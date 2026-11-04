@@ -143,7 +143,7 @@ export const e2b: Sandbox = {
       bullets: [
         "Browse the web in Chromium, with its own screen and browser profile. Signed-in sessions stay between runs.",
         "Run shell commands, read and write files, and open a terminal you can type in yourself.",
-        "Share one computer. Bots in a workspace share a team computer by default, and each one gets its own screen on it.",
+        "Share one computer. By default, one person's bots in a space share that person's team computer, each on its own screen. A bot can have a computer of its own instead.",
         "Come back to the same machine. After 10 minutes without use the computer pauses instead of being deleted, and stops billing for compute. The next time a bot needs it, the same computer resumes with its files. Removing the computer deletes it.",
         "Survive a lost sandbox. Rakazo keeps its own copy of each bot's workspace, so the E2B disk is a cache. If a sandbox disappears, a new one starts from the saved work.",
       ],

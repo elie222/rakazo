@@ -122,7 +122,7 @@ export const daytona: Sandbox = {
       bullets: [
         "Browse the web in Chromium, with its own screen and browser profile. Signed-in sessions stay between runs.",
         "Run shell commands, read and write files, and open a terminal you can type in yourself.",
-        "Share one computer. Bots in a workspace share a team computer by default, and each one gets its own screen on it.",
+        "Share one computer. By default, one person's bots in a space share that person's team computer, each on its own screen. A bot can have a computer of its own instead.",
         "Keep their files. A stopped computer keeps its disk, and Rakazo also keeps its own copy of each bot's workspace, so a lost sandbox is replaced from the saved work.",
       ],
     },

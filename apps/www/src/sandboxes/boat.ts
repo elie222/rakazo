@@ -92,7 +92,7 @@ export const boat: Sandbox = {
     {
       heading: "What a Rakazo computer costs on Boat",
       paragraphs: [
-        `${METHOD_NOTE} Rakazo can't run Boat at that size: its smallest Boat machine is the default ${shape(BOAT_RAKAZO)}, so the table compares that size on providers that bill per second. Because Boat is cheap per hour and has a monthly minimum, most small teams pay exactly $${BOAT.minimum}.`,
+        `${METHOD_NOTE} Rakazo can't run Boat at that size: its smallest Boat machine is the default ${shape(BOAT_RAKAZO)}, so the table compares that size on providers that bill per second. Because Boat is cheap per hour and has a monthly minimum, most people and small teams pay exactly $${BOAT.minimum}: the minimum covers all the computers on one Boat account.`,
       ],
       table: {
         caption: `One ${shape(BOAT_RAKAZO)} computer a month`,
@@ -156,7 +156,7 @@ export const boat: Sandbox = {
         "Use a Chrome browser that is only theirs. Each bot keeps its own persistent Chrome profile, so a sales bot's HubSpot login is never visible to the inbox bot.",
         "Read web pages as text as well as by screenshot. On Boat, Rakazo installs a page-reading helper so bots can follow links and fill forms without guessing from pixels.",
         "Run shell commands, read and write files, and open a terminal you can type in yourself.",
-        "Share one computer. Bots in a workspace share a team computer by default, and each one gets its own screen on it.",
+        "Share one computer. By default, one person's bots in a space share that person's team computer, each on its own screen. A bot can have a computer of its own instead.",
         "Pick up where they left off. Stopping a computer keeps its disk, and Rakazo also saves each bot's workspace and browser profile on its own side.",
       ],
     },

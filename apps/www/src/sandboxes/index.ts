@@ -77,7 +77,7 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
     heading: "Pricing compared",
     id: "pricing",
     paragraphs: [
-      `Every price on these pages is for the same workload: one bot computer with 2 vCPU and 4 GB of memory, enough for a Linux desktop, Chromium and a terminal, running 4 hours a workday (${WORKDAY_HOURS} hours a month) or around the clock (${MONTH_HOURS} hours). Bots in a workspace share one team computer by default, so this is usually the bill for a whole team, not for each bot. Rakazo stops or pauses a hosted computer after 10 minutes without use, so you pay for roughly the hours bots work. Where a provider or Rakazo can't use that size, the row says which size it prices.`,
+      `Every price on these pages is for one person's bots, which share one computer by default: 2 vCPU and 4 GB of memory, enough for a Linux desktop, Chromium and a terminal, running 4 hours a workday (${WORKDAY_HOURS} hours a month) or around the clock (${MONTH_HOURS} hours). Rakazo gives each person one team computer per space, plus one for each bot you give a computer of its own, so for a space where N people use bots, multiply by N. Rakazo stops or pauses a hosted computer after 10 minutes without use, so you pay for roughly the hours bots work. Where a provider or Rakazo can't use that size, the row says which size it prices.`,
       `On Rakazo Cloud you don't pay a sandbox provider: computers run on Boat and come with the plan, and the [pricing page](/pricing/) lists the computer hours each plan includes. The table is for a self-hosted Rakazo, where you bring your own provider.`,
     ],
     table: {
@@ -155,7 +155,7 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
     },
     bullets: [
       "For a few hours a day, per-second providers are cheapest. Novita has the lowest rate of the hosted options Rakazo supports, and E2B and Daytona charge the same as each other.",
-      `Boat's $${BOAT.minimum} minimum covers about ${Math.floor(BOAT.minimum / BOAT_RAKAZO.hour)} hours of the bigger computer self-hosted Rakazo uses, so it is cheaper than E2B or Daytona once a computer runs more than about ${boatBeatsE2bHours} hours a month, and by far around the clock.`,
+      `Boat's $${BOAT.minimum} minimum covers about ${Math.floor(BOAT.minimum / BOAT_RAKAZO.hour)} hours of the bigger computer self-hosted Rakazo uses, and it covers every computer on the account, so it is cheaper than E2B or Daytona once your computers run more than about ${boatBeatsE2bHours} hours a month between them, and by far around the clock.`,
       "A server you rent for Docker costs the same whether bots work or not. It's the cheapest way to run many computers, if you're happy to look after it.",
     ],
   },

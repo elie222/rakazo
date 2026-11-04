@@ -96,7 +96,7 @@ export const docker: Sandbox = {
         "Browse the web in Chromium, sign in to sites and download files. You can watch the screen live and take over the mouse and keyboard at any time.",
         "Run commands in a terminal, install tools and write scripts.",
         "Keep its work. Each bot's home folder lives on your server's disk, so files are still there after the computer or the whole server restarts.",
-        "Share a computer with its teammates. Bots in a workspace use one team computer by default, each with its own screen, and you can give a bot a private computer instead.",
+        "Share a computer with its teammates. By default, one person's bots in a space use that person's team computer, each with its own screen, and you can give a bot a private computer instead.",
         "Read folders you choose. An admin can mount host folders, such as a shared docs folder, into every computer, read-only unless they say otherwise.",
       ],
     },

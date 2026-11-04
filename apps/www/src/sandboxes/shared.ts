@@ -53,7 +53,7 @@ export const EXAMPLE_SIZE: ComputerShape = { vcpus: 2, gb: 4 };
 
 /** One sentence on provider pages pointing at the hub, where the method is explained once. */
 export const METHOD_NOTE =
-  "Monthly costs follow [the method on the comparison page](/sandboxes/#pricing): one 2 vCPU / 4 GB computer running 4 hours a workday, or around the clock.";
+  "Monthly costs follow [the method on the comparison page](/sandboxes/#pricing): one person's bots sharing one 2 vCPU / 4 GB computer, running 4 hours a workday or around the clock. For N people, multiply by N.";
 
 /** Per-hour CPU and memory rates. */
 export type Rate = { vcpuHour: number; gbHour: number };
