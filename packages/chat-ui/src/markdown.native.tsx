@@ -711,8 +711,8 @@ const scrollFrame: ViewStyle = {
   flexDirection: "row",
 };
 
-// Match Pressable's default and pass it explicitly to the message surface too.
-export const MESSAGE_LONG_PRESS_DELAY = 500;
+// Matches Pressable's default long-press delay.
+const MESSAGE_LONG_PRESS_DELAY = 500;
 export const MarkdownLongPressContext = createContext<
   ((event: GestureResponderEvent) => void) | undefined
 >(undefined);

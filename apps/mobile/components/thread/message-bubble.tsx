@@ -1,9 +1,4 @@
-import {
-  ChatMarkdown,
-  MarkdownLongPressContext,
-  MESSAGE_LONG_PRESS_DELAY,
-  withBlockMentions,
-} from "@rakazo/chat-ui/native";
+import { ChatMarkdown, MarkdownLongPressContext, withBlockMentions } from "@rakazo/chat-ui/native";
 import type { LoginFieldInput, MessageBlock } from "@rakazo/contracts";
 import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
@@ -780,7 +775,6 @@ function MessageTextCard({
         if (bot) userMentions?.onOpenBot(bot.id, bot.name);
         else actionProps.onAccessibilityAction?.(event);
       }}
-      delayLongPress={MESSAGE_LONG_PRESS_DELAY}
       onLongPress={doubleTapSurface ? undefined : actionProps.onLongPress}
       style={{
         flexShrink: 1,

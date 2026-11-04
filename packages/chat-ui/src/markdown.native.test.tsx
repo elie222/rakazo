@@ -230,7 +230,6 @@ import {
   LinkifiedText,
   MarkdownLinkPromptProvider,
   MarkdownLongPressContext,
-  MESSAGE_LONG_PRESS_DELAY,
   MermaidDiagramContext,
   markdownCodeBlocks,
   RemoteImagesContext,
@@ -414,8 +413,8 @@ describe("native markdown tables", () => {
         try {
           await act(async () => {
             root.render(
-              <Pressable onLongPress={openMenu}>
-                <MarkdownLongPressContext.Provider value={openMenu}>
+              <Pressable onLongPress={os === "ios" ? undefined : openMenu}>
+                <MarkdownLongPressContext.Provider value={os === "ios" ? undefined : openMenu}>
                   <ChatMarkdown>{markdown}</ChatMarkdown>
                 </MarkdownLongPressContext.Provider>
               </Pressable>,
@@ -427,12 +426,15 @@ describe("native markdown tables", () => {
           });
 
           expect(tableEvents.onStartShouldSetResponder?.()).toBe(overflows);
+          const timersBeforeTouch = vi.getTimerCount();
           if (overflows) expect(tableEvents.onResponderGrant?.(touch(100, 100))).toBeUndefined();
-          vi.advanceTimersByTime(MESSAGE_LONG_PRESS_DELAY - 1);
+          // iOS leaves long presses to the native context menu without a JS timer.
+          if (os === "ios") expect(vi.getTimerCount()).toBe(timersBeforeTouch);
+          vi.advanceTimersByTime(499);
           expect(openMenu).not.toHaveBeenCalled();
           vi.advanceTimersByTime(1);
-          vi.advanceTimersByTime(MESSAGE_LONG_PRESS_DELAY);
-          expect(openMenu).toHaveBeenCalledTimes(overflows ? 1 : 0);
+          vi.advanceTimersByTime(500);
+          expect(openMenu).toHaveBeenCalledTimes(overflows && os !== "ios" ? 1 : 0);
           if (_case === "wide table") {
             alert.mockClear();
             linking.openURL.mockClear();
@@ -447,7 +449,7 @@ describe("native markdown tables", () => {
               buttons[1].onPress();
             });
             expect(linking.openURL).toHaveBeenCalledWith("https://example.com/docs");
-            expect(openMenu).toHaveBeenCalledTimes(overflows ? 1 : 0);
+            expect(openMenu).toHaveBeenCalledTimes(overflows && os !== "ios" ? 1 : 0);
           }
 
           expect(
@@ -484,7 +486,7 @@ describe("native markdown tables", () => {
           tableEvents.onLayout?.({ nativeEvent: { layout: { width: 200, height: 40 } } });
         });
         tableEvents.onResponderGrant?.({ nativeEvent: { pageX: 100, pageY: 100 }, persist() {} });
-        vi.advanceTimersByTime(MESSAGE_LONG_PRESS_DELAY - 1);
+        vi.advanceTimersByTime(499);
         if (reason.startsWith("move"))
           tableEvents.onResponderMove?.({
             nativeEvent: {
@@ -496,7 +498,7 @@ describe("native markdown tables", () => {
         if (reason === "release") tableEvents.onResponderRelease?.();
         if (reason === "terminate") tableEvents.onResponderTerminate?.();
         if (reason === "unmount") await act(async () => root.unmount());
-        vi.advanceTimersByTime(MESSAGE_LONG_PRESS_DELAY);
+        vi.advanceTimersByTime(500);
         expect(openMenu).not.toHaveBeenCalled();
       } finally {
         if (reason !== "unmount") await act(async () => root.unmount());
