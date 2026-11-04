@@ -110,17 +110,21 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     jobs.enqueue.mockClear();
   }
 
+  /** One deadline for every poll of a barrier, inside the transactions' 20s budget. */
+  const BARRIER_POLL_BUDGET_MS = 4_000;
+
   /**
    * Wait until PostgreSQL itself shows a session blocked on a lock `holder` holds, so a
    * barrier step proves SQL progress instead of assuming it from elapsed time. Returns
-   * the blocked backend's pid, and throws after ten seconds of nothing.
+   * the blocked backend's pid; all polls of one barrier share its deadline.
    */
   async function waitForBlockedOn(
     monitor: SqlMonitor,
     holder: number,
     what: string,
+    deadline: number,
   ): Promise<number> {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
+    while (performance.now() < deadline) {
       const { rows } = await monitor.query(
         "SELECT pid FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND pg_blocking_pids(pid) @> ARRAY[$1::int]",
         [holder],
@@ -131,9 +135,44 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     throw new Error(`timed out waiting for ${what} to block on backend ${holder}`);
   }
 
+  /** An operation set whose failures are handled at once and drained at cleanup. */
+  function started() {
+    const ops: Array<Promise<unknown>> = [];
+    return {
+      track: (op: Promise<unknown>) => {
+        ops.push(
+          op.then(
+            () => undefined,
+            () => undefined,
+          ),
+        );
+        return op;
+      },
+      settle: () => Promise.allSettled(ops),
+    };
+  }
+
+  /**
+   * The runtime client with its interactive transactions given twenty seconds, so a
+   * save sitting at a barrier cannot be expired by Prisma's five-second default. Only
+   * this suite asks for that; production timeouts stay as they are.
+   */
+  const unhurried = () =>
+    new Proxy(app.prisma, {
+      get(target, key) {
+        if (key !== "$transaction") return Reflect.get(target, key);
+        const transaction = Reflect.get(target, "$transaction").bind(target) as (
+          work: unknown,
+          options?: Record<string, unknown>,
+        ) => unknown;
+        return (work: unknown, options?: Record<string, unknown>) =>
+          transaction(work, { timeout: 20_000, ...options });
+      },
+    }) as PrismaClient;
+
   function save(userIdArg: string, timezone: string, space: (typeof spaces)[number]) {
     return runAsTenant({ spaceId: space.spaceId, userId }, () =>
-      changeUserTimezone({ prisma: app.prisma, jobs }, userIdArg, timezone),
+      changeUserTimezone({ prisma: unhurried(), jobs }, userIdArg, timezone),
     );
   }
 
@@ -181,23 +220,27 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     // row. Both overlap in the database, not by assumed timing; neither may strand the
     // routines on an intermediate zone.
     await runAsSystem("overlap barrier", async () => {
+      const ops = started();
       const client = await app.pool.connect();
       const monitor = await owner.pool.connect();
       try {
         await client.query("BEGIN");
         await client.query('SELECT id FROM routines WHERE "userId" = $1 FOR UPDATE', [userId]);
         const { rows: own } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
-        const first = save(userId, "Europe/London", spaces[0]!);
-        const firstPid = await waitForBlockedOn(monitor, own[0]!.pid, "the first save");
-        const second = save(userId, "Asia/Tokyo", spaces[1]!);
-        await waitForBlockedOn(monitor, firstPid, "the second save on the first");
+        const deadline = performance.now() + BARRIER_POLL_BUDGET_MS;
+        const first = ops.track(save(userId, "Europe/London", spaces[0]!));
+        const firstPid = await waitForBlockedOn(monitor, own[0]!.pid, "the first save", deadline);
+        const second = ops.track(save(userId, "Asia/Tokyo", spaces[1]!));
+        await waitForBlockedOn(monitor, firstPid, "the second save on the first", deadline);
         await client.query("COMMIT");
         await Promise.all([first, second]);
       } finally {
-        // A failed step must not leave the barrier open and the saves wedged.
+        // A failed step must not leave the barrier open, the saves wedged, or their
+        // failures unhandled into the next test.
         await client.query("ROLLBACK").catch(() => undefined);
         client.release();
         monitor.release();
+        await ops.settle();
       }
     });
 
@@ -222,15 +265,17 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     // system would, on the runtime login.
     const claimed = new Date("2026-11-16T07:00:00.000Z"); // next Monday 09:00 Cairo
     await runAsSystem("routine claim barrier", async () => {
+      const ops = started();
       const client = await app.pool.connect();
       const monitor = await owner.pool.connect();
       try {
         await client.query("BEGIN");
         await client.query("SELECT id FROM routines WHERE id = $1 FOR UPDATE", [routine.id]);
         const { rows: own } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
-        const moving = save(userId, "Europe/London", spaces[0]!);
+        const deadline = performance.now() + BARRIER_POLL_BUDGET_MS;
+        const moving = ops.track(save(userId, "Europe/London", spaces[0]!));
         // Only once the save provably waits on the claimed row does the claim advance it.
-        await waitForBlockedOn(monitor, own[0]!.pid, "the zone save");
+        await waitForBlockedOn(monitor, own[0]!.pid, "the zone save", deadline);
         await client.query('UPDATE routines SET "nextRunAt" = $2 WHERE id = $1', [
           routine.id,
           claimed,
@@ -238,10 +283,10 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
         await client.query("COMMIT");
         await moving;
       } finally {
-        // A failed step must not leave the barrier open and the saves wedged.
         await client.query("ROLLBACK").catch(() => undefined);
         client.release();
         monitor.release();
+        await ops.settle();
       }
     });
 
@@ -260,40 +305,44 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     // on the save's account row, proving the interleaving in the database: it must not
     // freeze the zone the save is replacing.
     await runAsSystem("creation barrier", async () => {
+      const ops = started();
       const client = await app.pool.connect();
       const monitor = await owner.pool.connect();
       try {
         await client.query("BEGIN");
         await client.query("SELECT id FROM routines WHERE id = $1 FOR UPDATE", [fixture.id]);
         const { rows: own } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
-        const moving = save(userId, "Europe/London", spaces[0]!);
-        const movingPid = await waitForBlockedOn(monitor, own[0]!.pid, "the zone save");
-        const created = runAsTenant({ spaceId: spaces[0]!.spaceId, userId }, () =>
-          createScheduleFromTool(
-            {
-              prisma: app.prisma,
-              jobs,
-              events: { append: async () => undefined },
-            } as unknown as Parameters<typeof createScheduleFromTool>[0],
-            {
-              spaceId: spaces[0]!.spaceId,
-              botId: spaces[0]!.botId,
-              userId,
-              threadId: spaces[0]!.threadId,
-              name: "Fresh",
-              prompt: "Check",
-              schedule: { cron: "0 9 * * 1" },
-            },
+        const deadline = performance.now() + BARRIER_POLL_BUDGET_MS;
+        const moving = ops.track(save(userId, "Europe/London", spaces[0]!));
+        const movingPid = await waitForBlockedOn(monitor, own[0]!.pid, "the zone save", deadline);
+        const created = ops.track(
+          runAsTenant({ spaceId: spaces[0]!.spaceId, userId }, () =>
+            createScheduleFromTool(
+              {
+                prisma: unhurried(),
+                jobs,
+                events: { append: async () => undefined },
+              } as unknown as Parameters<typeof createScheduleFromTool>[0],
+              {
+                spaceId: spaces[0]!.spaceId,
+                botId: spaces[0]!.botId,
+                userId,
+                threadId: spaces[0]!.threadId,
+                name: "Fresh",
+                prompt: "Check",
+                schedule: { cron: "0 9 * * 1" },
+              },
+            ),
           ),
         );
-        await waitForBlockedOn(monitor, movingPid, "the account-zone creation");
+        await waitForBlockedOn(monitor, movingPid, "the account-zone creation", deadline);
         await client.query("COMMIT");
         await Promise.all([moving, created]);
       } finally {
-        // A failed step must not leave the barrier open and the saves wedged.
         await client.query("ROLLBACK").catch(() => undefined);
         client.release();
         monitor.release();
+        await ops.settle();
       }
     });
 
