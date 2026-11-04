@@ -80,6 +80,38 @@ describe("Speaker", () => {
     expect(speaker.state).toEqual({ status: "idle" });
   });
 
+  it("unlocks from a tap while other speech is still preparing, but never over a playing clip", async () => {
+    const played: string[] = [];
+    stubAudio((audio) => {
+      played.push((audio as unknown as { src: string }).src);
+      return new Promise(() => undefined);
+    });
+    const speaker = new Speaker();
+    let prepared!: (utterances: string[]) => void;
+    vi.spyOn(
+      speaker as unknown as { prepare: () => Promise<string[]> },
+      "prepare",
+    ).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          prepared = resolve;
+        }),
+    );
+
+    const pending = speaker.speak("Hello.");
+    expect(speaker.state.status).toBe("preparing");
+    speaker.unlock();
+    expect(played).toEqual([expect.stringMatching(/^data:audio\/wav/)]);
+
+    prepared(["Hello."]);
+    await vi.waitFor(() => expect(speaker.state.status).toBe("speaking"));
+    speaker.unlock();
+    expect(played).toEqual([expect.stringMatching(/^data:audio\/wav/), "blob:voice"]);
+
+    speaker.stop();
+    await pending;
+  });
+
   it("reports a clip the browser refuses to play", async () => {
     stubAudio(() => Promise.reject(new DOMException("Not allowed", "NotAllowedError")));
     const speaker = new Speaker();

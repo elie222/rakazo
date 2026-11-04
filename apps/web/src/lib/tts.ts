@@ -76,7 +76,7 @@ export class Speaker {
   }
 
   unlock() {
-    if (this.snapshot.status !== "idle") return;
+    if (this.settlePlayback) return;
     const audio = this.element();
     audio.src = SILENT_CLIP;
     void audio.play().catch(() => undefined);
