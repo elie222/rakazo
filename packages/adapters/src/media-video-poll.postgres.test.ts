@@ -190,6 +190,13 @@ describePostgres("background video delivery (PostgreSQL)", () => {
           data: { createdAt: new Date(Date.now() - ms) },
         }),
       );
+    // Nothing touched the job for a while, as when its scheduled poll was lost.
+    const stall = (jobId: string) =>
+      runAsSystem(
+        "test fixture",
+        () =>
+          prisma.$executeRaw`UPDATE external_effects SET "updatedAt" = now() - interval '15 minutes' WHERE id = ${jobId}`,
+      );
     const recovered = () => enqueued.map((job) => (job.payload as { jobId?: string }).jobId);
     return {
       user,
@@ -197,6 +204,7 @@ describePostgres("background video delivery (PostgreSQL)", () => {
       enqueued,
       queue,
       age,
+      stall,
       recovered,
       submit,
       poll,
@@ -214,6 +222,7 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     const jobId = await h.submit();
     expect(h.media.submissions).toBe(1);
     // Restart: the scheduled poll is lost, and recovery finds the job from the database alone.
+    await h.stall(jobId);
     h.enqueued.length = 0;
     await h.reconcile();
     expect(h.enqueued).toContainEqual(
@@ -292,6 +301,24 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     expect(await h2.messages()).toHaveLength(1);
   });
 
+  it("keeps trying to post an attached video past the deadline instead of failing it", async () => {
+    const h = await setup();
+    const jobId = await h.submit();
+    // The video was stored, but posting it has not succeeded yet.
+    await runAsSystem("test fixture", () =>
+      prisma.externalEffect.update({
+        where: { id: jobId },
+        data: { result: { provider: h.media.id, jobId: "remote-1", artifactId: "not-posted" } },
+      }),
+    );
+    await h.age(jobId, MEDIA_POLL_DEADLINE_MS + 60_000);
+    h.enqueued.length = 0;
+    await h.poll(jobId);
+    expect((await h.job(jobId)).status).toBe("media_pending");
+    expect(h.recovered()).toContain(jobId);
+    expect(await h.wakes()).toHaveLength(0);
+  });
+
   it("still delivers when the turn that asked was stopped or closed", async () => {
     const h = await setup();
     const jobId = await h.submit("cancelled");
@@ -331,10 +358,15 @@ describePostgres("background video delivery (PostgreSQL)", () => {
   it("recovers every unfinished video, however many and however old", async () => {
     const h = await setup();
     const jobIds = [await h.submit(), await h.submit()];
+    // Each run may submit two videos, so the recently checked one comes from another chat.
+    const healthy = await (await setup()).submit();
     await h.age(jobIds[0]!, 3 * MEDIA_POLL_DEADLINE_MS);
+    for (const jobId of jobIds) await h.stall(jobId);
     h.enqueued.length = 0;
     await h.reconcile();
     expect(h.recovered()).toEqual(expect.arrayContaining(jobIds));
+    // A job checked recently still has its poll scheduled.
+    expect(h.recovered()).not.toContain(healthy);
   });
 
   it("closes a job whose bot was archived, even one left mid-check", async () => {

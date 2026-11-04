@@ -15,6 +15,8 @@ import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
 export const MEDIA_POLL_DEADLINE_MS = 60 * 60_000;
 /** A poll lock held this long belongs to a worker that died; a live poll finishes well within it. */
 const ABANDONED_POLL_LOCK_MS = 10 * 60_000;
+/** Longer than the widest poll interval, so a job left this long lost its scheduled poll. */
+const STALLED_MS = 10 * 60_000;
 const PENDING_STATUSES = ["media_pending", "media_polling"];
 
 export interface MediaVideoDeps {
@@ -252,8 +254,14 @@ export async function pollMediaVideo(deps: MediaVideoDeps, payload: { jobId: str
   let settled = result?.status === "completed" || result?.status === "failed";
   if (!settled && expired) {
     // Still unfinished after the final check: report it failed. Only a released or abandoned
-    // claim is taken, so a check still in flight decides instead.
+    // claim is taken, so a check still in flight decides instead, and a video already attached
+    // keeps trying to post.
     settled = await deps.prisma.$transaction(async (tx) => {
+      const current = await tx.externalEffect.findUnique({
+        where: { id: job.id },
+        select: { result: true },
+      });
+      if ((current?.result as { artifactId?: unknown } | null)?.artifactId) return false;
       const failed = await tx.externalEffect.updateMany({
         where: {
           id: job.id,
@@ -320,7 +328,10 @@ async function queueWake(
   return wake.id;
 }
 
-/** Re-enqueue every unfinished video whose poll was lost, for example to a worker restart. */
+/**
+ * Re-enqueue unfinished videos whose poll was lost, for example to a worker restart. A healthy
+ * job is checked at least every five minutes, so only one untouched for longer is picked up.
+ */
 export async function reconcileMediaVideos(
   deps: Pick<MediaVideoDeps, "prisma" | "jobs" | "mediaGeneration">,
 ) {
@@ -330,25 +341,27 @@ export async function reconcileMediaVideos(
   let after: string | undefined;
   for (;;) {
     const page = await deps.prisma.externalEffect.findMany({
-      where: { kind: MEDIA_JOB_KIND, status: { in: PENDING_STATUSES } },
+      where: {
+        kind: MEDIA_JOB_KIND,
+        status: { in: PENDING_STATUSES },
+        updatedAt: { lt: new Date(now - STALLED_MS) },
+      },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: pageSize,
       ...(after ? { cursor: { id: after }, skip: 1 } : {}),
       select: { id: true, createdAt: true },
     });
-    await Promise.all(
-      page.map((job) =>
-        deps.jobs
-          .enqueue({
-            ...mediaPollJob(job.id, nextMediaPollAt(job.createdAt, now)),
-            // A scheduled poll is left alone; only a missing, exhausted or abandoned one is
-            // replaced.
-            keepExisting: true,
-            replaceLockedBefore: new Date(now - ABANDONED_POLL_LOCK_MS),
-          })
-          .catch(() => getLogger().warn("media poll recovery deferred")),
-      ),
-    );
+    for (const job of page) {
+      await deps.jobs
+        .enqueue({
+          ...mediaPollJob(job.id, nextMediaPollAt(job.createdAt, now)),
+          // A scheduled poll is left alone; only a missing, exhausted or abandoned one is
+          // replaced.
+          keepExisting: true,
+          replaceLockedBefore: new Date(now - ABANDONED_POLL_LOCK_MS),
+        })
+        .catch(() => getLogger().warn("media poll recovery deferred"));
+    }
     if (page.length < pageSize) return;
     after = page.at(-1)?.id;
   }
