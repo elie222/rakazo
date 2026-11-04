@@ -383,8 +383,10 @@ function SpaceShell() {
       rpc,
       activeBotId,
       activeGroupId,
-      openChat: (alert) =>
-        navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`),
+      openChat: (alert) => {
+        setMobileSidebarOpen(false);
+        navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
+      },
     },
   );
   const { speakingMessageId, speakMessage } = useReadAloud({
