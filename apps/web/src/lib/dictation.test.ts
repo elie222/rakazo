@@ -680,7 +680,11 @@ describe("Dictation recorder fallback", () => {
 
     const onFinal = vi.fn();
     const dictation = new Dictation();
+    const seen: boolean[] = [];
+    dictation.subscribe(() => seen.push(dictation.recording));
     await dictation.listen({ mode: "endpoint", transcribe: true, onFinal });
+    expect(dictation.recording).toBe(true);
+    expect(seen.at(-1)).toBe(true);
     vi.setSystemTime(Date.now() + MAX_ENDPOINT_RECORDING_MS - 1_000);
     await vi.advanceTimersByTimeAsync(960);
     expect(onFinal).not.toHaveBeenCalled();
@@ -689,6 +693,7 @@ describe("Dictation recorder fallback", () => {
     expect(onFinal).toHaveBeenCalledExactlyOnceWith(final);
     expect(fetchMock).toHaveBeenCalledTimes(final ? 1 : 0);
     expect(track.stop).toHaveBeenCalledOnce();
+    expect(dictation.recording).toBe(false);
   });
 
   it("does not let a replaced recorder tear down the new silence detector", async () => {

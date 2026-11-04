@@ -204,6 +204,10 @@ export class Dictation {
     return this.snapshot;
   }
 
+  get recording(): boolean {
+    return this.media?.state === "recording";
+  }
+
   private set(next: DictationSnapshot) {
     this.snapshot = next;
     for (const watcher of [...this.watchers]) watcher(next);
@@ -482,6 +486,7 @@ export class Dictation {
         void this.transcribeChunks(mine, spaceId);
       };
       media.start(mode === "endpoint" ? 250 : undefined);
+      this.set({ ...this.snapshot });
     } catch (error) {
       if (media) {
         media.ondataavailable = null;

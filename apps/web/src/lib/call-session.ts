@@ -190,7 +190,7 @@ export function startCall(call: {
     if (speech.status === "speaking") {
       bargedIn = false;
       set({ phase: "speaking", caption: speech.caption ?? "" });
-      if (micOpen && usesServerDictation(transcribe) && dictation.state.status === "listening") {
+      if (micOpen && dictation.recording) {
         dictation.stop("cancel");
         micOpen = false;
       }
@@ -204,6 +204,11 @@ export function startCall(call: {
   });
   unsubDictation = dictation.subscribe((heard) => {
     if (!state) return;
+    if (state.phase === "speaking" && dictation.recording) {
+      dictation.stop("cancel");
+      micOpen = false;
+      return;
+    }
     if (heard.status === "listening") {
       set({ heard: pendingSecretAsk(thread) ? "" : heard.transcript });
       watchInterim(heard.transcript);

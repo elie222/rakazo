@@ -65,13 +65,13 @@ export async function saveWaitSoundEnabled(on: boolean): Promise<void> {
   else await SecureStore.setItemAsync(WAIT_SOUND_KEY, "0");
 }
 
-export async function playCallCue(cue: CallCue): Promise<void> {
+export async function playCallCue(cue: CallCue, { duringCall = false } = {}): Promise<void> {
   const epoch = waitCallEpoch;
   if (!(await loadCallSoundsEnabled().catch(() => true))) return;
   if (epoch !== waitCallEpoch) return;
   const { createAudioPlayer } = await import("expo-audio");
   if (epoch !== waitCallEpoch) return;
-  const player = createAudioPlayer(CUE_ASSETS[cue], CALL_PLAYER);
+  const player = createAudioPlayer(CUE_ASSETS[cue], { keepAudioSessionActive: duringCall });
   let finish: () => void = () => undefined;
   cuePlayers.set(player, () => finish());
   try {
