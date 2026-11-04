@@ -106,7 +106,10 @@ export async function recordSecurityEvent(input: SecurityEventInput): Promise<vo
         recordAuditEvent({
           action: event.type,
           ...(DONE_TO_ACCOUNT.has(event.type)
-            ? { actor: { type: "system", label: "directory" }, target: { type: "user", id: userId } }
+            ? {
+                actor: { type: "system", label: "directory" },
+                target: { type: "user", id: userId },
+              }
             : {
                 actor: { type: "user", id: userId },
                 target: typeof kind === "string" ? { type: kind } : undefined,
