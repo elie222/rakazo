@@ -4412,9 +4412,10 @@ describe("stopThreadRuns", () => {
 
     // The stop holds the thread row lock, which snapshot reads can hold for up to
     // 15s; Prisma's 5s default counts that wait and turns a loaded database into
-    // a failed stop. finalizeRun uses the same budget for the same lock.
+    // a failed stop. Only the timeout is explicit: an explicit maxWait would
+    // override the client's longer connection wait, so a saturated pool that
+    // frees a connection late would fail the checkout instead of waiting it out.
     expect($transaction).toHaveBeenCalledWith(expect.any(Function), {
-      maxWait: 5_000,
       timeout: 20_000,
     });
   });

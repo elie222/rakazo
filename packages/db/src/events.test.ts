@@ -521,8 +521,10 @@ describe("thread lock transaction budget", () => {
   // These transactions wait on the thread row lock, which snapshot reads can hold
   // for up to 15s, before writing run state. Prisma's 5s default counts that wait,
   // and expiring fails a user stop, clear or card answer, or a run whose work
-  // already finished.
-  const budget = { maxWait: 5_000, timeout: 20_000 };
+  // already finished. Only the timeout is shared: an explicit maxWait would
+  // override the client's longer connection wait, so a saturated pool that frees
+  // a connection late would fail the checkout instead of waiting it out.
+  const budget = { timeout: 20_000 };
 
   it("clears a thread with the explicit budget", async () => {
     const tx = {
@@ -639,7 +641,11 @@ describe("thread lock transaction budget", () => {
       }),
     ).resolves.toEqual({ continuationRunId: null });
 
-    expect($transaction).toHaveBeenCalledWith(expect.any(Function), budget);
+    // finalizeRun keeps its own longer-standing options, including the connection wait.
+    expect($transaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: 5_000,
+      timeout: 20_000,
+    });
   });
 });
 
