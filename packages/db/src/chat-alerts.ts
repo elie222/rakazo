@@ -12,7 +12,10 @@ export function chatAlertTopic(userId: string): string {
   return `chat-alerts:${userId}`;
 }
 
-/** Without a realtime fanout nothing is published and the stream stays open and empty. */
+/**
+ * Without a realtime fanout nothing is published and the stream stays open and empty. A failed
+ * subscribe ends the stream with that error, so the app reconnects.
+ */
 export function createChatAlerts(realtime?: RealtimeFanout): ChatAlerts {
   return {
     async publish(userId, alert) {
@@ -35,7 +38,6 @@ export function createChatAlerts(realtime?: RealtimeFanout): ChatAlerts {
               queue.push(alert.data);
               wake?.();
             })
-            .catch(() => async () => {})
         : async () => {};
       try {
         while (!signal?.aborted) {

@@ -82,6 +82,13 @@ describe("notifyRun chat alerts", () => {
     expect(failing.send).toHaveBeenCalledOnce();
   });
 
+  it("still pushes where open apps have no alert publisher", async () => {
+    const { value, send } = deps();
+    delete (value.events as { publishChatAlert?: unknown }).publishChatAlert;
+    await notifyRun(value, run, message);
+    expect(send).toHaveBeenCalledOnce();
+  });
+
   it("publishes even where phones have no push provider", async () => {
     const { value, publish } = deps();
     delete (value as { notifications?: unknown }).notifications;

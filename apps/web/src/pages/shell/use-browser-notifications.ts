@@ -36,6 +36,8 @@ export function useBrowserNotifications(
     let active = true;
     let controller: AbortController | undefined;
     let cancelRetry: (() => void) | undefined;
+    // A click must not reach a shell that has gone, so its alerts go with it.
+    const shown = new Set<Notification>();
     const show = (alert: ChatAlert) => {
       if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
       const isOpen = alert.groupId
@@ -53,6 +55,8 @@ export function useBrowserNotifications(
           body: alert.body,
           tag: alert.threadId,
         });
+        shown.add(notification);
+        notification.onclose = () => shown.delete(notification);
         notification.onclick = () => {
           window.focus();
           openChatRef.current(alert);
@@ -79,7 +83,7 @@ export function useBrowserNotifications(
         } finally {
           controller.abort();
         }
-        if (!active || !isRetryableError(failure)) return;
+        if (!active || (failure !== undefined && !isRetryableError(failure))) return;
         await new Promise<void>((resolve) => {
           const timer = setTimeout(resolve, retryDelayMs(failure, 1_000));
           cancelRetry = () => {
@@ -94,6 +98,7 @@ export function useBrowserNotifications(
       active = false;
       controller?.abort();
       cancelRetry?.();
+      for (const notification of shown) notification.close();
     };
   }, [rpc]);
   const notifiedBrowserEvents = useRef(new Set<string>());

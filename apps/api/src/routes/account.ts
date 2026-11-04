@@ -318,7 +318,11 @@ export function accountRoutes(ctx: RouterContext) {
       subscribe: authed.notifications.subscribe.handler(async function* ({ context }) {
         if (!deps.events.followChatAlerts) throw new ORPCError("NOT_FOUND");
         const { spaceId, userId } = context.actor;
-        const alerts = deps.events.followChatAlerts(userId, context.signal);
+        const controller = new AbortController();
+        const signal = context.signal
+          ? AbortSignal.any([context.signal, controller.signal])
+          : controller.signal;
+        const alerts = deps.events.followChatAlerts(userId, signal);
         let pending: Promise<IteratorResult<ChatAlert>> | undefined;
         let authorizedAt = Date.now();
         try {
@@ -345,7 +349,8 @@ export function accountRoutes(ctx: RouterContext) {
             yield { type: "alert" as const, alert: next.value };
           }
         } finally {
-          void alerts.return(undefined).catch(() => {});
+          controller.abort();
+          await alerts.return(undefined);
         }
       }),
       subscribeCalls: authed.notifications.subscribeCalls.handler(async function* ({ context }) {

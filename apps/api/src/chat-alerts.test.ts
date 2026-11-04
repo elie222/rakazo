@@ -34,7 +34,7 @@ describe("notifications.subscribe", () => {
     try {
       const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
       expect((await iterator.next()).value).toEqual({ type: "alert", alert });
-      expect(followChatAlerts).toHaveBeenCalledWith(actor.userId, controller.signal);
+      expect(followChatAlerts).toHaveBeenCalledWith(actor.userId, expect.any(AbortSignal));
     } finally {
       controller.abort();
     }

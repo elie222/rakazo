@@ -81,8 +81,8 @@ export async function notifyRun(
   });
   if (!notice?.enabled) return;
   // Open apps alert from this too. Not awaited, so it never holds up the push.
-  void deps.events
-    .publishChatAlert?.(run.userId, {
+  void (async () =>
+    deps.events.publishChatAlert?.(run.userId, {
       kind: message.kind,
       title: truncatePlainText(message.title, COMPLETION_NOTIFICATION_MAX_CHARS),
       body: truncatePlainText(message.body, COMPLETION_NOTIFICATION_MAX_CHARS),
@@ -90,8 +90,7 @@ export async function notifyRun(
       botId: message.botId,
       threadId: message.threadId,
       ...(notice.groupId ? { groupId: notice.groupId } : {}),
-    })
-    .catch((error) => getLogger().error("chat alert publish", error));
+    }))().catch((error) => getLogger().error("chat alert publish", error));
   if (!deps.notifications) return;
   // The icon shows what the inbox shows: unread chats across the user's Spaces. Without a
   // count the push leaves the badge as it is.

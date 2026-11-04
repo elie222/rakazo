@@ -52,6 +52,12 @@ describe("createChatAlerts", () => {
     expect((await pending).done).toBe(true);
   });
 
+  it("ends the stream with the error when the subscription fails, so the app reconnects", async () => {
+    const fanout = { ...fakeFanout(), subscribe: () => Promise.reject(new Error("listen failed")) };
+    const iterator = createChatAlerts(fanout as never).follow("user-1");
+    await expect(iterator.next()).rejects.toThrow("listen failed");
+  });
+
   it("does not throw without a realtime fanout", async () => {
     await expect(createChatAlerts().publish("user-1", alert)).resolves.toBeUndefined();
   });
