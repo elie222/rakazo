@@ -44,9 +44,11 @@ import {
   beginComposerDraftSubmission,
   readComposerDraft,
   readComposerDraftBindings,
+  readComposerRetryNonce,
   settleComposerDraftSubmission,
   subscribeComposerDraftAccepted,
   writeComposerDraft,
+  writeComposerRetryNonce,
 } from "../../lib/composer-draft";
 import { hasOpenDialog } from "../../lib/has-open-dialog";
 import { usePageSession } from "../../lib/pages";
@@ -191,33 +193,22 @@ const ComposerBody = memo(function Composer({
     transcribe: dictationTranscribe,
     disabled: disabled || onCall || !phoneCallsEnabled,
     onText: (text) => {
-      // A refused send keeps the words to edit or retry: in the field while this
-      // chat stays open, else in the saved draft, so leaving during the request
-      // cannot lose them. A single untouched dictation retries with its nonce.
+      // Dictation rides the typed-message path: the words land in the draft and
+      // the normal send carries them, with its nonce, edit guards and recovery.
       const clientNonce = newClientId();
-      const key = draftKeyRef.current;
-      const fieldEmptyAtSend = compositionRef.current.text.length === 0;
-      const savedAtSend = readComposerDraft(key);
-      const restore = () => {
-        if (mountedRef.current && draftKeyRef.current === key) {
-          const fieldStillEmpty = compositionRef.current.text.length === 0;
-          appendDictation(text);
-          if (fieldEmptyAtSend && fieldStillEmpty) retryNonce.current = clientNonce;
-          return;
-        }
-        // The chat closed before the answer: keep the words in the saved draft
-        // unless it moved on after this send began.
-        if (readComposerDraft(key) === savedAtSend)
-          writeComposerDraft(key, savedAtSend ? `${savedAtSend} ${text}` : text);
-      };
-      void onSend(text, [], clientNonce)
-        .then((accepted) => {
-          if (accepted === false) restore();
-          else recordMessageSent();
-        })
-        .catch(() => restore());
+      appendDictation(text);
+      retryNonce.current = clientNonce;
+      setDictationSendDue(true);
     },
   });
+  // The words must reach the committed draft before send() reads it, so the
+  // send waits one render for the state appendDictation just queued.
+  const [dictationSendDue, setDictationSendDue] = useState(false);
+  useEffect(() => {
+    if (!dictationSendDue) return;
+    setDictationSendDue(false);
+    void send();
+  }, [dictationSendDue]);
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const editRevision = useRef(0);
   useEffect(
@@ -230,16 +221,19 @@ const ComposerBody = memo(function Composer({
       }),
     [draftKey],
   );
-  const retryNonce = useRef<string | null>(null);
+  // A draft reloaded without edits may still belong to a send whose answer never
+  // came; its nonce is stored beside it. Anything that would change the next
+  // payload (attachments, an armed reply) disqualifies the stored nonce.
+  const retryNonce = useRef<string | null>(
+    pendingAttachments.length === 0 && !replyTarget ? readComposerRetryNonce(draftKey) : null,
+  );
   const replyId = replyTarget?.id ?? null;
   const quote = replyTarget ? (replyQuote ?? null) : null;
   const previousReply = useRef({ id: replyId, quote });
   useEffect(() => {
     if (previousReply.current.id !== replyId || previousReply.current.quote !== quote) {
-      editRevision.current += 1;
-      retryNonce.current = null;
+      markEdited();
       previousReply.current = { id: replyId, quote };
-      onDraftEdited?.();
     }
   }, [replyId, quote, onDraftEdited]);
   const {
@@ -351,6 +345,7 @@ const ComposerBody = memo(function Composer({
     onDraftEdited?.();
     editRevision.current += 1;
     retryNonce.current = null;
+    writeComposerRetryNonce(draftKey, null);
   }
 
   const draftKeyRef = useRef(draftKey);
@@ -498,7 +493,14 @@ const ComposerBody = memo(function Composer({
   async function send(imageHandling?: "file") {
     if (!canSend || sending || disabled) return;
     const revision = editRevision.current;
-    const clientNonce = retryNonce.current ?? newClientId();
+    const clientNonce =
+      retryNonce.current ??
+      // A chat reopened before its unsettled send failed has not edited since
+      // mount, so the nonce stored beside the saved draft is still this draft's.
+      (revision === 0 && pendingAttachments.length === 0 && !replyTarget
+        ? readComposerRetryNonce(draftKey)
+        : null) ??
+      newClientId();
     retryNonce.current = null;
     const submitted = compositionRef.current;
     const text = serializeComposerPrompt(submitted.text, selectedSkill);
@@ -521,12 +523,16 @@ const ComposerBody = memo(function Composer({
       }
     } catch {
       settleComposerDraftSubmission(draftKey, submission, false);
-      // A rejected callback leaves acceptance unknown; do not restore a possible send.
+      // A rejected callback leaves acceptance unknown; do not restore a possible
+      // send. The saved draft still holds the words: keep the nonce with them so
+      // an unchanged retry is recognized instead of duplicated.
+      if (readComposerDraft(draftKey) === draft) writeComposerRetryNonce(draftKey, clientNonce);
       return;
     }
     // Restore only an untouched draft, retaining its nonce for an unchanged retry.
     if (editRevision.current !== revision) return;
     retryNonce.current = clientNonce;
+    if (readComposerDraft(draftKey) === draft) writeComposerRetryNonce(draftKey, clientNonce);
     commitComposition(submitted, false);
     setSelectedSkill(selectedSkill);
   }
