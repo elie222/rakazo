@@ -47,14 +47,29 @@ function draftFolder(scope: ComposerDraftScope): Directory {
   );
 }
 
+function draftName(scope: ComposerDraftScope): string {
+  return `${encodeURIComponent(scope.threadKey)}.json`;
+}
+
 function draftFile(scope: ComposerDraftScope): File {
-  return new File(draftFolder(scope), `${encodeURIComponent(scope.threadKey)}.json`);
+  return new File(draftFolder(scope), draftName(scope));
 }
 
 // The next draft is written here first. Native replacement deletes the saved file before
 // moving this one in, so after an interrupted move this file holds the newest draft.
 function nextDraftFile(scope: ComposerDraftScope): File {
-  return new File(draftFolder(scope), `${encodeURIComponent(scope.threadKey)}.json.tmp`);
+  return new File(draftFolder(scope), `${draftName(scope)}.tmp`);
+}
+
+function legacyDraftFile(scope: ComposerDraftScope, suffix: string): File {
+  return new File(
+    new Directory(
+      legacyRoot(),
+      encodeURIComponent(scope.apiBase),
+      `user-${encodeURIComponent(scope.userId)}`,
+    ),
+    `${draftName(scope)}${suffix}`,
+  );
 }
 
 function readDraftRecord(file: File): ComposerDraft | undefined {
@@ -80,17 +95,22 @@ function deleteLeftover(entry: File | Directory): void {
 
 // Android can move a directory by copying and stop halfway, so copy the earlier cache
 // drafts instead, keeping the source until a marker records a full copy (as the outbox
-// does). The marker stays forever: a cache copy that reappears later, after a downgrade,
-// is never trusted over drafts saved since.
+// does). The marker is written before any draft on a clean launch too, and stays forever:
+// a cache copy that reappears later, after a downgrade, is never trusted over drafts
+// saved since.
 function migrateLegacyDrafts(): void {
-  if (legacyRoot().exists && !legacyDone().exists) {
+  if (!legacyRoot().exists) {
+    if (!legacyDone().exists) legacyDone().create();
+    return;
+  }
+  if (!legacyDone().exists) {
     if (root().exists) root().delete();
     legacyRoot().copySync(root());
     legacyDone().create();
     // iOS can fail to create a file without an error; the source must stay until the marker exists.
     if (!legacyDone().exists) throw new Error("DRAFT_STORAGE_UNAVAILABLE");
   }
-  if (legacyRoot().exists) deleteLeftover(legacyRoot());
+  deleteLeftover(legacyRoot());
 }
 
 // Moves a draft recovered from an interrupted move back to the saved name, so the next save
@@ -102,11 +122,30 @@ function promoteRecoveredDraft(scope: ComposerDraftScope): void {
   }
 }
 
+/** The draft as the earlier build saved it, read while its copy cannot move over. */
+function readLegacyDraft(scope: ComposerDraftScope): ComposerDraft {
+  try {
+    return (
+      readDraftRecord(legacyDraftFile(scope, "")) ??
+      readDraftRecord(legacyDraftFile(scope, ".tmp")) ?? { text: "", bindings: [] }
+    );
+  } catch {
+    return { text: "", bindings: [] };
+  }
+}
+
 /** Same record as the web binding record; bindings that no longer match the text are dropped. */
 export function readComposerDraft(scope: ComposerDraftScope | undefined): ComposerDraft {
   if (!scope) return { text: "", bindings: [] };
   try {
     migrateLegacyDrafts();
+  } catch {
+    // The copy retries on the next read or write. Until it works, the draft still lives
+    // where the earlier build left it; reading it there keeps the composer from starting
+    // empty and saving that emptiness over the draft.
+    return readLegacyDraft(scope);
+  }
+  try {
     try {
       promoteRecoveredDraft(scope);
     } catch {

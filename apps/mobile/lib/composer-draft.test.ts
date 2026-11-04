@@ -5,6 +5,8 @@ import { readComposerDraft, writeComposerDraft } from "./composer-draft";
 vi.mock("./api", () => ({ currentApiBase: () => "https://api.example.test" }));
 
 const files = vi.hoisted(() => new Map<string, string>());
+/** Each copy step throws while true, like a transient storage failure. */
+const failing = vi.hoisted(() => ({ copy: false }));
 vi.mock("expo-file-system", () => {
   class Directory {
     uri: string;
@@ -30,6 +32,7 @@ vi.mock("expo-file-system", () => {
     }
     // Like the device, a directory lands inside an existing destination.
     copySync(destination: Directory) {
+      if (failing.copy) throw new Error("Copy failed");
       const target = destination.exists
         ? `${destination.uri}/${this.uri.split("/").pop()}`
         : destination.uri;
@@ -79,6 +82,7 @@ function legacyDraft(body: string) {
 
 beforeEach(() => {
   files.clear();
+  failing.copy = false;
 });
 
 it("keeps drafts in documents, not the cache", () => {
@@ -101,4 +105,22 @@ it("does not copy a migrated cache draft over a newer saved one", () => {
   expect(writeComposerDraft(scope, "Newer draft", [])).toBe(true);
   legacyDraft("Legacy draft");
   expect(readComposerDraft(scope).text).toBe("Newer draft");
+});
+
+it("does not let a cache draft reappear over drafts from a clean first launch", () => {
+  expect(writeComposerDraft(scope, "First draft", [])).toBe(true);
+  // A downgrade wrote to the cache again; its copy must not replace the newer draft.
+  legacyDraft("Downgrade draft");
+  expect(readComposerDraft(scope).text).toBe("First draft");
+  expect(files.has(draftPath("document"))).toBe(true);
+});
+
+it("reads the draft from the cache while the copy to documents fails", () => {
+  legacyDraft("Unsent draft");
+  failing.copy = true;
+  expect(readComposerDraft(scope).text).toBe("Unsent draft");
+  failing.copy = false;
+  // The composer's automatic save of what it read cannot erase the draft.
+  expect(writeComposerDraft(scope, "Unsent draft", [])).toBe(true);
+  expect(readComposerDraft(scope).text).toBe("Unsent draft");
 });
