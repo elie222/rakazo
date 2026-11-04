@@ -187,32 +187,42 @@ function finishPendingClear() {
 }
 /** Saves the index, then deletes files only once it no longer lists them. */
 function save(attempts: SendAttempt[]) {
-  return tryDisk(() => {
+  // Bytes captured before a recovery admission: the disk clears them on the attempt once it
+  // writes the files, so they go back if the index that lists the attempt still cannot save.
+  const held = new Map<SendAttempt, SendAttempt["payload"]["attachments"]>();
+  const saved = tryDisk(() => {
     if (!finishPendingClear() || !diskReadable) return false;
     // A write error left these in memory only. Ones whose files were written join this index
-    // directly; the others admit again. What still cannot reach disk waits for a later save.
-    const recovered: SendAttempt[] = [];
+    // directly; the others admit again, and a successful admission is recorded at once, so a
+    // later save lists it rather than re-admitting over its own files. What still cannot
+    // reach disk waits for a later save.
     for (const attempt of attempts) {
-      if (!memoryOnly.has(attempt)) continue;
-      if (writtenFiles.has(attempt) || config!.disk.admit(attempt)) recovered.push(attempt);
+      if (!memoryOnly.has(attempt) || writtenFiles.has(attempt)) continue;
+      held.set(
+        attempt,
+        attempt.payload.attachments.map((a) => ({ ...a })),
+      );
+      if (config!.disk.admit(attempt)) writtenFiles.add(attempt);
     }
-    attempts = attempts.filter(
-      (attempt) => !memoryOnly.has(attempt) || recovered.includes(attempt),
+    const listed = attempts.filter(
+      (attempt) => !memoryOnly.has(attempt) || writtenFiles.has(attempt),
     );
-    config!.disk.save(attempts);
+    config!.disk.save(listed);
     // Only now does the index on disk list them; until it does, memory stays their only copy.
-    for (const attempt of recovered) {
+    for (const attempt of listed) {
+      if (!memoryOnly.has(attempt)) continue;
       memoryOnly.delete(attempt);
       writtenFiles.delete(attempt);
       removed.delete(attempt);
     }
     for (const attempt of removed) {
       removed.delete(attempt);
-      if (!attempts.some((a) => a.clientNonce === attempt.clientNonce))
-        config!.disk.forget(attempt);
+      if (!listed.some((a) => a.clientNonce === attempt.clientNonce)) config!.disk.forget(attempt);
     }
     return true;
   }, false);
+  if (!saved) for (const [attempt, attachments] of held) attempt.payload.attachments = attachments;
+  return saved;
 }
 function changed() {
   unsentSends = [...unsentSends];

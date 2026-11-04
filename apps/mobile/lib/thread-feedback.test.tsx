@@ -146,7 +146,7 @@ describe("scoped mobile outbox", () => {
   };
   const request = vi.fn();
   const disk = {
-    admit: vi.fn(() => true),
+    admit: vi.fn((_attempt: SendAttempt) => true),
     hydrate: vi.fn(async () => undefined),
     forget: vi.fn(),
     load: vi.fn((): SendAttempt[] => []),
@@ -255,6 +255,37 @@ describe("scoped mobile outbox", () => {
     expect(request).not.toHaveBeenCalled();
     expect(disk.admit).toHaveBeenCalledTimes(2);
     expect(disk.save).toHaveBeenLastCalledWith([attempt]);
+  });
+  it("keeps a send's bytes when a recovery admission's index save fails", async () => {
+    const folders = new Set<string>();
+    disk.admit.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    // Admission writes the files and clears the in-memory bytes, as the disk implementation does.
+    disk.admit.mockImplementation((attempt: SendAttempt) => {
+      if (folders.has(attempt.clientNonce)) return false;
+      folders.add(attempt.clientNonce);
+      for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
+      return true;
+    });
+    disk.save.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const attempt = feedback.sendAttempt(payload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    // The recovery admission wrote the files, but the index save failed again: the message
+    // still uploads from memory, and the next save lists it instead of deleting its files.
+    expect(request).toHaveBeenCalledWith(
+      "artifacts/create",
+      expect.objectContaining({ contentBase64: "fake" }),
+      expect.anything(),
+      "space-a",
+    );
+    expect(attempt.acceptedSeq).toBe(42);
+    expect(disk.forget).not.toHaveBeenCalledWith(attempt);
+    expect(disk.save).toHaveBeenLastCalledWith([]);
   });
   it("retries attachments from memory while admission keeps failing", async () => {
     disk.admit.mockImplementation(() => {
