@@ -26,7 +26,14 @@ vi.mock("expo-router", () => ({
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
+vi.mock("../components/settings-group", () => ({
+  SettingsGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  SettingsRow: ({ title, onPress }: { title: string; onPress?: () => void }) => (
+    <button type="button" aria-label={title} onClick={onPress}>
+      {title}
+    </button>
+  ),
+}));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
     <button type="button" onClick={onPress}>
@@ -38,23 +45,23 @@ vi.mock("react-native", () => {
   const View = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     View,
-    ScrollView: View,
-    RefreshControl: () => null,
-    Text: ({ children }: { children?: ReactNode }) => <p>{children}</p>,
-    ActivityIndicator: () => <span role="status" />,
-    Pressable: ({
+    ScrollView: ({
       children,
-      accessibilityLabel,
-      onPress,
+      refreshControl,
     }: {
       children?: ReactNode;
-      accessibilityLabel?: string;
-      onPress?: () => void;
+      refreshControl?: ReactNode;
     }) => (
-      <button type="button" aria-label={accessibilityLabel} onClick={onPress}>
+      <div>
+        {refreshControl}
         {children}
-      </button>
+      </div>
     ),
+    RefreshControl: ({ onRefresh }: { onRefresh: () => void }) => (
+      <button type="button" aria-label="Refresh" onClick={onRefresh} />
+    ),
+    Text: ({ children }: { children?: ReactNode }) => <p>{children}</p>,
+    ActivityIndicator: () => <span role="status" />,
     StyleSheet: { create: (styles: unknown) => styles },
   };
 });
@@ -101,4 +108,18 @@ it("says when nothing is remembered, and retries a failed load", async () => {
   await act(async () => retry?.click());
   expect(container.textContent).toContain("Nothing remembered yet");
   expect(container.textContent).not.toContain("offline");
+});
+
+it("keeps the newest list when an earlier load finishes last", async () => {
+  let finishFirst!: (docs: unknown[]) => void;
+  mocks.rpc
+    .mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
+    .mockResolvedValueOnce([]);
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click(),
+  );
+  expect(container.textContent).toContain("Nothing remembered yet");
+  await act(async () => finishFirst([{ id: "old", path: "deleted.md" }]));
+  expect(container.textContent).not.toContain("deleted.md");
 });

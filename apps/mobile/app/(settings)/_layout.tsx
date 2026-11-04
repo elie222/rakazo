@@ -113,7 +113,13 @@ export default function SettingsLayout() {
       <Stack.Screen name="skills" options={glassHeaderOptions(t("Skills"))} />
       {/* Titled by the screen once the skill loads. */}
       <Stack.Screen name="skill" options={glassHeaderOptions("")} />
-      <Stack.Screen name="memory" options={glassHeaderOptions(t("Memory"))} />
+      <Stack.Screen
+        name="memory"
+        options={{
+          ...glassHeaderOptions(t("Memory")),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
       {/* Titled by the screen once the note loads. */}
       <Stack.Screen name="memory-note" options={glassHeaderOptions("")} />
       <Stack.Screen

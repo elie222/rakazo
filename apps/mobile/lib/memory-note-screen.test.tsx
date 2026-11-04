@@ -299,3 +299,39 @@ it("says when the note is gone and retries a failed load", async () => {
   await act(async () => button("Retry")?.click());
   expect(editor()?.value).toBe(note.content);
 });
+
+it.each([
+  ["the save finds it gone", Object.assign(new Error("gone"), { code: "NOT_FOUND" }), [note]],
+  [
+    "the conflict reload finds it gone",
+    Object.assign(new Error("conflict"), { code: "CONFLICT" }),
+    [],
+  ],
+])("shows a note deleted elsewhere read-only when %s", async (_case, failure, reloaded) => {
+  let lists = 0;
+  mocks.rpc.mockImplementation(async (proc: string) => {
+    if (proc === "memory/list") return lists++ === 0 ? [note] : reloaded;
+    throw failure;
+  });
+  await render();
+  await type("Draft to keep\n");
+  await headerSave();
+  expect(container.textContent).toContain("This note no longer exists");
+  expect(editor()?.value).toBe("Draft to keep\n");
+  expect(editor()?.readOnly).toBe(true);
+  expect(mocks.options.headerRight).toBeUndefined();
+  expect(button("Delete")).toBeUndefined();
+  expect(mocks.preventRemove.active).toBe(false);
+  expect(mocks.alert).not.toHaveBeenCalled();
+});
+
+it("treats deleting a note already deleted elsewhere as done", async () => {
+  mocks.rpc.mockImplementation(async (proc: string) => {
+    if (proc === "memory/list") return [note];
+    throw Object.assign(new Error("gone"), { code: "NOT_FOUND" });
+  });
+  await render();
+  await act(async () => button("Delete")?.click());
+  await act(async () => lastAlert().press("Delete"));
+  expect(mocks.back).toHaveBeenCalledTimes(1);
+});

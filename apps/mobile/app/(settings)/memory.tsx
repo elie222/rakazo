@@ -1,18 +1,10 @@
 import type { MemoryDocument } from "@rakazo/contracts";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
-import { Chevron } from "../../components/row-accessories";
+import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
@@ -30,15 +22,19 @@ export default function MemoryScreen() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const live = useRef(true);
+  // Only the newest load may land, so a slow earlier one cannot bring back a deleted note.
+  const latestLoad = useRef(0);
 
   const load = useCallback(async () => {
+    const order = ++latestLoad.current;
+    const current = () => live.current && order === latestLoad.current;
     try {
       const docs = await rpc("memory/list", { scope: "user" });
-      if (!live.current) return;
+      if (!current()) return;
       setNotes(docs);
       setError(null);
     } catch (reason) {
-      if (live.current) setError(errorText(reason, t("Could not load memory")));
+      if (current()) setError(errorText(reason, t("Could not load memory")));
     }
   }, [t]);
 
@@ -74,22 +70,17 @@ export default function MemoryScreen() {
           <Text style={styles.secondary}>{t("Nothing remembered yet")}</Text>
         ) : null}
         {notes?.length ? (
-          <View testID="shared-memory" style={styles.list}>
+          <SettingsGroup>
             {notes.map((note) => (
-              <Pressable
+              <SettingsRow
                 key={note.id}
                 accessibilityRole="button"
-                accessibilityLabel={note.path}
+                chevron="right"
                 onPress={() => router.push({ pathname: "/memory-note", params: { id: note.id } })}
-                style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-              >
-                <Text numberOfLines={1} style={styles.title}>
-                  {note.path}
-                </Text>
-                <Chevron />
-              </Pressable>
+                title={note.path}
+              />
             ))}
-          </View>
+          </SettingsGroup>
         ) : null}
         {error ? (
           <Text accessibilityRole="alert" style={styles.error}>
@@ -114,21 +105,8 @@ export default function MemoryScreen() {
 
 function createStyles() {
   return StyleSheet.create({
-    screen: { flex: 1, backgroundColor: native.page },
-    content: { padding: 16, gap: 14 },
-    list: { gap: 8 },
-    row: {
-      minHeight: 52,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderRadius: 14,
-      backgroundColor: native.fill,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-    },
-    pressed: { backgroundColor: native.fillPressed },
-    title: { flex: 1, color: native.label, fontSize: 15 },
+    screen: { flex: 1, backgroundColor: native.groupedPage },
+    content: { padding: 20, gap: 16 },
     secondary: { color: native.secondaryLabel, fontSize: 15 },
     error: { color: mobileTokens().destructive, fontSize: 13 },
   });

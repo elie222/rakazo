@@ -15,8 +15,8 @@ import { iosAtLeast } from "../../lib/native-controls";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
-function isConflict(error: unknown): boolean {
-  return (error as { code?: unknown } | null)?.code === "CONFLICT";
+function errorCode(error: unknown): unknown {
+  return (error as { code?: unknown } | null)?.code;
 }
 
 /** One memory note: a bot's when opened with its id, otherwise one shared by the space's bots. */
@@ -73,7 +73,9 @@ export default function MemoryNoteScreen() {
   }, [closing, router]);
 
   const dirty = Boolean(note) && draft !== note?.content;
-  usePreventRemove(dirty && !closing, ({ data }) => {
+  // A note deleted elsewhere keeps its draft on screen, read-only, with nothing left to save.
+  const writable = state === "ready" && !busy && !closing;
+  usePreventRemove(dirty && state === "ready" && !closing, ({ data }) => {
     Alert.alert(t("Discard changes?"), undefined, [
       { text: t("Cancel"), style: "cancel" },
       {
@@ -88,7 +90,7 @@ export default function MemoryNoteScreen() {
     const found = await latestRef.current().catch(() => null);
     if (!live.current) return;
     if (found === null) return setError(t("Could not save"));
-    if (!found) return setError(t("This note no longer exists"));
+    if (!found) return setState("gone");
     // The edit stays in the editor until its author picks which version wins.
     Alert.alert(t("This note changed"), undefined, [
       { text: t("Cancel"), style: "cancel" },
@@ -118,7 +120,8 @@ export default function MemoryNoteScreen() {
       if (live.current) setClosing(true);
     } catch (reason) {
       if (!live.current) return;
-      if (isConflict(reason)) await offerLatest();
+      if (errorCode(reason) === "CONFLICT") await offerLatest();
+      else if (errorCode(reason) === "NOT_FOUND") setState("gone");
       else setError(errorText(reason, t("Could not save")));
     } finally {
       if (live.current) setBusy(false);
@@ -143,6 +146,8 @@ export default function MemoryNoteScreen() {
             })
             .catch((reason) => {
               if (!live.current) return;
+              // Already deleted elsewhere: the outcome asked for.
+              if (errorCode(reason) === "NOT_FOUND") return setClosing(true);
               setError(errorText(reason, t("Could not delete note")));
               setBusy(false);
             });
@@ -151,11 +156,11 @@ export default function MemoryNoteScreen() {
     ]);
   }
 
-  const canSave = dirty && !busy && !closing;
+  const canSave = dirty && writable;
   useLayoutEffect(() => {
     navigation.setOptions({
       title: note?.path ?? "",
-      ...(!note
+      ...(!note || state === "gone"
         ? { headerRight: undefined, unstable_headerRightItems: undefined }
         : iosAtLeast(26)
           ? {
@@ -181,7 +186,7 @@ export default function MemoryNoteScreen() {
               ),
             }),
     } satisfies NativeStackNavigationOptions);
-  }, [navigation, note, canSave, t]);
+  }, [navigation, note, state, canSave, t]);
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
@@ -199,7 +204,7 @@ export default function MemoryNoteScreen() {
             value={draft}
             onChangeText={setDraft}
             accessibilityLabel={note.path}
-            editable={!busy && !closing}
+            editable={writable}
             multiline
             textAlignVertical="top"
             style={styles.editor}
@@ -221,7 +226,7 @@ export default function MemoryNoteScreen() {
             prominence="secondary"
           />
         ) : null}
-        {note && isDeletableMemoryDocument(note.path) ? (
+        {note && state !== "gone" && isDeletableMemoryDocument(note.path) ? (
           <NativeActionButton
             disabled={busy || closing}
             fill={false}
