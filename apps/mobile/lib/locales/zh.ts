@@ -85,6 +85,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   Block: "阻止",
   "Add a model in Settings to use this.": "请在设置中添加模型后再使用。",
   "Approval model": "审批模型",
+  "Computer-use model": "电脑操作模型",
+  "Same as main model": "与主模型相同",
   "Main model": "主模型",
   "Add fallback": "添加备用模型",
   "Manage {provider}": "管理 {provider}",

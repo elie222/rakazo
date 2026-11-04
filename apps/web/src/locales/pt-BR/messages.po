@@ -1613,6 +1613,10 @@ msgstr ""
 msgid "Computer is stopped"
 msgstr "O computador está parado"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "Modelo para uso do computador"
+
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -5498,6 +5502,10 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "Igual a {botName}"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Same as main model"
+msgstr "Igual ao modelo principal"
 
 #: src/lib/cron.ts
 msgid "Saturday"

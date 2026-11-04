@@ -12,6 +12,29 @@ SandboxProvider workspace <-> AgentHomeStore <-> Rakazo-owned DATA_DIR
 
 Pi runs in the Rakazo API/worker process. It is not installed in, or executed by, E2B. The built-in tools are ordinary Pi tools, not Claude- or MCP-specific tools, so any model exposed through Pi can call them. Screen operation still requires a model that can accept image tool results and reason about screenshots.
 
+## Computer-use model
+
+Settings → Models has a **Computer-use model** list next to the main and approval models.
+It is one more model role: account-wide unless a Space overrides models. When a run starts,
+the first choice that can run is used; a provider outage during screen work does not switch to
+the next one. Left empty, the main model works the screen itself, as before. It is meant for a
+main model that cannot see, such as a text-only or self-hosted one.
+
+When it is set, the main model gets `enter_computer_mode` instead of the graphical tools.
+Calling it hands a concrete goal to the computer-use model in the same run, which gets the
+screen tools; `leave_computer_mode` returns a summary to the main model (with its active
+fallback and effort). Each model uses its own connection and context limits. A choice that
+is unavailable or cannot see images is skipped for the next one; if none works, the main
+model keeps the screen. The role is skipped when it names the main model itself, and for a
+main model that runs without a connection of the member's own, since a paused turn pins
+both models by connection.
+
+Approval and takeover checkpoints pin both models and their authentication types. Resume
+uses exactly those, even if settings changed meanwhile; a paused turn whose model or
+account is gone fails instead of retrying. Pi's provider serializers translate foreign
+reasoning and tool/result IDs, and replace screenshots with a placeholder for a main model
+that cannot see them.
+
 ## Computer contract
 
 Each workspace gets one Team Computer by default. Bots share its files and installed tools. Each Team bot starts in `bots/<bot-id>/`, while deliberately shared work belongs in `shared/`. These folders organize work but are not security boundaries: every Team bot can access the full Team workspace. A bot can instead use a Private Computer, where the whole workspace is its home.

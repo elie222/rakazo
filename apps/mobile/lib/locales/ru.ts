@@ -91,6 +91,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Block: "Блокировать",
   "Add a model in Settings to use this.": "Добавьте модель в настройках, чтобы использовать это.",
   "Approval model": "Модель проверки действий",
+  "Computer-use model": "Модель для работы с компьютером",
+  "Same as main model": "Как у основной модели",
   "Main model": "Основная модель",
   "Add fallback": "Добавить резервную модель",
   "Manage {provider}": "Управление: {provider}",

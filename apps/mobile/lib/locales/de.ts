@@ -94,6 +94,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Add a model in Settings to use this.":
     "Füge in den Einstellungen ein Modell hinzu, um dies zu nutzen.",
   "Approval model": "Freigabemodell",
+  "Computer-use model": "Modell für Computernutzung",
+  "Same as main model": "Wie das Hauptmodell",
   "Main model": "Hauptmodell",
   "Add fallback": "Backup-Modell hinzufügen",
   "Manage {provider}": "{provider} verwalten",

@@ -26,6 +26,7 @@ import {
 import { FIND_TOOL, findTools, partitionTools, USE_TOOL } from "./builtin-tool-bridge.js";
 import { shortenToolResultText } from "./context-selection.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
+import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
 import { clipToolResultContent, clipToolResultText } from "./pi-runtime-limits.js";
 import type { RuntimeModelTarget } from "./pi-runtime-models.js";
@@ -423,6 +424,12 @@ function toAgentTool(
         },
         async (span) => {
           host.signal.throwIfAborted();
+          if (
+            host.computerModeAllowed &&
+            COMPUTER_MODE_TOOLS.has(tool.name) &&
+            (host.depth !== 0 || !host.computerModeAllowed())
+          )
+            throw new Error("Enter top-level computer mode before using computer tools");
           const args = (params ?? {}) as Record<string, unknown>;
           const keepToolResultWhole = (name: string, callArgs: Record<string, unknown>) =>
             VERBATIM_TOOL_RESULTS.has(name) ||
@@ -529,7 +536,12 @@ function toAgentTool(
                 };
               }
               if (tool.name === FIND_TOOL) {
-                const found = findTools(deferred, args);
+                // Outside computer mode, screen tools are reached by entering it, not by search.
+                const findable =
+                  host.computerModeAllowed && (host.depth !== 0 || !host.computerModeAllowed())
+                    ? deferred.filter((candidate) => !COMPUTER_MODE_TOOLS.has(candidate.name))
+                    : deferred;
+                const found = findTools(findable, args);
                 return {
                   content: [{ type: "text", text: JSON.stringify(found) }],
                   details: found,
@@ -715,6 +727,7 @@ export interface ToolHost {
   queue: EventQueue;
   request: AgentRunRequest;
   activeModel: RuntimeModelTarget;
+  computerModeAllowed?: () => boolean;
   models: Models;
   model: Model<Api>;
   apiKey: string | undefined;
