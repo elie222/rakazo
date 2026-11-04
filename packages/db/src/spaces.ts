@@ -309,28 +309,35 @@ async function loadActorSpace(
       space: { select: { isDefault: true, deletingAt: true } },
     },
   });
-  if (!targetMembership) throw new SpaceNotFoundError();
+  if (!targetMembership || targetMembership.organizationId !== currentMembership.organizationId) {
+    throw new SpaceNotFoundError();
+  }
   return {
-    organizationId: targetMembership.organizationId,
+    organizationId: currentMembership.organizationId,
     role: targetMembership.role,
     isDefault: targetMembership.space.isDefault,
     deletingAt: targetMembership.space.deletingAt,
   };
 }
 
-/** Owner of a non-default Space that is not the last Space they belong to. */
+/** Owner of a non-default Space that is not their last one in the organization. */
 async function assertSpaceDeletable(
   db: Pick<PrismaClient, "spaceMember">,
   input: SpaceMemberTargetInput,
-): Promise<{ organizationId: string }> {
+): Promise<Array<{ spaceId: string; space: { isDefault: boolean } }>> {
   const owned = await loadActorSpace(db, input);
   if (owned.role !== "owner") throw new CannotDeleteSpaceAsNonOwnerError();
   if (owned.isDefault) throw new CannotDeleteDefaultSpaceError();
-  const otherSpaces = await db.spaceMember.count({
-    where: { userId: input.userId, spaceId: { not: input.spaceId } },
+  const memberships = await db.spaceMember.findMany({
+    where: {
+      userId: input.userId,
+      organizationId: owned.organizationId,
+    },
+    select: { spaceId: true, space: { select: { isDefault: true } } },
+    orderBy: { createdAt: "asc" },
   });
-  if (otherSpaces === 0) throw new CannotDeleteLastSpaceError();
-  return { organizationId: owned.organizationId };
+  if (memberships.length <= 1) throw new CannotDeleteLastSpaceError();
+  return memberships;
 }
 
 /**
@@ -464,7 +471,7 @@ export async function deleteClaimedSpaceForMember(
           select: { id: true },
         });
         if (!claim) throw new SpaceDeletionInProgressError();
-        const planned = await assertSpaceDeletable(tx, input);
+        const memberships = await assertSpaceDeletable(tx, input);
         const [remainingBots, provisioned, artifacts, computers] = await Promise.all([
           tx.bot.count({ where: { spaceId: input.spaceId } }),
           tx.computer.count({ where: { spaceId: input.spaceId, providerRef: { not: null } } }),
@@ -478,14 +485,13 @@ export async function deleteClaimedSpaceForMember(
         // was cut short; a retry finishes it.
         if (remainingBots > 0 || provisioned > 0) throw new SpaceDeletionInProgressError();
         const pageShareSecrets = await deletePageShareSecrets(tx, { spaceId: input.spaceId });
-        await tx.space.delete({ where: { id: input.spaceId } });
+        const { organizationId } = await tx.space.delete({
+          where: { id: input.spaceId },
+          select: { organizationId: true },
+        });
         // Guests who only belonged to this Space leave its organization with it.
         await tx.member.deleteMany({
-          where: {
-            organizationId: planned.organizationId,
-            role: GUEST_ROLE,
-            spaceMemberships: { none: {} },
-          },
+          where: { organizationId, role: GUEST_ROLE, spaceMemberships: { none: {} } },
         });
         const removed = {
           artifactKeys: artifacts.map((artifact) => artifact.storageKey),
@@ -495,9 +501,10 @@ export async function deleteClaimedSpaceForMember(
         if (input.spaceId !== input.currentSpaceId) {
           return { id: input.currentSpaceId, ...removed };
         }
-        const fallback = await fallbackSpaceForMember(tx, input.userId);
+        const remaining = memberships.filter((membership) => membership.spaceId !== input.spaceId);
+        const fallback = remaining.find((membership) => membership.space.isDefault) ?? remaining[0];
         if (!fallback) throw new CannotDeleteLastSpaceError();
-        return { id: fallback, ...removed };
+        return { id: fallback.spaceId, ...removed };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),

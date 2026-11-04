@@ -291,7 +291,7 @@ postgres("history retrieval (PostgreSQL)", () => {
     expect(offset.messages.map((message) => message.seq)).toEqual([1442, 1441, 1440]);
     expect(offset.nextSearch).toBeNull();
   });
-  it("finds earlier files by name and lists only files that still belong to the user", async () => {
+  it("finds earlier files by name and lists only files that still belong to the space", async () => {
     await pool.query(`
       INSERT INTO messages VALUES
         ('file-captioned','synthetic-thread',12001,'user',NULL,NULL,now(),
@@ -300,7 +300,7 @@ postgres("history retrieval (PostgreSQL)", () => {
           '[{"kind":"file","artifactId":"art-foreign","name":"porto-warehouse.md","mimeType":"text/markdown","size":64}]');
       INSERT INTO artifacts VALUES
         ('art-lease','synthetic-space','synthetic-user','synthetic-bot',NULL,NULL,'lisbon-office-lease.md','text/markdown',64,now()),
-        ('art-foreign','synthetic-space','outsider','synthetic-bot',NULL,NULL,'porto-warehouse.md','text/markdown',64,now());
+        ('art-foreign','foreign-space','outsider','synthetic-bot',NULL,NULL,'porto-warehouse.md','text/markdown',64,now());
     `);
     const lease = {
       artifactId: "art-lease",
@@ -324,7 +324,7 @@ postgres("history retrieval (PostgreSQL)", () => {
         attachments: [lease],
       }),
     ]);
-    // A name match on a file someone else owns finds the message but never the file.
+    // A name match on a file from another space finds the message but never the file.
     const foreign = await searchHistory(prisma, scope, {
       query: "porto",
       kinds: ["user_messages"],
