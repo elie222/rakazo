@@ -144,7 +144,7 @@ public class RakazoFileDropModule: Module {
     }
     // Too large even to resize: the chat reports it as over the limit without a copy.
     if let data, let type, data.count > maxBytes {
-      return ["name": name(type), "mimeType": mimeType(type), "size": Double(data.count)]
+      return describe(type, size: data.count)
     }
     // Other formats, like HEIC, are converted to JPEG. Only the source is capped: its
     // pixels bound the JPEG, which the chat then resizes.
@@ -152,7 +152,7 @@ public class RakazoFileDropModule: Module {
       for candidate in images where !Self.keptTypes.contains(candidate) {
         guard let source = load(provider, candidate) else { continue }
         if source.count > maxBytes {
-          return ["name": name(.jpeg), "mimeType": mimeType(.jpeg), "size": Double(source.count)]
+          return describe(.jpeg, size: source.count)
         }
         if let converted = UIImage(data: source)?.jpegData(compressionQuality: 0.9) {
           (type, data) = (.jpeg, converted)
@@ -168,12 +168,8 @@ public class RakazoFileDropModule: Module {
     } catch {
       return failed
     }
-    var file: [String: Any] = [
-      "uri": destination.absoluteString,
-      "name": name(type),
-      "mimeType": mimeType(type),
-      "size": Double(data.count),
-    ]
+    var file = describe(type, size: data.count)
+    file["uri"] = destination.absoluteString
     // Lets the chat shrink a large photo the same way it does one picked from the library.
     if let image = UIImage(data: data) {
       file["width"] = Double(image.size.width * image.scale)
@@ -182,12 +178,12 @@ public class RakazoFileDropModule: Module {
     return file
   }
 
-  private func name(_ type: UTType) -> String {
-    "image.\(type.preferredFilenameExtension ?? "jpg")"
-  }
-
-  private func mimeType(_ type: UTType) -> String {
-    type.preferredMIMEType ?? "image/jpeg"
+  private func describe(_ type: UTType, size: Int) -> [String: Any] {
+    [
+      "name": "image.\(type.preferredFilenameExtension ?? "jpg")",
+      "mimeType": type.preferredMIMEType ?? "image/jpeg",
+      "size": Double(size),
+    ]
   }
 
   private func load(_ provider: NSItemProvider, _ type: UTType) -> Data? {

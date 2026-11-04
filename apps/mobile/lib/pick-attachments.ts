@@ -251,14 +251,12 @@ export async function readDroppedFiles(
         const prepared = await prepareImage(uri, name, mimeType, file.width, file.height);
         if (prepared.uri !== uri) {
           resized.push(prepared.uri);
-          // Keeps the original when the resized copy cannot be measured.
-          const resizedSize = (() => {
-            try {
-              return new File(prepared.uri).info().size;
-            } catch {
-              return undefined;
-            }
-          })();
+          let resizedSize: number | undefined;
+          try {
+            resizedSize = new File(prepared.uri).info().size;
+          } catch {
+            // Keeps the original when the resized copy cannot be measured.
+          }
           if (resizedSize !== undefined) {
             ({ uri, name } = prepared);
             mimeType = inferAttachmentMimeType(name, prepared.mimeType ?? undefined);
