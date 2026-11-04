@@ -209,6 +209,8 @@ export interface RunComputerContext {
   lazy: ReturnType<typeof lazyRunComputer>;
   /** Starts the computer on first use and copies the turn's files before each tool. */
   get: (reason: "tool" | "takeover" | "script", tool?: string) => Promise<ComputerRef>;
+  /** Queue files from earlier messages; `get` copies them before the next computer tool. */
+  copyEarlierFiles: (files: Array<Extract<MessageBlock, { kind: "file" | "image" }>>) => void;
   checkpoint: ReturnType<typeof createRunWorkspaceCheckpoint>;
   hostEnvironment: Awaited<ReturnType<NonNullable<SandboxProvider["environment"]>>> | undefined;
   graphical: boolean;

@@ -229,6 +229,7 @@ import {
   listCurrentTurnFiles,
   listRecentThreadFiles,
   materializeCurrentTurnFiles,
+  materializeEarlierFiles,
   materializeRecentThreadFiles,
   recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
@@ -1145,6 +1146,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           context.signal,
         );
         const pendingTurnFiles: MessageBlock[][] = [turnBlocks ?? []];
+        // Files from earlier messages that history tools surfaced this run.
+        const pendingEarlierFiles: Array<Extract<MessageBlock, { kind: "file" | "image" }>> = [];
         let copyingTurnFiles = Promise.resolve();
         // Serialize copies before each tool, including attachments received while a boot is in flight.
         const getRunComputer = async (reason: "tool" | "takeover" | "script", tool?: string) => {
@@ -1178,6 +1181,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                     );
                     workspaceCheckpoint.markFiles(files);
                     pendingTurnFiles.shift();
+                  }
+                  if (artifacts && pendingEarlierFiles.length) {
+                    await materializeEarlierFiles(
+                      { ...deps, artifacts },
+                      pendingEarlierFiles.splice(0),
+                      { context, computer: async () => computer, computerMode },
+                    );
                   }
                 });
               await copyingTurnFiles;
@@ -1543,6 +1553,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             lease: computerLease,
             lazy: runComputer,
             get: getRunComputer,
+            copyEarlierFiles: (files) => {
+              pendingEarlierFiles.push(...files);
+            },
             checkpoint: workspaceCheckpoint,
             hostEnvironment,
             graphical,

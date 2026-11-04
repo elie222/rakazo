@@ -43,6 +43,8 @@ postgres("history retrieval (PostgreSQL)", () => {
         FROM generate_series(1,10000) n;
       CREATE INDEX synthetic_history_fts ON messages USING GIN (to_tsvector('simple',jsonb_path_query_array(blocks,
         '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text));
+      CREATE INDEX synthetic_attachment_names ON messages USING GIN (to_tsvector('simple', translate(
+        jsonb_path_query_array(blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ')));
       CREATE INDEX synthetic_history_seq ON messages ("threadId",seq);
       ANALYZE messages;
       ALTER TABLE bots ADD COLUMN name text DEFAULT 'History bot';
@@ -151,6 +153,7 @@ postgres("history retrieval (PostgreSQL)", () => {
     );
     const plan = explained.rows[0]["QUERY PLAN"][0];
     expect(JSON.stringify(plan)).toContain("synthetic_history_fts");
+    expect(JSON.stringify(plan)).toContain("synthetic_attachment_names");
     expect(plan.Plan["Actual Rows"]).toBe(1);
     expect(plan["Planning Time"]).toBeGreaterThanOrEqual(0);
     expect(plan["Execution Time"]).toBeGreaterThanOrEqual(0);
@@ -290,6 +293,52 @@ postgres("history retrieval (PostgreSQL)", () => {
     );
     expect(offset.messages.map((message) => message.seq)).toEqual([1442, 1441, 1440]);
     expect(offset.nextSearch).toBeNull();
+  });
+  it("finds earlier files by name and lists only files that still belong to the user", async () => {
+    await pool.query(`
+      INSERT INTO messages VALUES
+        ('file-captioned','synthetic-thread',12001,'user',NULL,NULL,now(),
+          '[{"kind":"text","text":"Signed copy attached"},{"kind":"file","artifactId":"art-lease","name":"lisbon-office-lease.md","mimeType":"text/markdown","size":64}]'),
+        ('file-bare','synthetic-thread',12002,'user',NULL,NULL,now(),
+          '[{"kind":"file","artifactId":"art-foreign","name":"porto-warehouse.md","mimeType":"text/markdown","size":64}]');
+      INSERT INTO artifacts VALUES
+        ('art-lease','synthetic-space','synthetic-user','synthetic-bot',NULL,NULL,'lisbon-office-lease.md','text/markdown',64,now()),
+        ('art-foreign','synthetic-space','outsider','synthetic-bot',NULL,NULL,'porto-warehouse.md','text/markdown',64,now());
+    `);
+    const lease = {
+      artifactId: "art-lease",
+      name: "lisbon-office-lease.md",
+      mimeType: "text/markdown",
+      size: 64,
+      path: "attachments/art-lease.md",
+    };
+    const found = await searchHistory(prisma, scope, { query: "lisbon lease" });
+    expect(
+      (await searchHistory(prisma, scope, { query: "lisbon-office-lease.md" })).messages,
+    ).toHaveLength(1);
+    expect(found.messages).toEqual([
+      expect.objectContaining({
+        messageId: "file-captioned",
+        text: "Signed copy attached",
+        attachments: [lease],
+      }),
+    ]);
+    // A name match on a file someone else owns finds the message but never the file.
+    const foreign = await searchHistory(prisma, scope, {
+      query: "porto",
+      kinds: ["user_messages"],
+    });
+    expect(foreign.messages.map((message) => message.messageId)).toEqual(["file-bare"]);
+    expect(foreign.messages[0]).not.toHaveProperty("attachments");
+    const read = await readHistory(prisma, scope, { messageId: "file-captioned" });
+    expect(read.messages.find((message) => message.messageId === "file-captioned")).toMatchObject({
+      attachments: [lease],
+    });
+    await pool.query("DELETE FROM artifacts WHERE id = 'art-lease'");
+    const afterDelete = await readHistory(prisma, scope, { messageId: "file-captioned" });
+    expect(afterDelete.messages.every((message) => !("attachments" in message))).toBe(true);
+    await pool.query("DELETE FROM messages WHERE id IN ('file-captioned','file-bare')");
+    await pool.query("DELETE FROM artifacts WHERE id = 'art-foreign'");
   });
   it("does not index credential prompts or tool metadata", async () => {
     await pool.query(`INSERT INTO messages VALUES

@@ -245,9 +245,27 @@ export async function materializeRecentThreadFiles(
     maxTurns: number;
   },
 ): Promise<MaterializedThreadFile[]> {
+  return materializeEarlierFiles(
+    deps,
+    recentAttachmentBlocks(history, messages, input),
+    input,
+    ATTACHMENT_MAX_COUNT,
+  );
+}
+
+/**
+ * Copy files from earlier messages onto the computer, keeping copies already there. Each
+ * file that cannot be copied is logged and skipped so it never blocks the tool that asked.
+ */
+export async function materializeEarlierFiles(
+  deps: Parameters<typeof materializeCurrentTurnFiles>[0],
+  blocks: ReadonlyArray<Extract<MessageBlock, { kind: "file" | "image" }>>,
+  input: Parameters<typeof materializeCurrentTurnFiles>[2],
+  limit = Number.POSITIVE_INFINITY,
+): Promise<MaterializedThreadFile[]> {
   const materialized: MaterializedThreadFile[] = [];
-  for (const block of recentAttachmentBlocks(history, messages, input)) {
-    if (materialized.length >= ATTACHMENT_MAX_COUNT) break;
+  for (const block of blocks) {
+    if (materialized.length >= limit) break;
     try {
       materialized.push(
         ...(await materializeThreadFiles(

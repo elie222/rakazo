@@ -42,6 +42,12 @@ import {
   MEMORY_JUDGE_CALIBRATION,
   MEMORY_JUDGE_VERSION,
 } from "../evals/memory.js";
+import {
+  RECALL_EVAL_CASES,
+  RECALL_FIXTURE_VERSION,
+  RECALL_JUDGE_CALIBRATION,
+  RECALL_JUDGE_VERSION,
+} from "../evals/recall.js";
 import { emptyTrial, redact, summarize, validateControls } from "../evals/report.js";
 import {
   SILENCE_EVAL_CASES,
@@ -120,6 +126,11 @@ async function main() {
       fixtureVersion: MEMORY_FIXTURE_VERSION,
       judge: { version: MEMORY_JUDGE_VERSION, calibration: MEMORY_JUDGE_CALIBRATION },
     },
+    recall: {
+      cases: RECALL_EVAL_CASES,
+      fixtureVersion: RECALL_FIXTURE_VERSION,
+      judge: { version: RECALL_JUDGE_VERSION, calibration: RECALL_JUDGE_CALIBRATION },
+    },
     deliberation: {
       cases: DELIBERATION_EVAL_CASES,
       fixtureVersion: DELIBERATION_FIXTURE_VERSION,
@@ -138,7 +149,7 @@ async function main() {
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, tool-choice, or approval",
+      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, or approval",
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;

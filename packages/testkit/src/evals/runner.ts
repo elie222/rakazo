@@ -300,6 +300,32 @@ export async function runTrial(
         ? { id: group.threadId }
         : await prisma.thread.findUniqueOrThrow({ where: { botId }, select: { id: true } });
       seededThreadId = thread.id;
+      // Attachments go through the product's upload path so their bytes are stored as uploads are.
+      const files = new Map<
+        number,
+        { kind: "file"; artifactId: string; name: string; mimeType: string; size: number }
+      >();
+      for (const m of scenario.history.messages) {
+        if (!m.file) continue;
+        const artifact = await rpc<{ id: string; name: string; mimeType: string; size: number }>(
+          app,
+          cookie,
+          "artifacts/create",
+          {
+            botId,
+            name: m.file.name,
+            mimeType: m.file.mimeType,
+            contentBase64: Buffer.from(m.file.content).toString("base64"),
+          },
+        );
+        files.set(m.seq, {
+          kind: "file",
+          artifactId: artifact.id,
+          name: artifact.name,
+          mimeType: artifact.mimeType,
+          size: artifact.size,
+        });
+      }
       // Direct synthetic fixture setup, never pay a model to author filler.
       for (let offset = 0; offset < scenario.history.messages.length; offset += 500) {
         await prisma.message.createMany({
@@ -308,7 +334,8 @@ export async function runTrial(
             seq: m.seq,
             role: m.role,
             blocks: [
-              { kind: "text", text: m.text },
+              ...(m.text ? [{ kind: "text", text: m.text }] : []),
+              ...(files.has(m.seq) ? [files.get(m.seq)!] : []),
               ...(m.subagentResult
                 ? [
                     {
