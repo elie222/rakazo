@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Prints which CI areas a pull request's merge commit can affect, as GitHub step outputs.
-# web: anything beyond the mobile app and agent notes. e2e: web, minus the worker and server
-# adapters, which the browser never loads. server (the Postgres journeys): web, minus www, docs/,
-# and the browser and desktop clients and their UI packages, which no journey loads.
+# web: anything beyond the mobile app and agent notes. e2e: web, minus the worker, which the E2E
+# server never loads (it imports the server adapters in-process). server (the Postgres journeys):
+# web, minus www, docs/, and the browser and desktop clients and their UI packages, which no
+# journey loads.
 # native: the desktop app, the computer, screen and sandbox adapters its native tests load, and
 # core's desktop runtime. compose: the Compose files the Postgres upgrade drill copies. CI itself,
 # the root manifest and the lockfile count for every area. Any other file, shared packages included, counts
@@ -52,7 +53,8 @@ while IFS= read -r file; do
       e2e=true
       continue
       ;;
-    apps/worker/* | packages/adapters/*) web=true; server=true; continue ;;
+    apps/worker/*) web=true; server=true; continue ;;
+    packages/adapters/*) web=true; e2e=true; server=true; continue ;;
     */*) ;;
     *.md) continue ;;
   esac
