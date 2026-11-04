@@ -176,3 +176,49 @@ it("drops the quote pill when a streaming edit replaces the selected nodes", asy
   expect(window.getSelection()!.getRangeAt(0).collapsed).toBe(true);
   expect(document.querySelector("[data-quote-selection]")).toBeNull();
 });
+
+it("drops the quote pill when an edit removes only one end of the selection", async () => {
+  Range.prototype.getBoundingClientRect = () =>
+    ({ top: 0, bottom: 0, left: 0, width: 0 }) as DOMRect;
+  const messages = history().map((message) =>
+    message.id === "m2"
+      ? {
+          ...message,
+          blocks: [{ kind: "text" as const, text: "Looking at **cabins** near Zakopane" }],
+        }
+      : message,
+  );
+  const props = baseProps([...messages, liveMessage("Drafting")]);
+  render(props);
+  const row = container.querySelector<HTMLElement>('[data-message-id="m2"]')!;
+  const textNode = (needle: string) => {
+    const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode() as Text | null;
+    while (node && !node.textContent?.includes(needle)) node = walker.nextNode() as Text | null;
+    if (!node) throw new Error(`needle ${needle} not found`);
+    return node;
+  };
+  const start = textNode("Looking at");
+  const end = textNode("near Zakopane");
+  const range = document.createRange();
+  range.setStart(start, start.textContent!.indexOf("at"));
+  range.setEnd(end, end.textContent!.indexOf("near") + "near".length);
+  window.getSelection()?.removeAllRanges();
+  window.getSelection()?.addRange(range);
+  act(() => {
+    document.dispatchEvent(new Event("selectionchange"));
+  });
+  expect(document.querySelector("[data-quote-selection]")).not.toBeNull();
+
+  // An edit replaces only the node holding the start: the range moves without collapsing.
+  start.remove();
+  render({
+    ...props,
+    transcript: foldPeerReplies([...messages, liveMessage("Drafting more")], {
+      includePeerReceipts: true,
+    }),
+  });
+
+  expect(window.getSelection()!.getRangeAt(0).collapsed).toBe(false);
+  expect(document.querySelector("[data-quote-selection]")).toBeNull();
+});

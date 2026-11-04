@@ -233,14 +233,20 @@ export const Transcript = memo(function Transcript({
     message: ThreadMessage;
     text: string;
     range: Range;
+    /** The range's text when armed: a rewrite that removes one endpoint moves it without collapsing. */
+    rangeText: string;
   } | null>(null);
   const selectingWithMouse = useRef(false);
 
-  // A streaming edit can replace the selected nodes, which collapses the range
-  // without firing selectionchange; the pill must not keep its stale placement.
+  // A streaming edit can replace the selected nodes without firing selectionchange: replacing
+  // both endpoints collapses the range, replacing one moves it; the pill must not keep its
+  // stale placement either way.
   useLayoutEffect(() => {
     setQuoteDraft((prev) =>
-      prev && (prev.range.collapsed || !document.contains(prev.range.commonAncestorContainer))
+      prev &&
+      (prev.range.collapsed ||
+        !document.contains(prev.range.commonAncestorContainer) ||
+        prev.range.toString() !== prev.rangeText)
         ? null
         : prev,
     );
@@ -284,7 +290,7 @@ export const Transcript = memo(function Transcript({
       ) {
         return prev;
       }
-      return { ...draft, range };
+      return { ...draft, range, rangeText: range.toString() };
     });
   }, [messageById]);
 
