@@ -12,6 +12,8 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
+import { redactSecrets } from "@rakazo/core";
+import { MAX_APPROVAL_DETAIL_LENGTH, truncate } from "./approval-ask.js";
 import {
   isInternalTermination,
   isTerminatingReplyResult,
@@ -346,8 +348,11 @@ function toAgentTool(
         const options = Array.isArray(raw.options) ? raw.options.map(String) : raw.options;
         return {
           question: String(raw.question ?? "What should I use?"),
-          // The content the user is deciding about, shown on the card under the question.
-          ...(typeof raw.detail === "string" && raw.detail ? { detail: raw.detail } : {}),
+          // The content the user is deciding about, shown on the card under the question;
+          // redacted and capped here so recorded arguments never hold the raw value.
+          ...(typeof raw.detail === "string" && raw.detail
+            ? { detail: redactedAskUserDetail(raw.detail, host.request.secrets) }
+            : {}),
           // Keep a missing/invalid options value as-is so schema minItems can reject it;
           // coercing to [] would look like a valid empty list upstream.
           options,
@@ -755,6 +760,34 @@ export interface ToolHost {
 
 export function toolCallBudgetExceededMessage(limit: number) {
   return `I stopped after reaching the limit of ${limit} tool calls in this turn. Send another message to continue.`;
+}
+
+/**
+ * The ask card's detail is the one tool argument the product keeps outside the tool call
+ * itself: on the card, in the turn checkpoint and in the recorded session. Redact and cap
+ * it once, at the argument boundary, so every downstream copy holds the safe value.
+ */
+export function redactedAskUserDetail(
+  detail: string,
+  secrets: readonly string[] | undefined,
+): string {
+  return truncate(redactSecrets(detail, secrets ?? []), MAX_APPROVAL_DETAIL_LENGTH);
+}
+
+/** Redacts the ask card's detail in a streamed assistant message, in place, so the session
+ * transcript, the turn checkpoint and later provider payloads never hold the raw value. */
+export function redactAskUserDetailInMessage(
+  message: { role: string; content?: unknown },
+  secrets: readonly string[] | undefined,
+): void {
+  if (message.role !== "assistant" || !Array.isArray(message.content)) return;
+  for (const part of message.content) {
+    const call = part as { type?: string; name?: string; arguments?: Record<string, unknown> };
+    if (call?.type !== "toolCall" || call.name !== "ask_user") continue;
+    if (typeof call.arguments?.detail === "string" && call.arguments.detail) {
+      call.arguments.detail = redactedAskUserDetail(call.arguments.detail, secrets);
+    }
+  }
 }
 
 export function toolCallBudgetFor(runId: string): ToolCallBudget {

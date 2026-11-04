@@ -1,3 +1,6 @@
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { approvalPausedToolResult } from "../../adapters/src/approval-effect.js";
@@ -223,6 +226,76 @@ describe("paused turn context", () => {
       model.assertComplete();
     } finally {
       await model.close();
+    }
+  });
+  it("redacts a known run secret in ask_user detail before it is checkpointed or recorded", async () => {
+    const secret = "fixture-secret-value-123";
+    let capture: (() => string) | undefined;
+    const sessionRoot = await mkdtemp(path.join(tmpdir(), "rakazo-ask-detail-"));
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tool",
+            id: "question",
+            name: "ask_user",
+            arguments: {
+              question: "Send this email?",
+              detail: `The token is ${secret}.`,
+              options: ["Send it", "Show me first"],
+            },
+          },
+        },
+      ],
+    });
+    const request: AgentRunRequest = {
+      runId: "fixture-ask-detail",
+      botId: "fixture-bot",
+      threadId: "fixture-thread",
+      instructions: "Complete fixtures.",
+      prompt: "Confirm the draft.",
+      history: [],
+      model: model.model,
+      tools: builtinAgentTools.filter((tool) => tool.name === "ask_user"),
+      secrets: [secret],
+      onCheckpoint: async (snapshot) => {
+        capture = snapshot;
+      },
+    };
+    try {
+      const events = await collect(
+        new PiAgentRuntime({ sessionRoot }).run(request, {
+          operationId: "ask-detail",
+          traceId: "ask-detail",
+          spaceId: "fixture-space",
+          userId: "fixture-user",
+          signal: new AbortController().signal,
+        }),
+      );
+      // The card itself shows the redacted draft.
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "ask",
+          detail: expect.stringContaining("[redacted]"),
+        }),
+      );
+      // The persisted turn checkpoint holds the tool call's arguments.
+      const saved = capture!();
+      expect(saved).not.toContain(secret);
+      expect(saved).toContain("[redacted]");
+      // The recorded session transcript holds the streamed tool call.
+      const entries = await readdir(sessionRoot, { recursive: true });
+      const transcripts = await Promise.all(
+        entries
+          .filter((entry) => String(entry).endsWith(".jsonl"))
+          .map((entry) => readFile(path.join(sessionRoot, String(entry)), "utf8")),
+      );
+      expect(transcripts.join("\n")).not.toContain(secret);
+      model.assertComplete();
+    } finally {
+      await model.close();
+      await rm(sessionRoot, { recursive: true, force: true });
     }
   });
   it("resumes from the pending result when the newest stored message is the bot's own reply", async () => {

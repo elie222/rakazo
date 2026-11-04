@@ -1856,6 +1856,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   ),
               ),
               tools,
+              // The live array: secrets learned later in the run redact too.
+              secrets: runSecrets,
               model: mainRunModel,
               computerModel,
               fallbackModels: fallbackModels.map(({ provider, modelId, credentialId }) => ({
