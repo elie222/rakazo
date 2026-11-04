@@ -1085,6 +1085,7 @@ function SpaceShell() {
               onSpeak={speakMessage}
               onOpenComputer={computerControls.onOpenComputer}
               onOpenImportSetup={openImportSetup}
+              rpc={rpc}
             />
           )}
         </div>
