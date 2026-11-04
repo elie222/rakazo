@@ -56,16 +56,28 @@ export async function createDirectory(
       const email = resource.primaryEmail.toLowerCase();
       // Messaging addresses belong to chat-app accounts; creating one is refused below.
       if (isMessagingEmail(email)) return { action: "create" };
-      const existing = await database.findOne<{ id: string; emailVerified: boolean }>({
+      type Match = { id: string; emailVerified: boolean };
+      // Accounts store emails lowercased. One an older release wrote with capitals is found
+      // by case; two that differ only by case are a conflict for the operator to resolve.
+      const exact = await database.findOne<Match>({
         model: "user",
-        // Accounts store emails lowercased; insensitive still finds one an older release wrote.
-        where: [{ field: "email", value: email, mode: "insensitive" }],
+        where: [{ field: "email", value: email }],
       });
+      const [existing, other] = exact
+        ? [exact]
+        : await database.findMany<Match>({
+            model: "user",
+            where: [{ field: "email", value: email, mode: "insensitive" }],
+            limit: 2,
+          });
+      if (other)
+        throw new APIError("CONFLICT", { message: "More than one account has this email" });
+      if (!existing) return { action: "create" };
       // Only a proven mailbox is the directory's person: anyone could have signed up with the
-      // address first. Creating over an unverified account fails as a duplicate instead.
-      return existing?.emailVerified
-        ? { action: "link", userId: existing.id, profile: "preserve" }
-        : { action: "create" };
+      // address first.
+      if (!existing.emailVerified)
+        throw new APIError("CONFLICT", { message: "An unverified account has this email" });
+      return { action: "link", userId: existing.id, profile: "preserve" };
     },
     reconcileUser: async ({ userId, active }, { database }) => {
       const user = await database.findOne<{ deactivatedAt: Date | null }>({

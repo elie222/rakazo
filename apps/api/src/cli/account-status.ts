@@ -36,15 +36,19 @@ const realtime = new PostgresRealtimeFanout({
 });
 try {
   const email = address.trim().toLowerCase();
-  const user = await runAsSystem("find an account by email", () =>
-    // Insensitive, as the directory looks accounts up: an older release may have kept capitals.
-    prisma.user.findFirst({
+  // As the directory looks accounts up: the exact address, else the only one differing by case.
+  const user = await runAsSystem("find an account by email", async () => {
+    const exact = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (exact) return exact;
+    const matches = await prisma.user.findMany({
       where: { email: { equals: email, mode: "insensitive" } },
       select: { id: true },
-    }),
-  );
+      take: 2,
+    });
+    return matches.length === 1 ? matches[0] : null;
+  });
   if (!user) {
-    process.stderr.write("No account has that email\n");
+    process.stderr.write("No single account has that email\n");
     process.exitCode = 1;
   } else {
     const active = action === "reactivate";

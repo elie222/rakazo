@@ -101,7 +101,7 @@ describePostgres("the operator's account status command (PostgreSQL)", () => {
 
   it("refuses an unknown email or action", async () => {
     await expect(command("deactivate", "nobody@example.test")).rejects.toMatchObject({
-      stderr: expect.stringContaining("No account has that email"),
+      stderr: expect.stringContaining("No single account has that email"),
     });
     await expect(command("delete", "erin@example.test")).rejects.toMatchObject({
       stderr: expect.stringContaining("Usage: account-status.js deactivate|reactivate <email>"),
