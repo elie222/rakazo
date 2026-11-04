@@ -42,8 +42,15 @@ describe("Android call foreground service", () => {
       nl: "values-nl",
       ja: "values-ja",
       es: "values-es",
+      pl: "values-pl",
     } as const satisfies Record<(typeof UI_LOCALES)[number], string>;
-    const keys = ["rakazo_call_channel", "rakazo_call_title", "rakazo_call_text"];
+    const keys = [
+      "rakazo_call_channel",
+      "rakazo_call_title",
+      "rakazo_call_text",
+      "rakazo_call_answer",
+      "rakazo_call_decline",
+    ];
     for (const locale of UI_LOCALES) {
       const xml = source(`res/${directories[locale]}/call_strings.xml`);
       for (const key of keys) expect(xml).toContain(`name="${key}"`);

@@ -83,6 +83,10 @@
         {
           "from": "assets/es.lproj",
           "to": "es.lproj"
+        },
+        {
+          "from": "assets/pl.lproj",
+          "to": "pl.lproj"
         }
       ],
       "target": [

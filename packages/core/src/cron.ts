@@ -250,6 +250,20 @@ export function russianInterval(value: number, unit: CronUnit): { lead: string; 
   };
 }
 
+/** Polish intervals use the accusative singular and counted plural case forms. */
+export function polishInterval(value: number, unit: CronUnit): { lead: string; detail: string } {
+  const forms = {
+    minutes: ["minutę", "minuty", "minut"],
+    hours: ["godzinę", "godziny", "godzin"],
+    days: ["dzień", "dni", "dni"],
+  } as const;
+  const mod10 = value % 10;
+  const mod100 = value % 100;
+  const few = mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14);
+  const form = forms[unit][value === 1 ? 0 : few ? 1 : 2];
+  return { lead: "Co", detail: value === 1 ? form : `${value} ${form}` };
+}
+
 export function describeCronPreset(
   preset: CronPreset,
   labels: CronLabels = ENGLISH_CRON_LABELS,

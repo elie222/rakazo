@@ -17,6 +17,7 @@ import {
   nextRoutineRunDate,
   nextRoutineRunDateAcross,
   ONCE_ROUTINE_CRON,
+  polishInterval,
   presetFromCron,
   resolveRoutineNextRunAt,
   russianInterval,
@@ -296,6 +297,25 @@ describe("formatCron", () => {
     expect(russianInterval(1, "hours")).toEqual({ lead: "Каждый", detail: "час" });
     expect(russianInterval(5, "minutes")).toEqual({ lead: "Каждые", detail: "5 минут" });
     expect(russianInterval(3, "days")).toEqual({ lead: "Каждые", detail: "3 дня" });
+  });
+
+  it.each([
+    [1, "minutes", "minutę"],
+    [2, "minutes", "2 minuty"],
+    [5, "minutes", "5 minut"],
+    [12, "minutes", "12 minut"],
+    [14, "minutes", "14 minut"],
+    [21, "minutes", "21 minut"],
+    [22, "minutes", "22 minuty"],
+    [1, "hours", "godzinę"],
+    [3, "hours", "3 godziny"],
+    [13, "hours", "13 godzin"],
+    [23, "hours", "23 godziny"],
+    [1, "days", "dzień"],
+    [2, "days", "2 dni"],
+    [5, "days", "5 dni"],
+  ] as const)("inflects Polish intervals of %i %s", (count, unit, detail) => {
+    expect(polishInterval(count, unit)).toEqual({ lead: "Co", detail });
   });
 
   it("describes any day of the month", () => {
