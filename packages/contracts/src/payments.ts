@@ -128,10 +128,13 @@ export type SpendingCurrency = (typeof SPENDING_CURRENCIES)[number];
 export const SpendingPeriodSchema = z.enum(["day", "week", "month", "none"]);
 export type SpendingPeriod = z.infer<typeof SpendingPeriodSchema>;
 
+/** The most a spending limit can be set to, in minor units. */
+export const MAX_SPENDING_LIMIT = 100_000_000;
+
 /** The most the user's bots may spend in a period, across every bot and Space. Minor units. */
 export const SpendingLimitSchema = z
   .object({
-    amount: z.number().int().positive().max(100_000_000),
+    amount: z.number().int().positive().max(MAX_SPENDING_LIMIT),
     currency: z.enum(SPENDING_CURRENCIES),
     period: SpendingPeriodSchema,
   })

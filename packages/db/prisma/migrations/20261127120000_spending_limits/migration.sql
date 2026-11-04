@@ -45,3 +45,13 @@ CREATE POLICY payments_tenant ON "payments"
   USING ("userId" = NULLIF(current_setting('app.user_id', true), ''));
 CREATE POLICY payments_system ON "payments"
   USING ((SELECT app_rls_bypass()));
+
+-- Wallet purchases made before the limit existed count too, unless they were never paid. The poller
+-- releases one that is later denied or expires, by the same operation key.
+INSERT INTO "payments" ("id", "operationKey", "userId", "spaceId", "botId", "threadId", "site", "amount", "currency", "createdAt")
+SELECT gen_random_uuid()::text, p."operationKey", p."userId", p."spaceId", p."botId", p."threadId",
+       coalesce(substring(p."merchantUrl" from '^https?://([^/?#]+)'), ''), p."amount", p."currency", p."createdAt"
+FROM "purchases" p
+WHERE p."status" NOT IN ('denied', 'expired', 'canceled', 'failed')
+  AND EXISTS (SELECT 1 FROM "user" u WHERE u."id" = p."userId")
+ON CONFLICT ("operationKey") DO NOTHING;

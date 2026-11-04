@@ -6,9 +6,8 @@ import { useI18n } from "../lib/i18n";
 import { spendingLimitSummary } from "../lib/spending-limit";
 import { SettingsRow } from "./settings-group";
 
-/** The spending limit in account settings, once the user has a way to pay. */
-export function SpendingLimitRow({ disabled = false }: { disabled?: boolean }) {
-  const { t, locale } = useI18n();
+/** The spending limit and what counts against it, read again each time the screen is shown. */
+export function useSpendingStatus(): SpendingStatus | null {
   const [status, setStatus] = useState<SpendingStatus | null>(null);
   useFocusEffect(
     useCallback(() => {
@@ -24,7 +23,18 @@ export function SpendingLimitRow({ disabled = false }: { disabled?: boolean }) {
       };
     }, []),
   );
-  if (!status?.shown) return null;
+  return status;
+}
+
+/** The spending limit in account settings. Render it only once `status.shown`. */
+export function SpendingLimitRow({
+  status,
+  disabled = false,
+}: {
+  status: SpendingStatus;
+  disabled?: boolean;
+}) {
+  const { t, locale } = useI18n();
   return (
     <SettingsRow
       chevron="right"

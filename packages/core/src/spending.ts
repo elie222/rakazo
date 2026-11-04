@@ -1,4 +1,5 @@
 import type { SpendingCurrency, SpendingPeriod } from "@rakazo/contracts";
+import { MAX_SPENDING_LIMIT } from "@rakazo/contracts";
 import { wallClock, zonedDateTime } from "./cron.js";
 
 // A symbol another currency shares is read as the one listed. Nearly every other dollar or pound is
@@ -51,9 +52,6 @@ function minorUnits(number: string): number | null {
   const amount = Number(whole) * 100 + Number((fraction ?? "").padEnd(2, "0"));
   return Number.isSafeInteger(amount) && amount <= MAX_AMOUNT ? amount : null;
 }
-
-/** The most a spending limit can be set to, in minor units. */
-export const MAX_SPENDING_LIMIT = 100_000_000;
 
 /**
  * A limit amount the user typed, such as "200", "1,000" or "12,50", in minor units. Null for
