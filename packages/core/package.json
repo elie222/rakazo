@@ -77,6 +77,7 @@
   "dependencies": {
     "@observablehq/plot": "0.6.17",
     "@rakazo/contracts": "workspace:*",
+    "@rakazo/ui-tokens": "workspace:*",
     "@tanstack/query-core": "5.104.5",
     "croner": "10.0.1",
     "d3-dsv": "3.0.1",

@@ -1,5 +1,10 @@
 import {
+  avatarEyeRects,
   avatarIdentitySeed,
+  botEyeInk,
+  ORGANIC_AVATAR_EYES,
+  ORGANIC_AVATAR_VIEWBOX,
+  organicAvatarEyeTilt,
   organicAvatarPath,
   SHIPPED_BOT_AVATAR_EYES,
   SHIPPED_BOT_AVATAR_VIEWBOX,
@@ -19,7 +24,7 @@ import Svg, {
   Rect,
   Text as SvgText,
 } from "react-native-svg";
-import { botEyeInk, mobileBotAvatarPresentation } from "../lib/bot-avatar";
+import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import type { GroupSeat } from "../lib/group-seats";
 import {
   GROUP_SEAT_SIZE,
@@ -183,8 +188,6 @@ function seatArt(
       number,
       number,
     ];
-    const eyes = SHIPPED_BOT_AVATAR_EYES;
-    const eyeY = eyes.centerY - eyes.height / 2;
     return {
       box: [x, y, units],
       outline: (paint) => <Path d={parsed.shapePath} {...paint} />,
@@ -192,15 +195,8 @@ function seatArt(
         <>
           <Path d={parsed.shapePath} fill={parsed.color} />
           <G fill={botEyeInk(parsed.color, page)}>
-            {[eyes.leftX, eyes.rightX].map((x) => (
-              <Rect
-                key={x}
-                x={x}
-                y={eyeY}
-                width={eyes.width}
-                height={eyes.height}
-                rx={eyes.width / 2}
-              />
+            {avatarEyeRects(SHIPPED_BOT_AVATAR_EYES).map((rect) => (
+              <Rect key={rect.x} {...rect} />
             ))}
           </G>
         </>
@@ -210,15 +206,17 @@ function seatArt(
   const color = parsed.kind === "color" ? parsed.color : member.color;
   const seed = avatarIdentitySeed(member.botId ?? member.name ?? color);
   const outline = organicAvatarPath(seed);
+  const [x, y, units] = ORGANIC_AVATAR_VIEWBOX.split(" ").map(Number) as [number, number, number];
   return {
-    box: [-60, -60, 120],
+    box: [x, y, units],
     outline: (paint) => <Path d={outline} {...paint} />,
     face: (
       <>
         <Path d={outline} fill={color} />
-        <G transform={`rotate(${(seed % 9) - 4})`} fill={botEyeInk(color, page)}>
-          <Rect x={-14} y={-12} width={7} height={24} rx={3.5} />
-          <Rect x={7} y={-12} width={7} height={24} rx={3.5} />
+        <G transform={`rotate(${organicAvatarEyeTilt(seed)})`} fill={botEyeInk(color, page)}>
+          {avatarEyeRects(ORGANIC_AVATAR_EYES).map((rect) => (
+            <Rect key={rect.x} {...rect} />
+          ))}
         </G>
       </>
     ),
