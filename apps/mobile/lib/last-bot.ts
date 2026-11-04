@@ -18,3 +18,9 @@ export async function loadLastBotId() {
     return "";
   }
 }
+
+/** The last bot belongs to one account and server; a new session starts without one. */
+export async function clearLastBot() {
+  await SecureStore.deleteItemAsync(LAST_BOT_KEY).catch(() => undefined);
+  await SecureStore.deleteItemAsync(LAST_BOT_SPACE_KEY).catch(() => undefined);
+}
