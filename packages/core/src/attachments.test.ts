@@ -259,6 +259,64 @@ describe("ask history", () => {
       ]),
     ).toBe("API key");
   });
+
+  it("keeps a question card's draft in the history, pending and answered", () => {
+    const actions = [
+      { id: "choice-1", label: "Send it" },
+      { id: "choice-2", label: "Show me first" },
+    ];
+    const detail = "To: person@example.test\nSubject: Demo\n\nThe draft body.";
+    expect(
+      blocksToAgentHistoryText([
+        { kind: "ask", text: "Send this email?", detail, detailFormat: "text", actions },
+      ]),
+    ).toBe(`Send this email?\n${detail}`);
+    expect(
+      blocksToAgentHistoryText([
+        {
+          kind: "ask",
+          text: "Send this email?",
+          detail,
+          detailFormat: "text",
+          actions,
+          status: "answered",
+          answer: "choice-1",
+        },
+      ]),
+    ).toBe(`Send this email?\n${detail}\nAnswer: Send it`);
+  });
+
+  it("keeps approval and secret cards out of the question-detail rule", () => {
+    expect(
+      blocksToAgentHistoryText([
+        {
+          kind: "ask",
+          approvalEffectId: "effect-1",
+          text: "Review before gmail_send_email",
+          detail: "to: person@example.test\nbody: hello",
+          status: "answered",
+          answer: "allow",
+          actions: [
+            { id: "allow", label: "Allow once" },
+            { id: "deny", label: "Deny" },
+          ],
+        },
+      ]),
+    ).toBe("Review before gmail_send_email\nAnswer: Allow once");
+    expect(
+      blocksToAgentHistoryText([
+        {
+          kind: "ask",
+          text: "Code",
+          input: "secret",
+          purpose: "otp",
+          detail: "hidden detail",
+          status: "answered",
+          answer: "",
+        },
+      ]),
+    ).toBe("Code");
+  });
 });
 
 describe("artifactTypeLabel", () => {

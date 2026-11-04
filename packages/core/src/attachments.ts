@@ -7,6 +7,7 @@ import {
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
+import { isApprovalAskBlock, isSecretAskBlock } from "./action-approval.js";
 
 export class AttachmentValidationError extends Error {
   constructor(message: string) {
@@ -186,9 +187,16 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
       }
       // Without the answer a later turn sees the question as still open and asks it again.
       if (block.kind === "ask") {
-        if (block.status !== "answered" || !block.answer) return block.text;
+        // A question card keeps its draft in the detail, and a later turn still needs
+        // it: approval cards repeat tool arguments the call itself records, and secret
+        // cards keep their detail hidden.
+        const detail =
+          block.detail && !isApprovalAskBlock(block) && !isSecretAskBlock(block)
+            ? `\n${block.detail}`
+            : "";
+        if (block.status !== "answered" || !block.answer) return `${block.text}${detail}`;
         const choice = block.actions?.find((action) => action.id === block.answer);
-        return `${block.text}\nAnswer: ${choice?.label ?? block.answer}`;
+        return `${block.text}${detail}\nAnswer: ${choice?.label ?? block.answer}`;
       }
       // The bot needs the outcome of its own call: a missed call is its cue to follow up.
       if (block.kind === "call_request") {
