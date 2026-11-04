@@ -12,6 +12,7 @@ import type {
 import {
   SandboxAllowanceUsedError,
   SandboxDamagedError,
+  SandboxSizeUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -1982,6 +1983,28 @@ describe("Team Computer wake", () => {
 
     expect(harness.prisma.computer.updateMany).not.toHaveBeenCalled();
     expect(harness.sandbox.provision).not.toHaveBeenCalled();
+  });
+
+  it("starts the computer at the size its plan provides", async () => {
+    const harness = wakeHarness("stopped");
+
+    await boot(harness);
+
+    expect(harness.sandbox.provision).toHaveBeenCalledOnce();
+    expect(vi.mocked(harness.sandbox.provision).mock.calls[0]![0].size).toBe("standard");
+  });
+
+  it("starts the computer at the size it has when the provider cannot move it", async () => {
+    const harness = wakeHarness("stopped");
+    vi.mocked(harness.sandbox.provision).mockRejectedValueOnce(
+      new SandboxSizeUnavailableError("too_small"),
+    );
+
+    await expect(boot(harness)).resolves.toMatchObject({ providerRef: "sandbox-1" });
+
+    const sizes = vi.mocked(harness.sandbox.provision).mock.calls.map(([request]) => request.size);
+    expect(sizes).toEqual(["standard", undefined]);
+    expect(activation(harness)?.state).toBe("running");
   });
 
   it("starts the active-lifetime clock when a stopped computer starts", async () => {
