@@ -1290,21 +1290,18 @@ describe("changeUserTimezone", () => {
           ? (value.in as unknown[]).includes(row[key])
           : row[key] === value,
       );
+    const userUpdate = vi.fn(
+      async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+        if (where.id !== user.id) throw new Error("unknown user");
+        Object.assign(user, data);
+        return { ...user };
+      },
+    );
     const prisma = {
       user: {
         findUnique: async ({ where }: { where: { id: string } }) =>
           where.id === user.id ? { timezone: user.timezone } : null,
-        update: async ({
-          where,
-          data,
-        }: {
-          where: { id: string };
-          data: Record<string, unknown>;
-        }) => {
-          if (where.id !== user.id) throw new Error("unknown user");
-          Object.assign(user, data);
-          return { ...user };
-        },
+        update: userUpdate,
       },
       bot: { findFirst: async () => ({ computer: null }) },
       connection: { findMany: async () => [] },
@@ -1351,7 +1348,7 @@ describe("changeUserTimezone", () => {
       events: { append: async () => undefined },
       jobs: { enqueue, cancel: async () => undefined },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
-    return { deps, rows, user, enqueue };
+    return { deps, rows, user, userUpdate, enqueue };
   }
   const base = {
     spaceId: "ws-1",
@@ -1537,6 +1534,63 @@ describe("changeUserTimezone", () => {
 
     expect(user.timezone).toBe("Africa/Cairo");
     expect(rows[0]).toMatchObject({ timezone: "Africa/Cairo" });
+  });
+
+  it("writes the accompanying preference fields in the same save as the zone", async () => {
+    const { deps, userUpdate } = account();
+    await changeUserTimezone(deps, "user-1", "Europe/London", { locale: "pt-BR" });
+    expect(userUpdate).toHaveBeenCalledTimes(1);
+    expect(userUpdate).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { timezone: "Europe/London", locale: "pt-BR" },
+    });
+  });
+
+  it("still writes accompanying fields when the zone itself does not change", async () => {
+    const { deps, rows, userUpdate } = account();
+    await changeUserTimezone(deps, "user-1", "Africa/Cairo", { locale: "pt-BR" });
+    expect(userUpdate).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { timezone: "Africa/Cairo", locale: "pt-BR" },
+    });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("keeps the committed save when a wakeup enqueue fails, and tries the rest", async () => {
+    const { deps, rows } = account([
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "One",
+        crons: ["0 9 * * 1"],
+        timezone: "Africa/Cairo",
+        active: true,
+        watch: null,
+        nextRunAt: new Date("2026-11-09T07:00:00.000Z"),
+      },
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "Two",
+        crons: ["0 9 * * 1"],
+        timezone: "Africa/Cairo",
+        active: true,
+        watch: null,
+        nextRunAt: new Date("2026-11-09T07:00:00.000Z"),
+      },
+    ]);
+    const jobs = deps.jobs as unknown as { enqueue: ReturnType<typeof vi.fn> };
+    jobs.enqueue.mockImplementation(async (job: { payload: { routineId: string } }) => {
+      if (job.payload.routineId === "routine-1") throw new Error("queue down");
+    });
+
+    await expect(changeUserTimezone(deps, "user-1", "Europe/London")).resolves.toBeUndefined();
+
+    // Both wakeups were attempted and the move itself stands.
+    expect(jobs.enqueue).toHaveBeenCalledTimes(2);
+    for (const row of rows) expect(row.timezone).toBe("Europe/London");
   });
 
   it("only clears the account when the zone is cleared; routines cannot hold no zone", async () => {
