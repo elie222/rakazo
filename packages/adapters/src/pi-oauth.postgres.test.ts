@@ -168,4 +168,39 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
       reconnectRequired: true,
     });
   });
+
+  it("keeps a rotated token when the refreshed sign-in yields no usable key", async () => {
+    const owner = await instance();
+    const { scope, credential, plaintext, stored, connection } = await seed(owner);
+    const oauth = {
+      refresh: vi.fn(async () => ({
+        ...credential,
+        access: "acc-1",
+        refresh: "rt-1",
+        expires: Date.now() + 3_600_000,
+      })),
+      toAuth: vi.fn(async () => ({ apiKey: "" })),
+    };
+
+    await expect(
+      runAsTenant(scope, () =>
+        owner.oauth.resolveStoredModelAuth(
+          owner.prisma,
+          secrets,
+          scope,
+          { id: connection.id, secretId: stored.id },
+          plaintext,
+          "openai-codex",
+          { oauth },
+        ),
+      ),
+    ).rejects.toThrow("did not produce a usable token");
+    // The provider already spent rt-0, so the rotated token must survive the failure.
+    const row = await asSystem(owner.prisma).secret.findUniqueOrThrow({ where: { id: stored.id } });
+    expect(
+      owner.oauth.parseModelSecret(await secrets.load(row.ciphertext, stored.id)),
+    ).toMatchObject({
+      credential: { refresh: "rt-1" },
+    });
+  });
 });

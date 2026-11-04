@@ -903,7 +903,7 @@ export async function resolveStoredModelAuth(
     | { args: Parameters<NonNullable<ResolveModelOpts["retire"]>>; maxTokens?: number }
     | undefined;
   try {
-    return await withRefreshLock(
+    const outcome = await withRefreshLock(
       prisma,
       (tx) => lockModelCredential(tx, secretId),
       async (tx) => {
@@ -914,18 +914,28 @@ export async function resolveStoredModelAuth(
         const stored = row ? await secretStore.load(row.ciphertext, secretId) : plaintext;
         const timeout = AbortSignal.timeout(REFRESH_REQUEST_TIMEOUT_MS);
         const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
+        let saved = false;
+        // A failure after the save still commits it: the provider spent the old token.
         return resolveModelAuth(stored, provider, {
           ...opts,
           signal,
-          persist: persistStoredModelSecret(tx, secretStore, scope, secretId),
+          persist: async (next) => {
+            await persistStoredModelSecret(tx, secretStore, scope, secretId)(next);
+            saved = true;
+          },
           // Recorded only: retiring needs the lock's connection released first.
           retire: async (...args) => {
             failure = { args, maxTokens: parseModelSecret(stored).maxTokens };
             return false;
           },
-        });
+        }).then(
+          (resolved) => ({ resolved }),
+          (error) => (saved ? { error } : Promise.reject(error)),
+        );
       },
     );
+    if ("error" in outcome) throw outcome.error;
+    return outcome.resolved;
   } catch (error) {
     if (!failure || !credential.id) throw error;
     const [reason] = failure.args;
@@ -963,7 +973,10 @@ export function refreshStoredModelCredential(
 ) {
   return async (
     held: AgentModelOAuthCredential,
-    refresh: (stored: AgentModelOAuthCredential) => Promise<AgentModelOAuthCredential | undefined>,
+    refresh: (
+      stored: AgentModelOAuthCredential,
+      signal: AbortSignal,
+    ) => Promise<AgentModelOAuthCredential | undefined>,
   ): Promise<AgentModelOAuthCredential> => {
     const toAuth = (opts?.oauth ?? loadProviderOAuth(provider))?.toAuth;
     const resolved = await withModelCredentialLock(credential.secretId, () =>
@@ -977,8 +990,8 @@ export function refreshStoredModelCredential(
         toAuth
           ? {
               oauth: {
-                refresh: async (stored) => {
-                  const next = await refresh(stored);
+                refresh: async (stored, signal) => {
+                  const next = await refresh(stored, signal);
                   return next ? { ...next } : stored;
                 },
                 toAuth: (next) => toAuth(next),

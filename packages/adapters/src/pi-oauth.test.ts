@@ -20,6 +20,7 @@ import {
   parseModelSecret,
   RetiredModelCredentialError,
   refreshExpiredModelCredential,
+  refreshStoredModelCredential,
   resolveModelApiKey,
   resolveModelAuth,
   secretValuesToRedact,
@@ -1041,6 +1042,31 @@ describe("refreshExpiredModelCredential", () => {
   const stubOAuth = (refresh: (credential: OAuthCredential) => Promise<OAuthCredential>) => ({
     refresh: vi.fn(refresh),
     toAuth: vi.fn(async (credential: OAuthCredential) => ({ apiKey: credential.access })),
+  });
+
+  it("caps a running run's refresh with the locked refresh's 15-second signal", async () => {
+    const expired = oauthCred({ access: "old", expires: 1 });
+    const { prisma, secretStore } = secretRow(
+      serializeModelSecret({ kind: "oauth", credential: expired }),
+    );
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const refresh = vi.fn(async () =>
+      oauthCred({ access: "new", expires: Date.now() + 3_600_000 }),
+    );
+    const oauth = stubOAuth(async () => expired);
+
+    await refreshStoredModelCredential(
+      prisma,
+      secretStore,
+      scope,
+      { id: "cred-1", secretId: "secret-1" },
+      CHATGPT_OAUTH_PROVIDER,
+      { oauth },
+    )(expired, refresh);
+
+    expect(timeout).toHaveBeenCalledWith(15_000);
+    expect(refresh).toHaveBeenCalledWith(expect.anything(), timeout.mock.results[0]?.value);
+    timeout.mockRestore();
   });
 
   it("refreshes and persists an expired OAuth credential", async () => {

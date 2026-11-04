@@ -514,6 +514,7 @@ export interface AgentRunModel {
       held: AgentModelOAuthCredential,
       refresh: (
         stored: AgentModelOAuthCredential,
+        signal: AbortSignal,
       ) => Promise<AgentModelOAuthCredential | undefined>,
     ) => Promise<AgentModelOAuthCredential>;
     /** Drop the stored credential after a terminal provider rejection. */

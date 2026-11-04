@@ -12,6 +12,7 @@ import type {
   ModelCredentialRetireReason,
 } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId } from "@rakazo/contracts";
+import { withAbort } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import {
   isRetiredModelCredentialError,
@@ -84,10 +85,11 @@ export class PiRuntimeCredentialStore implements CredentialStore {
       if (this.refreshOAuth && current?.type === "oauth") {
         // The stored-credential refresh owns the lock, re-read, write and retirement.
         try {
-          const next = await this.refreshOAuth(current, async (stored) => {
-            const refreshed = await fn(toOAuthCredential(stored));
+          const next = await this.refreshOAuth(current, async (stored, signal) => {
+            const refreshed = await withAbort(fn(toOAuthCredential(stored)), signal);
             return refreshed?.type === "oauth" ? refreshed : undefined;
           });
+          options?.signal?.throwIfAborted();
           this.credential = toOAuthCredential(next);
         } catch (error) {
           if (isRetiredModelCredentialError(error)) this.credential = undefined;
