@@ -209,9 +209,6 @@ async function deleteClaimedSpaces(
     }
     if (deps.secrets) await forgetPageShareSecrets(deps.secrets, deleted.pageShareSecrets);
   }
-  return {
-    departedOrganizationIds: [...new Set(departures.map((departure) => departure.organizationId))],
-  };
 }
 
 function adapterContext(

@@ -17,8 +17,8 @@ import {
   isActive,
   isRunWorking,
   memberName,
-  otherAuthor,
   newClientId,
+  otherAuthor,
 } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { GroupAvatarMember } from "@rakazo/ui-web";

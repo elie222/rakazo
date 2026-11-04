@@ -271,7 +271,10 @@ export async function lockOrganizationSpaces(
   `);
 }
 
-export async function lockSpaceDeletion(tx: Prisma.TransactionClient, spaceId: string): Promise<void> {
+export async function lockSpaceDeletion(
+  tx: Prisma.TransactionClient,
+  spaceId: string,
+): Promise<void> {
   await tx.$queryRaw(Prisma.sql`
     SELECT pg_advisory_xact_lock(hashtextextended(${spaceId}, 0))::text AS "lock"
   `);
@@ -614,9 +617,7 @@ export async function deleteClaimedSpace(
       async (tx) => {
         await lockSpaceDeletion(tx, spaceId);
         const [others, remainingBots, remainingComputers, artifacts] = await Promise.all([
-          soleMemberId
-            ? tx.spaceMember.count({ where: otherNonGuests(spaceId, soleMemberId) })
-            : 0,
+          soleMemberId ? tx.spaceMember.count({ where: otherNonGuests(spaceId, soleMemberId) }) : 0,
           tx.bot.count({ where: { spaceId } }),
           tx.computer.count({ where: { spaceId } }),
           tx.artifact.findMany({ where: { spaceId }, select: { storageKey: true } }),

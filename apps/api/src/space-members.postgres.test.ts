@@ -8,6 +8,7 @@ import {
   createDb,
   ensureComputerRecord,
   installAuditEventStore,
+  personalOrganizationIds,
   prepareAccountDeletion,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -658,17 +659,20 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     });
 
     // The invitee deletes their account first: their bot stays in the shared Space.
-    await expect(prepareAccountDeletion(prisma, invitee.id)).resolves.toMatchObject({
-      ownedOrganizationIds: [invitee.organizationId],
-      departures: [expect.objectContaining({ spaceId: home })],
-    });
+    await expect(personalOrganizationIds(prisma, invitee.id)).resolves.toEqual([
+      invitee.organizationId,
+    ]);
+    await expect(prepareAccountDeletion(prisma, invitee.id)).resolves.toEqual([
+      expect.objectContaining({ spaceId: home }),
+    ]);
     await expect(system.bot.findUniqueOrThrow({ where: { id: bot.id } })).resolves.toMatchObject({
       userId: owner.id,
     });
 
     const other = await person("other");
     await call(other.actor, "spaces/invites/accept", { token: await invite(owner, home) });
-    const { ownedOrganizationIds } = await prepareAccountDeletion(prisma, owner.id);
+    await expect(prepareAccountDeletion(prisma, owner.id)).resolves.toEqual([]);
+    const ownedOrganizationIds = await personalOrganizationIds(prisma, owner.id);
     expect(ownedOrganizationIds).toEqual([owner.organizationId]);
     await system.organization.deleteMany({ where: { id: { in: ownedOrganizationIds } } });
     await expect(system.space.findUnique({ where: { id: home } })).resolves.toBeNull();
@@ -693,9 +697,11 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       data: { spaceId: home, userId: coOwner.id, name: "Planner", color: "test" },
     });
 
-    const { ownedOrganizationIds, departures } = await prepareAccountDeletion(prisma, coOwner.id);
+    const departures = await prepareAccountDeletion(prisma, coOwner.id);
 
-    expect(ownedOrganizationIds).not.toContain(owner.organizationId);
+    await expect(personalOrganizationIds(prisma, coOwner.id)).resolves.not.toContain(
+      owner.organizationId,
+    );
     expect(departures.map((departure) => departure.spaceId)).toEqual([home]);
     await expect(system.bot.findUniqueOrThrow({ where: { id: bot.id } })).resolves.toMatchObject({
       userId: owner.id,

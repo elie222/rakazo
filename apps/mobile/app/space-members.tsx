@@ -3,12 +3,20 @@ import type { SpaceMember, SpaceMembers } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Platform, ScrollView, Share, StyleSheet, Text } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+} from "react-native";
 import { SettingsGroup, SettingsRow } from "../components/settings-group";
 import { cancelHeaderOptions, trailingHeaderOptions } from "../components/sheet-header";
 import { rpc, selectedSpaceId, selectSpace } from "../lib/api";
-import { useI18n } from "../lib/i18n";
 import { mobileTokens } from "../lib/appearance";
+import { useI18n } from "../lib/i18n";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { errorText } from "../lib/user-error";
 

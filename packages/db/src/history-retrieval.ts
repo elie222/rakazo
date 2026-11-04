@@ -243,12 +243,12 @@ export interface HistoryAttachment {
 }
 
 /**
- * Files and images on these messages that still exist and belong to the history's owner.
+ * Files and images on these messages that still exist in the history's Space.
  * A deleted file drops out, so a model-supplied reference never reaches it.
  */
 async function messageAttachments(
   prisma: PrismaClient,
-  scope: Pick<HistoryScope, "spaceId" | "userId">,
+  scope: Pick<HistoryScope, "spaceId">,
   rows: readonly HistoryRow[],
 ): Promise<Map<string, HistoryAttachment[]>> {
   const blocks = new Map(rows.map((row) => [row.id, historyAttachmentBlocks(row.blocks)]));
@@ -257,7 +257,7 @@ async function messageAttachments(
   const artifacts = new Map(
     (
       await prisma.artifact.findMany({
-        where: { id: { in: ids }, spaceId: scope.spaceId, userId: scope.userId },
+        where: { id: { in: ids }, spaceId: scope.spaceId },
         select: { id: true, name: true, mimeType: true, size: true },
       })
     ).map((row) => [row.id, row]),
