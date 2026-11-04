@@ -225,11 +225,13 @@ certificate cannot change its project's restrictions or limits. On the Incus hos
 ```bash
 incus network create rakazo0
 incus network acl create rakazo-computers
-# Public internet only: no host, LAN, link-local or cloud-metadata addresses.
+# Public internet only: no host, LAN, link-local, multicast or cloud-metadata addresses.
 incus network acl rule add rakazo-computers egress action=reject \
   destination=0.0.0.0/8,10.0.0.0/8,100.64.0.0/10,127.0.0.0/8,169.254.0.0/16,172.16.0.0/12,192.0.0.0/24,192.168.0.0/16,198.18.0.0/15,224.0.0.0/3
-incus network acl rule add rakazo-computers egress action=reject protocol=tcp destination=::1/128,fc00::/7,fe80::/10
-incus network acl rule add rakazo-computers egress action=reject protocol=udp destination=::1/128,fc00::/7,fe80::/10
+incus network acl rule add rakazo-computers egress action=reject protocol=tcp \
+  destination=::1/128,fc00::/7,fe80::/10,ff00::/8
+incus network acl rule add rakazo-computers egress action=reject protocol=udp \
+  destination=::1/128,fc00::/7,fe80::/10,ff00::/8
 incus network acl rule add rakazo-computers egress action=reject protocol=icmp6 icmp_type=128 \
   destination=::1/128,fc00::/7,fe80::/10
 # Screens, from the address the API, worker and web connect from.
@@ -252,7 +254,8 @@ incus config trust add-certificate rakazo.crt --restricted --projects rakazo
 The ACL sits on each computer's network device, so it also keeps computers from reaching each
 other and other instances on the bridge; it needs the `nftables` firewall driver. Connections to a
 computer are refused except to the screen port. IPv6 neighbour discovery keeps working because only
-echo requests are refused among ICMPv6 messages to private addresses. The IP filtering options stop
+echo requests are refused among ICMPv6 messages to private addresses; DHCP and DNS from the bridge are
+allowed by Incus before any ACL rule. The IP filtering options stop
 a computer from spoofing addresses or sending router advertisements to the host. Set
 `INCUS_SANDBOX_PROJECT=rakazo` and the certificate and key from `rakazo.crt` and `rakazo.key`.
 

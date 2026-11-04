@@ -229,6 +229,7 @@ export class IncusSandboxProvider implements SandboxProvider {
       // name, so nothing here waits for it to go.
       if (existing) await this.remove(name, signal).catch(() => {});
     }
+    await this.removeOrphans(request.botId, request.providerRef, signal);
     // A new name for every start, as the Daytona provider does: a later start never adopts an
     // instance that an abandoned one created, so that one can be deleted without a race.
     const name = `rakazo-${randomUUID()}`;
@@ -360,11 +361,55 @@ export class IncusSandboxProvider implements SandboxProvider {
 
   /** Instances are ephemeral: Incus deletes one as soon as it stops. */
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
-    await this.remove(instanceName(computer), AbortSignal.timeout(STOP_TIMEOUT_MS));
+    await this.removeOwned(instanceName(computer), computer.botId);
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
-    await this.remove(instanceName(computer), AbortSignal.timeout(STOP_TIMEOUT_MS));
+    await this.removeOwned(instanceName(computer), computer.botId);
+  }
+
+  private async removeOwned(name: string, botId: string): Promise<void> {
+    const signal = AbortSignal.timeout(STOP_TIMEOUT_MS);
+    const instance = await this.instance(name, signal);
+    if (!instance) return;
+    this.assertOwner(instance, name, botId);
+    await this.remove(name, signal);
+  }
+
+  /**
+   * Removes this bot's instances other than its stored one, such as one whose start died before
+   * its name was saved. The caller's claim on the computer means no other start is using them.
+   * This never blocks a start; every start that creates an instance tries again.
+   */
+  private async removeOrphans(
+    botId: string,
+    keep: string | undefined,
+    signal: AbortSignal,
+  ): Promise<void> {
+    // The filter language has no quoting for other characters; bot ids use none of them.
+    if (!/^[A-Za-z0-9_-]+$/.test(botId)) return;
+    let instances: IncusInstance[];
+    try {
+      const filter = encodeURIComponent(`config.${BOT_ID_KEY} eq ${botId}`);
+      const { metadata } = await this.request(
+        "GET",
+        `/1.0/instances?recursion=1&filter=${filter}`,
+        signal,
+      );
+      instances = (metadata ?? []) as IncusInstance[];
+    } catch (error) {
+      signal.throwIfAborted();
+      getLogger().warn("list Incus instances left by earlier starts", { error });
+      return;
+    }
+    for (const instance of instances) {
+      if (!instance.name || instance.name === keep || instance.config?.[BOT_ID_KEY] !== botId)
+        continue;
+      await this.remove(instance.name, signal).catch((error) => {
+        signal.throwIfAborted();
+        getLogger().warn("remove Incus instance left by an earlier start", { error });
+      });
+    }
   }
 
   private instanceSpec(name: string, botId: string) {
