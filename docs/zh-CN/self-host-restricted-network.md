@@ -85,11 +85,8 @@ Docker Hub 的镜像设置不会替代 GHCR 应用与计算机镜像的覆盖配
 将摘要固定在 `.env` 中。先运行准备命令，再拉取、校验，最后禁止重新拉取并启动。
 
 下面的直接 Compose 启动不会执行安装器的计算机出站配置。开始前，在使用 iptables 防火墙后端的
-Linux Docker Engine 主机上，将可信来源的 `restrict-computer-egress.sh` 复制到安装目录，先安装规则：
-
-```bash
-sudo bash ./restrict-computer-egress.sh
-```
+Linux Docker Engine 主机上，将可信来源的 `restrict-computer-egress.sh` 复制到安装目录，
+执行 `sudo bash ./restrict-computer-egress.sh`，先安装规则。
 
 成功后，在 `.env` 中设置 `SANDBOX_COMPUTER_EGRESS=restricted`，并确认当前终端没有用不同值覆盖它。
 这会让监督服务在无法验证防火墙规则时拒绝启动计算机，而不是降级为开放出站。

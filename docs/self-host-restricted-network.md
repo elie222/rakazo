@@ -113,11 +113,8 @@ pulling again.
 
 Direct Compose startup below does not run the installer's computer-egress setup. On Linux Docker
 Engine with the iptables firewall backend, first copy a trusted `restrict-computer-egress.sh` into
-the installation directory and install the host rules without starting containers:
-
-```bash
-sudo bash ./restrict-computer-egress.sh
-```
+the installation directory and run `sudo bash ./restrict-computer-egress.sh` to install the host
+rules without starting containers.
 
 After it succeeds, set `SANDBOX_COMPUTER_EGRESS=restricted` in `.env` and make sure the shell does
 not override it with another value. The supervisor then refuses to start computers if it cannot
