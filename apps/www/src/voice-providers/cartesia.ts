@@ -1,12 +1,39 @@
 import type { VoiceProvider } from "./types";
 import {
+  CHARS_PER_HOUR,
+  CHARS_PER_MINUTE,
   PRICING_SOURCES,
+  RATES,
   VOICE_DOC,
   WORKLOAD,
+  WORKLOAD_CHARS,
+  cartesiaInkPerHour,
+  cartesiaPerMillion,
+  count,
   homepage,
+  perHourOfSpeech,
+  usd,
   voicePriceTable,
   voiceWorkloadTable,
 } from "./shared";
+
+const { pro, startup } = RATES.cartesiaPlans;
+const FREE_CREDITS = 20_000;
+/** Pro's price plus overage for a month of this many characters. */
+function onPro(chars: number): number {
+  return (Math.max(0, chars - pro.credits) * pro.overage) / 1_000_000;
+}
+const LIGHT_CHARS = ((10 * 30) / 60) * CHARS_PER_HOUR;
+const LOW = cartesiaPerMillion("scale");
+const HIGH = cartesiaPerMillion("pro");
+
+function planRow(plan: keyof typeof RATES.cartesiaPlans, label: string) {
+  const perMillion = cartesiaPerMillion(plan);
+  return {
+    topic: label,
+    cells: [usd(perMillion), perHourOfSpeech(perMillion), cartesiaInkPerHour(plan)],
+  };
+}
 
 export const cartesia: VoiceProvider = {
   slug: "cartesia",
@@ -48,7 +75,7 @@ export const cartesia: VoiceProvider = {
     {
       heading: "Cartesia pricing in 2026",
       paragraphs: [
-        "Cartesia sells monthly plans with credits. Sonic uses one credit per character, about 750 to 800 credits per minute of audio by Cartesia's own count, and Ink transcription uses 3 credits per second of audio. Unused credits roll over up to twice your monthly amount. With overage off, requests stop when credits run out; with it on, extra usage is billed per million credits.",
+        `Cartesia sells monthly plans with credits. Sonic uses one credit per character, so about ${count(CHARS_PER_MINUTE)} credits per minute of speech at 150 words a minute, the pace every figure on this page assumes. Ink transcription uses 3 credits per second of audio. Unused credits roll over up to twice your monthly amount. With overage off, requests stop when credits run out; with it on, extra usage is billed per million credits.`,
       ],
       table: {
         caption: "Cartesia plans, as of November 2026",
@@ -73,24 +100,24 @@ export const cartesia: VoiceProvider = {
     {
       heading: "Cartesia cost per hour of speech",
       paragraphs: [
-        "Dividing each plan's price by its credits gives the effective rate. Smaller plans cost more per character, and the Free plan covers about 20 minutes of speech a month. Cartesia's managed voice agents are priced separately at $0.03 a minute plus the language model and telephony.",
+        `Dividing each plan's price by its credits gives the effective rate. Smaller plans cost more per character, and the Free plan's ${count(FREE_CREDITS)} credits cover about ${Math.round(FREE_CREDITS / CHARS_PER_MINUTE)} minutes of speech a month. Cartesia's managed voice agents are priced separately at $0.03 a minute plus the language model and telephony.`,
       ],
       table: {
         caption: "Cartesia effective rates, as of November 2026",
         columns: ["Plan", "Speech per 1M characters", "About per hour of speech", "Ink per hour"],
         rows: [
-          { topic: "Pro", cells: ["$50", "$2.70", "$0.54"] },
-          { topic: "Startup", cells: ["$39.20", "$2.12", "$0.42"] },
-          { topic: "Scale", cells: ["$37.40", "$2.02", "$0.39"] },
+          planRow("pro", "Pro"),
+          planRow("startup", "Startup"),
+          planRow("scale", "Scale"),
         ],
-        note: "Derived from [Cartesia's pricing page](https://cartesia.ai/pricing), checked November 2026, at about 54,000 characters per hour of speech. Rakazo doesn't use Ink.",
+        note: `Derived from [Cartesia's pricing page](https://cartesia.ai/pricing), checked November 2026, at about ${count(CHARS_PER_HOUR)} characters per hour of speech. Rakazo doesn't use Ink.`,
       },
     },
     {
       heading: "What a talking Rakazo bot costs on Cartesia",
       paragraphs: [
         "Rakazo calls Cartesia with your key, so Cartesia bills you and Rakazo adds nothing. Because Rakazo uses Cartesia only to speak, transcription is free: your browser, the desktop app or your phone does the listening.",
-        `${WORKLOAD} That is about 810,000 credits, which fits inside the Startup plan's 1.25 million: $49 a month. On Pro you'd pay $5 plus about $46 of overage, so Startup is the better fit at this volume. Someone who hears 10 minutes a day uses about 270,000 credits, which is Pro plus about $11 of overage.`,
+        `${WORKLOAD} That is about ${count(WORKLOAD_CHARS)} credits, which fits inside the Startup plan's ${count(startup.credits)}: ${usd(startup.price)} a month. On Pro you'd pay ${usd(pro.price)} plus about $${Math.round(onPro(WORKLOAD_CHARS))} of overage, so Startup is the better fit at this volume. Someone who hears 10 minutes a day uses about ${count(LIGHT_CHARS)} credits, which is Pro plus about $${Math.round(onPro(LIGHT_CHARS))} of overage.`,
       ],
       table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", [
         "cartesia",
@@ -103,7 +130,7 @@ export const cartesia: VoiceProvider = {
     {
       heading: "Cartesia vs ElevenLabs",
       paragraphs: [
-        "Both make natural, clonable voices for agents, and per character they cost about the same: Cartesia $37 to $50 per million depending on plan, ElevenLabs Flash v2.5 $40. The differences are elsewhere. Cartesia is designed around latency, and in tests with lots of interruptions the difference is noticeable. ElevenLabs has the larger voice library, the more expressive top model (Eleven v4), and its own transcription. Reviewers rate Cartesia's English highly but say other languages trail ElevenLabs.",
+        `Both make natural, clonable voices for agents, and per character they cost about the same: Cartesia ${usd(LOW)} to ${usd(HIGH)} per million depending on plan, ElevenLabs Flash v2.5 ${usd(RATES.elevenlabsFlash)}. The differences are elsewhere. Cartesia is designed around latency, and in tests with lots of interruptions the difference is noticeable. ElevenLabs has the larger voice library, the more expressive top model (Eleven v4), and its own transcription. Reviewers rate Cartesia's English highly but say other languages trail ElevenLabs.`,
         "In Rakazo the practical difference is transcription: ElevenLabs does both directions with one key, while Cartesia only speaks, so the mic depends on your device's speech recognition.",
       ],
       table: voicePriceTable("Cartesia compared with ElevenLabs and other voice APIs", [
@@ -173,7 +200,7 @@ export const cartesia: VoiceProvider = {
     {
       question: "How much does Cartesia cost?",
       answer:
-        "As of November 2026, Cartesia has a Free plan with 20,000 credits a month, Pro at $5 for 100,000, Startup at $49 for 1.25 million and Scale at $299 for 8 million. Sonic uses one credit per character, so speech costs about $37 to $50 per million characters, roughly $2 to $2.70 per hour.",
+        `As of November 2026, Cartesia has a Free plan with 20,000 credits a month, Pro at $5 for 100,000, Startup at $49 for 1.25 million and Scale at $299 for 8 million. Sonic uses one credit per character, so speech costs about ${usd(LOW)} to ${usd(HIGH)} per million characters, roughly ${perHourOfSpeech(LOW)} to ${perHourOfSpeech(HIGH)} per hour.`,
     },
     {
       question: "Cartesia vs ElevenLabs: which is better for AI agents?",

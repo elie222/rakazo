@@ -1,12 +1,30 @@
 import type { VoiceProvider } from "./types";
 import {
+  CHARS_PER_HOUR,
+  CHARS_PER_MINUTE,
   PRICING_SOURCES,
+  RATES,
   VOICE_DOC,
   WORKLOAD,
+  WORKLOAD_COST,
+  aboutTotal,
+  count,
   homepage,
+  perHourOfSpeech,
+  usd,
   voicePriceTable,
   voiceWorkloadTable,
 } from "./shared";
+
+/** Monthly ElevenLabs cost for a bot that speaks and listens this many minutes a day. */
+function monthly(dailyMinutes: number, transcribe = true): number {
+  const hours = (dailyMinutes * 30) / 60;
+  const speech = (hours * CHARS_PER_HOUR * RATES.elevenlabsFlash) / 1_000_000;
+  return speech + (transcribe ? hours * RATES.elevenlabsScribeHour : 0);
+}
+
+const FLASH_HOUR = perHourOfSpeech(RATES.elevenlabsFlash);
+const V4_HOUR = perHourOfSpeech(RATES.elevenlabsV4);
 
 export const elevenlabs: VoiceProvider = {
   slug: "elevenlabs",
@@ -69,7 +87,7 @@ export const elevenlabs: VoiceProvider = {
           { topic: "Business", cells: ["$990, 10 seats", "6M", "Yes", "10 Professional", "25"] },
           { topic: "Enterprise", cells: ["Custom", "Custom", "Yes", "Custom", "Custom"] },
         ],
-        note: "From [ElevenLabs' pricing page](https://elevenlabs.io/pricing), checked November 2026. In the apps, text to speech uses about 1 credit per character, roughly 1,000 credits per minute of audio.",
+        note: `From [ElevenLabs' pricing page](https://elevenlabs.io/pricing), checked November 2026. In the apps, text to speech uses about 1 credit per character, so about ${count(CHARS_PER_MINUTE)} credits per minute of speech at the pace these tables assume.`,
       },
     },
     {
@@ -81,21 +99,30 @@ export const elevenlabs: VoiceProvider = {
         caption: "ElevenLabs API rates, as of November 2026",
         columns: ["Model", "Per 1,000 characters", "Per 1M characters", "About per hour"],
         rows: [
-          { topic: "Flash v2.5 (Rakazo uses this)", cells: ["$0.04", "$40", "$2.16"] },
-          { topic: "v4 Turbo, v3 Conversational", cells: ["$0.04", "$40", "$2.16"] },
-          { topic: "Eleven v4, v3, Multilingual v2", cells: ["$0.08", "$80", "$4.32"] },
-          { topic: "Scribe v2 transcription (Rakazo uses this)", cells: ["—", "—", "$0.22 of audio"] },
+          {
+            topic: "Flash v2.5 (Rakazo uses this)",
+            cells: [usd(RATES.elevenlabsFlash / 1000), usd(RATES.elevenlabsFlash), FLASH_HOUR],
+          },
+          {
+            topic: "v4 Turbo, v3 Conversational",
+            cells: [usd(RATES.elevenlabsFlash / 1000), usd(RATES.elevenlabsFlash), FLASH_HOUR],
+          },
+          {
+            topic: "Eleven v4, v3, Multilingual v2",
+            cells: [usd(RATES.elevenlabsV4 / 1000), usd(RATES.elevenlabsV4), V4_HOUR],
+          },
+          { topic: "Scribe v2 transcription (Rakazo uses this)", cells: ["—", "—", `${usd(RATES.elevenlabsScribeHour)} of audio`] },
           { topic: "Scribe v2 Realtime", cells: ["—", "—", "$0.39 of audio"] },
           { topic: "ElevenLabs Agents platform", cells: ["—", "—", "$4.80 ($0.08 a minute) plus the LLM"] },
         ],
-        note: "From [ElevenLabs' API pricing page](https://elevenlabs.io/pricing/api), checked November 2026. An hour of speech is taken as about 54,000 characters.",
+        note: `From [ElevenLabs' API pricing page](https://elevenlabs.io/pricing/api), checked November 2026. An hour of speech is taken as about ${count(CHARS_PER_HOUR)} characters.`,
       },
     },
     {
       heading: "What a talking Rakazo bot costs on ElevenLabs",
       paragraphs: [
         "Rakazo calls ElevenLabs with your key, so ElevenLabs bills you at its API rates and Rakazo adds nothing on top. The cost depends on how much your bots say and how much of your speech is transcribed on the server.",
-        `${WORKLOAD} On ElevenLabs that comes to about $32 of Flash v2.5 speech and $3.30 of Scribe v2 transcription: roughly $36 a month. A light user who hears 10 minutes a day pays around $12; a bot that talks for two hours a day costs about $130 in speech alone.`,
+        `${WORKLOAD} On ElevenLabs that comes to ${usd(WORKLOAD_COST.elevenlabs.speech)} of Flash v2.5 speech and ${usd(WORKLOAD_COST.elevenlabs.transcription)} of Scribe v2 transcription: ${aboutTotal("elevenlabs").toLowerCase()} a month. A light user who hears and speaks 10 minutes a day pays around $${Math.round(monthly(10))}; a bot that talks for two hours a day costs about $${Math.round(monthly(120, false) / 10) * 10} in speech alone.`,
         "Two things lower the bill. In Chrome on a desktop, the mic uses the browser's own speech recognition, so that transcription costs nothing. And a self-hosted Rakazo can set `VOICE_SUMMARY_MIN_CHARS` so long replies are read as a short summary instead of in full, which cuts characters at the cost of one extra model call.",
       ],
       table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", [
@@ -127,7 +154,7 @@ export const elevenlabs: VoiceProvider = {
     {
       heading: "ElevenLabs alternatives",
       paragraphs: [
-        "The best alternative depends on why you're leaving. If it's price, [Fish Audio](/voice-providers/fish-audio/) is roughly a third of the per-character cost with cloning and a big voice library, and a [self-hosted](/voice-providers/self-hosted/) Kokoro server costs only hardware. If it's latency on calls, [Cartesia](/voice-providers/cartesia/) is built for it, though in Rakazo it only speaks. If you already pay OpenAI, [OpenAI](/voice-providers/openai/) is the quickest start, but its speech model shuts down on January 6, 2027.",
+        "The best alternative depends on why you're leaving. If it's price, [Fish Audio](/voice-providers/fish-audio/) is less than half the per-character cost, with cloning and a big voice library, and a [self-hosted](/voice-providers/self-hosted/) Kokoro server costs only hardware. If it's latency on calls, [Cartesia](/voice-providers/cartesia/) is built for it, though in Rakazo it only speaks. If you already pay OpenAI, [OpenAI](/voice-providers/openai/) is the quickest start, but its speech model shuts down on January 6, 2027.",
         "Outside Rakazo, Deepgram is strong at transcription (Nova-3 from $0.26 an hour) with cheaper but plainer Aura-2 voices; Google, Azure and Amazon Polly are cheap at scale and come with cloud compliance paperwork; Hume and Inworld focus on expressive or low-cost voices for agents. PlayHT, once a common alternative, shut down at the end of 2025. Rakazo has no built-in connection for any of these.",
       ],
     },
@@ -190,12 +217,12 @@ export const elevenlabs: VoiceProvider = {
     {
       question: "How much does ElevenLabs cost?",
       answer:
-        "As of November 2026, plans run from Free (10,000 credits, non-commercial) through Starter at $6, Creator at $22, Pro at $99, Scale at $299 and Business at $990 a month. Through the API, Flash v2.5 costs $0.04 per 1,000 characters (about $2.16 per hour of speech) and Eleven v4 costs $0.08. Scribe v2 transcription is $0.22 per hour.",
+        `As of November 2026, plans run from Free (10,000 credits, non-commercial) through Starter at $6, Creator at $22, Pro at $99, Scale at $299 and Business at $990 a month. Through the API, Flash v2.5 costs ${usd(RATES.elevenlabsFlash / 1000)} per 1,000 characters (about ${FLASH_HOUR} per hour of speech) and Eleven v4 costs ${usd(RATES.elevenlabsV4 / 1000)}. Scribe v2 transcription is ${usd(RATES.elevenlabsScribeHour)} per hour.`,
     },
     {
       question: "How much does an ElevenLabs voice agent cost per month?",
       answer:
-        "In Rakazo, a bot that reads 30 minutes of replies a day and transcribes 30 minutes of what you say costs about $36 a month in ElevenLabs usage. Rakazo doesn't add a voice charge. ElevenLabs' own Agents platform is priced separately, at $0.08 a minute plus the language model.",
+        `In Rakazo, a bot that reads 30 minutes of replies a day and transcribes 30 minutes of what you say costs ${aboutTotal("elevenlabs").toLowerCase()} a month in ElevenLabs usage. Rakazo doesn't add a voice charge. ElevenLabs' own Agents platform is priced separately, at $0.08 a minute plus the language model.`,
     },
     {
       question: "Can I talk to my AI agent with ElevenLabs?",

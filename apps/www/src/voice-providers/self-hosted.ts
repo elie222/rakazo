@@ -1,13 +1,25 @@
 import type { VoiceProvider } from "./types";
 import {
+  CHARS_PER_HOUR,
   PRICING_SOURCES,
+  RATES,
   VOICE_DOC,
   VOICE_MODELS_DOC,
   WORKLOAD,
+  WORKLOAD_COST,
+  aboutTotal,
   homepage,
+  usd,
   voicePriceTable,
   voiceWorkloadTable,
 } from "./shared";
+
+/** RunPod RTX 4090 per hour, community and secure, as of November 2026. */
+const GPU_HOUR = { low: 0.34, high: 0.89 };
+const HOURS_A_MONTH = 24 * 30;
+const ELEVENLABS_HOUR = (RATES.elevenlabsFlash * CHARS_PER_HOUR) / 1_000_000;
+/** Hours of speech a month at which an always-on GPU costs the same as ElevenLabs Flash v2.5. */
+const GPU_BREAK_EVEN_HOURS = Math.round((GPU_HOUR.low * HOURS_A_MONTH) / ELEVENLABS_HOUR);
 
 export const selfHosted: VoiceProvider = {
   slug: "self-hosted",
@@ -116,7 +128,13 @@ export const selfHosted: VoiceProvider = {
           { topic: "A computer you already own", cells: ["Electricity only", "Kokoro and a small Whisper for one household or team"] },
           { topic: "Small cloud CPU server, 4 vCPU and 8 GB", cells: ["From about €9 a month (Hetzner)", "Kokoro; Whisper is slow on long clips"] },
           { topic: "Mac mini", cells: ["From $899 (M6)", "Kokoro and Whisper or Parakeet on mlx-audio, quickly"] },
-          { topic: "Rented RTX 4090", cells: ["$0.34 to $0.89 an hour, about $245 to $640 a month always on", "Many users, larger models such as Chatterbox or Orpheus"] },
+          {
+            topic: "Rented RTX 4090",
+            cells: [
+              `${usd(GPU_HOUR.low)} to ${usd(GPU_HOUR.high)} an hour, about $${Math.round(GPU_HOUR.low * HOURS_A_MONTH)} to $${Math.round(GPU_HOUR.high * HOURS_A_MONTH)} a month always on`,
+              "Many users, larger models such as Chatterbox or Orpheus",
+            ],
+          },
           { topic: "Rented NVIDIA L4", cells: ["$0.44 to $0.59 an hour", "Same, with less memory"] },
         ],
         note: "From the Hetzner, Apple and RunPod pricing pages, checked November 2026.",
@@ -125,7 +143,7 @@ export const selfHosted: VoiceProvider = {
     {
       heading: "Self-hosted vs hosted voice APIs",
       paragraphs: [
-        `${WORKLOAD} Hosted, that costs about $16 on OpenAI to $49 on Cartesia a month. Self-hosted on hardware you already have, it costs close to nothing, and on a small rented server about $10. A GPU only pays off with many users: at $0.34 an hour it costs more than ElevenLabs until you generate well over 100 hours of speech a month.`,
+        `${WORKLOAD} Hosted, that costs ${aboutTotal("openai").toLowerCase()} on OpenAI to ${usd(WORKLOAD_COST.cartesia.speech)} on Cartesia a month. Self-hosted on hardware you already have, it costs close to nothing, and on a small rented server about $10. A GPU only pays off with many users: at ${usd(GPU_HOUR.low)} an hour, always on, it costs more than ElevenLabs until you generate about ${GPU_BREAK_EVEN_HOURS} hours of speech a month.`,
         "What you give up is polish. The best hosted voices still sound more natural than Kokoro, cloning is easier, and someone else keeps the server running.",
       ],
       table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", [

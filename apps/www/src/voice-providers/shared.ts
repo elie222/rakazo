@@ -71,8 +71,84 @@ export const PRICING_SOURCES = {
   assemblyai: { label: "AssemblyAI, pricing", href: "https://www.assemblyai.com/pricing" },
 } satisfies Record<string, SourceLink>;
 
-export const PRICE_NOTE =
-  "Prices in US dollars from each provider's pricing page, checked November 2026. An hour of speech is taken as about 54,000 characters (150 words a minute); real voices run a little faster or slower.";
+
+/** The speaking pace every per-hour figure assumes: 150 words, about 900 characters, a minute. */
+export const CHARS_PER_MINUTE = 900;
+export const CHARS_PER_HOUR = CHARS_PER_MINUTE * 60;
+
+/** "$40" for whole dollars, otherwise cents ("$2.16"). */
+export function usd(amount: number): string {
+  const rounded = Math.round(amount * 100) / 100;
+  if (Number.isInteger(rounded)) return `$${rounded}`;
+  return `$${rounded.toFixed(2)}`;
+}
+
+/** Thousands separators, such as "810,000". */
+export function count(value: number): string {
+  return Math.round(value).toLocaleString("en-US");
+}
+
+/** Cost of an hour of speech at {@link CHARS_PER_HOUR}, from a price per 1M characters. */
+export function perHourOfSpeech(pricePerMillion: number): string {
+  return usd((pricePerMillion * CHARS_PER_HOUR) / 1_000_000);
+}
+
+/** Per-unit prices, as of November 2026, behind every voice table and worked example. */
+export const RATES = {
+  elevenlabsFlash: 40,
+  elevenlabsV4: 80,
+  elevenlabsScribeHour: 0.22,
+  openaiMiniTtsMinute: 0.015,
+  openaiTts1: 15,
+  openaiTts1Hd: 30,
+  openaiMiniTranscribeHour: 0.18,
+  /** Cartesia plans: price a month and credits included; Sonic uses one credit per character. */
+  cartesiaPlans: {
+    pro: { price: 5, credits: 100_000, overage: 65 },
+    startup: { price: 49, credits: 1_250_000, overage: 45 },
+    scale: { price: 299, credits: 8_000_000, overage: 38 },
+  },
+  /** Ink transcription uses 3 credits per second of audio. */
+  cartesiaInkCreditsPerHour: 3 * 3600,
+  fish: 15,
+  fishTranscribeHour: 0.36,
+  deepgram: 30,
+  deepgramBatchHour: 0.258,
+  googleChirp: 30,
+  googleFreeChars: 1_000_000,
+  googleSttHour: 0.96,
+  azureNeural: 15,
+  azureHd: 22,
+  azureFreeChars: 500_000,
+  azureFreeHours: 5,
+  azureRealtimeHour: 1,
+  pollyNeural: 16,
+  pollyGenerative: 30,
+  inworld: 25,
+  inworldFlash: 15,
+  deepinfraKokoro: 0.99,
+  togetherKokoro: 4,
+} as const;
+
+/** Effective Cartesia price per 1M characters on a plan. */
+export function cartesiaPerMillion(plan: keyof typeof RATES.cartesiaPlans): number {
+  const { price, credits } = RATES.cartesiaPlans[plan];
+  return (price / credits) * 1_000_000;
+}
+
+/** Cartesia Ink, per hour of audio, on a plan. */
+export function cartesiaInkPerHour(plan: keyof typeof RATES.cartesiaPlans): string {
+  return usd((RATES.cartesiaInkCreditsPerHour * cartesiaPerMillion(plan)) / 1_000_000);
+}
+
+const OPENAI_MINI_TTS_HOUR = RATES.openaiMiniTtsMinute * 60;
+const OPENAI_MINI_TTS_PER_MILLION = (RATES.openaiMiniTtsMinute / CHARS_PER_MINUTE) * 1_000_000;
+export const OPENAI_MINI_TTS = {
+  perHour: usd(OPENAI_MINI_TTS_HOUR),
+  perMillion: `$${Math.round(OPENAI_MINI_TTS_PER_MILLION)}`,
+};
+
+export const PRICE_NOTE = `Prices in US dollars from each provider's pricing page, checked November 2026. An hour of speech is taken as about ${count(CHARS_PER_HOUR)} characters (150 words a minute); real voices run a little faster or slower.`;
 
 const PRICE_COLUMNS = [
   "Option",
@@ -83,42 +159,57 @@ const PRICE_COLUMNS = [
   "In Rakazo",
 ] as const;
 
+const cartesiaLow = cartesiaPerMillion("scale");
+const cartesiaHigh = cartesiaPerMillion("pro");
+
 /** One source of truth for the per-unit prices every voice article compares. */
 const PRICE_ROWS = {
   elevenlabs: {
     topic: "[ElevenLabs](/voice-providers/elevenlabs/) Flash v2.5",
     cells: [
-      "$40",
-      "$2.16",
-      "$0.22 (Scribe v2)",
+      usd(RATES.elevenlabsFlash),
+      perHourOfSpeech(RATES.elevenlabsFlash),
+      `${usd(RATES.elevenlabsScribeHour)} (Scribe v2)`,
       "10,000 credits a month, non-commercial",
       "Built in, speaks and transcribes",
     ],
   },
   elevenlabsV4: {
     topic: "ElevenLabs v4 or Multilingual v2",
-    cells: ["$80", "$4.32", "Same as above", "Same plans", "Not selectable"],
+    cells: [
+      usd(RATES.elevenlabsV4),
+      perHourOfSpeech(RATES.elevenlabsV4),
+      "Same as above",
+      "Same plans",
+      "Not selectable",
+    ],
   },
   openai: {
     topic: "[OpenAI](/voice-providers/openai/) `gpt-4o-mini-tts`",
     cells: [
-      "About $17, billed in tokens",
-      "About $0.90",
-      "$0.18 (`gpt-4o-mini-transcribe`)",
+      `About ${OPENAI_MINI_TTS.perMillion}, billed in tokens`,
+      `About ${OPENAI_MINI_TTS.perHour}`,
+      `${usd(RATES.openaiMiniTranscribeHour)} (\`gpt-4o-mini-transcribe\`)`,
       "None",
       "Built in until January 6, 2027",
     ],
   },
   openaiTts1: {
     topic: "OpenAI `tts-1` or `tts-1-hd`",
-    cells: ["$15 or $30", "$0.81 or $1.62", "$0.36 (Whisper)", "None", "Not used"],
+    cells: [
+      `${usd(RATES.openaiTts1)} or ${usd(RATES.openaiTts1Hd)}`,
+      `${perHourOfSpeech(RATES.openaiTts1)} or ${perHourOfSpeech(RATES.openaiTts1Hd)}`,
+      "$0.36 (Whisper)",
+      "None",
+      "Not used",
+    ],
   },
   cartesia: {
     topic: "[Cartesia](/voice-providers/cartesia/) Sonic 3",
     cells: [
-      "$37 to $50, by plan",
-      "$2.02 to $2.70",
-      "$0.39 to $0.54 (Ink, not used by Rakazo)",
+      `${usd(cartesiaLow)} to ${usd(cartesiaHigh)}, by plan`,
+      `${perHourOfSpeech(cartesiaLow)} to ${perHourOfSpeech(cartesiaHigh)}`,
+      `${cartesiaInkPerHour("scale")} to ${cartesiaInkPerHour("pro")} (Ink, not used by Rakazo)`,
       "20,000 credits a month",
       "Built in, speaks only",
     ],
@@ -126,9 +217,9 @@ const PRICE_ROWS = {
   fish: {
     topic: "[Fish Audio](/voice-providers/fish-audio/) S2.1 Pro",
     cells: [
-      "$15 per 1M bytes",
-      "$0.81",
-      "$0.36",
+      `${usd(RATES.fish)} per 1M bytes`,
+      perHourOfSpeech(RATES.fish),
+      usd(RATES.fishTranscribeHour),
       "`s2.1-pro-free` costs nothing until November 30, 2026",
       "Built in, speaks and transcribes",
     ],
@@ -146,8 +237,8 @@ const PRICE_ROWS = {
   hostedKokoro: {
     topic: "Kokoro on DeepInfra or Together AI",
     cells: [
-      "$0.99 or $4",
-      "$0.05 or $0.22",
+      `${usd(RATES.deepinfraKokoro)} or ${usd(RATES.togetherKokoro)}`,
+      `${perHourOfSpeech(RATES.deepinfraKokoro)} or ${perHourOfSpeech(RATES.togetherKokoro)}`,
       "Whisper from $0.012 (DeepInfra)",
       "Pay as you go",
       "Possibly through **Self-hosted**, untested",
@@ -166,23 +257,29 @@ const PRICE_ROWS = {
   deepgram: {
     topic: "Deepgram Aura-2 and Nova-3",
     cells: [
-      "$30",
-      "$1.62",
-      "$0.26 batch, $0.46 streaming",
+      usd(RATES.deepgram),
+      perHourOfSpeech(RATES.deepgram),
+      `${usd(RATES.deepgramBatchHour)} batch, $0.46 streaming`,
       "$200 credit",
       "Not available",
     ],
   },
   google: {
     topic: "Google Cloud Chirp 3 HD",
-    cells: ["$30", "$1.62", "$0.96", "1M characters a month", "Not available"],
+    cells: [
+      usd(RATES.googleChirp),
+      perHourOfSpeech(RATES.googleChirp),
+      usd(RATES.googleSttHour),
+      "1M characters a month",
+      "Not available",
+    ],
   },
   azure: {
     topic: "Azure AI Speech, neural or HD",
     cells: [
-      "$15 or $22",
-      "$0.81 or $1.19",
-      "$1.00 real time, $0.18 batch",
+      `${usd(RATES.azureNeural)} or ${usd(RATES.azureHd)}`,
+      `${perHourOfSpeech(RATES.azureNeural)} or ${perHourOfSpeech(RATES.azureHd)}`,
+      `${usd(RATES.azureRealtimeHour)} real time, $0.18 batch`,
       "0.5M characters and 5 hours a month",
       "Not available",
     ],
@@ -190,8 +287,8 @@ const PRICE_ROWS = {
   polly: {
     topic: "Amazon Polly neural or generative",
     cells: [
-      "$16 or $30",
-      "$0.86 or $1.62",
+      `${usd(RATES.pollyNeural)} or ${usd(RATES.pollyGenerative)}`,
+      `${perHourOfSpeech(RATES.pollyNeural)} or ${perHourOfSpeech(RATES.pollyGenerative)}`,
       "$0.36 batch, $0.60 streaming (Transcribe)",
       "Neural: 1M characters a month for a year",
       "Not available",
@@ -199,7 +296,13 @@ const PRICE_ROWS = {
   },
   inworld: {
     topic: "Inworld TTS-2 or TTS-2 Flash",
-    cells: ["$25 or $15", "$1.35 or $0.81", "$0.15", "Up to 70 minutes of speech", "Not available"],
+    cells: [
+      `${usd(RATES.inworld)} or ${usd(RATES.inworldFlash)}`,
+      `${perHourOfSpeech(RATES.inworld)} or ${perHourOfSpeech(RATES.inworldFlash)}`,
+      "$0.15",
+      "Up to 70 minutes of speech",
+      "Not available",
+    ],
   },
 } satisfies Record<string, { topic: string; cells: readonly string[] }>;
 
@@ -218,25 +321,91 @@ export function voicePriceTable(caption: string, rows: readonly VoicePriceRow[])
 /** Sources for every row in {@link PRICE_ROWS}, for pages that show the full table. */
 export const ALL_PRICING_SOURCES: readonly SourceLink[] = Object.values(PRICING_SOURCES);
 
-export const WORKLOAD =
-  "The worked example is one bot that reads about 30 minutes of replies aloud each day and transcribes about 30 minutes of what you say, every day for a month: 15 hours of speech (about 810,000 characters) and 15 hours of transcription.";
+/** The worked example: daily minutes of speech and of transcription, over 30 days. */
+const WORKLOAD_DAILY_MINUTES = 30;
+export const WORKLOAD_HOURS = (WORKLOAD_DAILY_MINUTES * 30) / 60;
+export const WORKLOAD_CHARS = WORKLOAD_HOURS * CHARS_PER_HOUR;
+
+export const WORKLOAD = `The worked example is one bot that reads about ${WORKLOAD_DAILY_MINUTES} minutes of replies aloud each day and transcribes about ${WORKLOAD_DAILY_MINUTES} minutes of what you say, every day for a month: ${WORKLOAD_HOURS} hours of speech (about ${count(WORKLOAD_CHARS)} characters) and ${WORKLOAD_HOURS} hours of transcription.`;
+
+/** Speech cost of {@link WORKLOAD_CHARS} at a price per 1M characters, after free characters. */
+function workloadSpeech(pricePerMillion: number, freeChars = 0): number {
+  return (Math.max(0, WORKLOAD_CHARS - freeChars) * pricePerMillion) / 1_000_000;
+}
+
+function workloadTranscription(pricePerHour: number, freeHours = 0): number {
+  return Math.max(0, WORKLOAD_HOURS - freeHours) * pricePerHour;
+}
+
+/** The smallest Cartesia plan whose credits cover the worked example. */
+const CARTESIA_WORKLOAD_PLAN = (["pro", "startup", "scale"] as const).find(
+  (plan) => RATES.cartesiaPlans[plan].credits >= WORKLOAD_CHARS,
+) as keyof typeof RATES.cartesiaPlans;
+
+/** Monthly cost of the {@link WORKLOAD} per option, as numbers, for tables and text alike. */
+export const WORKLOAD_COST = {
+  elevenlabs: {
+    speech: workloadSpeech(RATES.elevenlabsFlash),
+    transcription: workloadTranscription(RATES.elevenlabsScribeHour),
+  },
+  openai: {
+    speech: WORKLOAD_HOURS * OPENAI_MINI_TTS_HOUR,
+    transcription: workloadTranscription(RATES.openaiMiniTranscribeHour),
+  },
+  cartesia: {
+    speech: RATES.cartesiaPlans[CARTESIA_WORKLOAD_PLAN].price,
+    transcription: 0,
+  },
+  fish: {
+    speech: workloadSpeech(RATES.fish),
+    transcription: workloadTranscription(RATES.fishTranscribeHour),
+  },
+  deepgram: {
+    speech: workloadSpeech(RATES.deepgram),
+    transcription: workloadTranscription(RATES.deepgramBatchHour),
+  },
+  google: {
+    speech: workloadSpeech(RATES.googleChirp, RATES.googleFreeChars),
+    transcription: workloadTranscription(RATES.googleSttHour),
+  },
+  azure: {
+    speech: workloadSpeech(RATES.azureNeural, RATES.azureFreeChars),
+    transcription: workloadTranscription(RATES.azureRealtimeHour, RATES.azureFreeHours),
+  },
+} satisfies Record<string, { speech: number; transcription: number }>;
+
+/** "About $36": a monthly total rounded to whole dollars. */
+export function aboutTotal(option: keyof typeof WORKLOAD_COST): string {
+  const { speech, transcription } = WORKLOAD_COST[option];
+  return `About $${Math.round(speech + transcription)}`;
+}
+
+const cost = WORKLOAD_COST;
 
 const WORKLOAD_ROWS = {
   elevenlabs: {
     topic: "[ElevenLabs](/voice-providers/elevenlabs/)",
-    cells: ["$32.40", "$3.30", "About $36"],
+    cells: [usd(cost.elevenlabs.speech), usd(cost.elevenlabs.transcription), aboutTotal("elevenlabs")],
   },
   openai: {
     topic: "[OpenAI](/voice-providers/openai/)",
-    cells: ["About $13.50", "$2.70", "About $16, until the 2027 shutdown"],
+    cells: [
+      `About ${usd(cost.openai.speech)}`,
+      usd(cost.openai.transcription),
+      `${aboutTotal("openai")}, until the 2027 shutdown`,
+    ],
   },
   cartesia: {
     topic: "[Cartesia](/voice-providers/cartesia/)",
-    cells: ["$49 (Startup plan)", "$0, your device listens", "$49"],
+    cells: [
+      `${usd(cost.cartesia.speech)} (${CARTESIA_WORKLOAD_PLAN.charAt(0).toUpperCase()}${CARTESIA_WORKLOAD_PLAN.slice(1)} plan)`,
+      "$0, your device listens",
+      usd(cost.cartesia.speech),
+    ],
   },
   fish: {
     topic: "[Fish Audio](/voice-providers/fish-audio/)",
-    cells: ["$12.15", "$5.40", "About $18"],
+    cells: [usd(cost.fish.speech), usd(cost.fish.transcription), aboutTotal("fish")],
   },
   selfHosted: {
     topic: "[Self-hosted](/voice-providers/self-hosted/) on a computer you own",
@@ -250,14 +419,25 @@ const WORKLOAD_ROWS = {
     topic: "[Server (Mac)](/voice-providers/macos/)",
     cells: ["$0", "$0, your device listens", "$0"],
   },
-  deepgram: { topic: "Deepgram (not in Rakazo)", cells: ["$24.30", "$3.87", "About $28"] },
+  deepgram: {
+    topic: "Deepgram (not in Rakazo)",
+    cells: [usd(cost.deepgram.speech), usd(cost.deepgram.transcription), aboutTotal("deepgram")],
+  },
   google: {
     topic: "Google Cloud (not in Rakazo)",
-    cells: ["$0, inside the free 1M", "$14.40", "About $14"],
+    cells: [
+      cost.google.speech === 0 ? "$0, inside the free 1M" : usd(cost.google.speech),
+      usd(cost.google.transcription),
+      aboutTotal("google"),
+    ],
   },
   azure: {
     topic: "Azure AI Speech (not in Rakazo)",
-    cells: ["$4.65 after the free 0.5M", "$10 after 5 free hours", "About $15"],
+    cells: [
+      `${usd(cost.azure.speech)} after the free 0.5M`,
+      `${usd(cost.azure.transcription)} after ${RATES.azureFreeHours} free hours`,
+      aboutTotal("azure"),
+    ],
   },
 } satisfies Record<string, { topic: string; cells: readonly string[] }>;
 

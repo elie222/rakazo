@@ -1,9 +1,17 @@
 import type { VoiceProvider } from "./types";
 import {
+  CHARS_PER_HOUR,
+  OPENAI_MINI_TTS,
   PRICING_SOURCES,
+  RATES,
   VOICE_DOC,
   WORKLOAD,
+  WORKLOAD_COST,
+  aboutTotal,
+  count,
   homepage,
+  perHourOfSpeech,
+  usd,
   voicePriceTable,
   voiceWorkloadTable,
 } from "./shared";
@@ -87,10 +95,19 @@ export const openai: VoiceProvider = {
         rows: [
           {
             topic: "`gpt-4o-mini-tts`",
-            cells: ["$0.60 per 1M text tokens in, $12 per 1M audio tokens out", "About $0.90"],
+            cells: [
+              "$0.60 per 1M text tokens in, $12 per 1M audio tokens out",
+              `About ${OPENAI_MINI_TTS.perHour}`,
+            ],
           },
-          { topic: "`tts-1`", cells: ["$15 per 1M characters", "$0.81"] },
-          { topic: "`tts-1-hd`", cells: ["$30 per 1M characters", "$1.62"] },
+          {
+            topic: "`tts-1`",
+            cells: [`${usd(RATES.openaiTts1)} per 1M characters`, perHourOfSpeech(RATES.openaiTts1)],
+          },
+          {
+            topic: "`tts-1-hd`",
+            cells: [`${usd(RATES.openaiTts1Hd)} per 1M characters`, perHourOfSpeech(RATES.openaiTts1Hd)],
+          },
           {
             topic: "`gpt-realtime-2.1-mini`",
             cells: ["$10 per 1M audio tokens in, $20 per 1M audio tokens out", "Not published"],
@@ -100,14 +117,14 @@ export const openai: VoiceProvider = {
           { topic: "`gpt-4o-transcribe`, Whisper", cells: ["$0.006 a minute", "$0.36"] },
           { topic: "`gpt-live-transcribe`", cells: ["$0.017 a minute", "$1.02"] },
         ],
-        note: "From [OpenAI's API pricing page](https://developers.openai.com/api/docs/pricing), checked November 2026. Hourly speech figures assume about 54,000 characters an hour; the `gpt-4o-mini-tts` figure uses OpenAI's earlier per-minute estimate.",
+        note: `From [OpenAI's API pricing page](https://developers.openai.com/api/docs/pricing), checked November 2026. Hourly speech figures assume about ${count(CHARS_PER_HOUR)} characters an hour; the \`gpt-4o-mini-tts\` figure uses OpenAI's earlier estimate of $${RATES.openaiMiniTtsMinute} a minute.`,
       },
     },
     {
       heading: "What a talking Rakazo bot costs on OpenAI",
       paragraphs: [
         "Rakazo calls OpenAI with your key, so OpenAI bills you and Rakazo adds nothing. The voice key is stored separately from any OpenAI key you use for models, but both draw on the same OpenAI account if you use the same project.",
-        `${WORKLOAD} On OpenAI that is about $13.50 of speech and $2.70 of transcription: roughly $16 a month, among the cheapest hosted options, until the shutdown.`,
+        `${WORKLOAD} On OpenAI that is about ${usd(WORKLOAD_COST.openai.speech)} of speech and ${usd(WORKLOAD_COST.openai.transcription)} of transcription: ${aboutTotal("openai").toLowerCase()} a month, among the cheapest hosted options, until the shutdown.`,
       ],
       table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", [
         "openai",
@@ -192,7 +209,7 @@ export const openai: VoiceProvider = {
     {
       question: "How much does OpenAI text to speech cost?",
       answer:
-        "As of November 2026, `tts-1` costs $15 and `tts-1-hd` $30 per million characters. `gpt-4o-mini-tts` costs $0.60 per million text tokens in and $12 per million audio tokens out, which OpenAI used to estimate at about $0.015 a minute, roughly $0.90 an hour. There is no free tier.",
+        `As of November 2026, \`tts-1\` costs ${usd(RATES.openaiTts1)} and \`tts-1-hd\` ${usd(RATES.openaiTts1Hd)} per million characters. \`gpt-4o-mini-tts\` costs $0.60 per million text tokens in and $12 per million audio tokens out, which OpenAI used to estimate at about $${RATES.openaiMiniTtsMinute} a minute, roughly ${OPENAI_MINI_TTS.perHour} an hour. There is no free tier.`,
     },
     {
       question: "How much does the Whisper API cost?",
@@ -217,7 +234,7 @@ export const openai: VoiceProvider = {
     {
       question: "OpenAI vs ElevenLabs for voice agents?",
       answer:
-        "Both speak and transcribe in Rakazo. OpenAI costs less, around $0.90 an hour of speech against $2.16 for ElevenLabs Flash v2.5, and offers a fixed set of voices. [ElevenLabs](/voice-providers/elevenlabs/) sounds more natural, lets you use voices you clone, and isn't affected by OpenAI's 2027 shutdown.",
+        `Both speak and transcribe in Rakazo. OpenAI costs less, around ${OPENAI_MINI_TTS.perHour} an hour of speech against ${perHourOfSpeech(RATES.elevenlabsFlash)} for ElevenLabs Flash v2.5, and offers a fixed set of voices. [ElevenLabs](/voice-providers/elevenlabs/) sounds more natural, lets you use voices you clone, and isn't affected by OpenAI's 2027 shutdown.`,
     },
     {
       question: "Can I use a self-hosted Whisper server instead?",

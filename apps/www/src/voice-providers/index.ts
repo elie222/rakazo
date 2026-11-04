@@ -9,11 +9,13 @@ import { openai } from "./openai";
 import { selfHosted } from "./self-hosted";
 import {
   ALL_PRICING_SOURCES,
+  RATES,
   VOICE_DOC,
   VOICE_DOCS_PATH,
   VOICE_PROVIDERS_PATH,
   VOICE_PROVIDERS_UPDATED,
   WORKLOAD,
+  perHourOfSpeech,
   voicePriceTable,
   voiceProviderPath,
   voiceWorkloadTable,
@@ -161,7 +163,7 @@ export const VOICE_PROVIDERS_HUB = {
   choose: [
     {
       heading: "You want the most natural voices",
-      text: "[ElevenLabs](/voice-providers/elevenlabs/) speaks and transcribes with one key, and any voice you clone in ElevenLabs shows up in Rakazo's voice picker. It costs about $2.16 per hour of speech. [Fish Audio](/voice-providers/fish-audio/) is the other pick when the voice itself matters, with expressive speech, your own cloned voice and a large public library, at about a third of the price.",
+      text: `[ElevenLabs](/voice-providers/elevenlabs/) speaks and transcribes with one key, and any voice you clone in ElevenLabs shows up in Rakazo's voice picker. It costs about ${perHourOfSpeech(RATES.elevenlabsFlash)} per hour of speech. [Fish Audio](/voice-providers/fish-audio/) is the other pick when the voice itself matters, with expressive speech, your own cloned voice and a large public library, at ${perHourOfSpeech(RATES.fish)} an hour.`,
     },
     {
       heading: "You want the lowest bill",

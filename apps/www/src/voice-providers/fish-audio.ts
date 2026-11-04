@@ -1,13 +1,33 @@
 import type { VoiceProvider } from "./types";
 import {
+  CHARS_PER_HOUR,
   PRICING_SOURCES,
+  RATES,
   VOICE_DOC,
   VOICE_MODELS_DOC,
   WORKLOAD,
+  WORKLOAD_COST,
+  aboutTotal,
+  count,
   homepage,
+  perHourOfSpeech,
+  usd,
   voicePriceTable,
   voiceWorkloadTable,
 } from "./shared";
+
+/** App plans as Fish Audio's plan page lists them: credits and the minutes of speech it says they buy. */
+const FISH_PLANS = {
+  free: { credits: 8_000, minutes: 7 },
+  plus: { credits: 250_000, minutes: 200 },
+  pro: { credits: 2_000_000, minutes: 1_620 },
+};
+const creditsPerMinute = Object.values(FISH_PLANS).map((plan) => plan.credits / plan.minutes);
+/** The credits per minute the plan page implies, rounded to the nearest 50. */
+const CREDITS_PER_MINUTE_RANGE = [Math.min(...creditsPerMinute), Math.max(...creditsPerMinute)]
+  .map((value) => count(Math.round(value / 50) * 50))
+  .join(" to ");
+const S2_HOUR = perHourOfSpeech(RATES.fish);
 
 export const fishAudio: VoiceProvider = {
   slug: "fish-audio",
@@ -48,15 +68,34 @@ export const fishAudio: VoiceProvider = {
     {
       heading: "Fish Audio pricing: app plans",
       paragraphs: [
-        "The Fish Audio app is sold in monthly plans with credits; one minute of generated speech uses about 600 to 625 credits. Unused credits don't roll over. These plans cover the app; API use is billed separately, below.",
+        `The Fish Audio app is sold in monthly plans with credits. By the minutes Fish Audio lists for each plan, a minute of generated speech uses about ${CREDITS_PER_MINUTE_RANGE} credits. Unused credits don't roll over. These plans cover the app; API use is billed separately, below.`,
       ],
       table: {
         caption: "Fish Audio app plans, as of November 2026",
         columns: ["Plan", "A month", "Credits a month", "About minutes of speech", "Cloned voices"],
         rows: [
-          { topic: "Free", cells: ["$0", "8,000", "7", "Public voices only"] },
-          { topic: "Plus", cells: ["$15, or $11 billed yearly", "250,000", "200", "10 private, 1 professional"] },
-          { topic: "Pro", cells: ["$100, or $75 billed yearly", "2M", "1,620", "Unlimited, 5 professional"] },
+          {
+            topic: "Free",
+            cells: ["$0", count(FISH_PLANS.free.credits), count(FISH_PLANS.free.minutes), "Public voices only"],
+          },
+          {
+            topic: "Plus",
+            cells: [
+              "$15, or $11 billed yearly",
+              count(FISH_PLANS.plus.credits),
+              count(FISH_PLANS.plus.minutes),
+              "10 private, 1 professional",
+            ],
+          },
+          {
+            topic: "Pro",
+            cells: [
+              "$100, or $75 billed yearly",
+              count(FISH_PLANS.pro.credits),
+              count(FISH_PLANS.pro.minutes),
+              "Unlimited, 5 professional",
+            ],
+          },
         ],
         note: "From [Fish Audio's plans page](https://fish.audio/plan), checked November 2026. The plan card and the FAQ disagree on whether the Free plan allows commercial use; the FAQ says personal, non-commercial only.",
       },
@@ -64,28 +103,35 @@ export const fishAudio: VoiceProvider = {
     {
       heading: "Fish Audio API pricing",
       paragraphs: [
-        "The API is pay as you go with no subscription. Speech is priced per million bytes of UTF-8 text, so English costs about the same per character, while Chinese, Japanese and Korean text, at three bytes a character, costs about three times as much per character. Fish Audio says a million bytes is about 12 hours of English speech.",
+        `The API is pay as you go with no subscription. Speech is priced per million bytes of UTF-8 text, so English costs the same per character, while Chinese, Japanese and Korean text, at three bytes a character, costs about three times as much per character. At ${usd(RATES.fish)} per million bytes and about ${count(CHARS_PER_HOUR)} characters an hour of English speech, an hour costs about ${S2_HOUR}.`,
         "Until November 30, 2026, Fish Audio offers its flagship as `s2.1-pro-free` at no cost, with no card required, under a fair use policy, without an uptime guarantee, and with requests that may be used to improve its models. The end date has already been extended several times. Because Rakazo lets you enter a Fish Audio **Speech model**, you can try that name there.",
       ],
       table: {
         caption: "Fish Audio API prices, as of November 2026",
         columns: ["Model", "Price", "About per hour"],
         rows: [
-          { topic: "`s2.1-pro` (Rakazo's default)", cells: ["$15 per 1M bytes", "$0.81"] },
+          { topic: "`s2.1-pro` (Rakazo's default)", cells: [`${usd(RATES.fish)} per 1M bytes`, S2_HOUR] },
           { topic: "`s2.1-pro-free`", cells: ["$0, until November 30, 2026", "$0"] },
-          { topic: "`s2-pro`", cells: ["$15 per 1M bytes", "$0.81"] },
-          { topic: "`s1`", cells: ["$15 per 1M bytes, retiring December 31, 2026", "$0.81"] },
-          { topic: "`drama-3`", cells: ["$50 per 1M bytes ($10 until November 12, 2026)", "$2.70"] },
-          { topic: "`transcribe-1-pro` (Rakazo's default)", cells: ["$0.36 per audio hour", "$0.36"] },
+          { topic: "`s2-pro`", cells: [`${usd(RATES.fish)} per 1M bytes`, S2_HOUR] },
+          {
+            topic: "`s1`",
+            cells: [`${usd(RATES.fish)} per 1M bytes, retiring December 31, 2026`, S2_HOUR],
+          },
+          { topic: "`drama-3`", cells: ["$50 per 1M bytes ($10 until November 12, 2026)", perHourOfSpeech(50)] },
+          { topic: "`transcribe-1-pro` (Rakazo's default)", cells: [
+              `${usd(RATES.fishTranscribeHour)} per audio hour`,
+              usd(RATES.fishTranscribeHour),
+            ],
+          },
         ],
-        note: "From [Fish Audio's API pricing page](https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits), checked November 2026. Hourly speech figures assume about 54,000 bytes of English text an hour. Transcription bills the full recording, rounded up to the second; failed requests aren't billed.",
+        note: `From [Fish Audio's API pricing page](https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits), checked November 2026. Hourly speech figures assume about ${count(CHARS_PER_HOUR)} bytes of English text an hour. Transcription bills the full recording, rounded up to the second; failed requests aren't billed.`,
       },
     },
     {
       heading: "What a talking Rakazo bot costs on Fish Audio",
       paragraphs: [
         "Rakazo calls Fish Audio with your key, so Fish Audio bills you and Rakazo adds nothing.",
-        `${WORKLOAD} On Fish Audio that is about $12 of S2.1 Pro speech and $5.40 of transcription: roughly $18 a month, half what ElevenLabs costs for the same use. While the free S2.1 Pro offer lasts, the speech part can be $0.`,
+        `${WORKLOAD} On Fish Audio that is ${usd(WORKLOAD_COST.fish.speech)} of S2.1 Pro speech and ${usd(WORKLOAD_COST.fish.transcription)} of transcription: ${aboutTotal("fish").toLowerCase()} a month, about half what ElevenLabs costs for the same use. While the free S2.1 Pro offer lasts, the speech part can be $0.`,
       ],
       table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", [
         "fish",
@@ -98,7 +144,7 @@ export const fishAudio: VoiceProvider = {
     {
       heading: "Fish Audio vs ElevenLabs and other voice APIs",
       paragraphs: [
-        "Fish Audio's pitch is ElevenLabs-class expressive voices and cloning at a fraction of the price. Per character it costs about a third of ElevenLabs Flash v2.5, and independent blind tests have ranked its models near the top. ElevenLabs still has the more established platform, broader compliance paperwork and enterprise data residency. Fish Audio's transcription costs more per hour than ElevenLabs Scribe.",
+        "Fish Audio's pitch is ElevenLabs-class expressive voices and cloning at a fraction of the price. Per character it costs less than half of ElevenLabs Flash v2.5, and independent blind tests have ranked its models near the top. ElevenLabs still has the more established platform, broader compliance paperwork and enterprise data residency. Fish Audio's transcription costs more per hour than ElevenLabs Scribe.",
       ],
       table: voicePriceTable("Fish Audio compared with other voice APIs", [
         "fish",
@@ -174,12 +220,12 @@ export const fishAudio: VoiceProvider = {
     {
       question: "How much does Fish Audio cost?",
       answer:
-        "As of November 2026, the app has a Free plan, Plus at $15 a month ($11 billed yearly) and Pro at $100 ($75 yearly). The API is pay as you go: $15 per million bytes of text for S2.1 Pro, about $0.81 per hour of English speech, and $0.36 per hour of transcription.",
+        `As of November 2026, the app has a Free plan, Plus at $15 a month ($11 billed yearly) and Pro at $100 ($75 yearly). The API is pay as you go: ${usd(RATES.fish)} per million bytes of text for S2.1 Pro, about ${S2_HOUR} per hour of English speech, and ${usd(RATES.fishTranscribeHour)} per hour of transcription.`,
     },
     {
       question: "Is Fish Audio free?",
       answer:
-        "The app has a free plan with about 7 minutes of speech a month for personal use. Through the API, `s2.1-pro-free` costs nothing until November 30, 2026, under a fair use policy.",
+        `The app has a free plan with about ${FISH_PLANS.free.minutes} minutes of speech a month for personal use. Through the API, \`s2.1-pro-free\` costs nothing until November 30, 2026, under a fair use policy.`,
     },
     {
       question: "Is Fish Audio safe to use?",
@@ -204,7 +250,7 @@ export const fishAudio: VoiceProvider = {
     {
       question: "Fish Audio vs ElevenLabs?",
       answer:
-        "Both offer expressive voices, cloning and transcription, and both work fully in Rakazo. Fish Audio costs about a third as much per character. [ElevenLabs](/voice-providers/elevenlabs/) has cheaper transcription, a more established platform, and enterprise options such as EU data residency.",
+        "Both offer expressive voices, cloning and transcription, and both work fully in Rakazo. Fish Audio costs less than half as much per character. [ElevenLabs](/voice-providers/elevenlabs/) has cheaper transcription, a more established platform, and enterprise options such as EU data residency.",
     },
   ],
   sources: [
