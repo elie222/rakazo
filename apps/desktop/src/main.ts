@@ -1595,6 +1595,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("desktop.platform", () => process.platform);
   ipcMain.handle("desktop.passkeys.rpIds", () => passkeyRpIds);
   ipcMain.handle("desktop.monitoring.enabled", () => reportsErrors);
+  ipcMain.handle("desktop.server.change", (event) => {
+    if (fromMainWindow(event)) showSetupWindow();
+  });
   ipcMain.handle("desktop.window.close", (event) => {
     windowFrom(event)?.close();
   });

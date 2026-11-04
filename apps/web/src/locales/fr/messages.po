@@ -1284,6 +1284,10 @@ msgstr "Changer de modèle"
 msgid "Change password"
 msgstr "Changer le mot de passe"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "Changer de serveur"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "Modification en cours…"

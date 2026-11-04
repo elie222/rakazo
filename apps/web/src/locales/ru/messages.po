@@ -1284,6 +1284,10 @@ msgstr "Сменить модель"
 msgid "Change password"
 msgstr "Изменить пароль"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "Сменить сервер"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "Изменение…"

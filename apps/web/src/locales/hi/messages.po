@@ -1284,6 +1284,10 @@ msgstr "मॉडल बदलें"
 msgid "Change password"
 msgstr "पासवर्ड बदलें"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "सर्वर बदलें"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "बदला जा रहा है…"
