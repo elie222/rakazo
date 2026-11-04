@@ -37,6 +37,7 @@ let root: Root;
 let latest: ReturnType<typeof useComposerActions>;
 let pageSession: PageSession;
 let activeChat: string;
+let rosterChatIds: ReadonlySet<string>;
 
 function ref<T>(current: T) {
   return { current };
@@ -46,6 +47,7 @@ function Harness() {
   latest = useComposerActions({
     rpc: rpc as unknown as ReturnType<typeof createSpaceRpc>,
     pageSession,
+    rosterChatIds,
     activeId: activeChat,
     inGroup: false,
     groupId: undefined,
@@ -70,6 +72,7 @@ function Harness() {
 
 function switchChat(activeId: string) {
   activeChat = activeId;
+  rosterChatIds = new Set([...rosterChatIds, activeId]);
   act(() => root.render(<Harness />));
 }
 
@@ -84,6 +87,7 @@ beforeEach(() => {
   me = null;
   navigate = vi.fn();
   activeChat = "bot-1";
+  rosterChatIds = new Set(["bot-1"]);
   pageSession = createPageSession();
   rpc = {
     routines: { testRun: vi.fn() },
@@ -170,6 +174,48 @@ it("discards a deleted chat's attachments with their previews and unsaved-work f
     expect(latest.activePendingAttachments).toEqual([]);
     expect(revoke).toHaveBeenCalledWith("blob:preview-a");
     expect(composerHoldsUnsavedWork()).toBe(false);
+  } finally {
+    create.mockRestore();
+    revoke.mockRestore();
+  }
+});
+
+it("discards pending attachments when their chat leaves the roster", () => {
+  const file = new File(["a"], "photo.png", { type: "image/png" });
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview-a");
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+  try {
+    act(() => void latest.onAttachmentPick([file]));
+    expect(composerHoldsUnsavedWork()).toBe(true);
+    // The chat disappeared: deleted in group settings or on another device.
+    rosterChatIds = new Set();
+    act(() => root.render(<Harness />));
+    expect(latest.activePendingAttachments).toEqual([]);
+    expect(revoke).toHaveBeenCalledWith("blob:preview-a");
+    expect(composerHoldsUnsavedWork()).toBe(false);
+  } finally {
+    create.mockRestore();
+    revoke.mockRestore();
+  }
+});
+
+it("keeps a live chat's attachments when another chat leaves the roster", () => {
+  const file = new File(["a"], "photo.png", { type: "image/png" });
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview-a");
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+  try {
+    act(() => void latest.onAttachmentPick([file]));
+    switchChat("bot-2");
+    act(() => void latest.onAttachmentPick([new File(["b"], "b.txt", { type: "text/plain" })]));
+    // Only bot-2 disappears from the roster.
+    rosterChatIds = new Set(["bot-1"]);
+    act(() => root.render(<Harness />));
+    expect(latest.activePendingAttachments).toEqual([]);
+    switchChat("bot-1");
+    const restored = latest.activePendingAttachments;
+    expect(restored.map((pending) => pending.file)).toEqual([file]);
+    expect(restored[0]!.previewUrl).toBe("blob:preview-a");
+    expect(revoke).not.toHaveBeenCalled();
   } finally {
     create.mockRestore();
     revoke.mockRestore();

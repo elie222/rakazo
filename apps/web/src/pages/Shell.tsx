@@ -625,9 +625,16 @@ function SpaceShell() {
     refreshGroupThread: (id) => refreshGroupThreadRef.current(id),
   });
   const { computerBot, openComputer } = computerControls;
+  // Pending attachments belong to chats on the roster; a chat deleted here
+  // (sidebar, group settings) or on another device can never send them.
+  const rosterChatIds = useMemo(
+    () => new Set([...bots.map((bot) => bot.id), ...groups.map((group) => group.id)]),
+    [bots, groups],
+  );
   const composer = useComposerActions({
     rpc,
     pageSession: pages.session,
+    rosterChatIds,
     activeId: active?.id,
     inGroup,
     groupId,

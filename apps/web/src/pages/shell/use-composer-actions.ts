@@ -49,6 +49,7 @@ type ThreadRefresh = RefObject<(id: string) => Promise<ThreadSnapshot>>;
 export function useComposerActions({
   rpc,
   pageSession,
+  rosterChatIds,
   activeId,
   inGroup,
   groupId,
@@ -71,6 +72,8 @@ export function useComposerActions({
   rpc: ReturnType<typeof createSpaceRpc>;
   /** The chat's open page, whose card a message sent from it replies to. */
   pageSession: PageSession;
+  /** The bot and group ids that still exist; attachments of others are dropped. */
+  rosterChatIds: ReadonlySet<string>;
   activeId: string | undefined;
   inGroup: boolean;
   groupId: string | undefined;
@@ -322,6 +325,15 @@ export function useComposerActions({
       return current.filter((attachment) => !discarded.includes(attachment));
     });
   }, []);
+
+  // A chat gone from the roster — deleted from the sidebar, from group
+  // settings, or on another device — can never send its pending attachments.
+  useEffect(() => {
+    if (!pendingAttachments.length) return;
+    for (const threadKey of new Set(pendingAttachments.map((a) => a.threadKey))) {
+      if (!rosterChatIds.has(threadKey)) discardThreadAttachments(threadKey);
+    }
+  }, [pendingAttachments, rosterChatIds, discardThreadAttachments]);
   const sendMessage = useCallback(
     async (
       draft: string,
