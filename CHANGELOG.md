@@ -12,12 +12,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Updated Better Auth to 1.7.16 for its November security fixes. The most serious one was in mobile sign-in, where the authorization proxy could sign values it did not issue. The others fix OAuth sign-in treating an unverified provider email as verified, email codes whose attempt limit could be raced, email-change links that stayed valid after the address changed hands, and passkey checks that skipped origin and user verification.
 - Signing out, signing in to another account, or switching server on mobile now stops read-aloud and clears the replies still waiting to be read. Before, the phone kept reading the previous account's bot replies over the sign-in screen.
-- Disconnecting an MCP server's OAuth stays in effect even when a sign-in was still finishing. A late token no longer marks the server as connected again.
+- Disconnecting an MCP server's OAuth stays in effect even when a sign-in was still finishing, including the first sign-in to a server. A late token no longer marks the server as connected again, and a sign-in the disconnect ended can't be completed.
+- A connected tool named `delete_bot` now runs on its own service. Before, it was sent to Rakazo's built-in bot archiving instead.
+- After signing in as another account on mobile, the call card no longer shows the previous account's initial.
+- The Android app limits how much a notification check can download in the background, so a faulty server or proxy can't make it use unbounded memory.
+- When a computer's saved files are deleted after the retention period, a copy cached on a computer host is deleted too.
 - Two computer pairings that arrive at the same moment can no longer both get past the limit of ten computers per account.
 - On Incus, stopping or deleting a computer checks that the instance belongs to it, so a wrong stored reference can't tear down another bot's computer.
 
 ### Added
 
+- One login can own several organizations, such as "Personal" and "Work", each with its own billing. Create one in **Settings → Organization** and switch between them from the account menu.
+- Rakazo is available in Polish on web, desktop and mobile, including account emails.
 - The own-model plan comes in three tiers. Standard is the existing plan. **Pro** and **Max** give bigger cloud computers and more computer hours each month. Choose a tier when you subscribe, and move between tiers from **Billing** on web and mobile.
 - Bots can hand screen and browser work to a second model. Set a **Computer-use model** in **Settings → Models** and a bot on a text-only or self-hosted model passes visual tasks to it in the middle of a reply, then answers you. When it's left empty, nothing changes.
 - The web and desktop app notifies you when an agent in another chat finishes a reply, asks you something, asks you to take over its screen, or fails. Clicking the notification opens that chat, and muted chats stay quiet. Web and desktop notifications now show the agent's avatar.
@@ -40,6 +46,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - When many new visitors arrive at once, readers opening a shared page are no longer rate limited from their first request.
 - A bot reading its own settings gets them in one piece whenever they fit, even with long instructions.
 - iOS builds that self-hosters make with `expo prebuild` open in Xcode and install on a phone again.
+- Removing one of two attached files that share a name, size and date no longer removes both.
+- Signing in with a model subscription now notices when the sign-in tab opened, instead of always showing the steps for a blocked popup.
 
 ## [0.6.0] - 2026-11-04
 
