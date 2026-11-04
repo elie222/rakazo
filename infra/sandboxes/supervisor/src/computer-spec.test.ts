@@ -37,6 +37,7 @@ import {
   controlPortPublicationMatches,
   homeVolumeMatches,
   hostComputerUser,
+  isIpv6NetworkUnavailable,
   isRegistryQualifiedImage,
   legacyNetworkOwnedSolelyBy,
   parseMemoryBytes,
@@ -394,6 +395,7 @@ describe("graphical computer spec", () => {
       Name: computerNetworkNameFor("bot_1"),
       Driver: "bridge",
       CheckDuplicate: true,
+      EnableIPv6: true,
       Labels: { "rakazo.computerOwner": "owner", "rakazo.botId": "bot_1" },
     });
     expect(open).not.toHaveProperty("Options");
@@ -406,6 +408,65 @@ describe("graphical computer spec", () => {
     // The bridge name differs from the network name so `docker network` output
     // still shows the readable rakazo-computer-* name while iptables matches the interface.
     expect(restricted.Options?.["com.docker.network.bridge.name"]).not.toBe(restricted.Name);
+  });
+
+  it("enables IPv6 with automatic subnets and can leave it out for daemons without it", () => {
+    // No IPAM config: the daemon allocates its own IPv6 ULA /64 (Docker 27+),
+    // unique per network, which keeps the payload daemon-agnostic.
+    expect(computerNetworkCreateOptions("bot_1", "owner", "open")).not.toHaveProperty("IPAM");
+
+    // The IPv4-only payload for daemons that refuse the dual-stack network
+    // (Docker 26, Docker-in-Docker without ip6_tables, IPv6 off in the kernel).
+    expect(computerNetworkCreateOptions("bot_1", "owner", "open", false)).not.toHaveProperty(
+      "EnableIPv6",
+    );
+  });
+
+  it("keeps restricted networks IPv4-only with their named bridge", () => {
+    // Restricted egress is enforced and startup-verified for IPv4 only
+    // (infra/compose/restrict-computer-egress.sh, egress-probe.ts); IPv6 would
+    // leave a restricted computer paths the ruleset does not cover.
+    const restricted = computerNetworkCreateOptions("bot_1", "owner", "restricted");
+    expect(restricted).not.toHaveProperty("EnableIPv6");
+    expect(restricted.Options).toEqual({
+      "com.docker.network.bridge.name": computerBridgeNameFor("bot_1"),
+    });
+  });
+
+  it("falls back for every IPv6 capability error the daemon wording uses", () => {
+    // Transient failures without IPv6 in them must surface, so the next start
+    // retries the dual-stack create.
+    expect(isIpv6NetworkUnavailable(new Error("daemon busy"))).toBe(false);
+    expect(isIpv6NetworkUnavailable(new Error("ETIMEDOUT"))).toBe(false);
+
+    // The daemon's IPv6 capability errors across releases, all matched broadly
+    // because the wording changes between releases.
+    const unavailable = [
+      // Engine 26, no IPv6 pool (libnetwork/ipam/allocator.go at v26.1.4).
+      "could not find an available, non-overlapping IPv6 address pool among the defaults to assign to the network",
+      // IPv6 off in the kernel (drivers/bridge/setup_ipv6_linux.go), wrapped by
+      // the daemon ("failed to create network ...").
+      "Error response from daemon: failed to create network rakazo-computer-bot_1: Cannot read IPv6 setup for bridge br-x: open /proc/sys/net/ipv6/conf/br-x/disable_ipv6: no such file or directory",
+      "Unable to enable IPv6 addresses on bridge: ...",
+      // ip6tables disabled in the daemon config (setup_ip_tables_linux.go at v26.1.4).
+      "Cannot program chains, EnableIP6Tables is disabled",
+      // Newer engines name ip6tables and forwarding directly.
+      "ip6tables is missing",
+      "ip6tables not found",
+      "IPv6 global forwarding is disabled",
+    ];
+    for (const message of unavailable) {
+      expect(isIpv6NetworkUnavailable(new Error(message)), message).toBe(true);
+    }
+
+    // A transient error that names ip6tables (fork pressure running the binary)
+    // falls back too. That is bounded: a stop gives the network back and the
+    // next start creates it again, retrying IPv6 (see reclaimComputerNetwork).
+    expect(
+      isIpv6NetworkUnavailable(
+        new Error("fork/exec /usr/sbin/ip6tables: resource temporarily unavailable"),
+      ),
+    ).toBe(true);
   });
 
   it("lists prior network name variants for cleanup", () => {
