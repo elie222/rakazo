@@ -2477,6 +2477,8 @@ function deletionPrisma(team: { id: string }) {
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     routine: { findMany: vi.fn().mockResolvedValue([]) },
+    // The Space's owner keeps its Team Computer.
+    spaceMember: { findFirst: vi.fn().mockResolvedValue({ userId: "user-1" }) },
     $transaction: transaction,
   } as unknown as PrismaClient;
 }

@@ -4192,6 +4192,7 @@ describe("computer terminal and file transfer", () => {
       writeFile: vi.fn().mockResolvedValue(undefined),
     };
     const prisma = {
+      spaceMember: { count: vi.fn(async () => 1) },
       bot: {
         findFirst: vi.fn().mockResolvedValue({
           id: "bot-1",
@@ -7466,9 +7467,10 @@ describe("routines.list", () => {
     );
 
     const routines = await client.routines.list({ botId: "bot-1" });
+    // Nothing marks either one read-only: any member may change it.
     expect(routines.map(({ id, editable }) => ({ id, editable }))).toEqual([
-      { id: "mine", editable: true },
-      { id: "theirs", editable: true },
+      { id: "mine", editable: undefined },
+      { id: "theirs", editable: undefined },
     ]);
     expect(routines[0]).not.toHaveProperty("userId");
   });
@@ -10049,6 +10051,7 @@ describe("quarantined computer stop", () => {
         return { count: 1 };
       });
       const prisma = {
+        spaceMember: { count: vi.fn(async () => 1) },
         bot: {
           findFirst: vi.fn(async () => {
             const snapshot = { ...row };

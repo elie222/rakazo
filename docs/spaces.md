@@ -30,6 +30,24 @@ Your account settings apply in every space: [models](./models.md), [voice](./voi
 [approvals](./approvals.md) and your credentials vault. Skills, MCP servers and plugins you add are
 available in all your spaces too, unless you narrow them with **Available in**.
 
+## Share a space
+
+Open the space's **Settings**, then **Members**, and choose **Invite** to copy a link. It works once
+and expires after 7 days. Whoever opens it joins that space only; it shows up in their space list
+next to their own spaces, and your other spaces stay private.
+
+Everyone in a shared space sees and can change its bots, chats, memory and routines, and uses one
+Team Computer and browser, so a site someone signs in to there stays signed in for everyone.
+
+Each person keeps their own models, connected accounts, MCP servers, skills, vault and approval
+rules. A bot uses the accounts of whoever messaged it, a routine uses its owner's, and each person's
+runs are billed to their own account. Only the person a bot is waiting on can take over its
+computer for them.
+
+The owner can remove people. Anyone else can **Leave**. What a person who leaves made in the space,
+such as bots and routines, passes to the owner, with routines paused, and their own credentials for
+that space are deleted.
+
 ## Customize one space
 
 Right-click a space in the sidebar and choose **Settings**, or open **Settings → General** and choose

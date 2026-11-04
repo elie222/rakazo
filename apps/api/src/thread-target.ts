@@ -443,17 +443,16 @@ export async function threadSnapshot(
   // otherwise advance the client cursor past thread.message.created while the
   // ask message page still omits it — leaving waiting_input with no AskCard.
   if (target.kind === "bot") {
-    const [busyBotName, shared, core] = await Promise.all([
+    const [busyBotName, core] = await Promise.all([
       resolveBusyBotName(deps.prisma, {
         computerId: target.bot.computer?.id,
         botId: target.botId,
         botName: target.bot.name,
       }),
-      spaceIsShared(deps.prisma, target.bot.spaceId),
       deps.prisma.$transaction(
         async (tx) => {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR SHARE`;
-          const [messagePage, last, activeRuns, busyOrFailed] = await Promise.all([
+          const [messagePage, last, activeRuns, busyOrFailed, shared] = await Promise.all([
             loadMessagePage(tx, target.threadId, undefined, THREAD_MESSAGE_PAGE_SIZE),
             tx.event.findFirst({
               where: { threadId: target.threadId },
@@ -484,6 +483,7 @@ export async function threadSnapshot(
               // timestamps, matching the supersession probe below.
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             }),
+            spaceIsShared(tx, target.bot.spaceId),
           ]);
           const run = pickPrimaryPrivateActiveRun(activeRuns) ?? busyOrFailed;
           // A failure only surfaces while it is still the newest terminal run, or a stale
@@ -525,7 +525,7 @@ export async function threadSnapshot(
                   orderBy: { seq: "asc" },
                 })
               : [];
-          return { messagePage, last, run: currentRun, activeRuns, liveEvents };
+          return { messagePage, last, run: currentRun, activeRuns, liveEvents, shared };
         },
         { timeout: 15_000, maxWait: 5_000 },
       ),
@@ -538,7 +538,7 @@ export async function threadSnapshot(
       olderCursor: core.messagePage.olderCursor,
       run: core.run ? mapRun(core.run) : null,
       activeRuns: core.activeRuns.map(mapRun),
-      computer: toComputerStatus(target.botId, target.bot.computer, busyBotName, shared),
+      computer: toComputerStatus(target.botId, target.bot.computer, busyBotName, core.shared),
     };
   }
 

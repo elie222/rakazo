@@ -18,6 +18,7 @@ const { rpc, selectSpace, selectedSpaceId, alert, share, router, header } = vi.h
 }));
 
 vi.mock("./api", () => ({ rpc, selectSpace, selectedSpaceId }));
+vi.mock("expo-secure-store", () => ({}));
 vi.mock("expo-router", () => ({
   useRouter: () => router,
   // Opened from Settings: no name in the link, so the sheet takes it from the list.
@@ -30,8 +31,10 @@ vi.mock("expo-router", () => ({
   },
 }));
 vi.mock("react-native", () => ({
+  Appearance: { getColorScheme: () => "dark", addChangeListener: () => ({ remove() {} }) },
   Alert: { alert },
   Share: { share },
+  StyleSheet: { create: <T,>(styles: T) => styles },
   Platform: { OS: "ios" },
   ActivityIndicator: () => null,
   ScrollView: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
@@ -93,6 +96,7 @@ vi.mock("./native", () => ({
   native: {},
   useMobileTokens: () => ({}),
   useResolvedAppearance: () => "light",
+  useThemedStyles: <T,>(factory: () => T) => factory(),
 }));
 vi.mock("./i18n", () => {
   const t = (text: string, values?: Record<string, string>) =>

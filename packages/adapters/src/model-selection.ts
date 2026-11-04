@@ -11,6 +11,7 @@ import {
   chooseModelCredential,
   findModelCredential,
   findModelCredentialById,
+  GUEST_ROLE,
   organizationForMember,
 } from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";
@@ -905,13 +906,25 @@ export async function hasHostedModelCredits(
 ): Promise<boolean> {
   const deployment = resolveDeploymentModel();
   if (!deployment.configured || deployment.provider !== provider) return false;
-  const payer = await organizationForMember(prisma, scope);
-  const credits = payer
-    ? await prisma.modelCreditAccount.findUnique({
-        where: { organizationId: payer.organizationId },
-        select: { mode: true, balanceMicros: true },
-      })
-    : null;
+  const space = await prisma.space.findFirst({
+    where: {
+      id: scope.spaceId,
+      organization: { members: { some: { userId: scope.userId, role: { not: GUEST_ROLE } } } },
+    },
+    select: {
+      organization: { select: { modelCredits: { select: { mode: true, balanceMicros: true } } } },
+    },
+  });
+  // A guest in someone's shared Space is paid for by their own organization.
+  const guestPayer = space ? null : await organizationForMember(prisma, scope);
+  const credits = space
+    ? space.organization.modelCredits
+    : guestPayer
+      ? await prisma.modelCreditAccount.findUnique({
+          where: { organizationId: guestPayer.organizationId },
+          select: { mode: true, balanceMicros: true },
+        })
+      : null;
   if (credits?.mode === "credits") return true;
   if (!credits || credits.balanceMicros <= 0n) return false;
   return !(await prisma.userModelCredential.findFirst({

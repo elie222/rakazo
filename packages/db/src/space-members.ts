@@ -28,8 +28,9 @@ export class SpaceInviteLimitError extends Error {
   }
 }
 
-/** Owner-only actions; the API answers FORBIDDEN. */
+/** Owner-only actions. `code` lets a caller outside the RPC boundary answer FORBIDDEN as-is. */
 export class SpaceOwnerRequiredError extends Error {
+  readonly code = "FORBIDDEN";
   constructor() {
     super("Only the space owner can do that");
     this.name = "SpaceOwnerRequiredError";
