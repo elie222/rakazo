@@ -151,11 +151,11 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
           cells: ["Nothing extra", "Free", "Electricity", `${About(macMiniMonthly(MONTH_HOURS))} for a Mac mini`],
         },
       ],
-      note: `${PRICES_NOTE} Usage before free credits. Rakazo can't run Boat at 2 vCPU / 4 GB: it creates ${BOAT_RAKAZO.vcpus} vCPU / ${BOAT_RAKAZO.gb} GB machines, which cost ${usd(boatMonthly(BOAT_RAKAZO.hour, WORKDAY_HOURS))} and ${usd(boatMonthly(BOAT_RAKAZO.hour, MONTH_HOURS))}. Each option's page shows the rates and assumptions behind its numbers.`,
+      note: `${PRICES_NOTE} Usage before free credits. Rakazo can't run Boat at 2 vCPU / 4 GB: self-hosted installs use ${BOAT_RAKAZO.vcpus} vCPU / ${BOAT_RAKAZO.gb} GB machines, which cost ${usd(boatMonthly(BOAT_RAKAZO.hour, WORKDAY_HOURS))} and ${usd(boatMonthly(BOAT_RAKAZO.hour, MONTH_HOURS))}, and larger Rakazo Cloud plans use [larger ones](/sandboxes/boat/). Each option's page shows the rates and assumptions behind its numbers.`,
     },
     bullets: [
       "For a few hours a day, per-second providers are cheapest. Novita has the lowest rate of the hosted options Rakazo supports, and E2B and Daytona charge the same as each other.",
-      `Boat's $${BOAT.minimum} minimum covers about ${Math.floor(BOAT.minimum / BOAT_RAKAZO.hour)} hours of the bigger computer Rakazo uses, so it is cheaper than E2B or Daytona once a computer runs more than about ${boatBeatsE2bHours} hours a month, and by far around the clock.`,
+      `Boat's $${BOAT.minimum} minimum covers about ${Math.floor(BOAT.minimum / BOAT_RAKAZO.hour)} hours of the bigger computer self-hosted Rakazo uses, so it is cheaper than E2B or Daytona once a computer runs more than about ${boatBeatsE2bHours} hours a month, and by far around the clock.`,
       "A server you rent for Docker costs the same whether bots work or not. It's the cheapest way to run many computers, if you're happy to look after it.",
     ],
   },

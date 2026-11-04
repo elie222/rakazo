@@ -109,7 +109,7 @@ export const novita: Sandbox = {
           {
             topic: "[Boat](/sandboxes/boat/)",
             cells: [
-              `${usd(boatMonthly(BOAT_RAKAZO.hour, WORKDAY_HOURS))} minimum, at the ${BOAT_RAKAZO.vcpus} vCPU / ${BOAT_RAKAZO.gb} GB size Rakazo uses`,
+              `${usd(boatMonthly(BOAT_RAKAZO.hour, WORKDAY_HOURS))} minimum, at the ${BOAT_RAKAZO.vcpus} vCPU / ${BOAT_RAKAZO.gb} GB size self-hosted Rakazo uses`,
               usd(boatMonthly(BOAT_RAKAZO.hour, MONTH_HOURS)),
             ],
           },

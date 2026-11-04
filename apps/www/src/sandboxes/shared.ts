@@ -131,7 +131,22 @@ export const BOAT = {
   xlarge: { vcpus: 16, gb: 32, hour: 0.2 },
 } as const;
 
-/** Rakazo creates Boat machines at the default size; a self-hosted install has no size choice. */
+/**
+ * The Boat machine Rakazo starts for each computer size. A computer gets the size of its
+ * organization's Rakazo Cloud plan; everything else, including every self-hosted install, uses
+ * the standard size, which is Boat's default machine.
+ */
+export const BOAT_SIZES = [
+  {
+    plan: "Rakazo Cloud's Standard plan and Rakazo credits, and every self-hosted install",
+    machine: "default",
+    ...BOAT.default,
+  },
+  { plan: "The Rakazo Cloud Pro plan", machine: "large", ...BOAT.large },
+  { plan: "The Rakazo Cloud Max plan", machine: "xlarge", ...BOAT.xlarge },
+] as const;
+
+/** The standard size, which the worked examples price. */
 export const BOAT_RAKAZO = BOAT.default;
 
 export function boatMonthly(hourPrice: number, hours: number): number {

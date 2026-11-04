@@ -1,6 +1,7 @@
 import {
   BOAT,
   BOAT_RAKAZO,
+  BOAT_SIZES,
   E2B_PRO_FEE,
   METHOD_NOTE,
   MONTH_HOURS,
@@ -91,7 +92,7 @@ export const boat: Sandbox = {
     {
       heading: "What a Rakazo computer costs on Boat",
       paragraphs: [
-        `${METHOD_NOTE} Rakazo can't run Boat at that size: it creates every machine at the default ${shape(BOAT_RAKAZO)}, so the table compares that size on providers that bill per second. Because Boat is cheap per hour and has a monthly minimum, most small teams pay exactly $${BOAT.minimum}.`,
+        `${METHOD_NOTE} Rakazo can't run Boat at that size: its smallest Boat machine is the default ${shape(BOAT_RAKAZO)}, so the table compares that size on providers that bill per second. Because Boat is cheap per hour and has a monthly minimum, most small teams pay exactly $${BOAT.minimum}.`,
       ],
       table: {
         caption: `One ${shape(BOAT_RAKAZO)} computer a month`,
@@ -112,7 +113,7 @@ export const boat: Sandbox = {
             topic: "[E2B](/sandboxes/e2b/)",
             cells: [
               usd(monthly(RATES.e2b, WORKDAY_HOURS, BOAT_RAKAZO)),
-              `${usd(monthly(RATES.e2b, MONTH_HOURS, BOAT_RAKAZO) + E2B_PRO_FEE)}, with the $${E2B_PRO_FEE} Pro plan`,
+              `${usd(monthly(RATES.e2b, MONTH_HOURS, BOAT_RAKAZO))}, or ${usd(monthly(RATES.e2b, MONTH_HOURS, BOAT_RAKAZO) + E2B_PRO_FEE)} with Pro for 24-hour sessions`,
             ],
           },
           {
@@ -126,9 +127,25 @@ export const boat: Sandbox = {
         ],
         note: "Computed from each provider's rates, checked November 2026, before free credits. Daytona caps one sandbox at 4 vCPU / 8 GiB. The Docker server also has to run Rakazo itself. Your model provider bills separately.",
       },
-      bullets: [
-        "On Rakazo Cloud you pay Rakazo, not Boat: computers come with the plan, and the [pricing page](/pricing/) lists the computer hours and size each plan includes.",
+    },
+    {
+      heading: "Which Boat size Rakazo uses",
+      paragraphs: [
+        "Rakazo picks a computer's size from its organization's Rakazo Cloud plan. A self-hosted install has no size setting, so its computers always use Boat's default machine. When the plan changes, a running computer keeps its size and moves to the new one the next time Rakazo starts it after a stop; if Boat refuses that size, it starts at the size it had.",
       ],
+      table: {
+        caption: "Boat machines by Rakazo computer size",
+        columns: ["Used for", "Boat machine", `${WORKDAY_HOURS} hours a month`, "Around the clock"],
+        rows: BOAT_SIZES.map((size) => ({
+          topic: size.plan,
+          cells: [
+            `${size.machine}, ${shape(size)}`,
+            usd(boatMonthly(size.hour, WORKDAY_HOURS)),
+            usd(boatMonthly(size.hour, MONTH_HOURS)),
+          ],
+        })),
+        note: "What Boat charges for one machine, from its rates checked November 2026, with the monthly minimum applied. Boat offers xlarge only on plans of $100 or more. On Rakazo Cloud you pay Rakazo, not Boat; the [pricing page](/pricing/) lists the computer hours each plan includes.",
+      },
     },
     {
       heading: "What your bots can do on a Boat computer",
