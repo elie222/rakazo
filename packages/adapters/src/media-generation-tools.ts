@@ -11,7 +11,7 @@ import type { ExternalEffect, PrismaClient } from "@rakazo/db";
 import { z } from "zod";
 import { mediaPromptSchema, validateGeneratedMedia } from "./media-generation-provider.js";
 
-const JOB_KIND = "media_generation_job";
+export const MEDIA_JOB_KIND = "media_generation_job";
 const savedJob = z.object({
   provider: z.string(),
   jobId: z.string().optional(),
@@ -27,6 +27,8 @@ export async function generateMediaFromTool(options: {
   prisma: PrismaClient;
   context: AdapterContext;
   run: { id: string; threadId: string; botId: string; userId: string; spaceId: string };
+  /** Saved with a new job so background delivery skips a chat that was cleared since. */
+  threadGeneration?: number;
   attach: (
     output: GeneratedMedia,
     name: string,
@@ -55,7 +57,7 @@ export async function generateMediaFromTool(options: {
       reservation = await prisma.externalEffect.findFirst({
         where: {
           id: args.jobId,
-          kind: JOB_KIND,
+          kind: MEDIA_JOB_KIND,
           spaceId: run.spaceId,
           run: { userId: run.userId, botId: run.botId, threadId: run.threadId },
         },
@@ -76,7 +78,7 @@ export async function generateMediaFromTool(options: {
       const prior = await prisma.externalEffect.findFirst({
         where: {
           runId: run.id,
-          kind: JOB_KIND,
+          kind: MEDIA_JOB_KIND,
           request: { path: ["executionId"], equals: options.executionId },
         },
       });
@@ -110,13 +112,16 @@ export async function generateMediaFromTool(options: {
               data: {
                 spaceId: run.spaceId,
                 runId: run.id,
-                kind: JOB_KIND,
+                kind: MEDIA_JOB_KIND,
                 idempotencyKey: `media:${run.id}:${slot}`,
                 status: "media_submitting",
                 request: {
                   tool: options.name,
                   prompt: input.data.prompt,
                   executionId: options.executionId,
+                  ...(options.threadGeneration === undefined
+                    ? {}
+                    : { threadGeneration: options.threadGeneration }),
                 },
                 result: { provider: provider.id },
               },
