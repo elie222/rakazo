@@ -17,6 +17,7 @@ import {
   recognitionLocaleTag,
   retryDelayMs,
   spokenMemory,
+  VoiceTranscript,
 } from "@rakazo/core";
 import type { AudioRecorder } from "expo-audio";
 import { File } from "expo-file-system";
@@ -37,6 +38,7 @@ import {
   startWaitSound,
   stopWaitSound,
 } from "./call-sounds";
+import type { conversationalCall } from "./conversational-call";
 import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
 import { deviceLanguage, getActiveUiLocale, t } from "./i18n";
@@ -56,6 +58,8 @@ export type CallState = {
   botAvatarSet?: BotAvatarSet;
   phase: CallPhase;
   muted: boolean;
+  speaker?: boolean;
+  speakerChanging?: boolean;
   transcriptOpen: boolean;
   caption: string;
   heard: string;
@@ -120,6 +124,8 @@ const METER_POLL_MS = 200;
 const MAX_CLIP_MS = 30_000;
 
 let state: CallState | null = null;
+let liveCall: Awaited<ReturnType<typeof conversationalCall>> | null = null;
+let conversational = false;
 /** The session the call started in: a sign-out or an account or server change ends the call. */
 let callSessionGeneration = 0;
 /** Shared by every message this call sends, so the thread can group one call's exchange. */
@@ -209,6 +215,7 @@ export function startCall(
     botColor?: string;
     botAvatarSet?: BotAvatarSet;
     transcribe?: boolean;
+    conversational?: boolean;
     /** Spoken as the call connects, before the caller's first turn. */
     greeting?: string;
     answered?: { callId: string };
@@ -244,6 +251,52 @@ export function startCall(
     heard: "",
     exchanges: [],
   };
+  conversational = call.conversational === true;
+  if (conversational) {
+    const openedCallId = callId;
+    const transcript = new VoiceTranscript();
+    emit();
+    void import("./conversational-call")
+      .then(({ conversationalCall }) =>
+        conversationalCall(
+          { botId: call.botId, callId: openedCallId },
+          (event) => {
+            if (!state || callId !== openedCallId) return;
+            if (event.type === "transcript") {
+              transcript.append(event);
+              set({
+                phase: event.role === "bot" ? "speaking" : "listening",
+                caption: event.role === "bot" ? event.text : state.caption,
+                heard: event.role === "user" ? event.text : state.heard,
+                exchanges: transcript.entries().map(({ role, text }) => ({ role, text })),
+              });
+            }
+            if (event.type === "ready" && liveCall?.hasSpeaker && state.speaker === undefined)
+              set({ speaker: true });
+            if (event.type === "closed") endCall();
+          },
+          (error) => {
+            if (state && callId === openedCallId)
+              set({ phase: "listening", muted: true, caption: errorText(error) });
+          },
+          call.requestContext,
+        ),
+      )
+      .then((connection) => {
+        if (!state || callId !== openedCallId) {
+          connection.close();
+          return;
+        }
+        liveCall = connection;
+        connection.mute(state.muted);
+        void connection.start();
+      })
+      .catch((error) => {
+        if (state && callId === openedCallId)
+          set({ phase: "listening", muted: true, caption: errorText(error) });
+      });
+    return callId;
+  }
   unwatch = deps.watch(call.botId, onReply, onCallEnded);
   emit();
   void openCall(callId, call.greeting);
@@ -270,9 +323,11 @@ export function setCallProviderTranscribe(enabled: boolean, forCallId?: string):
 }
 
 export function endCall(): void {
+  liveCall?.close();
+  liveCall = null;
   // The bot's own end_call already closed the call server-side; only a caller hang-up
   // has to say so. Fire and forget: the card is going away either way.
-  if (state && !botEndedCall) {
+  if (state && !botEndedCall && !conversational) {
     const { botId } = state;
     const closingCallId = callId;
     const closeServerCall = deps.endCall;
@@ -303,12 +358,32 @@ export function endCall(): void {
   switching = false;
   interim.clear();
   spokenMemory.clear();
+  conversational = false;
   if (!state) return;
   state = null;
   emit();
 }
 
+export async function toggleSpeaker(): Promise<void> {
+  if (!state || state.speaker === undefined || state.speakerChanging || !liveCall) return;
+  const connection = liveCall;
+  const speaker = !state.speaker;
+  set({ speakerChanging: true });
+  try {
+    await connection.setSpeaker(speaker);
+    if (liveCall === connection && state) set({ speaker });
+  } finally {
+    if (liveCall === connection && state) set({ speakerChanging: false });
+  }
+}
+
 export function toggleMute(): void {
+  if (conversational && state) {
+    const muted = !state.muted;
+    liveCall?.mute(muted);
+    set({ muted, heard: "" });
+    return;
+  }
   if (!state) return;
   const muted = !state.muted;
   set({ muted, heard: "" });

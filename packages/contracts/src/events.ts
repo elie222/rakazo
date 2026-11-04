@@ -195,6 +195,16 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({
     /** Transcript card left in the thread when the bot hangs up a voice call. */
     kind: z.literal("voice_call"),
+    transcript: z
+      .array(
+        z.object({
+          role: z.enum(["user", "bot"]),
+          text: z.string(),
+          startMs: z.number(),
+          endMs: z.number(),
+        }),
+      )
+      .optional(),
     /** Absent when the call had no client nonce to derive an id from. */
     callId: z.string().optional(),
     title: z.string(),

@@ -14,10 +14,18 @@ import {
   OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
   OpenAiCompatibleVoiceProvider,
 } from "./openai-compatible-voice.js";
+import { OpenAILiveVoiceProvider } from "./openai-live-voice.js";
 import { OpenAIVoiceProvider } from "./openai-voice.js";
 import { SCRIPTED_VOICE_CATALOG_ENTRY, ScriptedVoiceProvider } from "./scripted-voice.js";
 
 export const VOICE_CATALOG = [
+  {
+    id: "openai-live",
+    name: "OpenAI Live",
+    description: "Natural, continuous voice conversations with your bot.",
+    transcribe: true,
+    conversational: true,
+  },
   {
     id: "elevenlabs",
     name: "ElevenLabs",
@@ -94,6 +102,8 @@ export function createVoiceProvider(
   switch (kind) {
     case "elevenlabs":
       return new ElevenLabsVoiceProvider();
+    case "openai-live":
+      return new OpenAILiveVoiceProvider();
     case "openai":
       return new OpenAIVoiceProvider();
     case "cartesia":

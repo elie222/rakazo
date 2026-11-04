@@ -331,6 +331,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/markUnread", { botId: "missing-bot" }],
       ["threads/head"],
       ["threads/react"],
+      ["threads/converse"],
       ["threads/endCall"],
       ["threads/answerCall"],
       ["threads/declineCall"],

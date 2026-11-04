@@ -1,4 +1,8 @@
 export const JA_MESSAGES: Record<string, string> = {
+  "Speaker on": "スピーカーオン",
+  "Speaker off": "スピーカーオフ",
+  "Could not change speaker": "スピーカーを切り替えられませんでした",
+  "That audio output is unavailable.": "この音声出力は利用できません。",
   "Add rule": "ルールを追加",
   "Tool name": "ツール名",
   Address: "住所",

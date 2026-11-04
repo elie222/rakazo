@@ -1,4 +1,8 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Speaker on": "扬声器已开启",
+  "Speaker off": "扬声器已关闭",
+  "Could not change speaker": "无法切换扬声器",
+  "That audio output is unavailable.": "该音频输出不可用。",
   "Add rule": "添加规则",
   "Tool name": "工具名称",
   Address: "地址",

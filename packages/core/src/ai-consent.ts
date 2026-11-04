@@ -17,6 +17,7 @@ const pendingAiConsent = new Map<string, Promise<void>>();
 /** Only user actions that can start AI processing need a foreground disclosure. */
 export function aiDataUsesForProcedure(procedure: string, input?: unknown): AiDataUse[] {
   const path = procedure.replaceAll(".", "/");
+  if (path === "threads/converse") return ["model", "memory", "voice"];
   if (
     path === "routines/update" &&
     input &&

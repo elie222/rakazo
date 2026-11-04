@@ -1,4 +1,8 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Speaker on": "Luidspreker aan",
+  "Speaker off": "Luidspreker uit",
+  "Could not change speaker": "Luidspreker kon niet worden omgeschakeld",
+  "That audio output is unavailable.": "Die audio-uitgang is niet beschikbaar.",
   "Add rule": "Regel toevoegen",
   "Tool name": "Toolnaam",
   Address: "Adres",

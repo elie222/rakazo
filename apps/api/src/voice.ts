@@ -95,6 +95,7 @@ export function catalogEntry(provider: string) {
 export function toVoiceStatus(cred: { provider: string; voiceId: string } | null): VoiceStatus {
   const entry = cred ? catalogEntry(cred.provider) : undefined;
   return {
+    ...(entry?.conversational ? { conversational: true } : {}),
     configured: Boolean(cred),
     ready: Boolean(cred?.voiceId),
     transcribe: Boolean(entry?.transcribe && cred),

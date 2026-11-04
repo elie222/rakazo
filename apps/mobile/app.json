@@ -83,7 +83,8 @@
       "./plugins/with-lan-cleartext",
       "./plugins/with-agent-notifications",
       "./plugins/with-android-r8",
-      "./plugins/with-app-intents"
+      "./plugins/with-app-intents",
+      "@config-plugins/react-native-webrtc"
     ],
     "locales": {
       "es": "./locales/es.json",

@@ -50,6 +50,7 @@ describe("createVoiceProvider", () => {
     process.env.AGENT_RUNTIME = "pi";
     vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "0");
     expect(VOICE_CATALOG.map((entry) => entry.id)).toEqual([
+      "openai-live",
       "elevenlabs",
       "openai",
       "cartesia",
@@ -57,6 +58,7 @@ describe("createVoiceProvider", () => {
       "openai-compatible",
     ]);
     expect(listVoiceCatalog().map((entry) => entry.id)).toEqual([
+      "openai-live",
       "elevenlabs",
       "openai",
       "cartesia",

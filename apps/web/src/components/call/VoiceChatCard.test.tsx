@@ -73,6 +73,31 @@ describe("VoiceChatCard", () => {
     expect(opened.querySelector('[data-message-id="user-1"]')).not.toBeNull();
   });
 
+  it("shows saved spoken turns instead of delegated bot messages", () => {
+    const savedMarker = {
+      ...marker,
+      blocks: [
+        {
+          kind: "voice_call" as const,
+          title: "Saved call",
+          farewell: "Talk soon",
+          transcript: [
+            { role: "user" as const, text: "Hello there", startMs: 0, endMs: 1000 },
+            { role: "bot" as const, text: "How can I help?", startMs: 1000, endMs: 2500 },
+          ],
+        },
+      ],
+    };
+    const saved: VoiceChatGroup = { ...group, marker: savedMarker };
+    const opened = render();
+    act(() => root?.render(<VoiceChatCard group={saved} />));
+    act(() => opened.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click());
+    expect(opened.textContent).toContain("Hello there");
+    expect(opened.textContent).toContain("How can I help?");
+    expect(opened.textContent).not.toContain("Booked.");
+    expect(opened.textContent).not.toContain("book the flight");
+  });
+
   it("shows the bot's missed call with a way to call back", () => {
     const onCallBack = vi.fn();
     const missed: VoiceChatGroup = {

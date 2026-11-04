@@ -10,6 +10,7 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
 class RakazoNotificationsModule : Module() {
+  private var callAudio: CallAudioRoute? = null
   private var incomingReceiver: android.content.BroadcastReceiver? = null
   override fun definition() = ModuleDefinition {
     Name("RakazoNotifications")
@@ -91,6 +92,16 @@ class RakazoNotificationsModule : Module() {
     AsyncFunction("setOpenThread") { botId: String?, threadId: String? ->
       RakazoNotificationService.setOpenThread(context(), botId, threadId)
     }
+
+    AsyncFunction("startCallAudio") { id: String ->
+      val route = callAudio ?: CallAudioRoute(context()).also { callAudio = it }
+      route.start(id)
+    }
+    AsyncFunction("setCallSpeaker") { id: String, enabled: Boolean ->
+      checkNotNull(callAudio) { "No live voice call." }.setSpeaker(id, enabled)
+    }
+    AsyncFunction("stopCallAudio") { id: String -> callAudio?.stop(id) }
+    OnDestroy { callAudio?.stop() }
 
     AsyncFunction("startCall") { title: String, promise: Promise ->
       RakazoCallService.start(context(), title) { started -> promise.resolve(started) }
