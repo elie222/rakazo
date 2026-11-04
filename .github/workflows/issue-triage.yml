@@ -65,35 +65,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      contents: read
       issues: write
     steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
       - env:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number || inputs.issue }}
           RESULT: ${{ needs.triage.outputs.result }}
-        run: |
-          set -euo pipefail
-          type=$(jq -r '.type | select(IN("bug","enhancement","question","documentation","self-host"))' <<<"$RESULT")
-          size=$(jq -r '.size | select(IN("small","medium","large"))' <<<"$RESULT")
-          duplicate=$(jq -r --argjson issue "$ISSUE" '.duplicate_of | numbers | select(. > 0 and . != $issue)' <<<"$RESULT")
-          # The summary is not parsed for workflow commands; the log is.
-          jq -r '.reason | tostring | .[:500]' <<<"$RESULT" >> "$GITHUB_STEP_SUMMARY"
-
-          current=$(gh issue view "$ISSUE" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name]')
-          existing_type=$(jq -r 'map(select(IN("bug","enhancement","question","documentation","self-host")))[0] // ""' <<<"$current")
-          has_size=$(jq 'any(startswith("size:"))' <<<"$current")
-          labels=()
-          if [[ -n "$type" && -z "$existing_type" ]]; then
-            labels+=("$type")
-          fi
-          [[ -n "$size" && "$has_size" == false && "${existing_type:-$type}" != "question" ]] && labels+=("size:$size")
-          [[ $(jq '.priority_high == true' <<<"$RESULT") == true ]] && labels+=("priority:high")
-          if (( ${#labels[@]} )); then
-            gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --add-label "$(IFS=,; echo "${labels[*]}")"
-          fi
-
-          note="Possibly a duplicate of #$duplicate."
-          if [[ -n "$duplicate" ]] && gh issue view "$duplicate" --repo "$GITHUB_REPOSITORY" --json url --jq .url | grep -q '/issues/' &&
-            [[ $(gh issue view "$ISSUE" --repo "$GITHUB_REPOSITORY" --json comments --jq "any(.comments[]; .body == \"$note\")") == false ]]; then
-            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$note"
-          fi
+        run: bash .github/scripts/apply-issue-triage.sh
