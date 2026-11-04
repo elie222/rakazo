@@ -322,6 +322,7 @@ function SpaceShell() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const findInputRef = useRef<HTMLInputElement>(null);
+  const chatColumnRef = useRef<HTMLDivElement>(null);
   // Matches belong to the chat they were found in.
   useEffect(() => setFindOpen(false), [botId, groupId]);
   useShellShortcuts({
@@ -374,10 +375,14 @@ function SpaceShell() {
           return focusComposer();
         case "find":
           if (!active && !activeGroup) return false;
+          // The open drawer makes the chat inert, so the bar could not take focus behind it.
+          setMobileSidebarOpen(false);
           setFindOpen(true);
           // A bar already open may have lost focus; a new one focuses itself as it mounts.
-          findInputRef.current?.focus();
-          findInputRef.current?.select();
+          requestAnimationFrame(() => {
+            findInputRef.current?.focus();
+            findInputRef.current?.select();
+          });
           return true;
       }
       const botId =
@@ -1077,12 +1082,13 @@ function SpaceShell() {
         ) : null}
         <CallReturnBar />
         {/* The header floats so the transcript scrolls under its buttons. */}
-        <div className="relative flex min-h-0 flex-1 flex-col">
+        <div ref={chatColumnRef} className="relative flex min-h-0 flex-1 flex-col">
           {/* Only the pills take input; the gaps pass clicks and scrolling to the transcript. */}
           <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />
           {findOpen ? (
             <div className="absolute end-3 top-14 z-20">
               <ChatFindBar
+                scope={chatColumnRef}
                 inputRef={findInputRef}
                 onClose={() => {
                   setFindOpen(false);

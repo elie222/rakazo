@@ -31,9 +31,12 @@ function clearHighlights() {
 
 /** Finds text in the open chat's loaded messages, the desktop app's Cmd/Ctrl+F. */
 export function ChatFindBar({
+  scope,
   inputRef,
   onClose,
 }: {
+  /** The chat column. The transcript inside it remounts when a chat's history loads. */
+  scope: RefObject<HTMLElement | null>;
   inputRef: RefObject<HTMLInputElement | null>;
   onClose: () => void;
 }) {
@@ -45,7 +48,7 @@ export function ChatFindBar({
   // Streaming replies and older history change the transcript while the bar is open. A new
   // query jumps to its first match; a refresh keeps the selected match where it is.
   useEffect(() => {
-    const transcript = document.querySelector('[data-testid="transcript"]');
+    const transcript = scope.current;
     if (!transcript) {
       setFound({ ranges: [], index: 0 });
       return;
@@ -76,7 +79,7 @@ export function ChatFindBar({
       observer.disconnect();
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, scope]);
 
   const current = ranges.length > 0 ? Math.max(0, Math.min(found.index, ranges.length - 1)) : -1;
   const currentRange = current === -1 ? undefined : ranges[current];
