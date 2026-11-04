@@ -92,6 +92,7 @@ import {
   parseObservation,
   preferComputerControl,
   quiesceBrowserProfilesCommand,
+  refusedCommand,
   releaseAssignedScreen,
   removeOwnedComputer,
   resetManagedScreensCommand,
@@ -696,6 +697,13 @@ app.post("/computers/:id/browser", async (c) => {
     // purchase check presses nothing and never starts the browser again: no browser has nothing to buy.
     if (reusable.reused && body.command !== "purchase_check" && pageBrowserNotReady(result))
       result = await runHelper(await screen(false));
+    // Exit 2 is the page browser refusing the command before touching the page (an older
+    // computer image does not know it). Pass its reply on, as LinuxDesktop does, so a caller
+    // can tell "cannot check" from a check that failed.
+    if (result.code === 2 && Buffer.byteLength(result.stdout) <= 512 * 1024) {
+      const refused = refusedCommand(result.stdout);
+      if (refused) return c.json(refused);
+    }
     // A nonzero exit or malformed output cannot establish which mutations ran.
     if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {
       throw new Error(
