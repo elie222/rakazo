@@ -615,6 +615,8 @@ type Pending = {
   /** The MCP endpoint, or for a stdio server (which has none) its authorization server. */
   endpoint: string;
   stdio: boolean;
+  /** The stored authorization generation this flow began at. */
+  generation: number;
   provider: StoredMcpOAuthProvider;
   createdAt: number;
   expiry?: ReturnType<typeof setTimeout>;
@@ -921,11 +923,30 @@ function conflictsWithBinding(stored: PreRegisteredClient | undefined, flow: OAu
 export type McpOAuthSummary = {
   status: "none" | "connected" | "reconnect";
   clientId: string | null;
+  /** Whether the stored material holds a credential; a lone generation marker holds none. */
+  credential: boolean;
 };
+
+/** Whether the material holds anything beyond OAuth bookkeeping. */
+function hasCredential(material: OAuthMaterial): boolean {
+  return Boolean(
+    material.secret ||
+      material.args?.length ||
+      Object.keys(material.env ?? {}).length ||
+      Object.keys(material.files ?? {}).length ||
+      Object.keys(material.headers ?? {}).length ||
+      material.oauthClient ||
+      material.oauth,
+  );
+}
 
 function summarize(material: OAuthMaterial): McpOAuthSummary {
   const status = material.oauth?.tokens ? "connected" : material.oauth ? "reconnect" : "none";
-  return { status, clientId: material.oauthClient?.client_id ?? null };
+  return {
+    status,
+    clientId: material.oauthClient?.client_id ?? null,
+    credential: hasCredential(material),
+  };
 }
 
 export class McpOAuthBroker {
@@ -1087,6 +1108,7 @@ export class McpOAuthBroker {
       userId: input.userId,
       endpoint: target,
       stdio: !server.endpoint,
+      generation: loaded.material.oauthGeneration ?? 0,
       provider,
       createdAt: Date.now(),
       expiry,
@@ -1142,6 +1164,7 @@ export class McpOAuthBroker {
         userId: input.userId,
         endpoint: session.endpoint,
         stdio: !server.endpoint,
+        generation: loaded.material.oauthGeneration ?? 0,
         provider: this.createProvider(server, context, loaded, {
           redirectUri: session.redirectUri,
           state: session.id,
@@ -1199,6 +1222,18 @@ export class McpOAuthBroker {
     } finally {
       await networkFetch.close().catch(() => undefined);
     }
+    // A disconnect raised the stored generation after this sign-in began, so its tokens
+    // cannot connect the server; reject the completion instead of reporting it, however
+    // the exchange itself went.
+    const storedNow = await this.prisma.mcpServer.findFirst({
+      where: { id: pending.serverId, ...availableInSpace(input) },
+      select: { id: true, endpoint: true, secretId: true },
+    });
+    const generation = storedNow
+      ? ((await this.loadMaterial(storedNow, input)).material.oauthGeneration ?? 0)
+      : pending.generation;
+    if (generation !== pending.generation)
+      throw new Error("MCP OAuth session is invalid or expired");
     if (!(await pending.provider.tokens())) throw new Error("MCP OAuth authorization failed");
     // Bump the revision so cached runtime sessions rebuild with the fresh tokens.
     await this.prisma.mcpServer.update({
@@ -1492,16 +1527,7 @@ export class McpOAuthBroker {
         nextMaterial.oauthGeneration =
           Math.max(material.oauthGeneration ?? 0, nextMaterial.oauthGeneration ?? 0) || undefined;
       }
-      const hasMaterial = Boolean(
-        nextMaterial.secret ||
-          nextMaterial.args?.length ||
-          Object.keys(nextMaterial.env ?? {}).length ||
-          Object.keys(nextMaterial.files ?? {}).length ||
-          Object.keys(nextMaterial.headers ?? {}).length ||
-          nextMaterial.oauthClient ||
-          nextMaterial.oauth ||
-          nextMaterial.oauthGeneration,
-      );
+      const hasMaterial = hasCredential(nextMaterial) || Boolean(nextMaterial.oauthGeneration);
       const stored = hasMaterial ? await this.putMaterial(nextMaterial, context) : undefined;
       const committed = await persistPreparedSecret(
         this.prisma,

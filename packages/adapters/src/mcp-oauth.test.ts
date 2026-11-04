@@ -960,7 +960,7 @@ describe("MCP OAuth", () => {
         spaceId: shared.context.spaceId,
         userId: shared.context.userId,
       }),
-    ).rejects.toThrow("MCP OAuth authorization failed");
+    ).rejects.toThrow("MCP OAuth session is invalid or expired");
     expect(await shared.stored()).toEqual({ oauthGeneration: 1 });
     expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
   });
@@ -975,7 +975,7 @@ describe("MCP OAuth", () => {
         response_types_supported: ["code"],
       },
     };
-    const flow = {
+    const flow: OAuthMaterial = {
       oauthClient: { client_id: "client-1" },
       oauth: {
         codeVerifier: "verifier",
@@ -989,6 +989,24 @@ describe("MCP OAuth", () => {
     await broker.disconnect({ serverId: "server-1", ...shared.context });
     // The sign-in began before the disconnect; its session row lands only now.
     const session = await shared.beginSession(flow);
+    // A new authorization connects while the old sign-in is still in flight.
+    const reconnected: OAuthMaterial = {
+      oauthClient: { client_id: "client-1" },
+      oauthGeneration: 1,
+      oauth: {
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        tokens: {
+          access_token: "access-b",
+          refresh_token: "refresh-b",
+          token_type: "Bearer",
+          expires_in: 7200,
+        },
+        obtainedAt: Date.now(),
+        clientInformation: { client_id: "client-1" },
+        discoveryState,
+      },
+    };
+    await shared.replaceStored(reconnected);
 
     await expect(
       broker.complete({
@@ -998,8 +1016,10 @@ describe("MCP OAuth", () => {
         spaceId: shared.context.spaceId,
         userId: shared.context.userId,
       }),
-    ).rejects.toThrow("MCP OAuth authorization failed");
-    expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+    ).rejects.toThrow("MCP OAuth session is invalid or expired");
+    // The newer connection is left intact.
+    expect(await shared.stored()).toEqual(reconnected);
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("connected");
   });
 
   it("does not bind the stored client through a cancelled flow's write", async () => {
