@@ -108,13 +108,14 @@ export function useThreadLiveSubscription({
       visible.current;
     void (async () => {
       let backoff = 250;
+      let firstAttempt = true;
       while (current() && getHapticsEnabled()) {
         let failure: unknown;
         try {
           // The boundary never changes a pinned or expanded history window.
           const head = await rpc("threads/head", groupId ? { groupId } : { botId: botId! }, {
             signal: abort.signal,
-            timeoutMs: FEEDBACK_HEAD_BUDGET_MS,
+            ...(firstAttempt ? { timeoutMs: FEEDBACK_HEAD_BUDGET_MS } : {}),
           });
           if (!current()) return;
           boundary.cursor = head.cursor;
@@ -129,7 +130,8 @@ export function useThreadLiveSubscription({
           boundary.pending.clear();
         } finally {
           // Only the first attempt participates in bootstrap. Retries never hold up live chat.
-          settleFirst(boundary.cursor);
+          if (firstAttempt) settleFirst(boundary.cursor);
+          firstAttempt = false;
         }
         if (!current() || !isRetryableError(failure)) break;
         await abortableDelay(retryDelayMs(failure, backoff), abort.signal);

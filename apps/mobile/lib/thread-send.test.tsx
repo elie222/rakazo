@@ -4,6 +4,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { hapticImpact, hapticSuccess } from "./haptics";
+import * as feedbackModule from "./thread-feedback";
 
 const navigation = vi.hoisted(() => ({
   focused: true,
@@ -35,7 +36,7 @@ vi.mock("./session", () => ({
 vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));
 
 const { useThreadSend } = await import("./thread-send");
-const { deliverSend } = await import("./thread-feedback");
+const { deliverSend } = feedbackModule;
 const { offerPageReply } = await import("./pages");
 
 type Sender = ReturnType<typeof useThreadSend>;
@@ -136,7 +137,6 @@ async function chat(messages: object[]) {
 }
 
 it("taps only valid sends and confirms delivery only for the visible chat", async () => {
-  const feedbackModule = await import("./thread-feedback");
   let delivered!: Parameters<typeof feedbackModule.subscribeDelivered>[0];
   const subscription = vi
     .spyOn(feedbackModule, "subscribeDelivered")

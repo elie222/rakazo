@@ -497,6 +497,105 @@ describe("thread foreground subscription", () => {
     },
   );
 
+  it("recovers feedback on a 500 ms connection without delaying live chat or refocusing", async () => {
+    vi.useFakeTimers();
+    const actual = await vi.importActual<typeof ApiModule>("./api");
+    vi.mocked(applyMobileThreadEvent).mockImplementation(actual.applyMobileThreadEvent);
+    type Event = Parameters<Parameters<typeof subscribeThread>[2]>[0];
+    let deliver: (event: Event) => void = () => {};
+    vi.mocked(subscribeThread).mockImplementation(async (_target, _cursor, onEvent, signal) => {
+      deliver = onEvent;
+      await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
+    });
+    let headCursor = 10;
+    vi.mocked(rpc).mockImplementation(
+      (_procedure, _input, options) =>
+        new Promise((resolve, reject) => {
+          const capturedCursor = headCursor;
+          const budget = options?.timeoutMs ?? 8_000;
+          const cancel = () => {
+            clearTimeout(timer);
+            reject(new Error("Aborted"));
+          };
+          const timer = setTimeout(
+            () => {
+              options?.signal?.removeEventListener("abort", cancel);
+              if (budget < 500) {
+                reject(Object.assign(new Error("Request timed out"), { name: "TimeoutError" }));
+              } else {
+                resolve({ cursor: capturedCursor, threadId: "thread-1" });
+              }
+            },
+            Math.min(500, budget),
+          );
+          options?.signal?.addEventListener("abort", cancel, { once: true });
+        }) as never,
+    );
+    const snapRef = ref<MobileSnapshot | null>({
+      botId: "bot-1",
+      threadId: "thread-1",
+      cursor: 10,
+      olderCursor: null,
+      messages: [],
+      run: null,
+      activeRuns: [],
+    } as MobileSnapshot);
+    const refresh = vi.fn(async () => snapRef.current ?? undefined);
+    const refreshMentionBots = vi.fn(async () => {});
+    const markReadIfVisible = vi.fn();
+    const root = createRoot(document.createElement("div"));
+    function Probe() {
+      useThreadLiveSubscription({
+        botId: "bot-1",
+        focused: true,
+        foreground: true,
+        readOnly: false,
+        sessionEpoch: 1,
+        historyEpoch: ref(0),
+        expandedHistoryThread: ref("thread-1"),
+        pinnedAroundRef: ref(null),
+        jumpScrollTarget: ref(null),
+        jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
+        snapRef,
+        readVisibleTarget: ref(null),
+        showSavedThread: vi.fn(),
+        refresh,
+        commitSnap: (next) => {
+          snapRef.current = next;
+        },
+        setError: vi.fn(),
+        refreshMentionBots,
+        markReadIfVisible,
+      });
+      return null;
+    }
+    const complete = (seq: number, runId: string): Event => ({ type: "run.completed", seq, runId });
+    try {
+      await act(async () => root.render(createElement(Probe)));
+      await act(async () => vi.advanceTimersByTimeAsync(250));
+      expect(subscribeThread).toHaveBeenCalledTimes(1);
+      headCursor = 11;
+      deliver(complete(11, "before-retry"));
+      await act(async () => vi.advanceTimersByTimeAsync(250));
+      expect(rpc).toHaveBeenCalledTimes(2);
+      await act(async () => vi.advanceTimersByTimeAsync(250));
+      deliver(complete(12, "during-retry"));
+      expect(hapticSuccess).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTimeAsync(250));
+      expect(hapticSuccess).toHaveBeenCalledTimes(1);
+      deliver(complete(12, "during-retry"));
+      deliver(complete(13, "during-retry"));
+      expect(hapticSuccess).toHaveBeenCalledTimes(1);
+      deliver(complete(14, "after-retry"));
+      expect(hapticSuccess).toHaveBeenCalledTimes(2);
+      expect(subscribeThread).toHaveBeenCalledTimes(1);
+      expect(rpc).toHaveBeenCalledTimes(2);
+      expect(snapRef.current?.cursor).toBe(14);
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
   it.each(["latest", "expanded", "search"])(
     "replays missed updates and clears in the %s window, but starts fresh for another chat",
     async (mode) => {
