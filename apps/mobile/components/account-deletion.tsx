@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
@@ -34,6 +35,7 @@ export function useAccountDeletion({
 } = {}) {
   const { t } = useI18n();
   const styles = useThemedStyles(createStyles);
+  const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const [security, setSecurityState] = useState<AccountSecurity | null>(null);
   const [codeSent, setCodeSent] = useState(false);
@@ -136,7 +138,12 @@ export function useAccountDeletion({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={Platform.OS === "ios" ? styles.sheet : styles.dialogOverlay}
+        // Page sheets keep their actions clear of the home indicator.
+        style={
+          Platform.OS === "ios"
+            ? { ...styles.sheet, paddingBottom: insets.bottom }
+            : styles.dialogOverlay
+        }
       >
         {Platform.OS !== "ios" ? (
           <Pressable

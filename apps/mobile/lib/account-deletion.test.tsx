@@ -102,6 +102,7 @@ vi.mock("./native", () => ({
 vi.mock("./auth-routing", () => ({ replaceWithSignIn: vi.fn() }));
 vi.mock("./delete-account-prompt", () => ({ promptAccountDeletion: vi.fn(() => false) }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
+vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 34 }) }));
 vi.mock("./returning-user", () => ({ forgetSignedIn: vi.fn() }));
 vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
 
@@ -162,6 +163,8 @@ describe("passwordless account deletion", () => {
     const sheet = container.querySelector("section")!;
     expect(sheet.dataset.presentation).toBe("pageSheet");
     expect(sheet.dataset.transparent).toBe("false");
+    // The actions stay clear of the home indicator.
+    expect((sheet.firstElementChild as HTMLElement).style.paddingBottom).toBe("34px");
     expect(button("Delete").dataset.nativeAction).toBe("destructive");
     expect(button("Delete").disabled).toBe(true);
     expect(button("Cancel").dataset.nativeAction).toBe("plain");
