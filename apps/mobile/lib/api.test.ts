@@ -1291,6 +1291,38 @@ describe("mobile API authentication", () => {
     expect(pendingSignOutRecords(store)).toEqual([]);
   });
 
+  it("spaces non-forced retries, keeping launch retries immediate", async () => {
+    vi.useFakeTimers();
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    await signOut();
+
+    // A proxy keeps refusing the old server's revocation, so its record stays.
+    const deadServer = vi.fn<typeof globalThis.fetch>(
+      async () => new Response("{}", { status: 403 }),
+    );
+    vi.stubGlobal("fetch", deadServer);
+    await flushPendingSignOut(true);
+    expect(deadServer.mock.calls.length).toBe(2);
+
+    // Answered requests within the spacing window start no new attempt.
+    await flushPendingSignOut();
+    expect(deadServer.mock.calls.length).toBe(2);
+
+    vi.advanceTimersByTime(61_000);
+    await flushPendingSignOut();
+    expect(deadServer.mock.calls.length).toBe(4);
+
+    // A launch retry is never spaced out.
+    await flushPendingSignOut(true);
+    expect(deadServer.mock.calls.length).toBe(6);
+    expect(pendingSignOutRecords(store).length).toBe(1);
+  });
+
   it("keeps a revocation for each signed-out server", async () => {
     const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
     mockSecureStore(store);
@@ -2238,6 +2270,29 @@ describe("mobile API authentication", () => {
     expect(store.get("rakazo.session_token")).toBe("token-a");
   });
 
+  it("aborts a server switch when the session cannot be read", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    let sessionReads = 0;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token") {
+        sessionReads += 1;
+        // The switch's own read fails; a later read would see the session again.
+        if (sessionReads === 1) throw new Error("device locked");
+      }
+      return store.get(key) ?? null;
+    });
+
+    await expect(saveApiBase("https://second-server.example")).resolves.toEqual({
+      ok: false,
+      error: "Could not save the previous server session",
+    });
+    // Without knowing whether the old server has a session, the switch clears nothing.
+    expect(store.get("rakazo.session_token")).toBe("session-token");
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    await resetApiBase();
+  });
+
   it("records no revocation when switching servers without a session", async () => {
     const store = new Map<string, string>();
     mockSecureStore(store);
@@ -2391,7 +2446,7 @@ describe("mobile API authentication", () => {
 
     await expect(saveApiBase(next)).resolves.toEqual({
       ok: false,
-      error: "Could not clear the previous server session",
+      error: "Could not save the previous server session",
     });
     expect(currentApiBase()).toBe(previous);
     expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();

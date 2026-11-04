@@ -505,7 +505,12 @@ async function saveApiBaseLocked(
   let pendingPreviousSignOut: PendingSignOut | undefined;
   if (switching) {
     const tokenSnapshot = await snapshotSessionToken();
-    const token = tokenSnapshot.ok ? tokenSnapshot.value : "";
+    // An unreadable session is not an empty one: clearing now could strand a live session
+    // with no record to revoke it, so the switch stops before touching anything.
+    if (!tokenSnapshot.ok) {
+      return { ok: false, error: t("Could not save the previous server session") };
+    }
+    const token = tokenSnapshot.value;
     if (token) {
       // Recorded before the old credentials are discarded, so a process kill cannot lose both —
       // but provisionally: a retry must not revoke a session a rolled-back switch still uses.
@@ -579,7 +584,11 @@ async function resetApiBaseLocked(
   let pendingPreviousSignOut: PendingSignOut | undefined;
   if (switching) {
     const tokenSnapshot = await snapshotSessionToken();
-    const token = tokenSnapshot.ok ? tokenSnapshot.value : "";
+    // As in saveApiBase: an unreadable session stops the switch before it clears anything.
+    if (!tokenSnapshot.ok) {
+      return { ok: false, error: t("Could not save the previous server session") };
+    }
+    const token = tokenSnapshot.value;
     if (token) {
       pendingPreviousSignOut = {
         apiBase: previous,
@@ -930,10 +939,13 @@ const PENDING_SIGN_OUT_KEY = "rakazo.pending_sign_out";
 /**
  * An undelivered record is dropped once no server session could remain. Better-auth expires a
  * session 7 days after its last use, and the only call that keeps using a signed-out session is
- * the record's own unregistration — which renews it — so the record ages from the later of its
- * writing and that renewal; 30 days covers slower renewals and longer overrides conservatively.
+ * the record's own unregistration. Servers this app updates read that RPC without refreshing
+ * the session; older servers renew it, so the record conservatively ages from the later of its
+ * writing and a delivered unregistration; 30 days covers both and longer overrides.
  */
 const PENDING_SIGN_OUT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+/** Answered-request retries wait at least this long, so a dead old server is not retried per request. */
+const PENDING_SIGN_OUT_FLUSH_SPACING_MS = 60_000;
 /** Storage safety cap for the record list; with everything unexpired, the oldest go first. */
 const PENDING_SIGN_OUT_LIMIT = 100;
 
@@ -951,7 +963,7 @@ type PendingSignOut = {
   provisional?: boolean;
   /** Set once the unregistration was delivered; that half is never sent again. */
   unregistered?: boolean;
-  /** When the delivered unregistration last renewed the session server-side. */
+  /** When a delivered unregistration last renewed the session on a server that still refreshes it. */
   renewedAt?: number;
 };
 
@@ -972,6 +984,8 @@ function livePendingSignOuts(records: PendingSignOut[], now = Date.now()): Pendi
 
 /** True once a retry confirmed no record is stored, so answered requests stop re-reading the store. */
 let pendingSignOutAbsent = true;
+/** When the last answered-request retry started; launch retries ignore it. */
+let lastPendingSignOutFlushAt = 0;
 /** The one in-flight retry; triggers that arrive meanwhile join it instead of starting their own. */
 let flushingPendingSignOut: Promise<void> | undefined;
 /** Orders every read-modify-write of the record list; network calls never run inside it. */
@@ -1060,6 +1074,8 @@ async function savePendingSignOut(record: PendingSignOut): Promise<boolean> {
     kept.unshift(record);
     if (!(await writePendingSignOuts(kept.slice(0, PENDING_SIGN_OUT_LIMIT)))) return false;
     pendingSignOutAbsent = false;
+    // A fresh record gets its first retry at once, whatever an older record last attempted.
+    lastPendingSignOutFlushAt = 0;
     return true;
   });
 }
@@ -1160,9 +1176,10 @@ async function reconcileProvisionalSignOuts(): Promise<void> {
 
 /**
  * Delivers a pending revocation to its server: the push unregistration, then the session
- * revocation. A half with a hard answer is never sent again — the authenticated unregistration
- * renews the session server-side, so repeating it would keep the session alive — and the record
- * completes only when both halves are answered: success, or the session reported invalid.
+ * revocation. A half with a hard answer is never sent again — on older servers the
+ * authenticated unregistration renews the session, so repeating it could keep the session
+ * alive — and the record completes only when both halves are answered: success, or the
+ * session reported invalid.
  */
 async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered" | "retry"> {
   const send = async (path: string, body: string) => {
@@ -1201,6 +1218,7 @@ async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered
   let retrying = false;
   if (!record.unregistered) {
     const unregistered = await send("/rpc/notifications/unregisterPush", '{"json":{}}');
+    // Servers that still refresh this RPC's session renew it here; age the record from now.
     if (unregistered === "delivered") await markPendingSignOutProgress(record, Date.now());
     // An invalid session leaves nothing to unregister or revoke.
     if (unregistered === "final") return "delivered";
@@ -1219,8 +1237,12 @@ async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered
  */
 export async function flushPendingSignOut(force = false): Promise<void> {
   if (!force && pendingSignOutAbsent) return;
+  // Answered requests arrive in bursts; a permanently dead old server must not be hit
+  // after each one for the record's whole life. Launch retries are never spaced out.
+  if (!force && Date.now() - lastPendingSignOutFlushAt < PENDING_SIGN_OUT_FLUSH_SPACING_MS) return;
   flushingPendingSignOut ??= (async () => {
     try {
+      lastPendingSignOutFlushAt = Date.now();
       await reconcileProvisionalSignOuts();
       await prunePendingSignOuts();
       const read = await readPendingSignOuts();
