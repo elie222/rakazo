@@ -141,4 +141,29 @@ describePostgres("the operator's account status command (PostgreSQL)", () => {
       (await system.user.findUniqueOrThrow({ where: { id: user.id } })).deactivatedAt,
     ).toBeInstanceOf(Date);
   });
+
+  it("leaves an account the identity provider deleted for the provider to restore", async () => {
+    const { user } = await person("hana@example.test");
+    const now = new Date();
+    await system.scimIdentityTombstone.create({
+      data: {
+        id: randomUUID(),
+        connectionId: "directory",
+        provisioningDomainId: "directory",
+        externalId: "directory-hana",
+        externalIdKey: randomUUID(),
+        userId: user.id,
+        profile: "manage",
+        deletedAt: now,
+      },
+    });
+    await system.user.update({ where: { id: user.id }, data: { deactivatedAt: now } });
+
+    await expect(command("reactivate", user.email)).rejects.toMatchObject({
+      stderr: expect.stringContaining("turn it on there"),
+    });
+    expect(
+      (await system.user.findUniqueOrThrow({ where: { id: user.id } })).deactivatedAt,
+    ).toBeInstanceOf(Date);
+  });
 });
