@@ -28,11 +28,18 @@ export async function commitBotUpdate(
         "modelProvider" | "modelId" | "thinkingLevel" | "autoSpeak" | "voiceId" | "avatarSetPinned"
       >
     >;
+    /**
+     * Write only while the owner's default avatar set still equals this value, read
+     * under FOR SHARE after the thread lock. A newer save of the default either
+     * landed first (this update returns null and that save's pass owns the bot) or
+     * waits for this transaction and lists its write before styling anything.
+     */
+    expectedUserAvatarSet?: { userId: string; botAvatarSet: string };
     instructionRestore?: { versionId: string; undo?: boolean };
     reason?: string;
   },
   appendEvent: AppendEvent = appendEventInTransaction,
-): Promise<{ id: string; name: string; description: string }> {
+): Promise<{ id: string; name: string; description: string } | null> {
   if (typeof options.data.name === "string") {
     options = {
       ...options,
@@ -55,6 +62,11 @@ export async function commitBotUpdate(
   const committed = await options.prisma.$transaction(async (tx) => {
     // Event appends also lock the thread; all writers take it before the bot row.
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${options.threadId} FOR UPDATE`;
+    if (options.expectedUserAvatarSet) {
+      const [owner] = await tx.$queryRaw<Array<{ botAvatarSet: string | null }>>`
+        SELECT "botAvatarSet" FROM "user" WHERE id = ${options.expectedUserAvatarSet.userId} FOR SHARE`;
+      if (owner?.botAvatarSet !== options.expectedUserAvatarSet.botAvatarSet) return null;
+    }
     if (typeof instructions === "string" || options.instructionRestore) {
       await writeBotInstructions(tx, {
         botId: options.botId,
@@ -83,6 +95,7 @@ export async function commitBotUpdate(
     return { updated, seq: event.seq };
   });
 
+  if (!committed) return null;
   await options.notify(options.threadId, committed.seq).catch((error) => {
     getLogger().error("bot.updated realtime notification", error);
   });
