@@ -12,7 +12,7 @@
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --root ../.. packages/ui-web/src"
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",
