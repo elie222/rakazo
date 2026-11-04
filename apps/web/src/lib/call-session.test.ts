@@ -32,6 +32,7 @@ vi.mock("./call-pickup.js", () => ({
 vi.mock("./dictation.js", () => ({
   usesServerDictation: vi.fn(() => false),
   dictation: {
+    state: { status: "idle", transcript: "" },
     listen: vi.fn(async () => undefined),
     stop: vi.fn(),
     subscribe: vi.fn(() => () => undefined),
@@ -779,10 +780,13 @@ describe("call session", () => {
       await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: true });
       vi.mocked(dictation.stop).mockClear();
       listen.mockClear();
+      const recording = dictation as unknown as { state: { status: string } };
+      recording.state = { status: "listening" };
 
       const speech = vi.mocked(speaker.subscribe).mock.calls[0]?.[0];
       speech?.({ status: "speaking", caption: "Booked for Friday" });
       await Promise.resolve();
+      recording.state = { status: "idle" };
       expect(dictation.stop).toHaveBeenCalledWith("cancel");
       expect(listen).not.toHaveBeenCalled();
 
@@ -790,6 +794,24 @@ describe("call session", () => {
       await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS);
       expect(listen).toHaveBeenCalledOnce();
     } finally {
+      vi.mocked(usesServerDictation).mockReturnValue(false);
+    }
+  });
+
+  it("lets a finished recording's transcription land when a reply starts", async () => {
+    vi.mocked(usesServerDictation).mockReturnValue(true);
+    const recording = dictation as unknown as { state: { status: string } };
+    try {
+      await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: true });
+      vi.mocked(dictation.stop).mockClear();
+      recording.state = { status: "transcribing" };
+
+      const speech = vi.mocked(speaker.subscribe).mock.calls[0]?.[0];
+      speech?.({ status: "speaking", caption: "Booked for Friday" });
+      await Promise.resolve();
+      expect(dictation.stop).not.toHaveBeenCalled();
+    } finally {
+      recording.state = { status: "idle" };
       vi.mocked(usesServerDictation).mockReturnValue(false);
     }
   });

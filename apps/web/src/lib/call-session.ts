@@ -190,7 +190,7 @@ export function startCall(call: {
     if (speech.status === "speaking") {
       bargedIn = false;
       set({ phase: "speaking", caption: speech.caption ?? "" });
-      if (micOpen && usesServerDictation(transcribe)) {
+      if (micOpen && usesServerDictation(transcribe) && dictation.state.status === "listening") {
         dictation.stop("cancel");
         micOpen = false;
       }
