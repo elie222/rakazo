@@ -559,6 +559,21 @@ it("hides Messaging when no chat app is connected to the server", async () => {
   expect(titles).not.toContain("Messaging");
 });
 
+it("starts one sign-out when Sign out is tapped again while the warning is open", async () => {
+  vi.mocked(hasUnsentSends).mockReturnValue(true);
+  try {
+    const view = await renderAccount();
+    await view.press("Sign out");
+    await view.press("Sign out");
+    expect(Alert.alert).toHaveBeenCalledOnce();
+    const buttons = vi.mocked(Alert.alert).mock.calls[0]![2]!;
+    await act(async () => buttons[1]!.onPress?.());
+    expect(signOut).toHaveBeenCalledOnce();
+  } finally {
+    vi.mocked(hasUnsentSends).mockReturnValue(false);
+  }
+});
+
 it("warns before sign-out deletes unsent messages and keeps them on cancel", async () => {
   vi.mocked(hasUnsentSends).mockReturnValue(true);
   try {

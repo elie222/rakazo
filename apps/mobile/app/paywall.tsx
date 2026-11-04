@@ -79,6 +79,7 @@ export default function Paywall() {
   const [amount, setAmount] = useState<Amount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [interval, setByokInterval] = useState<ByokInterval>("month");
   const [pending, setPending] = useState(false);
+  const leaving = useRef(false);
   const deletion = useAccountDeletion();
   const organizations = useOrganizations(!dismissible).data;
   const organizationAction = useOrganizationMenuAction(organizations);
@@ -159,12 +160,17 @@ export default function Paywall() {
   }
 
   async function leave() {
-    if (!(await confirmUnsentSendLoss("sign-out"))) return;
+    // Held from the tap, so a second tap while the unsent-message check runs starts nothing.
+    if (leaving.current) return;
+    leaving.current = true;
     try {
+      if (!(await confirmUnsentSendLoss("sign-out"))) return;
       await signOut();
       replaceWithSignIn();
     } catch (err) {
       Alert.alert(errorText(err, t("Could not sign out")));
+    } finally {
+      leaving.current = false;
     }
   }
 
