@@ -13,7 +13,7 @@ import {
   PopoverTrigger,
   useCopyText,
 } from "@rakazo/ui-web";
-import { Copy, MessageSquareDot, MoreHorizontal, Reply, Smile } from "lucide-react";
+import { Check, Copy, MessageSquareDot, MoreHorizontal, Reply, Smile } from "lucide-react";
 import { useState } from "react";
 import { MessageHoverMetadata } from "../../components/MessageHoverMetadata";
 import { copyableMessageText } from "../../lib/message-text";
@@ -50,7 +50,7 @@ export function MessageHoverActions({
     "grid h-11 w-11 place-items-center text-muted-foreground transition-colors hover:text-foreground [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7";
 
   return (
-    <MessageHoverMetadata pinned={moreOpen || reactionsOpen} side={side}>
+    <MessageHoverMetadata pinned={moreOpen || reactionsOpen || copied} side={side}>
       <div data-testid="message-hover-actions" className="flex items-center gap-0.5">
         {canReactToThreadMessage(message) ? (
           <Popover open={reactionsOpen} onOpenChange={setReactionsOpen}>
@@ -88,8 +88,15 @@ export function MessageHoverActions({
           <Reply size={15} strokeWidth={1.7} />
         </button>
         <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
-          <DropdownMenuTrigger aria-label={t`More`} className={iconButtonClass}>
-            <MoreHorizontal size={15} strokeWidth={1.7} />
+          <DropdownMenuTrigger
+            aria-label={copied ? t`Copied` : t`More`}
+            className={iconButtonClass}
+          >
+            {copied ? (
+              <Check size={15} strokeWidth={1.7} />
+            ) : (
+              <MoreHorizontal size={15} strokeWidth={1.7} />
+            )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align={side === "end" ? "start" : "end"} className="w-auto">
             <DropdownMenuItem
@@ -114,7 +121,7 @@ export function MessageHoverActions({
             ) : null}
             <DropdownMenuItem onClick={copyMessage}>
               <Copy size={14} strokeWidth={1.7} />
-              {copied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
+              <Trans>Copy</Trans>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

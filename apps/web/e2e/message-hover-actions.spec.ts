@@ -308,7 +308,11 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await expect
     .poll(async () => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(parentText);
-  await expect(toolbar.getByRole("button", { name: "More" })).toBeFocused();
+  const copyConfirmation = toolbar.getByRole("button", { name: "Copied", exact: true });
+  await expect(copyConfirmation).toBeVisible();
+  await expect(copyConfirmation).toBeFocused();
+  await expect(copyConfirmation).toHaveAttribute("aria-expanded", "false");
+  await captureScreenshot(page, testInfo, "message-copy-confirmation");
 
   await parentRow.hover();
   await toolbar.getByRole("button", { name: "Reply" }).click();

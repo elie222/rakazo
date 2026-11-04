@@ -71,7 +71,7 @@ afterEach(() => {
   Reflect.deleteProperty(document, "execCommand");
 });
 
-it("copies a message through the selection fallback and confirms it", async () => {
+it("confirms a copied message on the trigger without reopening the menu", async () => {
   let copiedText = "";
   stubExecCommand((active) => {
     copiedText = active instanceof HTMLTextAreaElement ? active.value : "";
@@ -79,12 +79,14 @@ it("copies a message through the selection fallback and confirms it", async () =
   });
   expect(navigator.clipboard).toBeUndefined();
 
-  await click(document.querySelector<HTMLButtonElement>('button[aria-label="More"]'));
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="More"]');
+  await click(trigger);
   await click(menuItem("Copy"));
 
   expect(copiedText).toBe("Answer text");
-  await click(document.querySelector<HTMLButtonElement>('button[aria-label="More"]'));
-  expect(menuItem("Copied")).toBeTruthy();
+  expect(trigger?.getAttribute("aria-expanded")).toBe("false");
+  expect(trigger?.getAttribute("aria-label")).toBe("Copied");
+  expect(trigger?.querySelector(".lucide-check")).not.toBeNull();
 });
 
 it("offers the message for manual copying when copying fails", async () => {
