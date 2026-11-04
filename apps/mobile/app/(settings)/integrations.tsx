@@ -4,12 +4,13 @@ import type {
   Connection,
   ConnectionCatalogItem,
   McpServer,
+  McpServerConnection,
   PluginMarketplaceEntry,
   RpcOutput,
 } from "@rakazo/contracts";
 import {
   CONNECTION_LABEL_MAX_LENGTH,
-  MCP_OAUTH_CLIENT_REQUIRED,
+  mcpServerConnection,
   SUBMIT_PLUGIN_URL,
 } from "@rakazo/contracts";
 import type { PluginCategory } from "@rakazo/core";
@@ -520,18 +521,21 @@ export default function Integrations() {
     );
   }
 
-  function serverStatus(server: McpServer) {
-    return !server.enabled
-      ? t("Disabled")
-      : server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId
-        ? t("Needs an OAuth client ID")
-        : server.oauthStatus === "reconnect"
-          ? t("OAuth expired")
-          : server.oauthStatus === "connected"
-            ? t("OAuth connected")
-            : server.hasSecret
-              ? t("Credential saved")
-              : t("No auth");
+  function serverStatus(state: McpServerConnection) {
+    switch (state) {
+      case "disabled":
+        return t("Disabled");
+      case "needs_client":
+        return t("Needs an OAuth client ID");
+      case "needs_sign_in":
+        return t("Needs sign-in");
+      case "not_working":
+        return t("Not working");
+      case "connected":
+        return t("Connected");
+      case "not_connected":
+        return t("Not connected");
+    }
   }
 
   function renderInstalledPlugin(install: CapabilityInstall, summary: string, signIn: boolean) {
@@ -568,16 +572,20 @@ export default function Integrations() {
 
   /** What this account already has: apps it can reach, then skills it follows. */
   function renderSavedServer(server: McpServer) {
+    const state = mcpServerConnection(server);
     return (
       <View key={server.id} testID="registered-mcp-server" style={styles.row}>
         <ConnectorIcon name={server.name} size={LOGO_SIZE} />
         <Text numberOfLines={1} style={[styles.title, styles.grow]}>
           {server.name}
         </Text>
-        <Text style={styles.secondary}>{serverStatus(server)}</Text>
-        {server.enabled && (server.oauthStatus === "reconnect" || server.id === oauthServerId) ? (
+        <Text style={styles.secondary}>{serverStatus(state)}</Text>
+        {server.enabled &&
+        state !== "connected" &&
+        state !== "needs_client" &&
+        (server.oauthStatus === "reconnect" || server.id === oauthServerId) ? (
           <NativeActionButton
-            label={t("Connect OAuth")}
+            label={server.oauthStatus === "reconnect" ? t("Reconnect") : t("Connect")}
             fill={false}
             busy={pending === `oauth:${server.id}`}
             onPress={() => void authorizeMcp(server.id)}

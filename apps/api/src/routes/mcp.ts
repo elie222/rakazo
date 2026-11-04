@@ -946,6 +946,11 @@ export function mcpRoutes(ctx: RouterContext) {
               userId: context.actor.userId,
             });
             if (session) {
+              // A check from before the sign-in would otherwise still read as failing.
+              await recordMcpServerHealth(deps.prisma, session.serverId, {
+                status: "unknown",
+                message: null,
+              });
               // The account is connected now: check the server so it shows ok/error.
               void (async () => {
                 const server = await deps.prisma.mcpServer.findFirst({

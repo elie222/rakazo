@@ -902,7 +902,6 @@ msgid "Approving…"
 msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
 msgid "Apps"
 msgstr ""
 
@@ -2504,10 +2503,6 @@ msgstr "יוצר…"
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential"
 msgstr "פרטי גישה"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Credential saved"
-msgstr "פרטי הגישה נשמרו"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
@@ -4221,6 +4216,7 @@ msgstr "ממתין לתשובה"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
+#: src/pages/PluginsOverlay.tsx
 msgid "Needs an OAuth client ID"
 msgstr "נדרש מזהה לקוח OAuth"
 
@@ -4231,6 +4227,10 @@ msgstr "דורש תשומת לב"
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "ממתין לקלט"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Needs sign-in"
+msgstr "נדרשת התחברות"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4344,10 +4344,6 @@ msgstr "אין אפליקציות שתואמות לחיפוש."
 #: src/pages/Artifacts.tsx
 msgid "No artifacts found."
 msgstr "לא נמצאו תוצרים."
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No auth"
-msgstr "ללא אימות"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4473,6 +4469,10 @@ msgstr ""
 msgid "Not checked yet"
 msgstr "טרם נבדק"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Not connected"
+msgstr "לא מחובר"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Not imported"
 msgstr "לא יובא"
@@ -4500,6 +4500,7 @@ msgid "Not used by Rakazo"
 msgstr "לא בשימוש ב-Rakazo"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Not working"
 msgstr "לא עובד"
 
@@ -4527,17 +4528,9 @@ msgstr "מזהה לקוח OAuth (אופציונלי)"
 msgid "OAuth client secret (optional)"
 msgstr "סוד לקוח OAuth (אופציונלי)"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth connected"
-msgstr "OAuth מחובר"
-
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "חיבור OAuth נכשל"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth expired"
-msgstr "תוקף OAuth פג"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
@@ -7141,6 +7134,10 @@ msgstr "השליטה אצלך"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "Anthropic"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Your apps"
+msgstr "האפליקציות שלך"
 
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."

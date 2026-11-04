@@ -1005,10 +1005,10 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "The server had a problem": "伺服器出現問題",
   "Could not load MCP servers": "無法載入 MCP 伺服器",
   Disabled: "已停用",
-  "OAuth connected": "OAuth 已連線",
-  "OAuth expired": "OAuth 已過期",
+  "Needs sign-in": "需要登入",
+  "Not connected": "未連線",
+  "Not working": "無法正常工作",
   "Needs an OAuth client ID": "需要 OAuth 用戶端 ID",
-  "Credential saved": "憑證已儲存",
   Authentication: "驗證方式",
   "No auth": "無驗證",
   "The bot couldn't reply because its provider's daily limit was reached.":
@@ -1233,7 +1233,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   // Remote MCP authorization controls.
   "API key header name": "API 金鑰標頭名稱",
   Bearer: "Bearer",
-  "Connect OAuth": "使用 OAuth 連線",
   "Could not start MCP OAuth": "無法啟動 MCP OAuth 授權",
   OAuth: "OAuth",
   "Always open {site}": "一律開啟 {site}",

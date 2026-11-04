@@ -1058,10 +1058,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "The server had a problem": "На сервере произошла ошибка",
   "Could not load MCP servers": "Не удалось загрузить серверы MCP",
   Disabled: "Отключено",
-  "OAuth connected": "OAuth подключён",
-  "OAuth expired": "Срок действия OAuth истёк",
+  "Needs sign-in": "Нужен вход",
+  "Not connected": "Не подключено",
+  "Not working": "Не работает",
   "Needs an OAuth client ID": "Нужен идентификатор клиента OAuth",
-  "Credential saved": "Учётные данные сохранены",
   Authentication: "Способ аутентификации",
   "No auth": "Без авторизации",
   "The bot couldn't reply because its provider's daily limit was reached.":
@@ -1264,7 +1264,6 @@ export const RU_MESSAGES: Record<string, string> = {
   // Native remote MCP authentication controls.
   "API key header name": "Имя заголовка API-ключа",
   Bearer: "Bearer",
-  "Connect OAuth": "Подключить через OAuth",
   "Could not start MCP OAuth": "Не удалось запустить OAuth для MCP",
   OAuth: "OAuth",
   "Always open {site}": "Всегда открывать {site}",

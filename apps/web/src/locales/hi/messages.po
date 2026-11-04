@@ -902,7 +902,6 @@ msgid "Approving…"
 msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
 msgid "Apps"
 msgstr ""
 
@@ -2504,10 +2503,6 @@ msgstr "बनाया जा रहा है…"
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential"
 msgstr "क्रेडेंशियल"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Credential saved"
-msgstr "क्रेडेंशियल सहेजा गया"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
@@ -4221,6 +4216,7 @@ msgstr ""
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
+#: src/pages/PluginsOverlay.tsx
 msgid "Needs an OAuth client ID"
 msgstr "OAuth क्लाइंट ID चाहिए"
 
@@ -4231,6 +4227,10 @@ msgstr "ध्यान देने की ज़रूरत"
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "इनपुट चाहिए"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Needs sign-in"
+msgstr "साइन इन ज़रूरी है"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4344,10 +4344,6 @@ msgstr "आपकी खोज से कोई ऐप मेल नहीं �
 #: src/pages/Artifacts.tsx
 msgid "No artifacts found."
 msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No auth"
-msgstr "कोई प्रमाणीकरण नहीं"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4473,6 +4469,10 @@ msgstr ""
 msgid "Not checked yet"
 msgstr "अभी तक जाँच नहीं हुई"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Not connected"
+msgstr "कनेक्ट नहीं है"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Not imported"
 msgstr "इंपोर्ट नहीं हुआ"
@@ -4500,6 +4500,7 @@ msgid "Not used by Rakazo"
 msgstr "Rakazo इसका उपयोग नहीं करता"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Not working"
 msgstr "काम नहीं कर रहा"
 
@@ -4527,17 +4528,9 @@ msgstr "OAuth क्लाइंट ID (वैकल्पिक)"
 msgid "OAuth client secret (optional)"
 msgstr "OAuth क्लाइंट सीक्रेट (वैकल्पिक)"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth connected"
-msgstr "OAuth कनेक्टेड"
-
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "OAuth कनेक्शन विफल"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth expired"
-msgstr "OAuth की समय-सीमा समाप्त हो गई"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
@@ -7141,6 +7134,10 @@ msgstr "नियंत्रण आपके पास है"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "आपका Anthropic"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Your apps"
+msgstr "आपके ऐप्स"
 
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."

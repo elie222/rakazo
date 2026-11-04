@@ -1006,10 +1006,10 @@ export const JA_MESSAGES: Record<string, string> = {
   "The server had a problem": "サーバーで問題が発生しました",
   "Could not load MCP servers": "MCPサーバーを読み込めませんでした",
   Disabled: "無効",
-  "OAuth connected": "OAuth接続済み",
-  "OAuth expired": "OAuthの有効期限切れ",
+  "Needs sign-in": "ログインが必要",
+  "Not connected": "未接続",
+  "Not working": "動作していません",
   "Needs an OAuth client ID": "OAuth クライアント ID が必要です",
-  "Credential saved": "認証情報を保存済み",
   Authentication: "認証方式",
   "No auth": "認証なし",
   "The bot couldn't reply because its provider's daily limit was reached.":
@@ -1255,7 +1255,6 @@ export const JA_MESSAGES: Record<string, string> = {
   // Native remote MCP authentication controls.
   "API key header name": "APIキーヘッダー名",
   Bearer: "Bearer",
-  "Connect OAuth": "OAuthで接続",
   "Could not start MCP OAuth": "MCPのOAuth認証を開始できませんでした",
   OAuth: "OAuth",
   "Always open {site}": "{site} を常に開く",
