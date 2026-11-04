@@ -3,6 +3,7 @@ import type { MessageReaction, ThreadMessage } from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
 import { canMarkMessageUnread } from "@rakazo/core";
 import {
+  CopyTextFallback,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -10,6 +11,7 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  useCopyText,
 } from "@rakazo/ui-web";
 import { Copy, MessageSquareDot, MoreHorizontal, Reply, Smile } from "lucide-react";
 import { useState } from "react";
@@ -32,6 +34,7 @@ export function MessageHoverActions({
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
+  const [copied, copy, copyFailed, resetCopy] = useCopyText();
   const [moreOpen, setMoreOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
 
@@ -40,8 +43,7 @@ export function MessageHoverActions({
 
   function copyMessage() {
     const text = copyableMessageText(message);
-    if (!text || !navigator.clipboard) return;
-    void navigator.clipboard.writeText(text).catch(() => undefined);
+    if (text) copy(text);
   }
 
   const iconButtonClass =
@@ -112,11 +114,17 @@ export function MessageHoverActions({
             ) : null}
             <DropdownMenuItem onClick={copyMessage}>
               <Copy size={14} strokeWidth={1.7} />
-              <Trans>Copy</Trans>
+              {copied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <CopyTextFallback
+        open={copyFailed}
+        onOpenChange={resetCopy}
+        text={copyableMessageText(message)}
+        label={t`Copy`}
+      />
     </MessageHoverMetadata>
   );
 }

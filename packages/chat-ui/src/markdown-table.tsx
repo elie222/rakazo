@@ -1,4 +1,11 @@
-import { Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
+import {
+  CopyTextFallback,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  writeClipboard,
+} from "@rakazo/ui-web";
 import type { ComponentPropsWithoutRef, ReactElement, ReactNode } from "react";
 import {
   Children,
@@ -72,6 +79,7 @@ export const TableCard = memo(function TableCard({
   const { columns, aligns, rows, schemaKey, dataSignature, numericColumns, minWidths, rowKeys } =
     table;
   const copy = useMarkdownCopy();
+  const [copyFailed, setCopyFailed] = useState(false);
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -135,16 +143,14 @@ export const TableCard = memo(function TableCard({
   };
 
   const copyRows = () => {
-    if (!navigator.clipboard) return;
-    navigator.clipboard
-      .writeText(tableToTsv(columns, sortedRows))
-      .then(() => {
-        setCopiedSignature(dataSignature);
-        announce(copy.copied);
-        window.clearTimeout(copiedTimer.current);
-        copiedTimer.current = window.setTimeout(() => setCopiedSignature(null), 1500);
-      })
-      .catch(() => {});
+    void writeClipboard(tableToTsv(columns, sortedRows)).then((ok) => {
+      setCopyFailed(!ok);
+      if (!ok) return;
+      setCopiedSignature(dataSignature);
+      announce(copy.copied);
+      window.clearTimeout(copiedTimer.current);
+      copiedTimer.current = window.setTimeout(() => setCopiedSignature(null), 1500);
+    });
   };
 
   const downloadCsv = () => {
@@ -265,6 +271,12 @@ export const TableCard = memo(function TableCard({
 
   return (
     <Dialog open={expanded} onOpenChange={setExpanded}>
+      <CopyTextFallback
+        open={copyFailed}
+        onOpenChange={setCopyFailed}
+        text={copyFailed ? tableToTsv(columns, sortedRows) : ""}
+        label={copy.copyRows}
+      />
       <div className="rk-table-card rk-table-box" data-testid="table-card">
         {/* Keep the live region in the active view — dialog content is outside the card. */}
         {expanded ? null : status}

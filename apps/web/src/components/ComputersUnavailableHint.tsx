@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { Button, Spinner } from "@rakazo/ui-web";
+import { Button, CopyTextFallback, Spinner, useCopyText } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import type { SandboxAvailabilityPhase } from "../lib/computer-sandbox";
 import {
@@ -38,7 +38,7 @@ export function ComputersUnavailableHint({
   const [provider, setProvider] = useState(initialProvider);
   const [phase, setPhase] = useState<SandboxAvailabilityPhase>("idle");
   const [failureMessage, setFailureMessage] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, copy, copyFailed, resetCopy] = useCopyText();
   const onRecoveredRef = useRef(onRecovered);
   onRecoveredRef.current = onRecovered;
   const onRecoveryDismissedRef = useRef(onRecoveryDismissed);
@@ -81,17 +81,6 @@ export function ComputersUnavailableHint({
     }
   }
 
-  async function handleCopyGuidance() {
-    const text = sandboxEnvGuidanceText();
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
-  }
-
   const showUnavailableCopy = phase === "idle" || phase === "unavailable" || phase === "failure";
 
   return (
@@ -100,6 +89,12 @@ export function ComputersUnavailableHint({
       className={className}
       role={phase === "failure" ? "alert" : undefined}
     >
+      <CopyTextFallback
+        open={copyFailed}
+        onOpenChange={resetCopy}
+        text={sandboxEnvGuidanceText()}
+        label={t`Copy .env example`}
+      />
       {phase === "loading" ? (
         <Spinner className="text-muted-foreground" aria-label={t`Checking computer setup…`} />
       ) : null}
@@ -126,7 +121,12 @@ export function ComputersUnavailableHint({
               <Trans>Open computer settings</Trans>
             </Button>
           ) : null}
-          <Button type="button" variant="ghost" size="sm" onClick={() => void handleCopyGuidance()}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => copy(sandboxEnvGuidanceText())}
+          >
             {copied ? <Trans>Copied</Trans> : <Trans>Copy .env example</Trans>}
           </Button>
         </div>
