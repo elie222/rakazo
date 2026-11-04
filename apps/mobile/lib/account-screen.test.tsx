@@ -8,6 +8,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
+import type * as Api from "./api";
 import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode, signOut } from "./api";
 import { replaceWithSignIn } from "./auth-routing";
 import { promptAccountDeletion } from "./delete-account-prompt";
@@ -353,7 +354,7 @@ async function renderAccount() {
 }
 
 it("navigates to sign-in while a silent server still owes the sign-out delivery", async () => {
-  const actual = await vi.importActual<typeof import("./api")>("./api");
+  const actual = await vi.importActual<typeof Api>("./api");
   const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
   vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => store.get(key) ?? null);
   vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
