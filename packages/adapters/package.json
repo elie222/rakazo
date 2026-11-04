@@ -41,7 +41,7 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "@mozilla/readability": "0.6.0",
     "@observablehq/plot": "0.6.17",
-    "@opentelemetry/api": "1.10.0",
+    "@opentelemetry/api": "1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "0.221.0",
     "@opentelemetry/resources": "2.12.0",
     "@opentelemetry/sdk-trace-node": "2.12.0",
@@ -69,12 +69,12 @@
     "sharp": "0.35.5",
     "shell-quote": "1.12.0",
     "undici": "8.12.3",
-    "ws": "8.22.1",
+    "ws": "8.22.0",
     "yaml": "2.9.1",
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@chat-adapter/tests": "4.44.0",
+    "@chat-adapter/tests": "4.41.1",
     "@types/d3-dsv": "3.0.7",
     "@types/jsdom": "30.0.0",
     "@types/nodemailer": "8.0.2",
