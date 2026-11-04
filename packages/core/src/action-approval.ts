@@ -76,6 +76,8 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
 ]);
 
 const READ_ONLY_CONNECTOR_PATTERN = /(^|[_-])(get|list|search|find|read)([_-]|$)/i;
+/** App slug before a hyphenated action: letters and digits, with at most one underscore. */
+const PLAIN_CONNECTOR_SLUG = /^[a-z0-9]+(?:_[a-z0-9]+)?$/;
 const MUTATING_CONNECTOR_PATTERN =
   /(^|[_-])(accept|add|approve|archive|assign|buy|cancel|charge|checkout|close|commit|copy|create|delete|deploy|disable|enable|execute|forward|grant|invite|link|mark|merge|modify|move|patch|pay|post|publish|purchase|put|register|reject|remove|rename|replace|reply|reset|revoke|run|schedule|send|set|share|start|stop|submit|subscribe|trigger|unassign|unlink|unsubscribe|update|upload|upsert|write)([_-]|$)/i;
 const COMPOUND_CONNECTOR_ACTION_PATTERN = /[_-](and|or|then)[_-]/i;
@@ -92,9 +94,19 @@ export function connectorKindFromToolName(toolName: string, connectorKinds: stri
   const normalizedTool = toolName.toLowerCase();
   const matched = connectorKinds
     .map((kind) => kind.toLowerCase())
-    .filter((kind) => normalizedTool === kind || normalizedTool.startsWith(`${kind}_`))
+    .filter(
+      (kind) =>
+        normalizedTool === kind ||
+        normalizedTool.startsWith(`${kind}_`) ||
+        normalizedTool.startsWith(`${kind}-`),
+    )
     .sort((left, right) => right.length - left.length)[0];
   if (matched) return matched;
+  const hyphen = normalizedTool.indexOf("-");
+  if (hyphen > 0) {
+    const slug = normalizedTool.slice(0, hyphen);
+    if (PLAIN_CONNECTOR_SLUG.test(slug)) return slug;
+  }
   const [segment] = toolName.split("_");
   return (segment ?? toolName).toLowerCase();
 }

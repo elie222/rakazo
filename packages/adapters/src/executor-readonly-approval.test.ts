@@ -20,7 +20,12 @@ import { createRunExecutor } from "./executor.js";
 import { FakeWebProvider } from "./fake-web.js";
 import type * as FleetToolsModule from "./fleet-tools.js";
 import type { HostComputerRequest } from "./host-computer-protocol.js";
-import { catalogEntries, resolveCatalogCall } from "./lazy-tool-catalog.js";
+import {
+  CATALOG_EXECUTE,
+  catalogEntries,
+  lazyCatalogTools,
+  resolveCatalogCall,
+} from "./lazy-tool-catalog.js";
 import type { TurnCheckpoint } from "./turn-checkpoint.js";
 import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
@@ -69,6 +74,7 @@ function fixture({
   name = "demo_get_item",
   route,
   catalog = false,
+  catalogPrefix,
   readOnly = true,
   rules = [] as ActionApprovalRule[],
   confirmationsOverride = false,
@@ -128,6 +134,8 @@ function fixture({
   name?: string;
   route?: ConnectorTool["route"];
   catalog?: boolean;
+  /** Expose this prefix's lazy catalog wrappers instead of the tool itself. */
+  catalogPrefix?: string;
   readOnly?: boolean;
   rules?: ActionApprovalRule[];
   /** The Space has its own confirmations; otherwise `rules` and auto review are the account's. */
@@ -535,31 +543,38 @@ function fixture({
       discoverTools: async () =>
         builtin
           ? []
-          : catalog
-            ? [
-                {
-                  name: "demo_execute_tool",
-                  description: "Execute a catalog tool",
-                  inputSchema: { type: "object" },
-                  route: { connectorId: "demo", toolName: "__catalog_execute" },
-                },
-              ]
-            : secondResource
+          : catalogPrefix
+            ? lazyCatalogTools(catalogPrefix, catalogPrefix, "app", catalogEntries([tool]))
+            : catalog
               ? [
-                  tool,
                   {
-                    ...tool,
-                    name: "demo_get_other",
-                    route: {
-                      connectorId: "demo",
-                      resourceId: "resource-2",
-                      toolName: "demo_get_other",
-                    },
+                    name: "demo_execute_tool",
+                    description: "Execute a catalog tool",
+                    inputSchema: { type: "object" },
+                    route: { connectorId: "demo", toolName: "__catalog_execute" },
                   },
                 ]
-              : [tool],
-      resolveCall: async (call: ConnectorCall) =>
-        catalog ? resolveCatalogCall(call, catalogEntries([tool])) : undefined,
+              : secondResource
+                ? [
+                    tool,
+                    {
+                      ...tool,
+                      name: "demo_get_other",
+                      route: {
+                        connectorId: "demo",
+                        resourceId: "resource-2",
+                        toolName: "demo_get_other",
+                      },
+                    },
+                  ]
+                : [tool],
+      resolveCall: async (call: ConnectorCall) => {
+        if (catalogPrefix) {
+          if (call.route?.resourceId || call.route?.toolName !== CATALOG_EXECUTE) return undefined;
+          return resolveCatalogCall(call, catalogEntries([tool]));
+        }
+        return catalog ? resolveCatalogCall(call, catalogEntries([tool])) : undefined;
+      },
       execute,
     },
     sandbox: { describe: () => ({ capabilities: { graphical: Boolean(browser) } }) },
@@ -1215,6 +1230,40 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.execute).not.toHaveBeenCalled();
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
     });
+  });
+
+  it("catalog-load-no-card", async () => {
+    for (const prefix of ["pipedream", "connectors"]) {
+      const load = fixture({ catalogPrefix: prefix, name: "gmail-find-email" });
+      load.setCalls([
+        {
+          name: `${prefix}_load_tool`,
+          args: { id: "gmail-find-email" },
+          executionId: "call-1",
+        },
+      ]);
+      await load.run();
+      expect(load.pauseRunForInput).not.toHaveBeenCalled();
+      expect(load.execute).toHaveBeenCalledOnce();
+      expect(isApprovalPausedResult(load.results[0])).toBe(false);
+
+      const run = fixture({
+        catalogPrefix: prefix,
+        name: "gmail-delete-email",
+        readOnly: false,
+      });
+      run.setCalls([
+        {
+          name: `${prefix}_execute_tool`,
+          args: { id: "gmail-delete-email", arguments: { id: "item-1" } },
+          executionId: "call-1",
+        },
+      ]);
+      await run.run();
+      expect(run.execute).not.toHaveBeenCalled();
+      expect(run.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(isApprovalPausedResult(run.results[0])).toBe(true);
+    }
   });
 });
 
