@@ -11,6 +11,7 @@ export const RU_MESSAGES: Record<string, string> = {
   City: "Город",
   Contact: "Контакт",
   Contacts: "Контакты",
+  "Could not attach files": "Не удалось прикрепить файлы",
   "Could not remove the item": "Не удалось удалить запись",
   "Could not show the item": "Не удалось показать запись",
   Country: "Страна",

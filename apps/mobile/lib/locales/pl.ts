@@ -11,6 +11,7 @@ export const PL_MESSAGES: Record<string, string> = {
   City: "Miejscowość",
   Contact: "Kontakt",
   Contacts: "Kontakty",
+  "Could not attach files": "Nie udało się dołączyć plików",
   "Could not remove the item": "Nie udało się usunąć elementu",
   "Could not show the item": "Nie udało się wyświetlić elementu",
   Country: "Kraj",

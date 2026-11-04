@@ -11,6 +11,7 @@ export const JA_MESSAGES: Record<string, string> = {
   City: "市区町村",
   Contact: "連絡先",
   Contacts: "連絡先",
+  "Could not attach files": "ファイルを添付できませんでした",
   "Could not remove the item": "項目を削除できませんでした",
   "Could not show the item": "項目を表示できませんでした",
   Country: "国",
