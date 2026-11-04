@@ -1950,6 +1950,37 @@ describe("createMessagingInboundHandler channel routing", () => {
     expect(joined.status).toBe("approved");
   });
 
+  it("re-invites a rejoining member whose roster time did not advance past the LEAVE", async () => {
+    const member = {
+      id: "cm-rj",
+      channelId: "ch-1",
+      address: "+15551111111",
+      identityId: "mi-1",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [member], approvedMember: member });
+    const handle = createMessagingInboundHandler(deps);
+    const at = new Date("2026-11-04T10:01:00.000Z");
+    // A platform that repeats the same roster time (a truncated clock, or one
+    // timestamp reused across events) on every event of the group.
+    const roster = (handleId: string) => ({
+      ...groupEvent,
+      handle: handleId,
+      participants: ["+15551111111", "+15552222222"],
+      rosterAt: at,
+    });
+
+    // Discovery settles the roster's version, then the owner leaves by command.
+    await handle(roster("handle-first"));
+    await handle({ ...dmEvent, content: "LEAVE" });
+    expect(member.status).toBe("left");
+
+    // Back in the group on a later event that carries the same roster time:
+    // the leave invalidated the settled version, so the roster must re-invite.
+    await handle(roster("handle-back"));
+    expect(member.status).toBe("invited");
+  });
+
   it("sanitizes attacker-controlled channel names before storing them", async () => {
     const deps = createDeps();
     const handle = createMessagingInboundHandler(deps);

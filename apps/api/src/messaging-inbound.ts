@@ -633,6 +633,14 @@ async function applyOwnerCommand(
       // State changed under us (e.g. swept out and re-invited): treat the
       // text as a normal message rather than overwriting the newer state.
       if (count === 0) return false;
+      // The leave contradicts the roster the channel last settled on — the
+      // platform still names this member — so that version no longer describes
+      // the membership. Drop it: the next roster, whatever its platform time,
+      // is the freshest word and must be able to re-invite a rejoining member.
+      await tx.messagingChannel.update({
+        where: { id: membership.channelId },
+        data: { rosterSeenAt: null },
+      });
       await writeConfirmation(
         tx,
         identity,
