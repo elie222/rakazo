@@ -58,6 +58,7 @@ import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
 import { isPaywallShown } from "../lib/billing";
 import type { CreateAction } from "../lib/create-chooser";
 import { createInboxBot } from "../lib/create-inbox-bot";
+import { reportDeviceTimeZone } from "../lib/device-timezone";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
 import { getActiveUiLocale, t, useI18n } from "../lib/i18n";
@@ -296,6 +297,9 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           ).catch(() => undefined);
         }
       }
+      // The account follows this device's zone until the user picks one by hand; the
+      // poll that returns here also covers the foreground return after a zone change.
+      void reportDeviceTimeZone(nextMe.userId).catch(() => undefined);
       inboxLoaded.current = true;
       void ensureOrganizations();
       setBadgeLoad({ generation: badgeGeneration });

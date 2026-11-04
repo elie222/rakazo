@@ -44,15 +44,14 @@ async function updatePreferences(ctx: RunContext, call: ToolCall) {
     user = await deps.prisma.user.findUniqueOrThrow({ where: { id: run.userId }, select });
   } else if (timezone !== undefined) {
     // The routines that took the account zone keep their local schedule in the new zone,
-    // and the email preference commits in the same save.
-    await changeUserTimezone(
-      deps,
-      run.userId,
-      timezone,
-      marketingEmails === undefined
-        ? undefined
-        : { marketingEmailOptOutAt: marketingEmails ? null : new Date() },
-    );
+    // and the email preference commits in the same save. A bot's choice is the owner's
+    // hand-picked zone: device reports stop moving the account.
+    await changeUserTimezone(deps, run.userId, timezone, {
+      source: "manual",
+      ...(marketingEmails === undefined
+        ? {}
+        : { marketingEmailOptOutAt: marketingEmails ? null : new Date() }),
+    });
     user = await deps.prisma.user.findUniqueOrThrow({ where: { id: run.userId }, select });
   } else {
     user = await deps.prisma.user.update({

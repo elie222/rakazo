@@ -5,8 +5,16 @@ import { preferenceTools } from "./run-tools-preferences.js";
 
 function fakeAccount(ownerStartedRun = true, tainted = false, nextApprovedTool?: string) {
   const users = {
-    starter: { timezone: "UTC" as string | null, marketingEmailOptOutAt: null as Date | null },
-    other: { timezone: "UTC" as string | null, marketingEmailOptOutAt: null as Date | null },
+    starter: {
+      timezone: "UTC" as string | null,
+      timezoneSource: null as string | null,
+      marketingEmailOptOutAt: null as Date | null,
+    },
+    other: {
+      timezone: "UTC" as string | null,
+      timezoneSource: null as string | null,
+      marketingEmailOptOutAt: null as Date | null,
+    },
   };
   type Id = keyof typeof users;
   const routines: Record<string, unknown>[] = [];
@@ -26,6 +34,7 @@ function fakeAccount(ownerStartedRun = true, tainted = false, nextApprovedTool?:
     user: {
       findUnique: async ({ where }: { where: { id: Id } }) => ({
         timezone: users[where.id].timezone,
+        timezoneSource: users[where.id].timezoneSource,
       }),
       findUniqueOrThrow: async ({ where }: { where: { id: Id } }) => ({ ...users[where.id] }),
       update: userUpdate,
@@ -99,7 +108,11 @@ describe("update_preferences", () => {
       marketingEmails: false,
     });
     expect(users.starter.marketingEmailOptOutAt).toBeInstanceOf(Date);
-    expect(users.other).toEqual({ timezone: "UTC", marketingEmailOptOutAt: null });
+    expect(users.other).toEqual({
+      timezone: "UTC",
+      timezoneSource: null,
+      marketingEmailOptOutAt: null,
+    });
     await expect(call({ marketingEmails: true })).resolves.toEqual({
       timezone: "Europe/Berlin",
       marketingEmails: true,
@@ -115,9 +128,17 @@ describe("update_preferences", () => {
     expect(userUpdate).toHaveBeenCalledTimes(1);
     expect(userUpdate).toHaveBeenCalledWith({
       where: { id: "starter" },
-      data: { timezone: "Europe/Berlin", marketingEmailOptOutAt: expect.any(Date) },
+      data: {
+        timezone: "Europe/Berlin",
+        timezoneSource: "manual",
+        marketingEmailOptOutAt: expect.any(Date),
+      },
     });
-    expect(users.other).toEqual({ timezone: "UTC", marketingEmailOptOutAt: null });
+    expect(users.other).toEqual({
+      timezone: "UTC",
+      timezoneSource: null,
+      marketingEmailOptOutAt: null,
+    });
   });
 
   it("moves routines that took the account zone to the new one", async () => {

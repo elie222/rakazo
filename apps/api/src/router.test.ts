@@ -74,22 +74,23 @@ async function handle(handler: RouterHandler, ...args: Parameters<RouterHandler[
 }
 
 describe("account preferences", () => {
-  function preferencesDeps(avatarStyle: string, timezone: string | null = null) {
-    const update = vi.fn().mockResolvedValue({});
+  function preferencesDeps(
+    avatarStyle: string,
+    timezone: string | null = null,
+    timezoneSource: string | null = null,
+  ) {
     const user = {
-      email: "user@rakazo.test",
+      email: "user@rakozo.test",
       name: "Test User",
       avatarStyle,
       timezone,
+      timezoneSource,
       secrets: [],
     };
-    const updateMany = vi.fn(
-      async ({ where, data }: { where: { timezone: null }; data: { timezone: string } }) => {
-        if (user.timezone !== where.timezone) return { count: 0 };
-        Object.assign(user, data);
-        return { count: 1 };
-      },
-    );
+    const update = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+      Object.assign(user, data);
+      return {};
+    });
     const botFindMany = vi.fn().mockResolvedValue([]);
     const routines: Record<string, unknown>[] = [];
     const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
@@ -101,9 +102,11 @@ describe("account preferences", () => {
     const prisma = {
       user: {
         update,
-        updateMany,
-        findUnique: vi.fn(async () => ({ timezone: user.timezone })),
-        findUniqueOrThrow: vi.fn().mockResolvedValue(user),
+        findUnique: vi.fn(async () => ({
+          timezone: user.timezone,
+          timezoneSource: user.timezoneSource,
+        })),
+        findUniqueOrThrow: vi.fn(async () => user),
       },
       bot: { findMany: botFindMany },
       routine: {
@@ -162,7 +165,7 @@ describe("account preferences", () => {
     } satisfies Actor;
     return {
       update,
-      updateMany,
+      user,
       botFindMany,
       routines,
       deps,
@@ -448,7 +451,7 @@ describe("account preferences", () => {
     expect(response.status).toBe(200);
     expect(setup.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      data: { timezone: "Pacific/Auckland" },
+      data: { timezone: "Pacific/Auckland", timezoneSource: "manual" },
     });
   });
 
@@ -464,7 +467,7 @@ describe("account preferences", () => {
     expect(setup.update).toHaveBeenCalledTimes(1);
     expect(setup.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      data: { timezone: "Europe/London", locale: "pt-BR" },
+      data: { timezone: "Europe/London", timezoneSource: "manual", locale: "pt-BR" },
     });
   });
 
@@ -522,22 +525,60 @@ describe("account preferences", () => {
     });
   });
 
-  it.each([null, "Europe/London"])(
-    "adopts the browser timezone only while the saved value is null (%s)",
-    async (timezone) => {
-      const setup = preferencesDeps("organic", timezone);
+  it.each([
+    { timezone: null, timezoneSource: null },
+    { timezone: "Europe/London", timezoneSource: "device" },
+  ])(
+    "a device report takes over an account without a zone or one that follows the device (%j)",
+    async ({ timezone, timezoneSource }) => {
+      const setup = preferencesDeps("organic", timezone, timezoneSource);
       const client = createRouterClient(createRouter(setup.deps), {
         context: { actor: setup.actor } as never,
       });
       const me = await client.preferences.adoptTimezone({ timezone: "Pacific/Auckland" });
-      expect(setup.updateMany).toHaveBeenCalledWith({
-        where: { id: "user-1", timezone: null },
-        data: { timezone: "Pacific/Auckland" },
+      expect(setup.update).toHaveBeenCalledWith({
+        where: { id: "user-1" },
+        data: { timezone: "Pacific/Auckland", timezoneSource: "device" },
       });
-      expect(me.timezone).toBe(timezone ?? "Pacific/Auckland");
-      expect(setup.update).not.toHaveBeenCalled();
+      expect(me.timezone).toBe("Pacific/Auckland");
     },
   );
+
+  it("a device report never displaces a zone picked by hand", async () => {
+    const setup = preferencesDeps("organic", "Europe/London", "manual");
+    const client = createRouterClient(createRouter(setup.deps), {
+      context: { actor: setup.actor } as never,
+    });
+
+    const me = await client.preferences.adoptTimezone({ timezone: "Pacific/Auckland" });
+
+    expect(setup.update).not.toHaveBeenCalled();
+    expect(me.timezone).toBe("Europe/London");
+  });
+
+  it("switchTo returns a hand-picked zone to the device", async () => {
+    const setup = preferencesDeps("organic", "Europe/London", "manual");
+    const client = createRouterClient(createRouter(setup.deps), {
+      context: { actor: setup.actor } as never,
+    });
+
+    const me = await client.preferences.adoptTimezone({
+      timezone: "Pacific/Auckland",
+      switchTo: true,
+    });
+
+    expect(setup.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { timezone: "Pacific/Auckland", timezoneSource: "device" },
+    });
+    expect(me.timezone).toBe("Pacific/Auckland");
+    // Back on the device, the account follows the next report again.
+    await client.preferences.adoptTimezone({ timezone: "Europe/London" });
+    expect(setup.update).toHaveBeenLastCalledWith({
+      where: { id: "user-1" },
+      data: { timezone: "Europe/London", timezoneSource: "device" },
+    });
+  });
 
   it.each([{ timezone: "Mars/Olympus_Mons" }, { timezone: "" }, {}])(
     "rejects an unknown timezone or an empty update: %j",
@@ -564,7 +605,7 @@ describe("account preferences", () => {
     );
 
     expect(response?.status).toBeGreaterThanOrEqual(400);
-    expect(setup.updateMany).not.toHaveBeenCalled();
+    expect(setup.update).not.toHaveBeenCalled();
   });
 
   it.each(["robot", "organic", "custom-cdn"])(

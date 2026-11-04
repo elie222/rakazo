@@ -81,7 +81,9 @@ export type SettingsGeneralProps = {
   onNameSaved?: () => Promise<void>;
   /** The user's saved IANA timezone, or null before one is set. */
   timezone?: string | null;
-  onTimezoneChange?: (timezone: string) => Promise<void>;
+  /** Saves a zone the user picked; `followsDevice` marks the "Use {zone}" button, which
+   * also returns the account to following the device. */
+  onTimezoneChange?: (timezone: string, followsDevice?: boolean) => Promise<void>;
   /** The icon set new and unpinned bots wear; absent from servers that predate it. */
   botAvatarSet?: BotAvatarSet;
   onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
@@ -192,12 +194,12 @@ export function GeneralSettingsPanels({
     });
   }
 
-  async function chooseTimezone(next: string) {
+  async function chooseTimezone(next: string, followsDevice = false) {
     if (!onTimezoneChange || timezonePending || next === timezone) return;
     setTimezonePending(true);
     setTimezoneError(null);
     try {
-      await onTimezoneChange(next);
+      await onTimezoneChange(next, followsDevice);
     } catch {
       setTimezoneError(t`Couldn't update your timezone`);
     } finally {
@@ -415,7 +417,7 @@ export function GeneralSettingsPanels({
                     className="h-auto max-w-full py-1.5 text-left whitespace-normal"
                     disabled={timezonePending}
                     data-testid="timezone-use-device"
-                    onClick={() => void chooseTimezone(deviceTimezone)}
+                    onClick={() => void chooseTimezone(deviceTimezone, true)}
                   >
                     <Trans comment="Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'">
                       Use {deviceTimezone.replaceAll("_", " ")}
