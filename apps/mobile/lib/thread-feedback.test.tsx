@@ -287,7 +287,7 @@ describe("scoped mobile outbox", () => {
     expect(disk.forget).not.toHaveBeenCalledWith(attempt);
     expect(disk.save).toHaveBeenLastCalledWith([]);
   });
-  it("does not admit a send for recovery while it is being delivered", async () => {
+  it("keeps a delivering send's bytes through a recovery admission", async () => {
     const folders = new Set<string>();
     const admissions = new Map<string, number>();
     // The sending attempt's own admission and the saves while it queues and turns pending
@@ -353,6 +353,57 @@ describe("scoped mobile outbox", () => {
       .filter(([proc]) => proc === "artifacts/create")
       .map(([, body]) => (body as { contentBase64: string }).contentBase64);
     expect(uploads).toEqual(["first-bytes", "second-bytes"]);
+  });
+  it("persists a pending send once the disk answers during its delivery", async () => {
+    const folders = new Set<string>();
+    const written = new Map<string, string[]>();
+    const admissions = new Map<string, number>();
+    // The sending attempt's own admission and the saves while it queues and turns pending
+    // fail; the disk answers afterwards, clearing the in-memory bytes, as it does.
+    disk.admit.mockImplementation((attempt: SendAttempt) => {
+      const seen = (admissions.get(attempt.clientNonce) ?? 0) + 1;
+      admissions.set(attempt.clientNonce, seen);
+      if (seen <= 3) throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+      if (folders.has(attempt.clientNonce)) return false;
+      folders.add(attempt.clientNonce);
+      written.set(
+        attempt.clientNonce,
+        attempt.payload.attachments.map((attachment) => attachment.contentBase64),
+      );
+      for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
+      return true;
+    });
+    let releaseUpload!: (value: { id: string }) => void;
+    const held = new Promise<{ id: string }>((resolve) => {
+      releaseUpload = resolve;
+    });
+    let heldOnce = false;
+    request.mockImplementation(async (proc: string) => {
+      if (proc === "artifacts/create") {
+        if (!heldOnce) {
+          heldOnce = true;
+          return held;
+        }
+        return { id: "artifact-b" };
+      }
+      return { seq: 42 };
+    });
+    const attempt = feedback.sendAttempt(payload());
+    let sending!: Promise<boolean>;
+    act(() => {
+      sending = feedback.send(attempt);
+    });
+    await vi.waitFor(() => expect(request).toHaveBeenCalled());
+    // The disk answers while the upload runs: the next save writes the send's files and
+    // lists it in the index, so a process kill during the upload loses nothing.
+    feedback.sendAttempt(payload("Second"));
+    expect(written.get(attempt.clientNonce)).toEqual(["fake"]);
+    expect(disk.save).toHaveBeenCalledWith([attempt]);
+    await act(async () => {
+      releaseUpload({ id: "artifact-a" });
+      await sending;
+    });
+    expect(attempt.acceptedSeq).toBe(42);
   });
   it("retries attachments from memory while admission keeps failing", async () => {
     disk.admit.mockImplementation(() => {

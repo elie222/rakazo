@@ -185,26 +185,32 @@ function finishPendingClear() {
   }
   return !clearPending;
 }
+/**
+ * Admission clears the attachment bytes on the attempt it writes. Handing it a copy with
+ * detached attachments writes the same files while the objects a running delivery captured
+ * keep their bytes; nothing holds the copy once admission returns.
+ */
+function detachedForAdmission(attempt: SendAttempt): SendAttempt {
+  return {
+    ...attempt,
+    payload: {
+      ...attempt.payload,
+      attachments: attempt.payload.attachments.map((attachment) => ({ ...attachment })),
+    },
+  };
+}
+
 /** Saves the index, then deletes files only once it no longer lists them. */
 function save(attempts: SendAttempt[]) {
-  // Bytes captured before a recovery admission: the disk clears them on the attempt once it
-  // writes the files, so they go back if the index that lists the attempt still cannot save.
-  const held = new Map<SendAttempt, SendAttempt["payload"]["attachments"]>();
-  const saved = tryDisk(() => {
+  return tryDisk(() => {
     if (!finishPendingClear() || !diskReadable) return false;
     // A write error left these in memory only. Ones whose files were written join this index
-    // directly; the others admit again, and a successful admission is recorded at once, so a
-    // later save lists it rather than re-admitting over its own files. A delivery in flight
-    // holds the attachment objects, so admitting underneath it waits for the attempt to
-    // settle. What still cannot reach disk waits for a later save.
+    // directly; the others admit again on a detached copy, and a successful admission is
+    // recorded at once, so a later save lists it rather than re-admitting over its own
+    // files. What still cannot reach disk waits for a later save.
     for (const attempt of attempts) {
       if (!memoryOnly.has(attempt) || writtenFiles.has(attempt)) continue;
-      if (attempt.state === "pending") continue;
-      held.set(
-        attempt,
-        attempt.payload.attachments.map((a) => ({ ...a })),
-      );
-      if (config!.disk.admit(attempt)) writtenFiles.add(attempt);
+      if (config!.disk.admit(detachedForAdmission(attempt))) writtenFiles.add(attempt);
     }
     const listed = attempts.filter(
       (attempt) => !memoryOnly.has(attempt) || writtenFiles.has(attempt),
@@ -223,8 +229,6 @@ function save(attempts: SendAttempt[]) {
     }
     return true;
   }, false);
-  if (!saved) for (const [attempt, attachments] of held) attempt.payload.attachments = attachments;
-  return saved;
 }
 function changed() {
   unsentSends = [...unsentSends];
