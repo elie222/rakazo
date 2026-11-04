@@ -322,7 +322,7 @@ export function accountRoutes(ctx: RouterContext) {
         const signal = context.signal
           ? AbortSignal.any([context.signal, controller.signal])
           : controller.signal;
-        const alerts = deps.events.followChatAlerts(userId, signal);
+        const alerts = deps.events.followChatAlerts(userId, spaceId, signal);
         let pending: Promise<IteratorResult<ChatAlert>> | undefined;
         let authorizedAt = Date.now();
         try {

@@ -108,7 +108,11 @@ export interface ThreadEvents {
   notifyIncomingCalls?(userId: string): Promise<void>;
   followIncomingCalls?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
   publishChatAlert?(userId: string, alert: ChatAlert): Promise<void>;
-  followChatAlerts?(userId: string, signal?: AbortSignal): AsyncGenerator<ChatAlert>;
+  followChatAlerts?(
+    userId: string,
+    spaceId: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<ChatAlert>;
   answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;

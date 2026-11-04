@@ -32,10 +32,11 @@ describe("createChatAlerts", () => {
   it("delivers only the followed user's alerts, skipping malformed ones", async () => {
     const fanout = fakeFanout();
     const alerts = createChatAlerts(fanout as never);
-    const iterator = alerts.follow("user-1");
+    const iterator = alerts.follow("user-1", "space-1");
     const pending = iterator.next();
     await new Promise((resolve) => setTimeout(resolve, 0));
     await alerts.publish("user-2", { ...alert, body: "Not yours" });
+    await alerts.publish("user-1", { ...alert, spaceId: "space-2", body: "Other space" });
     await fanout.publish("chat-alerts:user-1", "{");
     await fanout.publish("chat-alerts:user-1", JSON.stringify({ kind: "help" }));
     await alerts.publish("user-1", alert);
@@ -46,7 +47,7 @@ describe("createChatAlerts", () => {
   it("keeps only the newest alerts for a stream that stops reading", async () => {
     const fanout = fakeFanout();
     const alerts = createChatAlerts(fanout as never);
-    const iterator = alerts.follow("user-1");
+    const iterator = alerts.follow("user-1", "space-1");
     const first = iterator.next();
     await new Promise((resolve) => setTimeout(resolve, 0));
     for (let i = 0; i < 30; i++) await alerts.publish("user-1", { ...alert, body: `Alert ${i}` });
@@ -57,7 +58,11 @@ describe("createChatAlerts", () => {
 
   it("ends the stream on abort", async () => {
     const controller = new AbortController();
-    const iterator = createChatAlerts(fakeFanout() as never).follow("user-1", controller.signal);
+    const iterator = createChatAlerts(fakeFanout() as never).follow(
+      "user-1",
+      "space-1",
+      controller.signal,
+    );
     const pending = iterator.next();
     await new Promise((resolve) => setTimeout(resolve, 0));
     controller.abort();
@@ -66,7 +71,7 @@ describe("createChatAlerts", () => {
 
   it("ends the stream with the error when the subscription fails, so the app reconnects", async () => {
     const fanout = { ...fakeFanout(), subscribe: () => Promise.reject(new Error("listen failed")) };
-    const iterator = createChatAlerts(fanout as never).follow("user-1");
+    const iterator = createChatAlerts(fanout as never).follow("user-1", "space-1");
     await expect(iterator.next()).rejects.toThrow("listen failed");
   });
 
