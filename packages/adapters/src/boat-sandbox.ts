@@ -911,7 +911,7 @@ export class BoatSandboxProvider implements SandboxProvider {
         await this.resume(id, signal, reconnect?.type);
         started = true;
       } else if (sandbox.state === "error" && !recovering) {
-        logRecovery("wait", await this.recover(id, signal));
+        logRecovery("wait", await this.recover(id, signal, reconnect?.type));
         recovering = started = true;
       }
       if (Date.now() >= deadline) {
@@ -988,13 +988,17 @@ export class BoatSandboxProvider implements SandboxProvider {
    * Boat's documented way out of the `error` state: power-cycle the machine, or resume. Returns
    * Boat's reason when it refused and the caller can only wait for the sandbox to answer.
    */
-  private async recover(id: string, signal?: AbortSignal): Promise<string | undefined> {
+  private async recover(
+    id: string,
+    signal?: AbortSignal,
+    type?: SandboxTypeEnum,
+  ): Promise<string | undefined> {
     try {
       await this.client.recover({ sandboxId: id }, { signal });
     } catch (error) {
       if (!(error instanceof BoatApiError) || error.response.status !== 409) throw error;
       if (error.code === "no_machine") {
-        await this.resume(id, signal);
+        await this.resume(id, signal, type);
         return error.code;
       }
       // Already answering again, or an earlier recover is still running. A machine Boat cannot

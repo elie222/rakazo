@@ -169,6 +169,31 @@ describe("BoatSandboxProvider", () => {
       );
     });
 
+    it("moves a computer Boat recovers by resuming to its size", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.fail(computer.id, "no_machine");
+
+      await provider.provision(
+        {
+          botId: computer.botId,
+          homePath: "/unused",
+          providerRef: computer.providerRef,
+          providerKind: "boat",
+          size: "large",
+        },
+        context,
+      );
+
+      expect(resume).toHaveBeenCalledWith(
+        {
+          sandboxId: computer.id,
+          resumeRequest: { noEnv: true, ttlSeconds: 7200, type: "large" },
+        },
+        { signal: context.signal },
+      );
+    });
+
     it("reports a size Boat refuses as unavailable and keeps the computer as it was", async () => {
       const { api, provider, computer } = await boat();
       api.setState(computer.id, "archived");
