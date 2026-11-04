@@ -244,6 +244,10 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
       "cancelled",
     );
 
+    // A sign-in that slipped in around the deactivation does not come back to life with her.
+    await rawSession(ada.id);
+    expect(await system.session.count({ where: { userId: ada.id } })).toBe(1);
+
     // Others patch with a capitalized op and a string boolean.
     const on = await scim("PATCH", `/Users/${resource.id}`, {
       schemas: [PATCH_SCHEMA],
@@ -251,6 +255,7 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     });
     expect([200, 204]).toContain(on.status);
     expect((await accountOf(address)).deactivatedAt).toBeNull();
+    expect(await system.session.count({ where: { userId: ada.id } })).toBe(0);
     expect((await signInWithCode(address)).status).toBe(200);
     expect((await securityEvents(ada.id)).map((event) => event.type)).toEqual([
       "auth.account.deactivated",

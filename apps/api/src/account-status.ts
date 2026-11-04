@@ -34,6 +34,7 @@ export async function settleDirectoryChange(
     // Recorded first: a failed cleanup fails the request, and its retry is no change.
     if (change.changed) await recordAccountStatus(change.userId, change.active, "directory");
     if (!change.active) await endDeactivatedAccess(deps, change.userId);
+    else if (change.changed) await clearSessionsFromWhileOff(deps, change.userId);
   });
 }
 
@@ -64,8 +65,17 @@ export async function setAccountActive(
     });
     if (count) await recordAccountStatus(userId, active, by);
     if (!active) await endDeactivatedAccess(deps, userId);
+    else if (count) await clearSessionsFromWhileOff(deps, userId);
     return count ? "changed" : "unchanged";
   });
+}
+
+/**
+ * No sign-in is admitted while an account is off, so any session left at reactivation slipped
+ * in around the deactivation. It goes rather than come back to life: the person signs in again.
+ */
+function clearSessionsFromWhileOff(deps: AccountStatusDeps, userId: string) {
+  return deps.prisma.session.deleteMany({ where: { userId } });
 }
 
 function recordAccountStatus(userId: string, active: boolean, by: AccountStatusActor) {
