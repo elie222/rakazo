@@ -28,12 +28,12 @@ name: Billing
 - takeScreenshot: 03-wallet
 - openLink: "rakazo:///spending-limit"
 - extendedWaitUntil:
-    visible: "Amount"
+    visible: "Amount.*"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 04-spending-limit-none
-- tapOn: "Amount"
+- tapOn: "Amount.*"
 - waitForAnimationToEnd:
     timeout: 3000
 - inputText: "200"
