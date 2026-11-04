@@ -360,9 +360,9 @@ export const SANDBOXES: readonly Sandbox[] = [
       "People can set it up for their own account in Settings, not only admins.",
     ],
     limits: [
-      "Everyone using that desktop shares one Windows account, its files and its signed-in apps. Use it for trusted teams.",
-      "One screen at a time, no terminal, and no Private Computers.",
-      "Each command can run for up to a minute.",
+      "Every bot and person using that desktop, including Private Computers, shares one Windows account, its files and its signed-in apps. Use it for trusted teams.",
+      "One screen viewer at a time, and no terminal.",
+      "Each call to the desktop is capped at a minute and 16 KiB of output. Longer commands run in the background and still stream their output.",
     ],
     setup: [
       "Choose Wuying in Settings → Computer, or set `SANDBOX_PROVIDER=wuying` with every value listed in the Wuying setup guide, including `WUYING_END_USER_ID`.",
