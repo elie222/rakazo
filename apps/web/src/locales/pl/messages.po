@@ -6715,7 +6715,7 @@ msgstr "Okres próbny ma mniej godzin, aby zapobiegać nadużyciom."
 
 #: src/components/ErrorNotice.tsx
 msgid "Troubleshoot"
-msgstr ""
+msgstr "Rozwiązywanie problemów"
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
