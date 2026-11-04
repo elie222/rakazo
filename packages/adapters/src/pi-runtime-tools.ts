@@ -346,13 +346,17 @@ function toAgentTool(
       }
       if (tool.name === "ask_user") {
         const options = Array.isArray(raw.options) ? raw.options.map(String) : raw.options;
+        // The content the user is deciding about, shown on the card under the question;
+        // redacted and capped here so recorded arguments never hold the raw value. An
+        // empty string means no draft; any other non-string value passes through so the
+        // schema rejects the call, instead of a card silently losing its draft.
+        const detail =
+          typeof raw.detail === "string"
+            ? redactedAskUserDetail(raw.detail, host.request.secrets)
+            : raw.detail;
         return {
           question: String(raw.question ?? "What should I use?"),
-          // The content the user is deciding about, shown on the card under the question;
-          // redacted and capped here so recorded arguments never hold the raw value.
-          ...(typeof raw.detail === "string" && raw.detail
-            ? { detail: redactedAskUserDetail(raw.detail, host.request.secrets) }
-            : {}),
+          ...(detail === undefined || detail === "" ? {} : { detail }),
           // Keep a missing/invalid options value as-is so schema minItems can reject it;
           // coercing to [] would look like a valid empty list upstream.
           options,
@@ -771,7 +775,10 @@ export function redactedAskUserDetail(
   detail: string,
   secrets: readonly string[] | undefined,
 ): string {
-  return truncate(redactSecrets(detail, secrets ?? []), MAX_APPROVAL_DETAIL_LENGTH);
+  // Redaction can expand a near-limit draft past the schema's maxLength, and
+  // truncate appends an ellipsis on top; cap below the limit so the value still
+  // validates on dispatch and checkpoint restore.
+  return truncate(redactSecrets(detail, secrets ?? []), MAX_APPROVAL_DETAIL_LENGTH - 1);
 }
 
 /** Redacts the ask card's detail in a streamed assistant message, in place, so the session

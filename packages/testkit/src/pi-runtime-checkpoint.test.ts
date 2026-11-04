@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
+import { MAX_APPROVAL_DETAIL_LENGTH } from "../../adapters/src/approval-ask.js";
 import { approvalPausedToolResult } from "../../adapters/src/approval-effect.js";
 import { builtinAgentTools } from "../../adapters/src/builtin-tools.js";
 import { PiAgentRuntime } from "../../adapters/src/pi-runtime.js";
@@ -296,6 +297,125 @@ describe("paused turn context", () => {
     } finally {
       await model.close();
       await rm(sessionRoot, { recursive: true, force: true });
+    }
+  });
+  it("keeps a near-limit secret-bearing detail a valid ask on dispatch and restore", async () => {
+    // A short secret expands under redaction ([redacted] is longer), so a draft
+    // at the schema limit grows past it once redacted; the capped result must
+    // still validate, in live dispatch and again on checkpoint restore.
+    const secret = "s3cr3t9";
+    const head = `The token is ${secret}. `;
+    const detail = head + "x".repeat(MAX_APPROVAL_DETAIL_LENGTH - head.length);
+    expect(detail.length).toBe(MAX_APPROVAL_DETAIL_LENGTH);
+    let capture: (() => string) | undefined;
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tool",
+            id: "question",
+            name: "ask_user",
+            arguments: {
+              question: "Send this email?",
+              detail,
+              options: ["Send it", "Show me first"],
+            },
+          },
+        },
+        {
+          expect(request) {
+            expect(request.messages.at(-1)).toMatchObject({
+              role: "tool",
+              tool_call_id: "question",
+            });
+          },
+          response: { type: "text", text: "Done." },
+        },
+      ],
+    });
+    const request: AgentRunRequest = {
+      runId: "fixture-ask-detail-cap",
+      botId: "fixture-bot",
+      threadId: "fixture-thread",
+      instructions: "Complete fixtures.",
+      prompt: "Confirm the draft.",
+      history: [],
+      model: model.model,
+      tools: builtinAgentTools.filter((tool) => tool.name === "ask_user"),
+      secrets: [secret],
+      onCheckpoint: async (snapshot) => {
+        capture = snapshot;
+      },
+    };
+    try {
+      const events = await collect(new PiAgentRuntime().run(request));
+      const ask = events.find((event) => event.type === "ask");
+      expect(ask).toMatchObject({ detail: expect.stringContaining("[redacted]") });
+      expect(String((ask as { detail?: string } | undefined)?.detail).length).toBeLessThanOrEqual(
+        MAX_APPROVAL_DETAIL_LENGTH,
+      );
+      const saved = capture!();
+      expect(saved).not.toContain(secret);
+      expect(saved).toContain("[redacted]");
+      const resumed = await collect(
+        new PiAgentRuntime().run({
+          ...request,
+          turnCheckpoint: saved,
+          resumeToolResult: { content: [{ type: "text", text: "Send it" }] },
+        }),
+      );
+      expect(resumed.at(-1)).toEqual({ type: "done", text: "Done." });
+      model.assertComplete();
+    } finally {
+      await model.close();
+    }
+  });
+  it("rejects an ask_user detail that is not a string instead of dropping it", async () => {
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tool",
+            id: "question",
+            name: "ask_user",
+            arguments: {
+              question: "Send this email?",
+              detail: { body: "the draft as a structured object" },
+              options: ["Send it", "Show me first"],
+            },
+          },
+        },
+        {
+          expect(request) {
+            // The schema rejects the call so the model can correct it; the card
+            // never appears, so the run must not pause.
+            const last = request.messages.at(-1);
+            expect(last?.role).toBe("tool");
+            expect(String(last?.content)).toContain("Validation failed");
+          },
+          response: { type: "text", text: "Done." },
+        },
+      ],
+    });
+    const request: AgentRunRequest = {
+      runId: "fixture-ask-detail-shape",
+      botId: "fixture-bot",
+      threadId: "fixture-thread",
+      instructions: "Complete fixtures.",
+      prompt: "Confirm the draft.",
+      history: [],
+      model: model.model,
+      tools: builtinAgentTools.filter((tool) => tool.name === "ask_user"),
+    };
+    try {
+      const events = await collect(new PiAgentRuntime().run(request));
+      expect(events.some((event) => event.type === "ask")).toBe(false);
+      expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
+      model.assertComplete();
+    } finally {
+      await model.close();
     }
   });
   it("resumes from the pending result when the newest stored message is the bot's own reply", async () => {
