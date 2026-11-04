@@ -78,7 +78,9 @@ describe("VoiceChatCard", () => {
       ...marker,
       blocks: [
         {
-          ...marker.blocks[0],
+          kind: "voice_call" as const,
+          title: "Saved call",
+          farewell: "Talk soon",
           transcript: [
             { role: "user" as const, text: "Hello there" },
             { role: "bot" as const, text: "How can I help?" },
