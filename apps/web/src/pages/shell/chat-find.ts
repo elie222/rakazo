@@ -2,11 +2,12 @@ const MESSAGE = "[data-message-id]";
 const BLOCK = "p,li,div,pre,h1,h2,h3,h4,h5,h6,td,th,blockquote";
 
 /**
- * Lowercase for matching. Greek sigma lowercases to a final form at the end of a word, which
+ * Lowercase for matching, the same on every device rather than by the system's language
+ * (which would turn I into ı for some). Greek sigma lowercases to a final form at the end of a word, which
  * a character-by-character fold never sees, so both forms fold to the same letter.
  */
 function fold(text: string) {
-  return text.toLocaleLowerCase().replaceAll("ς", "σ");
+  return text.toLowerCase().replaceAll("ς", "σ");
 }
 
 const SPACE = /\s/;

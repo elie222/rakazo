@@ -23,7 +23,10 @@ function setHighlights(all: Range[], current: Range | undefined) {
   if (typeof CSS === "undefined" || !("highlights" in CSS) || typeof Highlight === "undefined") {
     return;
   }
-  CSS.highlights.set(MATCHES, new Highlight(...all));
+  // One range at a time: a short query in a long chat can match more ranges than a call takes.
+  const matches = new Highlight();
+  for (const range of all) matches.add(range);
+  CSS.highlights.set(MATCHES, matches);
   if (current) CSS.highlights.set(CURRENT, new Highlight(current));
   else CSS.highlights.delete(CURRENT);
 }
