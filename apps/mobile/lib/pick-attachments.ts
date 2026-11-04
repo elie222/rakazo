@@ -242,36 +242,44 @@ export async function readDroppedFiles(
   const attachments: PickedAttachment[] = [];
   try {
     for (const file of files) {
-      const mimeType = inferAttachmentMimeType(file.name, file.mimeType || undefined);
+      let { uri, name, size } = file;
+      let mimeType = inferAttachmentMimeType(name, file.mimeType || undefined);
+      if (uri && file.width && file.height && mimeType?.startsWith("image/")) {
+        const prepared = await prepareImage(uri, name, mimeType, file.width, file.height);
+        if (prepared.uri !== uri) {
+          ({ uri, name } = prepared);
+          mimeType = inferAttachmentMimeType(name, prepared.mimeType ?? undefined);
+          size = new File(uri).info().size ?? 0;
+        }
+      }
       const reason = attachmentSkipReason(
-        { name: file.name, size: file.size ?? 0, mimeType },
+        { name, size: size ?? 0, mimeType },
         existingCount,
         attachments.length,
         maxBytes,
         maxCount,
       );
       if (reason) {
-        skipped.push({ name: file.name, reason });
+        skipped.push({ name, reason });
         continue;
       }
-      if (!file.uri) continue;
-      const read = await readUriAsBase64(file.uri, maxBytes).catch(() => null);
+      if (!uri) continue;
+      const read = await readUriAsBase64(uri, maxBytes).catch(() => null);
       if (!read) {
         // A copy that vanished or cannot be read costs that file only.
-        skipped.push({ name: file.name, reason: "permission denied" });
+        skipped.push({ name, reason: "permission denied" });
         continue;
       }
-      const { contentBase64, size } = read;
+      const { contentBase64 } = read;
+      size = read.size;
       if (size > maxBytes) {
-        skipped.push({ name: file.name, reason: attachmentSizeSkipReason(maxBytes) });
+        skipped.push({ name, reason: attachmentSizeSkipReason(maxBytes) });
         continue;
       }
       const previewUri = mimeType?.startsWith("image/")
         ? `data:${mimeType};base64,${contentBase64}`
         : undefined;
-      attachments.push(
-        pickedAttachment({ name: file.name, mimeType, size, contentBase64, previewUri }),
-      );
+      attachments.push(pickedAttachment({ name, mimeType, size, contentBase64, previewUri }));
     }
   } finally {
     await Promise.allSettled(

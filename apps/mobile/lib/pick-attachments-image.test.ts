@@ -1,7 +1,10 @@
 import Module from "node:module";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { pickFromLibrary as PickFromLibrary } from "./pick-attachments";
+import type {
+  pickFromLibrary as PickFromLibrary,
+  readDroppedFiles as ReadDroppedFiles,
+} from "./pick-attachments";
 
 const state = vi.hoisted(() => ({
   asset: {
@@ -46,6 +49,7 @@ vi.mock("expo-document-picker", () => ({}));
 vi.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: vi.fn(async () => ({ canceled: false, assets: state.assets })),
 }));
+vi.mock("./file-drop", () => ({ releaseDroppedFile: async () => {} }));
 vi.mock("expo-modules-core", () => ({
   requireOptionalNativeModule: state.optionalNativeModule,
 }));
@@ -57,6 +61,7 @@ const nodeModule = Module as unknown as {
 const originalLoad = nodeModule._load;
 
 let pickFromLibrary: typeof PickFromLibrary;
+let readDroppedFiles: typeof ReadDroppedFiles;
 
 function asset(overrides: Partial<typeof state.asset> = {}) {
   state.asset = {
@@ -82,7 +87,7 @@ beforeEach(async () => {
       ? state.loadManipulator(id)
       : originalLoad.call(Module, id, ...args),
   );
-  ({ pickFromLibrary } = await import("./pick-attachments"));
+  ({ pickFromLibrary, readDroppedFiles } = await import("./pick-attachments"));
   asset();
   state.assets = [state.asset];
   state.file.mockReset();
@@ -280,4 +285,22 @@ it("uses the configured photo count before reading or preparing extra photos", a
   expect(result.attachments).toHaveLength(8);
   expect(result.skipped).toEqual([{ name: "8.jpg", reason: "max 8 attachments" }]);
   expect(state.base64).toHaveBeenCalledTimes(8);
+});
+
+it("shrinks a large pasted photo before checking its size", async () => {
+  state.info.mockReturnValue({ size: 2 * 1024 * 1024 });
+  const result = await readDroppedFiles([
+    {
+      uri: "file:///cache/dropped/paste",
+      name: "image.jpeg",
+      mimeType: "image/jpeg",
+      size: 30 * 1024 * 1024,
+      width: 8000,
+      height: 6000,
+    },
+  ]);
+  expect(state.resize).toHaveBeenCalledWith({ width: 1600 });
+  expect(state.base64).toHaveBeenCalledExactlyOnceWith("file:///fake/photo-resized.jpg");
+  expect(result.skipped).toEqual([]);
+  expect(result.attachments[0]).toMatchObject({ name: "image.jpg", mimeType: "image/jpeg" });
 });
