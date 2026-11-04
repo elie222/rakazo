@@ -610,6 +610,17 @@ export async function sleepComputerIfIdle(
         reason: "damaged",
         error,
       });
+    } else if (
+      error instanceof WorkspaceTooLargeError &&
+      deps.sandbox.describe().capabilities.persistentHome
+    ) {
+      // The provider's disk is the source of truth and survives the stop; this save is only a
+      // backup, and the next start prefers the newer disk over the older backup.
+      getLogger().warn("computer.checkpoint_skipped", {
+        "computer.id": computerId,
+        provider: computer.kind,
+        reason: sleepDeferReason(error),
+      });
     } else {
       await deps.prisma.computer.updateMany({
         where: suspensionClaim,
@@ -890,8 +901,8 @@ function mayNeedSleep(computer: { state: string; updatedAt: Date }): boolean {
 /**
  * A provider that is rate limiting, too busy to answer, or that can only bring the sandbox back
  * from its own snapshot cannot be checkpointed or stopped now, and a workspace over the save
- * limits cannot be saved, so stopping it would lose its files. The caller has already scheduled
- * the next idle check, so the job succeeds instead of spending its retries on the same answer.
+ * limits cannot be saved where the provider keeps no disk, so stopping it would lose its files.
+ * The caller has already scheduled the next idle check, so the job succeeds instead of spending its retries on the same answer.
  */
 function deferSleep(error: unknown, computer: { id: string; kind: string }): boolean {
   const reason = sleepDeferReason(error);
