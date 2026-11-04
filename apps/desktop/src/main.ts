@@ -55,7 +55,7 @@ import {
   withDetail,
 } from "./i18n.js";
 import { verifyDownloadedLinuxUpdate } from "./linux-update-signature.js";
-import { saveLocalComputerHost } from "./local-settings.js";
+import { createLocalComputerChoice, saveLocalComputerHost } from "./local-settings.js";
 import {
   LocalStackController,
   readStackToken,
@@ -728,15 +728,6 @@ async function installUpdate() {
   return state;
 }
 
-let hostChoiceSaves: Promise<unknown> = Promise.resolve();
-
-/** Saves in the order chosen, so a grant still in flight never overwrites a later revoke. */
-function persistHostChoice(computerHost: "docker" | "this-mac") {
-  const saving = hostChoiceSaves.catch(() => undefined).then(() => saveHostChoice(computerHost));
-  hostChoiceSaves = saving;
-  return saving;
-}
-
 async function saveHostChoice(computerHost: "docker" | "this-mac") {
   const origin = new URL(localStack.webUrl()).origin;
   const token = await readStackToken(stackDir(app.getPath("userData")));
@@ -750,13 +741,13 @@ async function saveHostChoice(computerHost: "docker" | "this-mac") {
   );
 }
 
-/** Saves Docker as the local server's choice, so Settings and bots agree access is off. */
-async function revokeLocalComputerAccess() {
-  // Access ends at once; the save only follows it, so a slow server never prolongs it.
-  const results = await Promise.allSettled([hostComputer?.revoke(), persistHostChoice("docker")]);
-  installApplicationMenu();
-  for (const result of results) if (result.status === "rejected") throw result.reason;
-}
+const localComputerChoice = createLocalComputerChoice({
+  save: saveHostChoice,
+  revoke: () => hostComputer?.revoke(),
+  settled: () => installApplicationMenu(),
+});
+const persistHostChoice = localComputerChoice.persist;
+const revokeLocalComputerAccess = localComputerChoice.revoke;
 
 function installApplicationMenu() {
   const computerAccess: Electron.MenuItemConstructorOptions = {
