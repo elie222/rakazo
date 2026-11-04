@@ -3217,8 +3217,17 @@ td:last-child .pricing-hint__tip {
   text-underline-offset: 3px;
 }
 
+.alt-table td a {
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
 .alt-table th a:hover,
-.alt-table th a:focus-visible {
+.alt-table th a:focus-visible,
+.alt-table td a:hover,
+.alt-table td a:focus-visible {
   text-decoration-color: currentColor;
 }
 

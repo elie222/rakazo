@@ -13,6 +13,8 @@ export function cell(value: string): string {
 function tableMarkdown(table: ArticleTable): string[] {
   const row = (cells: readonly string[]) => `| ${cells.map((value) => cell(absolute(value))).join(" | ")} |`;
   return [
+    `**${table.caption}**`,
+    "",
     row(table.columns),
     `| ${table.columns.map(() => "---").join(" | ")} |`,
     ...table.rows.map((item) => row([item.topic, ...item.cells])),
@@ -21,9 +23,9 @@ function tableMarkdown(table: ArticleTable): string[] {
   ];
 }
 
-export function sectionMarkdown(section: ArticleSection, level = "##"): string[] {
+export function sectionMarkdown(section: ArticleSection): string[] {
   return [
-    `${level} ${section.heading}`,
+    `## ${section.heading}`,
     "",
     ...(section.paragraphs ?? []).flatMap((paragraph) => [absolute(paragraph), ""]),
     ...(section.table ? tableMarkdown(section.table) : []),
@@ -45,7 +47,7 @@ export function articleMarkdown(
     ...article.intro.flatMap((paragraph) => [absolute(paragraph), ""]),
     `Updated ${options.updated}.`,
     "",
-    ...article.sections.flatMap((section) => sectionMarkdown(section)),
+    ...article.sections.flatMap(sectionMarkdown),
     "## FAQ",
     "",
     ...article.faq.flatMap((item) => [`### ${item.question}`, "", absolute(item.answer), ""]),
