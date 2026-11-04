@@ -145,26 +145,36 @@ export function useComputerState({
     if (!screenFrame) return;
     const fallback = t`Could not connect to the computer screen`;
     let reconnect: ReturnType<typeof setTimeout> | undefined;
+    let readDeadline: ReturnType<typeof setTimeout> | undefined;
     // One reconnect at a time: while its screen read or page wait is still on its way,
     // further reports of the same drop only describe it again and must not start a second
     // one, whose failure would cancel the first. A new frame or screen URL re-runs this
     // effect and starts the next cycle.
     let reconnectPending = false;
-    // The reconnect's screen read left. Only its completion releases the hold then, so the
-    // drop it answers for still suppresses duplicates while it is out.
+    // The reconnect's screen read left. Only its completion, or its deadline below,
+    // releases the hold then, so the drop it answers for still suppresses duplicates
+    // while it is out.
     let reconnectReadOut = false;
+    // The reconnect the flags and timers belong to; a newer grant supersedes them all.
+    let reconnectCycle = 0;
+    // Whether the reporting screen is connected, so a read deadline that lands on a
+    // reconnected screen leaves it showing instead of replacing it with the error.
+    let screenConnected = false;
     const stopped = new AbortController();
     const onMessage = (event: MessageEvent) => {
       if (event.source !== screenFrame.contentWindow) return;
       const message = screenFrameMessage(event.data);
       if (!message) return;
       if (screenFrameStarted(message)) screenFrameReported.current = true;
+      if (message.rakazoScreen === "connected") screenConnected = true;
+      else if (message.rakazoScreen === "failed" || message.rakazoScreen === "disconnected")
+        screenConnected = false;
       const wuying = Boolean(screenUrl?.startsWith("wuying:"));
       if (wuying && message.rakazoScreen === "connected") {
         // The SDK can rejoin by itself, and a fresh read would sign that session out again.
         clearTimeout(reconnect);
         // A reconnected screen releases a retry it kept queued; a read already out holds
-        // until it completes.
+        // until it completes or runs out of time.
         if (!reconnectReadOut) reconnectPending = false;
         liveWuyingUrl.current = screenUrl;
       }
@@ -187,21 +197,38 @@ export function useComputerState({
         ) {
           if (reconnectPending) return;
           reconnectPending = true;
+          reconnectCycle += 1;
+          const cycle = reconnectCycle;
           screenRefocus.current.dropped(document.activeElement === screenFrame);
           const botId = computerBotIdRef.current;
           const delay = screenReconnect().delayMs();
           clearTimeout(reconnect);
           reconnect = setTimeout(() => {
-            if (botId && !stopped.signal.aborted) {
-              // A read that ends with the frame and its URL unchanged — the provider
-              // rejoined the same session — re-runs nothing, so the read itself releases
-              // the hold.
-              reconnectReadOut = true;
-              void refreshComputerScreen(botId).finally(() => {
-                reconnectPending = false;
-                reconnectReadOut = false;
-              });
+            if (!botId || stopped.signal.aborted) {
+              reconnectPending = false;
+              return;
             }
+            reconnectReadOut = true;
+            // A read that never settles must not hold the reconnect forever. It gets the
+            // same silence budget a framed screen has; past it the hold is released — a
+            // dropped screen shows the error, a reconnected one keeps showing — and the
+            // hung read's answer is stale, so it cannot commit.
+            readDeadline = setTimeout(() => {
+              if (cycle !== reconnectCycle) return;
+              screenRequest.current += 1;
+              reconnectPending = false;
+              reconnectReadOut = false;
+              if (!screenConnected) {
+                screenRefocus.current.forget();
+                setScreenLoadError(fallback);
+              }
+            }, SCREEN_FRAME_LOAD_TIMEOUT_MS);
+            void refreshComputerScreen(botId).finally(() => {
+              if (cycle !== reconnectCycle) return;
+              clearTimeout(readDeadline);
+              reconnectPending = false;
+              reconnectReadOut = false;
+            });
           }, delay);
           return;
         }
@@ -248,6 +275,7 @@ export function useComputerState({
       // Closing the screen or a new screen URL (taking or releasing control) cancels a reconnect.
       stopped.abort();
       clearTimeout(reconnect);
+      clearTimeout(readDeadline);
       window.removeEventListener("message", onMessage);
       document.removeEventListener("focusin", onFocusIn);
     };

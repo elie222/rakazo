@@ -6,6 +6,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { SCREEN_FRAME_LOAD_TIMEOUT_MS } from "../../lib/computer-screen";
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -262,6 +263,62 @@ it("reconnects again after its read ends on an already rejoined screen", async (
   });
   expect(screenUrl).toHaveBeenCalledTimes(3);
   expect(code()).toBe("code-3");
+  expect(state.screenLoadError).toBeNull();
+});
+
+it("shows the error when a reconnect read never settles", async () => {
+  await read();
+  await report("connected");
+  let settle: ((value: { url: string }) => void) | undefined;
+  screenUrl.mockImplementationOnce(
+    () =>
+      new Promise<{ url: string }>((resolve) => {
+        settle = resolve;
+      }),
+  );
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(state.screenLoadError).toBeNull();
+  // The read gets the same silence budget a framed screen has; past it the dropped screen
+  // shows the error with Retry instead of waiting forever.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SCREEN_FRAME_LOAD_TIMEOUT_MS);
+  });
+  expect(state.screenLoadError).toBe("Could not connect to the computer screen");
+  // An answer that arrives after the deadline does not commit: the screen keeps waiting
+  // for Retry.
+  await act(async () => {
+    settle?.({ url: screenUrlFactory() });
+  });
+  expect(code()).toBeNull();
+  expect(state.screenLoadError).toBe("Could not connect to the computer screen");
+});
+
+it("leaves a reconnected screen showing when its hung read runs out of time", async () => {
+  await read();
+  await report("connected");
+  screenUrl.mockImplementationOnce(() => new Promise<{ url: string }>(() => undefined));
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  // The provider rejoined while the read hung; the screen keeps showing, and the deadline
+  // releases the hold without an error.
+  await report("connected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SCREEN_FRAME_LOAD_TIMEOUT_MS);
+  });
+  expect(state.screenLoadError).toBeNull();
+  // A later drop reconnects again.
+  screenUrl.mockImplementationOnce(async () => ({ url: screenUrlFactory() }));
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(3);
+  expect(code()).toBe("code-2");
   expect(state.screenLoadError).toBeNull();
 });
 
