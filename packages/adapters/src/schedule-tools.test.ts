@@ -1456,25 +1456,28 @@ describe("changeUserTimezone", () => {
       to: "Asia/Tokyo",
       moved: "2026-11-09T00:00:00.000Z",
     },
-  ])("retimes the pending run of an active routine with $case", async ({ crons, nextRunAt, to, moved }) => {
-    const { deps, rows } = account([
-      {
-        spaceId: base.spaceId,
-        botId: base.botId,
-        userId: base.userId,
-        name: "Weekly",
-        crons,
-        timezone: "Africa/Cairo",
-        active: true,
-        watch: null,
-        nextRunAt: new Date(nextRunAt),
-      },
-    ]);
+  ])(
+    "retimes the pending run of an active routine with $case",
+    async ({ crons, nextRunAt, to, moved }) => {
+      const { deps, rows } = account([
+        {
+          spaceId: base.spaceId,
+          botId: base.botId,
+          userId: base.userId,
+          name: "Weekly",
+          crons,
+          timezone: "Africa/Cairo",
+          active: true,
+          watch: null,
+          nextRunAt: new Date(nextRunAt),
+        },
+      ]);
 
-    await changeUserTimezone(deps, "user-1", to);
+      await changeUserTimezone(deps, "user-1", to);
 
-    expect(rows[0]).toMatchObject({ timezone: to, crons, nextRunAt: new Date(moved) });
-  });
+      expect(rows[0]).toMatchObject({ timezone: to, crons, nextRunAt: new Date(moved) });
+    },
+  );
 
   it("moves only the zone label of an inactive routine", async () => {
     const { deps, rows } = account([
