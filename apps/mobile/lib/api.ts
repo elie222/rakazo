@@ -454,13 +454,26 @@ export async function saveApiBase(
         previousSpace: string;
       }
     | undefined;
+  /** The revocation owed to the previous server, recorded before its credentials are discarded. */
+  let pendingPreviousSignOut: PendingSignOut | undefined;
   if (parsed.url !== previous) {
+    const tokenSnapshot = await snapshotSessionToken();
+    const token = tokenSnapshot.ok ? tokenSnapshot.value : "";
+    if (token) {
+      // Recorded before the old credentials are discarded, so a process kill cannot lose both.
+      pendingPreviousSignOut = { apiBase: previous, token, headers: previousHeaders };
+      await savePendingSignOut(pendingPreviousSignOut);
+    }
     const result = await clearCredentialsForEndpointChange();
-    if (!result.ok) return result.result;
+    if (!result.ok) {
+      if (pendingPreviousSignOut) await removePendingSignOut(pendingPreviousSignOut);
+      return result.result;
+    }
     cleared = result;
   }
   if (!(await saveServerHeaders(parsed.url, headers))) {
     if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+    if (pendingPreviousSignOut) await removePendingSignOut(pendingPreviousSignOut);
     return { ok: false, error: t("Could not save the server URL") };
   }
   try {
@@ -470,19 +483,11 @@ export async function saveApiBase(
     if (cleared) {
       await restoreCredentials(cleared.previousToken, cleared.previousSpace);
     }
+    if (pendingPreviousSignOut) await removePendingSignOut(pendingPreviousSignOut);
     return { ok: false, error: t("Could not save the server URL") };
   }
   setCachedApiBase(parsed.url);
   await clearStoredValue(SPACE_ROLLBACK_KEY);
-  if (cleared?.previousToken) {
-    // The previous server keeps this session and its push registration; revoke them later,
-    // once a connectivity window or the next launch retries the pending record.
-    await savePendingSignOut({
-      apiBase: previous,
-      token: cleared.previousToken,
-      headers: previousHeaders,
-    });
-  }
   return parsed;
 }
 
@@ -496,9 +501,20 @@ export async function resetApiBase(): Promise<EndpointResult> {
         previousSpace: string;
       }
     | undefined;
+  /** As in saveApiBase: recorded before the old credentials are discarded, kept only on success. */
+  let pendingPreviousSignOut: PendingSignOut | undefined;
   if (url !== previous) {
+    const tokenSnapshot = await snapshotSessionToken();
+    const token = tokenSnapshot.ok ? tokenSnapshot.value : "";
+    if (token) {
+      pendingPreviousSignOut = { apiBase: previous, token, headers: previousHeaders };
+      await savePendingSignOut(pendingPreviousSignOut);
+    }
     const result = await clearCredentialsForEndpointChange();
-    if (!result.ok) return result.result;
+    if (!result.ok) {
+      if (pendingPreviousSignOut) await removePendingSignOut(pendingPreviousSignOut);
+      return result.result;
+    }
     cleared = result;
   }
   try {
@@ -506,24 +522,18 @@ export async function resetApiBase(): Promise<EndpointResult> {
   } catch {
     if (cleared) {
       await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+      if (pendingPreviousSignOut) await removePendingSignOut(pendingPreviousSignOut);
       return { ok: false, error: t("Could not clear the custom server URL") };
     }
   }
   if (!(await saveServerHeaders(url, {}))) {
     await SecureStore.setItemAsync(ENDPOINT_KEY, previous).catch(() => undefined);
     if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+    if (pendingPreviousSignOut) await removePendingSignOut(pendingPreviousSignOut);
     return { ok: false, error: t("Could not clear the custom server URL") };
   }
   setCachedApiBase(url);
   await clearStoredValue(SPACE_ROLLBACK_KEY);
-  if (cleared?.previousToken) {
-    // As in saveApiBase: the previous server's session and push registration stay revocable.
-    await savePendingSignOut({
-      apiBase: previous,
-      token: cleared.previousToken,
-      headers: previousHeaders,
-    });
-  }
   return { ok: true, url };
 }
 
@@ -833,6 +843,8 @@ export async function fetchMobileJson<T>(
 }
 
 const PENDING_SIGN_OUT_KEY = "rakazo.pending_sign_out";
+/** Several servers can owe this device a revocation; the oldest record is dropped past this. */
+const PENDING_SIGN_OUT_LIMIT = 10;
 
 /**
  * A sign-out or server switch whose revocation has not reached its server yet. Kept in the same
@@ -844,87 +856,135 @@ type PendingSignOut = {
   headers: Record<string, string>;
 };
 
+/** Records are keyed by server and session, so each signed-out account keeps its own revocation. */
+function samePendingSignOut(left: PendingSignOut, right: PendingSignOut): boolean {
+  return left.apiBase === right.apiBase && left.token === right.token;
+}
+
+type PendingSignOutRead = { ok: true; records: PendingSignOut[] } | { ok: false };
+
 /** True once a retry confirmed no record is stored, so answered requests stop re-reading the store. */
 let pendingSignOutAbsent = true;
 /** The one in-flight retry; triggers that arrive meanwhile join it instead of starting their own. */
 let flushingPendingSignOut: Promise<void> | undefined;
+/** Orders every read-modify-write of the record list; network calls never run inside it. */
+let pendingSignOutWrites: Promise<unknown> = Promise.resolve();
 
-async function savePendingSignOut(record: PendingSignOut): Promise<void> {
-  pendingSignOutAbsent = false;
-  try {
-    await SecureStore.setItemAsync(PENDING_SIGN_OUT_KEY, JSON.stringify(record));
-  } catch {
-    // Without the record the session still expires server-side; the local sign-out continues.
-  }
+function queuePendingSignOutWrite<T>(step: () => Promise<T>): Promise<T> {
+  const result = pendingSignOutWrites.then(step, step);
+  pendingSignOutWrites = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
 }
 
-async function clearPendingSignOut(): Promise<void> {
-  pendingSignOutAbsent = true;
-  try {
-    await SecureStore.deleteItemAsync(PENDING_SIGN_OUT_KEY);
-  } catch {
-    // A stale record only costs one request the next time connectivity returns.
-  }
-}
-
-async function loadPendingSignOut(): Promise<PendingSignOut | null> {
+async function readPendingSignOuts(): Promise<PendingSignOutRead> {
   let stored: string | null = null;
   try {
     stored = await SecureStore.getItemAsync(PENDING_SIGN_OUT_KEY);
   } catch {
     // The store could not be read; the retry stays for a later connectivity window.
-    return null;
+    return { ok: false };
   }
-  if (!stored) {
-    pendingSignOutAbsent = true;
-    return null;
-  }
+  if (!stored) return { ok: true, records: [] };
   try {
-    const parsed = JSON.parse(stored) as { apiBase?: unknown; token?: unknown; headers?: unknown };
-    const headers = parseServerHeaders(parsed.headers) ?? {};
-    if (typeof parsed.apiBase !== "string" || !parsed.apiBase) throw new Error("no server");
-    if (typeof parsed.token !== "string" || !parsed.token) throw new Error("no token");
-    return { apiBase: parsed.apiBase, token: parsed.token, headers };
+    const parsed: unknown = JSON.parse(stored);
+    if (!Array.isArray(parsed)) throw new Error("not a record list");
+    const records: PendingSignOut[] = [];
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== "object") continue;
+      const record = entry as { apiBase?: unknown; token?: unknown; headers?: unknown };
+      if (typeof record.apiBase !== "string" || !record.apiBase) continue;
+      if (typeof record.token !== "string" || !record.token) continue;
+      records.push({
+        apiBase: record.apiBase,
+        token: record.token,
+        headers: parseServerHeaders(record.headers) ?? {},
+      });
+    }
+    return { ok: true, records };
   } catch {
-    // A record this app cannot read is dropped; the session expires server-side regardless.
-    await clearPendingSignOut();
-    return null;
+    // A list this app cannot read is dropped; the sessions expire server-side regardless.
+    try {
+      await SecureStore.deleteItemAsync(PENDING_SIGN_OUT_KEY);
+    } catch {
+      // Reading it again next time reaches the same conclusion.
+    }
+    return { ok: true, records: [] };
   }
+}
+
+async function writePendingSignOuts(records: PendingSignOut[]): Promise<boolean> {
+  try {
+    await SecureStore.setItemAsync(PENDING_SIGN_OUT_KEY, JSON.stringify(records));
+    return true;
+  } catch {
+    // Without the record the session still expires server-side; the local sign-out continues.
+    return false;
+  }
+}
+
+async function savePendingSignOut(record: PendingSignOut): Promise<void> {
+  await queuePendingSignOutWrite(async () => {
+    const read = await readPendingSignOuts();
+    // An unreadable store keeps what it has; this record joins it when the store answers again.
+    if (!read.ok) return;
+    const kept = read.records.filter((existing) => !samePendingSignOut(existing, record));
+    kept.unshift(record);
+    if (await writePendingSignOuts(kept.slice(0, PENDING_SIGN_OUT_LIMIT))) {
+      pendingSignOutAbsent = false;
+    }
+  });
+}
+
+/** Removes one record by key, so a revocation recorded meanwhile stays. */
+async function removePendingSignOut(record: PendingSignOut): Promise<void> {
+  await queuePendingSignOutWrite(async () => {
+    const read = await readPendingSignOuts();
+    if (!read.ok) return;
+    const kept = read.records.filter((existing) => !samePendingSignOut(existing, record));
+    if (kept.length === read.records.length) return;
+    if (await writePendingSignOuts(kept)) pendingSignOutAbsent = kept.length === 0;
+  });
 }
 
 /**
  * Delivers both halves of a sign-out to the record's server: the push unregistration and the
- * session revocation. True only when the server answered both, so an unanswered half stays pending.
+ * session revocation. "retry" means some half may not have been processed and stays pending; any
+ * other answer — success, or a final rejection such as an unknown session — completes it.
  */
-async function revokeSessionOnServer(record: PendingSignOut): Promise<boolean> {
+async function revokeSessionOnServer(record: PendingSignOut): Promise<"delivered" | "retry"> {
   const send = async (path: string, body: string) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
     try {
       const response = await withAbort(
-        fetchServer(
-          `${record.apiBase}${path}`,
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              origin: "rakazo://",
-              ...(record.token ? { authorization: `Bearer ${record.token}` } : {}),
-              ...clientBuild.headers(),
-              ...record.headers,
-            },
-            body,
-            signal: controller.signal,
+        fetch(`${record.apiBase}${path}`, {
+          method: "POST",
+          // The record's own captured headers go out as they were; a redirect of them anywhere
+          // else must fail instead of silently forwarding this server's secrets.
+          redirect: "error",
+          headers: {
+            "content-type": "application/json",
+            origin: "rakazo://",
+            ...(record.token ? { authorization: `Bearer ${record.token}` } : {}),
+            ...clientBuild.headers(),
+            ...record.headers,
           },
-          record.apiBase,
-        ),
+          body,
+          signal: controller.signal,
+        }),
         controller.signal,
         "Request timed out",
       );
-      // A gateway answer means the request may never have reached the app; anything else is final.
-      return !isUnreachableStatus(response.status);
+      if (response.status >= 200 && response.status < 300) return "delivered";
+      // Timeouts, throttling and every server failure can be transient; other answers are final.
+      return response.status === 408 || response.status === 429 || response.status >= 500
+        ? "retry"
+        : "final";
     } catch {
-      return false;
+      return "retry";
     } finally {
       clearTimeout(timer);
     }
@@ -932,21 +992,26 @@ async function revokeSessionOnServer(record: PendingSignOut): Promise<boolean> {
   // Both halves are attempted even when one cannot get through, like the sign-out they belong to.
   const unregistered = await send("/rpc/notifications/unregisterPush", '{"json":{}}');
   const signedOut = await send("/api/auth/sign-out", "{}");
-  return unregistered && signedOut;
+  return unregistered === "retry" || signedOut === "retry" ? "retry" : "delivered";
 }
 
 /**
- * Retries a revocation that could not be delivered, until its server answers both requests.
+ * Retries revocations that could not be delivered, until each server answers both its requests.
  * `force` reads the store even when the last attempt found nothing, for launch.
  */
 export async function flushPendingSignOut(force = false): Promise<void> {
   if (!force && pendingSignOutAbsent) return;
   flushingPendingSignOut ??= (async () => {
     try {
-      const record = await loadPendingSignOut();
-      if (record && (await revokeSessionOnServer(record))) await clearPendingSignOut();
+      const read = await readPendingSignOuts();
+      if (!read.ok) return;
+      if (read.records.length > 0) pendingSignOutAbsent = false;
+      for (const record of read.records) {
+        // Removal is by record, so a revocation recorded during this attempt is not touched.
+        if ((await revokeSessionOnServer(record)) !== "retry") await removePendingSignOut(record);
+      }
     } catch {
-      // The record stays; the next connectivity window tries again.
+      // Records stay; the next connectivity window tries again.
     } finally {
       flushingPendingSignOut = undefined;
     }
@@ -965,7 +1030,8 @@ export async function signOut() {
   // The record is written before the attempts: an app that dies mid-sign-out still revokes later.
   if (revocation.token) {
     await savePendingSignOut(revocation);
-    if (await revokeSessionOnServer(revocation)) await clearPendingSignOut();
+    if ((await revokeSessionOnServer(revocation)) !== "retry")
+      await removePendingSignOut(revocation);
   } else {
     await revokeSessionOnServer(revocation);
   }
