@@ -6714,6 +6714,10 @@ msgstr "試用於 {day} 結束"
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "為防止濫用，試用期的時數較少。"
 
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "受信任的網站"

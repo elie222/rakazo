@@ -6713,6 +6713,10 @@ msgstr ""
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "В пробном периоде меньше часов, чтобы предотвратить злоупотребления."
 
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "Доверенные сайты"

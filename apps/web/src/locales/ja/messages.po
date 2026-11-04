@@ -6713,6 +6713,10 @@ msgstr "トライアル終了: {day}"
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "不正利用を防ぐため、トライアルでは時間が少なくなっています。"
 
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "信頼済みサイト"
