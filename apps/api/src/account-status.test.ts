@@ -2,6 +2,7 @@ import type * as Db from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { AccountStatusDeps } from "./account-status.js";
 import { endDeactivatedAccess } from "./account-status.js";
+import { revokeUserDevices } from "./user-devices.js";
 
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof Db>()),
@@ -31,5 +32,27 @@ describe("ending a deactivated account's access", () => {
 
     await expect(endDeactivatedAccess(deps, "user-1")).rejects.toThrow(AggregateError);
     expect(calls).toEqual(["sessions", "pushes", "call pushes", "screens", "notify"]);
+  });
+
+  it("disconnects the other computers when one fails", async () => {
+    const disconnect = vi.fn(async () => undefined);
+    const store = {
+      prisma: {
+        userDevice: {
+          findMany: vi.fn(async () => [
+            { id: "device-1", sessionId: null },
+            { id: "device-2", sessionId: null },
+          ]),
+          updateMany: vi.fn(async ({ where }: { where: { id: string } }) => {
+            if (where.id === "device-1") throw new Error("unavailable");
+            return { count: 1 };
+          }),
+        },
+      },
+      devices: { disconnect },
+    } as unknown as Parameters<typeof revokeUserDevices>[0];
+
+    await expect(revokeUserDevices(store, "user-1")).rejects.toThrow(AggregateError);
+    expect(disconnect).toHaveBeenCalledExactlyOnceWith("device-2", "session-ended");
   });
 });

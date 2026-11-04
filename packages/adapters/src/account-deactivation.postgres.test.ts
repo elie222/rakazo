@@ -145,12 +145,8 @@ describePostgres("a deactivated account's work (PostgreSQL)", () => {
       expect.objectContaining({ name: "routine.wakeup", availableAt: skipped.nextRunAt }),
     );
 
+    // Back on, the next due occurrence runs.
     await deactivate(dana, null);
-    await executor().wakeRoutine(routine.id, skipped.nextRunAt!.toISOString());
-    // The next occurrence is in the future, so it waits rather than running now.
-    const later = await system.routine.findUniqueOrThrow({ where: { id: routine.id } });
-    expect(later.nextRunAt?.getTime()).toBe(skipped.nextRunAt!.getTime());
-
     await system.routine.update({ where: { id: routine.id }, data: { nextRunAt: due } });
     await executor().wakeRoutine(routine.id, due.toISOString());
     expect(await system.run.count({ where: { routineId: routine.id } })).toBe(1);

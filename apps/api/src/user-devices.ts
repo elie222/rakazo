@@ -100,7 +100,10 @@ export async function endUserDeviceSession(
     await revokeDevice(store, device.id, userId, "session", device.sessionId);
 }
 
-/** Disconnects every computer the user paired, as when their last sign-in ends. */
+/**
+ * Disconnects every computer the user paired, as when their last sign-in ends. One that fails
+ * does not keep the others paired; the failures are reported together at the end.
+ */
 export async function revokeUserDevices(store: DeviceStore, userId: string) {
   const devices = await runAsSystem("find a user's devices", () =>
     store.prisma.userDevice.findMany({
@@ -108,8 +111,12 @@ export async function revokeUserDevices(store: DeviceStore, userId: string) {
       select: { id: true, sessionId: true },
     }),
   );
+  const failures: unknown[] = [];
   for (const device of devices)
-    await revokeDevice(store, device.id, userId, "session", device.sessionId);
+    await revokeDevice(store, device.id, userId, "session", device.sessionId).catch(
+      (error: unknown) => failures.push(error),
+    );
+  if (failures.length) throw new AggregateError(failures, "Could not disconnect every computer");
 }
 
 /** The device socket itself is upgraded by the hub before Hono sees it. */

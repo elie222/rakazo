@@ -39,8 +39,22 @@ try {
   const user = await runAsSystem("find an account by email", () =>
     prisma.user.findUnique({ where: { email }, select: { id: true } }),
   );
+  // The directory owns the accounts it provisions; turning one back on happens there.
+  const directoryOff =
+    user &&
+    action === "reactivate" &&
+    (await runAsSystem("check the account's directory status", async () => {
+      const [provisioned, active] = await Promise.all([
+        prisma.scimUser.count({ where: { userId: user.id } }),
+        prisma.scimUser.count({ where: { userId: user.id, active: true } }),
+      ]);
+      return provisioned > 0 && active === 0;
+    }));
   if (!user) {
     process.stderr.write("No account has that email\n");
+    process.exitCode = 1;
+  } else if (directoryOff) {
+    process.stderr.write("The identity provider has this account turned off; turn it on there\n");
     process.exitCode = 1;
   } else {
     const active = action === "reactivate";
