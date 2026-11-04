@@ -434,20 +434,24 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     const key = `contract:replacement:${Date.now()}`;
 
     try {
-      await host.start(target);
       await publisher.enqueue({
         name: "computer.sleep",
         payload: { computerId: "old" },
         availableAt: new Date(Date.now() + 300),
         replaceKey: key,
       });
+      const deadline = new Date(Date.now() + 800);
       await publisher.enqueue({
         name: "computer.sleep",
         payload: { computerId: "replacement" },
-        availableAt: new Date(Date.now() + 800),
+        availableAt: deadline,
         replaceKey: key,
       });
+      // The replacement must carry its own deadline, not keep the old job's:
+      // a payload swap at the 300 ms schedule would run it early.
+      expect((await keyedRow(key))?.runAt.getTime()).toBe(deadline.getTime());
 
+      await host.start(target);
       // The replacement ran at its own later deadline, so the worker has polled
       // well past the old job's earlier one; the exact list proves the old
       // payload never ran.
