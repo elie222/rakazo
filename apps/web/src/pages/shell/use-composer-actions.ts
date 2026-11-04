@@ -431,10 +431,27 @@ export function useComposerActions({
           }
           const file = await prepareImage(pending.file);
           const contentBase64 = await readFileAsBase64(file);
+          // Stable per pending attachment, so a retry under a new send nonce
+          // (an edited draft) gets back the artifact this upload already made.
+          // Scoped to the target: a retry rerouted to a group uploads afresh
+          // rather than replaying another chat's artifact.
+          const uploadNonce = `attachment:${groupTarget ?? botTarget}:${pending.id}`;
           const artifact = await rpc.artifacts.create(
             groupTarget
-              ? { groupId: groupTarget, name: pending.file.name, mimeType, contentBase64 }
-              : { botId: botTarget!, name: pending.file.name, mimeType, contentBase64 },
+              ? {
+                  groupId: groupTarget,
+                  name: pending.file.name,
+                  mimeType,
+                  contentBase64,
+                  clientNonce: uploadNonce,
+                }
+              : {
+                  botId: botTarget!,
+                  name: pending.file.name,
+                  mimeType,
+                  contentBase64,
+                  clientNonce: uploadNonce,
+                },
           );
           uploaded.set(pending.file, artifact.id);
           artifactIds.push(artifact.id);
