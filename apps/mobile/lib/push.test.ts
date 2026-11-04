@@ -47,6 +47,7 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { rpc, selectInitialSpace } from "./api";
+import { resumeLiveNotifications } from "./live-notifications.js";
 import { registerPushToken } from "./push";
 import { restoreSessionToken } from "./session";
 
@@ -141,6 +142,29 @@ describe("push registration on Android", () => {
       expect.anything(),
     );
   });
+});
+
+it("syncs the native session before the server can push", async () => {
+  Platform.OS = "android";
+  vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as never);
+
+  await registerPushToken();
+
+  // The server can push the moment the registration lands; Android's drop rule must
+  // already see this account's session by then, not the blank of a fresh sign-in.
+  expect(resumeLiveNotifications).toHaveBeenCalled();
+  const registerCall = fetch.mock.calls.findIndex(([url]) =>
+    String(url).endsWith("/rpc/notifications/registerPush"),
+  );
+  expect(registerCall).toBeGreaterThanOrEqual(0);
+  expect(vi.mocked(resumeLiveNotifications).mock.invocationCallOrder[0] as number).toBeLessThan(
+    fetch.mock.invocationCallOrder[registerCall] as number,
+  );
+  expect(vi.mocked(resumeLiveNotifications)).toHaveBeenCalledWith(
+    "http://127.0.0.1:3100",
+    "fake-session",
+    expect.any(String),
+  );
 });
 
 it("registers native sender delivery only when the installed Android module supports it", async () => {
