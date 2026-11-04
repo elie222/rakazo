@@ -65,6 +65,8 @@ const SANDBOX_NAMES: Record<Exclude<SandboxKind, "none" | "desktop" | "fake">, s
 };
 const SANDBOX_PROVIDERS = Object.values(SANDBOX_NAMES);
 
+const CREDITS_PRICE = `From ${dollars(MODEL_CREDIT_AMOUNTS[0])}/mo`;
+
 export const PRICING_PLANS: PricingPlan[] = [
   {
     name: "Self-hosted",
@@ -95,7 +97,7 @@ export const PRICING_PLANS: PricingPlan[] = [
   },
   {
     name: "Rakazo credits",
-    price: `From ${dollars(MODEL_CREDIT_AMOUNTS[0])}/mo`,
+    price: CREDITS_PRICE,
     note: "Model usage included",
     features: [
       "Hosted by us",
@@ -135,7 +137,7 @@ export const PRICING_COMPARISON = {
   columns: [
     { name: "Self-hosted", price: "Free" },
     ...TIERS.map((tier) => ({ name: tier.name, price: tier.price })),
-    { name: "Rakazo credits", price: PRICING_PLANS[2]?.price ?? "" },
+    { name: "Rakazo credits", price: CREDITS_PRICE },
   ],
   /** Most important first: what sets Rakazo apart, then the limits. */
   rows: [
