@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { SCREEN_RECONNECT_STABLE_MS } from "@rakazo/core";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -110,7 +111,10 @@ it("keeps a live Wuying frame's code, and reconnects every drop with a fresh cod
   });
   expect(code()).toBe("code-3");
   await report("connected");
-  // A second drop, however soon, is a restart again: it reconnects rather than waits for Retry.
+  // The connection stays up; the next drop is a new restart, with the first delay again.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SCREEN_RECONNECT_STABLE_MS);
+  });
   await report("disconnected");
   expect(state.screenLoadError).toBeNull();
   await act(async () => {

@@ -478,15 +478,22 @@ describe("computer screen", () => {
     expect(screens.mounts).toBeGreaterThan(mounted);
     report({ rakazoScreen: "connected" });
     expect(view.textContent).not.toContain("Could not connect to the computer screen");
-    // Every drop after a connection reconnects by itself, and so does a reload that raced a
-    // restart and never connected; only reloads that stop connecting show the error.
-    report({ rakazoScreen: "disconnected" });
-    expect(view.textContent).not.toContain("The screen connection closed.");
+    // A drop reconnects by itself. A dying page's further terminal reports are more words for
+    // the same drop: they don't spend tries. Only loads that come back without connecting do.
+    const load = () => act(() => screens.onLoadStart?.());
     report({ rakazoScreen: "disconnected" });
     expect(view.textContent).not.toContain("The screen connection closed.");
     report({ rakazoScreen: "failed" });
     expect(view.textContent).not.toContain("Could not connect to the computer screen");
     report({ rakazoScreen: "failed" });
+    expect(view.textContent).not.toContain("Could not connect to the computer screen");
+    for (let reload = 0; reload < 3; reload += 1) {
+      await load();
+      report({ rakazoScreen: "failed" });
+      if (reload < 2) {
+        expect(view.textContent).not.toContain("Could not connect to the computer screen");
+      }
+    }
     expect(view.textContent).toContain("Could not connect to the computer screen");
     vi.useRealTimers();
   });
@@ -819,7 +826,7 @@ describe("computer screen", () => {
         await new Promise((resolve) => setTimeout(resolve, ms));
       });
 
-    it("loads the screen again by itself once, a second after the drop", async () => {
+    it("loads the screen again by itself, a second after the drop", async () => {
       const fetchStub = vi.fn(async () => ({ status: 200 }) as Response);
       vi.stubGlobal("fetch", fetchStub);
       await openScreen();
@@ -835,10 +842,14 @@ describe("computer screen", () => {
       // It asks the server's status-only probe, never the computer's page itself.
       expect(String((fetchStub.mock.calls[0] as unknown[])[0])).toContain("rakazo_probe=1");
 
-      // A second drop soon after reconnects again: every restart of a working screen does.
+      // A second drop of a connection that only flashed up reconnects too, waiting twice
+      // as long this time.
       await load();
       await post('{"rakazoScreen":"connected"}');
       await post('{"rakazoScreen":"disconnected"}');
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened + 1);
       await wait(1100);
       await settle();
       expect(screens.mounts).toBe(opened + 2);

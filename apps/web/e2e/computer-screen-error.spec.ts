@@ -275,8 +275,8 @@ test("a framed screen that drops after connecting loads again by itself through 
   await expect(preview.getByRole("alert")).toHaveCount(0);
   await expect(preview.locator("iframe")).toHaveCount(1);
 
-  // A screen that keeps working reconnects through every drop, however soon. The reconnected
-  // frame is a new element, so find it again for each report.
+  // A screen that keeps coming back reconnects through every drop. The reconnected frame is
+  // a new element, so find it again for each report.
   const postState = (state: string) =>
     page
       .frames()
@@ -288,13 +288,14 @@ test("a framed screen that drops after connecting loads again by itself through 
   await expect(preview.getByRole("alert")).toHaveCount(0);
   await expect(preview.locator("iframe")).toHaveCount(1);
 
-  // A screen whose reloads stop connecting shows the error and Retry, after its retries.
+  // A screen whose connections only flash up, and whose reloads stop connecting, runs out of
+  // quiet reconnects and shows the error and Retry.
   await postState("disconnected");
-  await expect.poll(() => loads, { timeout: 15_000 }).toBe(6);
+  await expect.poll(() => loads, { timeout: 15_000 }).toBe(4);
   await expect(preview.getByRole("alert")).toContainText(
     "Could not connect to the computer screen",
   );
   await expect(preview.getByRole("button", { name: "Retry screen" })).toBeVisible();
   await page.waitForTimeout(1_500);
-  expect(loads).toBe(6);
+  expect(loads).toBe(4);
 });

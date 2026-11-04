@@ -3,6 +3,7 @@ import {
   createScreenReconnect,
   createScreenReconnects,
   SCREEN_RECONNECT_DELAY_MS,
+  SCREEN_RECONNECT_STABLE_MS,
   SCREEN_RECONNECT_TRIES,
   SCREEN_RECONNECT_WAIT_MS,
   screenProbeUrl,
@@ -13,37 +14,74 @@ describe("screen reconnect", () => {
   it("reconnects a screen that drops after connecting", () => {
     const screen = createScreenReconnect();
     expect(screen.report("loading")).toBe("none");
-    expect(screen.report("connected")).toBe("none");
-    expect(screen.report("disconnected")).toBe("reconnect");
+    expect(screen.report("connected", 0)).toBe("none");
+    expect(screen.report("disconnected", 1_000)).toBe("reconnect");
   });
 
   it("shows the error for a screen that never connected", () => {
     const screen = createScreenReconnect();
-    expect(screen.report("connecting")).toBe("none");
-    expect(screen.report("disconnected")).toBe("error");
-    expect(screen.report("failed")).toBe("error");
+    expect(screen.report("connecting", 0)).toBe("none");
+    expect(screen.report("disconnected", 0)).toBe("error");
+    expect(screen.report("failed", 0)).toBe("error");
   });
 
   it("reconnects a screen that reports its drop as a failure", () => {
     // The computer's embed page marks an unclean disconnect, such as the proxy closing the
     // socket, as an error.
     const screen = createScreenReconnect();
-    screen.report("connected");
-    expect(screen.report("failed")).toBe("reconnect");
+    screen.report("connected", 0);
+    expect(screen.report("failed", 1_000)).toBe("reconnect");
     screen.loaded();
-    screen.report("connected");
-    expect(screen.report("failed")).toBe("reconnect");
+    screen.report("connected", 2_000);
+    expect(screen.report("failed", 3_000)).toBe("reconnect");
   });
 
-  it("reconnects every drop that follows a connection, however soon", () => {
-    // A bot's run restarts the screen it works on every few seconds; each restart drops the
-    // viewer's connection and each reload brings the screen back.
+  it("reconnects every drop of a connection that stays up, as often as the computer restarts", () => {
+    // A bot's run restarts the screen every ten to twenty seconds; each restart drops the
+    // viewer's connection, and each reload brings the screen back for that long again.
     const screen = createScreenReconnect();
+    let time = 0;
     for (let drop = 0; drop < 4; drop += 1) {
       screen.loaded();
-      screen.report("connected");
-      expect(screen.report("disconnected")).toBe("reconnect");
+      screen.report("connected", time);
+      expect(screen.report("disconnected", time + SCREEN_RECONNECT_STABLE_MS)).toBe("reconnect");
+      expect(screen.delayMs()).toBe(SCREEN_RECONNECT_DELAY_MS);
+      time += SCREEN_RECONNECT_STABLE_MS + 2_000;
     }
+  });
+
+  it("runs out and shows the error when each connection only flashes up", () => {
+    // Two viewers the provider keeps displacing connect for a moment and drop again; the
+    // reconnects stay bounded instead of cycling forever.
+    const screen = createScreenReconnect();
+    let time = 0;
+    for (let drop = 1; drop <= SCREEN_RECONNECT_TRIES; drop += 1) {
+      screen.loaded();
+      screen.report("connected", time);
+      expect(screen.report("disconnected", time + 1_000)).toBe("reconnect");
+      expect(screen.delayMs()).toBe(SCREEN_RECONNECT_DELAY_MS * 2 ** (drop - 1));
+      time += 2_000;
+    }
+    screen.loaded();
+    screen.report("connected", time);
+    expect(screen.report("disconnected", time + 1_000)).toBe("error");
+  });
+
+  it("spends one try per load, not per report", () => {
+    // A dying page can report several terminal states for the same load: a disconnect, an
+    // error, a ticket error. Only the load's first report spends a try.
+    const screen = createScreenReconnect();
+    screen.loaded();
+    screen.report("connected", 0);
+    expect(screen.report("disconnected", 1_000)).toBe("reconnect");
+    expect(screen.delayMs()).toBe(SCREEN_RECONNECT_DELAY_MS);
+    for (const state of ["failed", "disconnected", "failed"] as const) {
+      expect(screen.report(state, 1_100)).toBe("reconnect");
+      expect(screen.delayMs()).toBe(SCREEN_RECONNECT_DELAY_MS);
+    }
+    screen.loaded();
+    expect(screen.report("failed", 3_000)).toBe("reconnect");
+    expect(screen.delayMs()).toBe(SCREEN_RECONNECT_DELAY_MS * 2);
   });
 
   it("loads a reloaded screen again when it never connected, waiting longer each time", () => {
@@ -51,12 +89,12 @@ describe("screen reconnect", () => {
     // connection once. That reload tries again rather than showing the error.
     const screen = createScreenReconnect();
     screen.loaded();
-    screen.report("connected");
-    expect(screen.report("disconnected")).toBe("reconnect");
+    screen.report("connected", 0);
+    expect(screen.report("disconnected", 1_000)).toBe("reconnect");
     expect(screen.delayMs()).toBe(SCREEN_RECONNECT_DELAY_MS);
     for (let retry = 2; retry <= SCREEN_RECONNECT_TRIES; retry += 1) {
       screen.loaded();
-      expect(screen.report("failed")).toBe("reconnect");
+      expect(screen.report("failed", retry * 1_000)).toBe("reconnect");
       expect(screen.delayMs()).toBe(SCREEN_RECONNECT_DELAY_MS * 2 ** (retry - 1));
     }
   });
@@ -64,27 +102,27 @@ describe("screen reconnect", () => {
   it("shows the error once the retries come back without connecting", () => {
     const screen = createScreenReconnect();
     screen.loaded();
-    screen.report("connected");
-    expect(screen.report("disconnected")).toBe("reconnect");
+    screen.report("connected", 0);
+    expect(screen.report("disconnected", 1_000)).toBe("reconnect");
     for (let retry = 2; retry <= SCREEN_RECONNECT_TRIES; retry += 1) {
       screen.loaded();
-      expect(screen.report("failed")).toBe("reconnect");
+      expect(screen.report("failed", retry * 1_000)).toBe("reconnect");
     }
     screen.loaded();
-    expect(screen.report("failed")).toBe("error");
+    expect(screen.report("failed", 9_000)).toBe("error");
   });
 
-  it("starts the retries over once a reload connects", () => {
+  it("starts the retries over once a reload connects and stays up", () => {
     const screen = createScreenReconnect();
     screen.loaded();
-    screen.report("connected");
-    screen.report("disconnected");
+    screen.report("connected", 0);
+    screen.report("disconnected", 1_000);
     screen.loaded();
-    expect(screen.report("failed")).toBe("reconnect");
+    expect(screen.report("failed", 3_000)).toBe("reconnect");
     screen.loaded();
-    screen.report("connected");
-    // A later drop is a restart again, with the full retries ahead of it.
-    expect(screen.report("disconnected")).toBe("reconnect");
+    screen.report("connected", 4_000);
+    // A connection that stays up ends the trouble; a later drop starts the retries over.
+    expect(screen.report("disconnected", 4_000 + SCREEN_RECONNECT_STABLE_MS)).toBe("reconnect");
     expect(screen.delayMs()).toBe(SCREEN_RECONNECT_DELAY_MS);
   });
 });
@@ -93,14 +131,14 @@ describe("screen reconnects per computer", () => {
   it("gives each bot's screen its own allowance", () => {
     const screens = createScreenReconnects();
     screens.for("bot-a").loaded();
-    screens.for("bot-a").report("connected");
-    expect(screens.for("bot-a").report("disconnected")).toBe("reconnect");
+    screens.for("bot-a").report("connected", 0);
+    expect(screens.for("bot-a").report("disconnected", 1_000)).toBe("reconnect");
     // bot-a's reload raced a restart and tries again; bot-b's drop is unaffected.
     screens.for("bot-a").loaded();
-    expect(screens.for("bot-a").report("failed")).toBe("reconnect");
+    expect(screens.for("bot-a").report("failed", 3_000)).toBe("reconnect");
     screens.for("bot-b").loaded();
-    screens.for("bot-b").report("connected");
-    expect(screens.for("bot-b").report("disconnected")).toBe("reconnect");
+    screens.for("bot-b").report("connected", 0);
+    expect(screens.for("bot-b").report("disconnected", 1_000)).toBe("reconnect");
   });
 });
 
