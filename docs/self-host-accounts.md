@@ -248,6 +248,10 @@ docker compose --env-file .env -f docker-compose.images.yml exec api \
   node dist/cli/account-status.js deactivate person@example.com   # or reactivate
 ```
 
+The same command finishes a deactivation whose cleanup failed. Sign-in and runs are refused as
+soon as the account is off, and the API logs `directory.account_change.unfinished` with the account
+id if ending its sessions, computers or runs did not complete.
+
 Deactivation and reactivation are recorded as `auth.account.deactivated` and
 `auth.account.reactivated` [security events](./self-host-observability.md#security-events) and in
 each of the person's organizations' [audit log](./self-host-audit-log.md). The directory never

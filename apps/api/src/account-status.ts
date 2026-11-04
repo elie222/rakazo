@@ -68,19 +68,30 @@ function recordAccountStatus(userId: string, active: boolean, by: AccountStatusA
 
 /**
  * Ends what a deactivated account had going: sign-ins, paired computers, notification
- * registrations, views of its bots' screens, and runs. Its bots, chats, memory, files and connections stay. Sign-in and
- * new runs are refused separately for as long as the account stays deactivated.
+ * registrations, views of its bots' screens, and runs. Its bots, chats, memory, files and
+ * connections stay. Sign-in and new runs are refused separately for as long as the account
+ * stays deactivated. Every step is tried even when an earlier one fails, and running it again
+ * is safe; the operator's `account-status.js deactivate` does.
  */
 export async function endDeactivatedAccess(deps: AccountStatusDeps, userId: string) {
   const { prisma } = deps;
-  await prisma.session.deleteMany({ where: { userId } });
-  await revokeUserDevices(deps.devices, userId);
-  await deps.pushTokens.remove(userId);
-  await prisma.callPushDevice.deleteMany({ where: { userId } });
-  // Screen links issued before now stop working; people still allowed get new ones.
-  await prisma.bot.updateMany({ where: { userId }, data: { screenGeneration: { increment: 1 } } });
-  for (const { threadId, seq } of await cancelDeactivatedAccountRuns(prisma, userId))
-    await deps.events.notify(threadId, seq).catch((error) => {
-      getLogger().error("deactivated account run cancellation notification", error);
-    });
+  const steps = [
+    () => prisma.session.deleteMany({ where: { userId } }),
+    () => revokeUserDevices(deps.devices, userId),
+    () => deps.pushTokens.remove(userId),
+    () => prisma.callPushDevice.deleteMany({ where: { userId } }),
+    // Screen links issued before now stop working; people still allowed get new ones.
+    () =>
+      prisma.bot.updateMany({ where: { userId }, data: { screenGeneration: { increment: 1 } } }),
+    async () => {
+      for (const { threadId, seq } of await cancelDeactivatedAccountRuns(prisma, userId))
+        await deps.events.notify(threadId, seq).catch((error) => {
+          getLogger().error("deactivated account run cancellation notification", error);
+        });
+    },
+  ];
+  const failures: unknown[] = [];
+  for (const step of steps) await step().catch((error: unknown) => failures.push(error));
+  if (failures.length)
+    throw new AggregateError(failures, "Could not finish ending a deactivated account's access");
 }
