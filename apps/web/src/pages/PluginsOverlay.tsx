@@ -58,7 +58,7 @@ import {
 } from "@rakazo/ui-web";
 import { queryOptions, skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
 import type {
@@ -101,7 +101,7 @@ function ConnectorIcon({ name, logo }: { name: string; logo?: string | null }) {
   );
 }
 
-function connectionLabel(server: McpServer) {
+function connectionLabel(server: McpServer): ReactElement {
   switch (mcpServerConnection(server)) {
     case "disabled":
       return <Trans>Disabled</Trans>;

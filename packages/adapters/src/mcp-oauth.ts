@@ -1126,7 +1126,7 @@ export class McpOAuthBroker {
     state: string;
     spaceId: string;
     userId: string;
-  }): Promise<void> {
+  }): Promise<{ serverId: string }> {
     await this.sweepExpiredPending();
     if (input.state !== input.sessionId) {
       throw new Error("MCP OAuth session is invalid or expired");
@@ -1247,6 +1247,7 @@ export class McpOAuthBroker {
       where: { id: pending.serverId },
       data: { revision: { increment: 1 } },
     });
+    return { serverId: pending.serverId };
   }
 
   private async sweepExpiredPending(): Promise<void> {

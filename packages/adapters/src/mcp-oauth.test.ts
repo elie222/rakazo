@@ -1101,7 +1101,7 @@ describe("MCP OAuth", () => {
         if (generation === 0) {
           await expect(completing).rejects.toThrow("MCP OAuth session is invalid or expired");
         } else {
-          await expect(completing).resolves.toBeUndefined();
+          await expect(completing).resolves.toEqual({ serverId: shared.server.id });
         }
       } finally {
         await saving;

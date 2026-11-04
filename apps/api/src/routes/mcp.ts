@@ -621,10 +621,12 @@ export function mcpRoutes(ctx: RouterContext) {
               message: "This server cannot be checked from here.",
             });
           } else if (await mcpAwaitsOAuth(server, context.actor, oauth)) {
-            await recordMcpServerHealth(deps.prisma, server.id, {
-              status: "unknown",
-              message: MCP_OAUTH_PENDING_MESSAGE,
-            });
+            await recordMcpServerHealth(
+              deps.prisma,
+              server.id,
+              { status: "unknown", message: MCP_OAUTH_PENDING_MESSAGE },
+              server.revision,
+            );
           } else {
             await probeMcpServer(server, context.actor);
           }
@@ -927,48 +929,28 @@ export function mcpRoutes(ctx: RouterContext) {
         }),
         complete: authed.mcp.oauth.complete.handler(async ({ context, input }) => {
           try {
-            // complete() consumes the session, so which server it belongs to is read first.
-            const session = deps.mcp
-              ? await deps.prisma.mcpOAuthSession
-                  .findFirst({
-                    where: {
-                      id: input.sessionId,
-                      spaceId: context.actor.spaceId,
-                      userId: context.actor.userId,
-                    },
-                    select: { serverId: true },
-                  })
-                  .catch(() => null)
-              : null;
-            await mcpOAuth.complete({
+            const { serverId } = await mcpOAuth.complete({
               ...input,
               spaceId: context.actor.spaceId,
               userId: context.actor.userId,
             });
-            if (session) {
-              // A check from before the sign-in would otherwise still read as failing.
-              await recordMcpServerHealth(deps.prisma, session.serverId, {
-                status: "unknown",
-                message: null,
+            // A check from before the sign-in would otherwise still read as failing.
+            await recordMcpServerHealth(deps.prisma, serverId, {
+              status: "unknown",
+              message: null,
+            });
+            // The account is connected now: check the server so it shows ok/error.
+            void (async () => {
+              const server = await deps.prisma.mcpServer.findFirst({
+                where: { id: serverId, ...availableInSpace(context.actor) },
               });
-              // The account is connected now: check the server so it shows ok/error.
-              void (async () => {
-                const server = await deps.prisma.mcpServer.findFirst({
-                  where: {
-                    id: session.serverId,
-                    ...availableInSpace(context.actor),
-                  },
-                });
-                if (server)
-                  await beginMcpProbe(
-                    server,
-                    context.actor,
-                    await mcpOAuth.summaryFor(server, context.actor),
-                  );
-              })().catch((error) =>
-                getLogger().error("mcp server probe after oauth failed", error),
-              );
-            }
+              if (server)
+                await beginMcpProbe(
+                  server,
+                  context.actor,
+                  await mcpOAuth.summaryFor(server, context.actor),
+                );
+            })().catch((error) => getLogger().error("mcp server probe after oauth failed", error));
             return { ok: true as const };
           } catch (error) {
             throw new ORPCError("BAD_REQUEST", {

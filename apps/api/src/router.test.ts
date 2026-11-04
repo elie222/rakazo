@@ -2817,16 +2817,13 @@ describe("MCP server health", () => {
 
     it("probes the server once its OAuth session completes", async () => {
       const h = harness({ row: baseRow() });
-      const complete = vi.fn(async () => undefined);
+      const complete = vi.fn(async () => ({ serverId: "server-1" }));
       Object.assign(h.deps, {
         mcpOAuth: {
           ...(h.deps.mcpOAuth as object),
           complete,
         },
       });
-      (h.deps.prisma as unknown as { mcpOAuthSession: unknown }).mcpOAuthSession = {
-        findFirst: vi.fn(async () => ({ serverId: "server-1" })),
-      };
       const client = createRouterClient(createRouter(h.deps), {
         context: {
           actor: {
@@ -2858,10 +2855,17 @@ describe("MCP server health", () => {
         probe: () => new Promise(() => undefined),
       });
       Object.assign(h.deps, {
-        mcpOAuth: { ...(h.deps.mcpOAuth as object), complete: vi.fn(async () => undefined) },
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          complete: vi.fn(async () => ({ serverId: "server-1" })),
+        },
       });
+      // A separate session lookup failing must not skip the reset: the completed sign-in names
+      // its server.
       (h.deps.prisma as unknown as { mcpOAuthSession: unknown }).mcpOAuthSession = {
-        findFirst: vi.fn(async () => ({ serverId: "server-1" })),
+        findFirst: vi.fn(async () => {
+          throw new Error("pool timeout");
+        }),
       };
 
       await h
@@ -2870,6 +2874,8 @@ describe("MCP server health", () => {
 
       // The new check is still running, so the list must not keep showing the old failure.
       expect(h.row()).toMatchObject({ healthStatus: "unknown", healthMessage: null });
+      await flush();
+      expect(h.probe).toHaveBeenCalledTimes(1);
     });
   });
 });

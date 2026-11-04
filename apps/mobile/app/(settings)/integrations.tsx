@@ -521,7 +521,7 @@ export default function Integrations() {
     );
   }
 
-  function serverStatus(state: McpServerConnection) {
+  function serverStatus(state: McpServerConnection): string {
     switch (state) {
       case "disabled":
         return t("Disabled");
