@@ -1840,8 +1840,15 @@ describe("a group member the message named nobody for", () => {
     expect(result.finalizeRun.mock.calls[0]![0].blocks).toEqual([{ kind: "text", text: "." }]);
   });
 
-  it("does not treat an empty finish as silence", async () => {
+  it("ends an empty finish silently instead of posting a fallback", async () => {
     const result = await turn(true, [done]);
+    expect(result.finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "completed", blocks: [], markUnread: false }),
+    );
+  });
+
+  it("keeps the fallback for an empty finish when the message named it", async () => {
+    const result = await turn(false, [done]);
     expect(result.finalizeRun).toHaveBeenCalledWith(
       expect.objectContaining({ blocks: [{ kind: "text", text: "done." }], markUnread: true }),
     );

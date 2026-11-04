@@ -800,14 +800,15 @@ export async function completeRun(ctx: RunContext) {
   flushPendingTools(reply);
   // Silent-allowed runs can choose an explicit NO_RESPONSE or finish empty.
   // Other runs still drop a stray sentinel at the edges of a real reply.
-  // A member a group message named nobody for may end silently, but only by saying so (the
-  // sentinel, or a placeholder such as a lone dot) without having done any work: tool steps or
-  // a posted message are still shown, and an empty finish is not a choice to stay quiet.
+  // A member a group message named nobody for may end silently with the sentinel, a placeholder
+  // such as a lone dot, or nothing at all, as long as it did no work: tool steps or a posted
+  // message are still shown.
   const groupSilentEnd =
     ctx.groupReplyOptional &&
     !ctx.allowSilentEmptyRun &&
     (isNoResponseReply(reply.assembled, reply.messageSegments) ||
-      isPlaceholderReply(reply.assembled, reply.messageSegments)) &&
+      isPlaceholderReply(reply.assembled, reply.messageSegments) ||
+      !(reply.assembled.trim() || reply.messageSegments.length)) &&
     !reply.publishedMidTurnUserMessage &&
     !reply.publishedTerminalSubagent &&
     reply.messageSegments.every((block) => block.kind === "text") &&
