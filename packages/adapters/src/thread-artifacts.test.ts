@@ -581,7 +581,21 @@ describe("earlier file queue", () => {
     queue.add([file("c")]);
     expect(queue.take().map((f) => f.artifactId)).toEqual(["a", "c"]);
     expect(queue.take()).toEqual([]);
-    // Listing it again retries a copy that failed, or keeps one already on the computer.
+    // Listing it again retries a copy that failed.
+    queue.add([file("a")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["a"]);
+  });
+
+  it("skips files already copied to this computer until a new one starts", () => {
+    const queue = createEarlierFileQueue();
+    queue.add([file("a"), file("b")]);
+    const taken = queue.take();
+    queue.copiedTo(taken, [
+      { name: "a.md", mimeType: "text/markdown", size: 1, path: "attachments/a.md" },
+    ]);
+    queue.add([file("a"), file("b")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["b"]);
+    queue.computerStarted();
     queue.add([file("a")]);
     expect(queue.take().map((f) => f.artifactId)).toEqual(["a"]);
   });

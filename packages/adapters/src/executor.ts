@@ -1117,10 +1117,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           skipMessageId: currentTurnMessage?.id,
           maxTurns: RECENT_TURN_IMAGE_TURNS,
         };
+        // Files from earlier messages that history tools surfaced this run.
+        const earlierFiles = createEarlierFileQueue();
         const runComputer = lazyRunComputer(
           async () => {
             getLogger().info("computer.requested");
             const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
+            earlierFiles.computerStarted();
             computerUse.screenRelease = { computer, context, keepWarm: false };
             recordComputerDisk(deps, storedComputer.id, computer, context);
             scheduleComputerSleep(deps.jobs, storedComputer.id);
@@ -1147,8 +1150,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           context.signal,
         );
         const pendingTurnFiles: MessageBlock[][] = [turnBlocks ?? []];
-        // Files from earlier messages that history tools surfaced this run.
-        const earlierFiles = createEarlierFileQueue();
         let copyingTurnFiles = Promise.resolve();
         // Serialize copies before each tool, including attachments received while a boot is in flight.
         const getRunComputer = async (reason: "tool" | "takeover" | "script", tool?: string) => {
@@ -1185,11 +1186,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   }
                   const earlier = earlierFiles.take();
                   if (artifacts && earlier.length) {
-                    await materializeEarlierFiles({ ...deps, artifacts }, earlier, {
-                      context,
-                      computer: async () => computer,
-                      computerMode,
-                    });
+                    earlierFiles.copiedTo(
+                      earlier,
+                      await materializeEarlierFiles({ ...deps, artifacts }, earlier, {
+                        context,
+                        computer: async () => computer,
+                        computerMode,
+                      }),
+                    );
                   }
                 });
               await copyingTurnFiles;

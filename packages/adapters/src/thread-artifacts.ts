@@ -257,15 +257,17 @@ export async function materializeRecentThreadFiles(
 export const EARLIER_FILES_PENDING = 20;
 
 /**
- * Files history tools listed since the last computer tool, newest kept. Nothing is reserved for the
- * run: listing a file again queues it again, so a failed copy retries and a copy already on the
- * computer is kept as is.
+ * Files history tools listed since the last computer tool, newest kept. A file copied to the
+ * current computer is not queued again; one whose copy failed is, the next time it is listed.
  */
 export function createEarlierFileQueue(limit = EARLIER_FILES_PENDING) {
-  let pending: Array<Extract<MessageBlock, { kind: "file" | "image" }>> = [];
+  type FileBlock = Extract<MessageBlock, { kind: "file" | "image" }>;
+  let pending: FileBlock[] = [];
+  let copied = new Set<string>();
   return {
-    add(files: ReadonlyArray<Extract<MessageBlock, { kind: "file" | "image" }>>) {
+    add(files: ReadonlyArray<FileBlock>) {
       for (const file of files) {
+        if (copied.has(file.artifactId)) continue;
         pending = pending.filter((queued) => queued.artifactId !== file.artifactId);
         pending.push(file);
       }
@@ -278,6 +280,17 @@ export function createEarlierFileQueue(limit = EARLIER_FILES_PENDING) {
       const taken = pending;
       pending = [];
       return taken;
+    },
+    /** Record which taken files reached the computer, by the paths the copy returned. */
+    copiedTo(taken: ReadonlyArray<FileBlock>, files: ReadonlyArray<MaterializedThreadFile>) {
+      const paths = new Set(files.map((file) => file.path));
+      for (const file of taken)
+        if (paths.has(attachmentComputerPath(file.artifactId, file.mimeType)))
+          copied.add(file.artifactId);
+    },
+    /** A newly started computer has none of the earlier copies. */
+    computerStarted() {
+      copied = new Set();
     },
   };
 }
