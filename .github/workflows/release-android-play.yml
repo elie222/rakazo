@@ -58,6 +58,17 @@ jobs:
       - name: Verify mobile project
         run: pnpm --filter @rakazo/mobile check
 
+      # Without Firebase config the app never registers for push, and an OTA update can't add it.
+      - name: Require Firebase config
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          vars="$(eas env:list production --format short)"
+          if ! grep -q '^GOOGLE_SERVICES_JSON=' <<< "$vars"; then
+            echo "Set the GOOGLE_SERVICES_JSON file variable in the EAS production environment (see docs/mobile-release.md)." >&2
+            exit 1
+          fi
+
       - name: Build App Bundle on EAS
         id: build
         working-directory: apps/mobile
