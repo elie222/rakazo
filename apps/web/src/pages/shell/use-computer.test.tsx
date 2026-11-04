@@ -181,6 +181,39 @@ it("shows a proxied screen's error only after its reloads stop connecting", asyn
   expect(container.querySelector("iframe")).toBeNull();
 });
 
+it("keeps one reconnect while its screen read is still pending", async () => {
+  await read();
+  await report("connected");
+  // The drop's screen read answers slowly; the dying page reports the same drop again, and
+  // that second read would fail.
+  let release: (() => void) | undefined;
+  screenUrl.mockImplementationOnce(
+    () =>
+      new Promise<{ url: string }>((resolve) => {
+        release = () => resolve({ url: screenUrlFactory() });
+      }),
+  );
+  screenUrl.mockImplementationOnce(async () => {
+    throw new Error("screen read failed");
+  });
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  await report("failed");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(2);
+  expect(state.screenLoadError).toBeNull();
+  // The one pending read completes with a fresh code, and the screen keeps it.
+  await act(async () => {
+    release?.();
+  });
+  expect(state.screenLoadError).toBeNull();
+  expect(code()).toBe("code-2");
+});
+
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {
   function Controls() {
     state = useComputerState({

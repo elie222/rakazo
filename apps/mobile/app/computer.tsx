@@ -294,21 +294,18 @@ export default function Computer() {
   // One reconnect at a time: once its reload is on its way, the same drop's further reports
   // must not start another.
   const screenReconnecting = useRef(false);
-  // Each bot's screen has its own reconnect budget, so switching bots starts a fresh one.
-  const screenReconnectBot = useRef<string | undefined>(botId);
-  const screenReconnect = useRef(createScreenReconnect());
-  if (screenReconnectBot.current !== botId) {
-    screenReconnectBot.current = botId;
-    screenReconnect.current = createScreenReconnect();
-    screenReconnecting.current = false;
-  }
+  // Each bot's screen has its own reconnect budget, so a committed switch of bots starts a
+  // fresh one. useMemo ties the new budget to a committed render: a render that never
+  // commits, such as a suspended transition toward another bot that is then cancelled,
+  // leaves the screen on screen with its budget.
+  const screenReconnect = useMemo(() => createScreenReconnect(), [botId]);
   const screenReconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const screenReconnectWait = useRef<AbortController | null>(null);
   const currentScreenUrl = useRef<string | null>(null);
   currentScreenUrl.current = loadedScreenUrl ?? embeddedScreenUrl;
   const onScreenState = useCallback(
     (state: ScreenPageState) => {
-      const next = screenReconnect.current.report(state);
+      const next = screenReconnect.report(state);
       if (next !== "reconnect") {
         // A drop that won't reconnect by itself shows why, with Retry.
         const failed = next === "error";
@@ -331,7 +328,7 @@ export default function Computer() {
       const wait = new AbortController();
       screenReconnectWait.current = wait;
       const url = currentScreenUrl.current;
-      const delay = screenReconnect.current.delayMs();
+      const delay = screenReconnect.delayMs();
       screenReconnectTimer.current = setTimeout(() => {
         // Wait out an API that can't be reached, so the one reconnect isn't spent on it; the
         // reload then shows whatever the page answers.
@@ -349,14 +346,14 @@ export default function Computer() {
         });
       }, delay);
     },
-    [reloadScreen, t],
+    [reloadScreen, screenReconnect, t],
   );
   const onScreenLoadStart = useCallback(() => {
     screenReconnecting.current = false;
-    screenReconnect.current.loaded();
-  }, []);
-  // Closing the screen, leaving the app or a new screen URL (taking or releasing control)
-  // cancels a pending reconnect.
+    screenReconnect.loaded();
+  }, [screenReconnect]);
+  // Closing the screen, leaving the app, switching bots or a new screen URL (taking or
+  // releasing control) cancels a pending reconnect.
   useEffect(
     () => () => {
       screenReconnectWait.current?.abort();
@@ -364,7 +361,12 @@ export default function Computer() {
       screenReconnecting.current = false;
     },
     // A renewed link for the same screen keeps the page and the pending reconnect.
-    [computerOpen, foreground, embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null],
+    [
+      botId,
+      computerOpen,
+      foreground,
+      embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null,
+    ],
   );
 
   useEffect(() => {
@@ -506,7 +508,7 @@ export default function Computer() {
       size="default"
       onPress={() => {
         // A pressed retry starts the screen's reconnects over, with their whole budget.
-        screenReconnect.current.reset();
+        screenReconnect.reset();
         void reloadScreen();
       }}
     />

@@ -145,6 +145,11 @@ export function useComputerState({
     if (!screenFrame) return;
     const fallback = t`Could not connect to the computer screen`;
     let reconnect: ReturnType<typeof setTimeout> | undefined;
+    // One reconnect at a time: while its screen read or page wait is still on its way,
+    // further reports of the same drop only describe it again and must not start a second
+    // one, whose failure would cancel the first. A new frame or screen URL re-runs this
+    // effect and starts the next cycle.
+    let reconnectPending = false;
     const stopped = new AbortController();
     const onMessage = (event: MessageEvent) => {
       if (event.source !== screenFrame.contentWindow) return;
@@ -174,6 +179,8 @@ export function useComputerState({
           document.visibilityState === "visible" &&
           screenReconnect().report(message.rakazoScreen) === "reconnect"
         ) {
+          if (reconnectPending) return;
+          reconnectPending = true;
           screenRefocus.current.dropped(document.activeElement === screenFrame);
           const botId = computerBotIdRef.current;
           const delay = screenReconnect().delayMs();
@@ -188,6 +195,8 @@ export function useComputerState({
         return;
       }
       if (screenReconnect().report(message.rakazoScreen) === "reconnect") {
+        if (reconnectPending) return;
+        reconnectPending = true;
         screenRefocus.current.dropped(document.activeElement === screenFrame);
         clearTimeout(reconnect);
         const url = embeddableScreenUrl(screenUrl);
