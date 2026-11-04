@@ -700,7 +700,7 @@ describe("routines screen", () => {
     rowFor("New routine")!.click();
     expect(push).toHaveBeenCalledWith({
       pathname: "/routine",
-      params: { botId: "bot-fixture", botName: "Fixture" },
+      params: { botId: "bot-fixture", botName: "Fixture", origin: "profile" },
     });
   });
 

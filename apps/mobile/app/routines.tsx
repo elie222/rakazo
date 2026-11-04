@@ -52,7 +52,8 @@ export default function Routines() {
     );
   }
 
-  const create = () => router.push({ pathname: "/routine", params: { botId, botName: name } });
+  const create = () =>
+    router.push({ pathname: "/routine", params: { botId, botName: name, origin: "profile" } });
   const header = (
     <Stack.Screen
       options={
