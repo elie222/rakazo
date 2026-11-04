@@ -82,7 +82,6 @@ const others = SANDBOXES.filter((other) => other.slug !== sandbox.slug);
   <ul>
     {others.map((other) => <li><a href={sandboxPath(other.slug)}>{other.name}</a></li>)}
   </ul>
-  <p><a href={SANDBOXES_PATH}>Compare all sandboxes for AI agents</a></p>
 
   <h2>Sources</h2>
   <ul class="source-list">

@@ -2880,6 +2880,14 @@ button.product-demo__dock-icon {
   padding-left: 22px;
 }
 
+.alt-page ul:not([class]) {
+  list-style: disc;
+}
+
+.alt-page ul:not([class]) li::marker {
+  color: var(--muted);
+}
+
 .alt-page p a:not(.button),
 .alt-page li a:not(.button) {
   color: var(--blue);

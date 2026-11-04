@@ -6,7 +6,7 @@ export const SANDBOXES_UPDATED = "November 4, 2026";
 export const COMPUTER_PROVIDERS_DOCS_PATH = "/docs/self-host-sandbox-providers/";
 
 export const SANDBOXES_HUB = {
-  title: "Best sandboxes for AI agents in 2026: E2B, Daytona, Novita, Railway, Boat, Docker and Kubernetes",
+  title: "Best sandboxes for AI agents in 2026: Boat, E2B, Daytona, Novita, Railway, Docker and Kubernetes",
   description:
     "A comparison of the sandboxes Rakazo bots can use as their computer: hosted, on your own machine or cluster, or your own Mac or PC.",
   h1: "Best sandboxes for AI agents in 2026",
@@ -21,7 +21,7 @@ export const SANDBOXES_HUB = {
     },
     {
       heading: "Hosted, away from your server",
-      text: "E2B is the remote option Rakazo's live tests run on. Novita pauses with memory, so bots come back to the same open programs. Daytona and Boat keep each computer's disk, and Boat gives every bot its own Chrome logins.",
+      text: "Boat runs Rakazo Cloud's bot computers and gives every bot its own Chrome logins. E2B is the remote option Rakazo's live tests run on. Novita pauses with memory, so bots come back to the same open programs. Daytona keeps each computer's disk.",
     },
     {
       heading: "One account for everything",
@@ -108,6 +108,47 @@ const RUNTIME_DOC: SourceLink = {
 };
 
 export const SANDBOXES: readonly Sandbox[] = [
+  {
+    slug: "boat",
+    name: "Boat",
+    runsOn: "Hosted Linux VM in the EU",
+    keeps: "Its disk and each bot's Chrome profile",
+    bestFor: "Many bots with separate logins",
+    title: "Boat for AI agents: run Rakazo bot computers on Boat",
+    description:
+      "Give each Rakazo bot a Linux desktop on a Boat cloud VM, with its own Chrome profile and logins.",
+    h1: "Run your AI agents' computers on Boat",
+    intro: [
+      "Boat runs cloud VMs for agents, with a desktop and browser. Rakazo can use it as the place where your bots' computers live. It's what Rakazo Cloud uses for its own bot computers.",
+      "Each bot gets its own Chrome profile, so one bot's logins are never shared with another.",
+    ],
+    image: homepage(
+      "boat",
+      "Boat",
+      "The Boat homepage, headed Most powerful and affordable cloud VMs for agents.",
+    ),
+    works: [
+      "A Linux desktop you can watch live and take over, with several bots' screens on one computer.",
+      "Shell commands, a terminal, and reading and writing files.",
+      "A separate, persistent Chrome profile for each bot.",
+      "Computers start from a prebuilt snapshot that Rakazo builds on its own the first time.",
+    ],
+    limits: [
+      "No region choice or custom image from Rakazo. Boat's regions are in the EU.",
+      "Stopping keeps the disk, not running programs.",
+    ],
+    setup: [
+      "Set `SANDBOX_PROVIDER=boat` and `BOAT_API_KEY`, or choose Boat in Settings → Computer as an admin. `BOAT_API_URL` is optional.",
+      "No template step: the snapshot builds itself. `pnpm sandbox:boat-snapshot` builds it ahead of time.",
+    ],
+    faq: [
+      {
+        question: "Do Boat computers see my server's environment variables?",
+        answer: "No. Rakazo always creates Boat sandboxes without the account's environment.",
+      },
+    ],
+    sources: [{ label: "Boat", href: "https://boat.dev" }, PROVIDERS_DOC],
+  },
   {
     slug: "e2b",
     name: "E2B",
@@ -294,47 +335,6 @@ export const SANDBOXES: readonly Sandbox[] = [
     ],
   },
   {
-    slug: "boat",
-    name: "Boat",
-    runsOn: "Hosted Linux VM in the EU",
-    keeps: "Its disk and each bot's Chrome profile",
-    bestFor: "Many bots with separate logins",
-    title: "Boat for AI agents: run Rakazo bot computers on Boat",
-    description:
-      "Give each Rakazo bot a Linux desktop on a Boat cloud VM, with its own Chrome profile and logins.",
-    h1: "Run your AI agents' computers on Boat",
-    intro: [
-      "Boat runs cloud VMs for agents, with a desktop and browser. Rakazo can use it as the place where your bots' computers live.",
-      "Each bot gets its own Chrome profile, so one bot's logins are never shared with another.",
-    ],
-    image: homepage(
-      "boat",
-      "Boat",
-      "The Boat homepage, headed Most powerful and affordable cloud VMs for agents.",
-    ),
-    works: [
-      "A Linux desktop you can watch live and take over, with several bots' screens on one computer.",
-      "Shell commands, a terminal, and reading and writing files.",
-      "A separate, persistent Chrome profile for each bot.",
-      "Computers start from a prebuilt snapshot that Rakazo builds on its own the first time.",
-    ],
-    limits: [
-      "No region choice or custom image from Rakazo. Boat's regions are in the EU.",
-      "Stopping keeps the disk, not running programs.",
-    ],
-    setup: [
-      "Set `SANDBOX_PROVIDER=boat` and `BOAT_API_KEY`, or choose Boat in Settings → Computer as an admin. `BOAT_API_URL` is optional.",
-      "No template step: the snapshot builds itself. `pnpm sandbox:boat-snapshot` builds it ahead of time.",
-    ],
-    faq: [
-      {
-        question: "Do Boat computers see my server's environment variables?",
-        answer: "No. Rakazo always creates Boat sandboxes without the account's environment.",
-      },
-    ],
-    sources: [{ label: "Boat", href: "https://boat.dev" }, PROVIDERS_DOC],
-  },
-  {
     slug: "wuying",
     name: "Wuying",
     runsOn: "Your Alibaba Cloud Windows desktop",
@@ -494,11 +494,12 @@ export const SANDBOXES: readonly Sandbox[] = [
       "Either way, this is your machine, not a sandbox. Only turn it on for bots you'd trust unattended.",
     ],
     image: {
-      webp: "/graphics/chat/approval.png",
-      width: 1200,
-      height: 800,
-      alt: "An approval card asking whether a demo bot may send an email, with allow once, always allow, and deny.",
-      caption: "An approval card in Rakazo.",
+      webp: "/graphics/sandboxes/your-computer.webp",
+      avif: "/graphics/sandboxes/your-computer.avif",
+      width: 1280,
+      height: 720,
+      alt: "A chat where the user asks a bot to look at TextEdit on their computer, and the bot asks: Use TextEdit on your computer? Allow in this space, or Deny.",
+      caption: "A bot asks before it uses an app on your computer.",
     },
     works: [
       "Let bots use this computer, in Settings → General, works when the app connects to Rakazo Cloud or another server. A bot asks before its first command in a space and before it first uses each app, in every approval mode, and only in your own chats.",
