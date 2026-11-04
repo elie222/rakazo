@@ -12,7 +12,7 @@ export const selfHosted: VoiceProvider = {
     "Run text to speech and speech to text for your AI agents on your own hardware. Connect Kokoro, Whisper or any OpenAI-compatible speech server to Rakazo, with no hosted voice vendor. Limits, network rules and setup.",
   h1: "Self-hosted voice for your AI agents",
   intro: [
-    "You don't need a voice vendor to talk to an AI agent. Open models such as [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) for speech and Whisper for transcription run on an ordinary computer, and several open source servers put them behind the same API shape OpenAI uses. Point an agent at that server and your voice never leaves your network.",
+    "You don't need a voice vendor to talk to an AI agent. Open models such as [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) for speech and Whisper for transcription run on an ordinary computer, and several open source servers put them behind the same API shape OpenAI uses. Point an agent at that server and no voice vendor ever hears you. The finished audio still goes to whichever device is listening.",
     "[Rakazo](/) is an open source app for AI teammates that do real work. You talk to each bot in chat, and you can also talk to it by voice: hold the mic to speak, have replies read aloud, or call a bot in real time. Its **Self-hosted** voice option connects to any OpenAI-compatible speech server you run, so a [self-hosted Rakazo](/self-hosted-ai-agent/) can have voice with no hosted service at all.",
   ],
   scene: {
@@ -24,7 +24,7 @@ export const selfHosted: VoiceProvider = {
     results: [
       { k: "Speech", v: "Kokoro on your server" },
       { k: "Transcription", v: "Whisper on your server" },
-      { k: "Audio", v: "Never leaves your network" },
+      { k: "Voice vendor", v: "None, your own server" },
     ],
   },
   sections: [
@@ -51,7 +51,7 @@ export const selfHosted: VoiceProvider = {
     {
       heading: "When to choose self-hosted voice",
       paragraphs: [
-        "Choose it when audio must stay on your network, when you want voice with no vendor account, or when you already run local models. It pairs naturally with a [self-hosted Rakazo](/self-hosted-ai-agent/) and a local model, so the whole assistant can work offline.",
+        "Choose it when you don't want a hosted vendor to process your voice, when you want voice with no vendor account, or when you already run local models. It pairs naturally with a [self-hosted Rakazo](/self-hosted-ai-agent/) and a local model, so the whole assistant can work offline.",
         "Hosted providers are less work and usually sound more polished. [ElevenLabs](/voice-providers/elevenlabs/) and [Fish Audio](/voice-providers/fish-audio/) offer cloning, [OpenAI](/voice-providers/openai/) reuses a key you may already have, and [Cartesia](/voice-providers/cartesia/) is tuned for low latency. If Rakazo runs directly on a Mac, [macOS voices](/voice-providers/macos/) speak with nothing to install, but don't transcribe. See the [comparison](/voice-providers/) for all six.",
       ],
     },
@@ -63,7 +63,7 @@ export const selfHosted: VoiceProvider = {
         "Addresses on your own network, `localhost` and `host.docker.internal` are refused unless the server sets `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker. That setting applies to every user, so leave it off on a public install.",
         "A hostname that resolves to a private address must also be listed in `RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS`. Cloud metadata and link-local addresses are always blocked.",
         "A public address must use HTTPS if you add an API key. Setting `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` blocks public servers, and hides the option if private ones aren't allowed either.",
-        "On the mobile app, calls use your phone's own speech recognition and voices instead.",
+        "On the mobile app, calls can use your phone's own voices if you pick a **Device voice** in the bot's settings. Otherwise replies use this provider.",
       ],
     },
     {

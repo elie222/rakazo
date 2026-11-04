@@ -48,7 +48,7 @@ export const elevenlabs: VoiceProvider = {
         "Call a bot. Choose **Call** at the top of a chat to talk in real time. You can cut in while the bot is speaking, and the transcript stays in the chat.",
         "Get called. Ask \"call me at 5 to go over the day\" and the bot rings you then. A bot may also call if you've missed the same reminder several times.",
         "Give each bot its own voice. The **Voice** next to **Read replies aloud** overrides your default for that bot, so your inbox bot and your sales bot don't sound alike.",
-        "Use your own voices. The voice picker lists the voices in your ElevenLabs account, including ones you cloned or saved from its library, and you can paste any voice ID.",
+        "Use your own voices. The voice picker lists the voices in your ElevenLabs account, including ones you cloned or saved from its library.",
         "Send voice notes from chat apps. A voice note sent to a bot through Telegram, for example, is transcribed with ElevenLabs before the bot reads it. See [messaging apps](/docs/messaging-apps/).",
       ],
     },
@@ -113,7 +113,7 @@ export const elevenlabs: VoiceProvider = {
     {
       question: "Do I need ElevenLabs to use Rakazo?",
       answer:
-        "No. Voice is optional, and Rakazo works fully in text. The mobile app can also use your phone's own speech recognition and voices for calls.",
+        "No. Voice is optional, and Rakazo works fully in text. On the mobile app, a bot can also use your phone's own voice for calls.",
     },
   ],
   sources: [

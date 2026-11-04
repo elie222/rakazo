@@ -52,7 +52,7 @@ export const macos: VoiceProvider = {
     {
       heading: "When to choose macOS voices",
       paragraphs: [
-        "Choose them when you run Rakazo on your own Mac and want bots to speak right away, with nothing to sign up for and nothing to install. Speech never leaves the machine running Rakazo.",
+        "Choose them when you run Rakazo on your own Mac and want bots to speak right away, with nothing to sign up for and nothing to install. Speech is made on the machine running Rakazo, with no vendor involved, then sent to whichever device is listening.",
         "For voices that also transcribe, a [self-hosted speech server](/voice-providers/self-hosted/) keeps everything on your own hardware and works on Linux too. Hosted providers sound more natural and need a key: [ElevenLabs](/voice-providers/elevenlabs/) and [Fish Audio](/voice-providers/fish-audio/) clone voices, [OpenAI](/voice-providers/openai/) is the simplest, and [Cartesia](/voice-providers/cartesia/) is built for low latency. The [voice provider comparison](/voice-providers/) shows all six.",
       ],
     },
@@ -63,7 +63,7 @@ export const macos: VoiceProvider = {
         "It doesn't transcribe. Hold-to-talk and calls depend on speech recognition in your browser or the desktop app, and voice notes from messaging apps reach bots without a transcript.",
         "macOS voices sound less natural than the best hosted voices, and there's no voice cloning.",
         "The voices are whatever is installed on the server's Mac. A newly downloaded voice can take a few minutes to show up.",
-        "On the mobile app, calls use your phone's own speech recognition and voices instead.",
+        "On the mobile app, calls can use your phone's own voices if you pick a **Device voice** in the bot's settings. Otherwise replies use this provider.",
       ],
     },
     {

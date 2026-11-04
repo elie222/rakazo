@@ -63,7 +63,7 @@ export const fishAudio: VoiceProvider = {
         "Rakazo asks Fish Audio for each reply as a finished clip. It doesn't use Fish Audio's realtime streaming API.",
         "The voice picker shows your own voices and the top public voices, not the whole library.",
         "When your Fish Audio credit runs out or the key is rejected, speaking and transcribing stop until you fix the account.",
-        "On the mobile app, calls use your phone's own speech recognition and voices instead.",
+        "On the mobile app, calls can use your phone's own voices if you pick a **Device voice** in the bot's settings. Otherwise replies use this provider.",
       ],
     },
     {

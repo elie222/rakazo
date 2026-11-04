@@ -18,7 +18,7 @@ import type { VoiceProvider } from "./types";
 export * from "./shared";
 export type { VoiceProvider } from "./types";
 
-/** Display order everywhere integration providers are listed. */
+/** Display order everywhere voice providers are listed. */
 export const VOICE_PROVIDERS: readonly VoiceProvider[] = [
   elevenlabs,
   openai,
@@ -120,7 +120,7 @@ export function otherVoiceProviders(provider: VoiceProvider): ArticleLink[] {
   );
 }
 
-/** Markdown twin of an integration provider page, for agents and `.md` requests. */
+/** Markdown twin of a voice provider page, for agents and `.md` requests. */
 export function voiceProviderMarkdown(provider: VoiceProvider): string {
   return articleMarkdown(provider, {
     hub: VOICE_PROVIDERS_ARTICLE_HUB,
@@ -129,7 +129,7 @@ export function voiceProviderMarkdown(provider: VoiceProvider): string {
   });
 }
 
-/** Markdown twin of the integration providers hub. */
+/** Markdown twin of the voice providers hub. */
 export function voiceProvidersHubMarkdown(): string {
   const hub = VOICE_PROVIDERS_HUB;
   return [
