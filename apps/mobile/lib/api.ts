@@ -950,13 +950,15 @@ export async function fetchMobileJson<T>(
 
 const PENDING_SIGN_OUT_KEY = "rakazo.pending_sign_out";
 /**
- * An undelivered record is dropped once no server session could remain. Better-auth expires a
+ * An undelivered record normally ages from its last possible server contact. Better-auth expires a
  * session 7 days after its last use. Older servers refresh the authenticated unregistration;
  * a same-origin redirect can also follow a request that refreshed the session. This record
  * conservatively ages from the later of its writing and a possible renewal; 30 days covers
  * both and longer overrides.
  */
 const PENDING_SIGN_OUT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+/** Bounds token retention from the original writing, even if a server keeps redirecting retries. */
+const PENDING_SIGN_OUT_HARD_MAX_AGE_MS = 2 * PENDING_SIGN_OUT_MAX_AGE_MS;
 /** Answered-request retries wait at least this long, so a dead old server is not retried per request. */
 const PENDING_SIGN_OUT_FLUSH_SPACING_MS = 60_000;
 /** Storage safety cap for the record list; with everything unexpired, the oldest go first. */
@@ -987,11 +989,14 @@ function samePendingSignOut(left: PendingSignOut, right: PendingSignOut): boolea
 
 type PendingSignOutRead = { ok: true; records: PendingSignOut[] } | { ok: false };
 
-/** Records whose session could still be alive: young since the writing or the last renewal. */
+/** Records within both the renewal window and the total retention limit. */
 function livePendingSignOuts(records: PendingSignOut[], now = Date.now()): PendingSignOut[] {
   return records.filter((record) => {
     const lastServerContact = Math.max(record.recordedAt, record.renewedAt ?? 0);
-    return now - lastServerContact < PENDING_SIGN_OUT_MAX_AGE_MS;
+    return (
+      now - record.recordedAt < PENDING_SIGN_OUT_HARD_MAX_AGE_MS &&
+      now - lastServerContact < PENDING_SIGN_OUT_MAX_AGE_MS
+    );
   });
 }
 

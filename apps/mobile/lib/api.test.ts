@@ -1730,6 +1730,42 @@ describe("mobile API authentication", () => {
     ]);
   });
 
+  it("retires a continually redirected revocation at the hard age limit", async () => {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const startedAt = Date.now();
+    let now = startedAt;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn(async () => {
+      const response = new Response("<html>Sign in</html>", { status: 200 });
+      Object.defineProperties(response, {
+        redirected: { value: true },
+        url: { value: "http://127.0.0.1:3100/login" },
+      });
+      return response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await signOut();
+
+    for (const age of [29 * dayMs, 31 * dayMs, 59 * dayMs, 60 * dayMs - 1]) {
+      now = startedAt + age;
+      await flushPendingSignOut(true);
+      expect(pendingSignOutRecords(store)).toHaveLength(1);
+      expect(JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]")[0].renewedAt).toBe(now);
+    }
+
+    fetchMock.mockClear();
+    now = startedAt + 60 * dayMs;
+    await flushPendingSignOut(true);
+
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+    now += dayMs;
+    await flushPendingSignOut(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("keeps a revocation whose unregistration renewed the session", async () => {
     const dayMs = 24 * 60 * 60 * 1000;
     const store = new Map<string, string>([
