@@ -6697,6 +6697,10 @@ msgstr ""
 msgid "Transcription response is too large."
 msgstr ""
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription server URL"
+msgstr "전사 서버 URL"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr ""

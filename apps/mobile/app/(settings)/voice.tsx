@@ -40,7 +40,7 @@ import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 import { speakText } from "../../lib/voice";
 
-type VoiceField = "voiceId" | "speechModel" | "baseUrl" | "ttsModel" | "sttModel";
+type VoiceField = "voiceId" | "speechModel" | "baseUrl" | "sttBaseUrl" | "ttsModel" | "sttModel";
 
 /** A Space's override is read from that Space even when another one is selected. */
 const targetSpace = (target: SettingsTarget) =>
@@ -103,6 +103,7 @@ export default function VoiceSettings() {
   const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
+  const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   // Fields typed into since the last load; an opening refresh keeps them.
   const edited = useRef(new Set<VoiceField>());
   // Every load and action bumps this, so an older refresh never lands over a newer choice.
@@ -154,6 +155,7 @@ export default function VoiceSettings() {
         ["baseUrl", setBaseUrl, cred?.endpoint],
         ["ttsModel", setTtsModel, cred?.ttsModel],
         ["sttModel", setSttModel, cred?.sttModel],
+        ["sttBaseUrl", setSttBaseUrl, cred?.sttEndpoint],
       ];
       for (const [field, set, value] of fields) if (!edited.current.has(field)) set(value ?? "");
       if (cred) {
@@ -350,6 +352,7 @@ export default function VoiceSettings() {
               baseUrl: baseUrl.trim(),
               ttsModel: ttsModel.trim() || undefined,
               sttModel: sttModel.trim() || undefined,
+              sttBaseUrl: sttBaseUrl.trim(),
             }
           : {}),
       });
@@ -584,6 +587,21 @@ export default function VoiceSettings() {
                   placeholder={DEFAULT_COMPATIBLE_STT_MODEL}
                   placeholderTextColor={native.tertiaryLabel}
                   style={styles.input}
+                />
+                <Text style={styles.fieldLabel}>{t("Transcription server URL")}</Text>
+                <TextInput
+                  accessibilityLabel={t("Transcription server URL")}
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  autoCorrect={false}
+                  inputMode="url"
+                  keyboardType="url"
+                  value={sttBaseUrl}
+                  onChangeText={edit("sttBaseUrl", setSttBaseUrl)}
+                  placeholder={baseUrl.trim() || "http://192.168.1.10:8880/v1"}
+                  placeholderTextColor={native.tertiaryLabel}
+                  style={styles.input}
+                  textContentType="URL"
                 />
               </>
             ) : null}

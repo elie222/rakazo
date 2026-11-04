@@ -696,6 +696,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Replace key": "Reemplazar clave",
   "Speech model": "Modelo de habla",
   "Transcription model": "Modelo de transcripción",
+  "Transcription server URL": "URL del servidor de transcripción",
   Reconnect: "Reconectar",
   "This device": "Este dispositivo",
   "Agent messages": "Mensajes de agentes",

@@ -6697,6 +6697,10 @@ msgstr "Se agotó el tiempo de la solicitud de transcripción."
 msgid "Transcription response is too large."
 msgstr "La respuesta de la transcripción es demasiado grande."
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription server URL"
+msgstr "URL del servidor de transcripción"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr "Tratar como a una persona"

@@ -272,6 +272,9 @@ it("connects a self-hosted speech server by URL without a key", async () => {
 
     await type(labelledInput(container, "Server URL"), " http://100.64.0.10:8810 ");
     expect(connect()?.disabled).toBe(false);
+    const sttServer = labelledInput(container, "Transcription server URL");
+    expect(sttServer.placeholder).toBe("http://100.64.0.10:8810");
+    await type(sttServer, " http://100.64.0.11:9000 ");
     await act(async () => {
       connect()?.click();
     });
@@ -284,6 +287,7 @@ it("connects a self-hosted speech server by URL without a key", async () => {
       baseUrl: "http://100.64.0.10:8810",
       ttsModel: undefined,
       sttModel: undefined,
+      sttBaseUrl: "http://100.64.0.11:9000",
     });
   } finally {
     await act(async () => root.unmount());

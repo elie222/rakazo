@@ -511,6 +511,7 @@ export function accountRoutes(ctx: RouterContext) {
           voiceId: input.voiceId,
           speechModel: input.speechModel,
           baseUrl: input.baseUrl,
+          sttBaseUrl: input.sttBaseUrl,
           ttsModel: input.ttsModel,
           sttModel: input.sttModel,
           scope: input.scope,

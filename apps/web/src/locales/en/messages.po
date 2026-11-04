@@ -6697,6 +6697,10 @@ msgstr "Transcription request timed out."
 msgid "Transcription response is too large."
 msgstr "Transcription response is too large."
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription server URL"
+msgstr "Transcription server URL"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr "Treat like a person"

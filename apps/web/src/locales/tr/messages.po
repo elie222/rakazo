@@ -6697,6 +6697,10 @@ msgstr "Transkripsiyon isteği zaman aşımına uğradı."
 msgid "Transcription response is too large."
 msgstr "Transkripsiyon yanıtı çok büyük."
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription server URL"
+msgstr "Transkripsiyon sunucusu URL'si"
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr "Bir insan gibi davran"

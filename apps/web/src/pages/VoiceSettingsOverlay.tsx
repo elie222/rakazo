@@ -75,6 +75,7 @@ export function VoiceSettingsOverlay({
   const baseUrlId = useId();
   const ttsModelId = useId();
   const sttModelId = useId();
+  const sttBaseUrlId = useId();
   const providerSelectId = useId();
   const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>(cached?.catalog ?? []);
   const [credentials, setCredentials] = useState<VoiceCredential[]>(cached?.credentials ?? []);
@@ -98,6 +99,7 @@ export function VoiceSettingsOverlay({
   const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
+  const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const speechModelSave = useRef<string | null>(null);
   const voicesRequest = useRef(0);
   const [loading, setLoading] = useState(!cached);
@@ -141,6 +143,7 @@ export function VoiceSettingsOverlay({
     if (!keep("baseUrl")) setBaseUrl(cred?.endpoint ?? "");
     if (!keep("ttsModel")) setTtsModel(cred?.ttsModel ?? "");
     if (!keep("sttModel")) setSttModel(cred?.sttModel ?? "");
+    if (!keep("sttBaseUrl")) setSttBaseUrl(cred?.sttEndpoint ?? "");
     if (!cred) return Promise.resolve();
     return queryClient
       .fetchQuery(
@@ -247,6 +250,7 @@ export function VoiceSettingsOverlay({
               baseUrl: baseUrl.trim(),
               ttsModel: ttsModel.trim() || undefined,
               sttModel: sttModel.trim() || undefined,
+              sttBaseUrl: sttBaseUrl.trim(),
             }
           : {}),
       });
@@ -467,6 +471,23 @@ export function VoiceSettingsOverlay({
                       placeholder={DEFAULT_COMPATIBLE_STT_MODEL}
                     />
                   </Field>
+                  <Field className="mt-5">
+                    <FieldLabel htmlFor={sttBaseUrlId}>
+                      <Trans>Transcription server URL</Trans>
+                    </FieldLabel>
+                    <Input
+                      id={sttBaseUrlId}
+                      type="url"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={sttBaseUrl}
+                      onChange={(event) => {
+                        edited.current.add("sttBaseUrl");
+                        setSttBaseUrl(event.target.value);
+                      }}
+                      placeholder={baseUrl.trim() || "http://192.168.1.10:8880/v1"}
+                    />
+                  </Field>
                 </>
               ) : null}
               {keyless && credential ? null : (
@@ -653,4 +674,4 @@ function selectedProvider(
 
 const NO_VOICES: VoiceInfo[] = [];
 
-type EditableField = "voiceId" | "speechModel" | "baseUrl" | "ttsModel" | "sttModel";
+type EditableField = "voiceId" | "speechModel" | "baseUrl" | "sttBaseUrl" | "ttsModel" | "sttModel";

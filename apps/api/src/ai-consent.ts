@@ -222,14 +222,23 @@ export async function aiConsentStatus(
   }
   for (const voice of voices) {
     // A self-hosted server is disclosed by its own origin, like a custom model endpoint.
-    const endpoint = (await voiceCredentialServer(deps, actor, voice.credential))?.endpoint;
+    const server = await voiceCredentialServer(deps, actor, voice.credential);
     add(
       aiRecipient({
         provider: voice.credential.provider,
         use: "voice",
-        ...(endpoint ? { baseUrl: endpoint } : {}),
+        ...(server?.endpoint ? { baseUrl: server.endpoint } : {}),
       }),
     );
+    if (server?.sttEndpoint) {
+      add(
+        aiRecipient({
+          provider: voice.credential.provider,
+          use: "voice",
+          baseUrl: server.sttEndpoint,
+        }),
+      );
+    }
   }
   if (memory)
     add(
