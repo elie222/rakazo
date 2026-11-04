@@ -47,7 +47,14 @@ function messageText(message: Element) {
       continue;
     }
     const node = current as Text;
-    if (!searchable(node)) continue;
+    if (!searchable(node)) {
+      // Skipped text (a page chip, a hidden step) still sits between its neighbours.
+      if (units.at(-1) !== null) {
+        text += "\n";
+        units.push(null);
+      }
+      continue;
+    }
     const nodeBlock = node.parentElement?.closest(BLOCK) ?? null;
     // Separate paragraphs, so the end of one and the start of the next never form a match.
     if (block && nodeBlock !== block) {

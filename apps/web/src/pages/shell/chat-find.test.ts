@@ -66,6 +66,12 @@ describe("findTextRanges", () => {
     expect(found(root, "messages")).toEqual(["messages"]);
   });
 
+  it("never joins the text either side of a button", () => {
+    const root = transcript("<p>before <button>Page</button> after</p>");
+    expect(found(root, "before after")).toEqual([]);
+    expect(found(root, "after")).toEqual(["after"]);
+  });
+
   it("does not count overlapping matches twice", () => {
     expect(findTextRanges(transcript("aaaa"), "aa")).toHaveLength(2);
   });
