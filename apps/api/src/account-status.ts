@@ -38,23 +38,31 @@ export async function settleDirectoryChange(
 }
 
 /**
- * Turns an account off or back on outside the directory. Returns whether that changed it;
- * deactivating an account that already is off still finishes ending its access.
+ * Turns an account off or back on outside the directory. Deactivating an account that already
+ * is off still finishes ending its access. The identity provider owns the accounts it
+ * provisions, so one it has turned off is only turned back on there: that is `"directory"`.
  */
 export async function setAccountActive(
   deps: AccountStatusDeps,
   userId: string,
   active: boolean,
   by: AccountStatusActor,
-): Promise<boolean> {
+): Promise<"changed" | "unchanged" | "directory"> {
   return runAsSystem("change an account's status", async () => {
+    if (active) {
+      const [provisioned, on] = await Promise.all([
+        deps.prisma.scimUser.count({ where: { userId } }),
+        deps.prisma.scimUser.count({ where: { userId, active: true } }),
+      ]);
+      if (provisioned > 0 && on === 0) return "directory";
+    }
     const { count } = await deps.prisma.user.updateMany({
       where: { id: userId, deactivatedAt: active ? { not: null } : null },
       data: { deactivatedAt: active ? null : new Date() },
     });
     if (count) await recordAccountStatus(userId, active, by);
     if (!active) await endDeactivatedAccess(deps, userId);
-    return count > 0;
+    return count ? "changed" : "unchanged";
   });
 }
 

@@ -39,26 +39,12 @@ try {
   const user = await runAsSystem("find an account by email", () =>
     prisma.user.findUnique({ where: { email }, select: { id: true } }),
   );
-  // The directory owns the accounts it provisions; turning one back on happens there.
-  const directoryOff =
-    user &&
-    action === "reactivate" &&
-    (await runAsSystem("check the account's directory status", async () => {
-      const [provisioned, active] = await Promise.all([
-        prisma.scimUser.count({ where: { userId: user.id } }),
-        prisma.scimUser.count({ where: { userId: user.id, active: true } }),
-      ]);
-      return provisioned > 0 && active === 0;
-    }));
   if (!user) {
     process.stderr.write("No account has that email\n");
     process.exitCode = 1;
-  } else if (directoryOff) {
-    process.stderr.write("The identity provider has this account turned off; turn it on there\n");
-    process.exitCode = 1;
   } else {
     const active = action === "reactivate";
-    const changed = await setAccountActive(
+    const outcome = await setAccountActive(
       {
         prisma,
         pushTokens: new PrismaPushTokenStore(prisma, env.encryptionKey),
@@ -75,9 +61,14 @@ try {
       active,
       "operator",
     );
-    process.stdout.write(
-      `${changed ? (active ? "Reactivated" : "Deactivated") : active ? "Already active" : "Already deactivated"}\n`,
-    );
+    if (outcome === "directory") {
+      process.stderr.write("The identity provider has this account turned off; turn it on there\n");
+      process.exitCode = 1;
+    } else {
+      process.stdout.write(
+        `${outcome === "changed" ? (active ? "Reactivated" : "Deactivated") : active ? "Already active" : "Already deactivated"}\n`,
+      );
+    }
   }
 } finally {
   await realtime.close();
