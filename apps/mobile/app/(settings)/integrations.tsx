@@ -1628,6 +1628,6 @@ function createIntegrationsStyles() {
     },
     toolsBody: { gap: 8, paddingTop: 4 },
     toolName: { color: native.label, fontSize: 14 },
-    addCustom: { alignSelf: "flex-end", padding: 12, margin: -8 },
+    addCustom: { alignSelf: "flex-end", padding: 12 },
   });
 }

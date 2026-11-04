@@ -21,19 +21,11 @@ tags:
 - longPressOn: "The fixture workspace is ready."
 - tapOn: "Speak message"
 - extendedWaitUntil:
-    visible: "Stop|Could not speak"
+    visible: "Stop"
     timeout: 10000
+- assertNotVisible: "Could not speak"
 - takeScreenshot: "40-speak-message"
-- runFlow:
-    when:
-      visible: "Could not speak"
-    commands:
-      - tapOn: "OK|Not now|Cancel"
-- runFlow:
-    when:
-      visible: "Stop"
-    commands:
-      - tapOn: "Stop"
+- tapOn: "Stop"
 
 # Text shared in from another app opens the share sheet, then the chosen chat.
 - evalScript: ${output.share = http.get(RAKAZO_DEVICE_CONTROL_URL + '/share-text')}
@@ -101,6 +93,9 @@ tags:
 - extendedWaitUntil:
     visible: ".*rakazo-fixture.pdf"
     timeout: 30000
+- extendedWaitUntil:
+    visible: "Open image .*"
+    timeout: 15000
 - takeScreenshot: "45-sent-attachments"
 
 # Native PDF viewer (rakazo-pdf-view): Share appears only after the file loaded.
@@ -190,6 +185,9 @@ tags:
       - assertTrue: ${output.expandNotifications.ok}
       - waitForAnimationToEnd:
           timeout: 2000
+- extendedWaitUntil:
+    visible: "Microphone is active"
+    timeout: 5000
 - takeScreenshot: "51-call-notification"
 - back
 - tapOn: "Hang up"
