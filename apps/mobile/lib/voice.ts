@@ -183,7 +183,16 @@ export async function speakQueue(items: SpeechQueueItem[]): Promise<boolean> {
     ...item,
     requestContext: item.requestContext ?? requestContext,
   }));
-  return advanceSpeechQueue(epoch);
+  try {
+    return await advanceSpeechQueue(epoch);
+  } catch (error) {
+    // The session change (or a newer Play or Stop) that ended this queue can
+    // leave its request failing late, e.g. with the old session's revoked
+    // token; the next session's screen must not hear about that. Playback
+    // that still owns the epoch keeps reporting its errors.
+    if (!isCurrentSpeech(epoch)) return true;
+    throw error;
+  }
 }
 
 async function advanceSpeechQueue(epoch: number): Promise<boolean> {

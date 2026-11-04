@@ -182,4 +182,105 @@ describe("read-aloud across session changes", () => {
     await expect(queued).resolves.toBe(true);
     expect(utterances.map((spoken) => spoken.text)).toEqual(["First reply."]);
   });
+
+  it("keeps a late prepare failure silent after the session is cleared", async () => {
+    await savedApiBase("https://a.example.test");
+    await saveSessionToken("token-a");
+    secureStore.set(DEVICE_VOICE_KEY, "0");
+    let failPrepare: ((status: number) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.endsWith("/rpc/aiConsent/status")) {
+          return Response.json({ json: { version: "2026-09-14", recipients: [] } });
+        }
+        if (url.endsWith("/rpc/voice/prepare")) {
+          return new Promise<Response>((resolve) => {
+            failPrepare = (status: number) =>
+              resolve(Response.json({ json: { message: "expired" } }, { status }));
+          });
+        }
+        return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      }),
+    );
+
+    const queued = speakQueue([
+      { text: "First reply.", botId: "bot-a", messageId: "m1" },
+      { text: "Second reply.", botId: "bot-a", messageId: "m2" },
+    ]);
+    await vi.waitFor(() => expect(failPrepare).toBeTypeOf("function"));
+    expect(getVoicePlaybackState()).toMatchObject({ status: "playing", messageId: "m1" });
+
+    await clearSessionToken();
+    expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
+
+    failPrepare?.(401);
+    await expect(queued).resolves.toBe(true);
+  });
+
+  it("keeps a late clip failure silent after the session is cleared", async () => {
+    await savedApiBase("https://a.example.test");
+    await saveSessionToken("token-a");
+    secureStore.set(DEVICE_VOICE_KEY, "0");
+    let failClip: ((status: number) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.endsWith("/rpc/aiConsent/status")) {
+          return Response.json({ json: { version: "2026-09-14", recipients: [] } });
+        }
+        if (url.endsWith("/rpc/voice/prepare")) {
+          return Response.json({ json: { ready: true, utterances: ["First reply."] } });
+        }
+        return new Promise<Response>((resolve) => {
+          failClip = (status: number) =>
+            resolve(Response.json({ json: { message: "expired" } }, { status }));
+        });
+      }),
+    );
+
+    const queued = speakQueue([
+      { text: "First reply.", botId: "bot-a", messageId: "m1" },
+      { text: "Second reply.", botId: "bot-a", messageId: "m2" },
+    ]);
+    await vi.waitFor(() => expect(failClip).toBeTypeOf("function"));
+
+    await clearSessionToken();
+    expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
+
+    failClip?.(401);
+    await expect(queued).resolves.toBe(true);
+  });
+
+  it("still reports a late prepare failure while the queue is current", async () => {
+    await savedApiBase("https://a.example.test");
+    await saveSessionToken("token-a");
+    secureStore.set(DEVICE_VOICE_KEY, "0");
+    let failPrepare: ((status: number) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.endsWith("/rpc/aiConsent/status")) {
+          return Response.json({ json: { version: "2026-09-14", recipients: [] } });
+        }
+        if (url.endsWith("/rpc/voice/prepare")) {
+          return new Promise<Response>((resolve) => {
+            failPrepare = (status: number) =>
+              resolve(Response.json({ json: { message: "expired" } }, { status }));
+          });
+        }
+        return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      }),
+    );
+
+    const queued = speakQueue([{ text: "First reply.", botId: "bot-a", messageId: "m1" }]);
+    await vi.waitFor(() => expect(failPrepare).toBeTypeOf("function"));
+
+    failPrepare?.(401);
+    await expect(queued).rejects.toBeInstanceOf(Error);
+    expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
+  });
 });
