@@ -495,7 +495,17 @@ describe("paused turn context", () => {
         },
       };
       try {
-        const events = await collect(new PiAgentRuntime({ sessionRoot }).run(request));
+        // The authenticated context starts session recording, so the transcript
+        // assertions below inspect a real recording, not an empty file list.
+        const events = await collect(
+          new PiAgentRuntime({ sessionRoot }).run(request, {
+            operationId: "ask-shape",
+            traceId: "ask-shape",
+            spaceId: "fixture-space",
+            userId: "fixture-user",
+            signal: new AbortController().signal,
+          }),
+        );
         // The card still asks, without a draft.
         const ask = events.find((event) => event.type === "ask");
         expect(ask).toMatchObject({ text: "Send this email?" });
@@ -508,6 +518,87 @@ describe("paused turn context", () => {
             .filter((entry) => String(entry).endsWith(".jsonl"))
             .map((entry) => readFile(path.join(sessionRoot, String(entry)), "utf8")),
         );
+        expect(transcripts.length).toBeGreaterThan(0);
+        expect(transcripts.join("\n")).not.toContain(secret);
+        model.assertComplete();
+      } finally {
+        await model.close();
+        await rm(sessionRoot, { recursive: true, force: true });
+      }
+    },
+  );
+  it.each([
+    ["string", "The token is wrapped-secret-value.", "wrapped-secret-value"],
+    ["number", 971334409, "971334409"],
+  ])(
+    "sanitizes a use_tool-wrapped ask_user detail (%s) before it is kept",
+    async (shape, rawDetail, secret) => {
+      const sessionRoot = await mkdtemp(path.join(tmpdir(), "rakazo-ask-wrapped-"));
+      let capture: (() => string) | undefined;
+      const model = await startModelEmulator({
+        steps: [
+          {
+            expect() {},
+            response: {
+              type: "tool",
+              id: "wrapped-question",
+              name: "use_tool",
+              arguments: {
+                name: "ask_user",
+                arguments: {
+                  question: "Send this email?",
+                  detail: rawDetail,
+                  options: ["Send it", "Show me first"],
+                },
+              },
+            },
+          },
+        ],
+      });
+      const request: AgentRunRequest = {
+        runId: "fixture-ask-detail-wrapped",
+        botId: "fixture-bot",
+        threadId: "fixture-thread",
+        instructions: "Complete fixtures.",
+        prompt: "Confirm the draft.",
+        history: [],
+        model: model.model,
+        // list_secrets is deferred, so use_tool is listed and can wrap the
+        // core ask_user, whose nested arguments the model writes verbatim.
+        tools: builtinAgentTools.filter((tool) => ["ask_user", "list_secrets"].includes(tool.name)),
+        secrets: [secret],
+        onCheckpoint: async (snapshot) => {
+          capture = snapshot;
+        },
+      };
+      try {
+        const events = await collect(
+          new PiAgentRuntime({ sessionRoot }).run(request, {
+            operationId: "ask-wrapped",
+            traceId: "ask-wrapped",
+            spaceId: "fixture-space",
+            userId: "fixture-user",
+            signal: new AbortController().signal,
+          }),
+        );
+        // The wrapped call still asks, with the sanitized detail.
+        const ask = events.find((event) => event.type === "ask");
+        expect(ask).toMatchObject({ text: "Send this email?" });
+        const detail = (ask as { detail?: string } | undefined)?.detail;
+        if (shape === "string") {
+          expect(detail).toContain("[redacted]");
+        } else {
+          expect(detail).toBeUndefined();
+        }
+        // Neither the checkpoint nor the recorded session keeps the raw value.
+        expect(capture!()).not.toContain(secret);
+        const entries = await readdir(sessionRoot, { recursive: true });
+        const transcripts = await Promise.all(
+          entries
+            .filter((entry) => String(entry).endsWith(".jsonl"))
+            .map((entry) => readFile(path.join(sessionRoot, String(entry)), "utf8")),
+        );
+        expect(transcripts.length).toBeGreaterThan(0);
         expect(transcripts.join("\n")).not.toContain(secret);
         model.assertComplete();
       } finally {

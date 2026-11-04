@@ -786,6 +786,19 @@ export function redactedAskUserDetail(
   return `${capped}…`;
 }
 
+/** The arguments an ask_user call carries: directly, or nested in a use_tool wrapper
+ * (the wrapper's own normalizer unwraps them, but the streamed message records the
+ * nested object verbatim). */
+function askUserScrubTarget(call: {
+  name?: string;
+  arguments?: Record<string, unknown>;
+}): Record<string, unknown> | undefined {
+  if (call.name === "ask_user") return call.arguments;
+  if (call.name !== USE_TOOL || call.arguments?.name !== "ask_user") return undefined;
+  const nested = call.arguments.arguments;
+  return nested && typeof nested === "object" ? (nested as Record<string, unknown>) : undefined;
+}
+
 /** Redacts the ask card's detail in a streamed assistant message, in place, so the session
  * transcript, the turn checkpoint and later provider payloads never hold the raw value. */
 export function redactAskUserDetailInMessage(
@@ -795,15 +808,15 @@ export function redactAskUserDetailInMessage(
   if (message.role !== "assistant" || !Array.isArray(message.content)) return;
   for (const part of message.content) {
     const call = part as { type?: string; name?: string; arguments?: Record<string, unknown> };
-    if (call?.type !== "toolCall" || call.name !== "ask_user") continue;
-    if (typeof call.arguments?.detail === "string") {
-      if (call.arguments.detail) {
-        call.arguments.detail = redactedAskUserDetail(call.arguments.detail, secrets);
-      }
-    } else if (call.arguments && "detail" in call.arguments) {
+    if (call?.type !== "toolCall") continue;
+    const args = askUserScrubTarget(call);
+    if (!args) continue;
+    if (typeof args.detail === "string") {
+      if (args.detail) args.detail = redactedAskUserDetail(args.detail, secrets);
+    } else if ("detail" in args) {
       // A non-string detail never reaches the card (the argument normalizer drops
       // it); drop it here too, so no kept copy holds the raw value.
-      delete call.arguments.detail;
+      delete args.detail;
     }
   }
 }
