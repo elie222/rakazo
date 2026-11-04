@@ -14,6 +14,7 @@ import type { SpeechRecognizer } from "./dictation";
 import { ENDPOINT_SILENCE_MS, setSpeechRecognizer, stop as stopDictation } from "./dictation";
 import { activateUiLocale, getActiveUiLocale } from "./i18n";
 import { reportMobileError } from "./monitoring";
+import { saveServerHeaders } from "./server-headers";
 import {
   clearSessionToken,
   currentSessionGeneration,
@@ -236,6 +237,44 @@ describe("mobile call session", () => {
     fake.say("hello again");
     await flush();
     expect(reportMobileError).toHaveBeenCalledWith(unexpected, "voice.turn");
+  });
+
+  it("sends the saved server headers on the transcription request", async () => {
+    const server = "https://api.example.test";
+    await saveServerHeaders(server, { "x-proxy-token": "gate" });
+    const fetchImpl = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ text: "transcribed words" })),
+    );
+    vi.stubGlobal("fetch", fetchImpl);
+    try {
+      const fake = fakes();
+      const { transcribe: _transcribe, ...deps } = fake.deps;
+      startCall(
+        {
+          botId: "bot-1",
+          botName: "Ada",
+          requestContext: {
+            apiBase: server,
+            headers: { authorization: "Bearer token" },
+            sessionGeneration: currentSessionGeneration(),
+          },
+        },
+        deps,
+      );
+      await flush();
+      fake.say("spoken words");
+      await flush();
+      expect(fake.send).toHaveBeenCalledWith("bot-1", "transcribed words", expect.any(String));
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect(fetchImpl.mock.calls[0]?.[0]).toBe(`${server}/api/voice/transcribe`);
+      const init = fetchImpl.mock.calls[0]?.[1];
+      expect(init?.redirect).toBe("error");
+      expect(new Headers(init?.headers).get("x-proxy-token")).toBe("gate");
+    } finally {
+      vi.unstubAllGlobals();
+      await saveServerHeaders(server, {});
+    }
   });
 
   it("mutes after a consent refusal instead of reopening the microphone or resending", async () => {
