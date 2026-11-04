@@ -20,6 +20,8 @@ const ERROR_GRACE_MS = 15 * 60_000;
 /** Longer than the widest poll interval, so a job left this long lost its scheduled poll. */
 const STALLED_MS = 10 * 60_000;
 const PENDING_STATUSES = ["media_pending", "media_polling"];
+/** Images share the job kind but finish within their turn; only videos are polled. */
+const VIDEO_JOB = { kind: MEDIA_JOB_KIND, request: { path: ["tool"], equals: "generate_video" } };
 
 export interface MediaVideoDeps {
   prisma: PrismaClient;
@@ -183,7 +185,7 @@ export async function pollMediaVideo(deps: MediaVideoDeps, payload: { jobId: str
   const artifacts = deps.artifacts;
   if (!provider?.capabilities.video || !artifacts) return;
   const job = await deps.prisma.externalEffect.findFirst({
-    where: { id: payload.jobId, kind: MEDIA_JOB_KIND, status: { in: PENDING_STATUSES } },
+    where: { id: payload.jobId, ...VIDEO_JOB, status: { in: PENDING_STATUSES } },
     select: {
       id: true,
       createdAt: true,
@@ -348,7 +350,7 @@ export async function reconcileMediaVideos(
   for (;;) {
     const page = await deps.prisma.externalEffect.findMany({
       where: {
-        kind: MEDIA_JOB_KIND,
+        ...VIDEO_JOB,
         status: { in: PENDING_STATUSES },
         updatedAt: { lt: new Date(now - STALLED_MS) },
       },

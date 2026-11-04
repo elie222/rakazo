@@ -356,6 +356,31 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     expect(await h.wakes()).toHaveLength(1);
   });
 
+  it("leaves a stored image whose post failed to its own turn", async () => {
+    const h = await setup();
+    const image = await runAsSystem("test fixture", () =>
+      prisma.externalEffect.create({
+        data: {
+          spaceId: h.user.id,
+          runId: h.user.run.id,
+          kind: "media_generation_job",
+          idempotencyKey: `media:${h.user.run.id}:image`,
+          status: "media_polling",
+          request: { tool: "generate_image", prompt: "a lighthouse", executionId: "image" },
+          result: { provider: h.media.id, artifactId: "stored-image" },
+        },
+      }),
+    );
+    await h.stall(image.id);
+    h.enqueued.length = 0;
+    await h.reconcile();
+    expect(h.recovered()).not.toContain(image.id);
+    await h.poll(image.id);
+    expect((await h.job(image.id)).status).toBe("media_polling");
+    expect(await h.messages()).toHaveLength(0);
+    expect(await h.wakes()).toHaveLength(0);
+  });
+
   it("still delivers when the turn that asked was stopped or closed", async () => {
     const h = await setup();
     const jobId = await h.submit("cancelled");
