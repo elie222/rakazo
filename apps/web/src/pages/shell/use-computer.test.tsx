@@ -322,6 +322,42 @@ it("leaves a reconnected screen showing when its hung read runs out of time", as
   expect(state.screenLoadError).toBeNull();
 });
 
+it("keeps a newer read's answer when the hung reconnect read runs out of time", async () => {
+  await read();
+  await report("connected");
+  screenUrl.mockImplementationOnce(() => new Promise<{ url: string }>(() => undefined));
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  await report("connected");
+  // A newer read, such as a takeover's, starts just before the hung read's deadline and is
+  // itself slow.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(14_000);
+  });
+  const takeoverUrl = `wuying://desktop?desktop_id=ecd-1&region_id=cn-hangzhou&auth_code=takeover&view_only=false`;
+  let answerB: ((value: { url: string }) => void) | undefined;
+  screenUrl.mockImplementationOnce(
+    () =>
+      new Promise<{ url: string }>((resolve) => {
+        answerB = (value) => resolve(value);
+      }),
+  );
+  await act(async () => {
+    void state.refreshComputerScreen("bot-1");
+  });
+  // The hung read's deadline fires while the newer read is still out.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  await act(async () => {
+    answerB?.({ url: takeoverUrl });
+  });
+  expect(state.screenUrl).toBe(takeoverUrl);
+  expect(state.screenLoadError).toBeNull();
+});
+
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {
   function Controls() {
     state = useComputerState({

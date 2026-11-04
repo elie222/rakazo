@@ -209,21 +209,27 @@ export function useComputerState({
               return;
             }
             reconnectReadOut = true;
+            // Claim this read's request token up front, so its deadline can invalidate
+            // exactly this read and never a newer one.
+            const readRequest = ++screenRequest.current;
             // A read that never settles must not hold the reconnect forever. It gets the
             // same silence budget a framed screen has; past it the hold is released — a
             // dropped screen shows the error, a reconnected one keeps showing — and the
             // hung read's answer is stale, so it cannot commit.
             readDeadline = setTimeout(() => {
               if (cycle !== reconnectCycle) return;
-              screenRequest.current += 1;
               reconnectPending = false;
               reconnectReadOut = false;
+              // A newer read — a takeover, a panel refresh — owns the token now; only this
+              // read's own answer is invalidated and shown as timed out.
+              if (readRequest !== screenRequest.current) return;
+              screenRequest.current += 1;
               if (!screenConnected) {
                 screenRefocus.current.forget();
                 setScreenLoadError(fallback);
               }
             }, SCREEN_FRAME_LOAD_TIMEOUT_MS);
-            void refreshComputerScreen(botId).finally(() => {
+            void refreshComputerScreen(botId, readRequest).finally(() => {
               if (cycle !== reconnectCycle) return;
               clearTimeout(readDeadline);
               reconnectPending = false;
@@ -362,14 +368,14 @@ export function useComputerState({
     }
   }
 
-  async function refreshComputerScreen(id: string) {
+  async function refreshComputerScreen(id: string, request?: number) {
     if (!computerVisible.current) return null;
-    const request = ++screenRequest.current;
+    const read = request ?? ++screenRequest.current;
     const issuedState = computerRef.current?.botId === id ? computerRef.current.state : undefined;
     return loadComputerScreen({
       load: () => rpc.computer.screenUrl({ botId: id }),
       isCurrent: () =>
-        request === screenRequest.current &&
+        read === screenRequest.current &&
         (activeBotId.current === id || computerBotIdRef.current === id) &&
         computerVisible.current,
       commit: (screen) => {
