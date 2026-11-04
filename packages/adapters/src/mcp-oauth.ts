@@ -1241,12 +1241,15 @@ export class McpOAuthBroker {
     const server = await this.prisma.mcpServer.findFirst({
       where: { id: input.serverId, ...availableInSpace(input) },
     });
-    if (!server?.secretId) return;
-    const row = await this.prisma.secret.findFirst({
-      where: { id: server.secretId, ...itemSecretIn(input) },
-    });
-    if (!row) return;
-    const material = await this.read(row.ciphertext, row.id);
+    if (!server) return;
+    // With no stored credential the generation is still raised, so a first authorization
+    // still in flight cannot connect the server after the disconnect.
+    const row = server.secretId
+      ? await this.prisma.secret.findFirst({
+          where: { id: server.secretId, ...itemSecretIn(input) },
+        })
+      : null;
+    const material = row ? await this.read(row.ciphertext, row.id) : {};
     delete material.oauth;
     // The generation is raised from the stored value inside each retry of the write, so
     // this disconnect ends every flow still in flight, including one that began after an
@@ -1445,13 +1448,20 @@ export class McpOAuthBroker {
         // the first binding saved wins and any other flow's state is refused.
         if (conflictsWithBinding(nextMaterial.oauthClient, material))
           throw new McpOAuthServerMismatchError();
-        const bound = material.oauthClient?.authorization_server;
-        if (nextMaterial.oauthClient && bound && !nextMaterial.oauthClient.authorization_server)
-          nextMaterial.oauthClient = { ...nextMaterial.oauthClient, authorization_server: bound };
-        nextMaterial.oauth = structuredClone(material.oauth);
         // A disconnect discarded the stored state and raised its generation; a write from
         // that earlier flow, issued tokens included, must not bring the grant back.
         const superseded = (material.oauthGeneration ?? 0) !== (nextMaterial.oauthGeneration ?? 0);
+        const bound = material.oauthClient?.authorization_server;
+        // A superseded write keeps the stored client exactly as stored: a first-use
+        // binding belongs to an authorization the user ended.
+        if (
+          !superseded &&
+          nextMaterial.oauthClient &&
+          bound &&
+          !nextMaterial.oauthClient.authorization_server
+        )
+          nextMaterial.oauthClient = { ...nextMaterial.oauthClient, authorization_server: bound };
+        nextMaterial.oauth = structuredClone(material.oauth);
         // A process that spent the rotated-away token meanwhile cleared the grant this write renews.
         const staleClear = options.replaceCleared && storedOAuth && !storedOAuth.tokens;
         if (
