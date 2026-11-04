@@ -105,6 +105,20 @@ describe("startUnsentSends", () => {
     expect(sendWaitingMessages).toHaveBeenCalledTimes(2);
     stop();
   });
+
+  it("restores again after a sign-in, so a signed-out launch's failure does not linger", async () => {
+    session.generation = session.ready = 40;
+    vi.mocked(hasUnsentSends).mockReturnValue(false);
+    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("signed out"));
+    const stop = startUnsentSends();
+    await vi.waitFor(() => expect(loadVerifiedIntegrationsScope).toHaveBeenCalled());
+    await expect(unsentSendsRestored()).resolves.toBe(false);
+    // Sign-in: the new session cleared the queue and is ready.
+    session.generation = session.ready = 41;
+    session.listener();
+    await expect(unsentSendsRestored()).resolves.toBe(true);
+    stop();
+  });
 });
 
 describe("unsentSendsRestored", () => {

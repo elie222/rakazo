@@ -149,7 +149,10 @@ export function startUnsentSends(): () => void {
   });
   // Other session changes empty the queue; a password change keeps it for the new session.
   const session = subscribeSessionGeneration(() => {
-    if (currentReadySessionGeneration() === currentSessionGeneration() && hasUnsentSends()) retry();
+    if (currentReadySessionGeneration() !== currentSessionGeneration()) return;
+    if (hasUnsentSends()) retry();
+    // A ready session restores again, so a failure from a signed-out launch does not linger.
+    else void prepareUnsentSends().catch(() => undefined);
   });
   return () => {
     stopped = true;
