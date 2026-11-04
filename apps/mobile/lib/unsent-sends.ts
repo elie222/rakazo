@@ -39,7 +39,7 @@ function scope() {
     ? activeScope
     : null;
 }
-export async function prepareUnsentSends(): Promise<void> {
+async function loadUnsentSends(): Promise<void> {
   const generation = currentSessionGeneration();
   const apiBase = currentApiBase();
   const spaceId = selectedSpaceId();
@@ -65,6 +65,23 @@ export async function prepareUnsentSends(): Promise<void> {
     };
   }
   restoreUnsentSends();
+}
+
+/** The latest restore attempt, never rejected: settled means the in-memory queue reflects the disk. */
+let restoreAttempt: Promise<void> = Promise.resolve();
+
+/** Waits for the latest queue restore attempt, so a not-yet-loaded queue cannot look empty. */
+export function unsentSendsRestored(): Promise<void> {
+  return restoreAttempt;
+}
+
+export function prepareUnsentSends(): Promise<void> {
+  const attempt = loadUnsentSends();
+  restoreAttempt = attempt.then(
+    () => undefined,
+    () => undefined,
+  );
+  return attempt;
 }
 // Configure the wipe before bootstrap can replace credentials or the saved server.
 configureUnsentSends({

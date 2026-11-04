@@ -57,17 +57,18 @@ export default function ServerScreen() {
 
   async function save() {
     if (saving.current) return;
-    // Only a different server clears the device; the same address saves without a switch.
-    if (
-      parsedDraft.ok &&
-      parsedDraft.url !== current &&
-      !(await confirmUnsentSendLoss("server-switch"))
-    )
-      return;
+    // Held across the confirmation, so a second submit cannot start a parallel switch.
     saving.current = true;
-    setPending(true);
-    setError(null);
     try {
+      // Only a different server clears the device; the same address saves without a switch.
+      if (
+        parsedDraft.ok &&
+        parsedDraft.url !== current &&
+        !(await confirmUnsentSendLoss("server-switch"))
+      )
+        return;
+      setPending(true);
+      setError(null);
       let headers: Record<string, string>;
       try {
         headers = serverHeadersFromRows(headerRows);
@@ -95,11 +96,12 @@ export default function ServerScreen() {
 
   async function restoreDefault() {
     if (saving.current) return;
-    if (usesCustomApiBase(current) && !(await confirmUnsentSendLoss("server-switch"))) return;
+    // Held across the confirmation, like save, so the two cannot run a switch in parallel.
     saving.current = true;
-    setPending(true);
-    setError(null);
     try {
+      if (usesCustomApiBase(current) && !(await confirmUnsentSendLoss("server-switch"))) return;
+      setPending(true);
+      setError(null);
       const saved = await resetApiBase();
       if (!active.current) return;
       if (!saved.ok) {

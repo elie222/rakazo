@@ -2,9 +2,15 @@ import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import { router } from "expo-router";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { loadVerifiedIntegrationsScope } from "./session";
 import type { SendAttempt } from "./thread-feedback";
-import { configureUnsentSends, hasUnsentSends, sendWaitingMessages } from "./thread-feedback";
-import { startUnsentSends } from "./unsent-sends";
+import {
+  configureUnsentSends,
+  hasUnsentSends,
+  restoreUnsentSends,
+  sendWaitingMessages,
+} from "./thread-feedback";
+import { prepareUnsentSends, startUnsentSends, unsentSendsRestored } from "./unsent-sends";
 
 const session = vi.hoisted(() => ({ generation: 1, ready: 1, listener: () => {} }));
 vi.mock("react-native", () => ({
@@ -26,12 +32,12 @@ vi.mock("./session", () => ({
   currentReadySessionGeneration: () => session.ready,
   currentSessionGeneration: () => session.generation,
   loadSessionToken: async () => "fake-token",
-  loadVerifiedIntegrationsScope: async () => ({
+  loadVerifiedIntegrationsScope: vi.fn(async () => ({
     apiBase: "https://api.example.test",
     userId: "user-a",
     spaceId: "space-a",
     selectionId: "space-a",
-  }),
+  })),
   subscribeSessionGeneration: (listener: () => void) => {
     session.listener = listener;
     return () => {};
@@ -95,5 +101,43 @@ describe("startUnsentSends", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sendWaitingMessages).toHaveBeenCalledTimes(2);
     stop();
+  });
+});
+
+describe("unsentSendsRestored", () => {
+  it("resolves only after the disk queue is restored", async () => {
+    session.generation = 20;
+    let unblockRestore!: () => void;
+    vi.mocked(loadVerifiedIntegrationsScope).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          unblockRestore = () =>
+            resolve({
+              apiBase: "https://api.example.test",
+              userId: "user-a",
+              spaceId: "space-a",
+              selectionId: "space-a",
+            });
+        }),
+    );
+    void prepareUnsentSends();
+    let settled = false;
+    const restored = unsentSendsRestored().then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    expect(restoreUnsentSends).not.toHaveBeenCalled();
+
+    unblockRestore();
+    await restored;
+    expect(restoreUnsentSends).toHaveBeenCalledOnce();
+  });
+
+  it("settles when a restore attempt fails", async () => {
+    session.generation = 21;
+    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("store unreadable"));
+    await expect(prepareUnsentSends()).rejects.toThrow("store unreadable");
+    await expect(unsentSendsRestored()).resolves.toBeUndefined();
   });
 });

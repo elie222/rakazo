@@ -95,6 +95,7 @@ vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("./server-headers", () => ({ serverHeaders: () => ({}) }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
+vi.mock("./unsent-sends", () => ({ unsentSendsRestored: vi.fn(async () => undefined) }));
 vi.mock("./thread-feedback", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./thread-feedback")>()),
   hasUnsentSends: vi.fn(() => false),
@@ -195,6 +196,25 @@ it("asks before returning to the default server deletes unsent messages", async 
     expect(alertButtons()[1]!.text).toBe("Switch anyway");
     await act(async () => alertButtons()[1]!.onPress?.());
     expect(api.reset).toHaveBeenCalled();
+  } finally {
+    vi.mocked(hasUnsentSends).mockReturnValue(false);
+  }
+});
+
+it("holds the save lock while the unsent-message confirmation is open", async () => {
+  vi.mocked(hasUnsentSends).mockReturnValue(true);
+  try {
+    await renderServer("https://two.example.test");
+    // A second submit (keyboard Go while the alert is open) must not start a parallel switch.
+    await pressSave();
+    await pressSave();
+    expect(Alert.alert).toHaveBeenCalledOnce();
+
+    await act(async () => alertButtons()[0]!.onPress?.());
+    expect(api.save).not.toHaveBeenCalled();
+    // Cancelling released the lock, so a later save asks again.
+    await pressSave();
+    expect(Alert.alert).toHaveBeenCalledTimes(2);
   } finally {
     vi.mocked(hasUnsentSends).mockReturnValue(false);
   }

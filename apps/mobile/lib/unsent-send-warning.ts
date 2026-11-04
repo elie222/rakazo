@@ -1,6 +1,7 @@
 import { Alert } from "react-native";
 import { t } from "./i18n";
 import { hasUnsentSends } from "./thread-feedback";
+import { unsentSendsRestored } from "./unsent-sends";
 
 /** What is about to clear the queue of unsent messages. */
 export type UnsentSendLossAction = "sign-out" | "server-switch";
@@ -9,8 +10,11 @@ export type UnsentSendLossAction = "sign-out" | "server-switch";
  * Confirms an action that deletes this device's unsent messages. Resolves false when
  * messages wait and their owner keeps them, so the action must not run then.
  */
-export function confirmUnsentSendLoss(action: UnsentSendLossAction): Promise<boolean> {
-  if (!hasUnsentSends()) return Promise.resolve(true);
+export async function confirmUnsentSendLoss(action: UnsentSendLossAction): Promise<boolean> {
+  // The persisted queue loads asynchronously at startup; reading the in-memory list
+  // before that lands would treat a not-yet-restored queue as empty.
+  await unsentSendsRestored();
+  if (!hasUnsentSends()) return true;
   const confirmLabel = action === "sign-out" ? t("Sign out anyway") : t("Switch anyway");
   const message =
     action === "sign-out"
