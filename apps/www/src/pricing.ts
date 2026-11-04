@@ -4,6 +4,7 @@ import {
   byokTierPriceCents,
   COMPUTER_SIZE_SPECS,
   CREDITS_SANDBOX_ALLOWANCE_PERCENT,
+  DEFAULT_MONTHLY_CREDIT_AMOUNT,
   MODEL_CREDIT_AMOUNTS,
   sandboxAllowanceHours,
   TRIAL_DAYS,
@@ -43,13 +44,10 @@ function computerSpecs(size: ComputerSize) {
   return `${specs.vcpus} vCPU\n${specs.memoryGb} GB RAM`;
 }
 
-/** Hours a credit plan gets per dollar it costs. */
-const CREDIT_HOURS_PER_DOLLAR = computerHours(CREDITS_SANDBOX_ALLOWANCE_PERCENT);
-
-/** Hours on the smallest credit plan, matching its "From" price. */
-const SMALLEST_CREDIT_PLAN_HOURS = computerHours(
-  (MODEL_CREDIT_AMOUNTS[0] * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100,
-);
+/** Computer hours a monthly credit plan of `cents` includes. */
+function creditPlanHours(cents: number) {
+  return computerHours((cents * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
+}
 
 /** Display names for every sandbox a self-hosted deployment can use; typed so a new kind must be named. */
 const SANDBOX_NAMES: Record<Exclude<SandboxKind, "none" | "desktop" | "fake">, string> = {
@@ -175,8 +173,8 @@ export const PRICING_COMPARISON = {
         "Unlimited",
         ...TIERS.map((tier) => `${tier.hours} hours/mo`),
         {
-          label: `From ${SMALLEST_CREDIT_PLAN_HOURS} hours/mo`,
-          detail: `${CREDIT_HOURS_PER_DOLLAR} hour a month for every $1 of your plan`,
+          label: `From ${creditPlanHours(MODEL_CREDIT_AMOUNTS[0])} hours/mo`,
+          detail: `Grows with your plan: ${dollars(DEFAULT_MONTHLY_CREDIT_AMOUNT)} a month includes ${creditPlanHours(DEFAULT_MONTHLY_CREDIT_AMOUNT)} hours`,
         },
       ],
     },
@@ -184,7 +182,7 @@ export const PRICING_COMPARISON = {
       feature: "Cloud computer",
       cells: ["Any size", ...TIERS.map((tier) => tier.computer), STANDARD_COMPUTER],
     },
-    { feature: "Hosted in the EU", cells: [false, ...TIERS.map(() => true), true] },
+    { feature: "Hosted in the EU", cells: ["Your choice", ...TIERS.map(() => true), true] },
     {
       feature: "Free trial",
       cells: [
