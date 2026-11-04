@@ -603,15 +603,9 @@ async function main() {
                 });
               },
               modelCallObserver: {
-                beforeCall: ({
-                  inputTokensEstimate,
-                  maxOutputTokens,
-                  provider,
-                  modelId,
-                  cacheWriteRetention,
-                }) => {
-                  if (provider !== connection.provider || modelId !== connection.modelId)
-                    throw new Error("Eval model has no configured pricing");
+                // Other models the product calls, such as the Auto Review checker, run too: their
+                // reservation uses the eval model's rates, and the provider-reported charge settles it.
+                beforeCall: ({ inputTokensEstimate, maxOutputTokens, cacheWriteRetention }) => {
                   if (!acceptingCalls) throw new Error("Eval trial stopped scheduling inference");
                   return liveBudget.reserve(
                     inputTokensEstimate,
