@@ -840,6 +840,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not clear the local session": "ローカルセッションをクリアできませんでした",
   "Could not clear the previous server session": "以前のサーバーセッションをクリアできませんでした",
   "Could not clear the previous space": "以前のスペースをクリアできませんでした",
+  "Could not save the previous server session": "前のサーバーのセッションを保存できませんでした",
   "Could not save the server URL": "サーバーURLを保存できませんでした",
   "Could not send reset email": "リセット用メールを送信できませんでした",
   "The server changed while starting the request": "リクエストの開始中にサーバーが変更されました",

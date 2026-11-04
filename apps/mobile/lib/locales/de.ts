@@ -858,6 +858,8 @@ export const DE_MESSAGES: Record<string, string> = {
     "Die vorherige Serversitzung konnte nicht gelöscht werden",
   "Could not clear the previous space":
     "Die vorherige Space-Auswahl konnte nicht zurückgesetzt werden",
+  "Could not save the previous server session":
+    "Die vorherige Serversitzung konnte nicht gespeichert werden",
   "Could not save the server URL": "Server-URL konnte nicht gespeichert werden",
   "Could not send reset email": "E-Mail zum Zurücksetzen konnte nicht gesendet werden",
   "The server changed while starting the request":

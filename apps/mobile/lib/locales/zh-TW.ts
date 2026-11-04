@@ -466,6 +466,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Could not save that speech model": "無法儲存該語音模型",
   "Could not save that voice": "無法儲存該語音",
   "Could not save the default space": "無法儲存預設空間",
+  "Could not save the previous server session": "無法儲存上一個伺服器的工作階段",
   "Could not save the server URL": "無法儲存伺服器網址",
   "Could not send reset email": "無法傳送重設郵件",
   "Could not send answer": "無法傳送回答",

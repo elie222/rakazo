@@ -460,9 +460,19 @@ export async function saveApiBase(
     const tokenSnapshot = await snapshotSessionToken();
     const token = tokenSnapshot.ok ? tokenSnapshot.value : "";
     if (token) {
-      // Recorded before the old credentials are discarded, so a process kill cannot lose both.
-      pendingPreviousSignOut = { apiBase: previous, token, headers: previousHeaders };
-      await savePendingSignOut(pendingPreviousSignOut);
+      // Recorded before the old credentials are discarded, so a process kill cannot lose both —
+      // but provisionally: a retry must not revoke a session a rolled-back switch still uses.
+      pendingPreviousSignOut = {
+        apiBase: previous,
+        token,
+        headers: previousHeaders,
+        recordedAt: Date.now(),
+        provisional: true,
+      };
+      if (!(await savePendingSignOut(pendingPreviousSignOut))) {
+        // Without the record the old server keeps its session, so the switch cannot proceed.
+        return { ok: false, error: t("Could not save the previous server session") };
+      }
     }
     const result = await clearCredentialsForEndpointChange();
     if (!result.ok) {
@@ -488,6 +498,7 @@ export async function saveApiBase(
   }
   setCachedApiBase(parsed.url);
   await clearStoredValue(SPACE_ROLLBACK_KEY);
+  if (pendingPreviousSignOut) await promotePendingSignOut(pendingPreviousSignOut);
   return parsed;
 }
 
@@ -501,14 +512,22 @@ export async function resetApiBase(): Promise<EndpointResult> {
         previousSpace: string;
       }
     | undefined;
-  /** As in saveApiBase: recorded before the old credentials are discarded, kept only on success. */
+  /** As in saveApiBase: recorded provisionally before the old credentials are discarded. */
   let pendingPreviousSignOut: PendingSignOut | undefined;
   if (url !== previous) {
     const tokenSnapshot = await snapshotSessionToken();
     const token = tokenSnapshot.ok ? tokenSnapshot.value : "";
     if (token) {
-      pendingPreviousSignOut = { apiBase: previous, token, headers: previousHeaders };
-      await savePendingSignOut(pendingPreviousSignOut);
+      pendingPreviousSignOut = {
+        apiBase: previous,
+        token,
+        headers: previousHeaders,
+        recordedAt: Date.now(),
+        provisional: true,
+      };
+      if (!(await savePendingSignOut(pendingPreviousSignOut))) {
+        return { ok: false, error: t("Could not save the previous server session") };
+      }
     }
     const result = await clearCredentialsForEndpointChange();
     if (!result.ok) {
@@ -534,6 +553,7 @@ export async function resetApiBase(): Promise<EndpointResult> {
   }
   setCachedApiBase(url);
   await clearStoredValue(SPACE_ROLLBACK_KEY);
+  if (pendingPreviousSignOut) await promotePendingSignOut(pendingPreviousSignOut);
   return { ok: true, url };
 }
 
@@ -843,8 +863,14 @@ export async function fetchMobileJson<T>(
 }
 
 const PENDING_SIGN_OUT_KEY = "rakazo.pending_sign_out";
-/** Several servers can owe this device a revocation; the oldest record is dropped past this. */
-const PENDING_SIGN_OUT_LIMIT = 10;
+/**
+ * An undelivered record is dropped once no server session could remain: better-auth expires a
+ * session 7 days after its last use and a signed-out session is never used again, so 30 days
+ * covers slower renewals and longer server-side overrides conservatively.
+ */
+const PENDING_SIGN_OUT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+/** Storage safety cap for the record list; with everything unexpired, the oldest go first. */
+const PENDING_SIGN_OUT_LIMIT = 100;
 
 /**
  * A sign-out or server switch whose revocation has not reached its server yet. Kept in the same
@@ -854,6 +880,10 @@ type PendingSignOut = {
   apiBase: string;
   token: string;
   headers: Record<string, string>;
+  /** When this record was written, so an age bound can retire undeliverable ones. */
+  recordedAt: number;
+  /** A server switch's record is deliverable only once the switch has committed. */
+  provisional?: boolean;
 };
 
 /** Records are keyed by server and session, so each signed-out account keeps its own revocation. */
@@ -862,6 +892,11 @@ function samePendingSignOut(left: PendingSignOut, right: PendingSignOut): boolea
 }
 
 type PendingSignOutRead = { ok: true; records: PendingSignOut[] } | { ok: false };
+
+/** Records young enough that the session they revoke could still be alive. */
+function livePendingSignOuts(records: PendingSignOut[], now = Date.now()): PendingSignOut[] {
+  return records.filter((record) => now - record.recordedAt < PENDING_SIGN_OUT_MAX_AGE_MS);
+}
 
 /** True once a retry confirmed no record is stored, so answered requests stop re-reading the store. */
 let pendingSignOutAbsent = true;
@@ -894,13 +929,22 @@ async function readPendingSignOuts(): Promise<PendingSignOutRead> {
     const records: PendingSignOut[] = [];
     for (const entry of parsed) {
       if (!entry || typeof entry !== "object") continue;
-      const record = entry as { apiBase?: unknown; token?: unknown; headers?: unknown };
+      const record = entry as {
+        apiBase?: unknown;
+        token?: unknown;
+        headers?: unknown;
+        recordedAt?: unknown;
+        provisional?: unknown;
+      };
       if (typeof record.apiBase !== "string" || !record.apiBase) continue;
       if (typeof record.token !== "string" || !record.token) continue;
+      if (typeof record.recordedAt !== "number" || !Number.isFinite(record.recordedAt)) continue;
       records.push({
         apiBase: record.apiBase,
         token: record.token,
         headers: parseServerHeaders(record.headers) ?? {},
+        recordedAt: record.recordedAt,
+        ...(record.provisional === true ? { provisional: true } : {}),
       });
     }
     return { ok: true, records };
@@ -920,21 +964,23 @@ async function writePendingSignOuts(records: PendingSignOut[]): Promise<boolean>
     await SecureStore.setItemAsync(PENDING_SIGN_OUT_KEY, JSON.stringify(records));
     return true;
   } catch {
-    // Without the record the session still expires server-side; the local sign-out continues.
+    // A failed write keeps whatever the store already holds.
     return false;
   }
 }
 
-async function savePendingSignOut(record: PendingSignOut): Promise<void> {
-  await queuePendingSignOutWrite(async () => {
+/** Records a revocation to deliver later. False when the store could not be read or written. */
+async function savePendingSignOut(record: PendingSignOut): Promise<boolean> {
+  return queuePendingSignOutWrite(async () => {
     const read = await readPendingSignOuts();
-    // An unreadable store keeps what it has; this record joins it when the store answers again.
-    if (!read.ok) return;
-    const kept = read.records.filter((existing) => !samePendingSignOut(existing, record));
+    if (!read.ok) return false;
+    const kept = livePendingSignOuts(read.records).filter(
+      (existing) => !samePendingSignOut(existing, record),
+    );
     kept.unshift(record);
-    if (await writePendingSignOuts(kept.slice(0, PENDING_SIGN_OUT_LIMIT))) {
-      pendingSignOutAbsent = false;
-    }
+    if (!(await writePendingSignOuts(kept.slice(0, PENDING_SIGN_OUT_LIMIT)))) return false;
+    pendingSignOutAbsent = false;
+    return true;
   });
 }
 
@@ -949,10 +995,70 @@ async function removePendingSignOut(record: PendingSignOut): Promise<void> {
   });
 }
 
+/** Retires records whose session cannot be alive on any server anymore. */
+async function prunePendingSignOuts(): Promise<void> {
+  await queuePendingSignOutWrite(async () => {
+    const read = await readPendingSignOuts();
+    if (!read.ok) return;
+    const kept = livePendingSignOuts(read.records);
+    if (kept.length === read.records.length) return;
+    if (await writePendingSignOuts(kept)) pendingSignOutAbsent = kept.length === 0;
+  });
+}
+
+/** Marks a switch's provisional record deliverable, once the switch has committed. */
+async function promotePendingSignOut(record: PendingSignOut): Promise<void> {
+  await queuePendingSignOutWrite(async () => {
+    const read = await readPendingSignOuts();
+    if (!read.ok) return;
+    let promoted = false;
+    const kept = read.records.map((existing) => {
+      if (!existing.provisional || !samePendingSignOut(existing, record)) return existing;
+      promoted = true;
+      const { provisional, ...committed } = existing;
+      return committed;
+    });
+    if (promoted) await writePendingSignOuts(kept);
+  });
+}
+
+/**
+ * Resolves records a dying server switch left behind. A provisional record whose session is still
+ * the active one on its server belongs to a switch that never completed, and the session it would
+ * revoke is still in use; every other provisional record is promoted for delivery. The session
+ * token is read only when there is something to resolve, so launches with no records stay quiet.
+ */
+async function reconcileProvisionalSignOuts(): Promise<void> {
+  const initial = await readPendingSignOuts();
+  if (!initial.ok || !initial.records.some((record) => record.provisional)) return;
+  const snapshot = await snapshotSessionToken();
+  if (!snapshot.ok) return;
+  const activeToken = snapshot.value;
+  await queuePendingSignOutWrite(async () => {
+    const read = await readPendingSignOuts();
+    if (!read.ok) return;
+    let resolvedAny = false;
+    const resolved: PendingSignOut[] = [];
+    for (const record of livePendingSignOuts(read.records)) {
+      if (!record.provisional) {
+        resolved.push(record);
+        continue;
+      }
+      resolvedAny = true;
+      const stillActive = record.apiBase === currentApiBase() && record.token === activeToken;
+      if (!stillActive) {
+        const { provisional, ...committed } = record;
+        resolved.push(committed);
+      }
+    }
+    if (resolvedAny) await writePendingSignOuts(resolved);
+  });
+}
+
 /**
  * Delivers both halves of a sign-out to the record's server: the push unregistration and the
  * session revocation. "retry" means some half may not have been processed and stays pending; any
- * other answer — success, or a final rejection such as an unknown session — completes it.
+ * other answer — success, or the server reporting the session itself invalid — completes it.
  */
 async function revokeSessionOnServer(record: PendingSignOut): Promise<"delivered" | "retry"> {
   const send = async (path: string, body: string) => {
@@ -979,10 +1085,9 @@ async function revokeSessionOnServer(record: PendingSignOut): Promise<"delivered
         "Request timed out",
       );
       if (response.status >= 200 && response.status < 300) return "delivered";
-      // Timeouts, throttling and every server failure can be transient; other answers are final.
-      return response.status === 408 || response.status === 429 || response.status >= 500
-        ? "retry"
-        : "final";
+      // Only the server reporting the session itself invalid (401) proves there is nothing left
+      // to revoke. Every other answer — a refusing proxy, throttling, a server failure — retries.
+      return response.status === 401 ? "final" : "retry";
     } catch {
       return "retry";
     } finally {
@@ -997,16 +1102,21 @@ async function revokeSessionOnServer(record: PendingSignOut): Promise<"delivered
 
 /**
  * Retries revocations that could not be delivered, until each server answers both its requests.
- * `force` reads the store even when the last attempt found nothing, for launch.
+ * `force` reads the store even when the last attempt found nothing, for launch, and first
+ * resolves whatever a dying server switch left behind.
  */
 export async function flushPendingSignOut(force = false): Promise<void> {
   if (!force && pendingSignOutAbsent) return;
   flushingPendingSignOut ??= (async () => {
     try {
+      if (force) await reconcileProvisionalSignOuts();
+      await prunePendingSignOuts();
       const read = await readPendingSignOuts();
       if (!read.ok) return;
-      if (read.records.length > 0) pendingSignOutAbsent = false;
+      pendingSignOutAbsent = read.records.length === 0;
       for (const record of read.records) {
+        // A provisional record belongs to a switch that has not committed; it is not delivered.
+        if (record.provisional) continue;
         // Removal is by record, so a revocation recorded during this attempt is not touched.
         if ((await revokeSessionOnServer(record)) !== "retry") await removePendingSignOut(record);
       }
@@ -1026,9 +1136,11 @@ export async function signOut() {
     apiBase,
     token: tokenSnapshot.ok ? tokenSnapshot.value : "",
     headers: serverHeaders(apiBase),
+    recordedAt: Date.now(),
   };
   // The record is written before the attempts: an app that dies mid-sign-out still revokes later.
   if (revocation.token) {
+    // A failed write cannot block the local sign-out; the session still expires server-side.
     await savePendingSignOut(revocation);
     if ((await revokeSessionOnServer(revocation)) !== "retry")
       await removePendingSignOut(revocation);

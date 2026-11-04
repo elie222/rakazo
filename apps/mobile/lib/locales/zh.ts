@@ -484,6 +484,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not save that speech model": "无法保存该语音模型",
   "Could not save that voice": "无法保存该语音",
   "Could not save the default space": "无法保存默认空间",
+  "Could not save the previous server session": "无法保存上一个服务器的会话",
   "Could not save the server URL": "无法保存服务器地址",
   "Could not send reset email": "无法发送重置邮件",
   "Could not send answer": "无法发送回答",

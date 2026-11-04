@@ -510,6 +510,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not save that speech model": "Не удалось сохранить речевую модель",
   "Could not save that voice": "Не удалось сохранить этот голос",
   "Could not save the default space": "Не удалось сохранить пространство по умолчанию.",
+  "Could not save the previous server session": "Не удалось сохранить сеанс предыдущего сервера",
   "Could not save the server URL": "Не удалось сохранить URL-адрес сервера.",
   "Could not send reset email": "Не удалось отправить электронное письмо для сброса",
   "Could not send answer": "Не удалось отправить ответ",

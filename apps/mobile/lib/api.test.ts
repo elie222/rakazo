@@ -1358,7 +1358,7 @@ describe("mobile API authentication", () => {
     await resetApiBase();
   });
 
-  it("keeps the pending revocation when the server fails to process it", async () => {
+  it("keeps the pending revocation unless the server reports the session invalid", async () => {
     const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
     mockSecureStore(store);
     vi.stubGlobal(
@@ -1367,27 +1367,75 @@ describe("mobile API authentication", () => {
     );
     await signOut();
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("{}", { status: 500 })),
-    );
-    await flushPendingSignOut(true);
-    expect(pendingSignOutRecords(store).length).toBe(1);
+    // A proxy can refuse with 403 without the request reaching the server at all.
+    for (const status of [500, 429, 403] as const) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("{}", { status })),
+      );
+      await flushPendingSignOut(true);
+      expect(pendingSignOutRecords(store).length).toBe(1);
+    }
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("{}", { status: 429 })),
-    );
-    await flushPendingSignOut(true);
-    expect(pendingSignOutRecords(store).length).toBe(1);
-
-    // An unknown session is final: the server has nothing left to revoke.
+    // An invalid session is final: the server has nothing left to revoke.
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("{}", { status: 401 })),
     );
     await flushPendingSignOut(true);
     expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("drops a pending revocation older than the session lifetime", async () => {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const store = new Map<string, string>([
+      [
+        "rakazo.pending_sign_out",
+        JSON.stringify([
+          {
+            apiBase: "https://old.example",
+            token: "expired-token",
+            headers: {},
+            recordedAt: Date.now() - 31 * dayMs,
+          },
+          {
+            apiBase: "https://old.example",
+            token: "fresh-token",
+            headers: {},
+            recordedAt: Date.now(),
+          },
+        ]),
+      ],
+    ]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await flushPendingSignOut(true);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://old.example/rpc/notifications/unregisterPush",
+      "https://old.example/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("bounds the stored revocations, dropping the oldest", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    for (let index = 0; index <= 100; index += 1) {
+      store.set("rakazo.session_token", `token-${index}`);
+      await signOut();
+    }
+
+    const records = pendingSignOutRecords(store);
+    expect(records.length).toBe(100);
+    expect(records.some((record) => record.token === "token-0")).toBe(false);
+    expect(records.some((record) => record.token === "token-100")).toBe(true);
   });
 
   it("sends the revocation to the recorded server with redirect error and its own headers", async () => {
@@ -1422,7 +1470,14 @@ describe("mobile API authentication", () => {
     const store = new Map<string, string>([
       [
         "rakazo.pending_sign_out",
-        JSON.stringify([{ apiBase: "https://old.example", token: "old-token", headers: {} }]),
+        JSON.stringify([
+          {
+            apiBase: "https://old.example",
+            token: "old-token",
+            headers: {},
+            recordedAt: Date.now(),
+          },
+        ]),
       ],
     ]);
     mockSecureStore(store);
@@ -1439,6 +1494,47 @@ describe("mobile API authentication", () => {
     const [, firstInit] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(firstInit.headers).toMatchObject({ authorization: "Bearer old-token" });
     expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("resolves a dying server switch's record at launch", async () => {
+    const provisional = (token: string) => ({
+      apiBase: "http://127.0.0.1:3100",
+      token,
+      headers: {},
+      recordedAt: Date.now(),
+      provisional: true,
+    });
+
+    // The switch never completed: its session is still the active one, so the record goes.
+    const uncompleted = new Map<string, string>([
+      ["rakazo.session_token", "token-a"],
+      ["rakazo.pending_sign_out", JSON.stringify([provisional("token-a")])],
+    ]);
+    mockSecureStore(uncompleted);
+    const noFetch = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", noFetch);
+    await loadApiBase();
+    await flushPendingSignOut(true);
+    expect(noFetch.mock.calls).toEqual([]);
+    expect(pendingSignOutRecords(uncompleted)).toEqual([]);
+    expect(uncompleted.get("rakazo.session_token")).toBe("token-a");
+
+    // The switch committed but died before promoting: the record is promoted and delivered.
+    const committed = new Map<string, string>([
+      ["rakazo.api_base", "https://second-server.example"],
+      ["rakazo.pending_sign_out", JSON.stringify([provisional("token-a")])],
+    ]);
+    mockSecureStore(committed);
+    const deliverFetch = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", deliverFetch);
+    await loadApiBase();
+    await flushPendingSignOut(true);
+    expect(deliverFetch.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(committed)).toEqual([]);
+    await resetApiBase();
   });
 
   it("unregisters push delivery before deleting the account", async () => {
@@ -1890,6 +1986,65 @@ describe("mobile API authentication", () => {
       // The switch rolled back, so the session it recorded a revocation for stays in use.
       expect(pendingSignOutRecords(store)).toEqual([]);
     }
+  });
+
+  it("aborts a server switch when the revocation cannot be recorded", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await saveApiBase("https://second-server.example");
+    store.set("rakazo.session_token", "session-token");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.pending_sign_out") throw new Error("device locked");
+      store.set(key, value);
+    });
+
+    // Without the record the old server keeps its session forever, so the switch stops.
+    await expect(resetApiBase()).resolves.toEqual({
+      ok: false,
+      error: "Could not save the previous server session",
+    });
+    expect(store.get("rakazo.session_token")).toBe("session-token");
+    expect(store.get("rakazo.api_base")).toBe("https://second-server.example");
+
+    await expect(saveApiBase("https://third-server.example")).resolves.toEqual({
+      ok: false,
+      error: "Could not save the previous server session",
+    });
+    expect(store.get("rakazo.session_token")).toBe("session-token");
+    // Restore writable storage so the cleanup switch can record its own revocation.
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      store.set(key, value);
+    });
+    await resetApiBase();
+  });
+
+  it("a flush racing a failing server switch cannot revoke the old session", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
+    mockSecureStore(store);
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token") throw new Error("device locked");
+      store.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token") {
+        // An answered request retries the record at the moment the switch starts clearing.
+        await flushPendingSignOut();
+        throw new Error("device locked");
+      }
+      store.delete(key);
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const next =
+      currentApiBase() === "https://second-server.example"
+        ? "https://third-server.example"
+        : "https://second-server.example";
+
+    await expect(saveApiBase(next)).resolves.toMatchObject({ ok: false });
+
+    expect(fetchMock.mock.calls).toEqual([]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    expect(store.get("rakazo.session_token")).toBe("token-a");
   });
 
   it("records no revocation when switching servers without a session", async () => {

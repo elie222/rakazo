@@ -852,6 +852,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not clear the local session": "De lokale sessie wissen mislukt",
   "Could not clear the previous server session": "De vorige serversessie wissen mislukt",
   "Could not clear the previous space": "De vorige space wissen mislukt",
+  "Could not save the previous server session": "Kon de sessie van de vorige server niet opslaan",
   "Could not save the server URL": "De server-URL opslaan mislukt",
   "Could not send reset email": "Herstellingsmail versturen mislukt",
   "The server changed while starting the request":
