@@ -362,6 +362,8 @@ export class LocalStackController {
   private ticket = 0;
   /** Starts ticketed at or below this were superseded by a later stop and must not run. */
   private voidBefore = 0;
+  /** A reused stack runs while its phase stays idle; only a successful stop clears this. */
+  private reusedManagedStack = false;
 
   constructor(private readonly deps: LocalStackDeps) {
     this.current = initialStackState(deps.imageTag);
@@ -376,6 +378,14 @@ export class LocalStackController {
     return this.current;
   }
 
+  /**
+   * True while a stack this app manages may be running: one it started this session, or one
+   * whose reuse a launch probe confirmed. The desktop's stack off-switch applies to these.
+   */
+  managedStackRunning(): boolean {
+    return this.current.phase !== "idle" || this.reusedManagedStack;
+  }
+
   /** Fast path for launch: only a stack with our private token and desired image may be reused. */
   async matchesDesiredStack(url = this.currentWebUrl): Promise<boolean> {
     if (
@@ -388,10 +398,11 @@ export class LocalStackController {
     if (token === null) return false;
     this.currentStackToken = token;
     try {
-      return (
+      const matched =
         (await this.deps.probe(url, AbortSignal.timeout(HEALTH_POLL_INTERVAL_MS), token)) ===
-        this.deps.imageTag
-      );
+        this.deps.imageTag;
+      if (matched) this.reusedManagedStack = true;
+      return matched;
     } catch {
       return false;
     }
@@ -441,6 +452,7 @@ export class LocalStackController {
   private async runStop(): Promise<DesktopLocalStackState> {
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
     const stopped = binary === null ? null : await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
+    if (stopped?.code === 0) this.reusedManagedStack = false;
     this.setState(
       stopped?.code === 0
         ? initialStackState(this.deps.imageTag)

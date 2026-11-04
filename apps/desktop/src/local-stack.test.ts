@@ -588,6 +588,25 @@ describe("LocalStackController", () => {
     },
   );
 
+  it("counts a reused managed stack as running until it is stopped", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    const stack = controller({
+      probe: async (_url, _signal, supplied) => (supplied === token ? "v1.2.3" : null),
+    });
+
+    expect(stack.managedStackRunning()).toBe(false);
+    await expect(stack.matchesDesiredStack()).resolves.toBe(true);
+    // Reuse records a running stack without faking a start attempt.
+    expect(stack.state().phase).toBe("idle");
+    expect(stack.managedStackRunning()).toBe(true);
+
+    await stack.stop();
+    expect(stack.managedStackRunning()).toBe(false);
+    expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]);
+  });
+
   it("reuses only the privately identified stack on the desired image", async () => {
     const stackPath = path.join(root, "stack");
     await mkdir(stackPath, { recursive: true });

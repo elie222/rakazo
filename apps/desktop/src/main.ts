@@ -101,7 +101,7 @@ import {
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
 import { clearSetup, readSetup, readUiLocale, writeSetup, writeUiLocale } from "./setup-store.js";
-import { stopLocalStackItem } from "./stop-local-stack.js";
+import { StackStopMenuAvailability, stopLocalStackItem } from "./stop-local-stack.js";
 import { createSystemSpeech } from "./system-speech.js";
 import type { UserDeviceAccess } from "./user-device.js";
 import { createUserDeviceAccess, deviceName } from "./user-device.js";
@@ -765,11 +765,11 @@ function installApplicationMenu() {
   };
   const stopStack = stopLocalStackItem({
     mode: currentSetup?.mode,
-    phase: localStack.state().phase,
+    stackRunning: localStack.managedStackRunning(),
     stop: () => {
       hostComputer?.activate(false);
       installApplicationMenu();
-      void localStack.stop().finally(() => installApplicationMenu());
+      void localStack.stop();
     },
   });
   const isMac = process.platform === "darwin";
@@ -1405,6 +1405,11 @@ app.whenReady().then(async () => {
         ...events,
       }),
   });
+  // Must exist before the stack controller: its state events refresh the stop item.
+  const stopStackMenu = new StackStopMenuAvailability(
+    () => ({ mode: currentSetup?.mode ?? null, running: localStack.managedStackRunning() }),
+    () => installApplicationMenu(),
+  );
   localStack = new LocalStackController({
     hostComputer: hostComputer?.connection,
     platform: process.platform,
@@ -1431,6 +1436,8 @@ app.whenReady().then(async () => {
       if (setupWindow !== null && !setupWindow.isDestroyed()) {
         setupWindow.webContents.send("desktop.setup.stack.changed", state);
       }
+      // A stack can start or stop without a server switch; refresh the stop item on flips.
+      stopStackMenu.stackChanged();
     },
   });
   currentSetup = await readSetup(userDataDir);
