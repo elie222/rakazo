@@ -194,10 +194,12 @@ function save(attempts: SendAttempt[]) {
     if (!finishPendingClear() || !diskReadable) return false;
     // A write error left these in memory only. Ones whose files were written join this index
     // directly; the others admit again, and a successful admission is recorded at once, so a
-    // later save lists it rather than re-admitting over its own files. What still cannot
-    // reach disk waits for a later save.
+    // later save lists it rather than re-admitting over its own files. A delivery in flight
+    // holds the attachment objects, so admitting underneath it waits for the attempt to
+    // settle. What still cannot reach disk waits for a later save.
     for (const attempt of attempts) {
       if (!memoryOnly.has(attempt) || writtenFiles.has(attempt)) continue;
+      if (attempt.state === "pending") continue;
       held.set(
         attempt,
         attempt.payload.attachments.map((a) => ({ ...a })),
