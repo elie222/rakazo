@@ -12,7 +12,12 @@ const element =
   ({ children }: { children?: ReactNode }) =>
     createElement(tag, null, children);
 
-vi.mock("./routine-store", () => ({ useBotRoutines: state.useBotRoutines }));
+vi.mock("./routine-store", () => ({
+  useBotRoutines: state.useBotRoutines,
+  saveBotRoutine: vi.fn(),
+  removeBotRoutine: vi.fn(),
+}));
+vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./i18n", () => {
   const t = (message: string) => message;
   return { useI18n: () => ({ t }) };
@@ -21,9 +26,21 @@ vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 vi.mock("./routine", () => ({
+  deviceTimeZone: () => "UTC",
+  routineTriggerNames: () => [],
   routineStatusLine: (routine: { scheduleDelayed?: boolean }) =>
     routine.scheduleDelayed ? "Schedule delayed" : "Active",
 }));
+vi.mock("../components/settings-group", () => ({
+  SettingsGroup: ({ children, footer }: { children?: ReactNode; footer?: string }) =>
+    createElement("div", null, children, footer),
+  SettingsLabel: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
+  SettingsInputRow: () => null,
+  SettingsRow: ({ title }: { title: string }) => createElement("span", null, title),
+  SettingsSwitch: () => null,
+}));
+vi.mock("../components/growing-text-input", () => ({ GrowingTextInput: () => null }));
+vi.mock("../components/routine-schedule-editor", () => ({ RoutineScheduleEditor: () => null }));
 vi.mock("../components/glass-title", () => ({ glassHeaderOptions: () => ({}) }));
 vi.mock("../components/native-action-button", () => ({ NativeActionButton: () => null }));
 vi.mock("../components/routine-run-history", () => ({ RoutineRunHistory: () => null }));
@@ -34,6 +51,7 @@ vi.mock("expo-router", () => ({
 }));
 vi.mock("react-native", () => ({
   ActivityIndicator: () => null,
+  Alert: { alert: vi.fn() },
   ScrollView: (props: { children?: ReactNode }) => element("div")(props),
   View: (props: { children?: ReactNode }) => element("div")(props),
   Text: (props: { children?: ReactNode }) => element("span")(props),
@@ -45,6 +63,8 @@ const routine = {
   id: "routine-1",
   name: "Report",
   prompt: "Prepare the report.",
+  crons: ["0 9 * * *"],
+  active: true,
   scheduleDelayed: true,
 };
 
@@ -73,6 +93,13 @@ it("refreshes recovered and newly delayed status while the detail stays open", a
   state.useBotRoutines.mockReturnValue({ routines: [routine] });
   await act(async () => root.render(createElement(RoutineDetail)));
   expect(container.textContent).toContain("Schedule delayed");
+});
+
+it("shows a routine another member created without the editor", async () => {
+  state.useBotRoutines.mockReturnValue({ routines: [{ ...routine, editable: false }] });
+  await act(async () => root.render(createElement(RoutineDetail)));
+  expect(container.textContent).toContain("Prepare the report.");
+  expect(container.textContent).not.toContain("Delete routine");
 });
 
 it("uses the shared routine store with focus-scoped polling enabled", () => {

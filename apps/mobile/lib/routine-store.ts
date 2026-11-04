@@ -1,4 +1,4 @@
-import type { Routine } from "@rakazo/contracts";
+import type { Routine, RpcInput } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { QueryFunction } from "@tanstack/react-query";
 import { hashKey, useQuery } from "@tanstack/react-query";
@@ -134,6 +134,36 @@ export function setRoutineActive(
     toggles.set(id, toggle);
   }
   toggle.update(active);
+}
+
+/** Creates or edits a routine; the list shows the server's copy once it answers. */
+export async function saveBotRoutine(
+  botId: string,
+  request: { create: RpcInput<"routines/create"> } | { update: RpcInput<"routines/update"> },
+): Promise<Routine> {
+  const { queryKey } = routinesQuery(botId);
+  const scope = hashKey(queryKey);
+  const requestContext = captureApiRequestContext();
+  requestContext.catch(() => undefined);
+  countWrite(scope, 1);
+  try {
+    await queryClient.cancelQueries({ queryKey, exact: true });
+    const context = await requestContext;
+    const saved =
+      "create" in request
+        ? await rpc("routines/create", request.create, { requestContext: context })
+        : await rpc("routines/update", request.update, { requestContext: context });
+    if (hashKey(routinesQuery(botId).queryKey) === scope) {
+      await writeSaved(queryClient, queryKey, (rows) =>
+        rows?.some((row) => row.id === saved.id)
+          ? rows.map((row) => (row.id === saved.id ? saved : row))
+          : [...(rows ?? []), saved],
+      );
+    }
+    return saved;
+  } finally {
+    countWrite(scope, -1);
+  }
 }
 
 /** Deletes a routine; its row goes once the server confirms. */

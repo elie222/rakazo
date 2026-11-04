@@ -94,6 +94,7 @@ vi.mock("react-native", () => {
     ScrollView: view,
     View: view,
     Text: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
+    TextInput: ({ value }: { value?: string }) => createElement("input", { value, readOnly: true }),
     Pressable: ({
       children,
       onPress,
@@ -686,7 +687,7 @@ describe("routines screen", () => {
     });
   });
 
-  it("shows a spinner, then the empty text, with no list or button", async () => {
+  it("shows a spinner, then the empty text and a way to create one", async () => {
     let load!: (rows: unknown) => void;
     profileRpc(() => new Promise((resolve) => (load = resolve)));
     await render(createElement(RoutinesScreen));
@@ -695,8 +696,12 @@ describe("routines screen", () => {
 
     await act(async () => load([]));
     expect(container.querySelector("progress")).toBeNull();
-    expect(container.textContent).toBe("Ask this Bot in chat to set up a routine.");
-    expect(container.querySelector("button")).toBeNull();
+    expect(container.textContent).toBe("Ask this Bot in chat to set up a routine.New routine");
+    rowFor("New routine")!.click();
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/routine",
+      params: { botId: "bot-fixture", botName: "Fixture" },
+    });
   });
 
   it("offers Try again after a failed read and its retry, and reloads", async () => {

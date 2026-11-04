@@ -3,10 +3,9 @@ import { formatCron } from "@rakazo/core";
 import { cronLabels } from "./cron";
 import { t } from "./i18n";
 
-function routineTriggers(routine: Routine): string {
-  const labels = cronLabels();
+/** The triggers that aren't schedules, by name. */
+export function routineTriggerNames(routine: Routine): string[] {
   return [
-    ...routine.crons.map((cron) => formatCron(cron, labels)),
     ...(routine.webhookEnabled ? [t("Webhook")] : []),
     ...(routine.githubEnabled ? [t("Git event")] : []),
     ...(routine.messageProvider === "slack"
@@ -17,6 +16,14 @@ function routineTriggers(routine: Routine): string {
           ? [t("Message event")]
           : []),
     ...(routine.watch ? [t("When something changes")] : []),
+  ];
+}
+
+function routineTriggers(routine: Routine): string {
+  const labels = cronLabels();
+  return [
+    ...routine.crons.map((cron) => formatCron(cron, labels)),
+    ...routineTriggerNames(routine),
   ].join(", ");
 }
 
