@@ -25,7 +25,7 @@ import PricingHint from "./PricingHint.astro";
           PRICING_COMPARISON.rows.map((row) => (
             <tr>
               <th scope="row">
-                {"hint" in row ? (
+                {"hint" in row && row.hint ? (
                   <PricingHint label={row.feature} detail={row.hint} />
                 ) : (
                   row.feature
