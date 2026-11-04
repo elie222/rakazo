@@ -549,7 +549,9 @@ export class PiAgentRuntime implements AgentRuntime {
                 main: computerSelection(mainTarget.config),
                 computer: computerSelection(computer.config),
               };
-              fallbackState.messagesBeforeSwitch = agent.state.messages.length;
+              // Returning keeps the main model's own reasoning; Pi drops the computer model's.
+              if (mode === "computer")
+                fallbackState.messagesBeforeSwitch = agent.state.messages.length;
               tools = modeTools();
               agent.state.tools = tools;
             },

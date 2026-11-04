@@ -22,7 +22,13 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 
 import { PiAgentRuntime } from "./pi-runtime.js";
 
-function response(target: Model<"openai-completions">, name?: string, args = {}, id = name) {
+function response(
+  target: Model<"openai-completions">,
+  name?: string,
+  args = {},
+  id = name,
+  thinking?: string,
+) {
   const message: AssistantMessage = {
     role: "assistant",
     api: target.api,
@@ -42,6 +48,7 @@ function response(target: Model<"openai-completions">, name?: string, args = {},
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
   };
+  if (thinking) message.content.unshift({ type: "thinking", thinking, thinkingSignature: "sig" });
   if (name === "!error") {
     message.content = [];
     message.stopReason = "error";
@@ -416,6 +423,31 @@ it("runs the user's own screen tools only in computer mode", async () => {
     "computer",
     "main",
   ]);
+});
+it("keeps the main model's own reasoning after computer work", async () => {
+  const input = request();
+  const steps: Array<[string | undefined, Record<string, unknown>?, string?]> = [
+    ["enter_computer_mode", { goal: "Click" }, "main plan"],
+    ["browser_act", { actions: [{ kind: "click", ref: "button-1" }] }, "computer plan"],
+    ["leave_computer_mode", { summary: "Clicked" }],
+    [undefined],
+  ];
+  const sent: string[][] = [];
+  fake.stream.mockImplementation(
+    (target: Model<"openai-completions">, context: { messages: AssistantMessage[] }) => {
+      sent.push(
+        context.messages.flatMap((message) =>
+          message.role === "assistant"
+            ? message.content.flatMap((part) => (part.type === "thinking" ? [part.thinking] : []))
+            : [],
+        ),
+      );
+      const [name, args, thinking] = steps.shift()!;
+      return response(target, name, args, name, thinking);
+    },
+  );
+  await run(input);
+  expect(sent.at(-1)).toContain("main plan");
 });
 it("finds screen tools only in computer mode", async () => {
   const input = request();
