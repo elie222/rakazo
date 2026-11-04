@@ -360,6 +360,8 @@ function SpaceShell() {
           setOverlay({ kind: "integrations" });
           return true;
         case "chat-panel":
+          // A form in the side panel (a new group, an import) keeps its unsaved input.
+          if (panel && !chatPanelOpen) return false;
           return toggleChatPanel();
         case "focus-composer":
           return focusComposer();
@@ -1366,6 +1368,7 @@ function SpaceShell() {
         open={shortcutsOpen}
         onOpenChange={setShortcutsOpen}
         host={{ desktop: Boolean(desktopBridge()), apple: isApplePlatform() }}
+        dictation={Boolean(bootstrapMe?.phoneCallsEnabled)}
       />
 
       {computerOpen && computerBot ? (

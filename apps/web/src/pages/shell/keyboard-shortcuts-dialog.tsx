@@ -8,10 +8,13 @@ export function KeyboardShortcutsDialog({
   open,
   onOpenChange,
   host,
+  dictation,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   host: ShortcutHost;
+  /** Whether the composer offers the microphone, which Cmd/Ctrl+D starts. */
+  dictation: boolean;
 }) {
   const { t } = useLingui();
   const mod = host.apple ? "⌘" : "Ctrl";
@@ -25,7 +28,7 @@ export function KeyboardShortcutsDialog({
     host.desktop && { label: t`Search bots`, keys: [[mod, "F"]] },
     { label: t`Toggle sidebar`, keys: [[mod, "B"]] },
     { label: t`Focus message`, keys: [[mod, "I"]] },
-    { label: t`Dictate`, keys: [[mod, "D"]] },
+    dictation && { label: t`Dictate`, keys: [[mod, "D"]] },
     { label: t`Chat details`, keys: [[mod, shift, ","]] },
     { label: t`Connect apps`, keys: [[mod, shift, "M"]] },
     host.desktop && { label: t`Go to bot`, keys: [[mod, "1–9"]] },
