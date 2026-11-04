@@ -57,7 +57,7 @@ describe("built-in tool bridge", () => {
     ]);
     // request_secret carries the card and contact kinds; update_bot carries instructions paging;
     // the history tools point at files from earlier messages.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(31_977);
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(32_095);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );

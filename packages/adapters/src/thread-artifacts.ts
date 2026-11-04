@@ -253,26 +253,32 @@ export async function materializeRecentThreadFiles(
   );
 }
 
-/** Earlier files one run copies after history tools list them; later ones are skipped. */
-export const EARLIER_FILES_PER_RUN = 20;
+/** Earlier files waiting to be copied at once; older listings give way to newer ones. */
+export const EARLIER_FILES_PENDING = 20;
 
-/** Files history tools listed this run, each queued once and at most `limit` in all. */
-export function createEarlierFileQueue(limit = EARLIER_FILES_PER_RUN) {
-  const queued = new Set<string>();
-  const pending: Array<Extract<MessageBlock, { kind: "file" | "image" }>> = [];
+/**
+ * Files history tools listed since the last computer tool, newest kept. Nothing is reserved for the
+ * run: listing a file again queues it again, so a failed copy retries and a copy already on the
+ * computer is kept as is.
+ */
+export function createEarlierFileQueue(limit = EARLIER_FILES_PENDING) {
+  let pending: Array<Extract<MessageBlock, { kind: "file" | "image" }>> = [];
   return {
     add(files: ReadonlyArray<Extract<MessageBlock, { kind: "file" | "image" }>>) {
       for (const file of files) {
-        if (queued.has(file.artifactId)) continue;
-        if (queued.size >= limit) {
-          getLogger().warn("earlier file not copied: run copy limit reached");
-          return;
-        }
-        queued.add(file.artifactId);
+        pending = pending.filter((queued) => queued.artifactId !== file.artifactId);
         pending.push(file);
       }
+      if (pending.length > limit) {
+        getLogger().warn("earlier files not copied: newer listings replaced them");
+        pending = pending.slice(-limit);
+      }
     },
-    take: () => pending.splice(0),
+    take() {
+      const taken = pending;
+      pending = [];
+      return taken;
+    },
   };
 }
 

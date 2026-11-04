@@ -55,6 +55,8 @@ export const HistoryReadInputSchema = z.object({
   artifactAfterId: Id.optional(),
   outcomeAfterSeq: z.number().int().nonnegative().optional(),
   textOffset: z.number().int().nonnegative().optional(),
+  /** Continues the anchor message's attachment list from a returned nextAttachmentOffset. */
+  attachmentOffset: z.number().int().nonnegative().optional(),
   direction: z.enum(["around", "older", "newer"]).optional(),
   limit: z.number().int().min(1).max(20).optional(),
 });

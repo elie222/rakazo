@@ -575,11 +575,14 @@ describe("earlier file queue", () => {
     size: 1,
   });
 
-  it("queues each listed file once and stops at the run limit", () => {
+  it("keeps the newest listings, once each, and queues a file again after it was taken", () => {
     const queue = createEarlierFileQueue(2);
-    queue.add([file("a"), file("a"), file("b")]);
-    expect(queue.take().map((f) => f.artifactId)).toEqual(["a", "b"]);
-    queue.add([file("a"), file("c")]);
+    queue.add([file("a"), file("b"), file("a")]);
+    queue.add([file("c")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["a", "c"]);
     expect(queue.take()).toEqual([]);
+    // Listing it again retries a copy that failed, or keeps one already on the computer.
+    queue.add([file("a")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["a"]);
   });
 });

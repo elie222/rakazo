@@ -42,9 +42,7 @@ postgres("history retrieval (PostgreSQL)", () => {
         jsonb_build_array(jsonb_build_object('kind','text','text', CASE WHEN n = 100 THEN 'exports use batching' ELSE 'filler exchange ' || n END))
         FROM generate_series(1,10000) n;
       CREATE INDEX synthetic_history_fts ON messages USING GIN (to_tsvector('simple',jsonb_path_query_array(blocks,
-        '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text));
-      CREATE INDEX synthetic_attachment_names ON messages USING GIN (to_tsvector('simple', translate(
-        jsonb_path_query_array(blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ')));
+        '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ')));
       CREATE INDEX synthetic_history_seq ON messages ("threadId",seq);
       ANALYZE messages;
       ALTER TABLE bots ADD COLUMN name text DEFAULT 'History bot';
@@ -153,7 +151,6 @@ postgres("history retrieval (PostgreSQL)", () => {
     );
     const plan = explained.rows[0]["QUERY PLAN"][0];
     expect(JSON.stringify(plan)).toContain("synthetic_history_fts");
-    expect(JSON.stringify(plan)).toContain("synthetic_attachment_names");
     expect(plan.Plan["Actual Rows"]).toBe(1);
     expect(plan["Planning Time"]).toBeGreaterThanOrEqual(0);
     expect(plan["Execution Time"]).toBeGreaterThanOrEqual(0);
@@ -316,6 +313,10 @@ postgres("history retrieval (PostgreSQL)", () => {
     expect(
       (await searchHistory(prisma, scope, { query: "lisbon-office-lease.md" })).messages,
     ).toHaveLength(1);
+    // One word from the caption, one from the file name.
+    expect((await searchHistory(prisma, scope, { query: "signed lease" })).messages).toHaveLength(
+      1,
+    );
     expect(found.messages).toEqual([
       expect.objectContaining({
         messageId: "file-captioned",
@@ -340,7 +341,7 @@ postgres("history retrieval (PostgreSQL)", () => {
     await pool.query("DELETE FROM messages WHERE id IN ('file-captioned','file-bare')");
     await pool.query("DELETE FROM artifacts WHERE id = 'art-foreign'");
   });
-  it("keeps a message with many files within the response budget and counts the omitted ones", async () => {
+  it("keeps a message with many files within the response budget and pages through them", async () => {
     // 100 files with long names, as a deployment that raises the per-message limit allows.
     await pool.query(`
       INSERT INTO artifacts SELECT 'many-' || n, 'synthetic-space', 'synthetic-user', 'synthetic-bot', NULL, NULL,
@@ -349,14 +350,24 @@ postgres("history retrieval (PostgreSQL)", () => {
         (SELECT jsonb_agg(jsonb_build_object('kind','file','artifactId','many-' || n,
           'name', repeat('n', 200) || n || '.md','mimeType','text/markdown','size',1)) FROM generate_series(1,100) n));
     `);
-    const read = await readHistory(prisma, scope, { messageId: "many-files", limit: 1 });
-    expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThanOrEqual(10_000);
-    const [message] = read.messages as Array<{
-      attachments?: unknown[];
-      omittedAttachments?: number;
-    }>;
-    expect(message!.attachments!.length).toBeGreaterThan(0);
-    expect(message!.attachments!.length + message!.omittedAttachments!).toBe(100);
+    type Page = { attachments?: Array<{ artifactId: string }>; nextAttachmentOffset?: number };
+    const seen: string[] = [];
+    let attachmentOffset: number | undefined;
+    for (let page = 0; page < 100; page += 1) {
+      const read = await readHistory(prisma, scope, {
+        messageId: "many-files",
+        limit: 1,
+        ...(attachmentOffset === undefined ? {} : { attachmentOffset }),
+      });
+      expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThanOrEqual(10_000);
+      const [message] = read.messages as Page[];
+      seen.push(...(message!.attachments ?? []).map((file) => file.artifactId));
+      attachmentOffset = message!.nextAttachmentOffset;
+      if (attachmentOffset === undefined) break;
+    }
+    // Every file is reachable by paging, each listed once.
+    expect(seen.length).toBe(100);
+    expect(new Set(seen).size).toBe(100);
     await pool.query("DELETE FROM messages WHERE id = 'many-files'");
     await pool.query("DELETE FROM artifacts WHERE id LIKE 'many-%'");
   });

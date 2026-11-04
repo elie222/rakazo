@@ -62,8 +62,8 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
       undefined,
     );
     if (!longest) {
-      // Text is as short as it goes: drop files from the message listing the most, and say how
-      // many are left out so a narrower read can list them.
+      // Text is as short as it goes: drop files from the message listing the most, and return
+      // where its list continues so a read of that message can page through the rest.
       const crowded = (response.messages as AttachedReference[]).reduce<
         AttachedReference | undefined
       >(
@@ -76,7 +76,7 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
       );
       if (!crowded?.attachments) throw new Error("History metadata exceeds response budget");
       crowded.attachments.pop();
-      crowded.omittedAttachments = (crowded.omittedAttachments ?? 0) + 1;
+      crowded.nextAttachmentOffset = (crowded.attachmentOffset ?? 0) + crowded.attachments.length;
       if (!crowded.attachments.length) delete crowded.attachments;
       continue;
     }
@@ -86,13 +86,13 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
   }
   return response;
 }
-const searchableText = Prisma.sql`jsonb_path_query_array(m.blocks,
-  '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").result')::text`;
 /**
- * Matches the expression of messages_attachment_name_search_idx. The parser keeps a name like
- * "q3-report.pdf" as one token, so separators become spaces first, as searchTerms splits them.
+ * Matches the expression of messages_history_search_files_idx: conversational text plus
+ * attachment names. The parser keeps a name like "q3-report.pdf" as one token, so its
+ * separators become spaces first, as searchTerms splits them.
  */
-const attachmentNames = Prisma.sql`translate(jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ')`;
+const searchableText = Prisma.sql`jsonb_path_query_array(m.blocks,
+  '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ')`;
 const columns = Prisma.sql`m.id, m.seq, m.role, m."runId", m."replyToMessageId", m."createdAt", m.blocks, m."threadId", t."groupId" AS "groupId"`;
 
 function visible(scope: HistoryScope, myChats = false, targetThreadId?: string): Prisma.Sql {
@@ -161,8 +161,9 @@ async function historyMatch(
   spaceId: string,
   query: string,
 ): Promise<Prisma.Sql> {
+  // A file name typed whole ("q3-report.pdf") matches its indexed parts through the second query.
   const fullText = Prisma.sql`(to_tsvector('simple', ${searchableText}) @@ plainto_tsquery('simple', ${query})
-    OR to_tsvector('simple', ${attachmentNames}) @@ plainto_tsquery('simple', translate(${query}, '._-', '   ')))`;
+    OR to_tsvector('simple', ${searchableText}) @@ plainto_tsquery('simple', translate(${query}, '._-', '   ')))`;
   const encryption = contentEncryptionOf(prisma);
   if (!encryption) return fullText;
   const tokenSets = (await encryption.messageSearchTokens(spaceId, query, "word")).filter(
@@ -260,16 +261,20 @@ async function messageAttachments(
 
 type AttachedReference = ReturnType<typeof reference> & {
   attachments?: HistoryAttachment[];
-  /** Files the response budget left out; reading this message alone lists more. */
-  omittedAttachments?: number;
+  attachmentOffset?: number;
+  /** Set when the response budget cut the list: read this message with it as attachmentOffset. */
+  nextAttachmentOffset?: number;
 };
 
 function withAttachments<T extends { messageId: string }>(
   ref: T,
   attachments: Map<string, HistoryAttachment[]>,
-): T & { attachments?: HistoryAttachment[] } {
-  const attached = attachments.get(ref.messageId);
-  return attached?.length ? { ...ref, attachments: attached } : ref;
+  offset = 0,
+): T & { attachments?: HistoryAttachment[]; attachmentOffset?: number } {
+  const attached = attachments.get(ref.messageId)?.slice(offset);
+  return attached?.length
+    ? { ...ref, attachments: attached, ...(offset ? { attachmentOffset: offset } : {}) }
+    : ref;
 }
 
 /**
@@ -458,6 +463,11 @@ export async function readHistory(
     (!Number.isInteger(input.textOffset) || input.textOffset < 0)
   )
     throw new Error("Invalid history text offset");
+  if (
+    input.attachmentOffset !== undefined &&
+    (!Number.isInteger(input.attachmentOffset) || input.attachmentOffset < 0)
+  )
+    throw new Error("Invalid history attachment offset");
   if (!["around", "older", "newer"].includes(direction))
     throw new Error("Invalid history direction");
   const anchors = await messageRows(
@@ -488,7 +498,7 @@ export async function readHistory(
         ? Prisma.sql`m.seq > ${anchor.seq}`
         : Prisma.sql`m.seq >= ${Math.max(0, anchor.seq - Math.floor(limit / 2))}`;
   const rows =
-    input.textOffset !== undefined
+    input.textOffset !== undefined || input.attachmentOffset !== undefined
       ? [anchor]
       : await messageRows(
           prisma,
@@ -594,6 +604,7 @@ export async function readHistory(
       withAttachments(
         reference(row, "", 2000, row.id === anchor.id ? (input.textOffset ?? 0) : 0),
         attachments,
+        row.id === anchor.id ? (input.attachmentOffset ?? 0) : 0,
       ),
     ),
     runs: runs.map((run) => ({

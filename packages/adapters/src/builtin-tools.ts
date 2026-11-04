@@ -1045,6 +1045,11 @@ export const builtinAgentTools: ConnectorTool[] = [
           minimum: 0,
           description: "Text cursor for a long original message.",
         },
+        attachmentOffset: {
+          type: "integer",
+          minimum: 0,
+          description: "Attachment cursor returned as nextAttachmentOffset.",
+        },
         limit: { type: "integer", minimum: 1, maximum: 5 },
       },
       required: ["messageId"],
