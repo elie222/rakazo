@@ -296,7 +296,8 @@ export function useComposerActions({
           continue;
         }
         next.push({
-          id: `${file.name}-${file.size}-${file.lastModified}-${next.length}`,
+          // A client id, not file metadata: two picks of equal metadata are separate attachments.
+          id: newClientId(),
           threadKey,
           file,
           previewUrl: mimeType.startsWith("image/") ? URL.createObjectURL(file) : undefined,
