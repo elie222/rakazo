@@ -190,6 +190,10 @@ export function startCall(call: {
     if (speech.status === "speaking") {
       bargedIn = false;
       set({ phase: "speaking", caption: speech.caption ?? "" });
+      if (micOpen && usesServerDictation(transcribe)) {
+        dictation.stop("cancel");
+        micOpen = false;
+      }
       // Recognition stays open through playback so the caller can talk over the reply.
       void openMic();
     } else if (speech.status === "idle" && state.phase !== "listening" && !bargedIn) {

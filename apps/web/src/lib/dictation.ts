@@ -514,11 +514,10 @@ export class Dictation {
       const data = new Uint8Array(analyser.fftSize);
       let heardSpeech = alreadyHeard;
       let silentFor = 0;
-      let recordedFor = 0;
+      const startedAt = Date.now();
       this.vadTimer = setInterval(() => {
         const media = this.media;
         if (this.token !== mine || !media || media.state === "inactive") return;
-        recordedFor += ENDPOINT_TICK_MS;
         analyser.getByteTimeDomainData(data);
         let sum = 0;
         for (const sample of data) {
@@ -532,7 +531,7 @@ export class Dictation {
         } else if (heardSpeech) {
           silentFor += ENDPOINT_TICK_MS;
         }
-        const full = recordedFor >= MAX_ENDPOINT_RECORDING_MS;
+        const full = Date.now() - startedAt >= MAX_ENDPOINT_RECORDING_MS;
         if (full && !heardSpeech) {
           this.finish(this.snapshot.transcript, mine);
           return;

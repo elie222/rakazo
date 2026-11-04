@@ -218,6 +218,21 @@ describe("mobile call session", () => {
     expect(fake.audioSession).toEqual([true, false]);
   });
 
+  it("reports a call audio failure and still listens", async () => {
+    vi.mocked(reportMobileError).mockClear();
+    const fake = fakes();
+    const failure = new Error("audio session unavailable");
+    fake.deps.audio = async () => {
+      throw failure;
+    };
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    expect(reportMobileError).toHaveBeenCalledWith(failure, "voice.microphone", {
+      source: "call-audio",
+    });
+    expect(fake.recordings).toHaveLength(1);
+  });
+
   it("starts listening for the bot on the call", async () => {
     const fake = fakes();
     startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);

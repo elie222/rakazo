@@ -905,12 +905,43 @@ describe("call audio", () => {
   });
 
   it("keeps the session of a call that starts while the last one releases it", async () => {
+    vi.mocked(setAudioModeAsync).mockClear();
     vi.mocked(setIsAudioActiveAsync).mockClear();
     const ending = setCallAudio(false);
     await setCallAudio(true);
     await ending;
+    expect(setAudioModeAsync).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ allowsRecording: true }),
+    );
     expect(setIsAudioActiveAsync).not.toHaveBeenCalled();
     await setCallAudio(false);
+  });
+
+  it("applies audio mode changes one at a time, in order", async () => {
+    let releaseFirst!: () => void;
+    const applied: unknown[] = [];
+    vi.mocked(setAudioModeAsync)
+      .mockImplementationOnce(async (mode) => {
+        await new Promise<void>((resolve) => {
+          releaseFirst = resolve;
+        });
+        applied.push(mode);
+      })
+      .mockImplementation(async (mode) => {
+        applied.push(mode);
+      });
+    const starting = setCallAudio(true);
+    await Promise.resolve();
+    const ending = setCallAudio(false);
+    await Promise.resolve();
+    expect(applied).toEqual([]);
+    releaseFirst();
+    await Promise.all([starting, ending]);
+    expect(applied).toEqual([
+      expect.objectContaining({ allowsRecording: true }),
+      expect.objectContaining({ shouldPlayInBackground: false }),
+    ]);
+    vi.mocked(setAudioModeAsync).mockImplementation(async () => undefined);
   });
 });
 

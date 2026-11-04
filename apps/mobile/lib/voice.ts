@@ -132,15 +132,25 @@ const CALL_AUDIO = {
 } as const;
 
 let onCall = false;
+let audioModeChange: Promise<void> = Promise.resolve();
 
-export async function setCallAudio(active: boolean): Promise<void> {
+function changeAudioMode(change: () => Promise<void>): Promise<void> {
+  const next = audioModeChange.then(change);
+  audioModeChange = next.catch(() => undefined);
+  return next;
+}
+
+export function setCallAudio(active: boolean): Promise<void> {
   onCall = active;
-  if (active) {
-    await setAudioModeAsync(CALL_AUDIO);
-    return;
-  }
-  await setAudioModeAsync(READ_ALOUD_AUDIO);
-  if (Platform.OS === "ios" && !onCall) await setIsAudioActiveAsync(false);
+  return changeAudioMode(async () => {
+    if (onCall !== active) return;
+    if (active) {
+      await setAudioModeAsync(CALL_AUDIO);
+      return;
+    }
+    await setAudioModeAsync(READ_ALOUD_AUDIO);
+    if (Platform.OS === "ios" && !onCall) await setIsAudioActiveAsync(false);
+  });
 }
 
 // Queued playback runs speakText one call at a time, so a single Stop always reaches whatever is
@@ -635,7 +645,9 @@ async function playWithHtmlAudio(
 
 async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): Promise<void> {
   if (session?.isStopped) return;
-  if (!onCall) await setAudioModeAsync(READ_ALOUD_AUDIO);
+  await changeAudioMode(async () => {
+    if (!onCall) await setAudioModeAsync(READ_ALOUD_AUDIO);
+  });
   const file = new File(
     Paths.cache,
     `rakazo-voice-${Date.now()}.${speechClipType(bytes).extension}`,

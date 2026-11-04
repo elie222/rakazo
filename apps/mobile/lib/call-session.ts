@@ -255,7 +255,9 @@ export function startCall(
 async function openCall(openedCallId: string, greeting?: string): Promise<void> {
   deps.waitSound("preload");
   opening = true;
-  await deps.audio(true).catch(() => undefined);
+  await deps.audio(true).catch((error: unknown) => {
+    reportMobileError(error, "voice.microphone", { source: "call-audio" });
+  });
   if (!state || callId !== openedCallId) return;
   await deps.cue("start").catch(() => undefined);
   if (!state || callId !== openedCallId) return;

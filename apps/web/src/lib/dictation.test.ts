@@ -634,7 +634,7 @@ describe("Dictation recorder fallback", () => {
     ["sends a recording that never goes quiet", 0.6, "hello"],
     ["drops a recording that never heard speech", 0, ""],
   ])("%s once it reaches the length cap", async (_case, loudness, final) => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
     vi.stubGlobal(
       "AudioContext",
       class {
@@ -681,10 +681,12 @@ describe("Dictation recorder fallback", () => {
     const onFinal = vi.fn();
     const dictation = new Dictation();
     await dictation.listen({ mode: "endpoint", transcribe: true, onFinal });
-    await vi.advanceTimersByTimeAsync(MAX_ENDPOINT_RECORDING_MS - 80);
+    vi.setSystemTime(Date.now() + MAX_ENDPOINT_RECORDING_MS - 1_000);
+    await vi.advanceTimersByTimeAsync(960);
     expect(onFinal).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(80);
-    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledExactlyOnceWith(final));
+    await Promise.resolve();
+    expect(onFinal).toHaveBeenCalledExactlyOnceWith(final);
     expect(fetchMock).toHaveBeenCalledTimes(final ? 1 : 0);
     expect(track.stop).toHaveBeenCalledOnce();
   });

@@ -773,6 +773,27 @@ describe("call session", () => {
     }
   });
 
+  it("stops a recording that is still open when a reply starts playing", async () => {
+    vi.mocked(usesServerDictation).mockReturnValue(true);
+    try {
+      await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: true });
+      vi.mocked(dictation.stop).mockClear();
+      listen.mockClear();
+
+      const speech = vi.mocked(speaker.subscribe).mock.calls[0]?.[0];
+      speech?.({ status: "speaking", caption: "Booked for Friday" });
+      await Promise.resolve();
+      expect(dictation.stop).toHaveBeenCalledWith("cancel");
+      expect(listen).not.toHaveBeenCalled();
+
+      speech?.({ status: "idle" });
+      await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS);
+      expect(listen).toHaveBeenCalledOnce();
+    } finally {
+      vi.mocked(usesServerDictation).mockReturnValue(false);
+    }
+  });
+
   it("prepares the call's audio in the tap that starts it", () => {
     startCall({ botId: "call-bot", botName: "Ada" });
     expect(speaker.unlock).toHaveBeenCalledOnce();
