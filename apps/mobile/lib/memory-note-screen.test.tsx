@@ -354,3 +354,14 @@ it("does not offer to discard an edit while its save is in flight", async () => 
   await act(async () => finishSave({ ...note, content: "Saving this\n", revision: 4 }));
   expect(mocks.back).toHaveBeenCalledTimes(1);
 });
+
+it("loads the new note when the screen is reused for another one", async () => {
+  const other = { ...note, id: "note-2", path: "sources.md", content: "Cite primary sources.\n" };
+  mocks.rpc.mockResolvedValue([note, other]);
+  await render();
+  expect(editor()?.value).toBe(note.content);
+  mocks.params = { id: other.id, botId: note.botId };
+  await render();
+  expect(editor()?.value).toBe(other.content);
+  expect(mocks.options.title).toBe("sources.md");
+});

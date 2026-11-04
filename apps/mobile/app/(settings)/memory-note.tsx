@@ -45,8 +45,11 @@ export default function MemoryNoteScreen() {
   const latestRef = useRef(latest);
   latestRef.current = latest;
 
+  // A different note in the same screen starts from its own content, never the previous one's.
   useEffect(() => {
     live.current = true;
+    setNote(null);
+    setDraft("");
     setState("loading");
     setError(null);
     latestRef
@@ -66,7 +69,7 @@ export default function MemoryNoteScreen() {
     return () => {
       live.current = false;
     };
-  }, [t, attempt]);
+  }, [id, botId, t, attempt]);
 
   useEffect(() => {
     if (closing) router.back();
