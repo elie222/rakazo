@@ -222,8 +222,10 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
 
   /**
    * Removes this host's copy of a remote computer's home once the bucket holds it and no export
-   * here is reading it; it is downloaded again when next needed. A home never stored keeps its
-   * only copy. Never call it for a Docker computer, which works directly in the copy.
+   * here is reading it; it is downloaded again when next needed. A copy this host downloaded from
+   * storage is still a cache when the record no longer names a revision (retention deleted the
+   * home), so it goes too, as hydrate does on read. A home never stored keeps its only copy.
+   * Never call it for a Docker computer, which works directly in the copy.
    */
   async evictCache(botId: string, { idleBefore }: { idleBefore?: number } = {}): Promise<boolean> {
     return this.withBotWrite(botId, async () => {
@@ -233,7 +235,12 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
         const used = await this.revisionUsedAt(botId);
         if (used === undefined || used > idleBefore) return false;
       }
-      if (!(await this.records.load(botId))?.revision) return false;
+      const stored = await this.records.load(botId);
+      if (
+        !stored?.revision &&
+        !((await this.isDownloaded(botId)) && !(await this.isLiveCache(botId)))
+      )
+        return false;
       await this.removeCopy(botId);
       return true;
     });
