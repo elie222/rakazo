@@ -93,6 +93,8 @@ class FakeIncus implements IncusClient {
   /** Holds an exec's control stream; Incus starts the command without it. */
   controlGate?: Promise<void>;
   private readonly operations = new Map<string, Promise<Record<string, unknown>>>();
+  /** Operations still creating an instance, by id, as Incus lists them. */
+  private readonly creating = new Map<string, string>();
   private readonly secrets = new Map<string, { exec: Exec; fd: string }>();
   private next = 0;
 
@@ -110,6 +112,14 @@ class FakeIncus implements IncusClient {
     const parts = url.pathname.split("/").slice(2).map(decodeURIComponent);
     if (parts[0] === "operations" && parts[2] === "wait") {
       return { metadata: await abortable(this.operations.get(parts[1]!)!, signal) };
+    }
+    if (parts[0] === "operations" && !parts[1]) {
+      const running = [...this.creating].map(([id, name]) => ({
+        id,
+        status_code: 103,
+        resources: { instances: [`/1.0/instances/${name}?project=default`] },
+      }));
+      return { metadata: { running } };
     }
     if (parts[0] !== "instances") throw new IncusError("not found", 404);
     const name = parts[1];
@@ -180,7 +190,11 @@ class FakeIncus implements IncusClient {
         ? { status: "Failure", status_code: 400, err: "Failed to start instance" }
         : { status: "Success", status_code: 200 };
     });
-    return this.operation(created);
+    const response = this.operation(created);
+    const id = response.operation!.split("/").pop()!;
+    this.creating.set(id, name);
+    void created.finally(() => this.creating.delete(id));
+    return response;
   }
 
   private exec(body: Record<string, unknown>): IncusResponse {
@@ -482,6 +496,30 @@ describe("IncusSandboxProvider", () => {
     await expect(
       providerFor(fake).provision({ botId: "bot-a", homePath: "/unused" }, context),
     ).rejects.toThrow("remote image info");
+    // An answered refusal created nothing, so nothing is looked for.
+    expect(fake.requests.some((entry) => entry.path.startsWith("/1.0/operations?"))).toBe(false);
+  });
+
+  it("deletes an instance whose create request lost its answer", async () => {
+    const fake = new FakeIncus();
+    let release!: () => void;
+    fake.createGate = new Promise((resolve) => (release = resolve));
+    const request = fake.request.bind(fake);
+    vi.spyOn(fake, "request").mockImplementation(async (method, path, body, signal) => {
+      const response = await request(method, path, body, signal);
+      // Incus accepted the creation, but the answer never arrived.
+      if (method === "POST" && path.startsWith("/1.0/instances?"))
+        throw new Error("socket hang up");
+      return response;
+    });
+    await expect(
+      providerFor(fake).provision({ botId: "bot-a", homePath: "/unused" }, context),
+    ).rejects.toThrow("socket hang up");
+    release();
+    await vi.waitFor(() =>
+      expect(fake.requests.some((entry) => entry.method === "PUT")).toBe(true),
+    );
+    expect(fake.instances.size).toBe(0);
   });
 
   it("deletes an instance whose start failed", async () => {

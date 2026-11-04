@@ -20,6 +20,7 @@ import type {
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
+import { getLogger } from "@rakazo/logging";
 import { Agent, request as httpRequest } from "undici";
 import WebSocket from "ws";
 import type { RawExecEvent } from "./exec-computer.js";
@@ -128,6 +129,12 @@ interface IncusInstance {
       { addresses?: { family?: string; address?: string; scope?: string }[] }
     >;
   };
+}
+
+interface IncusOperationEntry {
+  id?: string;
+  status_code?: number;
+  resources?: { instances?: string[] };
 }
 
 interface IncusOperation {
@@ -394,29 +401,55 @@ export class IncusSandboxProvider implements SandboxProvider {
   }
 
   private async create(name: string, botId: string, signal: AbortSignal): Promise<void> {
-    const accepted = await this.request(
-      "POST",
-      "/1.0/instances",
-      signal,
-      this.instanceSpec(name, botId),
-    );
+    let accepted: IncusResponse | undefined;
     try {
+      // Not cancelled with the caller: Incus may accept the request either way, and its answer
+      // names the operation to clean up after.
+      accepted = await this.request(
+        "POST",
+        "/1.0/instances",
+        new AbortController().signal,
+        this.instanceSpec(name, botId),
+      );
+      signal.throwIfAborted();
       expectSuccess(await this.waitOperation(accepted, signal, CREATE_TIMEOUT_MS));
     } catch (error) {
-      // Incus goes on creating after a caller gives up, and a failed start can leave the instance.
-      void this.discard(accepted, name);
+      // A refusal Incus answered created nothing. Anything else may have, and Incus goes on
+      // creating after a caller gives up.
+      if (accepted || !(error instanceof IncusError)) void this.discard(name, accepted);
       throw error;
     }
   }
 
-  /** Deletes an instance whose start failed or was abandoned, once Incus has finished with it. */
-  private async discard(accepted: IncusResponse, name: string): Promise<void> {
+  /**
+   * Deletes the instance of a start that failed or was abandoned, once Incus has finished with it.
+   * No later start uses its name, so this cannot remove a computer in use.
+   */
+  private async discard(name: string, accepted: IncusResponse | undefined): Promise<void> {
+    const deadline = AbortSignal.timeout(CREATE_TIMEOUT_MS);
     try {
-      await this.waitOperation(accepted, AbortSignal.timeout(CREATE_TIMEOUT_MS), CREATE_TIMEOUT_MS);
+      const creating = accepted ?? (await this.creation(name, deadline));
+      if (creating) await this.waitOperation(creating, deadline, CREATE_TIMEOUT_MS);
       await this.remove(name, AbortSignal.timeout(STOP_TIMEOUT_MS));
-    } catch {
-      // An instance left here belongs to no computer; the project's other tooling can see it.
+    } catch (error) {
+      getLogger().error("delete Incus instance left by a failed start", error);
     }
+  }
+
+  /** The running operation creating `name`, when the request's answer was lost. */
+  private async creation(name: string, signal: AbortSignal): Promise<IncusResponse | undefined> {
+    const { metadata } = await this.request("GET", "/1.0/operations?recursion=1", signal);
+    const target = instancePath(name);
+    const operation = Object.values((metadata ?? {}) as Record<string, IncusOperationEntry[]>)
+      .flat()
+      .find(
+        (entry) =>
+          (entry.status_code ?? 0) < 200 &&
+          entry.resources?.instances?.some((path) => path.split("?")[0] === target),
+      );
+    return operation?.id
+      ? { metadata: {}, operation: `/1.0/operations/${operation.id}` }
+      : undefined;
   }
 
   private async waitForReady(name: string, botId: string, context: AdapterContext): Promise<void> {
