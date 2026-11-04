@@ -53,7 +53,8 @@ export function useBrowserNotifications(
       try {
         const notification = new Notification(alert.title, {
           body: alert.body,
-          tag: alert.threadId,
+          // Per chat and kind: a repeat replaces its copy, but a question after a reply still pops up.
+          tag: `${alert.threadId}:${alert.kind}`,
         });
         shown.add(notification);
         notification.onclose = () => shown.delete(notification);

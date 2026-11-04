@@ -147,11 +147,11 @@ describe("useBrowserNotifications chat alerts", () => {
     await send({ kind: "failure", title: "Scout failed", body: "Timed out" });
     await send({ kind: "completion", body: "Second reply." });
     expect(shown()).toEqual([
-      ["Scout finished", "The report is ready.", "thread-b"],
-      ["Scout needs an answer", "Which repo?", "thread-b"],
-      ["Scout needs you on the screen", "Log in", "thread-b"],
-      ["Scout failed", "Timed out", "thread-b"],
-      ["Scout finished", "Second reply.", "thread-b"],
+      ["Scout finished", "The report is ready.", "thread-b:completion"],
+      ["Scout needs an answer", "Which repo?", "thread-b:help"],
+      ["Scout needs you on the screen", "Log in", "thread-b:takeover"],
+      ["Scout failed", "Timed out", "thread-b:failure"],
+      ["Scout finished", "Second reply.", "thread-b:completion"],
     ]);
   });
 
