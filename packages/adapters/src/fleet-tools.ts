@@ -1009,7 +1009,8 @@ export async function createChildRoutine(
   const cron = runAt ? ONCE_ROUTINE_CRON : text(schedule.cron);
   if (!cron) return { error: "The approved routine is incomplete." };
   // A zone that came from the account is re-read under the account lock at creation,
-  // not replayed from the approval.
+  // not replayed from the approval — so the identical-routine lookup must not match on
+  // the approval's zone either: the created routine may sit in a later account zone.
   const pinnedTimezone = canonical.timezoneFromAccount === true ? undefined : timezone;
   const existing = await deps.prisma.routine.findFirst({
     where: {
@@ -1019,7 +1020,7 @@ export async function createChildRoutine(
       threadId: child.thread.id,
       name,
       prompt,
-      timezone,
+      ...(pinnedTimezone === undefined ? {} : { timezone: pinnedTimezone }),
       crons: { equals: [cron] },
       active: true,
       ...(runAt ? { nextRunAt: new Date(runAt) } : {}),
