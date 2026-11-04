@@ -12,6 +12,11 @@ const describePostgres =
     ? describe.sequential
     : describe.skip;
 
+/** A raw SQL monitor, as the owner pool's connections provide. */
+type SqlMonitor = {
+  query: (text: string, values?: unknown[]) => Promise<{ rows: Array<{ pid: number }> }>;
+};
+
 describePostgres("moving routines with the account timezone (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;
   const organizationId = `tz-move-org-${suffix}`;
@@ -105,22 +110,26 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     jobs.enqueue.mockClear();
   }
 
-  /** A promise whose settlement a barrier step can assert is still pending. */
-  function tracked(promise: Promise<unknown>) {
-    const state = { settled: false };
-    void promise.then(
-      () => {
-        state.settled = true;
-      },
-      () => {
-        state.settled = true;
-      },
-    );
-    return state;
+  /**
+   * Wait until PostgreSQL itself shows a session blocked on a lock `holder` holds, so a
+   * barrier step proves SQL progress instead of assuming it from elapsed time. Returns
+   * the blocked backend's pid, and throws after ten seconds of nothing.
+   */
+  async function waitForBlockedOn(
+    monitor: SqlMonitor,
+    holder: number,
+    what: string,
+  ): Promise<number> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const { rows } = await monitor.query(
+        "SELECT pid FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND pg_blocking_pids(pid) @> ARRAY[$1::int]",
+        [holder],
+      );
+      if (rows.length > 0) return rows[0]!.pid;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`timed out waiting for ${what} to block on backend ${holder}`);
   }
-
-  /** Real-timer wait; the barrier steps must still be blocked when it ends. */
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
 
   function save(userIdArg: string, timezone: string, space: (typeof spaces)[number]) {
     return runAsTenant({ spaceId: space.spaceId, userId }, () =>
@@ -167,26 +176,28 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     await weeklyRoutine(spaces[0]!, userId, "A");
     await weeklyRoutine(spaces[1]!, userId, "B");
 
-    // A barrier holds the user's routines, so the first save is provably mid-transaction
-    // (past the account write, waiting on the rows) when the second one starts and waits
-    // in turn. Both overlap; neither may strand the routines on an intermediate zone.
+    // A barrier holds the user's routines. The first save blocks there, provably past
+    // its account write (it holds the account row); the second save then blocks on that
+    // row. Both overlap in the database, not by assumed timing; neither may strand the
+    // routines on an intermediate zone.
     await runAsSystem("overlap barrier", async () => {
       const client = await app.pool.connect();
+      const monitor = await owner.pool.connect();
       try {
         await client.query("BEGIN");
         await client.query('SELECT id FROM routines WHERE "userId" = $1 FOR UPDATE', [userId]);
+        const { rows: own } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
         const first = save(userId, "Europe/London", spaces[0]!);
-        const firstState = tracked(first);
-        await settle();
-        expect(firstState.settled).toBe(false);
+        const firstPid = await waitForBlockedOn(monitor, own[0]!.pid, "the first save");
         const second = save(userId, "Asia/Tokyo", spaces[1]!);
-        const secondState = tracked(second);
-        await settle();
-        expect(secondState.settled).toBe(false);
+        await waitForBlockedOn(monitor, firstPid, "the second save on the first");
         await client.query("COMMIT");
         await Promise.all([first, second]);
       } finally {
+        // A failed step must not leave the barrier open and the saves wedged.
+        await client.query("ROLLBACK").catch(() => undefined);
         client.release();
+        monitor.release();
       }
     });
 
@@ -212,11 +223,14 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     const claimed = new Date("2026-11-16T07:00:00.000Z"); // next Monday 09:00 Cairo
     await runAsSystem("routine claim barrier", async () => {
       const client = await app.pool.connect();
+      const monitor = await owner.pool.connect();
       try {
         await client.query("BEGIN");
         await client.query("SELECT id FROM routines WHERE id = $1 FOR UPDATE", [routine.id]);
+        const { rows: own } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
         const moving = save(userId, "Europe/London", spaces[0]!);
-        await settle();
+        // Only once the save provably waits on the claimed row does the claim advance it.
+        await waitForBlockedOn(monitor, own[0]!.pid, "the zone save");
         await client.query('UPDATE routines SET "nextRunAt" = $2 WHERE id = $1', [
           routine.id,
           claimed,
@@ -224,7 +238,10 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
         await client.query("COMMIT");
         await moving;
       } finally {
+        // A failed step must not leave the barrier open and the saves wedged.
+        await client.query("ROLLBACK").catch(() => undefined);
         client.release();
+        monitor.release();
       }
     });
 
@@ -238,16 +255,19 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     await resetAccount();
     const fixture = await weeklyRoutine(spaces[0]!, userId, "A");
 
-    // The same barrier holds the fixture routine, so the zone save is mid-transaction
-    // while a bot creates a routine that takes the account zone: the creation must not
+    // The same barrier holds the fixture routine, so the zone save waits there while a
+    // bot creates a routine that takes the account zone. The creation must itself wait
+    // on the save's account row, proving the interleaving in the database: it must not
     // freeze the zone the save is replacing.
     await runAsSystem("creation barrier", async () => {
       const client = await app.pool.connect();
+      const monitor = await owner.pool.connect();
       try {
         await client.query("BEGIN");
         await client.query("SELECT id FROM routines WHERE id = $1 FOR UPDATE", [fixture.id]);
+        const { rows: own } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
         const moving = save(userId, "Europe/London", spaces[0]!);
-        await settle();
+        const movingPid = await waitForBlockedOn(monitor, own[0]!.pid, "the zone save");
         const created = runAsTenant({ spaceId: spaces[0]!.spaceId, userId }, () =>
           createScheduleFromTool(
             {
@@ -266,10 +286,14 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
             },
           ),
         );
+        await waitForBlockedOn(monitor, movingPid, "the account-zone creation");
         await client.query("COMMIT");
         await Promise.all([moving, created]);
       } finally {
+        // A failed step must not leave the barrier open and the saves wedged.
+        await client.query("ROLLBACK").catch(() => undefined);
         client.release();
+        monitor.release();
       }
     });
 
