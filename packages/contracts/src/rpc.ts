@@ -69,6 +69,7 @@ import {
   BotSectionName,
   BotSectionSchema,
   ByokIntervalSchema,
+  ByokTierSchema,
   CapabilityInstallSchema,
   ChatAlertSchema,
   CONNECTION_LABEL_MAX_LENGTH,
@@ -309,7 +310,12 @@ export const appContract = {
     checkout: oc
       .input(
         z
-          .object({ client: BillingClientSchema, interval: ByokIntervalSchema.optional() })
+          .object({
+            client: BillingClientSchema,
+            interval: ByokIntervalSchema.optional(),
+            /** The own-key plan's tier; Standard when omitted. */
+            tier: ByokTierSchema.optional(),
+          })
           .optional(),
       )
       .output(z.object({ url: z.string().url() })),
@@ -320,6 +326,8 @@ export const appContract = {
     endTrial: oc.output(BillingStatusSchema),
     /** Owners only: moves a monthly own-key plan to yearly, charging the difference now. */
     switchToYearly: oc.output(BillingStatusSchema),
+    /** Owners only: moves the own-key plan to another tier at the same interval, billing the difference now. */
+    changeTier: oc.input(z.object({ tier: ByokTierSchema })).output(BillingStatusSchema),
     /** Records who invited this organization; ignored once it has subscribed. */
     claimReferral: oc
       .input(z.object({ code: z.string().min(1).max(64) }))

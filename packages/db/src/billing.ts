@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
-import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
+import { BYOK_TIERS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 
@@ -21,9 +21,9 @@ export function hasModelAccess(
 ): boolean {
   if (hasBillingAccess(subscriptionStatus)) return true;
   if (credits.mode === "byok")
-    return BYOK_MONTHLY_PRICE_CENTS === null || byokFreeUntil(credits, now) !== null;
+    return BYOK_TIERS.standard.monthlyPriceCents === null || byokFreeUntil(credits, now) !== null;
   if (credits.balanceMicros > 0n) return true;
-  return BYOK_MONTHLY_PRICE_CENTS === null && credits.mode === "credits";
+  return BYOK_TIERS.standard.monthlyPriceCents === null && credits.mode === "credits";
 }
 
 /** The free period's end while it is still running. */
@@ -110,6 +110,7 @@ export async function replaceBillingCustomer(
       creditAmountCents: null,
       byokPriceCents: null,
       byokInterval: null,
+      byokTier: null,
       subscriptionId: null,
       subscriptionItemId: null,
       priceId: null,
@@ -188,6 +189,7 @@ export async function syncBillingSnapshot(
       creditAmountCents: snapshot?.creditAmountCents ?? null,
       byokPriceCents: snapshot?.byokPriceCents ?? null,
       byokInterval: snapshot?.byokInterval ?? null,
+      byokTier: snapshot?.byokTier ?? null,
       subscriptionId: snapshot?.subscriptionId ?? null,
       subscriptionItemId: snapshot?.subscriptionItemId ?? null,
       priceId: snapshot?.priceId ?? null,

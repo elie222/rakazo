@@ -1,7 +1,10 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { BillingStatus } from "@rakazo/contracts";
 import {
+  ByokTierSchema,
+  byokTierChangeOffered,
   byokYearlySwitchSavings,
+  COMPUTER_SIZE_SPECS,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
@@ -100,6 +103,51 @@ export default function BillingScreen() {
   const endTrial = status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd;
   const yearlySavings = byokYearlySwitchSavings(status);
   const annualCents = status.byokAnnualPriceCents;
+  const tiers = status.byokTiers ?? [];
+  type TierOffer = (typeof tiers)[number];
+  const currentTier = ownKeyCents
+    ? tiers.find((offer) => offer.tier === ByokTierSchema.catch("standard").parse(status.byokTier))
+    : undefined;
+  const tierChange = byokTierChangeOffered(status);
+  const interval = status.byokInterval ?? "month";
+  const tierCents = (offer: TierOffer) =>
+    interval === "year" ? offer.annualPriceCents : offer.monthlyPriceCents;
+  /** "$49 / month", at the plan's interval. */
+  const tierPrice = (cents: number) => {
+    const price = `$${cents / 100}`;
+    return interval === "year" ? t("{price} / year", { price }) : t("{price} / month", { price });
+  };
+  const changeTier = (offer: TierOffer, cents: number) =>
+    Alert.alert(
+      t("Switch to {name}?", { name: offer.name }),
+      status.state === "trialing"
+        ? t("Your plan becomes {price} when your trial ends.", { price: tierPrice(cents) })
+        : cents > (ownKeyCents ?? 0)
+          ? t("Your card is charged the prorated difference today.")
+          : t("The unused difference is credited to your next invoice."),
+      [
+        { text: t("Cancel"), style: "cancel" },
+        {
+          text: t("Switch"),
+          onPress: () =>
+            void action(async () => {
+              show(await rpc("billing/changeTier", { tier: offer.tier }));
+            }),
+        },
+      ],
+    );
+  const tierRow = currentTier ? (
+    <SettingsRow
+      title={currentTier.name}
+      detail={t("{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month", {
+        vcpus: COMPUTER_SIZE_SPECS[currentTier.computerSize].vcpus,
+        memoryGb: COMPUTER_SIZE_SPECS[currentTier.computerSize].memoryGb,
+        hours: currentTier.computerHours,
+      })}
+      chevron={tierChange ? "down" : undefined}
+      disabled={pending}
+    />
+  ) : null;
   return (
     <ScrollView
       style={sideInsets}
@@ -126,6 +174,32 @@ export default function BillingScreen() {
                   : t("None")
           }
         />
+        {currentTier && tierChange ? (
+          <MenuView
+            actions={tiers.flatMap((offer) => {
+              const cents = tierCents(offer);
+              return cents === null
+                ? []
+                : [
+                    {
+                      id: offer.tier,
+                      title: `${offer.name} · ${tierPrice(cents)}`,
+                      state: offer.tier === currentTier.tier ? ("on" as const) : ("off" as const),
+                    },
+                  ];
+            })}
+            onPressAction={({ nativeEvent }) => {
+              const offer = tiers.find((candidate) => candidate.tier === nativeEvent.event);
+              const cents = offer && tierCents(offer);
+              if (offer && cents != null && offer.tier !== currentTier.tier)
+                changeTier(offer, cents);
+            }}
+          >
+            {tierRow}
+          </MenuView>
+        ) : (
+          tierRow
+        )}
         {endsAt ? (
           <SettingsRow
             title={status.cancelAtPeriodEnd ? t("Ends") : t("Free until")}

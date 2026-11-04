@@ -1,5 +1,6 @@
 import type {
   BillingCancellationReason,
+  ByokTier,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
   ModelApiProtocol,
@@ -1380,6 +1381,8 @@ export interface BillingCreditCheckoutRequest {
 export interface BillingByokCheckoutRequest extends Omit<BillingCreditCheckoutRequest, "monthly"> {
   /** How often `amountCents` bills; monthly when omitted. */
   interval?: "month" | "year";
+  /** Standard when omitted. */
+  tier?: ByokTier;
   /** Omitted when the customer has already used its trial. */
   trialDays?: number;
 }
@@ -1404,10 +1407,19 @@ export interface BillingSubscriptionSnapshot {
   byokPriceCents?: number;
   /** The own-key plan's billing period. */
   byokInterval?: "month" | "year";
+  /** The own-key plan's tier, which the provider reports with the plan. */
+  byokTier?: ByokTier;
   /** Stable identity of the subscription's card across customers, when the provider has one. */
   cardFingerprint?: string;
   cancellationReason?: BillingCancellationReason;
   cancellationComment?: string;
+}
+
+/** One own-key plan: its tier, how often it bills, and what it bills each period. */
+export interface BillingByokPlan {
+  tier: ByokTier;
+  interval: "month" | "year";
+  amountCents: number;
 }
 
 export interface BillingCheckoutRequest {

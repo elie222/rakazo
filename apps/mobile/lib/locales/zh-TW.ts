@@ -1062,6 +1062,12 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Start plan": "開始方案",
   "Switch to yearly": "切換為按年",
   "Switch to yearly?": "切換為按年付費？",
+  "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
+    "{vcpus} vCPU、{memoryGb} GB、每月 {hours} 小時電腦時數",
+  "Switch to {name}?": "切換到 {name}？",
+  "The unused difference is credited to your next invoice.": "未使用的差額將抵扣到你的下一張帳單。",
+  "Your card is charged the prorated difference today.": "今天將從你的卡片扣除按比例計算的差額。",
+  "Your plan becomes {price} when your trial ends.": "試用結束後，你的方案將變為 {price}。",
   "Your card is charged {price} today, less the unused part of this month.":
     "今天將從你的卡中扣款 {price}，並抵扣本月未使用的部分。",
   "Your plan becomes {price} / year when your trial ends.":

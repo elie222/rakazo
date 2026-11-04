@@ -355,3 +355,66 @@ test("switch a monthly own-key plan to yearly", async ({ page }, testInfo) => {
   await expect(plan.getByText("$144 / year", { exact: true })).toBeVisible();
   await expect(plan.getByRole("button", { name: /Switch to yearly/ })).toHaveCount(0);
 });
+
+test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
+  await signup(page, `byok-tier-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  const tiers = [
+    ["standard", "Standard", 1500, 14400, "standard", 25],
+    ["pro", "Pro", 4900, 46800, "large", 100],
+    ["max", "Max", 14900, 142800, "xlarge", 200],
+  ].map(([tier, name, monthlyPriceCents, annualPriceCents, computerSize, computerHours]) => ({
+    tier,
+    name,
+    monthlyPriceCents,
+    annualPriceCents,
+    computerSize,
+    computerHours,
+  }));
+  let status = billingStatus({
+    access: true,
+    trialAvailable: false,
+    creditPurchasesEnabled: true,
+    byokPriceCents: 1500,
+    byokInterval: "month",
+    byokAnnualPriceCents: 14400,
+    byokTier: "standard",
+    byokTiers: tiers,
+    funding: "byok",
+    balanceUsd: 0,
+    monthlyAmountCents: null,
+    state: "active",
+    currentPeriodEndsAt: "2030-01-15T12:00:00.000Z",
+    hasCustomer: true,
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
+  let changedTo: unknown = null;
+  await page.route("**/rpc/billing/changeTier", async (route) => {
+    changedTo = route.request().postDataJSON()?.json?.tier;
+    status = { ...status, byokPriceCents: 4900, byokAnnualPriceCents: 46800, byokTier: "pro" };
+    await route.fulfill({ json: { json: status } });
+  });
+  await page.reload();
+  const settings = await openUserSettings(page, "billing");
+  const plan = settings.getByTestId("own-key-plan");
+  await expect(plan.getByText("4 vCPU, 8 GB, 25 computer hours a month")).toBeVisible();
+  await plan.getByRole("combobox", { name: "Plan" }).click();
+  await expect(page.getByRole("option", { name: /Max · \$149 \/ month/ })).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-own-key-tiers");
+  await page.getByRole("option", { name: /Pro · \$49 \/ month/ }).click();
+  const confirm = page.getByRole("alertdialog", { name: "Switch to Pro?" });
+  await expect(
+    confirm.getByText("Your card is charged the prorated difference today."),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-own-key-tier-confirm");
+  await confirm.getByRole("button", { name: "Switch", exact: true }).click();
+  await expect.poll(() => changedTo).toBe("pro");
+  await expect(plan.getByText("$49 / month", { exact: true })).toBeVisible();
+  await expect(plan.getByText("8 vCPU, 16 GB, 100 computer hours a month")).toBeVisible();
+});

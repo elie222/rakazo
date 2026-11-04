@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { ORPCError } from "@orpc/server";
 import type {
+  BillingByokPlan,
   BillingPrice,
   BillingProvider,
   BillingSubscriptionSnapshot,
@@ -13,11 +14,13 @@ import {
   BillingNoMonthlyCreditsError,
 } from "@rakazo/adapter-kit";
 import { sandboxAllowance, sandboxHoursLeft } from "@rakazo/adapters";
-import type { Actor, BillingStatus, ByokInterval } from "@rakazo/contracts";
+import type { Actor, BillingStatus, ByokInterval, ByokTier } from "@rakazo/contracts";
 import {
-  BYOK_ANNUAL_PRICE_CENTS,
-  BYOK_MONTHLY_PRICE_CENTS,
+  BYOK_TIERS,
+  ByokTierSchema,
+  byokTierPriceCents,
   INVITED_TRIAL_WEEKS,
+  sandboxAllowanceHours,
   TRIAL_DAYS,
 } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
@@ -72,11 +75,18 @@ export interface BillingService {
     input: { amountCents: number; monthly: boolean; client?: BillingClient },
   ): Promise<{ url: string }>;
   setMonthlyCredits(actor: Actor, amountCents: number): Promise<{ ok: true }>;
-  checkout(actor: Actor, client?: BillingClient, interval?: ByokInterval): Promise<{ url: string }>;
+  checkout(
+    actor: Actor,
+    client?: BillingClient,
+    interval?: ByokInterval,
+    tier?: ByokTier,
+  ): Promise<{ url: string }>;
   portal(actor: Actor, client?: BillingClient): Promise<{ url: string }>;
   /** Ends the organization's trial and bills the first period now. */
   endTrial(actor: Actor): Promise<void>;
   switchToYearly(actor: Actor): Promise<void>;
+  /** Moves the own-key plan to another tier at the same interval, billing the difference now. */
+  changeTier(actor: Actor, tier: ByokTier): Promise<void>;
   /** Re-fetches the customer's subscription from the provider and overwrites the stored snapshot. */
   sync(customerId: string): Promise<void>;
   /** Syncs the actor's organization, e.g. on return from checkout before the webhook lands. */
@@ -104,13 +114,27 @@ function subscribedByokPrice(account: BillingAccount | null) {
   if (!account?.byokPriceCents || !(hasBillingAccess(status) || needsBillingPortal(status)))
     return null;
   const interval: ByokInterval = account.byokInterval === "year" ? "year" : "month";
-  return { cents: account.byokPriceCents, interval };
+  const tier = ByokTierSchema.catch("standard").parse(account.byokTier ?? "standard");
+  return { cents: account.byokPriceCents, interval, tier };
 }
 
-/** The own-key plan's price for new subscriptions; null when that period is not offered. */
-function byokOfferCents(interval: ByokInterval) {
-  if (BYOK_MONTHLY_PRICE_CENTS === null) return null;
-  return interval === "year" ? BYOK_ANNUAL_PRICE_CENTS : BYOK_MONTHLY_PRICE_CENTS;
+/** The tiers on offer, in order; empty when the own-key plan is free. */
+function byokTierOffers() {
+  return ByokTierSchema.options.flatMap((tier) => {
+    const monthlyPriceCents = byokTierPriceCents(tier, "month");
+    if (monthlyPriceCents === null) return [];
+    const terms = BYOK_TIERS[tier];
+    return [
+      {
+        tier,
+        name: terms.name,
+        monthlyPriceCents,
+        annualPriceCents: byokTierPriceCents(tier, "year"),
+        computerSize: terms.computerSize,
+        computerHours: sandboxAllowanceHours(terms.computerAllowanceCents),
+      },
+    ];
+  });
 }
 
 export function createBillingService(deps: {
@@ -214,7 +238,9 @@ export function createBillingService(deps: {
       provider.endByokPlans &&
       hasBillingAccess(live.status) &&
       (live.creditAmountCents ||
-        (BYOK_MONTHLY_PRICE_CENTS === null && live.byokPlan && !live.cancelAtPeriodEnd))
+        (BYOK_TIERS.standard.monthlyPriceCents === null &&
+          live.byokPlan &&
+          !live.cancelAtPeriodEnd))
     )
       await provider.endByokPlans(customerId);
   }
@@ -307,8 +333,9 @@ export function createBillingService(deps: {
     organizationId: string,
     client: BillingClient,
     interval: ByokInterval = "month",
+    tier: ByokTier = "standard",
   ) {
-    const amountCents = byokOfferCents(interval);
+    const amountCents = byokTierPriceCents(tier, interval);
     if (amountCents === null || !provider.createByokCheckout) throw new ORPCError("NOT_FOUND");
     const [account, credits, days] = await Promise.all([
       billingAccountFor(actor, organizationId),
@@ -321,6 +348,7 @@ export function createBillingService(deps: {
           customerId,
           amountCents,
           interval,
+          tier,
           ...(byokTrialAvailable(account, credits) ? { trialDays: days } : {}),
           successUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
           cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
@@ -331,6 +359,47 @@ export function createBillingService(deps: {
       await sync(account.customerId);
       throw new ORPCError("CONFLICT", { message: "Manage your existing subscription in Billing" });
     }
+  }
+
+  /**
+   * Moves the organization's live own-key plan to the plan `target` picks for it, charging the
+   * difference now. Conflicts when there is no such plan or `target` offers no change.
+   */
+  async function changeByokPlan(
+    actor: Actor,
+    target: (from: BillingByokPlan) => BillingByokPlan | null,
+  ) {
+    if (!provider.changeByokPlan) throw new ORPCError("NOT_FOUND");
+    const { organizationId } = await managedOrganization(actor);
+    const stored = await billingAccountForOrganization(prisma, organizationId);
+    if (!stored) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
+    // Decide from the provider, not a snapshot a missed webhook may have left stale.
+    await sync(stored.customerId);
+    const account = await billingAccountForOrganization(prisma, organizationId);
+    const conflict = () => new ORPCError("CONFLICT", { message: "No own-key plan to change" });
+    const subscribed = subscribedByokPrice(account);
+    if (
+      !account?.subscriptionId ||
+      !subscribed ||
+      account.creditAmountCents ||
+      account.cancelAtPeriodEnd ||
+      // Paid up: an overdue period must not be credited against the new plan.
+      (account.status !== "active" && account.status !== "trialing")
+    )
+      throw conflict();
+    const from = {
+      tier: subscribed.tier,
+      interval: subscribed.interval,
+      amountCents: subscribed.cents,
+    };
+    const to = target(from);
+    if (!to) throw conflict();
+    const changed = await provider.changeByokPlan(account.customerId, account.subscriptionId, {
+      from,
+      to,
+    });
+    await sync(account.customerId);
+    if (!changed) throw conflict();
   }
 
   return {
@@ -427,11 +496,13 @@ export function createBillingService(deps: {
         ]);
         const freeUntil =
           credits.mode === "byok" &&
-          BYOK_MONTHLY_PRICE_CENTS !== null &&
+          BYOK_TIERS.standard.monthlyPriceCents !== null &&
           !hasBillingAccess(account?.status ?? null)
             ? byokFreeUntil(credits)
             : null;
         const subscribed = subscribedByokPrice(account);
+        const tier = subscribed?.tier ?? "standard";
+        const offers = byokTierOffers();
         return {
           access: hasModelAccess(credits, account?.status ?? null),
           funding:
@@ -444,12 +515,16 @@ export function createBillingService(deps: {
           monthlyAmountCents: account?.creditAmountCents ?? null,
           creditPurchasesEnabled: deps.managedModelsAvailable ?? true,
           byokPriceCents:
-            BYOK_MONTHLY_PRICE_CENTS && (subscribed?.cents ?? BYOK_MONTHLY_PRICE_CENTS),
+            BYOK_TIERS.standard.monthlyPriceCents &&
+            (subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents),
           byokInterval: subscribed?.interval ?? "month",
-          byokAnnualPriceCents: byokOfferCents("year"),
+          byokAnnualPriceCents: byokTierPriceCents(tier, "year"),
+          byokTier: tier,
+          ...(offers.length ? { byokTiers: offers } : {}),
           byokFreeUntil: freeUntil?.toISOString() ?? null,
           canManage: isOwner,
-          trialAvailable: BYOK_MONTHLY_PRICE_CENTS !== null && byokTrialAvailable(account, credits),
+          trialAvailable:
+            BYOK_TIERS.standard.monthlyPriceCents !== null && byokTrialAvailable(account, credits),
           trialDays: days,
           state: (account?.status ?? "none") as BillingStatus["state"],
           price: account?.creditAmountCents
@@ -491,9 +566,9 @@ export function createBillingService(deps: {
       };
     },
 
-    async checkout(actor, client, interval) {
+    async checkout(actor, client, interval, tier) {
       const { organizationId } = await managedOrganization(actor);
-      if (modelCredits) return byokCheckout(actor, organizationId, client, interval);
+      if (modelCredits) return byokCheckout(actor, organizationId, client, interval, tier);
       let account = await billingAccountForOrganization(prisma, organizationId);
       if (account) {
         // Decide from the provider, not a snapshot a missed webhook may have left stale.
@@ -552,35 +627,24 @@ export function createBillingService(deps: {
     },
 
     async switchToYearly(actor) {
-      const amountCents = byokOfferCents("year");
-      if (amountCents === null || !provider.switchByokToYearly) throw new ORPCError("NOT_FOUND");
-      const { organizationId } = await managedOrganization(actor);
-      const stored = await billingAccountForOrganization(prisma, organizationId);
-      if (!stored) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
-      // Decide from the provider, not a snapshot a missed webhook may have left stale.
-      await sync(stored.customerId);
-      const account = await billingAccountForOrganization(prisma, organizationId);
-      const conflict = () =>
-        new ORPCError("CONFLICT", { message: "No monthly own-key plan to switch" });
-      if (
-        !account?.subscriptionId ||
-        !account.byokPriceCents ||
-        account.byokInterval === "year" ||
-        account.creditAmountCents ||
-        account.cancelAtPeriodEnd ||
-        // Paid up: an overdue month must not be credited against the year.
-        (account.status !== "active" && account.status !== "trialing") ||
+      await changeByokPlan(actor, (from) => {
+        const amountCents = byokTierPriceCents(from.tier, "year");
         // A subscriber on an older, cheaper price would pay more.
-        account.byokPriceCents * 12 <= amountCents
-      )
-        throw conflict();
-      const switched = await provider.switchByokToYearly(
-        account.customerId,
-        account.subscriptionId,
-        amountCents,
-      );
-      await sync(account.customerId);
-      if (!switched) throw conflict();
+        return from.interval === "month" &&
+          amountCents !== null &&
+          from.amountCents * 12 > amountCents
+          ? { tier: from.tier, interval: "year", amountCents }
+          : null;
+      });
+    },
+
+    async changeTier(actor, tier) {
+      await changeByokPlan(actor, (from) => {
+        const amountCents = byokTierPriceCents(tier, from.interval);
+        return tier !== from.tier && amountCents !== null
+          ? { tier, interval: from.interval, amountCents }
+          : null;
+      });
     },
 
     sync,
