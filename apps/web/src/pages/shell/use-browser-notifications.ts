@@ -5,6 +5,7 @@ import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/browser-notifications";
+import { notificationIcon } from "../../lib/notification-icon";
 
 type PendingBrowserNotification = {
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;
@@ -29,7 +30,10 @@ export function useBrowserNotifications(botsRef: RefObject<Bot[]>) {
         windowFocused: document.hasFocus(),
         permission: Notification.permission,
         notifiedEventIds: notifiedBrowserEvents.current,
-        show: (title, body, tag) => new Notification(title, { body, tag }),
+        show: (title, body, tag) =>
+          void notificationIcon(currentBot)
+            .then((icon) => new Notification(title, { body, tag, ...(icon ? { icon } : {}) }))
+            .catch(() => undefined),
       },
     );
     return result !== "pending";
