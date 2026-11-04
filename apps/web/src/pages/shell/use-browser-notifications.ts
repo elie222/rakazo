@@ -1,11 +1,11 @@
 import type { Bot, ProductEvent } from "@rakazo/contracts";
 import type { RefObject } from "react";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/browser-notifications";
-import { notificationIcon } from "../../lib/notification-icon";
+import { notificationIcon, prepareNotificationIcons } from "../../lib/notification-icon";
 
 type PendingBrowserNotification = {
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;
@@ -15,7 +15,8 @@ type PendingBrowserNotification = {
 };
 
 /** Finished-run notifications, held until the browser grants permission. */
-export function useBrowserNotifications(botsRef: RefObject<Bot[]>) {
+export function useBrowserNotifications(bots: Bot[], botsRef: RefObject<Bot[]>) {
+  useEffect(() => prepareNotificationIcons(bots), [bots]);
   const notifiedBrowserEvents = useRef(new Set<string>());
   const pendingBrowserNotifications = useRef(new Map<string, PendingBrowserNotification>());
   const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
@@ -30,13 +31,10 @@ export function useBrowserNotifications(botsRef: RefObject<Bot[]>) {
         windowFocused: document.hasFocus(),
         permission: Notification.permission,
         notifiedEventIds: notifiedBrowserEvents.current,
-        show: (title, body, tag) =>
-          void notificationIcon(currentBot)
-            .then((icon) => new Notification(title, { body, tag, ...(icon ? { icon } : {}) }))
-            .catch(() => {
-              notifiedBrowserEvents.current.delete(pending.event.id);
-              pendingBrowserNotifications.current.set(pending.event.threadId, pending);
-            }),
+        show: (title, body, tag) => {
+          const icon = notificationIcon(currentBot);
+          new Notification(title, { body, tag, ...(icon ? { icon } : {}) });
+        },
       },
     );
     return result !== "pending";
