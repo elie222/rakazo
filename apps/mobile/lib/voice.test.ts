@@ -896,6 +896,20 @@ describe("call audio", () => {
     });
   });
 
+  it("leaves the session to speech that is still playing when a call ends", async () => {
+    vi.mocked(captureApiRequestContext).mockReturnValueOnce(new Promise(() => undefined));
+    const reading = speakText("Read this", { botId: "bot-1" });
+    await waitFor(() => getVoicePlaybackState().status === "playing");
+    vi.mocked(setIsAudioActiveAsync).mockClear();
+
+    await setCallAudio(true);
+    await setCallAudio(false);
+    expect(setIsAudioActiveAsync).not.toHaveBeenCalled();
+
+    stopVoicePlayback();
+    void reading;
+  });
+
   it("keeps Android audio enabled after a call", async () => {
     platform.OS = "android";
     vi.mocked(setIsAudioActiveAsync).mockClear();

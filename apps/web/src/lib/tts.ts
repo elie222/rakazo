@@ -33,7 +33,7 @@ const IDLE: SpeechSnapshot = { status: "idle" };
 const SILENT_CLIP =
   "data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
-type PlaybackEnd = "ended" | "stopped" | "failed";
+type PlaybackEnd = "ended" | "stopped" | "blocked" | "failed";
 
 export class Speaker {
   private snapshot: SpeechSnapshot = IDLE;
@@ -155,10 +155,13 @@ export class Speaker {
       });
       const end = await this.play(rendered.blob, live);
       if (end !== "ended" || !live()) {
-        const failure = end === "failed" && live() ? t`Could not play that clip.` : undefined;
+        const failure =
+          live() && (end === "failed" || end === "blocked")
+            ? t`Could not play that clip.`
+            : undefined;
         if (live()) this.set(failure ? { ...IDLE, error: failure } : IDLE);
         if (this.request === controller) this.request = null;
-        return failure;
+        return end === "blocked" ? undefined : failure;
       }
     }
     if (live()) this.set(IDLE);
@@ -242,7 +245,13 @@ export class Speaker {
       this.settlePlayback = done;
       audio.onended = () => done("ended");
       audio.onerror = () => done("failed");
-      audio.play().catch(() => done("failed"));
+      audio
+        .play()
+        .catch((error: unknown) =>
+          done(
+            (error as { name?: unknown } | null)?.name === "NotAllowedError" ? "blocked" : "failed",
+          ),
+        );
     });
   }
 }

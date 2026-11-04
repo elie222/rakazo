@@ -112,8 +112,8 @@ describe("Speaker", () => {
     await pending;
   });
 
-  it("reports a clip the browser refuses to play", async () => {
-    stubAudio(() => Promise.reject(new DOMException("Not allowed", "NotAllowedError")));
+  it("reports a clip the browser cannot play", async () => {
+    stubAudio(() => Promise.reject(new DOMException("Unsupported", "NotSupportedError")));
     const speaker = new Speaker();
     vi.spyOn(
       speaker as unknown as { prepare: () => Promise<string[]> },
@@ -121,6 +121,18 @@ describe("Speaker", () => {
     ).mockResolvedValue(["Hello."]);
 
     await expect(speaker.speak("Hello.")).resolves.toBe("Could not play that clip.");
+    expect(speaker.state.error).toBe("Could not play that clip.");
+  });
+
+  it("shows a blocked autoplay in the speech state without returning it for a toast", async () => {
+    stubAudio(() => Promise.reject(new DOMException("Not allowed", "NotAllowedError")));
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: () => Promise<string[]> },
+      "prepare",
+    ).mockResolvedValue(["Hello."]);
+
+    await expect(speaker.speak("Hello.")).resolves.toBeUndefined();
     expect(speaker.state.error).toBe("Could not play that clip.");
   });
 

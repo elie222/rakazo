@@ -149,7 +149,9 @@ export function setCallAudio(active: boolean): Promise<void> {
       return;
     }
     await setAudioModeAsync(READ_ALOUD_AUDIO);
-    if (Platform.OS === "ios" && !onCall) await setIsAudioActiveAsync(false);
+    if (Platform.OS === "ios" && !onCall && playback.status === "idle") {
+      await setIsAudioActiveAsync(false);
+    }
   });
 }
 
