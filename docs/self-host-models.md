@@ -12,6 +12,7 @@ picks the provider and `PI_DEFAULT_MODEL` the model:
 | --- | --- | --- |
 | `openrouter` (default) | `OPENROUTER_API_KEY` | `openai/gpt-6-luna` |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-5` |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-flash` |
 
 Pick a vision-capable model so screenshot computer tools stay available.
 
