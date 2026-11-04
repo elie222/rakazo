@@ -26,11 +26,22 @@ export function composerDraftScope(
   }
 }
 
-// App-private cache storage, like the outbox: excluded from device backups.
+// The OS may evict the cache when storage runs low, so an unsent draft lives next to
+// the outbox in documents, like a message waiting to be sent.
+function root() {
+  return new Directory(Paths.document, "composer-drafts-v1");
+}
+/** Where earlier builds kept drafts. */
+function legacyRoot() {
+  return new Directory(Paths.cache, "composer-drafts-v1");
+}
+/** Exists while the earlier drafts are still in the cache but must not be copied again. */
+function legacyDone() {
+  return new File(Paths.document, "composer-drafts-legacy-done");
+}
 function draftFolder(scope: ComposerDraftScope): Directory {
   return new Directory(
-    Paths.cache,
-    "composer-drafts-v1",
+    root(),
     encodeURIComponent(scope.apiBase),
     `user-${encodeURIComponent(scope.userId)}`,
   );
@@ -60,6 +71,28 @@ function readDraftRecord(file: File): ComposerDraft | undefined {
   }
 }
 
+/** Leftovers are retried on the next draft read or write; a failed delete must not block them. */
+function deleteLeftover(entry: File | Directory): void {
+  try {
+    entry.delete();
+  } catch {}
+}
+
+// Android can move a directory by copying and stop halfway, so copy the earlier cache
+// drafts instead, keeping the source until a marker records a full copy (as the outbox
+// does). The marker stays forever: a cache copy that reappears later, after a downgrade,
+// is never trusted over drafts saved since.
+function migrateLegacyDrafts(): void {
+  if (legacyRoot().exists && !legacyDone().exists) {
+    if (root().exists) root().delete();
+    legacyRoot().copySync(root());
+    legacyDone().create();
+    // iOS can fail to create a file without an error; the source must stay until the marker exists.
+    if (!legacyDone().exists) throw new Error("DRAFT_STORAGE_UNAVAILABLE");
+  }
+  if (legacyRoot().exists) deleteLeftover(legacyRoot());
+}
+
 // Moves a draft recovered from an interrupted move back to the saved name, so the next save
 // writes a fresh next file instead of truncating the only copy. Throws when the move fails.
 function promoteRecoveredDraft(scope: ComposerDraftScope): void {
@@ -73,6 +106,7 @@ function promoteRecoveredDraft(scope: ComposerDraftScope): void {
 export function readComposerDraft(scope: ComposerDraftScope | undefined): ComposerDraft {
   if (!scope) return { text: "", bindings: [] };
   try {
+    migrateLegacyDrafts();
     try {
       promoteRecoveredDraft(scope);
     } catch {
@@ -95,6 +129,7 @@ export function writeComposerDraft(
   bindings: readonly ComposerMentionBinding[],
 ): boolean {
   try {
+    migrateLegacyDrafts();
     const file = draftFile(scope);
     const next = nextDraftFile(scope);
     if (!text) {
