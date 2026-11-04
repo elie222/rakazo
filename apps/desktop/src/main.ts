@@ -728,7 +728,16 @@ async function installUpdate() {
   return state;
 }
 
-async function persistHostChoice(computerHost: "docker" | "this-mac") {
+let hostChoiceSaves: Promise<unknown> = Promise.resolve();
+
+/** Saves in the order chosen, so a grant still in flight never overwrites a later revoke. */
+function persistHostChoice(computerHost: "docker" | "this-mac") {
+  const saving = hostChoiceSaves.catch(() => undefined).then(() => saveHostChoice(computerHost));
+  hostChoiceSaves = saving;
+  return saving;
+}
+
+async function saveHostChoice(computerHost: "docker" | "this-mac") {
   const origin = new URL(localStack.webUrl()).origin;
   const token = await readStackToken(stackDir(app.getPath("userData")));
   if (!token || !(await localStack.matchesDesiredStack()))
