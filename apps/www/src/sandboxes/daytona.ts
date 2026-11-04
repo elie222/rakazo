@@ -21,11 +21,13 @@ export const daytona: Sandbox = {
     where: "Computer on Daytona",
     ask: "read the infra applicants and shortlist anyone who has run their own cluster",
     reply: "on it. reading every profile and repo. intros held for you.",
-    task: "Reading applicants in Ashby.",
-    screen: {
-      host: "app.ashbyhq.com",
-      title: "Infra applicants",
-      lines: ["61 read", "9 shortlisted: ran their own cluster", "3 intros held"],
+    computer: {
+      task: "Reading applicants in Ashby.",
+      screen: {
+        host: "app.ashbyhq.com",
+        title: "Infra applicants",
+        lines: ["61 read", "9 shortlisted: ran their own cluster", "3 intros held"],
+      },
     },
   },
   sections: [

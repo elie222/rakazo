@@ -21,11 +21,13 @@ export const e2b: Sandbox = {
     where: "Computer on E2B",
     ask: "checkout is throwing 500s since the deploy, find out why?",
     reply: "on it. reproducing in the browser and reading the logs in my terminal.",
-    task: "Reproducing the checkout error.",
-    screen: {
-      host: "localhost:3000",
-      title: "Checkout: 500 on submit",
-      lines: ["Reproduced on first try", "Null coupon in cart total", "Fix drafted · tests pass"],
+    computer: {
+      task: "Reproducing the checkout error.",
+      screen: {
+        host: "localhost:3000",
+        title: "Checkout: 500 on submit",
+        lines: ["Reproduced on first try", "Null coupon in cart total", "Fix drafted · tests pass"],
+      },
     },
   },
   sections: [

@@ -1,3 +1,5 @@
+import { absolute, articleMarkdown, cell } from "../provider-article/markdown";
+import type { ArticleHub, ArticleLink } from "../provider-article/types";
 import { SITE_URL } from "../site";
 import { boat } from "./boat";
 import { daytona } from "./daytona";
@@ -7,7 +9,7 @@ import { kubernetes } from "./kubernetes";
 import { novita } from "./novita";
 import { railway } from "./railway";
 import { COMPUTER_PROVIDERS_DOCS_PATH, SANDBOXES_PATH, SANDBOXES_UPDATED, sandboxPath } from "./shared";
-import type { Sandbox, SandboxSection } from "./types";
+import type { Sandbox } from "./types";
 import { wuying } from "./wuying";
 import { yourComputer } from "./your-computer";
 
@@ -43,11 +45,13 @@ export const SANDBOXES_HUB = {
     where: "Computer on any sandbox",
     ask: "inbox got away from me over the weekend, sweep it?",
     reply: "on it. 41 unread since friday. archiving the noise, drafting the rest.",
-    task: "Sweeping Gmail back to Friday.",
-    screen: {
-      host: "mail.google.com",
-      title: "Inbox: 5 drafts parked",
-      lines: ["41 threads read", "26 archived · 9 replied", "Nora's renewal held"],
+    computer: {
+      task: "Sweeping Gmail back to Friday.",
+      screen: {
+        host: "mail.google.com",
+        title: "Inbox: 5 drafts parked",
+        lines: ["41 threads read", "26 archived · 9 replied", "Nora's renewal held"],
+      },
     },
   },
   choose: [
@@ -96,51 +100,28 @@ export const SANDBOXES_HUB = {
   ],
 } as const;
 
-/** Absolute links for agent Markdown, which is read outside the site. */
-function absolute(text: string): string {
-  return text.replace(/\]\((\/[^)]*)\)/g, `](${SITE_URL}$1)`);
+export const SANDBOXES_ARTICLE_HUB: ArticleHub = {
+  label: "Sandboxes for AI agents",
+  href: SANDBOXES_PATH,
+  moreHeading: "More sandboxes for AI agents",
+  guide: { label: "Computer providers guide", href: COMPUTER_PROVIDERS_DOCS_PATH },
+};
+
+export function sandboxLink(sandbox: Sandbox): ArticleLink {
+  return { name: sandbox.name, href: sandboxPath(sandbox.slug), meta: sandbox.bestFor, image: sandbox.image };
 }
 
-function sectionMarkdown(section: SandboxSection): string[] {
-  return [
-    `## ${section.heading}`,
-    "",
-    ...(section.paragraphs ?? []).flatMap((paragraph) => [absolute(paragraph), ""]),
-    ...(section.bullets?.length ? [...section.bullets.map((item) => `- ${absolute(item)}`), ""] : []),
-    ...(section.steps?.length
-      ? [...section.steps.map((step, index) => `${index + 1}. ${absolute(step)}`), ""]
-      : []),
-  ];
+export function otherSandboxes(sandbox: Sandbox): ArticleLink[] {
+  return SANDBOXES.filter((other) => other.slug !== sandbox.slug).map(sandboxLink);
 }
 
 /** Markdown twin of a sandbox page, for agents and `.md` requests. */
 export function sandboxMarkdown(sandbox: Sandbox): string {
-  return [
-    `# ${sandbox.h1}`,
-    "",
-    ...sandbox.intro.flatMap((paragraph) => [absolute(paragraph), ""]),
-    `Updated ${SANDBOXES_UPDATED}.`,
-    "",
-    ...sandbox.sections.flatMap(sectionMarkdown),
-    "## FAQ",
-    "",
-    ...sandbox.faq.flatMap((item) => [`### ${item.question}`, "", absolute(item.answer), ""]),
-    "## More sandboxes for AI agents",
-    "",
-    `- [All sandboxes compared](${SITE_URL}${SANDBOXES_PATH})`,
-    ...SANDBOXES.filter((other) => other.slug !== sandbox.slug).map(
-      (other) => `- [${other.name}](${SITE_URL}${sandboxPath(other.slug)}): ${other.bestFor}`,
-    ),
-    "",
-    "## Sources",
-    "",
-    ...sandbox.sources.map((source) => `- [${source.label}](${source.href})`),
-    "",
-  ].join("\n");
-}
-
-function cell(value: string): string {
-  return value.replaceAll("|", "\\|");
+  return articleMarkdown(sandbox, {
+    hub: SANDBOXES_ARTICLE_HUB,
+    others: otherSandboxes(sandbox),
+    updated: SANDBOXES_UPDATED,
+  });
 }
 
 /** Markdown twin of the sandboxes hub. */

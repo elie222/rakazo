@@ -24,11 +24,13 @@ export const wuying: Sandbox = {
     where: "Computer on Wuying",
     ask: "reconcile october's card export against the receipts folder",
     reply: "on it. opening the export in excel on the windows desktop. anything that doesn't line up, i ask.",
-    task: "Matching charges in Excel.",
-    screen: {
-      host: "october-card.xlsx",
-      title: "Month-end close: October",
-      lines: ["38 charges matched", "Harbor hotel: two nights", "2 receipts missing"],
+    computer: {
+      task: "Matching charges in Excel.",
+      screen: {
+        host: "october-card.xlsx",
+        title: "Month-end close: October",
+        lines: ["38 charges matched", "Harbor hotel: two nights", "2 receipts missing"],
+      },
     },
   },
   sections: [
