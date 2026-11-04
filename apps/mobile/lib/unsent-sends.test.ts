@@ -9,6 +9,7 @@ import {
   hasUnsentSends,
   restoreUnsentSends,
   sendWaitingMessages,
+  unsentSendsReadable,
 } from "./thread-feedback";
 import { prepareUnsentSends, startUnsentSends, unsentSendsRestored } from "./unsent-sends";
 
@@ -49,6 +50,7 @@ vi.mock("./thread-feedback", () => ({
   hasUnsentSends: vi.fn(),
   restoreUnsentSends: vi.fn(),
   sendWaitingMessages: vi.fn(async () => undefined),
+  unsentSendsReadable: vi.fn(() => true),
 }));
 vi.mock("./i18n", () => ({ t: (message: string) => `translated: ${message}` }));
 
@@ -140,6 +142,13 @@ describe("unsentSendsRestored", () => {
     session.generation = 21;
     vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("store unreadable"));
     await expect(prepareUnsentSends()).rejects.toThrow("store unreadable");
+    await expect(unsentSendsRestored()).resolves.toBe(false);
+  });
+
+  it("reports an unknown queue when the saved queue could not be read", async () => {
+    session.generation = 25;
+    vi.mocked(unsentSendsReadable).mockReturnValueOnce(false);
+    await prepareUnsentSends();
     await expect(unsentSendsRestored()).resolves.toBe(false);
   });
 

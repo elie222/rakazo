@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Server from "../app/server";
+import type * as Endpoint from "./endpoint";
 import type * as ThreadFeedback from "./thread-feedback";
 import { hasUnsentSends } from "./thread-feedback";
 
@@ -76,7 +77,7 @@ vi.mock("../components/sheet-header", () => ({
   }),
 }));
 vi.mock("./api", async () => {
-  const endpoint = await import("./endpoint");
+  const endpoint = await vi.importActual<typeof Endpoint>("./endpoint");
   return {
     apiBaseWarning: () => null,
     currentApiBase: () => server.base,

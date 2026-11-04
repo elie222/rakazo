@@ -29,6 +29,7 @@ import {
   hasUnsentSends,
   restoreUnsentSends,
   sendWaitingMessages,
+  unsentSendsReadable,
 } from "./thread-feedback";
 import { errorText } from "./user-error";
 
@@ -87,7 +88,8 @@ export function prepareUnsentSends(): Promise<void> {
   const attempt = loadUnsentSends();
   // Signed out, the queue was cleared with the session, so a failed restore hides nothing.
   restoreAttempt = attempt.then(
-    () => true,
+    // A restore that could not read the saved queue leaves it unknown, not empty.
+    () => unsentSendsReadable(),
     () =>
       snapshotSessionToken().then(
         (session) => session.ok && !session.value,

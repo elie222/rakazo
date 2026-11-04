@@ -268,6 +268,10 @@ export function clearUnsentSends() {
 export function hasUnsentSends() {
   return unsentSends.length > 0;
 }
+/** False after a restore could not read the saved queue: an empty list then proves nothing. */
+export function unsentSendsReadable() {
+  return diskReadable;
+}
 // Alias kept for existing sign-out callers.
 export const clearFailedSends = clearUnsentSends;
 export function confirmEchoes(threadKey: string, seqs: Iterable<number>) {

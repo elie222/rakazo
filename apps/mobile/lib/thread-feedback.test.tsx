@@ -22,6 +22,7 @@ import {
   restoreUnsentSends,
   sendWaitingMessages,
   settleComposer,
+  unsentSendsReadable,
   useThreadFeedback,
 } from "./thread-feedback";
 
@@ -298,6 +299,7 @@ describe("scoped mobile outbox", () => {
         throw new Error(message);
       });
       act(() => restoreUnsentSends());
+      expect(unsentSendsReadable()).toBe(false);
       const attempt = feedback.sendAttempt(payload());
       await act(async () => {
         expect(await feedback.send(attempt)).toBe(true);
