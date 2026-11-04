@@ -203,6 +203,20 @@ it("does not restore a signed-out session while push registration loads its toke
   );
 });
 
+it("does not register push while a sign-in has not saved its token yet", async () => {
+  Platform.OS = "android";
+  vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as never);
+  vi.spyOn(session, "loadSessionToken").mockResolvedValueOnce("");
+
+  await registerPushToken();
+
+  expect(resumeLiveNotifications).not.toHaveBeenCalled();
+  expect(fetch).not.toHaveBeenCalledWith(
+    expect.stringMatching(/notifications\/registerPush$/),
+    expect.anything(),
+  );
+});
+
 it("registers native sender delivery only when the installed Android module supports it", async () => {
   Platform.OS = "android";
   vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as never);

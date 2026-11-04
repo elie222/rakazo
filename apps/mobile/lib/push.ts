@@ -27,6 +27,8 @@ export async function registerPushToken() {
     const generation = currentSessionGeneration();
     const apiBase = currentApiBase();
     const sessionToken = await loadSessionToken();
+    // A sign-in still saving its token registers again once the session lands.
+    if (!sessionToken) return;
     if (generation !== currentSessionGeneration() || apiBase !== currentApiBase()) return;
     // The server can push the moment this registration lands, before any Space load
     // resumes native notifications; sync the session first, so Android's signed-out
