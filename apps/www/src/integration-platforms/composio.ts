@@ -1,12 +1,37 @@
 import type { IntegrationPlatform } from "./types";
 import {
+  ARCADE,
+  ARCADE_PRICING,
+  COMPOSIO,
   COMPOSIO_PRICING,
   INTEGRATIONS_DOC,
+  LARGE_TEAM,
+  MERGE_PRICING,
+  NANGO_PRICING,
   PIPEDREAM_PRICING,
   PRICES_CHECKED,
+  PRICE_SUMMARY,
+  SMALL_TEAM,
+  WORKLOADS,
+  ZAPIER,
   ZAPIER_PRICING,
+  roundUsd,
+  composioExtraCalls,
+  composioHobby,
+  composioPro,
+  count,
   homepage,
+  monthlyCalls,
+  teamLabel,
+  usd,
 } from "./shared";
+
+const SMALL = monthlyCalls(SMALL_TEAM);
+const LARGE = monthlyCalls(LARGE_TEAM);
+const FREE_CALLS = count(COMPOSIO.freeCalls);
+const FREE_MANAGED = count(COMPOSIO.freeManagedCalls);
+const PRO = usd(COMPOSIO.proFee);
+const RATE = COMPOSIO.per1000;
 
 export const composio: IntegrationPlatform = {
   slug: "composio",
@@ -19,7 +44,7 @@ export const composio: IntegrationPlatform = {
     "What Composio is, what it costs per tool call in 2026, what a team of bots really spends, how it compares with Pipedream, Arcade and Zapier MCP, and how Rakazo bots use it.",
   h1: "Composio for AI agents: pricing, limits and alternatives",
   intro: [
-    "[Composio](https://composio.dev) is a hosted service that gives AI agents actions in other apps, such as sending an email in Gmail or opening an issue in GitHub. It runs the sign-in for each app, stores the tokens, and calls the app's API when an agent asks it to. It is free up to 100,000 tool calls a month, and the paid plan starts at $29 a month plus usage.",
+    `[Composio](https://composio.dev) is a hosted service that gives AI agents actions in other apps, such as sending an email in Gmail or opening an issue in GitHub. It runs the sign-in for each app, stores the tokens, and calls the app's API when an agent asks it to. It is free up to ${FREE_CALLS} tool calls a month, and the paid plan starts at ${PRO} a month plus usage.`,
     "[Rakazo](/) is an open source app for AI teammates that do real work. You talk to each bot in chat, and bots use tools in your apps as well as their own computer. When you host Rakazo yourself, one Composio API key fills the app catalog people connect from. Composio supplies the app actions and logins. Rakazo decides which account each bot acts as and asks you before anything that changes data.",
   ],
   scene: {
@@ -38,7 +63,7 @@ export const composio: IntegrationPlatform = {
     {
       heading: "What is Composio?",
       paragraphs: [
-        "[Composio](https://composio.dev) is an integration platform for AI agents. It has a catalog of toolkits, one per app, each with actions an agent can call. Composio says it has more than 1,500 toolkits. It handles the OAuth sign-in and keeps the tokens encrypted, so the agent never sees a password or token. It also serves its tools over MCP for agents that speak that protocol, and offers triggers that fire when something happens in an app.",
+        `[Composio](https://composio.dev) is an integration platform for AI agents. It has a catalog of toolkits, one per app, each with actions an agent can call. Composio says it has ${COMPOSIO.toolkits} toolkits. It handles the OAuth sign-in and keeps the tokens encrypted, so the agent never sees a password or token. It also serves its tools over MCP for agents that speak that protocol, and offers triggers that fire when something happens in an app.`,
         "Its SDKs for TypeScript and Python are open source under the MIT license. The service behind them, including the app catalog and stored logins, is hosted by Composio. Running it in your own VPC or fully self-hosted is part of the Enterprise plan. Composio says it holds SOC 2 Type II and ISO 27001 certifications.",
       ],
       image: true,
@@ -52,36 +77,43 @@ export const composio: IntegrationPlatform = {
         caption: "Composio plans as of November 2026",
         columns: ["Plan", "Hobby", "Pro", "Enterprise"],
         rows: [
-          { topic: "Price", cells: ["$0", "$29/mo, as $29 of usage credit", "Custom, committed volume"] },
+          { topic: "Price", cells: ["$0", `${PRO}/mo, as ${PRO} of usage credit`, "Custom, committed volume"] },
           {
             topic: "Tool calls included",
-            cells: ["100,000/mo, then usage stops", "100,000/mo, then billed", "Custom"],
+            cells: [`${FREE_CALLS}/mo, then usage stops`, `${FREE_CALLS}/mo, then billed`, "Custom"],
           },
           {
             topic: "Of those, on managed apps",
-            cells: ["Up to 20,000", "Up to 20,000", "Custom"],
+            cells: [`Up to ${FREE_MANAGED}`, `Up to ${FREE_MANAGED}`, "Custom"],
           },
           {
             topic: "Extra calls, your own app",
-            cells: ["None, hard cap", "$0.30 per 1,000", "Custom"],
+            cells: ["None, hard cap", `${usd(RATE.own)} per 1,000`, "Custom"],
           },
           {
             topic: "Extra calls, managed apps",
             cells: [
               "None, hard cap",
-              "$0.50 per 1,000 for most apps, $2 for apps like Gmail, Slack and HubSpot, $10 for apps like Salesforce and LinkedIn",
+              `${usd(RATE.managed)} per 1,000 for most apps, ${usd(RATE.popular)} for apps like Gmail, Slack and HubSpot, ${usd(RATE.premium)} for apps like Salesforce and LinkedIn`,
               "Custom",
             ],
           },
           {
             topic: "Connected accounts",
             cells: [
-              "Unlimited on your apps, 1,000 on managed apps",
-              "Unlimited on your apps; managed apps past 1,000 cost $0.10 once each",
+              `Unlimited on your apps, ${count(COMPOSIO.freeManagedAccounts)} on managed apps`,
+              `Unlimited on your apps; managed apps past ${count(COMPOSIO.freeManagedAccounts)} cost ${usd(COMPOSIO.extraManagedAccount)} once each`,
               "Custom",
             ],
           },
-          { topic: "Rate limit", cells: ["2,000 requests/min", "10,000 requests/min", "Custom"] },
+          {
+            topic: "Rate limit",
+            cells: [
+              `${count(COMPOSIO.rateLimit.hobby)} requests/min`,
+              `${count(COMPOSIO.rateLimit.pro)} requests/min`,
+              "Custom",
+            ],
+          },
           { topic: "Team", cells: ["3 members", "Unlimited", "Unlimited, SSO and SCIM"] },
           {
             topic: "Compliance",
@@ -92,7 +124,7 @@ export const composio: IntegrationPlatform = {
       },
       bullets: [
         "Instant Tools, formerly Premium tools, call a paid third-party service such as a web search API with no account of your own. Composio passes on the provider's price with no markup, on top of the normal tool-call charge.",
-        "Triggers are billed separately: $0.003 per event on your own apps on Pro, and $0.003 to $0.006 on managed apps after 10,000 free a month.",
+        `Triggers are billed separately: ${usd(COMPOSIO.trigger.own)} per event on your own apps on Pro, and ${usd(COMPOSIO.trigger.managedLow)} to ${usd(COMPOSIO.trigger.managedHigh)} on managed apps after ${count(COMPOSIO.trigger.freeManaged)} free a month.`,
         "Pro has per-meter spend caps. The free plan never bills you; it pauses until the next month instead.",
         "Accepted startups get six months of Pro free through Composio's [startup program](https://composio.dev/startups).",
       ],
@@ -100,27 +132,33 @@ export const composio: IntegrationPlatform = {
     {
       heading: "What Rakazo bots cost on Composio",
       paragraphs: [
-        "Two examples, both on managed apps, which is what Rakazo uses unless you add your own auth config in Composio. A small team is 5 people whose bots run about 40 app actions each per workday, about 4,400 calls a month. A larger one is 20 people at about 100 actions each per workday, about 44,000 calls. Bots in Rakazo also search Composio's catalog for the right action; if every search counted as a call, double these numbers.",
+        `Rakazo uses Composio's managed apps unless you add your own auth config in Composio. ${WORKLOADS} Bots in Rakazo also search Composio's catalog for the right action; if every search counted as a call, double these numbers.`,
       ],
       table: {
         caption: "Monthly Composio bill for a team of Rakazo bots",
         columns: ["Workload", "Hobby", "Pro"],
         rows: [
           {
-            topic: "5 people, 4,400 calls",
-            cells: ["$0, well under the 20,000 managed-app calls", "$29, all inside the included credit"],
+            topic: `${teamLabel(SMALL_TEAM)} on apps like Gmail and Slack`,
+            cells: [composioHobby(SMALL, "popular"), usd(composioPro(SMALL, "popular"))],
           },
           {
-            topic: "20 people, 44,000 calls on apps like Gmail and Slack",
-            cells: ["Pauses after 20,000 calls", "About $48: 24,000 extra calls at $2 per 1,000"],
+            topic: `${teamLabel(LARGE_TEAM)} on apps like Gmail and Slack`,
+            cells: [
+              composioHobby(LARGE, "popular"),
+              `About ${roundUsd(composioPro(LARGE, "popular"))}: ${count(composioExtraCalls(LARGE, "popular"))} extra calls at ${usd(RATE.popular)} per 1,000`,
+            ],
           },
           {
-            topic: "20 people, 44,000 calls on apps like Salesforce",
-            cells: ["Pauses after 20,000 calls", "About $240: 24,000 extra calls at $10 per 1,000"],
+            topic: `${teamLabel(LARGE_TEAM)} on apps like Salesforce`,
+            cells: [
+              composioHobby(LARGE, "premium"),
+              `About ${roundUsd(composioPro(LARGE, "premium"))}: ${count(composioExtraCalls(LARGE, "premium"))} extra calls at ${usd(RATE.premium)} per 1,000`,
+            ],
           },
           {
-            topic: "20 people, 44,000 calls through your own OAuth apps",
-            cells: ["$0, under 100,000 calls", "$29"],
+            topic: `${teamLabel(LARGE_TEAM)} through your own OAuth apps`,
+            cells: [composioHobby(LARGE, "own"), usd(composioPro(LARGE, "own"))],
           },
         ],
         note: `Worked from [Composio's pricing page](${COMPOSIO_PRICING}), checked ${PRICES_CHECKED}. Model usage and the bots' computers are billed separately, by your model provider or by Rakazo.`,
@@ -129,7 +167,7 @@ export const composio: IntegrationPlatform = {
     {
       heading: "Composio vs Pipedream and other alternatives",
       paragraphs: [
-        "The pricing units differ, so compare a real workload, not the headline price. Composio charges per call and its free tier is the largest. [Pipedream Connect](/integration-platforms/pipedream/) charges per user and per 30 seconds of compute, and has no free production use. Zapier MCP spends two Zapier tasks per call. Arcade charges a flat cent per call.",
+        `The pricing units differ, so compare a real workload, not the headline price. Composio charges per call and its free tier is the largest. [Pipedream Connect](/integration-platforms/pipedream/) charges per user and per 30 seconds of compute, and has no free production use. Zapier MCP spends ${ZAPIER.tasksPerCall} Zapier tasks per call. Arcade charges ${usd(ARCADE.perCall)} per call.`,
       ],
       table: {
         caption: "Composio and its main alternatives",
@@ -138,10 +176,10 @@ export const composio: IntegrationPlatform = {
           {
             topic: "Composio",
             cells: [
-              "100,000 calls/mo",
-              "$29/mo",
-              "Tool call",
-              "1,500+",
+              PRICE_SUMMARY.composio.free,
+              PRICE_SUMMARY.composio.paid,
+              PRICE_SUMMARY.composio.billedBy,
+              PRICE_SUMMARY.composio.apps,
               "Enterprise only",
               "Built in: one API key",
             ],
@@ -149,10 +187,10 @@ export const composio: IntegrationPlatform = {
           {
             topic: "[Pipedream Connect](/integration-platforms/pipedream/)",
             cells: [
-              "Development only, 10 test users",
-              "$99/mo yearly or $150 monthly",
-              "User and 30 s of compute",
-              "3,000+",
+              PRICE_SUMMARY.pipedream.free,
+              PRICE_SUMMARY.pipedream.paid,
+              PRICE_SUMMARY.pipedream.billedBy,
+              PRICE_SUMMARY.pipedream.apps,
               "No",
               "Built in: project and OAuth client",
             ],
@@ -160,36 +198,43 @@ export const composio: IntegrationPlatform = {
           {
             topic: "[Zapier MCP](https://zapier.com/mcp)",
             cells: [
-              "100 tasks/mo, about 50 calls",
-              "$19.99/mo yearly for 750 tasks",
-              "2 tasks per call",
-              "9,000+",
+              PRICE_SUMMARY.zapier.free,
+              PRICE_SUMMARY.zapier.paid,
+              PRICE_SUMMARY.zapier.billedBy,
+              PRICE_SUMMARY.zapier.apps,
               "No",
               "As a remote MCP server",
             ],
           },
           {
-            topic: "[Arcade](https://www.arcade.dev/pricing)",
+            topic: `[Arcade](${ARCADE_PRICING})`,
             cells: [
-              "2,000 calls/mo",
-              "$25/mo plus $0.01 a call",
-              "Tool call",
-              "7,500+ tools in 81 toolkits",
+              PRICE_SUMMARY.arcade.free,
+              PRICE_SUMMARY.arcade.paid,
+              PRICE_SUMMARY.arcade.billedBy,
+              PRICE_SUMMARY.arcade.apps,
               "Enterprise only",
               "Not built in",
             ],
           },
           {
-            topic: "[Merge Agent Handler](https://www.merge.dev/pricing/agent-handler)",
-            cells: ["2,000 credits/mo", "$1,000/mo for 25,000 credits", "Credit", "Not stated", "Enterprise only", "Not built in"],
+            topic: `[Merge Agent Handler](${MERGE_PRICING})`,
+            cells: [
+              PRICE_SUMMARY.merge.free,
+              PRICE_SUMMARY.merge.paid,
+              PRICE_SUMMARY.merge.billedBy,
+              PRICE_SUMMARY.merge.apps,
+              "Enterprise only",
+              "Not built in",
+            ],
           },
           {
-            topic: "[Nango](https://nango.dev/pricing)",
+            topic: `[Nango](${NANGO_PRICING})`,
             cells: [
-              "10 connections",
-              "$50/mo of usage",
-              "Connection and compute hour",
-              "1,000+",
+              PRICE_SUMMARY.nango.free,
+              PRICE_SUMMARY.nango.paid,
+              PRICE_SUMMARY.nango.billedBy,
+              PRICE_SUMMARY.nango.apps,
               "Enterprise only; source on GitHub",
               "Not built in",
             ],
@@ -267,12 +312,12 @@ export const composio: IntegrationPlatform = {
     {
       question: "How much does Composio cost?",
       answer:
-        "As of November 2026, the Hobby plan is free with 100,000 tool calls a month, up to 20,000 of them on Composio's managed apps, and stops at that cap. Pro is $29 a month, paid as usage credit, and bills extra calls at $0.30 per 1,000 on your own apps and $0.50 to $10 per 1,000 on managed apps. Enterprise is custom. See [Composio's pricing page](https://composio.dev/pricing).",
+        `As of ${PRICES_CHECKED}, the Hobby plan is free with ${FREE_CALLS} tool calls a month, up to ${FREE_MANAGED} of them on Composio's managed apps, and stops at that cap. Pro is ${PRO} a month, paid as usage credit, and bills extra calls at ${usd(RATE.own)} per 1,000 on your own apps and ${usd(RATE.managed)} to ${usd(RATE.premium)} per 1,000 on managed apps. Enterprise is custom. See [Composio's pricing page](${COMPOSIO_PRICING}).`,
     },
     {
       question: "Is Composio free?",
       answer:
-        "Yes, for up to 100,000 tool calls a month, with no credit card. Only 20,000 of those can go through Composio's managed OAuth apps, and the plan pauses at the cap rather than billing you.",
+        `Yes, for up to ${FREE_CALLS} tool calls a month, with no credit card. Only ${FREE_MANAGED} of those can go through Composio's managed OAuth apps, and the plan pauses at the cap rather than billing you.`,
     },
     {
       question: "Is Composio open source?",
@@ -321,9 +366,9 @@ export const composio: IntegrationPlatform = {
     },
     { label: "Pipedream pricing", href: PIPEDREAM_PRICING },
     { label: "Zapier pricing", href: ZAPIER_PRICING },
-    { label: "Arcade pricing", href: "https://www.arcade.dev/pricing" },
-    { label: "Merge Agent Handler pricing", href: "https://www.merge.dev/pricing/agent-handler" },
-    { label: "Nango pricing", href: "https://nango.dev/pricing" },
+    { label: "Arcade pricing", href: ARCADE_PRICING },
+    { label: "Merge Agent Handler pricing", href: MERGE_PRICING },
+    { label: "Nango pricing", href: NANGO_PRICING },
     INTEGRATIONS_DOC,
   ],
 };

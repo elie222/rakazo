@@ -1,5 +1,17 @@
 import { GITHUB_URL } from "../site";
-import { INTEGRATIONS_DOC, PRICES_CHECKED, ZAPIER_PRICING, homepage } from "./shared";
+import {
+  COMPOSIO,
+  COMPOSIO_PRICING,
+  INTEGRATIONS_DOC,
+  PIPEDREAM,
+  PIPEDREAM_PRICING,
+  PRICES_CHECKED,
+  ZAPIER,
+  ZAPIER_PRICING,
+  count,
+  homepage,
+  usd,
+} from "./shared";
 import type { IntegrationPlatform } from "./types";
 
 export const mcp: IntegrationPlatform = {
@@ -113,7 +125,7 @@ export const mcp: IntegrationPlatform = {
             topic: "A hosted gateway for many apps",
             cells: [
               "Zapier MCP, [Composio](/integration-platforms/composio/), [Pipedream](/integration-platforms/pipedream/)",
-              "Usage-based. Zapier spends 2 tasks per call, from $19.99 a month billed yearly for 750 tasks; Composio is free to 100,000 calls; Pipedream Connect starts at $99 a month.",
+              `Usage-based. Zapier spends ${ZAPIER.tasksPerCall} tasks per call, from ${usd(ZAPIER.pro[0].price)} a month billed yearly for ${count(ZAPIER.pro[0].tasks)} tasks; Composio is free to ${count(COMPOSIO.freeCalls)} calls; Pipedream Connect starts at ${usd(PIPEDREAM.yearlyFee)} a month.`,
             ],
           },
           {
@@ -128,10 +140,10 @@ export const mcp: IntegrationPlatform = {
             ],
           },
         ],
-        note: `Gateway prices from [Zapier](${ZAPIER_PRICING}), [Composio](https://composio.dev/pricing) and [Pipedream](https://pipedream.com/pricing), checked ${PRICES_CHECKED}. In Rakazo, MCP servers are included in every plan, on Rakazo Cloud and self-hosted.`,
+        note: `Gateway prices from [Zapier](${ZAPIER_PRICING}), [Composio](${COMPOSIO_PRICING}) and [Pipedream](${PIPEDREAM_PRICING}), checked ${PRICES_CHECKED}. In Rakazo, MCP servers are included in every plan, on Rakazo Cloud and self-hosted.`,
       },
       bullets: [
-        "The hidden cost is usually tokens, not fees. A server with 40 tools can add thousands of input tokens to every model call. Rakazo gives a bot up to 20 MCP tools directly; past that, the bot searches for the tools it needs and loads only those.",
+        "The hidden cost is usually tokens, not fees. A server with 40 tools can add thousands of input tokens to every model call. Rakazo counts tools by source, not per server: the MCP servers and OpenAPI and GraphQL connectors installed from **Integrations** share one count, so a few small servers and one large API can add up together. Up to 20 tools, a bot gets them all directly; past that, it searches for the tools it needs and loads only those.",
         "A gateway that covers thousands of apps costs money and sees your data in transit. If the app publishes its own server, connecting to it directly is cheaper and has one fewer company in the middle.",
       ],
     },
@@ -157,7 +169,7 @@ export const mcp: IntegrationPlatform = {
       heading: "Zapier MCP and other hosted MCP gateways",
       paragraphs: [
         "Zapier MCP, Arcade, Merge Agent Handler and similar services put many apps behind one MCP endpoint. Rakazo has no built-in support for them, but any of them is just a remote MCP server to Rakazo, as long as it speaks Streamable HTTP or SSE and signs in with OAuth, a bearer token or a single custom header. Zapier MCP uses Streamable HTTP and OAuth, so you add its URL and sign in.",
-        "Two things to know. A gateway acts as whoever signed in to it, so every bot that uses it acts as that person's accounts. And it bills by its own meter: each successful Zapier MCP call spends two tasks from your Zapier plan.",
+        `Two things to know. A gateway acts as whoever signed in to it, so every bot that uses it acts as that person's accounts. And it bills by its own meter: each successful Zapier MCP call spends ${ZAPIER.tasksPerCall} tasks from your Zapier plan.`,
       ],
     },
     {
@@ -214,7 +226,7 @@ export const mcp: IntegrationPlatform = {
     {
       question: "Is an MCP server free or paid?",
       answer:
-        "The protocol is free and open source. Most apps' own MCP servers cost nothing beyond the app's plan. Hosted gateways that cover many apps charge by use: Zapier MCP spends two tasks per call, and Composio and Pipedream bill per call or credit. Every tool also uses model tokens.",
+        `The protocol is free and open source. Most apps' own MCP servers cost nothing beyond the app's plan. Hosted gateways that cover many apps charge by use: Zapier MCP spends ${ZAPIER.tasksPerCall} tasks per call, and Composio and Pipedream bill per call or credit. Every tool also uses model tokens.`,
     },
     {
       question: "Where does an MCP server run?",
@@ -229,7 +241,7 @@ export const mcp: IntegrationPlatform = {
     {
       question: "Can I use Zapier MCP with Rakazo?",
       answer:
-        "Yes, as a remote MCP server: add its URL under **Integrations** and sign in with OAuth. It acts as the Zapier account that signed in, and each call spends two Zapier tasks. Rakazo has no Zapier-specific integration.",
+        `Yes, as a remote MCP server: add its URL under **Integrations** and sign in with OAuth. It acts as the Zapier account that signed in, and each call spends ${ZAPIER.tasksPerCall} Zapier tasks. Rakazo has no Zapier-specific integration.`,
     },
     {
       question: "How do I connect a remote MCP server that uses OAuth?",
@@ -249,7 +261,7 @@ export const mcp: IntegrationPlatform = {
     {
       question: "Do too many MCP tools slow an agent down?",
       answer:
-        "Every tool description takes room in the model's context. Rakazo gives a bot up to 20 MCP tools directly; past that, the bot searches for the tools it needs and loads only those.",
+        "Every tool description takes room in the model's context. Rakazo counts tools by source, not per server: the MCP servers and OpenAPI and GraphQL connectors installed from **Integrations** share one count, so a few small servers and one large API can add up together. Up to 20 tools, a bot gets them all directly; past that, it searches for the tools it needs and loads only those.",
     },
   ],
   sources: [

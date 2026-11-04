@@ -1,5 +1,17 @@
 import { GITHUB_URL } from "../site";
-import { INTEGRATIONS_DOC, PRICES_CHECKED, homepage } from "./shared";
+import {
+  COMPOSIO,
+  INTEGRATIONS_DOC,
+  PIPEDREAM,
+  PRICES_CHECKED,
+  TWILIO,
+  TWILIO_SMS_PRICING,
+  homepage,
+  usd,
+} from "./shared";
+
+/** Texts a month in the Twilio example. */
+const REMINDERS = 300;
 import type { IntegrationPlatform } from "./types";
 
 export const apiConnectors: IntegrationPlatform = {
@@ -45,7 +57,7 @@ export const apiConnectors: IntegrationPlatform = {
         "Authenticate with a bearer token or an API key header. The key is encrypted, never sent to the model, and removed from what the API sends back.",
         "Find an API by domain. When the operator points `INTEGRATIONS_CATALOG_URL` at an integrations.sh-compatible catalog, **Search by domain** adds a service's OpenAPI description or MCP server with the address and sign-in method filled in.",
         "Read without asking. A `GET` operation or a GraphQL query counts as reading, so in **Ask** mode it usually runs without a card. Writes ask first, under your [approval settings](/docs/approvals/).",
-        "Share it. Every bot in the [spaces](/docs/spaces/) you choose can use the connector. Past 20 tools, a bot searches for the operations it needs instead of loading them all.",
+        "Share it. Every bot in the [spaces](/docs/spaces/) you choose can use the connector. API connectors share one tool count with the MCP servers installed from **Integrations**: past 20 tools in total, a bot searches for the operations it needs instead of loading them all.",
       ],
     },
     {
@@ -72,7 +84,7 @@ export const apiConnectors: IntegrationPlatform = {
           {
             topic: "Twilio SMS",
             cells: [
-              "$0.0083 per US message segment, plus a carrier fee of $0.0025 to $0.005",
+              `${usd(TWILIO.segment)} per US message segment, plus a carrier fee of ${usd(TWILIO.carrierLow)} to ${usd(TWILIO.carrierHigh)}`,
               "Business texting in the US needs A2P 10DLC registration first",
             ],
           },
@@ -81,13 +93,13 @@ export const apiConnectors: IntegrationPlatform = {
             cells: ["Your hosting", "Whatever you set"],
           },
         ],
-        note: `From [GitHub's rate limit docs](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api), [HubSpot's usage guidelines](https://developers.hubspot.com/docs/developer-tooling/platform/usage-guidelines) and [Twilio's US SMS pricing](https://www.twilio.com/en-us/sms/pricing/us), checked ${PRICES_CHECKED}.`,
+        note: `From [GitHub's rate limit docs](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api), [HubSpot's usage guidelines](https://developers.hubspot.com/docs/developer-tooling/platform/usage-guidelines) and [Twilio's US SMS pricing](${TWILIO_SMS_PRICING}), checked ${PRICES_CHECKED}.`,
       },
       bullets: [
-        "A worked example: a bot that texts 300 appointment reminders a month through Twilio spends about 300 × ($0.0083 + $0.0045) ≈ $3.84, plus the phone number's monthly fee. The same bot reading 2,000 HubSpot records a month costs nothing beyond your HubSpot plan, well inside its limits.",
+        `A worked example: a bot that texts ${REMINDERS} appointment reminders a month through Twilio spends about ${REMINDERS} × (${usd(TWILIO.segment)} + ${usd(TWILIO.carrierTypical)}) ≈ ${usd(Number((REMINDERS * (TWILIO.segment + TWILIO.carrierTypical)).toFixed(2)))}, plus the phone number's monthly fee. The same bot reading 2,000 HubSpot records a month costs nothing beyond your HubSpot plan, well inside its limits.`,
         "The cost people miss is model tokens. Every response an API sends back goes into the bot's context and is billed as input by your model provider. Rakazo cuts responses at 1 MB, but asking for only the fields you need, through an operation's filters, saves more.",
         "Rate limits belong to your account or key, so several bots sharing one key share one limit. A bot that hits a limit gets the API's error and can wait and try again.",
-        "Compared with a hosted platform: [Composio](/integration-platforms/composio/) charges from $0.30 to $10 per 1,000 calls past its free tier and [Pipedream Connect](/integration-platforms/pipedream/) starts at $99 a month, on top of the same API limits. An API connector skips that layer when a key is all you need.",
+        `Compared with a hosted platform: [Composio](/integration-platforms/composio/) charges from ${usd(COMPOSIO.per1000.own)} to ${usd(COMPOSIO.per1000.premium)} per 1,000 calls past its free tier and [Pipedream Connect](/integration-platforms/pipedream/) starts at ${usd(PIPEDREAM.yearlyFee)} a month, on top of the same API limits. An API connector skips that layer when a key is all you need.`,
       ],
     },
     {
@@ -203,7 +215,7 @@ export const apiConnectors: IntegrationPlatform = {
       label: "HubSpot, API usage guidelines",
       href: "https://developers.hubspot.com/docs/developer-tooling/platform/usage-guidelines",
     },
-    { label: "Twilio, US SMS pricing", href: "https://www.twilio.com/en-us/sms/pricing/us" },
+    { label: "Twilio, US SMS pricing", href: TWILIO_SMS_PRICING },
     INTEGRATIONS_DOC,
     { label: "Rakazo, connect apps", href: `${GITHUB_URL}/blob/main/docs/integrations.md` },
   ],

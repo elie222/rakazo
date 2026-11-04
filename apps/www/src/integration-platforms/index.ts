@@ -6,14 +6,36 @@ import { composio } from "./composio";
 import { mcp } from "./mcp";
 import { pipedream } from "./pipedream";
 import {
+  ARCADE,
+  ARCADE_PRICING,
+  COMPOSIO,
   COMPOSIO_PRICING,
   INTEGRATIONS_DOCS_PATH,
   INTEGRATION_PLATFORMS_PATH,
   INTEGRATION_PLATFORMS_UPDATED,
+  LARGE_TEAM,
+  MERGE_PRICING,
+  NANGO_PRICING,
+  PARAGON_PRICING,
+  PIPEDREAM,
   PIPEDREAM_PRICING,
   PRICES_CHECKED,
+  PRICE_SUMMARY,
+  SMALL_TEAM,
+  WORKLOADS,
+  ZAPIER,
   ZAPIER_PRICING,
+  arcadeMonthly,
+  composioHobby,
+  composioPro,
+  count,
   integrationPlatformPath,
+  monthlyCalls,
+  pipedreamMonthly,
+  roundUsd,
+  teamLabel,
+  usd,
+  zapierPlan,
 } from "./shared";
 import type { IntegrationPlatform } from "./types";
 
@@ -28,10 +50,17 @@ export const INTEGRATION_PLATFORMS: readonly IntegrationPlatform[] = [
   apiConnectors,
 ];
 
-const ARCADE_PRICING = "https://www.arcade.dev/pricing";
-const NANGO_PRICING = "https://nango.dev/pricing";
-const MERGE_PRICING = "https://www.merge.dev/pricing/agent-handler";
-const PARAGON_PRICING = "https://www.useparagon.com/pricing";
+const SMALL = monthlyCalls(SMALL_TEAM);
+const LARGE = monthlyCalls(LARGE_TEAM);
+
+function summaryCells(summary: { free: string; paid: string; billedBy: string; apps: string }) {
+  return [summary.free, summary.paid, summary.billedBy, summary.apps];
+}
+
+function zapierCell(calls: number): string {
+  const plan = zapierPlan(calls);
+  return `${usd(plan.price)} billed yearly, for ${count(plan.tasks)} tasks`;
+}
 
 /** Comparison sections shown between the summary table and the cards. */
 const HUB_SECTIONS: readonly ArticleSection[] = [
@@ -41,28 +70,16 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
       "On [Rakazo Cloud](/pricing/), connecting apps and MCP servers is part of every plan, and you don't need an account with any of these platforms. When you host Rakazo yourself, Rakazo is free and you pay any platform you turn on directly, on its own terms. The units differ, so the next table works out a real workload.",
     ],
     table: {
-      caption: "Integration platforms for AI agents: prices as of November 2026",
+      caption: `Integration platforms for AI agents: prices as of ${PRICES_CHECKED}`,
       columns: ["Option", "Free tier", "Paid from", "Billed by", "Apps", "In Rakazo"],
       rows: [
         {
           topic: "[Composio](/integration-platforms/composio/)",
-          cells: [
-            "100,000 calls/mo, 20,000 on managed apps",
-            "$29/mo, as usage credit",
-            "Tool call, $0.30 to $10 per 1,000",
-            "1,500+",
-            "Built in",
-          ],
+          cells: [...summaryCells(PRICE_SUMMARY.composio), "Built in"],
         },
         {
           topic: "[Pipedream Connect](/integration-platforms/pipedream/)",
-          cells: [
-            "Development only, 10 test users",
-            "$99/mo yearly, $150 monthly",
-            "User ($2 past 100) and credit ($0.012 per 30 s)",
-            "3,000+",
-            "Built in",
-          ],
+          cells: [...summaryCells(PRICE_SUMMARY.pipedream), "Built in"],
         },
         {
           topic: "[An app's own MCP server](/integration-platforms/mcp/)",
@@ -80,38 +97,14 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
         },
         {
           topic: "Zapier MCP",
-          cells: [
-            "100 tasks/mo, about 50 calls",
-            "$19.99/mo yearly for 750 tasks",
-            "2 tasks per call",
-            "9,000+",
-            "As a remote MCP server",
-          ],
+          cells: [...summaryCells(PRICE_SUMMARY.zapier), "As a remote MCP server"],
         },
-        {
-          topic: "Arcade",
-          cells: ["2,000 calls/mo", "$25/mo plus usage", "$0.01 per call", "81 toolkits", "Not built in"],
-        },
+        { topic: "Arcade", cells: [...summaryCells(PRICE_SUMMARY.arcade), "Not built in"] },
         {
           topic: "Merge Agent Handler",
-          cells: [
-            "2,000 credits/mo",
-            "$1,000/mo for 25,000 credits",
-            "Credit",
-            "Not stated",
-            "Not built in",
-          ],
+          cells: [...summaryCells(PRICE_SUMMARY.merge), "Not built in"],
         },
-        {
-          topic: "Nango",
-          cells: [
-            "10 connections",
-            "$50/mo of usage",
-            "$0.29 per connection, $0.72 per compute hour",
-            "1,000+",
-            "Not built in",
-          ],
-        },
+        { topic: "Nango", cells: [...summaryCells(PRICE_SUMMARY.nango), "Not built in"] },
         {
           topic: "Paragon",
           cells: ["Trial", "Custom quote", "Connected customer", "Not stated", "Not built in"],
@@ -123,11 +116,11 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
   {
     heading: "What a team of bots costs on each",
     paragraphs: [
-      "Two workloads. A small team is 5 people whose bots run about 40 app actions each per workday, about 4,400 calls a month. A larger team is 20 people at about 100 actions each, about 44,000 calls. Calls go to everyday apps like Gmail and Slack, each finishes within 30 seconds, and everyone is in one space.",
+      `Two workloads. ${WORKLOADS} Calls go to everyday apps like Gmail and Slack, each finishes within 30 seconds, and everyone is in one space.`,
     ],
     table: {
-      caption: "Monthly cost of 4,400 and 44,000 app actions",
-      columns: ["Option", "5 people, 4,400 calls", "20 people, 44,000 calls"],
+      caption: `Monthly cost of ${count(SMALL)} and ${count(LARGE)} app actions`,
+      columns: ["Option", teamLabel(SMALL_TEAM), teamLabel(LARGE_TEAM)],
       rows: [
         {
           topic: "An app's own MCP server or an API connector",
@@ -135,26 +128,32 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
         },
         {
           topic: "Composio, managed apps",
-          cells: ["$0 on Hobby", "About $48 on Pro; $240 if the calls go to apps like Salesforce"],
+          cells: [
+            `${composioHobby(SMALL, "popular")} on Hobby`,
+            `About ${roundUsd(composioPro(LARGE, "popular"))} on Pro; ${roundUsd(composioPro(LARGE, "premium"))} if the calls go to apps like Salesforce`,
+          ],
         },
         {
           topic: "Composio, your own OAuth apps",
-          cells: ["$0 on Hobby", "$0 on Hobby, or $29 on Pro"],
+          cells: [
+            `${composioHobby(SMALL, "own")} on Hobby`,
+            `${composioHobby(LARGE, "own")} on Hobby, or ${roundUsd(composioPro(LARGE, "own"))} on Pro`,
+          ],
         },
         {
           topic: "Pipedream Connect",
-          cells: ["$99 billed yearly", "About $507 billed yearly"],
+          cells: [
+            `${roundUsd(pipedreamMonthly(SMALL, SMALL_TEAM.people))} billed yearly`,
+            `About ${roundUsd(pipedreamMonthly(LARGE, LARGE_TEAM.people))} billed yearly`,
+          ],
         },
-        {
-          topic: "Zapier MCP",
-          cells: ["$129 billed yearly, for 10,000 tasks", "$489 billed yearly, for 100,000 tasks"],
-        },
+        { topic: "Zapier MCP", cells: [zapierCell(SMALL), zapierCell(LARGE)] },
         {
           topic: "Arcade",
-          cells: ["About $69", "About $465"],
+          cells: [`About ${roundUsd(arcadeMonthly(SMALL))}`, `About ${roundUsd(arcadeMonthly(LARGE))}`],
         },
       ],
-      note: `Worked from the pricing pages above, checked ${PRICES_CHECKED}. Arcade assumes no calls are included in the $25 fee, as its page lists none. Model usage and the bots' computers are separate costs.`,
+      note: `Worked from the pricing pages above, checked ${PRICES_CHECKED}. Arcade assumes no calls are included in the ${usd(ARCADE.fee)} fee, as its page lists none. Model usage and the bots' computers are separate costs.`,
     },
   },
   {
@@ -220,8 +219,8 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
       "Comparison articles often list these next to Composio and Pipedream. Here is what each is and how it fits with Rakazo.",
     ],
     bullets: [
-      "**Zapier MCP** gives an MCP client actions in more than 9,000 apps through your Zapier account. It speaks Streamable HTTP and signs in with OAuth, so it works in Rakazo as a remote [MCP server](/integration-platforms/mcp/). Every bot that uses it acts as the Zapier account that signed in, and each call spends two Zapier tasks.",
-      "**Arcade** is a hosted runtime for agent tools, with 81 toolkits and a focus on authorizing each user. Its MCP gateways work in Rakazo only if their sign-in fits what Rakazo sends: OAuth, a bearer token or one custom header.",
+      `**Zapier MCP** gives an MCP client actions in ${ZAPIER.apps} apps through your Zapier account. It speaks Streamable HTTP and signs in with OAuth, so it works in Rakazo as a remote [MCP server](/integration-platforms/mcp/). Every bot that uses it acts as the Zapier account that signed in, and each call spends ${ZAPIER.tasksPerCall} Zapier tasks.`,
+      `**Arcade** is a hosted runtime for agent tools, with ${ARCADE.toolkits} toolkits and a focus on authorizing each user. Its MCP gateways work in Rakazo only if their sign-in fits what Rakazo sends: OAuth, a bearer token or one custom header.`,
       "**Nango** handles OAuth, syncs and tool calls for software companies building integrations into their own product, and publishes its source. It is a building block for developers, not a catalog a team connects to.",
       "**Paragon** and **Merge Agent Handler** serve the same product builders, with custom or high entry prices. A team that wants its own bots in Gmail and HubSpot doesn't need them.",
     ],
@@ -258,7 +257,7 @@ export const INTEGRATION_PLATFORMS_HUB = {
     },
     {
       heading: "The app has its own MCP server",
-      text: "If the app publishes an MCP server, [connect it directly](/integration-platforms/mcp/): paste its URL or find it with Browse MCP servers, and sign in with OAuth. It costs nothing beyond the app, and no other company holds your login. Anyone can add remote servers. Admins of a [self-hosted Rakazo](/self-hosted-ai-agent/) can also run local servers and reach internal ones.",
+      text: "If the app publishes an MCP server, [connect it directly](/integration-platforms/mcp/): paste its URL or find it with Browse MCP servers, and sign in with OAuth. It costs nothing beyond the app, and no integration platform sits in between. On Rakazo Cloud, Rakazo stores the sign-in encrypted; when you host Rakazo yourself, it stays on your server. Anyone can add remote servers. Admins of a [self-hosted Rakazo](/self-hosted-ai-agent/) can also run local servers and reach internal ones.",
     },
     {
       heading: "The app only has an API",
@@ -266,15 +265,15 @@ export const INTEGRATION_PLATFORMS_HUB = {
     },
     {
       heading: "You want a big app catalog with sign-in handled, cheaply",
-      text: "[Composio](/integration-platforms/composio/) is the quickest way to give self-hosted bots a large app catalog: one API key, and Composio handles each app's sign-in. Its free tier covers a small team, and Pro starts at $29 a month. Bots search its actions and run them in batches, and approvals judge each action on its own. Register your own OAuth apps for the busiest apps to cut the per-call price.",
+      text: `[Composio](/integration-platforms/composio/) is the quickest way to give self-hosted bots a large app catalog: one API key, and Composio handles each app's sign-in. Its free tier covers a small team, and Pro starts at ${usd(COMPOSIO.proFee)} a month. Bots search its actions and run them in batches, and approvals judge each action on its own. Register your own OAuth apps for the busiest apps to cut the per-call price.`,
     },
     {
       heading: "You need more apps, or already use Pipedream",
-      text: "[Pipedream Connect](/integration-platforms/pipedream/), owned by Workday, hosts logins for about twice as many apps and serves each connected account's tools over its MCP server, with SOC 2 Type 2 on every plan. It takes a project and an OAuth client to set up, and real users need the Startup plan at $99 a month or more. It can run alongside Composio.",
+      text: `[Pipedream Connect](/integration-platforms/pipedream/), owned by Workday, hosts logins for about twice as many apps and serves each connected account's tools over its MCP server, with SOC 2 Type 2 on every plan. It takes a project and an OAuth client to set up, and real users need the Startup plan at ${usd(PIPEDREAM.yearlyFee)} a month or more. It can run alongside Composio.`,
     },
     {
       heading: "You already pay for Zapier",
-      text: "Add Zapier MCP as a remote [MCP server](/integration-platforms/mcp/). It reaches the most apps, but it acts as one Zapier account and each call spends two tasks, so it suits one person's bots more than a whole team's.",
+      text: `Add Zapier MCP as a remote [MCP server](/integration-platforms/mcp/). It reaches the most apps, but it acts as one Zapier account and each call spends ${ZAPIER.tasksPerCall} tasks, so it suits one person's bots more than a whole team's.`,
     },
     {
       heading: "You can't send app logins to a third party",
@@ -290,7 +289,7 @@ export const INTEGRATION_PLATFORMS_HUB = {
     {
       question: "Composio vs Pipedream: which is cheaper?",
       answer:
-        "For most teams, Composio. As of November 2026 it is free up to 100,000 calls a month, 20,000 of them on its managed apps, and Pro is $29 a month plus per-call usage. Pipedream Connect has no free production use and starts at $99 a month billed yearly, with $2 per user past 100 and $0.012 per credit past 10,000. For 44,000 calls a month, that is roughly $48 against $507.",
+        `For most teams, Composio. As of ${PRICES_CHECKED} it is free up to ${count(COMPOSIO.freeCalls)} calls a month, ${count(COMPOSIO.freeManagedCalls)} of them on its managed apps, and Pro is ${usd(COMPOSIO.proFee)} a month plus per-call usage. Pipedream Connect has no free production use and starts at ${usd(PIPEDREAM.yearlyFee)} a month billed yearly, with ${usd(PIPEDREAM.perUser)} per user past ${PIPEDREAM.users} and ${usd(PIPEDREAM.perCredit)} per credit past ${count(PIPEDREAM.credits)}. For ${count(LARGE)} calls a month, that is roughly ${roundUsd(composioPro(LARGE, "popular"))} against ${roundUsd(pipedreamMonthly(LARGE, LARGE_TEAM.people))}.`,
     },
     {
       question: "What is MCP, and how is it different from an API?",
