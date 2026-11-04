@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import {
+  changeUserTimezone,
   effectiveModelRole,
   hasHostedModelCredits,
   isAutoReviewCheckerConfigured,
@@ -154,12 +155,15 @@ export function accountRoutes(ctx: RouterContext) {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
         const userId = context.actor.userId;
         const botAvatarSet = input.botAvatarSet;
+        if (input.timezone !== undefined) {
+          // The routines that took the account zone keep their local schedule in the new one.
+          await changeUserTimezone(deps, userId, input.timezone);
+        }
         // Waits for any bot creation holding the user row, so no new bot is missed below.
         await deps.prisma.user.update({
           where: { id: userId },
           // An avatar style from an older app is accepted and ignored: there is only one.
           data: {
-            ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
             ...(input.locale === undefined ? {} : { locale: input.locale }),
             ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
           },

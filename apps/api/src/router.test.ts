@@ -5,7 +5,11 @@ import type { InferRouterInitialContext } from "@orpc/server";
 import { createRouterClient } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
-import { ConnectorAuthUnavailableError, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import {
+  ConnectorAuthUnavailableError,
+  routineWakeupJob,
+  SecretStoreUnavailableError,
+} from "@rakazo/adapter-kit";
 import type { McpOAuthSummary } from "@rakazo/adapters";
 import * as adapters from "@rakazo/adapters";
 import {
@@ -87,18 +91,60 @@ describe("account preferences", () => {
       },
     );
     const botFindMany = vi.fn().mockResolvedValue([]);
+    const routines: Record<string, unknown>[] = [];
+    const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
+      Object.entries(where).every(([key, value]) =>
+        value && typeof value === "object" && "in" in value
+          ? (value.in as unknown[]).includes(row[key])
+          : row[key] === value,
+      );
     const prisma = {
       user: {
         update,
         updateMany,
+        findUnique: vi.fn(async () => ({ timezone: user.timezone })),
         findUniqueOrThrow: vi.fn().mockResolvedValue(user),
       },
       bot: { findMany: botFindMany },
+      routine: {
+        findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+          routines.filter((row) => matches(row, where)),
+        ),
+        updateMany: vi.fn(
+          async ({
+            where,
+            data,
+          }: {
+            where: Record<string, unknown>;
+            data: Record<string, unknown>;
+          }) => {
+            let count = 0;
+            for (const [index, row] of routines.entries()) {
+              if (!matches(row, where)) continue;
+              routines[index] = { ...row, ...data };
+              count += 1;
+            }
+            return { count };
+          },
+        ),
+      },
+      $transaction: vi.fn(async (run: (client: unknown) => Promise<unknown>) => run(prisma)),
+      $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join("?");
+        if (sql.includes("FOR SHARE")) return [{ timezone: user.timezone }];
+        if (sql.includes('"routines"')) {
+          return routines
+            .filter((row) => matches(row, { userId: values[0], timezone: values[1] }))
+            .map((row) => ({ id: row.id }));
+        }
+        return [];
+      }),
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
+      jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -118,6 +164,7 @@ describe("account preferences", () => {
       update,
       updateMany,
       botFindMany,
+      routines,
       deps,
       actor,
       handler: new RPCHandler(createRouter(deps)),
@@ -403,6 +450,48 @@ describe("account preferences", () => {
       where: { id: "user-1" },
       data: { timezone: "Pacific/Auckland" },
     });
+  });
+
+  it("moves routines that took the account zone to the new one", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-04T12:00:00.000Z") });
+    try {
+      const setup = preferencesDeps("organic", "Africa/Cairo");
+      setup.routines.push(
+        {
+          id: "routine-1",
+          userId: "user-1",
+          crons: ["0 9 * * 1"],
+          timezone: "Africa/Cairo",
+          active: true,
+          watch: null,
+          nextRunAt: new Date("2026-11-09T07:00:00.000Z"),
+        },
+        {
+          id: "routine-2",
+          userId: "user-1",
+          crons: ["0 9 * * 1"],
+          timezone: "Asia/Tokyo",
+          active: true,
+          watch: null,
+          nextRunAt: new Date("2026-11-09T00:00:00.000Z"),
+        },
+      );
+
+      const response = await updatePreferences(setup, { timezone: "Europe/London" });
+
+      expect(response.status).toBe(200);
+      // The routine that took the account zone keeps Monday 09:00 in London; the pinned one stays.
+      expect(setup.routines[0]).toMatchObject({
+        timezone: "Europe/London",
+        nextRunAt: new Date("2026-11-09T09:00:00.000Z"),
+      });
+      expect(setup.routines[1]).toMatchObject({ timezone: "Asia/Tokyo" });
+      expect(setup.deps.jobs.enqueue).toHaveBeenCalledWith(
+        routineWakeupJob("routine-1", new Date("2026-11-09T09:00:00.000Z")),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("saves the app language emails are written in", async () => {

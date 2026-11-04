@@ -563,6 +563,8 @@ describe("prepareFleetRequest create_child_routine", () => {
         name: "Morning brief",
         prompt: "Summarize the news",
         timezone: "UTC",
+        // The account's zone is re-read when the approved routine is created.
+        timezoneFromAccount: true,
         schedule: { runAt: "2026-10-18T09:30:00.000Z" },
       },
       summary: {
@@ -585,6 +587,12 @@ describe("prepareFleetRequest create_child_routine", () => {
     expect(prepared).toMatchObject({
       ok: true,
       canonical: { timezone: "Europe/Bucharest", schedule: { cron: expect.any(String) } },
+      // A named zone is pinned: it replays as approved, not re-read from the account.
+    });
+    expect((prepared as { canonical: Record<string, unknown> }).canonical).not.toHaveProperty(
+      "timezoneFromAccount",
+    );
+    expect(prepared).toMatchObject({
       summary: {
         lines: [
           expect.stringMatching(/^Repeats .+, next at .+ Europe\/Bucharest$/),
@@ -604,7 +612,11 @@ describe("prepareFleetRequest create_child_routine", () => {
     });
     expect(prepared).toMatchObject({
       ok: true,
-      canonical: { timezone: "Europe/Paris", schedule: { cron: "0 9 * * *" } },
+      canonical: {
+        timezone: "Europe/Paris",
+        timezoneFromAccount: true,
+        schedule: { cron: "0 9 * * *" },
+      },
       summary: {
         lines: ["Repeats 0 9 * * *, next at 19 Oct 2026, 09:00 Europe/Paris", expect.any(String)],
       },
