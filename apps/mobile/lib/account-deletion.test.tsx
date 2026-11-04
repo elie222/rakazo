@@ -28,7 +28,6 @@ vi.mock("react-native", () => {
     Platform: { OS: "ios" },
     StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
     View: view,
-    KeyboardAvoidingView: view,
     ScrollView: ({
       children,
       style,
@@ -187,8 +186,7 @@ describe("passwordless account deletion", () => {
     // The sheet can be swiped away while nothing is in flight; the swipe goes through close().
     expect(sheet.dataset.swipe).toBe("true");
     expect(sheet.dataset.transparent).toBe("false");
-    // The actions stay clear of the home indicator: the inset sits on the content, because the
-    // keyboard view replaces its own bottom padding.
+    // The actions stay clear of the home indicator.
     const content = container.querySelector<HTMLElement>("[data-testid='sheet-content']")!;
     expect(content.style.paddingBottom).toBe("52px");
     expect((sheet.firstElementChild as HTMLElement).style.paddingBottom).toBe("");

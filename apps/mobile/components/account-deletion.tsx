@@ -1,7 +1,6 @@
 import type { AccountSecurity } from "@rakazo/contracts";
 import { useState } from "react";
 import {
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -138,10 +137,7 @@ export function useAccountDeletion({
       allowSwipeDismissal={!pending}
       onRequestClose={close}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={Platform.OS === "ios" ? styles.sheet : styles.dialogOverlay}
-      >
+      <View style={Platform.OS === "ios" ? styles.sheet : styles.dialogOverlay}>
         {Platform.OS !== "ios" ? (
           <Pressable
             accessibilityLabel={t("Cancel")}
@@ -150,9 +146,10 @@ export function useAccountDeletion({
           />
         ) : null}
         <ScrollView
+          // The sheet sits below the window top, so the scroll view measures the keyboard itself.
+          automaticallyAdjustKeyboardInsets
           bounces={false}
-          // Page sheets keep their actions clear of the home indicator. The keyboard view owns
-          // its own bottom padding, so the inset goes on the content instead.
+          // Page sheets keep their actions clear of the home indicator.
           contentContainerStyle={
             Platform.OS === "ios"
               ? [styles.dialog, { paddingBottom: DIALOG_PADDING + insets.bottom }]
@@ -236,7 +233,7 @@ export function useAccountDeletion({
             />
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   ) : null;
 
