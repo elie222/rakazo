@@ -77,14 +77,16 @@ jobs:
           size=$(jq -r '.size | select(IN("small","medium","large"))' <<<"$RESULT")
           duplicate=$(jq -r --argjson issue "$ISSUE" '.duplicate_of | numbers | select(. > 0 and . != $issue)' <<<"$RESULT")
           # The summary is not parsed for workflow commands; the log is.
-          jq -r '.reason' <<<"$RESULT" | head -c 500 >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.reason | tostring | .[:500]' <<<"$RESULT" >> "$GITHUB_STEP_SUMMARY"
 
-          current=$(gh issue view "$ISSUE" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name] | join(",")')
+          current=$(gh issue view "$ISSUE" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name]')
+          existing_type=$(jq -r 'map(select(IN("bug","enhancement","question","documentation","self-host")))[0] // ""' <<<"$current")
+          has_size=$(jq 'any(startswith("size:"))' <<<"$current")
           labels=()
-          if [[ -n "$type" ]] && ! grep -qE '(^|,)(bug|enhancement|question|documentation|self-host)(,|$)' <<<"$current"; then
+          if [[ -n "$type" && -z "$existing_type" ]]; then
             labels+=("$type")
           fi
-          [[ -n "$size" && "$type" != "question" ]] && labels+=("size:$size")
+          [[ -n "$size" && "$has_size" == false && "${existing_type:-$type}" != "question" ]] && labels+=("size:$size")
           [[ $(jq '.priority_high == true' <<<"$RESULT") == true ]] && labels+=("priority:high")
           if (( ${#labels[@]} )); then
             gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --add-label "$(IFS=,; echo "${labels[*]}")"
