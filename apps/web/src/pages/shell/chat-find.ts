@@ -1,25 +1,70 @@
-/** Every case-insensitive match of `query` in the text under `root`, in document order. */
-export function findTextRanges(root: Node, query: string): Range[] {
+const MESSAGE = "[data-message-id]";
+const BLOCK = "p,li,div,pre,h1,h2,h3,h4,h5,h6,td,th,blockquote";
+
+/** One code unit of a message's lowercased text and the source character it came from. */
+type Unit = { node: Text; start: number; end: number } | null;
+
+function searchable(node: Text) {
+  const parent = node.parentElement;
+  if (!parent || parent.closest("button, [aria-hidden='true']")) return false;
+  // A collapsed tool step or other hidden text would be a match the user cannot see.
+  return typeof parent.checkVisibility === "function" ? parent.checkVisibility() : true;
+}
+
+/**
+ * Lowercases a message's visible text one character at a time, remembering where each
+ * resulting code unit came from, so a match maps back to the DOM even when lowercasing
+ * changes a character's length or the match crosses a link or bold text.
+ */
+function messageText(message: Element) {
+  const walker = message.ownerDocument.createTreeWalker(message, NodeFilter.SHOW_TEXT);
+  let text = "";
+  const units: Unit[] = [];
+  let block: Element | null = null;
+  for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+    if (!searchable(node)) continue;
+    const nodeBlock = node.parentElement?.closest(BLOCK) ?? null;
+    // Separate paragraphs, so the end of one and the start of the next never form a match.
+    if (block && nodeBlock !== block) {
+      text += "\n";
+      units.push(null);
+    }
+    block = nodeBlock;
+    const value = node.nodeValue ?? "";
+    for (let at = 0; at < value.length; ) {
+      const char = String.fromCodePoint(value.codePointAt(at) ?? 0);
+      const lower = char.toLocaleLowerCase();
+      for (let unit = 0; unit < lower.length; unit++) {
+        units.push({ node, start: at, end: at + char.length });
+      }
+      text += lower;
+      at += char.length;
+    }
+  }
+  return { text, units };
+}
+
+/** Every case-insensitive match of `query` in the chat messages under `root`, in document order. */
+export function findTextRanges(root: ParentNode, query: string): Range[] {
   const needle = query.toLocaleLowerCase();
   if (!needle.trim()) return [];
-  const doc = root.ownerDocument ?? (root as Document);
-  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const ranges: Range[] = [];
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    const text = node.nodeValue ?? "";
-    const haystack = text.toLocaleLowerCase();
-    // Lowercasing can change a string's length; offsets only line up when it did not.
-    if (haystack.length !== text.length) continue;
-    for (
-      let at = haystack.indexOf(needle);
-      at !== -1;
-      at = haystack.indexOf(needle, at + needle.length)
-    ) {
-      const range = doc.createRange();
-      range.setStart(node, at);
-      range.setEnd(node, at + needle.length);
+  for (const message of root.querySelectorAll(MESSAGE)) {
+    const { text, units } = messageText(message);
+    for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + needle.length)) {
+      const first = units[at];
+      const last = units[at + needle.length - 1];
+      if (!first || !last) continue;
+      const range = message.ownerDocument.createRange();
+      range.setStart(first.node, first.start);
+      range.setEnd(last.node, last.end);
       ranges.push(range);
     }
   }
   return ranges;
+}
+
+/** Whether two ranges start at the same place, so a selection survives a fresh search. */
+export function sameStart(a: Range, b: Range) {
+  return a.startContainer === b.startContainer && a.startOffset === b.startOffset;
 }

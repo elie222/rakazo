@@ -2,11 +2,16 @@ import { useLingui } from "@lingui/react/macro";
 import { Button, Input } from "@rakazo/ui-web";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import type { RefObject } from "react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { findTextRanges } from "./chat-find";
+import { useEffect, useLayoutEffect, useState } from "react";
+import { findTextRanges, sameStart } from "./chat-find";
 
 const MATCHES = "rk-find";
 const CURRENT = "rk-find-current";
+const REFRESH_MS = 250;
+
+function reveal(range: Range) {
+  range.startContainer.parentElement?.scrollIntoView({ block: "center" });
+}
 
 function setHighlights(all: Range[], current: Range | undefined) {
   // Painting needs the CSS Custom Highlight API; without it Enter still scrolls to each match.
@@ -34,49 +39,57 @@ export function ChatFindBar({
 }) {
   const { t } = useLingui();
   const [query, setQuery] = useState("");
-  const [ranges, setRanges] = useState<Range[]>([]);
-  const [index, setIndex] = useState(0);
-  const scrollOnChange = useRef(true);
+  const [found, setFound] = useState<{ ranges: Range[]; index: number }>({ ranges: [], index: 0 });
+  const { ranges } = found;
 
-  // Streaming replies and older history change the transcript while the bar is open.
+  // Streaming replies and older history change the transcript while the bar is open. A new
+  // query jumps to its first match; a refresh keeps the selected match where it is.
   useEffect(() => {
     const transcript = document.querySelector('[data-testid="transcript"]');
     if (!transcript) {
-      setRanges([]);
+      setFound({ ranges: [], index: 0 });
       return;
     }
-    let frame = 0;
-    const search = () => {
-      frame = 0;
-      setRanges(findTextRanges(transcript, query));
+    const first = findTextRanges(transcript, query);
+    setFound({ ranges: first, index: 0 });
+    if (first[0]) reveal(first[0]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = () => {
+      timer = undefined;
+      const next = findTextRanges(transcript, query);
+      setFound((previous) => {
+        const selected = previous.ranges[previous.index];
+        const kept = selected ? next.findIndex((range) => sameStart(range, selected)) : -1;
+        return {
+          ranges: next,
+          index: kept === -1 ? Math.min(previous.index, next.length - 1) : kept,
+        };
+      });
     };
-    search();
+    // A streaming reply changes the transcript many times a second; rescanning a few times a
+    // second keeps the count current without searching on every token.
     const observer = new MutationObserver(() => {
-      if (!frame) frame = requestAnimationFrame(search);
+      timer ??= setTimeout(refresh, REFRESH_MS);
     });
     observer.observe(transcript, { childList: true, subtree: true, characterData: true });
     return () => {
       observer.disconnect();
-      cancelAnimationFrame(frame);
+      clearTimeout(timer);
     };
   }, [query]);
 
-  const current = ranges.length > 0 ? Math.min(index, ranges.length - 1) : -1;
+  const current = ranges.length > 0 ? Math.max(0, Math.min(found.index, ranges.length - 1)) : -1;
   const currentRange = current === -1 ? undefined : ranges[current];
 
-  useLayoutEffect(() => {
-    setHighlights(ranges, currentRange);
-    if (!currentRange || !scrollOnChange.current) return;
-    scrollOnChange.current = false;
-    currentRange.startContainer.parentElement?.scrollIntoView({ block: "center" });
-  }, [ranges, currentRange]);
-
+  useLayoutEffect(() => setHighlights(ranges, currentRange), [ranges, currentRange]);
   useEffect(() => clearHighlights, []);
 
   function step(by: 1 | -1) {
     if (ranges.length === 0) return;
-    scrollOnChange.current = true;
-    setIndex((current + by + ranges.length) % ranges.length);
+    const index = (current + by + ranges.length) % ranges.length;
+    setFound({ ranges, index });
+    const range = ranges[index];
+    if (range) reveal(range);
   }
 
   return (
@@ -91,11 +104,7 @@ export function ChatFindBar({
         placeholder={t`Find in chat`}
         value={query}
         autoFocus
-        onChange={(event) => {
-          scrollOnChange.current = true;
-          setIndex(0);
-          setQuery(event.target.value);
-        }}
+        onChange={(event) => setQuery(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.nativeEvent.isComposing) {
             event.preventDefault();

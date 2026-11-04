@@ -375,6 +375,8 @@ function SpaceShell() {
         case "find":
           if (!active && !activeGroup) return false;
           setFindOpen(true);
+          // A bar already open may have lost focus; a new one focuses itself as it mounts.
+          findInputRef.current?.focus();
           findInputRef.current?.select();
           return true;
       }
