@@ -251,10 +251,10 @@ describe("commitBotUpdate", () => {
       ),
     ).resolves.toEqual(updated);
 
-    // The default is read after the thread lock and before the bot row.
+    // The default is read before the thread lock and before the bot row.
     const queries = tx.$queryRaw.mock.calls.map(([strings]) => strings.join(""));
-    expect(queries[0]).toContain("threads");
-    expect(queries[1]).toContain("FOR SHARE");
+    expect(queries[0]).toContain("FOR SHARE");
+    expect(queries[1]).toContain("threads");
     expect(botUpdate).toHaveBeenCalledOnce();
     expect(notify).toHaveBeenCalledWith("thread-1", 4);
   });

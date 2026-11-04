@@ -1,3 +1,4 @@
+import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { commitBotUpdate } from "./bot-update.js";
 import type { PrismaClient } from "./client.js";
@@ -36,12 +37,13 @@ function restyle(prisma: PrismaClient, botAvatarSet: string, ids: Fixture) {
 
 describePostgres("commitBotUpdate against a moving default avatar set (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;
-  const ids: Fixture & { organizationId: string } = {
+  const ids: Fixture & { organizationId: string; routineId: string } = {
     organizationId: `bot-style-org-${suffix}`,
     spaceId: `bot-style-space-${suffix}`,
     userId: `bot-style-user-${suffix}`,
     threadId: `bot-style-thread-${suffix}`,
     botId: `bot-style-bot-${suffix}`,
+    routineId: `bot-style-routine-${suffix}`,
   };
   let db: ReturnType<typeof createDb>;
   let prisma: PrismaClient;
@@ -83,6 +85,18 @@ describePostgres("commitBotUpdate against a moving default avatar set (PostgreSQ
       });
       await prisma.thread.create({
         data: { id: ids.threadId, spaceId: ids.spaceId, userId: ids.userId, botId: ids.botId },
+      });
+      await prisma.routine.create({
+        data: {
+          id: ids.routineId,
+          spaceId: ids.spaceId,
+          botId: ids.botId,
+          userId: ids.userId,
+          name: "Weekly",
+          prompt: "fixture",
+          crons: [],
+          active: true,
+        },
       });
     });
   });
@@ -169,7 +183,8 @@ describePostgres("commitBotUpdate against a moving default avatar set (PostgreSQ
     const ops = started();
     const holder = await db.pool.connect();
     try {
-      // Request A saves the default rakazo, then its restyle waits on the thread lock.
+      // Request A saves the default rakazo, then its restyle reads the owner's row
+      // and waits on the thread lock with the share held.
       await runAsSystem("test fixture", () =>
         prisma.user.update({ where: { id: ids.userId }, data: { botAvatarSet: "rakazo" } }),
       );
@@ -178,14 +193,20 @@ describePostgres("commitBotUpdate against a moving default avatar set (PostgreSQ
       const { rows: own } = await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
       const deadline = performance.now() + BARRIER_POLL_BUDGET_MS;
       const update = ops.track(restyle(unhurried(), "rakazo", ids));
-      await waitForBlockedOn(own[0]!.pid, "the restyle", deadline);
-      // Request B saves the default organic and finishes while A waits: the bot still
-      // has organic, so B's own pass lists nothing. The older restyle must not win.
-      await runAsSystem("test fixture", () =>
-        prisma.user.update({ where: { id: ids.userId }, data: { botAvatarSet: "organic" } }),
+      const updatePid = await waitForBlockedOn(own[0]!.pid, "the restyle", deadline);
+      // Request B saves the default organic while A waits: it queues on A's share of
+      // the owner's row, so it cannot slip between A's read and A's write.
+      const newer = ops.track(
+        runAsSystem("test fixture", () =>
+          prisma.user.update({ where: { id: ids.userId }, data: { botAvatarSet: "organic" } }),
+        ),
       );
+      await waitForBlockedOn(updatePid, "the newer save of the default", deadline);
       await holder.query("COMMIT");
-      await expect(update).resolves.toBeNull();
+      await update;
+      await newer;
+      // B's own pass lists the bot (now rakazo) and styles it to its own default.
+      await restyle(prisma, "organic", ids);
     } finally {
       await holder.query("ROLLBACK").catch(() => undefined);
       holder.release();
@@ -234,5 +255,78 @@ describePostgres("commitBotUpdate against a moving default avatar set (PostgreSQ
     const state = await rows();
     expect(state.user.botAvatarSet).toBe("organic");
     expect(state.bot.avatarSet).toBe("organic");
+  });
+
+  it("does not deadlock when a timezone save and a routine wake hold the user and the thread", async () => {
+    const ops = started();
+    // The probe legs and their monitor get their own pool: the app pool's four
+    // connections must stay free for the restyle's transaction.
+    const side = new Pool({ connectionString: databaseUrl, max: 4 });
+    const routineWake = await side.connect();
+    const zoneSave = await side.connect();
+    const monitor = await side.connect();
+    const deadlocks = async () => {
+      const { rows } = await monitor.query<{ deadlocks: string }>(
+        "SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()",
+      );
+      return Number(rows[0]!.deadlocks);
+    };
+    try {
+      await runAsSystem("test fixture", () =>
+        prisma.user.update({ where: { id: ids.userId }, data: { botAvatarSet: "rakazo" } }),
+      );
+      const before = await deadlocks();
+      // A routine wake holds its routine row and then inserts a task whose foreign
+      // key takes a key-share on the bot's thread.
+      await routineWake.query("BEGIN");
+      await routineWake.query("SELECT id FROM routines WHERE id = $1 FOR UPDATE", [ids.routineId]);
+      const { rows: wakePid } = await routineWake.query<{ pid: number }>(
+        "SELECT pg_backend_pid() AS pid",
+      );
+      // A timezone save holds the user row and then locks the routine to move it.
+      await zoneSave.query("BEGIN");
+      await zoneSave.query('UPDATE "user" SET timezone = $1 WHERE id = $2', [
+        "Europe/London",
+        ids.userId,
+      ]);
+      const { rows: zonePid } = await zoneSave.query<{ pid: number }>(
+        "SELECT pg_backend_pid() AS pid",
+      );
+      const deadline = performance.now() + BARRIER_POLL_BUDGET_MS;
+      const movingRoutine = ops.track(
+        zoneSave.query("SELECT id FROM routines WHERE id = $1 FOR UPDATE", [ids.routineId]),
+      );
+      await waitForBlockedOn(wakePid[0]!.pid, "the timezone save", deadline);
+      // The restyle takes the user share first; taking the thread first instead would
+      // close the cycle thread ← task ← routine ← user around its own write.
+      const update = ops.track(restyle(unhurried(), "rakazo", ids));
+      await waitForBlockedOn(zonePid[0]!.pid, "the restyle", deadline);
+      const task = ops.track(
+        routineWake.query(
+          'INSERT INTO tasks (id, "spaceId", "botId", "threadId", "userId", prompt, status, "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())',
+          [`${ids.routineId}-task`, ids.spaceId, ids.botId, ids.threadId, ids.userId, "x", "open"],
+        ),
+      );
+      // Give the deadlock detector its window; with the user share taken first there
+      // is no cycle and the counter never moves.
+      for (let waited = 0; waited < 3_000; waited += 100) {
+        if ((await deadlocks()) > before) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      await routineWake.query("COMMIT").catch(() => routineWake.query("ROLLBACK"));
+      await Promise.allSettled([movingRoutine, task]);
+      await zoneSave.query("COMMIT").catch(() => zoneSave.query("ROLLBACK"));
+      await update;
+      expect(await deadlocks()).toBe(before);
+      expect((await rows()).bot.avatarSet).toBe("rakazo");
+    } finally {
+      await routineWake.query("ROLLBACK").catch(() => undefined);
+      await zoneSave.query("ROLLBACK").catch(() => undefined);
+      routineWake.release();
+      zoneSave.release();
+      monitor.release();
+      await side.end();
+      await ops.settle();
+    }
   });
 });

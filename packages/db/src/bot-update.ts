@@ -30,7 +30,7 @@ export async function commitBotUpdate(
     >;
     /**
      * Write only while the owner's default avatar set still equals this value, read
-     * under FOR SHARE after the thread lock. A newer save of the default either
+     * under FOR SHARE before the thread lock. A newer save of the default either
      * landed first (this update returns null and that save's pass owns the bot) or
      * waits for this transaction and lists its write before styling anything.
      */
@@ -60,13 +60,16 @@ export async function commitBotUpdate(
 
   const { instructions, ...data } = options.data;
   const committed = await options.prisma.$transaction(async (tx) => {
-    // Event appends also lock the thread; all writers take it before the bot row.
-    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${options.threadId} FOR UPDATE`;
+    // The owner's share lock comes first: a timezone save holds the user row while it
+    // moves routines, and a routine wake inserts a task whose foreign key waits for the
+    // thread, so thread → user closes a cycle user → routines → thread around this write.
     if (options.expectedUserAvatarSet) {
       const [owner] = await tx.$queryRaw<Array<{ botAvatarSet: string | null }>>`
         SELECT "botAvatarSet" FROM "user" WHERE id = ${options.expectedUserAvatarSet.userId} FOR SHARE`;
       if (owner?.botAvatarSet !== options.expectedUserAvatarSet.botAvatarSet) return null;
     }
+    // Event appends also lock the thread; all writers take it before the bot row.
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${options.threadId} FOR UPDATE`;
     if (typeof instructions === "string" || options.instructionRestore) {
       await writeBotInstructions(tx, {
         botId: options.botId,
