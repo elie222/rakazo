@@ -203,6 +203,21 @@ it("does not restore a signed-out session while push registration loads its toke
   );
 });
 
+it("does not register the push token when the native session sync fails", async () => {
+  Platform.OS = "android";
+  vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as never);
+  vi.mocked(resumeLiveNotifications).mockRejectedValueOnce(new Error("native sync failed"));
+
+  await registerPushToken();
+
+  // Registering now would have Android drop every push as signed-out; the next
+  // registration attempt retries the session sync first.
+  expect(fetch).not.toHaveBeenCalledWith(
+    expect.stringMatching(/notifications\/registerPush$/),
+    expect.anything(),
+  );
+});
+
 it("does not register push while a sign-in has not saved its token yet", async () => {
   Platform.OS = "android";
   vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as never);

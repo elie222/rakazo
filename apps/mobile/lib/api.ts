@@ -1337,14 +1337,16 @@ export async function signOut() {
   if (revocation.token) {
     // A failed write cannot block the local sign-out; the session still expires server-side.
     await savePendingSignOut(revocation);
-    if ((await deliverPendingSignOut(revocation)) !== "retry")
-      await removePendingSignOut(revocation);
-  } else {
-    await deliverPendingSignOut(revocation);
   }
+  // The local session clears first: a server that accepts the connection but never answers
+  // must not keep this device signed in for the delivery's two request timeouts.
   const sessionCleared = await clearSessionToken();
   const spaceCleared = await clearSpace();
   if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
+  // Both halves authenticate with the record's own token, so delivery needs no live session.
+  if ((await deliverPendingSignOut(revocation)) !== "retry" && revocation.token) {
+    await removePendingSignOut(revocation);
+  }
 }
 
 export async function deleteAccount(password?: string, token?: string) {

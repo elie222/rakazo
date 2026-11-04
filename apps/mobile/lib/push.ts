@@ -32,10 +32,14 @@ export async function registerPushToken() {
     if (generation !== currentSessionGeneration() || apiBase !== currentApiBase()) return;
     // The server can push the moment this registration lands, before any Space load
     // resumes native notifications; sync the session first, so Android's signed-out
-    // drop rule sees this account instead of the blank of a fresh sign-in.
-    await resumeLiveNotifications(apiBase, sessionToken, selectedSpaceId() ?? "").catch(
-      () => undefined,
-    );
+    // drop rule sees this account instead of the blank of a fresh sign-in. A rejected
+    // resume means native never stored this session: registering would have Android
+    // drop every push, so leave the token unregistered for the next attempt to retry.
+    try {
+      await resumeLiveNotifications(apiBase, sessionToken, selectedSpaceId() ?? "");
+    } catch {
+      return;
+    }
     await rpc("notifications/registerPush", {
       token,
       ...(Platform.OS === "android" &&

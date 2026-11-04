@@ -1274,6 +1274,34 @@ describe("mobile API authentication", () => {
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.space_id");
   });
 
+  it("clears the local session before a silent server answers either request", async () => {
+    vi.useFakeTimers();
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn((_url: string) => new Promise<Response>(() => undefined));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = signOut();
+    // No request timeout has fired yet: this device is already signed out.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+
+    await vi.advanceTimersByTimeAsync(16_000);
+    await pending;
+
+    // Both halves timed out; the record stays for the next connectivity window.
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+  });
+
   it("clears the pending revocation when the server answers both requests", async () => {
     const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
     mockSecureStore(store);
