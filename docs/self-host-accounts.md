@@ -249,8 +249,8 @@ docker compose --env-file .env -f docker-compose.images.yml exec api \
   node dist/cli/account-status.js deactivate person@example.com   # or reactivate
 ```
 
-It will not turn back on an account the identity provider turned off or deleted; do that in
-the provider. The same command finishes a deactivation whose cleanup failed. Sign-in and runs are refused as
+It leaves accounts the identity provider manages to the provider: it will not turn off one the
+provider has on, or turn back on one the provider turned off or deleted. The same command finishes a deactivation whose cleanup failed. Sign-in and runs are refused as
 soon as the account is off, and the API logs `directory.account_change.unfinished` with the account
 id if ending its sessions, computers or runs did not complete.
 

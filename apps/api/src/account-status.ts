@@ -40,8 +40,8 @@ export async function settleDirectoryChange(
 /**
  * Turns an account off or back on outside the directory. Deactivating an account that already
  * is off still finishes ending its access. The identity provider owns the accounts it
- * provisions, so one it has turned off or deleted is only turned back on there: that is
- * `"directory"`.
+ * provisions: one it has on is turned off there, and one it turned off or deleted is turned
+ * back on there. Either refusal is `"directory"`.
  */
 export async function setAccountActive(
   deps: AccountStatusDeps,
@@ -50,15 +50,14 @@ export async function setAccountActive(
   by: AccountStatusActor,
 ): Promise<"changed" | "unchanged" | "directory"> {
   return runAsSystem("change an account's status", async () => {
-    if (active) {
-      // Turned off, or deleted (which leaves a tombstone), and not back in the directory.
-      const [provisioned, deleted, on] = await Promise.all([
-        deps.prisma.scimUser.count({ where: { userId } }),
-        deps.prisma.scimIdentityTombstone.count({ where: { userId } }),
-        deps.prisma.scimUser.count({ where: { userId, active: true } }),
-      ]);
-      if (provisioned + deleted > 0 && on === 0) return "directory";
-    }
+    const [provisioned, deleted, on] = await Promise.all([
+      deps.prisma.scimUser.count({ where: { userId } }),
+      deps.prisma.scimIdentityTombstone.count({ where: { userId } }),
+      deps.prisma.scimUser.count({ where: { userId, active: true } }),
+    ]);
+    // The directory has it on, so its next update would undo turning it off here; or the
+    // directory turned it off or deleted it (a tombstone) and has not added it back.
+    if (on > 0 ? !active : active && provisioned + deleted > 0) return "directory";
     const { count } = await deps.prisma.user.updateMany({
       where: { id: userId, deactivatedAt: active ? { not: null } : null },
       data: { deactivatedAt: active ? null : new Date() },

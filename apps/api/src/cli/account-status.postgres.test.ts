@@ -135,7 +135,7 @@ describePostgres("the operator's account status command (PostgreSQL)", () => {
     await system.user.update({ where: { id: user.id }, data: { deactivatedAt: now } });
 
     await expect(command("reactivate", user.email)).rejects.toMatchObject({
-      stderr: expect.stringContaining("turn it on there"),
+      stderr: expect.stringContaining("turn it off or on there"),
     });
     expect(
       (await system.user.findUniqueOrThrow({ where: { id: user.id } })).deactivatedAt,
@@ -160,10 +160,44 @@ describePostgres("the operator's account status command (PostgreSQL)", () => {
     await system.user.update({ where: { id: user.id }, data: { deactivatedAt: now } });
 
     await expect(command("reactivate", user.email)).rejects.toMatchObject({
-      stderr: expect.stringContaining("turn it on there"),
+      stderr: expect.stringContaining("turn it off or on there"),
     });
     expect(
       (await system.user.findUniqueOrThrow({ where: { id: user.id } })).deactivatedAt,
     ).toBeInstanceOf(Date);
+  });
+
+  it("leaves an account the identity provider has on for the provider to turn off", async () => {
+    const { user } = await person("ines@example.test");
+    const now = new Date();
+    await system.scimUser.create({
+      data: {
+        id: randomUUID(),
+        connectionId: "directory",
+        provisioningDomainId: "directory",
+        userId: user.id,
+        connectionUserKey: randomUUID(),
+        userName: user.email,
+        userNameKey: randomUUID(),
+        primaryEmail: user.email,
+        workEmailValueIndex: "",
+        emailValueIndex: "",
+        displayName: "Ines",
+        formattedName: "Ines",
+        serializedEmails: "[]",
+        active: true,
+        orderKey: randomUUID(),
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+
+    await expect(command("deactivate", user.email)).rejects.toMatchObject({
+      stderr: expect.stringContaining("turn it off or on there"),
+    });
+    expect(
+      (await system.user.findUniqueOrThrow({ where: { id: user.id } })).deactivatedAt,
+    ).toBeNull();
+    expect(await system.session.count({ where: { userId: user.id } })).toBe(1);
   });
 });

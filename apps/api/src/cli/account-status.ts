@@ -62,9 +62,7 @@ try {
       "operator",
     );
     if (outcome === "directory") {
-      process.stderr.write(
-        "The identity provider turned this account off or deleted it; turn it on there\n",
-      );
+      process.stderr.write("The identity provider manages this account; turn it off or on there\n");
       process.exitCode = 1;
     } else {
       process.stdout.write(
