@@ -170,6 +170,24 @@ describe("unsentSendsRestored", () => {
     await expect(unsentSendsRestored()).resolves.toBe(true);
   });
 
+  it("follows a restore that starts while the session is read", async () => {
+    session.generation = 28;
+    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("store unreadable"));
+    await expect(prepareUnsentSends()).rejects.toThrow("store unreadable");
+    let readSession!: (value: { ok: true; value: string }) => void;
+    vi.mocked(snapshotSessionToken).mockReturnValueOnce(
+      new Promise((resolve) => {
+        readSession = resolve;
+      }),
+    );
+    const restored = unsentSendsRestored();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // A reachability retry restores the queue while the session is still being read.
+    await prepareUnsentSends();
+    readSession({ ok: true, value: "fake-token" });
+    await expect(restored).resolves.toBe(true);
+  });
+
   it("treats a failed restore while signed out as an empty queue", async () => {
     session.generation = 22;
     vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("signed out"));

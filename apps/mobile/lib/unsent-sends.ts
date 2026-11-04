@@ -86,10 +86,11 @@ export async function unsentSendsRestored(): Promise<boolean> {
     if (!unsentSendsReadable()) return false;
     if (loaded) return true;
     // Signed out, the queue was cleared with the session, so a failed restore hides nothing.
-    return snapshotSessionToken().then(
+    const signedOut = await snapshotSessionToken().then(
       (session) => session.ok && !session.value,
       () => false,
     );
+    if (attempt === restoreAttempt) return signedOut;
   }
 }
 
