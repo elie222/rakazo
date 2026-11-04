@@ -5229,3 +5229,7 @@ button.product-demo__dock-icon {
     display: none;
   }
 }
+
+.sandbox-section code {
+  overflow-wrap: anywhere;
+}
