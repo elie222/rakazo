@@ -6,16 +6,27 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CallCard } from "../components/CallCard";
+import { rpc } from "./api";
 import type { CallDeps } from "./call-session";
 import { endCall, startCall } from "./call-session";
 
-const { activeTags, platform, startBackground, stopBackground, useKeepAwake } = vi.hoisted(() => ({
-  activeTags: new Set<string>(),
-  platform: { OS: "android", Version: 35 },
-  startBackground: vi.fn(async () => false),
-  stopBackground: vi.fn(async () => undefined),
-  useKeepAwake: vi.fn(),
-}));
+const { activeTags, platform, sessionChange, startBackground, stopBackground, useKeepAwake } =
+  vi.hoisted(() => ({
+    activeTags: new Set<string>(),
+    platform: { OS: "android", Version: 35 },
+    sessionChange: {
+      generation: 0,
+      listeners: new Set<() => void>(),
+      /** Emulates a sign-in or sign-out: a new generation notifies every observer. */
+      fire() {
+        this.generation += 1;
+        for (const listener of this.listeners) listener();
+      },
+    },
+    startBackground: vi.fn(async () => false),
+    stopBackground: vi.fn(async () => undefined),
+    useKeepAwake: vi.fn(),
+  }));
 
 vi.mock("./call-background", () => ({
   startCallBackground: startBackground,
@@ -70,8 +81,11 @@ vi.mock("./api", () => ({
   subscribeThread: vi.fn(),
 }));
 vi.mock("./session", () => ({
-  currentSessionGeneration: () => 0,
-  subscribeSessionGeneration: () => () => undefined,
+  currentSessionGeneration: () => sessionChange.generation,
+  subscribeSessionGeneration: (listener: () => void) => {
+    sessionChange.listeners.add(listener);
+    return () => sessionChange.listeners.delete(listener);
+  },
 }));
 vi.mock("./i18n", () => ({
   useI18n: () => ({ t: (text: string) => text }),
@@ -126,6 +140,7 @@ describe("CallCard background lifetime", () => {
     });
     activeTags.clear();
     platform.OS = "android";
+    sessionChange.generation = 0;
     startBackground.mockReset();
     startBackground.mockResolvedValue(false);
     stopBackground.mockReset();
@@ -184,5 +199,33 @@ describe("CallCard background lifetime", () => {
 
     expect(startBackground).not.toHaveBeenCalled();
     expect(activeTags.has("rakazo-call")).toBe(true);
+  });
+
+  it("shows the signed-in account's initial after a session change", async () => {
+    const me = vi.mocked(rpc);
+    me.mockResolvedValueOnce({ name: "Alicja" } as never);
+    me.mockClear();
+    // The card stays mounted in the app layout; earlier tests left another session's initial.
+    act(() => root.render(<CallCard />));
+    act(() => sessionChange.fire());
+
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Rex" }, deps);
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("A"));
+    expect(me).toHaveBeenCalledWith("me");
+    expect(me).toHaveBeenCalledTimes(1);
+
+    await act(async () => endCall());
+    // A different account signs in without an app restart; the card stays mounted.
+    me.mockResolvedValueOnce({ name: "Bartek" } as never);
+    act(() => sessionChange.fire());
+
+    await act(async () => {
+      startCall({ botId: "bot-2", botName: "Nova" }, deps);
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("B"));
+    expect(me).toHaveBeenCalledTimes(2);
+    expect(container.textContent).not.toContain("A");
   });
 });
