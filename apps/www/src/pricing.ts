@@ -32,7 +32,6 @@ export type PricingPlan = {
   action: { label: string; href: string };
 };
 
-/** Prices come from the same constants the app bills with. */
 /** Whole cloud computer hours an allowance in cents buys. */
 function computerHours(cents: number) {
   return Math.floor(sandboxAllowanceHours(cents));
@@ -67,6 +66,7 @@ const SANDBOX_PROVIDERS = Object.values(SANDBOX_NAMES);
 
 const CREDITS_PRICE = `From ${dollars(MODEL_CREDIT_AMOUNTS[0])}/mo`;
 
+/** Prices come from the same constants the app bills with. */
 export const PRICING_PLANS: PricingPlan[] = [
   {
     name: "Self-hosted",
@@ -184,7 +184,7 @@ export const PRICING_COMPARISON = {
       feature: "Cloud computer",
       cells: ["Any size", ...TIERS.map((tier) => tier.computer), STANDARD_COMPUTER],
     },
-    { feature: "Hosted in the EU", cells: ["Your choice", ...TIERS.map(() => true), true] },
+    { feature: "Cloud computers in the EU", cells: ["Your choice", ...TIERS.map(() => true), true] },
     {
       feature: "Free trial",
       cells: [
