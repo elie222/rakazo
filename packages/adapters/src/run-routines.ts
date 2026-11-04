@@ -181,9 +181,6 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     spaceId: routine.spaceId,
     userId: routine.userId,
   });
-  const routinePrompt =
-    expandSkillReferencesInPrompt(routine.prompt, skillRecords) +
-    (watchTick?.run ? watchTick.note : "");
   const claimed = await deps.prisma.$transaction(async (tx) => {
     const updated = await tx.routine.updateMany({
       where: {
@@ -200,12 +197,18 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
       },
     });
     if (updated.count !== 1) return null;
-    // The claim locks the row, so this is the model that was committed when it fired.
-    const currentModel = await tx.routine.findUnique({
+    // The claim locks the row, so the prompt and the model are the versions
+    // committed when it fired; a prompt edit that lands while the tick gathers
+    // its context must not pair with the newer model. Skill expansion runs on
+    // the already-loaded list.
+    const current = await tx.routine.findUnique({
       where: { id: routine.id },
-      select: { modelProvider: true, modelId: true, thinkingLevel: true },
+      select: { prompt: true, modelProvider: true, modelId: true, thinkingLevel: true },
     });
-    if (!currentModel) return null;
+    if (!current) return null;
+    const routinePrompt =
+      expandSkillReferencesInPrompt(current.prompt, skillRecords) +
+      (watchTick?.run ? watchTick.note : "");
     const timerTick = routine.watch == null && !isOneShotRoutineCrons(routine.crons);
     const timerNonce = timerTick ? routineTimerNonce(routine.id, scheduledFor) : undefined;
     if (timerNonce) {
@@ -216,7 +219,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         userId: routine.userId,
         threadId: thread.id,
         prompt: routinePrompt,
-        ...routineRunModelPin(currentModel),
+        ...routineRunModelPin(current),
       });
       if (pending) return { ...pending, coalesced: true };
       // An edit racing an earlier tick can rewind the schedule onto an occurrence that already ran.
@@ -247,7 +250,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         trigger: "routine",
         routineId: routine.id,
         clientNonce: timerNonce,
-        ...routineRunModelPin(currentModel),
+        ...routineRunModelPin(current),
       },
     });
     return { ...run, coalesced: false };
