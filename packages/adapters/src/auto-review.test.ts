@@ -183,6 +183,7 @@ describe("parseAutoReviewJudgeText", () => {
       reason: "Sends email outside scope.",
     });
     expect(parseAutoReviewJudgeText("not json")).toEqual({ decision: "error" });
+    expect(parseAutoReviewJudgeText('{"decision":"pass"')).toEqual({ decision: "error" });
   });
 
   it("strips em dashes from reasons", () => {
@@ -394,6 +395,37 @@ describe("runAutoReviewJudge instructions", () => {
       threadId: "thread",
     });
     expect(captured?.model?.thinkingLevel).toBe("low");
+  });
+});
+
+describe("runAutoReviewJudge unreadable verdict", () => {
+  const judge = (replies: string[]) => {
+    const run = vi.fn(() =>
+      (async function* () {
+        yield { type: "done", text: replies.shift() } as never;
+      })(),
+    );
+    const result = runAutoReviewJudge({
+      runtime: { describe: () => ({ capabilities: { scripted: false } }), run } as never,
+      checker: { provider: "openrouter", model: "x" },
+      prompt: "test",
+      runId: "run",
+      spaceId: "ws",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+    });
+    return { run, result };
+  };
+
+  it("asks the checker once more before giving up", async () => {
+    const recovered = judge(["I think this is fine.", '{"decision":"pass","reason":"Fits."}']);
+    expect(await recovered.result).toMatchObject({ decision: "pass", reason: "Fits." });
+    expect(recovered.run).toHaveBeenCalledTimes(2);
+
+    const unreadable = judge(["I think this is fine.", "Still fine."]);
+    expect((await unreadable.result).decision).toBe("error");
+    expect(unreadable.run).toHaveBeenCalledTimes(2);
   });
 });
 
