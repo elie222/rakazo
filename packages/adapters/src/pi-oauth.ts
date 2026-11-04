@@ -7,6 +7,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type {
+  AgentModelOAuthCredential,
   ModelCredentialFailedState,
   ModelCredentialRetireReason,
   SecretStore,
@@ -28,10 +29,11 @@ import {
   parseModelHeaders,
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import { retireModelCredential, runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
+import { withRefreshLock } from "./refresh-lock.js";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
 export const COPILOT_OAUTH_PROVIDER = "github-copilot";
@@ -81,6 +83,8 @@ const SIGN_IN_START_WAIT_MS = 30_000;
 const PASTED_CODE_TTL_SECONDS = 15 * 60;
 /** Bound on a detached credential refresh so it cannot pin the shared lock. */
 const REFRESH_KICK_TIMEOUT_MS = 30_000;
+/** Bounds the provider request a refresh makes while holding the credential lock. */
+const REFRESH_REQUEST_TIMEOUT_MS = 15_000;
 const CORRUPT_MODEL_SECRET_MESSAGE =
   "Stored model credential is corrupt. Connect the provider again.";
 
@@ -856,6 +860,132 @@ export function retireToReconnectMarker(
   };
 }
 
+function oauthRefreshDue(plaintext: string, now: number): boolean {
+  try {
+    const parsed = parseModelSecret(plaintext);
+    return (
+      parsed.kind === "oauth" &&
+      !parsed.reconnectRequired &&
+      parsed.credential.expires - now < MIN_OAUTH_VALIDITY_MS
+    );
+  } catch {
+    return false;
+  }
+}
+
+function lockModelCredential(tx: Prisma.TransactionClient, secretId: string): Promise<number> {
+  return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('model-credential'), hashtext(${secretId}))`;
+}
+
+/**
+ * `resolveModelAuth` for a stored credential. Providers rotate refresh tokens, so a
+ * due refresh runs under a database lock against the stored copy: an instance whose
+ * copy another instance already refreshed adopts the stored token instead of
+ * spending the rotated one. The refresh's write and any reconnect marker commit on
+ * the lock's own connection, so a refresh never waits for a second one.
+ * `credential.id` enables retirement on a terminal refresh failure.
+ */
+export async function resolveStoredModelAuth(
+  prisma: Pick<PrismaClient, "$transaction">,
+  secretStore: Pick<SecretStore, "load" | "put" | "delete">,
+  scope: { userId: string; spaceId: string },
+  credential: { id?: string; secretId: string },
+  plaintext: string,
+  provider: string,
+  opts: Pick<ResolveModelOpts, "oauth" | "signal" | "now"> = {},
+): ReturnType<typeof resolveModelAuth> {
+  if (!oauthRefreshDue(plaintext, opts.now ?? Date.now())) {
+    return resolveModelAuth(plaintext, provider, opts);
+  }
+  const { secretId } = credential;
+  const outcome = await withRefreshLock(
+    prisma,
+    (tx) => lockModelCredential(tx, secretId),
+    async (tx) => {
+      const row = await tx.secret.findUnique({
+        where: { id: secretId },
+        select: { ciphertext: true },
+      });
+      const stored = row ? await secretStore.load(row.ciphertext, secretId) : plaintext;
+      const timeout = AbortSignal.timeout(REFRESH_REQUEST_TIMEOUT_MS);
+      const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
+      // Retirement's own transactions run inside this one.
+      const onTx = {
+        $transaction: (fn: (inner: typeof tx) => unknown) => fn(tx),
+        secret: tx.secret,
+      };
+      const id = credential.id;
+      try {
+        const resolved = await resolveModelAuth(stored, provider, {
+          ...opts,
+          signal,
+          persist: persistStoredModelSecret(tx, secretStore, scope, secretId),
+          ...(id
+            ? {
+                retire: retireToReconnectMarker(
+                  onTx as unknown as Pick<PrismaClient, "$transaction" | "secret">,
+                  secretStore,
+                  scope,
+                  { id, secretId },
+                  parseModelSecret(stored).maxTokens,
+                ),
+              }
+            : {}),
+        });
+        return { resolved };
+      } catch (error) {
+        // A failed refresh may have written a reconnect marker: commit it, then throw.
+        return { error };
+      }
+    },
+  );
+  if ("error" in outcome) throw outcome.error;
+  return outcome.resolved;
+}
+
+/**
+ * The run's own refresh of the stored credential it started with, coordinated like
+ * every other refresh. `refresh` is the runtime's refresh of the stored copy.
+ */
+export function refreshStoredModelCredential(
+  prisma: Pick<PrismaClient, "$transaction">,
+  secretStore: Pick<SecretStore, "load" | "put" | "delete">,
+  scope: { userId: string; spaceId: string },
+  credential: { id: string; secretId: string },
+  provider: string,
+  opts?: Pick<ResolveModelOpts, "oauth">,
+) {
+  return async (
+    held: AgentModelOAuthCredential,
+    refresh: (stored: AgentModelOAuthCredential) => Promise<AgentModelOAuthCredential | undefined>,
+  ): Promise<AgentModelOAuthCredential> => {
+    const toAuth = (opts?.oauth ?? loadProviderOAuth(provider))?.toAuth;
+    const resolved = await withModelCredentialLock(credential.secretId, () =>
+      resolveStoredModelAuth(
+        prisma,
+        secretStore,
+        scope,
+        credential,
+        serializeModelSecret({ kind: "oauth", credential: { ...held } }),
+        provider,
+        toAuth
+          ? {
+              oauth: {
+                refresh: async (stored) => {
+                  const next = await refresh(stored);
+                  return next ? { ...next } : stored;
+                },
+                toAuth: (next) => toAuth(next),
+              },
+            }
+          : {},
+      ),
+    );
+    if (resolved.secret.kind !== "oauth") throw new Error(OAUTH_RECONNECT_REQUIRED_ERROR);
+    return resolved.secret.credential;
+  };
+}
+
 /** The only token writer, shared by the run path and the detached refresh kick. */
 export function persistStoredModelSecret(
   prisma: Pick<PrismaClient, "secret">,
@@ -887,8 +1017,8 @@ export function persistStoredModelSecret(
  * behind a run's own refresh is a no-op once the stored token is fresh.
  */
 export async function refreshExpiredModelCredential(
-  prisma: Pick<PrismaClient, "secret">,
-  secretStore: Pick<SecretStore, "load" | "put">,
+  prisma: Pick<PrismaClient, "$transaction" | "secret">,
+  secretStore: Pick<SecretStore, "load" | "put" | "delete">,
   scope: { userId: string; spaceId: string },
   secretId: string,
   provider: string,
@@ -908,10 +1038,15 @@ export async function refreshExpiredModelCredential(
     } catch {
       return;
     }
-    await resolveModelAuth(plaintext, provider, {
-      ...opts,
-      persist: persistStoredModelSecret(prisma, secretStore, scope, row.id),
-    });
+    await resolveStoredModelAuth(
+      prisma,
+      secretStore,
+      scope,
+      { secretId: row.id },
+      plaintext,
+      provider,
+      opts,
+    );
   });
 }
 
@@ -919,8 +1054,8 @@ const credentialRefreshKicks = new Map<string, Promise<void>>();
 
 /** Concurrent kicks for one credential collapse into a single refresh. */
 export function kickModelCredentialRefresh(
-  prisma: Pick<PrismaClient, "secret">,
-  secretStore: Pick<SecretStore, "load" | "put">,
+  prisma: Pick<PrismaClient, "$transaction" | "secret">,
+  secretStore: Pick<SecretStore, "load" | "put" | "delete">,
   scope: { userId: string; spaceId: string },
   secretId: string,
   provider: string,

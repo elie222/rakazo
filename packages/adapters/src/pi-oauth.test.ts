@@ -1000,19 +1000,28 @@ describe("matchesFailedOAuthSecret", () => {
   });
 });
 
+function lockingSecretRow() {
+  const prisma = {
+    $executeRaw: vi.fn(async () => 0),
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
+    secret: {
+      findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" })),
+      findUnique: vi.fn(async () => ({ ciphertext: "cipher" })),
+      update: vi.fn(async () => ({})),
+    },
+  };
+  return prisma as unknown as PrismaClient;
+}
+
 describe("refreshExpiredModelCredential", () => {
   const scope = { userId: "user-1", spaceId: "ws-1" };
 
   function secretRow(initial: string) {
     let current = initial;
-    const prisma = {
-      secret: {
-        findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" })),
-        update: vi.fn(async () => ({})),
-      },
-    } as unknown as PrismaClient;
+    const prisma = lockingSecretRow();
     const secretStore = {
       load: vi.fn(async () => current),
+      delete: vi.fn(async () => {}),
       put: vi.fn(async (next: string) => {
         current = next;
         return {
@@ -1144,6 +1153,121 @@ describe("refreshExpiredModelCredential", () => {
     expect(oauth.refresh).toHaveBeenCalledTimes(1);
     expect(secretStore.put).toHaveBeenCalledTimes(1);
   });
+
+  it("refreshes a rotating token once when the kick, a run start and a running run race across processes", async () => {
+    // Three API/worker processes: separate module state, one shared secret row and lock.
+    const processes = [];
+    for (let index = 0; index < 3; index += 1) {
+      vi.resetModules();
+      processes.push({
+        oauth: await import("./pi-oauth.js"),
+        credentials: await import("./pi-credentials.js"),
+      });
+    }
+    const [a, b, c] = processes as [
+      (typeof processes)[0],
+      (typeof processes)[0],
+      (typeof processes)[0],
+    ];
+    const held = oauthCred({ access: "acc-0", refresh: "rt-0", expires: 1 });
+    let stored = serializeModelSecret({ kind: "oauth", credential: held });
+    const secret = {
+      findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: stored })),
+      findUnique: vi.fn(async () => ({ ciphertext: stored })),
+      update: vi.fn(async ({ data }: { data: { ciphertext: string } }) => {
+        stored = data.ciphertext;
+        return {};
+      }),
+    };
+    let locked = Promise.resolve();
+    const prisma = {
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+        let release = () => {};
+        const tx = {
+          $executeRaw: vi.fn(async (sql: TemplateStringsArray) => {
+            if (!sql.join("").includes("pg_advisory_xact_lock")) return 0;
+            const previous = locked;
+            locked = new Promise<void>((resolve) => (release = resolve));
+            await previous;
+            return 0;
+          }),
+          secret,
+        };
+        try {
+          return await fn(tx);
+        } finally {
+          release();
+        }
+      }),
+      secret,
+    } as unknown as PrismaClient;
+    const secretStore = {
+      load: vi.fn(async (ciphertext: string) => ciphertext),
+      put: vi.fn(async (next: string) => ({ id: "secret-1", ref: next, ciphertext: next })),
+      delete: vi.fn(async () => {}),
+    };
+    // The provider rotates refresh tokens and rejects a spent one.
+    const sent: string[] = [];
+    const oauth = stubOAuth(async (credential) => {
+      sent.push(credential.refresh);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      if (credential.refresh !== "rt-0") throw new Error("invalid_grant: refresh token reused");
+      return oauthCred({ access: "acc-1", refresh: "rt-1", expires: Date.now() + 3_600_000 });
+    });
+    const credential = { id: "cred-1", secretId: "secret-1" };
+    // A running run's store, refreshing the way the runtime does: only a token that expires soon.
+    const runner = new c.credentials.PiRuntimeCredentialStore(
+      CHATGPT_OAUTH_PROVIDER,
+      held,
+      undefined,
+      undefined,
+      c.oauth.refreshStoredModelCredential(
+        prisma,
+        secretStore,
+        scope,
+        credential,
+        CHATGPT_OAUTH_PROVIDER,
+        {
+          oauth,
+        },
+      ),
+    );
+
+    const [, started, running] = await Promise.all([
+      a.oauth.refreshExpiredModelCredential(
+        prisma,
+        secretStore,
+        scope,
+        "secret-1",
+        CHATGPT_OAUTH_PROVIDER,
+        {
+          oauth,
+        },
+      ),
+      b.oauth.resolveStoredModelAuth(
+        prisma,
+        secretStore,
+        scope,
+        credential,
+        stored,
+        CHATGPT_OAUTH_PROVIDER,
+        {
+          oauth,
+        },
+      ),
+      runner.modify(CHATGPT_OAUTH_PROVIDER, async (current) =>
+        current?.type === "oauth" && current.expires - Date.now() < 300_000
+          ? oauth.refresh(current)
+          : undefined,
+      ),
+    ]);
+
+    expect(sent).toEqual(["rt-0"]);
+    expect(started.apiKey).toBe("acc-1");
+    expect(running).toMatchObject({ access: "acc-1", refresh: "rt-1" });
+    expect(runner.accessToken).toBe("acc-1");
+    expect(parseModelSecret(stored)).toMatchObject({ credential: { refresh: "rt-1" } });
+  });
 });
 
 describe("kickModelCredentialRefresh", () => {
@@ -1154,14 +1278,10 @@ describe("kickModelCredentialRefresh", () => {
       kind: "oauth",
       credential: oauthCred({ access: "old", expires: 1 }),
     });
-    const prisma = {
-      secret: {
-        findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" })),
-        update: vi.fn(async () => ({})),
-      },
-    } as unknown as PrismaClient;
+    const prisma = lockingSecretRow();
     const secretStore = {
       load: vi.fn(async () => current),
+      delete: vi.fn(async () => {}),
       put: vi.fn(async (next: string) => {
         current = next;
         return { id: "secret-1", ref: "next", ciphertext: "next" };
