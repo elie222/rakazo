@@ -1030,6 +1030,10 @@ msgstr "Studio awatara"
 msgid "Back"
 msgstr "Wstecz"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Back or forward"
+msgstr "Wstecz lub dalej"
+
 #: src/components/pages/PageNotice.tsx
 msgid "Back to chat"
 msgstr "Wróć do czatu"
@@ -1300,6 +1304,10 @@ msgstr "Czat"
 msgid "Chat Completions"
 msgstr "Chat Completions"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Chat details"
+msgstr "Szczegóły czatu"
+
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
 msgstr "Ustawienia czatu"
@@ -1559,6 +1567,7 @@ msgid "Command"
 msgstr "Polecenie"
 
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr "Menu poleceń"
 
@@ -1697,6 +1706,7 @@ msgstr "Połącz klucz API"
 
 #: src/components/SidebarFooter.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Connect apps"
 msgstr "Połącz aplikacje"
 
@@ -2743,6 +2753,10 @@ msgstr "Szczegóły"
 msgid "Developer"
 msgstr "Programista"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Dictate"
+msgstr "Dyktuj"
+
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
 msgstr "Dyktowanie niespodziewanie się zakończyło."
@@ -3228,6 +3242,10 @@ msgstr "Ukończono."
 msgid "Finishing MCP connection…"
 msgstr "Kończenie połączenia MCP…"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Focus message"
+msgstr "Przejdź do wiadomości"
+
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "Nie pamiętasz hasła?"
@@ -3312,6 +3330,10 @@ msgstr "Podaruj znajomemu {weeks} tyg. za darmo"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "Przejdź do strony głównej"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Go to bot"
+msgstr "Przejdź do bota"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Grant"
@@ -3663,6 +3685,11 @@ msgstr "Zachowuj pełne wyniki narzędzi"
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "klucz"
+
+#: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Keyboard shortcuts"
+msgstr "Skróty klawiszowe"
 
 #: src/components/vault/kinds.tsx
 msgid "Keys"
@@ -4252,6 +4279,7 @@ msgstr "Nigdy nie pytaj"
 
 #: src/components/VaultSettings.tsx
 #: src/pages/shell/chat-context.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New"
 msgstr "Nowe"
 
@@ -4283,6 +4311,7 @@ msgstr "Nowa grupa"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New group chat"
 msgstr "Nowy czat grupowy"
 
@@ -4328,6 +4357,10 @@ msgstr "Nowe zgłoszenie"
 #: src/components/VaultSettings.tsx
 msgid "New variable"
 msgstr "Nowa zmienna"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Next or previous bot"
+msgstr "Następny lub poprzedni bot"
 
 #: src/components/markdown-copy.tsx
 msgid "Next page"
@@ -5648,6 +5681,10 @@ msgstr "Szukaj aplikacji"
 msgid "Search artifacts…"
 msgstr "Szukaj artefaktów…"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Search bots"
+msgstr "Szukaj botów"
+
 #: src/pages/shell/command-palette.tsx
 msgid "Search bots, actions, and settings"
 msgstr "Szukaj botów, działań i ustawień"
@@ -5781,6 +5818,7 @@ msgstr "Adres URL serwera"
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "Ustawienia"
@@ -6590,6 +6628,10 @@ msgstr "Do:"
 #: src/pages/shell/chat-context.tsx
 msgid "Today"
 msgstr "Dzisiaj"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Toggle sidebar"
+msgstr "Pokaż lub ukryj pasek boczny"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"

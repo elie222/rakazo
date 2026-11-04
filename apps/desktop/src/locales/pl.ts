@@ -204,4 +204,9 @@ export const PL_MESSAGES: Record<string, string> = {
   "Toggle Sidebar": "Pokaż lub ukryj pasek boczny",
   "Search…": "Szukaj…",
   "The window closed before the app loaded.": "Okno zamknęło się przed wczytaniem aplikacji.",
+  "New Group Chat": "Nowy czat grupowy",
+  "Connect Apps…": "Połącz aplikacje…",
+  "Chat Details": "Szczegóły czatu",
+  Help: "Pomoc",
+  "Keyboard Shortcuts": "Skróty klawiszowe",
 };

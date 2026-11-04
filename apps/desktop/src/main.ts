@@ -790,6 +790,13 @@ function installApplicationMenu() {
     },
   });
   const newItem = command(t("New…"), "CmdOrCtrl+N", "new");
+  const newGroupItem = command(t("New Group Chat"), "CmdOrCtrl+Shift+N", "new-group");
+  const connectAppsItem = command(t("Connect Apps…"), "CmdOrCtrl+Shift+M", "integrations");
+  const helpMenu: Electron.MenuItemConstructorOptions = {
+    label: t("Help"),
+    role: "help",
+    submenu: [command(t("Keyboard Shortcuts"), "CmdOrCtrl+/", "shortcuts")],
+  };
   // Electron's own Edit menu, plus Search. Electron names role items in English, so each one
   // gets its label to translate it.
   const macEdit: Electron.MenuItemConstructorOptions[] = [
@@ -837,6 +844,7 @@ function installApplicationMenu() {
     label: t("View"),
     submenu: [
       command(t("Toggle Sidebar"), "CmdOrCtrl+B", "toggle-sidebar"),
+      command(t("Chat Details"), "CmdOrCtrl+Shift+,", "chat-panel"),
       { type: "separator" },
       { role: "resetZoom", label: t("Actual Size") },
       { role: "zoomIn", label: t("Zoom In") },
@@ -875,7 +883,10 @@ function installApplicationMenu() {
               { role: "quit", label: t("Quit {name}", { name: app.name }) },
             ],
           },
-          { label: t("File"), submenu: [newItem] },
+          {
+            label: t("File"),
+            submenu: [newItem, newGroupItem, { type: "separator" }, connectAppsItem],
+          },
           editMenu,
           viewMenu,
           goMenu,
@@ -890,12 +901,16 @@ function installApplicationMenu() {
               { role: "front", label: t("Bring All to Front") },
             ],
           },
+          helpMenu,
         ]
       : [
           {
             label: t("File"),
             submenu: [
               newItem,
+              newGroupItem,
+              { type: "separator" },
+              connectAppsItem,
               { type: "separator" },
               openSettings,
               computerAccess,
@@ -920,6 +935,7 @@ function installApplicationMenu() {
               { role: "close", label: t("Close") },
             ],
           },
+          helpMenu,
         ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }

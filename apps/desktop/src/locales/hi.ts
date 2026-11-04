@@ -184,4 +184,9 @@ export const HI_MESSAGES: Record<string, string> = {
   "Toggle Sidebar": "साइडबार दिखाएँ/छिपाएँ",
   "Search…": "खोजें…",
   "The window closed before the app loaded.": "ऐप लोड होने से पहले विंडो बंद हो गई।",
+  "New Group Chat": "नई समूह चैट",
+  "Connect Apps…": "ऐप्स कनेक्ट करें…",
+  "Chat Details": "चैट विवरण",
+  Help: "सहायता",
+  "Keyboard Shortcuts": "कीबोर्ड शॉर्टकट",
 };

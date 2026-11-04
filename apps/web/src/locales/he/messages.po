@@ -1030,6 +1030,10 @@ msgstr "Avatar Studio"
 msgid "Back"
 msgstr "חזרה"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Back or forward"
+msgstr "אחורה או קדימה"
+
 #: src/components/pages/PageNotice.tsx
 msgid "Back to chat"
 msgstr "חזרה לצ'אט"
@@ -1300,6 +1304,10 @@ msgstr ""
 msgid "Chat Completions"
 msgstr ""
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Chat details"
+msgstr "פרטי הצ׳אט"
+
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
 msgstr "הגדרות צ׳אט"
@@ -1559,6 +1567,7 @@ msgid "Command"
 msgstr "פקודה"
 
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr ""
 
@@ -1697,6 +1706,7 @@ msgstr "חיבור מפתח API"
 
 #: src/components/SidebarFooter.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Connect apps"
 msgstr "חיבור אפליקציות"
 
@@ -2743,6 +2753,10 @@ msgstr "פרטים"
 msgid "Developer"
 msgstr ""
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Dictate"
+msgstr "הכתבה"
+
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
 msgstr ""
@@ -3228,6 +3242,10 @@ msgstr "הסתיים."
 msgid "Finishing MCP connection…"
 msgstr "משלים את חיבור ה-MCP…"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Focus message"
+msgstr "מעבר להודעה"
+
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "שכחת סיסמה?"
@@ -3312,6 +3330,10 @@ msgstr "תנו לחבר {weeks} שבועות בחינם"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "לדף הבית"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Go to bot"
+msgstr "מעבר לבוט"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Grant"
@@ -3663,6 +3685,11 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "מפתח"
+
+#: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Keyboard shortcuts"
+msgstr "קיצורי מקלדת"
 
 #: src/components/vault/kinds.tsx
 msgid "Keys"
@@ -4252,6 +4279,7 @@ msgstr "לא לשאול אף פעם"
 
 #: src/components/VaultSettings.tsx
 #: src/pages/shell/chat-context.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New"
 msgstr ""
 
@@ -4283,6 +4311,7 @@ msgstr "קבוצה חדשה"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New group chat"
 msgstr "צ'אט קבוצתי חדש"
 
@@ -4328,6 +4357,10 @@ msgstr "כרטיס חדש"
 #: src/components/VaultSettings.tsx
 msgid "New variable"
 msgstr ""
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Next or previous bot"
+msgstr "הבוט הבא או הקודם"
 
 #: src/components/markdown-copy.tsx
 msgid "Next page"
@@ -5648,6 +5681,10 @@ msgstr "חיפוש אפליקציות"
 msgid "Search artifacts…"
 msgstr "חיפוש תוצרים…"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Search bots"
+msgstr "חיפוש בוטים"
+
 #: src/pages/shell/command-palette.tsx
 msgid "Search bots, actions, and settings"
 msgstr ""
@@ -5781,6 +5818,7 @@ msgstr "URL של השרת"
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "הגדרות"
@@ -6590,6 +6628,10 @@ msgstr "אל:"
 #: src/pages/shell/chat-context.tsx
 msgid "Today"
 msgstr "היום"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Toggle sidebar"
+msgstr "הצגה או הסתרה של סרגל הצד"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
