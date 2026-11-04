@@ -60,6 +60,9 @@ export type OAuthMaterial = {
    * dynamic client registration for servers that do not offer it. */
   oauthClient?: PreRegisteredClient;
   oauth?: OAuthState;
+  /** Raised whenever the stored OAuth state is discarded, so a write from a flow that
+   * began before the discard cannot bring its tokens back. */
+  oauthGeneration?: number;
 };
 
 /** Values that must never appear in model-visible tool results or errors. */
@@ -1222,6 +1225,19 @@ export class McpOAuthBroker {
   }
 
   async disconnect(input: { serverId: string; spaceId: string; userId: string }): Promise<void> {
+    // End this actor's pending sign-ins for the server too, so a callback that lands after
+    // the disconnect cannot finish an authorization the user called off.
+    for (const [sessionId, pending] of this.pending) {
+      if (
+        pending.serverId === input.serverId &&
+        pending.spaceId === input.spaceId &&
+        pending.userId === input.userId
+      )
+        this.discardPending(sessionId, pending);
+    }
+    await this.prisma.mcpOAuthSession.deleteMany({
+      where: { serverId: input.serverId, spaceId: input.spaceId, userId: input.userId },
+    });
     const server = await this.prisma.mcpServer.findFirst({
       where: { id: input.serverId, ...availableInSpace(input) },
     });
@@ -1232,6 +1248,9 @@ export class McpOAuthBroker {
     if (!row) return;
     const material = await this.read(row.ciphertext, row.id);
     delete material.oauth;
+    // Raise the authorization generation, so a flow still exchanging its code when the
+    // disconnect lands cannot store the tokens it receives afterwards.
+    material.oauthGeneration = (material.oauthGeneration ?? 0) + 1;
     await this.replaceMaterial(server.id, material, input, { incrementRevision: true });
   }
 
@@ -1425,12 +1444,16 @@ export class McpOAuthBroker {
         if (nextMaterial.oauthClient && bound && !nextMaterial.oauthClient.authorization_server)
           nextMaterial.oauthClient = { ...nextMaterial.oauthClient, authorization_server: bound };
         nextMaterial.oauth = structuredClone(material.oauth);
+        // A disconnect discarded the stored state and raised its generation; a write from
+        // that earlier flow, issued tokens included, must not bring the grant back.
+        const superseded = (material.oauthGeneration ?? 0) !== (nextMaterial.oauthGeneration ?? 0);
         // A process that spent the rotated-away token meanwhile cleared the grant this write renews.
         const staleClear = options.replaceCleared && storedOAuth && !storedOAuth.tokens;
         if (
-          options.storedRefreshToken !== undefined &&
-          (storedOAuth?.tokens?.refresh_token ?? null) !== options.storedRefreshToken &&
-          !staleClear
+          superseded ||
+          (options.storedRefreshToken !== undefined &&
+            (storedOAuth?.tokens?.refresh_token ?? null) !== options.storedRefreshToken &&
+            !staleClear)
         ) {
           // Another process rotated or replaced the grant; never overwrite it with an older one.
           // A disconnect removed the state altogether, and this write must not bring it back.
@@ -1440,6 +1463,9 @@ export class McpOAuthBroker {
           else delete nextMaterial.oauth;
         }
       } else delete nextMaterial.oauth;
+      // Never lower the stored generation, so a superseded flow cannot undo a disconnect.
+      nextMaterial.oauthGeneration =
+        Math.max(material.oauthGeneration ?? 0, nextMaterial.oauthGeneration ?? 0) || undefined;
       const hasMaterial = Boolean(
         nextMaterial.secret ||
           nextMaterial.args?.length ||
@@ -1447,7 +1473,8 @@ export class McpOAuthBroker {
           Object.keys(nextMaterial.files ?? {}).length ||
           Object.keys(nextMaterial.headers ?? {}).length ||
           nextMaterial.oauthClient ||
-          nextMaterial.oauth,
+          nextMaterial.oauth ||
+          nextMaterial.oauthGeneration,
       );
       const stored = hasMaterial ? await this.putMaterial(nextMaterial, context) : undefined;
       const committed = await persistPreparedSecret(
