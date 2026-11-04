@@ -109,7 +109,7 @@ let container: HTMLDivElement | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
   server.custom = false;
-  api.probe.mockResolvedValue({ ok: true, url: "" });
+  api.probe.mockImplementation(async (draft: string) => ({ ok: true, url: draft }));
   api.save.mockResolvedValue({ ok: true, url: "" });
   api.reset.mockResolvedValue({ ok: true, url: "" });
 });
@@ -159,7 +159,9 @@ it("asks before switching servers deletes unsent messages", async () => {
   try {
     await renderServer("https://two.example.test");
     await pressSave();
-    expect(api.probe).not.toHaveBeenCalled();
+    // Asked only once the new server answered, and before anything is saved.
+    expect(api.probe).toHaveBeenCalled();
+    expect(api.save).not.toHaveBeenCalled();
     expect(alertButtons()[1]!.text).toBe("Switch anyway");
     await act(async () => alertButtons()[1]!.onPress?.());
     expect(api.save).toHaveBeenCalled();
@@ -174,8 +176,21 @@ it("keeps unsent messages when the server switch is cancelled", async () => {
     await renderServer("https://two.example.test");
     await pressSave();
     await act(async () => alertButtons()[0]!.onPress?.());
-    expect(api.probe).not.toHaveBeenCalled();
     expect(api.save).not.toHaveBeenCalled();
+  } finally {
+    vi.mocked(hasUnsentSends).mockReturnValue(false);
+  }
+});
+
+it("shows why a switch cannot happen without asking about unsent messages", async () => {
+  vi.mocked(hasUnsentSends).mockReturnValue(true);
+  api.probe.mockResolvedValueOnce({ ok: false, error: "Could not reach this server" });
+  try {
+    await renderServer("https://two.example.test");
+    await pressSave();
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(api.save).not.toHaveBeenCalled();
+    expect(container?.textContent).toContain("Could not reach this server");
   } finally {
     vi.mocked(hasUnsentSends).mockReturnValue(false);
   }

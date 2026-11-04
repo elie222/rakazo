@@ -60,13 +60,6 @@ export default function ServerScreen() {
     // Held across the confirmation, so a second submit cannot start a parallel switch.
     saving.current = true;
     try {
-      // Only a different server clears the device; the same address saves without a switch.
-      if (
-        parsedDraft.ok &&
-        parsedDraft.url !== current &&
-        !(await confirmUnsentSendLoss("server-switch"))
-      )
-        return;
       setPending(true);
       setError(null);
       let headers: Record<string, string>;
@@ -82,6 +75,10 @@ export default function ServerScreen() {
         setError(probed.error);
         return;
       }
+      // Asked once the switch can happen. Only a different server clears the device; the same
+      // address saves without a switch.
+      if (probed.url !== current && !(await confirmUnsentSendLoss("server-switch"))) return;
+      if (!active.current) return;
       const saved = await saveApiBase(probed.url, headers);
       if (!saved.ok) {
         setError(saved.error);
