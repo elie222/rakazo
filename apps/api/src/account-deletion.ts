@@ -83,6 +83,20 @@ export async function deleteOrganization(
     throw error;
   }
   const inOrganization = { spaceId: { in: spaceIds } };
+  // The claim leaves the owner as its only member, so every Space goes: its files can go before
+  // the rows that list them, and a failed removal is found again on retry.
+  const artifacts = await deps.prisma.artifact.findMany({
+    where: inOrganization,
+    select: { spaceId: true, storageKey: true },
+  });
+  await settleAll(
+    artifacts.map(({ spaceId, storageKey }) =>
+      deps.artifacts.remove(
+        storageKey,
+        adapterContext(`organization-delete:${organizationId}`, userId, spaceId),
+      ),
+    ),
+  );
   await deleteClaimedSpaces(deps, {
     userId,
     operationId: `organization-delete:${organizationId}`,
@@ -107,14 +121,8 @@ async function deleteClaimedSpaces(
     computers: Prisma.ComputerWhereInput;
   },
 ): Promise<void> {
-  const context = (spaceId: string, botId?: string): AdapterContext => ({
-    operationId: input.operationId,
-    traceId: input.operationId,
-    spaceId,
-    userId: input.userId,
-    ...(botId ? { botId } : {}),
-    signal: new AbortController().signal,
-  });
+  const context = (spaceId: string, botId?: string) =>
+    adapterContext(input.operationId, input.userId, spaceId, botId);
   const bots = await deps.prisma.bot.findMany({
     where: input.bots,
     select: {
@@ -167,22 +175,36 @@ async function deleteClaimedSpaces(
   );
 
   for (const spaceId of input.spaceIds) {
-    // Files go before the row that lists them, so a failed removal is found again on retry.
-    const artifacts = await deps.prisma.artifact.findMany({
-      where: { spaceId },
-      select: { storageKey: true },
-    });
-    await settleAll(
-      artifacts.map(({ storageKey }) => deps.artifacts.remove(storageKey, context(spaceId))),
-    );
     const deleted = await deleteClaimedSpace(deps.prisma, {
       spaceId,
       claimId: input.claimId,
       soleMemberId: input.soleMemberId,
     });
     if (!deleted) continue;
+    const cleanup = await Promise.allSettled(
+      deleted.artifactKeys.map((storageKey) => deps.artifacts.remove(storageKey, context(spaceId))),
+    );
+    for (const result of cleanup) {
+      if (result.status === "rejected") getLogger().error("space file cleanup", result.reason);
+    }
     if (deps.secrets) await forgetPageShareSecrets(deps.secrets, deleted.pageShareSecrets);
   }
+}
+
+function adapterContext(
+  operationId: string,
+  userId: string,
+  spaceId: string,
+  botId?: string,
+): AdapterContext {
+  return {
+    operationId,
+    traceId: operationId,
+    spaceId,
+    userId,
+    ...(botId ? { botId } : {}),
+    signal: new AbortController().signal,
+  };
 }
 
 /** Runs every teardown, then fails with the first error so a retry finishes the rest. */
