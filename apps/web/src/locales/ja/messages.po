@@ -689,6 +689,10 @@ msgstr "{credit} はすべてモデルの利用に充てられます。"
 msgid "All bots"
 msgstr "すべてのボット"
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "すべてのファイル"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr ""
@@ -3185,6 +3189,10 @@ msgid "Filter by date"
 msgstr "日付で絞り込む"
 
 #: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "作成者で絞り込む"
+
+#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "フィルター"
@@ -3830,6 +3838,10 @@ msgstr "低"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "低"
+
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "ボットが作成"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"

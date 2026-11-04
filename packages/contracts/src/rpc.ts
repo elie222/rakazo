@@ -1287,6 +1287,8 @@ export const appContract = {
       .input(
         z.object({
           botId: Id.optional(),
+          /** Only files bots attached, leaving out uploads. */
+          madeByBots: z.boolean().optional(),
           cursor: z.string().optional(),
           limit: z.number().int().min(1).max(60).optional(),
         }),

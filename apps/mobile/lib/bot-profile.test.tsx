@@ -118,10 +118,31 @@ vi.mock("react-native", () => {
     FlatList: ({
       ListHeaderComponent,
       ListEmptyComponent,
+      data = [],
+      keyExtractor,
+      renderItem,
+      onEndReached,
     }: {
       ListHeaderComponent?: ReactNode;
       ListEmptyComponent?: ReactNode;
-    }) => createElement("div", null, ListHeaderComponent, ListEmptyComponent),
+      data?: unknown[];
+      keyExtractor?: (item: unknown) => string;
+      renderItem?: (info: { item: unknown }) => ReactNode;
+      onEndReached?: () => void;
+    }) =>
+      createElement(
+        "div",
+        null,
+        ListHeaderComponent,
+        data.length === 0
+          ? ListEmptyComponent
+          : data.map((item) =>
+              createElement("div", { key: keyExtractor?.(item) }, renderItem?.({ item })),
+            ),
+        onEndReached
+          ? createElement("button", { type: "button", onClick: onEndReached }, "End of list")
+          : null,
+      ),
   };
 });
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
@@ -174,6 +195,26 @@ vi.mock("../components/run-error-sheet", () => ({
     details ? createElement("dialog", { open: true }, details) : null,
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/native-segmented-control", () => ({
+  NativeSegmentedControl: ({
+    options,
+    onChange,
+  }: {
+    options: { value: string; label: string }[];
+    onChange: (value: string) => void;
+  }) =>
+    createElement(
+      "nav",
+      null,
+      options.map((option) =>
+        createElement(
+          "button",
+          { key: option.value, type: "button", onClick: () => onChange(option.value) },
+          option.label,
+        ),
+      ),
+    ),
+}));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
 
 const routine = (id: string, name: string, partial: Partial<Routine> = {}) => ({
@@ -1246,6 +1287,76 @@ describe("artifacts opened for one bot", () => {
   it("loads only the profile bot's artifacts initially", async () => {
     await render(createElement(ArtifactsScreen));
     expect(listSpaceArtifacts).toHaveBeenCalledTimes(1);
-    expect(listSpaceArtifacts).toHaveBeenCalledWith({ botId: "bot-fixture", limit: 30 });
+    expect(listSpaceArtifacts).toHaveBeenCalledWith({
+      botId: "bot-fixture",
+      madeByBots: false,
+      limit: 30,
+    });
+  });
+
+  it("lists only what bots made while Made by bots is chosen", async () => {
+    await render(createElement(ArtifactsScreen));
+    expect(container.textContent).toContain("No artifacts yet");
+    await act(async () => button("Made by bots").click());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: true,
+      limit: 30,
+    });
+    expect(container.textContent).toContain("No matching artifacts");
+    expect(container.textContent).not.toContain("No artifacts yet");
+    await act(async () => button("All files").click());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: false,
+      limit: 30,
+    });
+    expect(container.textContent).toContain("No artifacts yet");
+  });
+
+  it("keeps Made by bots on the next page and when the screen comes back", async () => {
+    const file = (id: string, name: string) => ({
+      id,
+      name,
+      botId: "bot-fixture",
+      groupId: null,
+      runId: `run-${id}`,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    });
+    listSpaceArtifacts.mockImplementation(
+      async (input: { madeByBots?: boolean; cursor?: string }) =>
+        !input.madeByBots
+          ? { items: [], nextCursor: null }
+          : input.cursor
+            ? { items: [file("b", "second-report.md")], nextCursor: null }
+            : { items: [file("a", "first-report.md")], nextCursor: "page-2" },
+    );
+    await render(createElement(ArtifactsScreen));
+    await act(async () => button("Made by bots").click());
+    expect(container.textContent).toContain("first-report.md");
+
+    await act(async () => button("End of list").click());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: true,
+      cursor: "page-2",
+      limit: 30,
+    });
+    expect(container.textContent).toContain("first-report.md");
+    expect(container.textContent).toContain("second-report.md");
+
+    await act(async () => {
+      for (const effect of focus) effect();
+    });
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: true,
+      limit: 30,
+    });
   });
 });

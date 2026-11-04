@@ -689,6 +689,10 @@ msgstr "Die vollen {credit} fließen in die Modellnutzung."
 msgid "All bots"
 msgstr ""
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "Alle Dateien"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr ""
@@ -3185,6 +3189,10 @@ msgid "Filter by date"
 msgstr ""
 
 #: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "Nach Ersteller filtern"
+
+#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "Filter"
@@ -3830,6 +3838,10 @@ msgstr "Niedrig"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "Niedrig"
+
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "Von Bots erstellt"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
