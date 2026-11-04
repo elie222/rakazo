@@ -22,6 +22,7 @@ import {
   currentApiBase,
   deleteAccount,
   fetchAccountSecurity,
+  flushPendingSignOut,
   IDLE_TIMEOUT_MS,
   isServerReachable,
   loadApiBase,
@@ -1147,15 +1148,21 @@ describe("mobile API authentication", () => {
     }
   });
 
-  it("clears the local session even when the sign-out request fails", async () => {
-    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+  it("signs out locally and keeps the revocation pending when the server cannot be reached", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => Promise.reject(new Error("offline"))),
     );
 
     await expect(signOut()).resolves.toBeUndefined();
-    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
+    expect(store.has("rakazo.session_token")).toBe(false);
+    // The old server keeps the session and the push registration until the revocation lands.
+    expect(JSON.parse(store.get("rakazo.pending_sign_out") ?? "{}")).toMatchObject({
+      apiBase: "http://127.0.0.1:3100",
+      token: "session-token",
+    });
   });
 
   it("unregisters push delivery before invalidating the session", async () => {
@@ -1189,9 +1196,10 @@ describe("mobile API authentication", () => {
     expect(init.body).toBe("{}");
   });
 
-  it("continues sign-out when push unregistration times out", async () => {
+  it("continues sign-out when push unregistration times out and keeps it pending", async () => {
     vi.useFakeTimers();
-    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
     const fetchMock = vi
       .fn()
       .mockImplementationOnce(
@@ -1213,7 +1221,13 @@ describe("mobile API authentication", () => {
       "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
       "http://127.0.0.1:3100/api/auth/sign-out",
     ]);
-    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
+    expect(store.has("rakazo.session_token")).toBe(false);
+    // The session revocation reached the server, but the unregistration did not: the
+    // registration row survives, so the record waits to deliver the missing half.
+    expect(JSON.parse(store.get("rakazo.pending_sign_out") ?? "{}")).toMatchObject({
+      apiBase: "http://127.0.0.1:3100",
+      token: "session-token",
+    });
   });
 
   it("clears the local session when the sign-out request stalls", async () => {
@@ -1231,6 +1245,74 @@ describe("mobile API authentication", () => {
 
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.space_id");
+  });
+
+  it("clears the pending revocation when the server answers both requests", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    await signOut();
+    expect(store.has("rakazo.pending_sign_out")).toBe(true);
+
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await flushPendingSignOut(true);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(store.has("rakazo.pending_sign_out")).toBe(false);
+  });
+
+  it("delivers a pending revocation on the next answered request", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    await signOut();
+
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ json: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await rpc("bots/list");
+    await flushPendingSignOut(true);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/bots/list",
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    const [, revocationInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(revocationInit.headers).toMatchObject({ authorization: "Bearer session-token" });
+    expect(store.has("rakazo.pending_sign_out")).toBe(false);
+  });
+
+  it("retries a persisted pending revocation on launch against its own server", async () => {
+    const store = new Map<string, string>([
+      [
+        "rakazo.pending_sign_out",
+        JSON.stringify({ apiBase: "https://old.example", token: "old-token", headers: {} }),
+      ],
+    ]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await loadApiBase();
+    await flushPendingSignOut(true);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://old.example/rpc/notifications/unregisterPush",
+      "https://old.example/api/auth/sign-out",
+    ]);
+    const [, firstInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(firstInit.headers).toMatchObject({ authorization: "Bearer old-token" });
+    expect(store.has("rakazo.pending_sign_out")).toBe(false);
   });
 
   it("unregisters push delivery before deleting the account", async () => {
@@ -1616,6 +1698,30 @@ describe("mobile API authentication", () => {
 
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.space_id");
+    await resetApiBase();
+  });
+
+  it("keeps the previous server's revocation pending when switching servers signed in", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+
+    await expect(saveApiBase("https://second-server.example")).resolves.toMatchObject({ ok: true });
+
+    // The old server keeps the session and the push registration after a local switch.
+    expect(JSON.parse(store.get("rakazo.pending_sign_out") ?? "{}")).toMatchObject({
+      apiBase: "http://127.0.0.1:3100",
+      token: "session-token",
+    });
+    await resetApiBase();
+  });
+
+  it("records no revocation when switching servers without a session", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+
+    await expect(saveApiBase("https://second-server.example")).resolves.toMatchObject({ ok: true });
+
+    expect(store.has("rakazo.pending_sign_out")).toBe(false);
     await resetApiBase();
   });
 
