@@ -4,6 +4,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { composerHoldsUnsavedWork } from "../../lib/composer-draft";
 import type { PageSession } from "../../lib/pages";
 import { createPageSession } from "../../lib/pages";
 import type { createSpaceRpc } from "../../lib/rpc";
@@ -156,6 +157,23 @@ it("keeps an attachment added while a send is in flight", async () => {
     expect.objectContaining({ artifactIds: ["artifact-a.txt"] }),
   );
   expect(latest.activePendingAttachments.map((pending) => pending.file)).toEqual([fileB]);
+});
+
+it("discards a deleted chat's attachments with their previews and unsaved-work flag", () => {
+  const file = new File(["a"], "photo.png", { type: "image/png" });
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview-a");
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+  try {
+    act(() => void latest.onAttachmentPick([file]));
+    expect(composerHoldsUnsavedWork()).toBe(true);
+    act(() => latest.discardThreadAttachments("bot-1"));
+    expect(latest.activePendingAttachments).toEqual([]);
+    expect(revoke).toHaveBeenCalledWith("blob:preview-a");
+    expect(composerHoldsUnsavedWork()).toBe(false);
+  } finally {
+    create.mockRestore();
+    revoke.mockRestore();
+  }
 });
 
 it("keeps unsent attachments when switching chats and back", () => {
