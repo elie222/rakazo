@@ -1242,6 +1242,30 @@ describe("mobile call recognition recovery", () => {
     expect(fake.start).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps recording for the call once recognition fails twice in a row", async () => {
+    const fake = await greetedCall(true, true);
+    fake.say("status please");
+    await vi.advanceTimersByTimeAsync(0);
+    fake.start.mockImplementationOnce(() => {
+      throw new Error("recognizer unavailable");
+    });
+    fake.replyWith("message-1", "The task is ready.");
+    await vi.advanceTimersByTimeAsync(0);
+    fake.speeches[1]?.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.start).toHaveBeenCalledTimes(2);
+    expect(fake.recordings).toHaveLength(2);
+
+    fake.say("and the deploy");
+    await vi.advanceTimersByTimeAsync(0);
+    fake.replyWith("message-2", "It shipped.");
+    await vi.advanceTimersByTimeAsync(0);
+    fake.speeches[2]?.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.start).toHaveBeenCalledTimes(2);
+    expect(fake.recordings).toHaveLength(3);
+  });
+
   it("falls back when restarting throws and keeps the new microphone open", async () => {
     const fake = await greetedCall(true);
     fake.start.mockImplementationOnce(() => {

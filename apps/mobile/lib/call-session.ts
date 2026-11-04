@@ -150,6 +150,7 @@ let speechSeq = 0;
 let canTranscribe = true;
 /** Whether this device does its own speech recognition; unknown until a turn tries it again. */
 let onDevice: boolean | null = null;
+let recognitionFailures = 0;
 /** A microphone session is running, so playback can leave it open instead of restarting it. */
 let micOpen = false;
 /** True from ringing until the start cue ends: nothing may open the microphone before the greeting. */
@@ -230,6 +231,7 @@ export function startCall(
   callRunId = null;
   canTranscribe = call.transcribe ?? true;
   onDevice = null;
+  recognitionFailures = 0;
   micOpen = false;
   bargedIn = false;
   spokenMemory.clear();
@@ -364,7 +366,9 @@ async function openMic(): Promise<void> {
             if (mine()) heardInterim(text);
           },
           onFinal: (text) => {
-            if (mine()) void handleTranscript(text);
+            if (!mine()) return;
+            recognitionFailures = 0;
+            void handleTranscript(text);
           },
           onGiveUp: (reason) => {
             if (!mine()) return;
@@ -372,7 +376,10 @@ async function openMic(): Promise<void> {
             micOpen = false;
             interim.clear();
             set({ heard: "" });
-            if (reason === "failed") onDevice = false;
+            if (reason === "failed") {
+              onDevice = false;
+              recognitionFailures += 1;
+            }
             // Recording must wait for playback; recognition can still hear a barge-in.
             if (state?.phase !== "speaking" || onDevice !== false) void openMic();
           },
@@ -405,7 +412,7 @@ async function openMic(): Promise<void> {
     const text = clip ? await deps.transcribe(clip, controller.signal) : "";
     if (!mine()) return;
     micOpen = false;
-    onDevice = null;
+    if (recognitionFailures < 2) onDevice = null;
     await handleTranscript(text);
   } catch (error) {
     if (!mine()) return;
