@@ -21,11 +21,13 @@ export const boat: Sandbox = {
     where: "Computer on Boat",
     ask: "work the seed-stage fintech list overnight, nothing sent without me",
     reply: "on it. signed in to hubspot and linkedin in my own browser. drafts will wait for you at 6am.",
-    task: "Scoring the list in HubSpot.",
-    screen: {
-      host: "app.hubspot.com",
-      title: "Seed-stage fintech: review list",
-      lines: ["40 accounts scored", "22 LinkedIn profiles read", "18 drafts queued"],
+    computer: {
+      task: "Scoring the list in HubSpot.",
+      screen: {
+        host: "app.hubspot.com",
+        title: "Seed-stage fintech: review list",
+        lines: ["40 accounts scored", "22 LinkedIn profiles read", "18 drafts queued"],
+      },
     },
   },
   sections: [

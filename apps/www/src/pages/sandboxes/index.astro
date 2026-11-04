@@ -1,8 +1,8 @@
 ---
 import ArticleText from "../../components/ArticleText.astro";
 import Button from "../../components/Button.astro";
-import SandboxCard from "../../components/SandboxCard.astro";
-import { SandboxScene } from "../../components/SandboxScene";
+import ProviderCard from "../../components/ProviderCard.astro";
+import { ProviderScene } from "../../components/ProviderScene";
 import SiteFrame from "../../components/SiteFrame.astro";
 import { ogPublicPath } from "../../og-pages";
 import {
@@ -10,6 +10,7 @@ import {
   SANDBOXES,
   SANDBOXES_HUB,
   SANDBOXES_UPDATED,
+  sandboxLink,
   sandboxPath,
 } from "../../sandboxes";
 import { GITHUB_URL } from "../../site";
@@ -26,7 +27,7 @@ import { GITHUB_URL } from "../../site";
   <p class="page-updated">Updated {SANDBOXES_UPDATED}.</p>
   {SANDBOXES_HUB.intro.map((paragraph) => <p><ArticleText text={paragraph} /></p>)}
 
-  <SandboxScene {...SANDBOXES_HUB.scene} />
+  <ProviderScene {...SANDBOXES_HUB.scene} />
 
   <h2>Compared</h2>
 
@@ -60,7 +61,7 @@ import { GITHUB_URL } from "../../site";
 
   <h2>Every option</h2>
   <ul class="sandbox-cards">
-    {SANDBOXES.map((sandbox) => <SandboxCard sandbox={sandbox} />)}
+    {SANDBOXES.map((sandbox) => <ProviderCard link={sandboxLink(sandbox)} />)}
   </ul>
 
   <h2>How to choose</h2>

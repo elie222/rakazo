@@ -22,11 +22,13 @@ export const docker: Sandbox = {
     where: "Computer in Docker",
     ask: "find infra engineers who maintain kubernetes operators on github, shortlist ten",
     reply: "on it. reading their repos and recent commits, notes go in your shortlist file.",
-    task: "Reading maintainer profiles in Chromium.",
-    screen: {
-      host: "github.com",
-      title: "Operator maintainers: shortlist",
-      lines: ["48 profiles read", "10 shortlisted", "Notes saved to shortlist.md"],
+    computer: {
+      task: "Reading maintainer profiles in Chromium.",
+      screen: {
+        host: "github.com",
+        title: "Operator maintainers: shortlist",
+        lines: ["48 profiles read", "10 shortlisted", "Notes saved to shortlist.md"],
+      },
     },
   },
   sections: [
