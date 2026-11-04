@@ -1,0 +1,302 @@
+import { createHmac } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import { FakeSandboxProvider } from "@rakazo/adapters";
+import type { PrismaClient } from "@rakazo/db";
+import { asSystem, createRepos } from "@rakazo/db";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { AppHandles } from "./app.js";
+import { createApp } from "./app.js";
+
+const databaseUrl = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_URL : undefined;
+const describePostgres = databaseUrl ? describe.sequential : describe.skip;
+const webOrigin = "http://127.0.0.1:5173";
+const token = "scim-test-token-0123456789abcdef0123456789";
+const authSecret = "directory-test-secret-with-32-characters";
+const USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User";
+const PATCH_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
+
+describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
+  let handles: AppHandles;
+  let system: PrismaClient;
+  let dataDir: string;
+  const sent: string[] = [];
+  const email: TransactionalEmailProvider = {
+    describe: () => ({
+      id: "offline-email",
+      contractVersion: "1",
+      adapterVersion: "1",
+      capabilities: { transactional: true },
+    }),
+    send: async (message) => {
+      sent.push(message.text);
+    },
+  };
+
+  beforeAll(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "rakazo-directory-"));
+    handles = await createApp({
+      databaseUrl: databaseUrl!,
+      dataDir,
+      sandboxProvider: "docker",
+      sandbox: new FakeSandboxProvider(),
+      agentRuntime: "scripted",
+      wakeupDriver: "memory",
+      signupsEnabled: "true",
+      signupAllowlist: "",
+      webOrigin,
+      authUrl: webOrigin,
+      authSecret,
+      scimBearerToken: token,
+      email,
+    });
+    system = asSystem(handles.prisma);
+  });
+  afterAll(async () => {
+    await handles?.stop();
+    if (dataDir) await rm(dataDir, { recursive: true, force: true });
+  });
+
+  function scim(method: string, path: string, body?: unknown, bearer: string | null = token) {
+    return handles.app.request(`/api/auth/scim/v2${path}`, {
+      method,
+      headers: {
+        "content-type": "application/scim+json",
+        ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  }
+  function auth(path: string, body?: object, cookie?: string) {
+    return handles.app.request(`/api/auth${path}`, {
+      method: body ? "POST" : "GET",
+      headers: {
+        origin: webOrigin,
+        "content-type": "application/json",
+        ...(cookie ? { cookie } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+  }
+  const cookieOf = (response: Response) =>
+    response.headers
+      .getSetCookie()
+      .map((cookie) => cookie.split(";")[0])
+      .join("; ");
+  /** Signs in with an emailed code, as a directory account without a password would. */
+  async function signInWithCode(address: string) {
+    sent.length = 0;
+    const requested = await auth("/email-otp/send-verification-otp", {
+      email: address,
+      type: "sign-in",
+    });
+    expect(requested.status).toBe(200);
+    await expect.poll(() => sent.length).toBeGreaterThan(0);
+    const otp = sent.at(-1)!.match(/\b\d{6}\b/)![0];
+    return auth("/sign-in/email-otp", { email: address, otp });
+  }
+  const userResource = (userName: string, externalId: string, active = true) => ({
+    schemas: [USER_SCHEMA],
+    userName,
+    externalId,
+    name: { givenName: "Ada", familyName: "Lovelace" },
+    emails: [{ value: userName, type: "work", primary: true }],
+    active,
+  });
+  /** A session row written straight to the database, as one racing a deactivation would be. */
+  async function rawSession(userId: string) {
+    const raw = `raw-${userId}-${Date.now()}`;
+    await system.session.create({
+      data: { id: raw, token: raw, userId, expiresAt: new Date(Date.now() + 3_600_000) },
+    });
+    const signed = `${raw}.${createHmac("sha256", authSecret).update(raw).digest("base64")}`;
+    return () =>
+      handles.app.request("/api/auth/get-session", {
+        headers: { origin: webOrigin, authorization: `Bearer ${signed}` },
+      });
+  }
+  const accountOf = (address: string) =>
+    system.user.findUniqueOrThrow({ where: { email: address } });
+  const securityEvents = (userId: string) =>
+    system.securityEvent.findMany({
+      where: { userId, type: { in: ["auth.account.deactivated", "auth.account.reactivated"] } },
+      orderBy: { createdAt: "asc" },
+    });
+
+  it("answers only the operator's token, and only for users", async () => {
+    expect((await scim("GET", "/Users", undefined, null)).status).toBe(401);
+    expect(
+      (await scim("GET", "/Users", undefined, "wrong-token-0123456789abcdef01234")).status,
+    ).toBe(401);
+    expect((await scim("GET", "/Users")).status).toBe(200);
+    expect((await scim("GET", "/Groups")).status).toBe(403);
+    const created = await scim("POST", "/Groups", {
+      schemas: ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+      displayName: "Everyone",
+    });
+    expect(created.status).toBe(403);
+  });
+
+  it("provisions a person, turns them off with a full replace, and back on with a patch", async () => {
+    const address = "ada@example.test";
+    const created = await scim("POST", "/Users", userResource(address, "directory-ada"));
+    expect(created.status).toBe(201);
+    const resource = (await created.json()) as { id: string; active: boolean };
+    expect(resource.active).toBe(true);
+    const found = await scim(
+      "GET",
+      `/Users?filter=${encodeURIComponent(`userName eq "${address}"`)}`,
+    );
+    expect(await found.json()).toMatchObject({ totalResults: 1, Resources: [{ id: resource.id }] });
+    const ada = await accountOf(address);
+    expect(ada).toMatchObject({ deactivatedAt: null, emailVerified: false });
+    // The directory made this account, so its first SSO sign-in may claim it.
+    expect(
+      (await system.scimSubject.findUniqueOrThrow({ where: { userId: ada.id } })).profileSourceId,
+    ).toEqual(expect.any(String));
+
+    // The directory admits Ada even though nobody invited her; she signs in with an emailed code.
+    const signedIn = await signInWithCode(address);
+    expect(signedIn.status).toBe(200);
+    const cookie = cookieOf(signedIn);
+    expect(await (await auth("/get-session", undefined, cookie)).json()).toMatchObject({
+      user: { id: ada.id },
+    });
+    expect(await (await (await rawSession(ada.id))()).json()).toMatchObject({
+      user: { id: ada.id },
+    });
+    const membership = await system.spaceMember.findFirstOrThrow({ where: { userId: ada.id } });
+    const bot = await createRepos(system).createBot(
+      { userId: ada.id, spaceId: membership.spaceId, email: address, isDeploymentOwner: false },
+      { name: "Helper", description: "", instructions: "", notifyOnFinish: false },
+    );
+    const thread = await system.thread.findFirstOrThrow({ where: { botId: bot.id } });
+    const task = await system.task.create({
+      data: {
+        userId: ada.id,
+        spaceId: membership.spaceId,
+        botId: bot.id,
+        threadId: thread.id,
+        prompt: "fixture",
+        status: "queued",
+      },
+    });
+    const queued = await system.run.create({
+      data: {
+        userId: ada.id,
+        spaceId: membership.spaceId,
+        botId: bot.id,
+        threadId: thread.id,
+        taskId: task.id,
+        trigger: "chat",
+        status: "queued",
+      },
+    });
+
+    // Some providers replace the whole user with active: false.
+    const off = await scim(
+      "PUT",
+      `/Users/${resource.id}`,
+      userResource(address, "directory-ada", false),
+    );
+    expect(off.status).toBe(200);
+    expect(await off.json()).toMatchObject({ active: false });
+    expect((await accountOf(address)).deactivatedAt).toBeInstanceOf(Date);
+    expect(await system.session.count({ where: { userId: ada.id } })).toBe(0);
+    expect(await (await auth("/get-session", undefined, cookie)).json()).toBeNull();
+    // A sign-in that slipped in around the deactivation is refused when it is used.
+    const racing = await rawSession(ada.id);
+    expect(await (await racing()).json()).toBeNull();
+    expect((await system.run.findUniqueOrThrow({ where: { id: queued.id } })).status).toBe(
+      "cancelled",
+    );
+    const refused = await signInWithCode(address);
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ code: "ACCOUNT_DEACTIVATED" });
+    // Ada's content stays.
+    expect(await system.bot.count({ where: { id: bot.id } })).toBe(1);
+    const space = await system.space.findUniqueOrThrow({ where: { id: membership.spaceId } });
+    expect(
+      await system.auditEvent.findFirst({
+        where: { organizationId: space.organizationId, action: "auth.account.deactivated" },
+      }),
+    ).toMatchObject({
+      actorType: "system",
+      actorLabel: "directory",
+      targetType: "user",
+      targetId: ada.id,
+      targetLabel: address,
+    });
+
+    // Others patch with a capitalized op and a string boolean.
+    const on = await scim("PATCH", `/Users/${resource.id}`, {
+      schemas: [PATCH_SCHEMA],
+      Operations: [{ op: "Replace", path: "active", value: "True" }],
+    });
+    expect([200, 204]).toContain(on.status);
+    expect((await accountOf(address)).deactivatedAt).toBeNull();
+    expect((await signInWithCode(address)).status).toBe(200);
+    expect((await securityEvents(ada.id)).map((event) => event.type)).toEqual([
+      "auth.account.deactivated",
+      "auth.account.reactivated",
+    ]);
+  });
+
+  it("keeps a deleted person's account and finds it again when they come back", async () => {
+    const address = "grace@example.test";
+    const first = (await (
+      await scim("POST", "/Users", userResource(address, "directory-grace"))
+    ).json()) as { id: string };
+    const grace = await accountOf(address);
+
+    const off = await scim("PATCH", `/Users/${first.id}`, {
+      schemas: [PATCH_SCHEMA],
+      Operations: [{ op: "Replace", path: "active", value: "False" }],
+    });
+    expect([200, 204]).toContain(off.status);
+    expect((await scim("DELETE", `/Users/${first.id}`)).status).toBe(204);
+    expect(await accountOf(address)).toMatchObject({ id: grace.id });
+    expect((await accountOf(address)).deactivatedAt).toBeInstanceOf(Date);
+    expect((await scim("GET", `/Users/${first.id}`)).status).toBe(404);
+
+    const again = await scim("POST", "/Users", userResource(address, "directory-grace"));
+    expect(again.status).toBe(201);
+    expect(await accountOf(address)).toMatchObject({ id: grace.id, deactivatedAt: null });
+  });
+
+  it("takes over an existing account without changing it, and leaves others alone", async () => {
+    const credentials = { email: "carol@example.test", password: "test-password-123" };
+    const signedUp = await auth("/sign-up/email", { ...credentials, name: "Carol" });
+    expect(signedUp.status).toBe(200);
+    const bystander = { email: "dave@example.test", password: "test-password-123" };
+    const daveSignedUp = await auth("/sign-up/email", { ...bystander, name: "Dave" });
+    const daveCookie = cookieOf(daveSignedUp);
+    const carol = await accountOf(credentials.email);
+
+    const linked = await scim("POST", "/Users", {
+      ...userResource(credentials.email, "directory-carol"),
+      name: { givenName: "Someone", familyName: "Else" },
+    });
+    expect(linked.status).toBe(201);
+    const resource = (await linked.json()) as { id: string };
+    expect(await accountOf(credentials.email)).toMatchObject({ id: carol.id, name: "Carol" });
+    // Taken over, not made: SSO sign-in never claims it by email.
+    expect(
+      (await system.scimSubject.findUniqueOrThrow({ where: { userId: carol.id } })).profileSourceId,
+    ).toBeNull();
+
+    await scim("PATCH", `/Users/${resource.id}`, {
+      schemas: [PATCH_SCHEMA],
+      Operations: [{ op: "replace", value: { active: false } }],
+    });
+    const refused = await auth("/sign-in/email", credentials);
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ code: "ACCOUNT_DEACTIVATED" });
+    expect(await (await auth("/get-session", undefined, daveCookie)).json()).toMatchObject({
+      user: { email: bystander.email },
+    });
+    expect((await auth("/sign-in/email", bystander)).status).toBe(200);
+  });
+});

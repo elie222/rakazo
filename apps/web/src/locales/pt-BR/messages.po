@@ -6453,6 +6453,10 @@ msgid "Thinking: {0}"
 msgstr "Raciocínio: {0}"
 
 #: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "Esta conta está desativada"
+
+#: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
 msgstr "Este app precisa da própria configuração de login para se conectar."
 

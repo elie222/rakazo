@@ -34,7 +34,9 @@ import {
 } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
 import {
+  accountDeactivated,
   availableInSpace,
+  cancelDeactivatedAccountRuns,
   effectiveMemoryScope,
   isPartialReplyClientNonce,
   isTooManyDatabaseConnections,
@@ -320,6 +322,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // worker's run-scoped state for it may end now; until a next touch, the
         // connector's own idle bound holds it.
         endRunConnectorState(runId);
+        return;
+      }
+      // Every way work reaches a bot ends here, so a deactivated account's run stops before it starts.
+      if (await accountDeactivated(deps.prisma, run.userId)) {
+        for (const { threadId, seq } of await cancelDeactivatedAccountRuns(
+          deps.prisma,
+          run.userId,
+          runId,
+        ))
+          await deps.events.notify(threadId, seq).catch(() => undefined);
         return;
       }
       let { resumeCheckpoint, heldForTakeover, takeoverResume } = takeoverContinuePlan(run);

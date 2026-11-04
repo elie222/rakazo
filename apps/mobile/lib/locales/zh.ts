@@ -1025,6 +1025,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Email verification required": "需要验证邮箱",
   "Link SSO": "关联 SSO",
   "Registration is closed": "注册已关闭",
+  "This account is deactivated": "此账户已停用",
   Retry: "重试",
   "Send deletion code": "发送删除验证码",
   "Sign in to your existing account to link SSO": "请登录现有账户以关联 SSO",

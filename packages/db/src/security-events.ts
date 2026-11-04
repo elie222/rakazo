@@ -44,6 +44,11 @@ const FAILURE_TYPES = new Set<SecurityEventType>([
 ]);
 /** Deployment-wide signals with no account or organization to attribute them to. */
 const NOT_AUDITED = new Set<SecurityEventType>([...FAILURE_TYPES, "deployment.settings.changed"]);
+/** Done to an account by the directory, not by the account itself. */
+const DONE_TO_ACCOUNT = new Set<SecurityEventType>([
+  "auth.account.deactivated",
+  "auth.account.reactivated",
+]);
 const MAX_METADATA_KEYS = 16;
 const MAX_METADATA_STRING = 200;
 /** Keys that could carry what a user said or a secret. Never stored, whatever the value. */
@@ -100,9 +105,13 @@ export async function recordSecurityEvent(input: SecurityEventInput): Promise<vo
       () =>
         recordAuditEvent({
           action: event.type,
-          actor: { type: "user", id: userId },
+          ...(DONE_TO_ACCOUNT.has(event.type)
+            ? { actor: { type: "system", label: "directory" }, target: { type: "user", id: userId } }
+            : {
+                actor: { type: "user", id: userId },
+                target: typeof kind === "string" ? { type: kind } : undefined,
+              }),
           spaceId: event.spaceId,
-          target: typeof kind === "string" ? { type: kind } : undefined,
           runId: typeof runId === "string" ? runId : undefined,
           metadata: event.metadata,
         }),

@@ -12,6 +12,7 @@ import {
   isOneShotRoutineCrons,
   nextRoutineRunDateAcross,
 } from "@rakazo/core";
+import { accountDeactivated } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { protectedComputerLifecycleRefusal } from "./desktop-command-guard.js";
@@ -127,6 +128,17 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
   )
     return;
   if (await deferFutureRoutine(deps.jobs, routineId, scheduledAt)) return;
+  if (await accountDeactivated(deps.prisma, routine.userId)) {
+    // A deactivated owner's routine skips this occurrence and keeps its schedule for reactivation.
+    const nextRunAt = isOneShotRoutineCrons(routine.crons)
+      ? null
+      : nextRoutineRunDateAcross(routine.crons, scheduledAt, new Date(Date.now()), routine.timezone);
+    await deps.prisma.routine.updateMany({
+      where: { id: routine.id, active: true, nextRunAt: scheduledAt },
+      data: { nextRunAt, ...(nextRunAt ? {} : { active: false }) },
+    });
+    return;
+  }
   const bot = await deps.prisma.bot.findUnique({
     where: { id: routine.botId },
     include: { thread: true },

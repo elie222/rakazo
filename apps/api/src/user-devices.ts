@@ -34,7 +34,7 @@ export interface UserDeviceRouteDeps {
   trustedOrigin: (origin: string) => boolean;
 }
 
-type DeviceStore = { prisma: PrismaClient; devices: UserDevices };
+export type DeviceStore = { prisma: PrismaClient; devices: UserDevices };
 
 async function revokeDevice(
   { prisma, devices }: DeviceStore,
@@ -93,6 +93,18 @@ export async function endUserDeviceSession(
         revokedAt: null,
         OR: [{ sessionId: ended.id }, ...(signedIn ? [] : [{ sessionId: null }])],
       },
+      select: { id: true, sessionId: true },
+    }),
+  );
+  for (const device of devices)
+    await revokeDevice(store, device.id, userId, "session", device.sessionId);
+}
+
+/** Disconnects every computer the user paired, as when their last sign-in ends. */
+export async function revokeUserDevices(store: DeviceStore, userId: string) {
+  const devices = await runAsSystem("find a user's devices", () =>
+    store.prisma.userDevice.findMany({
+      where: { userId, revokedAt: null },
       select: { id: true, sessionId: true },
     }),
   );

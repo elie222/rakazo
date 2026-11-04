@@ -165,7 +165,8 @@ SecureStore, like password sign-in. Native builds need the Expo WebBrowser modul
 
 Provider emails are verified only when `email_verified` is the boolean `true`. False or missing
 claims stay unverified, including on subsequent sign-ins, and an unverified claim never changes
-the account's email. Sign-in never links accounts by email.
+the account's email. Sign-in never links accounts by email, except to claim an account
+[directory provisioning](#directory-provisioning-scim) created.
 If an email belongs to another account, sign in to that existing account and choose **Link SSO**
 in account settings. Linking requires an authenticated session, a verified provider email and
 matching email addresses. With email delivery, an account links SSO only after its email is
@@ -210,6 +211,38 @@ deletion or create another account in that flow. A stale or borrowed session alo
 email configured, **Send deletion code** sends a single-use code to the account email, valid for ten
 minutes. Enter it in account settings to confirm deletion. Email-code requests are rate-limited;
 invalid, expired or wrong-account codes fail. No password needs to be created for deletion.
+
+## Directory provisioning (SCIM)
+
+Your identity provider can add people to Rakazo and remove them over SCIM 2.0. Generate a token of
+at least 32 random characters and set it on the API:
+
+```env
+SCIM_BEARER_TOKEN=replace-with-a-long-random-token
+```
+
+In the identity provider, set the SCIM base URL to `https://app.example.com/api/auth/scim/v2`
+(your `BETTER_AUTH_URL` origin) and the bearer token to that value. The token manages users only;
+group requests are refused. Rotating it means changing the value and restarting the API.
+
+- **Adding a person** creates an account with their email, unverified, and no password. It
+  joins Rakazo even while signup is closed or the allowlist would refuse it, so
+  `SIGNUPS_ENABLED=false` with SCIM admits exactly the people the directory assigns. They sign in
+  through [SSO](#openid-connect-sso) (the first SSO sign-in with the same verified email claims the
+  account) or with an emailed sign-in code.
+- **A person who already has an account** keeps it: the directory takes it over by email without
+  changing its name, email or logins, and can then turn it off.
+- **Turning a person off** (`active: false`) or **deleting** them deactivates the account at once.
+  It ends every sign-in and paired computer, removes notification registrations, cancels runs
+  they started, skips their routines, and refuses any new sign-in or run. Their bots, chats,
+  memory, files and connections stay. Turning them back on restores sign-in, and routines resume
+  from their next scheduled time.
+- **Adding a deleted person again** with the same external id finds their existing account.
+
+Deactivation and reactivation are recorded as `auth.account.deactivated` and
+`auth.account.reactivated` [security events](./self-host-observability.md#security-events) and in
+each of the person's organizations' [audit log](./self-host-audit-log.md). The directory never
+deletes an account or its content.
 
 ## Passkeys
 

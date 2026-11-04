@@ -29,6 +29,10 @@ let corruptSignature = false;
 let omitIdToken = false;
 let replayedIdToken: string | undefined;
 let userInfoClaims: Record<string, unknown>;
+/** Directory-made accounts by user id: the profile source the directory manages, or null when adopted. */
+let directorySubjects: Map<string, string | null>;
+/** Users the directory currently provisions. */
+let provisionedUsers: Set<string>;
 const codes = new Map<
   string,
   { challenge: string; nonce: string; claims: Record<string, unknown> }
@@ -67,7 +71,6 @@ function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
     messagingIdentity: { deleteMany: vi.fn(async () => ({})) },
     messagingLinkCode: { deleteMany: vi.fn(async () => ({})) },
     userDevice: { updateMany: vi.fn(async () => ({})) },
-    passkey: { deleteMany: vi.fn(async () => ({})) },
     account: {
       deleteMany: vi.fn(async ({ where }: { where: { userId: string } }) => {
         const kept = rows("account").filter(
@@ -78,7 +81,30 @@ function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
       }),
     },
     organization: { deleteMany: vi.fn(async () => ({})) },
+    scimSubject: {
+      findUnique: vi.fn(async ({ where }: { where: { userId: string } }) =>
+        directorySubjects.has(where.userId)
+          ? { profileSourceId: directorySubjects.get(where.userId) }
+          : null,
+      ),
+    },
+    scimUser: {
+      findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
+        provisionedUsers.has(where.userId) ? { id: `scim-${where.userId}` } : null,
+      ),
+    },
+    passkey: {
+      deleteMany: vi.fn(async () => ({})),
+      count: vi.fn(
+        async ({ where }: { where: { userId: string } }) =>
+          rows("passkey").filter((row) => row.userId === where.userId).length,
+      ),
+    },
   };
+  (prisma.account as Record<string, unknown>).count = vi.fn(
+    async ({ where }: { where: { userId: string } }) =>
+      rows("account").filter((row) => row.userId === where.userId).length,
+  );
   prisma.$transaction = vi.fn(async (operations: (tx: unknown) => Promise<unknown>) =>
     operations(prisma),
   );
@@ -226,6 +252,8 @@ beforeEach(() => {
   omitIdToken = false;
   replayedIdToken = undefined;
   userInfoClaims = { sub: "subject-1", email: "sso@example.test", email_verified: true };
+  directorySubjects = new Map();
+  provisionedUsers = new Set();
   codes.clear();
   vi.stubGlobal(
     "fetch",
@@ -1472,4 +1500,129 @@ it("counts only stored OIDC subjects bound to the current issuer", async () => {
   expect(await isCurrentOidcAccount({ ...account, idToken: "malformed" }, issuer, secret)).toBe(
     false,
   );
+});
+
+describe("directory accounts", () => {
+  const now = () => new Date();
+
+  /** An account the directory made: no login yet, its profile managed by the directory. */
+  function provisionedAccount(id = "provisioned-1", email = "sso@example.test") {
+    rows("user").push({
+      id,
+      name: "Provisioned",
+      email,
+      emailVerified: false,
+      createdAt: now(),
+      updatedAt: now(),
+    });
+    directorySubjects.set(id, `scim-${id}`);
+    provisionedUsers.add(id);
+    return id;
+  }
+
+  it("refuses a deactivated account's sign-in and its existing sessions", async () => {
+    setup();
+    const credentials = { email: "local@example.test", password: "test-password-123" };
+    expect((await request("/sign-up/email", { ...credentials, name: "Local" })).status).toBe(200);
+    expect(await (await request("/get-session")).json()).toMatchObject({
+      user: { email: "local@example.test" },
+    });
+    rows("user")[0]!.deactivatedAt = now();
+
+    expect(await (await request("/get-session")).json()).toBeNull();
+    cookies = "";
+    const refused = await request("/sign-in/email", credentials);
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ code: "ACCOUNT_DEACTIVATED" });
+
+    delete rows("user")[0]!.deactivatedAt;
+    expect((await request("/sign-in/email", credentials)).status).toBe(200);
+  });
+
+  it("refuses a deactivated account's SSO sign-in", async () => {
+    setup();
+    await signIn();
+    rows("user")[0]!.deactivatedAt = now();
+    cookies = "";
+    const sessions = rows("session").length;
+    const response = await signIn();
+    expect(response.headers.get("location")).toContain("error=ACCOUNT_DEACTIVATED");
+    expect(rows("session")).toHaveLength(sessions);
+  });
+
+  it("claims an account the directory made on its first SSO sign-in", async () => {
+    setup({ directoryProvisioning: true });
+    const userId = provisionedAccount();
+    const response = await signIn();
+    expect(response.headers.get("location")).toBe(`${origin}/app`);
+    expect(rows("user")).toHaveLength(1);
+    expect(rows("account")).toEqual([expect.objectContaining({ userId, providerId: "oidc" })]);
+    expect(rows("user")[0]?.emailVerified).toBe(true);
+    // The link is now the account's own; signing in again needs no claim.
+    cookies = "";
+    expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
+  });
+
+  it("admits a directory account while registration is closed", async () => {
+    setup({ directoryProvisioning: true, signupsEnabled: "false" }, false);
+    provisionedAccount();
+    expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
+
+    // An account the directory no longer provisions follows the signup policy again.
+    cookies = "";
+    provisionedAccount("provisioned-2", "second@example.test");
+    provisionedUsers.delete("provisioned-2");
+    const refused = await signIn({
+      sub: "subject-2",
+      email: "second@example.test",
+      email_verified: true,
+    });
+    expect(refused.headers.get("location")).toContain("error=REGISTRATION_CLOSED");
+  });
+
+  it.each([
+    [
+      "the provider email is unverified",
+      () => provisionedAccount(),
+      { sub: "subject-1", email: "sso@example.test", email_verified: false },
+    ],
+    [
+      "someone already signed in to it",
+      () => {
+        const userId = provisionedAccount();
+        rows("account").push({
+          id: "credential-1",
+          userId,
+          providerId: "credential",
+          accountId: userId,
+          password: "hash",
+          createdAt: now(),
+          updatedAt: now(),
+        });
+      },
+      undefined,
+    ],
+    [
+      "the directory adopted an account it did not make",
+      () => {
+        const userId = provisionedAccount();
+        directorySubjects.set(userId, null);
+      },
+      undefined,
+    ],
+  ])("does not claim the account when %s", async (_case, seed, claims) => {
+    setup({ directoryProvisioning: true });
+    seed();
+    const response = await signIn(claims);
+    expect(response.headers.get("location")).toContain("error=account_not_linked");
+    expect(rows("account").filter((row) => row.providerId === "oidc")).toHaveLength(0);
+  });
+
+  it("never links by email without directory provisioning", async () => {
+    setup();
+    provisionedAccount();
+    const response = await signIn();
+    expect(response.headers.get("location")).toContain("error=account_not_linked");
+    expect(rows("account")).toHaveLength(0);
+  });
 });
