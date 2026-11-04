@@ -214,8 +214,14 @@ it.each([false, true])(
       1,
       input.computerModel!.provider,
       input.computerModel!.id,
+      true,
     );
-    expect(input.onModelChange).toHaveBeenNthCalledWith(2, input.model.provider, input.model.id);
+    expect(input.onModelChange).toHaveBeenNthCalledWith(
+      2,
+      input.model.provider,
+      input.model.id,
+      false,
+    );
     expect(input.executeTool).toHaveBeenCalledTimes(1);
   },
 );

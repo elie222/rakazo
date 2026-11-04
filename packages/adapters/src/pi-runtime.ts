@@ -521,7 +521,11 @@ export class PiAgentRuntime implements AgentRuntime {
             mode,
             async () => {
               const next = mode === "main" ? computer : mainTarget;
-              await request.onModelChange?.(next.config.provider, next.config.id);
+              await request.onModelChange?.(
+                next.config.provider,
+                next.config.id,
+                next === computer,
+              );
               signal.throwIfAborted();
               if (mode === "main") {
                 mainTarget = {
@@ -572,6 +576,7 @@ export class PiAgentRuntime implements AgentRuntime {
             await request.onModelChange?.(
               activeStreamTarget.config.provider,
               activeStreamTarget.config.id,
+              mode === "computer",
             );
         }
         agent = new Agent({

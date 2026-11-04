@@ -414,10 +414,16 @@ describe("computer settings reach the shared API/worker executor", () => {
     expect(request.currentTurnImages).toBeUndefined();
     prisma.run.updateMany.mockClear();
     await expect(
-      request.onModelChange?.(request.computerModel!.provider, request.computerModel!.id),
+      request.onModelChange?.(request.computerModel!.provider, request.computerModel!.id, true),
     ).resolves.toBeUndefined();
     // Retries and pins rerun the run's model, so computer mode never becomes it.
     expect(prisma.run.updateMany).not.toHaveBeenCalled();
+    // The same model reached as a backup outside computer mode does become the run's model.
+    await request.onModelChange?.(request.computerModel!.provider, request.computerModel!.id);
+    expect(prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { modelProvider: "openrouter", modelId: VISION_MODEL } }),
+    );
+    prisma.run.updateMany.mockClear();
     await expect(
       request.onModelChange?.(request.model.provider, request.model.id),
     ).resolves.toBeUndefined();

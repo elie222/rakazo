@@ -79,10 +79,10 @@ import {
   screenLeaseIdForRun,
 } from "./computer-lifecycle.js";
 import {
-  computerCheckpointResolver,
   isLostPinnedModel,
   PINNED_COMPUTER_MODEL_LOST_RUN_ERROR,
   resolveComputerRunModel,
+  computerCheckpointResolver,
 } from "./computer-model-settings.js";
 import { teamBotWorkspaceDirectory } from "./computer-support.js";
 import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
@@ -554,14 +554,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             connectionId,
           );
         const checkpointIdentity = { provider: run.modelProvider ?? "", id: run.modelId ?? "" };
-        const computerCheckpoint = turnCheckpoint ?? takeoverResume?.checkpoint;
         const checkpointModelResolver = computerCheckpointResolver(
-          computerCheckpoint,
+          turnCheckpoint,
           checkpointIdentity,
           resolveCheckpointModel,
         );
         const savedComputerMode = checkpointModelResolver
-          ? restoreTurnCheckpoint(computerCheckpoint!, checkpointIdentity).computerMode
+          ? restoreTurnCheckpoint(turnCheckpoint!, checkpointIdentity).computerMode
           : undefined;
         let pinnedComputerModels: Awaited<ReturnType<typeof restoreComputerModels>> | undefined;
         let pinnedComputerFailure: string | undefined;
@@ -1259,7 +1258,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const computerModel =
           pinnedComputerModels?.computer ??
           // A paused turn resumes with the models it started with, even one saved before this setting.
-          (scripted || computerCheckpoint || !graphical
+          (scripted || storedTurnCheckpoint || !graphical
             ? undefined
             : await resolveComputerRunModel(
                 {
@@ -1890,7 +1889,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                       );
                     }
                   : undefined,
-              onModelChange: async (provider, modelId) => {
+              onModelChange: async (provider, modelId, computerMode) => {
                 const roleModel =
                   [mainRunModel, computerModel].some(
                     (model) => model?.provider === provider && model.id === modelId,
@@ -1899,8 +1898,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   throw new Error("Model is not selected");
                 }
                 // The run's model is what retries and pins rerun; computer mode is a detour from it.
-                const detour = computerModel?.provider === provider && computerModel.id === modelId;
-                if (!detour) {
+                if (!computerMode) {
                   const updated = await deps.prisma.run.updateMany({
                     where: {
                       id: runId,
