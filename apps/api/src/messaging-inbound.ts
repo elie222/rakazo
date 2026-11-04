@@ -785,6 +785,18 @@ async function handleChannelEvent(
   const participants = [...event.participants];
   if (!participants.includes(event.from)) participants.push(event.from);
 
+  // A webhook retry can deliver a roster older than one a newer event already
+  // settled; its sweep would mark returning members left again and its re-invite
+  // would ask for consent twice. The platform's own event time tells them apart.
+  const rosterAt = event.participants.length > 0 ? event.rosterAt : undefined;
+  const staleRoster = Boolean(rosterAt && channel.rosterSeenAt && rosterAt < channel.rosterSeenAt);
+  if (rosterAt && !staleRoster) {
+    await deps.prisma.messagingChannel.updateMany({
+      where: { id: channel.id, OR: [{ rosterSeenAt: null }, { rosterSeenAt: { lt: rosterAt } }] },
+      data: { rosterSeenAt: rosterAt },
+    });
+  }
+
   let hasUnlinked = false;
   for (const address of participants) {
     const identity = await deps.prisma.messagingIdentity.findUnique({
@@ -805,7 +817,7 @@ async function handleChannelEvent(
         });
         if (member.status === "invited") await inviteMember(deps, channel, identity);
       }
-      if (member.status === "left") {
+      if (member.status === "left" && !staleRoster) {
         // Back in the group: restart the approval cycle.
         await deps.prisma.messagingChannelMember.update({
           where: { id: member.id },
@@ -833,8 +845,8 @@ async function handleChannelEvent(
 
   // Someone removed from the group must stop receiving its content.
   // A webhook without a participants roster says nothing about membership —
-  // never sweep on partial data.
-  if (event.participants.length > 0) {
+  // never sweep on partial data, and never on a roster a newer event beat.
+  if (event.participants.length > 0 && !staleRoster) {
     await deps.prisma.messagingChannelMember.updateMany({
       where: {
         channelId: channel.id,

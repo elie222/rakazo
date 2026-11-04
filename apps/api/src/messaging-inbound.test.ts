@@ -66,6 +66,7 @@ function createDeps(
     threadId: "sendblue:grp-1",
     name: "Family",
     introPostedAt: null,
+    rosterSeenAt: null as Date | null,
   };
   const outboundRows: Array<Record<string, unknown>> = [];
   const txMock = {
@@ -141,6 +142,25 @@ function createDeps(
       findUnique: vi.fn(async () => channel),
       upsert: vi.fn(async () => channel),
       update: vi.fn(async () => ({ ...channel, introPostedAt: new Date() })),
+      updateMany: vi.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: { id: string; OR?: Array<Record<string, unknown>> };
+          data: { rosterSeenAt?: Date };
+        }) => {
+          if (where.id !== channel.id || !data.rosterSeenAt) return { count: 0 };
+          const newer = where.OR?.some((clause) =>
+            clause.rosterSeenAt === null
+              ? channel.rosterSeenAt === null
+              : channel.rosterSeenAt instanceof Date && data.rosterSeenAt! > channel.rosterSeenAt,
+          );
+          if (!newer) return { count: 0 };
+          channel.rosterSeenAt = data.rosterSeenAt;
+          return { count: 1 };
+        },
+      ),
     },
     messagingChannelMember: {
       findUnique: vi.fn(
@@ -1838,6 +1858,63 @@ describe("createMessagingInboundHandler channel routing", () => {
     // A webhook with no participants roster must not mass-mark members left.
     await sparseHandle({ ...groupEvent, participants: [] });
     expect(sparse.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not sweep an approved member when a delayed roster older than the newest arrives", async () => {
+    const joined = {
+      id: "cm-x",
+      channelId: "ch-1",
+      address: "+15553333333",
+      identityId: "mi-2",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [joined] });
+    const handle = createMessagingInboundHandler(deps);
+    // The newer event first: its roster names the member, so the channel records it.
+    await handle({
+      ...groupEvent,
+      handle: "handle-new",
+      participants: ["+15551111111", "+15553333333"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    // A retry of an older webhook, delivered late: its roster predates the member.
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(joined.status).toBe("approved");
+  });
+
+  it("does not re-invite a member who left when the roster naming them is older", async () => {
+    const gone = {
+      id: "cm-y",
+      channelId: "ch-1",
+      address: "+15552222222",
+      identityId: "mi-2",
+      status: "left",
+    };
+    const deps = createDeps({ members: [gone] });
+    const handle = createMessagingInboundHandler(deps);
+    // A newer event without the member sets the channel's roster time first.
+    await handle({
+      ...groupEvent,
+      handle: "handle-new",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    // The delayed older roster still names the member, who has since left.
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111", "+15552222222"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(gone.status).toBe("left");
+    expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-2")).toBe(false);
   });
 
   it("sanitizes attacker-controlled channel names before storing them", async () => {
