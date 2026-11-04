@@ -3,6 +3,7 @@ import { GROK_ALTERNATIVE_H1 } from "./grok-alternative";
 import { OPENCLAW_H1 } from "./guide";
 import { INTEGRATION_PLATFORMS, INTEGRATION_PLATFORMS_HUB } from "./integration-platforms";
 import { SANDBOXES, SANDBOXES_HUB } from "./sandboxes";
+import { VOICE_PROVIDERS, VOICE_PROVIDERS_HUB } from "./voice-providers";
 
 export type OgPage = {
   id: string;
@@ -60,6 +61,12 @@ export function ogPages(): OgPage[] {
       id: `integration-platform-${platform.slug}`,
       kicker: "Bot tools",
       title: platform.h1,
+    })),
+    { id: "voice-providers", kicker: "Comparison", title: VOICE_PROVIDERS_HUB.h1 },
+    ...VOICE_PROVIDERS.map((provider) => ({
+      id: `voice-provider-${provider.slug}`,
+      kicker: "Bot voices",
+      title: provider.h1,
     })),
     ...BLOG_OG,
   ];
