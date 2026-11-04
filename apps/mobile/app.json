@@ -86,7 +86,8 @@
       "./plugins/with-app-intents"
     ],
     "locales": {
-      "es": "./locales/es.json"
+      "es": "./locales/es.json",
+      "pl": "./locales/pl.json"
     },
     "ios": {
       "bundleIdentifier": "com.rakazo.app",

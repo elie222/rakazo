@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { CronLabels, CronUnit } from "@rakazo/core";
-import { ENGLISH_CRON_LABELS, localizedClock, russianInterval } from "@rakazo/core";
+import { ENGLISH_CRON_LABELS, localizedClock, polishInterval, russianInterval } from "@rakazo/core";
 
 export function cronUnitLabel(unit: CronUnit): string {
   switch (unit) {
@@ -32,7 +32,7 @@ export function cronUnitLabelSingular(unit: CronUnit): string {
  * Schedule words for `formatCron` outside the editor — routine rows, the
  * composer `@` picker. Member expressions like `preset.n` extract the same
  * "{0}" catalog ids the editor's strings already carry translations for.
- * Russian intervals need case forms, so they share the core helper instead
+ * Russian and Polish intervals need case forms, so they share core helpers instead
  * of a catalog string.
  */
 export function cronLabels(locale: string): CronLabels {
@@ -57,6 +57,7 @@ export function cronLabels(locale: string): CronLabels {
     ],
     interval: (n, unit) => {
       if (locale === "ru") return russianInterval(n, unit);
+      if (locale === "pl") return polishInterval(n, unit);
       const preset = { n };
       const unitLabel = n === 1 ? cronUnitLabelSingular(unit) : cronUnitLabel(unit);
       return { lead: t`Every`, detail: t`${preset.n} ${unitLabel}` };
