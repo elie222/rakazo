@@ -7,6 +7,7 @@ import { clearLastBot, loadLastBotId, saveLastBotId } from "./last-bot";
 import {
   clearSessionToken,
   currentSessionGeneration,
+  loadSessionToken,
   registerSessionDiskCache,
   restoreSessionToken,
   rotateSessionTokenIfCurrent,
@@ -31,6 +32,11 @@ vi.mock("./api", () => ({
   authHeaders: async () => ({ authorization: "Bearer session-a" }),
   clearSpace: async () => true,
   currentApiBase: () => "https://app.example.test",
+  captureApiRequestContext: async () => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: currentSessionGeneration(),
+    headers: { authorization: `Bearer ${await loadSessionToken()}` },
+  }),
   fetchMobileJson: vi.fn(),
 }));
 vi.mock("./i18n", () => ({ t: (text: string) => text }));
@@ -51,18 +57,21 @@ function deferred() {
 describe("last bot shortcut target", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    await saveSessionToken("session-a");
     saved.clear();
+    await saveSessionToken("session-a");
+    vi.mocked(fetchMobileJson)
+      .mockReset()
+      .mockResolvedValue({ response: Response.json({}), body: { user: { id: "account-a" } } });
   });
 
   it("does not carry an explicit Space into a later default-Space chat", async () => {
     await saveLastBotId("researcher", "shared-space");
     expect(await loadLastBotId()).toBe("researcher");
-    expect(saved.get("rakazo.last_bot_space_id")).toBe("shared-space");
+    expect(JSON.parse(saved.get("rakazo.last_bot_id") ?? "null").spaceId).toBe("shared-space");
 
     await saveLastBotId("writer", null);
     expect(await loadLastBotId()).toBe("writer");
-    expect(saved.has("rakazo.last_bot_space_id")).toBe(false);
+    expect(JSON.parse(saved.get("rakazo.last_bot_id") ?? "null").spaceId).toBeNull();
   });
 
   it.each(["sign-in", "sign-out", "server"])("clears the last bot on %s", async (change) => {
@@ -78,7 +87,7 @@ describe("last bot shortcut target", () => {
     await saveLastBotId("researcher", "shared-space");
     await rotateSessionTokenIfCurrent(currentSessionGeneration(), "session-a", "rotated-session");
     expect(await loadLastBotId()).toBe("researcher");
-    expect(saved.get("rakazo.last_bot_space_id")).toBe("shared-space");
+    expect(JSON.parse(saved.get("rakazo.last_bot_id") ?? "null").spaceId).toBe("shared-space");
   });
 
   it("keeps the last bot and Space after verified SSO re-authentication", async () => {
@@ -96,7 +105,7 @@ describe("last bot shortcut target", () => {
     });
     expect(await continueWithSso("reauthenticate")).toBe(true);
     expect(await loadLastBotId()).toBe("researcher");
-    expect(saved.get("rakazo.last_bot_space_id")).toBe("shared-space");
+    expect(JSON.parse(saved.get("rakazo.last_bot_id") ?? "null").spaceId).toBe("shared-space");
   });
 
   it("clears a delayed old-session write and drops other saves queued by that session", async () => {
@@ -115,10 +124,15 @@ describe("last bot shortcut target", () => {
     await Promise.all([writing, obsolete, changing]);
     expect(await loadLastBotId()).toBe("");
     expect(saved.has("rakazo.last_bot_space_id")).toBe(false);
-    expect(SecureStore.setItemAsync).not.toHaveBeenCalledWith("rakazo.last_bot_id", "obsolete");
+    expect(
+      vi
+        .mocked(SecureStore.setItemAsync)
+        .mock.calls.filter(([key]) => key === "rakazo.last_bot_id")
+        .map(([, value]) => JSON.parse(value).botId),
+    ).not.toContain("obsolete");
     await saveLastBotId("writer", "space-b");
     expect(await loadLastBotId()).toBe("writer");
-    expect(saved.get("rakazo.last_bot_space_id")).toBe("space-b");
+    expect(JSON.parse(saved.get("rakazo.last_bot_id") ?? "null").spaceId).toBe("space-b");
   });
 
   it("waits for a pending delete before exposing a target to the new session", async () => {

@@ -9,6 +9,18 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: vi.fn(),
   deleteItemAsync: vi.fn(),
 }));
+vi.mock("./api", () => ({
+  currentApiBase: () => "https://app.example.test",
+  captureApiRequestContext: async () => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: session.currentSessionGeneration(),
+    headers: { authorization: `Bearer ${await session.loadSessionToken()}` },
+  }),
+  fetchMobileJson: async () => ({
+    response: Response.json({}),
+    body: { user: { id: "account-a" } },
+  }),
+}));
 vi.mock("./live-notifications", () => ({ stopLiveNotifications: vi.fn(async () => undefined) }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("./thread-feedback", () => ({ clearFailedSends: vi.fn() }));
