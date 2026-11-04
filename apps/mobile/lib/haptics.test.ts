@@ -275,6 +275,8 @@ describe("mobile haptics", () => {
     haptics.hapticImpact();
     haptics.hapticSuccess();
     expectNoFeedback();
+    await haptics.loadHapticsPreference();
+    expectNoFeedback();
     expect(values.get("rakazo.haptics")).toBe("false");
   });
 
@@ -369,6 +371,78 @@ describe("mobile haptics", () => {
     expect(haptics.getHapticsEnabled()).toBe(true);
     haptics.hapticSelection();
     expect(feedback.selectionAsync).toHaveBeenCalledOnce();
+  });
+
+  it.each(["false", "true"])(
+    "recovers a saved %s preference on demand without replaying gestures",
+    async (stored) => {
+      values.set("rakazo.haptics", stored);
+      const read = deferred<string | null>();
+      storage.getItemAsync
+        .mockRejectedValueOnce(new Error("startup read failed"))
+        .mockReturnValueOnce(read.promise);
+      const haptics = await import("./haptics");
+      await haptics.loadHapticsPreference();
+      expect(storage.getItemAsync).toHaveBeenCalledOnce();
+      haptics.hapticSelection();
+      haptics.hapticImpact();
+      haptics.hapticSuccess();
+      await Promise.resolve();
+      expect(storage.getItemAsync).toHaveBeenCalledTimes(2);
+      expectNoFeedback();
+      const recovery = haptics.loadHapticsPreference();
+      read.resolve(stored);
+      await recovery;
+      expectNoFeedback();
+      haptics.hapticSelection();
+      haptics.hapticImpact();
+      haptics.hapticSuccess();
+      const count = stored === "true" ? 1 : 0;
+      expect(feedback.selectionAsync).toHaveBeenCalledTimes(count);
+      expect(feedback.impactAsync).toHaveBeenCalledTimes(count);
+      expect(feedback.notificationAsync).toHaveBeenCalledTimes(count);
+      expect(storage.getItemAsync).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("retries another failed recovery only when a later gesture asks for feedback", async () => {
+    values.set("rakazo.haptics", "true");
+    storage.getItemAsync
+      .mockRejectedValueOnce(new Error("startup read failed"))
+      .mockRejectedValueOnce(new Error("recovery read failed"));
+    const haptics = await import("./haptics");
+    await haptics.loadHapticsPreference();
+    haptics.hapticImpact();
+    await Promise.resolve();
+    expect(storage.getItemAsync).toHaveBeenCalledTimes(2);
+    await haptics.loadHapticsPreference();
+    expectNoFeedback();
+    expect(storage.getItemAsync).toHaveBeenCalledTimes(2);
+    haptics.hapticImpact();
+    await Promise.resolve();
+    expect(storage.getItemAsync).toHaveBeenCalledTimes(3);
+    await haptics.loadHapticsPreference();
+    expectNoFeedback();
+    haptics.hapticImpact();
+    expect(feedback.impactAsync).toHaveBeenCalledExactlyOnceWith("light");
+    expect(storage.getItemAsync).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ["ios", "background"],
+    ["ios", "inactive"],
+    ["ios", null],
+    ["web", "active"],
+  ] as const)("does not read an unknown preference on %s while %s", async (platform, state) => {
+    native.Platform.OS = platform;
+    native.AppState.currentState = state;
+    const haptics = await import("./haptics");
+    haptics.hapticSelection();
+    haptics.hapticImpact();
+    haptics.hapticSuccess();
+    await Promise.resolve();
+    expect(storage.getItemAsync).not.toHaveBeenCalled();
+    expectNoFeedback();
   });
 
   it("keeps memory after a failed save and still persists the next toggle", async () => {

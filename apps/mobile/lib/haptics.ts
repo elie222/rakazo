@@ -56,14 +56,14 @@ export function setHapticsEnabled(value: boolean): Promise<void> {
 }
 
 function perform(effect: () => Promise<void>): void {
-  if (
-    !loaded ||
-    !enabled ||
-    AppState.currentState !== "active" ||
-    (Platform.OS !== "ios" && Platform.OS !== "android")
-  ) {
+  if (AppState.currentState !== "active" || (Platform.OS !== "ios" && Platform.OS !== "android")) {
     return;
   }
+  if (!loaded) {
+    void loadHapticsPreference();
+    return;
+  }
+  if (!enabled) return;
   try {
     void effect().catch(() => undefined);
   } catch {
