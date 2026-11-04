@@ -265,8 +265,9 @@ export function clearUnsentSends() {
   if (clearPending) restored = true;
   changed();
 }
+/** Messages still waiting to be delivered; an accepted one only waits for its echo. */
 export function hasUnsentSends() {
-  return unsentSends.length > 0;
+  return waiting().length > 0;
 }
 /** False after a restore could not read the saved queue: an empty list then proves nothing. */
 export function unsentSendsReadable() {

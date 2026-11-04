@@ -19,6 +19,7 @@ import {
   configureUnsentSends,
   confirmEchoes,
   deliverSend,
+  hasUnsentSends,
   restoreUnsentSends,
   sendWaitingMessages,
   settleComposer,
@@ -289,6 +290,14 @@ describe("scoped mobile outbox", () => {
       await feedback.send(discarded);
     });
     expect(disk.forget).not.toHaveBeenCalled();
+  });
+  it("counts a message the server accepted as sent while its echo is pending", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.acceptedSeq).toBeDefined();
+    expect(hasUnsentSends()).toBe(false);
   });
   it.each(["Read failed", "OUTBOX_STORAGE_UNAVAILABLE"])(
     "finishes a failed restore (%s) without overwriting recoverable messages",
