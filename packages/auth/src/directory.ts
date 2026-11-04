@@ -58,7 +58,8 @@ export async function createDirectory(
       if (isMessagingEmail(email)) return { action: "create" };
       const existing = await database.findOne<{ id: string; emailVerified: boolean }>({
         model: "user",
-        where: [{ field: "email", value: email }],
+        // Accounts store emails lowercased; insensitive still finds one an older release wrote.
+        where: [{ field: "email", value: email, mode: "insensitive" }],
       });
       // Only a proven mailbox is the directory's person: anyone could have signed up with the
       // address first. Creating over an unverified account fails as a duplicate instead.

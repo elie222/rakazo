@@ -270,6 +270,23 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     expect((await accountOf(address)).deactivatedAt).toBeNull();
   });
 
+  it("takes over an account whose stored email differs only in case", async () => {
+    const stored = "Mixed.Case@Example.test";
+    const user = await system.user.create({
+      data: { id: "mixed-case-user", name: "Mixed", email: stored, emailVerified: true },
+    });
+    const linked = await scim(
+      "POST",
+      "/Users",
+      userResource("mixed.case@example.test", "directory-mixed"),
+    );
+    expect(linked.status).toBe(201);
+    expect(
+      await system.user.count({ where: { email: { equals: stored, mode: "insensitive" } } }),
+    ).toBe(1);
+    expect(await system.scimUser.findFirstOrThrow({ where: { userId: user.id } })).toBeTruthy();
+  });
+
   it("refuses to provision a chat-app address", async () => {
     const address = "someone@messaging.invalid";
     const refused = await scim("POST", "/Users", userResource(address, "directory-chat"));
