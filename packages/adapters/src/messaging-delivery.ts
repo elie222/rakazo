@@ -11,6 +11,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { botMessageHopExhausted, nextBotMessageHop, pageLinksAsTitles } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  accountDeactivated,
   appendEventInTransaction,
   CrossSpaceCommunicationBlockedError,
   createThreadMessageInTransaction,
@@ -586,7 +587,8 @@ async function deliverRow(
     const identity = row.identityId
       ? await deps.prisma.messagingIdentity.findUnique({ where: { id: row.identityId } })
       : null;
-    if (!identity) {
+    // Nothing more reaches a deactivated person's chat app, including what was queued before.
+    if (!identity || (await accountDeactivated(deps.prisma, identity.userId))) {
       await deps.prisma.messagingOutbound.update({
         where: { id: row.id },
         data: { status: "failed" },

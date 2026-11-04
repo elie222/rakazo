@@ -133,6 +133,9 @@ function createDeps(overrides: {
   const identityRow =
     overrides.identity === null ? null : { ...identity, ...(overrides.identity ?? {}) };
   const prisma = {
+    user: {
+      findUnique: vi.fn(async (): Promise<{ deactivatedAt: Date | null } | null> => null),
+    },
     run: {
       findUnique: vi.fn(async () => overrides.run ?? messagingRun),
       updateMany: vi.fn(async () => ({ count: 1 })),
@@ -569,6 +572,29 @@ describe("deliverMessagingOutbound", () => {
     await deliverMessagingOutbound(deps, {}, context);
 
     expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
+  });
+
+  it("drops what was queued for a person who has since been deactivated", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [
+        {
+          id: "out-late",
+          idempotencyKey: "late:1",
+          kind: "dm",
+          identityId: "mi-1",
+          body: "a reply queued before deactivation",
+          status: "pending",
+          providerHandle: null,
+        },
+      ],
+    });
+    deps.prisma.user.findUnique.mockResolvedValue({ deactivatedAt: new Date() });
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.openDirectThread).not.toHaveBeenCalled();
     expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
   });
 

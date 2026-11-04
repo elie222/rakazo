@@ -143,6 +143,36 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
         where: { channel: { threadId: `group-${identity.address}` } },
       }),
     ).toBe(0);
+
+    // An active person's group does not invite them either.
+    const friend = await runAsSystem("test fixture", () =>
+      provisionMessagingIdentity(
+        prisma,
+        { provider: "test", address: `friend-${randomUUID()}` },
+        { signupsEnabled: undefined, signupAllowlist: undefined },
+      ),
+    );
+    try {
+      await handle({
+        type: "message",
+        provider: "test",
+        handle: `${friend.address}:invite`,
+        threadId: `friends-${identity.address}`,
+        isDirect: false,
+        from: friend.address,
+        fromLabel: null,
+        channelName: "Friends",
+        participants: [friend.address, identity.address],
+        content: "hi both",
+        mediaUrl: null,
+      } as MessagingInboundMessage);
+      expect(await replies()).toEqual([]);
+      expect(await system.message.count({ where: { threadId: identity.threadId } })).toBe(messages);
+    } finally {
+      await system.messagingIdentity.deleteMany({ where: { userId: friend.userId } });
+      await system.organization.deleteMany({ where: { id: friend.spaceId } });
+      await system.user.deleteMany({ where: { id: friend.userId } });
+    }
   });
 
   it("stops running work, answers once and notes it in the app", async () => {
