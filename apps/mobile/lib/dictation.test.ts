@@ -130,6 +130,15 @@ describe("mobile dictation", () => {
     expect(onFinal).not.toHaveBeenCalled();
   });
 
+  it("restarts a quiet session that keeps reporting empty results", async () => {
+    await listen({ onFinal: vi.fn() });
+    for (let elapsed = 0; elapsed < QUIET_RESTART_MS; elapsed += 5_000) {
+      vi.advanceTimersByTime(5_000);
+      fake.hear("");
+    }
+    expect(fake.abort).toHaveBeenCalledOnce();
+  });
+
   it("keeps a session that is hearing the caller", async () => {
     await listen({ onFinal: vi.fn() });
     vi.advanceTimersByTime(QUIET_RESTART_MS - 100);

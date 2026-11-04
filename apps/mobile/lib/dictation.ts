@@ -216,7 +216,7 @@ function onResult(session: Session, event: ResultEvent): void {
   const heard = event.results?.[0]?.transcript ?? "";
   session.backoff = RESTART_MIN_MS;
   session.deadRestarts = 0;
-  watchQuiet(session);
+  if (heard.trim()) watchQuiet(session);
   // Android reports a phrase once and starts over, iOS grows one transcript: folding a
   // final into the carried text and clearing the live one covers both.
   if (event.isFinal) {
