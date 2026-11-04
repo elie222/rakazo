@@ -2668,6 +2668,99 @@ button.product-demo__dock-icon {
   color: var(--ink);
 }
 
+.pricing-compare {
+  margin-top: 112px;
+}
+
+.pricing-compare__wrap {
+  margin-top: 44px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface);
+}
+
+.pricing-compare__table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.pricing-compare__table th,
+.pricing-compare__table td {
+  padding: 14px 24px;
+  white-space: pre-line;
+  border-bottom: 1px solid var(--line);
+  color: var(--body);
+  font-weight: 400;
+  text-align: center;
+}
+
+.pricing-compare__table tbody tr:last-child th,
+.pricing-compare__table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.pricing-compare__table th:first-child {
+  text-align: left;
+}
+
+.pricing-compare__table thead th {
+  padding-block: 18px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.pricing-compare__table thead th:not(:first-child) {
+  width: 15%;
+}
+
+/* Rules after the feature names and either side of the own-model tiers. */
+.pricing-compare__table tr > :nth-child(2),
+.pricing-compare__table tr > :nth-child(3),
+.pricing-compare__table tr > :last-child {
+  border-left: 1px solid var(--line);
+}
+
+.pricing-compare__plan {
+  display: block;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.pricing-compare__price {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pricing-compare__table svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  margin-inline: auto;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.pricing-compare__yes {
+  stroke: var(--blue);
+}
+
+.pricing-compare__no {
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+
+.pricing-compare__detail {
+  border-bottom: 1px dotted var(--muted);
+  cursor: help;
+}
+
 @media (max-width: 1000px) {
   .pricing__plans {
     grid-template-columns: minmax(0, 1fr);
