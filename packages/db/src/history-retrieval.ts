@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { HistoryReadInput, HistorySearchInput } from "@rakazo/contracts";
-import { HistoryQueriesSchema } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_COUNT, HistoryQueriesSchema } from "@rakazo/contracts";
 import { attachmentComputerPath, shortenedTextLength, textBoundary } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
@@ -53,7 +53,30 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
     }>;
     refs.push(...runs.flatMap((run) => run.outcomes));
   }
+  const messages = response.messages as AttachedReference[];
+  const crowded = () =>
+    messages.reduce<AttachedReference | undefined>(
+      (best, ref) =>
+        ref.attachments?.length &&
+        (!best || ref.attachments.length > (best.attachments?.length ?? 0))
+          ? ref
+          : best,
+      undefined,
+    );
+  // Return where a cut file list continues so a read of that message can page through the rest.
+  const dropFile = (ref: AttachedReference) => {
+    const files = ref.attachments ?? [];
+    files.pop();
+    ref.nextAttachmentOffset = (ref.attachmentOffset ?? 0) + files.length;
+    if (!files.length) delete ref.attachments;
+  };
   while (Buffer.byteLength(JSON.stringify(response), "utf8") > MAX_RESPONSE_BYTES) {
+    // A message with more files than one upload carries gives up files before any text shrinks.
+    const fullest = crowded();
+    if (fullest?.attachments && fullest.attachments.length > ATTACHMENT_MAX_COUNT) {
+      dropFile(fullest);
+      continue;
+    }
     const longest = refs.reduce<ReturnType<typeof reference> | undefined>(
       (best, ref) =>
         shortenedTextLength(ref.text) > 0 && (!best || ref.text.length > best.text.length)
@@ -61,28 +84,14 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
           : best,
       undefined,
     );
-    if (!longest) {
-      // Text is as short as it goes: drop files from the message listing the most, and return
-      // where its list continues so a read of that message can page through the rest.
-      const crowded = (response.messages as AttachedReference[]).reduce<
-        AttachedReference | undefined
-      >(
-        (best, ref) =>
-          ref.attachments?.length &&
-          (!best || ref.attachments.length > (best.attachments?.length ?? 0))
-            ? ref
-            : best,
-        undefined,
-      );
-      if (!crowded?.attachments) throw new Error("History metadata exceeds response budget");
-      crowded.attachments.pop();
-      crowded.nextAttachmentOffset = (crowded.attachmentOffset ?? 0) + crowded.attachments.length;
-      if (!crowded.attachments.length) delete crowded.attachments;
+    if (longest) {
+      longest.text = longest.text.slice(0, shortenedTextLength(longest.text));
+      longest.truncated = true;
+      longest.nextTextOffset = longest.textOffset + longest.text.length;
       continue;
     }
-    longest.text = longest.text.slice(0, shortenedTextLength(longest.text));
-    longest.truncated = true;
-    longest.nextTextOffset = longest.textOffset + longest.text.length;
+    if (!fullest?.attachments) throw new Error("History metadata exceeds response budget");
+    dropFile(fullest);
   }
   return response;
 }

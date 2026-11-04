@@ -346,10 +346,18 @@ postgres("history retrieval (PostgreSQL)", () => {
     await pool.query(`
       INSERT INTO artifacts SELECT 'many-' || n, 'synthetic-space', 'synthetic-user', 'synthetic-bot', NULL, NULL,
         repeat('n', 200) || n || '.md', 'text/markdown', 1, now() FROM generate_series(1,100) n;
+      INSERT INTO messages VALUES ('many-files-neighbor','synthetic-thread',12099,'bot',NULL,NULL,now(),
+        '[{"kind":"text","text":"Neighbor context keeps every word of this reply."}]');
       INSERT INTO messages VALUES ('many-files','synthetic-thread',12100,'user',NULL,NULL,now(),
         (SELECT jsonb_agg(jsonb_build_object('kind','file','artifactId','many-' || n,
           'name', repeat('n', 200) || n || '.md','mimeType','text/markdown','size',1)) FROM generate_series(1,100) n));
     `);
+    // Files give way before nearby text does.
+    const around = await readHistory(prisma, scope, { messageId: "many-files", limit: 3 });
+    expect(Buffer.byteLength(JSON.stringify(around))).toBeLessThanOrEqual(10_000);
+    expect(around.messages.find((m) => m.messageId === "many-files-neighbor")?.text).toBe(
+      "Neighbor context keeps every word of this reply.",
+    );
     type Page = { attachments?: Array<{ artifactId: string }>; nextAttachmentOffset?: number };
     const seen: string[] = [];
     let attachmentOffset: number | undefined;
@@ -368,7 +376,7 @@ postgres("history retrieval (PostgreSQL)", () => {
     // Every file is reachable by paging, each listed once.
     expect(seen.length).toBe(100);
     expect(new Set(seen).size).toBe(100);
-    await pool.query("DELETE FROM messages WHERE id = 'many-files'");
+    await pool.query("DELETE FROM messages WHERE id IN ('many-files','many-files-neighbor')");
     await pool.query("DELETE FROM artifacts WHERE id LIKE 'many-%'");
   });
   it("does not index credential prompts or tool metadata", async () => {
