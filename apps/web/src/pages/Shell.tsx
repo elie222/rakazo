@@ -17,6 +17,7 @@ import {
   isActive,
   isRunWorking,
   memberName,
+  newClientId,
 } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
@@ -1225,7 +1226,7 @@ function SpaceShell() {
                 void rpc.threads
                   .send({
                     botId,
-                    clientNonce: crypto.randomUUID(),
+                    clientNonce: newClientId(),
                     text: t`Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.`,
                   })
                   .then(async () => {
