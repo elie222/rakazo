@@ -1,4 +1,4 @@
-import type { ByokTier, ComputerSize } from "@rakazo/contracts";
+import type { ByokTier, ComputerSize, SandboxKind } from "@rakazo/contracts";
 import {
   BYOK_TIERS,
   byokTierPriceCents,
@@ -50,18 +50,21 @@ const SMALLEST_CREDIT_PLAN_HOURS = computerHours(
   (MODEL_CREDIT_AMOUNTS[0] * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100,
 );
 
-const SANDBOX_PROVIDERS = [
-  "Docker",
-  "Kubernetes",
-  "Boat",
-  "Boxd",
-  "CreateOS",
-  "Daytona",
-  "E2B",
-  "Novita",
-  "Railway",
-  "Wuying",
-];
+/** Display names for every sandbox a self-hosted deployment can use; typed so a new kind must be named. */
+const SANDBOX_NAMES: Record<Exclude<SandboxKind, "none" | "desktop" | "fake">, string> = {
+  docker: "Docker",
+  kubernetes: "Kubernetes",
+  incus: "Incus",
+  boat: "Boat",
+  boxd: "Boxd",
+  createos: "CreateOS",
+  daytona: "Daytona",
+  e2b: "E2B",
+  novita: "Novita",
+  railway: "Railway",
+  wuying: "Wuying",
+};
+const SANDBOX_PROVIDERS = Object.values(SANDBOX_NAMES);
 
 export const PRICING_PLANS: PricingPlan[] = [
   {
@@ -113,12 +116,13 @@ const STANDARD_COMPUTER = computerSpecs(STANDARD.computerSize);
 /** Own-model tiers on offer, from the terms the app bills with. */
 const TIERS = (Object.keys(BYOK_TIERS) as ByokTier[]).flatMap((tier) => {
   const monthly = byokTierPriceCents(tier, "month");
-  if (monthly === null) return [];
+  // A null Standard price makes the own-model plan free and hides the other tiers.
+  if (monthly === null && tier !== "standard") return [];
   const terms = BYOK_TIERS[tier];
   return [
     {
       name: terms.name,
-      price: `${dollars(monthly)}/mo`,
+      price: monthly === null ? "Free" : `${dollars(monthly)}/mo`,
       computer: computerSpecs(terms.computerSize),
       hours: computerHours(terms.computerAllowanceCents),
     },
@@ -136,13 +140,19 @@ export const PRICING_COMPARISON = {
   ],
   /** Most important first: what sets Rakazo apart, then the limits. */
   rows: [
-    { feature: "Any model", cells: included(true) },
+    {
+      feature: "Any model",
+      cells: [
+        ...included(true).slice(1),
+        { label: "Our catalog", detail: "Credits cover the models Rakazo offers" },
+      ],
+    },
     {
       feature: "Sandbox",
       cells: [
         {
-          label: `Any of ${SANDBOX_PROVIDERS.length} providers`,
-          detail: SANDBOX_PROVIDERS.join(", "),
+          label: `Your computer or any of ${SANDBOX_PROVIDERS.length}`,
+          detail: `Your own computer through the desktop app, or ${SANDBOX_PROVIDERS.join(", ")}`,
         },
         ...TIERS.map(() => "Included"),
         "Included",
@@ -156,7 +166,6 @@ export const PRICING_COMPARISON = {
         { label: "Credits", detail: "Charged at the provider's price, with no markup" },
       ],
     },
-    { feature: "Use your own computer", cells: included(true) },
     { feature: "Integrations and MCP", cells: included(true) },
     {
       feature: "Cloud computer hours",

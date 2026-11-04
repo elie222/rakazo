@@ -2752,13 +2752,51 @@ button.product-demo__dock-icon {
 }
 
 .pricing-compare__no {
-  stroke: var(--line);
+  stroke: var(--muted);
   stroke-width: 1.5;
 }
 
-.pricing-compare__detail {
+.pricing-hint {
+  position: relative;
   border-bottom: 1px dotted var(--muted);
   cursor: help;
+}
+
+.pricing-hint:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.pricing-hint__tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 1;
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition: opacity 120ms;
+}
+
+th .pricing-hint__tip {
+  left: 0;
+  transform: none;
+}
+
+.pricing-hint:hover .pricing-hint__tip,
+.pricing-hint:focus .pricing-hint__tip {
+  opacity: 1;
 }
 
 @media (max-width: 1000px) {

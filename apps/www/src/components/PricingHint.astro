@@ -1,0 +1,13 @@
+---
+type Props = {
+  label: string;
+  detail: string;
+};
+
+const { label, detail } = Astro.props;
+---
+
+<span class="pricing-hint" tabindex="0">
+  {label}
+  <span class="pricing-hint__tip" role="tooltip">{detail}</span>
+</span>

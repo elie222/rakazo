@@ -1,5 +1,6 @@
 ---
 import { PRICING_COMPARISON } from "../pricing";
+import PricingHint from "./PricingHint.astro";
 ---
 
 <section class="pricing-compare" aria-labelledby="compare-heading">
@@ -25,9 +26,7 @@ import { PRICING_COMPARISON } from "../pricing";
             <tr>
               <th scope="row">
                 {"hint" in row ? (
-                  <span class="pricing-compare__detail" title={row.hint}>
-                    {row.feature}
-                  </span>
+                  <PricingHint label={row.feature} detail={row.hint} />
                 ) : (
                   row.feature
                 )}
@@ -45,9 +44,7 @@ import { PRICING_COMPARISON } from "../pricing";
                   ) : typeof cell === "string" ? (
                     cell
                   ) : (
-                    <span class="pricing-compare__detail" title={cell.detail}>
-                      {cell.label}
-                    </span>
+                    <PricingHint label={cell.label} detail={cell.detail} />
                   )}
                 </td>
               ))}
