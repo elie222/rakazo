@@ -91,14 +91,28 @@ describe.skipIf(!databaseUrl)("pairing holds the per-user device limit under rac
       handles.prisma.$transaction(
         async (tx) => {
           await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${userId} FOR UPDATE`;
+          const [held] = await tx.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`;
           racing.push(
             Promise.resolve(pairRequest(cookie, "Racer A")),
             Promise.resolve(pairRequest(cookie, "Racer B")),
           );
+          // Count only sessions queued behind this holder, directly or behind a queued
+          // pairing, in this database; poll outside the transaction so every check reads
+          // fresh activity instead of the transaction's cached snapshot.
           await vi.waitFor(async () => {
-            const [row] = await tx.$queryRaw<Array<{ waiters: number }>>`
-              SELECT count(*)::int AS waiters FROM pg_stat_activity
-              WHERE cardinality(pg_blocking_pids(pid)) > 0`;
+            const [row] = await runAsSystem(
+              "count pairings queued behind the held row",
+              () =>
+                handles.prisma.$queryRaw<Array<{ waiters: number }>>`
+                WITH RECURSIVE queued(pid) AS (
+                  SELECT pid FROM pg_stat_activity
+                  WHERE datname = current_database() AND ${held!.pid}::int = ANY(pg_blocking_pids(pid))
+                  UNION
+                  SELECT a.pid FROM pg_stat_activity a JOIN queued q ON q.pid = ANY(pg_blocking_pids(a.pid))
+                  WHERE a.datname = current_database()
+                )
+                SELECT count(*)::int AS waiters FROM queued`,
+            );
             expect(row?.waiters).toBeGreaterThanOrEqual(2);
           });
         },
