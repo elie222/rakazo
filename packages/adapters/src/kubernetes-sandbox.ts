@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Readable } from "node:stream";
 import { PassThrough } from "node:stream";
 import type * as KubernetesClient from "@kubernetes/client-node";
@@ -20,11 +21,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import type { RawExecEvent } from "./exec-computer.js";
-import {
-  computerNameForBot,
-  ExecComputer,
-  COMPUTER_IMAGE_WORKSPACE as WORKSPACE,
-} from "./exec-computer.js";
+import { ExecComputer, COMPUTER_IMAGE_WORKSPACE as WORKSPACE } from "./exec-computer.js";
 import { LinuxDesktop, onBotScreen } from "./linux-desktop.js";
 
 const DISPLAY_START = 20;
@@ -161,7 +158,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     const podName =
       request.providerKind === "kubernetes" && request.providerRef
         ? request.providerRef
-        : computerNameForBot(request.botId);
+        : podNameForBot(request.botId);
     let pod = await this.readPod(podName, context.signal);
     if (pod && pod.metadata?.labels?.[BOT_ID_LABEL] !== request.botId) {
       throw new Error(`Kubernetes pod ${podName} belongs to another bot`);
@@ -649,6 +646,16 @@ let kubernetesModule: Promise<typeof KubernetesClient> | undefined;
 function loadKubernetes(): Promise<typeof KubernetesClient> {
   kubernetesModule ??= import("@kubernetes/client-node");
   return kubernetesModule;
+}
+
+function podNameForBot(botId: string): string {
+  const normalized = botId
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9-]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "")
+    .slice(0, 40);
+  const hash = createHash("sha256").update(botId).digest("hex").slice(0, 12);
+  return `rakazo-${normalized || "bot"}-${hash}`;
 }
 
 /** The data directory holds `homes/<bot id>`; a bot id must name exactly one folder. */

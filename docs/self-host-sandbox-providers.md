@@ -202,11 +202,14 @@ Computers without the URL, certificate or key fall back to `none`.
 Each instance is unprivileged, without nesting, with an isolated id map (its own range of host
 uids) and the limits above, all set on the instance so a profile cannot loosen them. The image's
 own start command and every command run as the image's user (uid 1000) with no privilege
-escalation, the same boundary as a Docker computer, so a custom image must keep that command. Instances are labelled `user.rakazo-bot-id=<bot id>`, and one carrying another bot's id is
-never reused or deleted. They are ephemeral: Incus deletes one when it stops, and the saved
-workspace is the persistence boundary, copied in when a computer starts and saved back when it
-stops, as on Kubernetes. Only cache paths and the screen size are set in the instance environment.
-Incus computers do not bill while running, so `COMPUTER_MAX_ACTIVE_UNBILLED_MS` caps them when set.
+escalation, the same boundary as a Docker computer, so a custom image must keep that command.
+
+Each start creates a new instance named `rakazo-<uuid>` and labelled `user.rakazo-bot-id=<bot id>`;
+one carrying another bot's id is never reused or deleted. Instances are ephemeral: Incus deletes
+one when it stops, and the saved workspace is the persistence boundary, copied in when a computer
+starts and saved back when it stops, as on Kubernetes. Only cache paths and the screen size are set
+in the instance environment. Incus computers do not bill while running, so
+`COMPUTER_MAX_ACTIVE_UNBILLED_MS` caps them when set.
 The first computer downloads the image into the project, which can take a few minutes.
 
 The instance's root disk and network come from the project's default profile. Screens use the

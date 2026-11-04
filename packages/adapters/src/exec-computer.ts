@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { Readable } from "node:stream";
 import type {
@@ -377,17 +377,6 @@ export class ExecComputer {
     }
     return { code, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr) };
   }
-}
-
-/** A stable machine name for a bot, valid as a Kubernetes pod name and an Incus instance name. */
-export function computerNameForBot(botId: string): string {
-  const normalized = botId
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9-]+/g, "-")
-    .replaceAll(/^-+|-+$/g, "")
-    .slice(0, 40);
-  const hash = createHash("sha256").update(botId).digest("hex").slice(0, 12);
-  return `rakazo-${normalized || "bot"}-${hash}`;
 }
 
 function commandRequestArgv(request: CommandRequest, timeoutMs: number): string[] {

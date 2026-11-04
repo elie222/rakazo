@@ -1,4 +1,4 @@
-import { X509Certificate } from "node:crypto";
+import { randomUUID, X509Certificate } from "node:crypto";
 import { Agent as HttpsAgent } from "node:https";
 import type { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -25,7 +25,6 @@ import WebSocket from "ws";
 import type { RawExecEvent } from "./exec-computer.js";
 import {
   COMMAND_KILL_AFTER_MS,
-  computerNameForBot,
   ExecComputer,
   COMPUTER_IMAGE_WORKSPACE as WORKSPACE,
 } from "./exec-computer.js";
@@ -61,9 +60,6 @@ const IMAGE_COMMAND = "/usr/bin/env -u LD_PRELOAD /usr/local/bin/rakazo-computer
 // Names the bot that owns an instance. An instance carrying another bot's value is never
 // reused or replaced.
 const BOT_ID_KEY = "user.rakazo-bot-id";
-// Set once provision has returned the instance. One without it, such as an instance a cancelled
-// start went on to create, has never had the workspace restored into it.
-const HANDED_OUT_KEY = "user.rakazo-handed-out";
 
 export interface IncusSandboxOptions {
   /** HTTPS address of the Incus API, such as `https://incus.example.test:8443`. */
@@ -102,7 +98,7 @@ export interface IncusSocketHandlers {
 export interface IncusClient {
   /** Resolves a successful response and rejects with `IncusError` for an error response. */
   request(
-    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
     body: unknown,
     signal: AbortSignal,
@@ -214,43 +210,29 @@ export class IncusSandboxProvider implements SandboxProvider {
   ): Promise<ComputerRef> {
     const { signal } = context;
     signal.throwIfAborted();
-    const name =
-      request.providerKind === "incus" && request.providerRef
-        ? request.providerRef
-        : computerNameForBot(request.botId);
-    let instance = await this.instance(name, signal);
-    if (instance) this.assertOwner(instance, name, request.botId);
-    if (instance && instance.status !== "Running")
-      instance = await this.settle(instance, name, signal);
-
-    let created = false;
-    if (!instance) {
-      try {
-        await this.create(name, request.botId, signal);
-        created = true;
-      } catch (error) {
-        // Incus reports a taken name as a generic failure; another start for this bot may
-        // have created the instance first.
-        instance = await this.instance(name, signal);
-        if (!instance) throw error;
-        this.assertOwner(instance, name, request.botId);
+    if (request.providerKind === "incus" && request.providerRef) {
+      const name = request.providerRef;
+      const existing = await this.instance(name, signal);
+      if (existing) this.assertOwner(existing, name, request.botId);
+      if (existing?.status === "Running") {
+        await this.waitForReady(name, request.botId, context);
+        return { id: name, botId: request.botId, kind: "incus", providerRef: name, fresh: false };
       }
+      // A stopped instance deletes itself; remove one that failed. Its replacement gets a new
+      // name, so nothing here waits for it to go.
+      if (existing) await this.remove(name, signal).catch(() => {});
     }
-
+    // A new name for every start, as the Daytona provider does: a later start never adopts an
+    // instance that an abandoned one created, so that one can be deleted without a race.
+    const name = `rakazo-${randomUUID()}`;
+    await this.create(name, request.botId, signal);
     try {
       await this.waitForReady(name, request.botId, context);
     } catch (error) {
-      if (created) await this.remove(name, AbortSignal.timeout(STOP_TIMEOUT_MS)).catch(() => {});
+      await this.remove(name, AbortSignal.timeout(STOP_TIMEOUT_MS)).catch(() => {});
       throw error;
     }
-    // Reported fresh until handed out, so the caller restores the workspace into it.
-    const fresh = instance?.config?.[HANDED_OUT_KEY] !== "true";
-    if (fresh) {
-      await this.request("PATCH", instancePath(name), signal, {
-        config: { [HANDED_OUT_KEY]: "true" },
-      });
-    }
-    return { id: name, botId: request.botId, kind: "incus", providerRef: name, fresh };
+    return { id: name, botId: request.botId, kind: "incus", providerRef: name, fresh: true };
   }
 
   async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
@@ -412,38 +394,29 @@ export class IncusSandboxProvider implements SandboxProvider {
   }
 
   private async create(name: string, botId: string, signal: AbortSignal): Promise<void> {
-    const response = await this.request(
+    const accepted = await this.request(
       "POST",
       "/1.0/instances",
       signal,
       this.instanceSpec(name, botId),
     );
-    expectSuccess(await this.waitOperation(response, signal, CREATE_TIMEOUT_MS));
+    try {
+      expectSuccess(await this.waitOperation(accepted, signal, CREATE_TIMEOUT_MS));
+    } catch (error) {
+      // Incus goes on creating after a caller gives up, and a failed start can leave the instance.
+      void this.discard(accepted, name);
+      throw error;
+    }
   }
 
-  /**
-   * An instance found down is usually being deleted after a stop, or is still being created by
-   * another start. Wait for either; replace one that stays down or has failed.
-   */
-  private async settle(
-    found: IncusInstance,
-    name: string,
-    signal: AbortSignal,
-  ): Promise<IncusInstance | undefined> {
-    const deadline = Date.now() + this.readyTimeoutMs;
-    let instance: IncusInstance | undefined = found;
-    while (instance && instance.status !== "Running") {
-      const transient =
-        instance.ephemeral === true &&
-        ["Stopped", "Stopping", "Starting"].includes(instance.status ?? "");
-      if (!transient || Date.now() >= deadline) {
-        await this.remove(name, signal);
-        return undefined;
-      }
-      await sleep(500, undefined, { signal });
-      instance = await this.instance(name, signal);
+  /** Deletes an instance whose start failed or was abandoned, once Incus has finished with it. */
+  private async discard(accepted: IncusResponse, name: string): Promise<void> {
+    try {
+      await this.waitOperation(accepted, AbortSignal.timeout(CREATE_TIMEOUT_MS), CREATE_TIMEOUT_MS);
+      await this.remove(name, AbortSignal.timeout(STOP_TIMEOUT_MS));
+    } catch {
+      // An instance left here belongs to no computer; the project's other tooling can see it.
     }
-    return instance;
   }
 
   private async waitForReady(name: string, botId: string, context: AdapterContext): Promise<void> {
@@ -522,7 +495,7 @@ export class IncusSandboxProvider implements SandboxProvider {
   }
 
   private request(
-    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
     signal: AbortSignal,
     body?: unknown,
@@ -742,7 +715,7 @@ class IncusHttpClient implements IncusClient {
   }
 
   async request(
-    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
     body: unknown,
     signal: AbortSignal,

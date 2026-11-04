@@ -63,7 +63,7 @@ function running(botId = "bot-a", address = "10.0.0.8"): Instance {
   return {
     status: "Running",
     ephemeral: true,
-    config: { "user.rakazo-bot-id": botId, "user.rakazo-handed-out": "true" },
+    config: { "user.rakazo-bot-id": botId },
     state: {
       network: {
         lo: { addresses: [{ family: "inet", address: "127.0.0.1", scope: "local" }] },
@@ -86,6 +86,8 @@ class FakeIncus implements IncusClient {
   /** Lets a test change an instance between the provider's reads. */
   onRead?: (name: string) => void;
   failCreate?: (name: string) => void;
+  /** Creates the instance, then fails the operation, as a start that fails does. */
+  failStart?: boolean;
   /** Holds instance creation until it settles, as an image download does. */
   createGate?: Promise<void>;
   /** Holds an exec's control stream; Incus starts the command without it. */
@@ -118,10 +120,6 @@ class FakeIncus implements IncusClient {
     if (!instance)
       throw new IncusError(`Failed to fetch instance "${name}": Instance not found`, 404);
     if (method === "GET" && !parts[2]) return { metadata: { name, ...structuredClone(instance) } };
-    if (method === "PATCH" && !parts[2]) {
-      Object.assign(instance.config, (body as { config: Record<string, string> }).config);
-      return { metadata: {} };
-    }
     if (method === "PUT" && parts[2] === "state") {
       if (instance.status !== "Running")
         throw new IncusError("The instance is already stopped", 400);
@@ -173,8 +171,14 @@ class FakeIncus implements IncusClient {
     this.failCreate?.(name);
     const config = body.config as Record<string, string>;
     const created = (this.createGate ?? Promise.resolve()).then(() => {
-      this.instances.set(name, { ...running(config["user.rakazo-bot-id"]), config: { ...config } });
-      return { status: "Success", status_code: 200 };
+      this.instances.set(name, {
+        ...running(config["user.rakazo-bot-id"]),
+        ...(this.failStart ? { status: "Stopped" } : {}),
+        config: { ...config },
+      });
+      return this.failStart
+        ? { status: "Failure", status_code: 400, err: "Failed to start instance" }
+        : { status: "Success", status_code: 200 };
     });
     return this.operation(created);
   }
@@ -337,7 +341,7 @@ describe("IncusSandboxProvider", () => {
     const created = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
 
     expect(created).toMatchObject({ kind: "incus", botId: "bot-a", fresh: true });
-    expect(created.providerRef).toMatch(/^rakazo-bot-a-[0-9a-f]{12}$/);
+    expect(created.providerRef).toMatch(/^rakazo-[0-9a-f-]{36}$/);
     const create = fake.requests.find(
       (entry) => entry.method === "POST" && entry.path.startsWith("/1.0/instances?"),
     );
@@ -443,33 +447,31 @@ describe("IncusSandboxProvider", () => {
 
   it("ignores a stored reference from another provider", async () => {
     const fake = new FakeIncus();
+    fake.instances.set("box", running());
     const result = await providerFor(fake).provision(
       { botId: "bot-a", homePath: "/unused", providerKind: "docker", providerRef: "box" },
       context,
     );
-    expect(result.providerRef).toMatch(/^rakazo-bot-a-/);
+    expect(result).toMatchObject({ fresh: true });
+    expect(result.providerRef).not.toBe("box");
   });
 
-  it("treats a create that loses a race to the same bot as a reconnect", async () => {
+  it("starts each new instance under a name of its own", async () => {
     const fake = new FakeIncus();
-    fake.failCreate = (name) => {
-      fake.instances.set(name, running());
-      throw new IncusError(`Instance "${name}" already exists`, 500);
-    };
-    await expect(
-      providerFor(fake).provision({ botId: "bot-a", homePath: "/unused" }, context),
-    ).resolves.toMatchObject({ fresh: false });
-  });
-
-  it("rejects a create race won by another bot", async () => {
-    const fake = new FakeIncus();
-    fake.failCreate = (name) => {
-      fake.instances.set(name, running("bot-b"));
-      throw new IncusError(`Instance "${name}" already exists`, 500);
-    };
-    await expect(
-      providerFor(fake).provision({ botId: "bot-a", homePath: "/unused" }, context),
-    ).rejects.toThrow("belongs to another bot");
+    const provider = providerFor(fake);
+    const first = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    await provider.stop(first, context);
+    const second = await provider.provision(
+      {
+        botId: "bot-a",
+        homePath: "/unused",
+        providerKind: "incus",
+        providerRef: first.providerRef,
+      },
+      context,
+    );
+    expect(second).toMatchObject({ fresh: true });
+    expect(second.providerRef).not.toBe(first.providerRef);
   });
 
   it("reports a failed create when nothing was created", async () => {
@@ -482,44 +484,21 @@ describe("IncusSandboxProvider", () => {
     ).rejects.toThrow("remote image info");
   });
 
-  it("waits for a stopping instance to go before creating its replacement", async () => {
+  it("deletes an instance whose start failed", async () => {
     const fake = new FakeIncus();
-    fake.instances.set("box", { ...running(), status: "Stopped" });
-    let reads = 0;
-    fake.onRead = (name) => {
-      if (name === "box" && ++reads === 2) fake.instances.delete("box");
-    };
-    const result = await providerFor(fake).provision(
-      { botId: "bot-a", homePath: "/unused", providerKind: "incus", providerRef: "box" },
-      context,
-    );
-    expect(result).toMatchObject({ providerRef: "box", fresh: true });
-    expect(fake.requests.some((entry) => entry.method === "PUT" || entry.method === "DELETE")).toBe(
-      false,
-    );
+    fake.failStart = true;
+    await expect(
+      providerFor(fake).provision({ botId: "bot-a", homePath: "/unused" }, context),
+    ).rejects.toThrow("Failed to start instance");
+    await vi.waitFor(() => expect(fake.instances.size).toBe(0));
   });
 
-  it.each([
-    ["failed", { ...running(), status: "Error" }],
-    ["persistent", { ...running(), ephemeral: false, status: "Stopped" }],
-  ])("replaces a %s instance of the same bot", async (_kind, instance) => {
-    const fake = new FakeIncus();
-    fake.instances.set("box", instance);
-    const result = await providerFor(fake).provision(
-      { botId: "bot-a", homePath: "/unused", providerKind: "incus", providerRef: "box" },
-      context,
-    );
-    expect(result).toMatchObject({ providerRef: "box", fresh: true });
-    expect(fake.requests.some((entry) => entry.method === "DELETE")).toBe(true);
-  });
-
-  it("reports an instance a cancelled start left behind as fresh, so its workspace is restored", async () => {
+  it("deletes an instance whose start was cancelled once Incus has created it", async () => {
     const fake = new FakeIncus();
     let release!: () => void;
     fake.createGate = new Promise((resolve) => (release = resolve));
     const controller = new AbortController();
-    const provider = providerFor(fake);
-    const cancelled = provider.provision(
+    const provisioning = providerFor(fake).provision(
       { botId: "bot-a", homePath: "/unused" },
       { ...context, signal: controller.signal },
     );
@@ -527,24 +506,28 @@ describe("IncusSandboxProvider", () => {
       expect(fake.requests.some((entry) => entry.path.startsWith("/1.0/instances?"))).toBe(true),
     );
     controller.abort();
-    await expect(cancelled).rejects.toThrow();
-    // Incus goes on to create and start the instance.
+    await expect(provisioning).rejects.toThrow();
+    // Incus goes on to create and start the instance; nothing else knows its name.
     release();
-    await vi.waitFor(() => expect(fake.instances.size).toBe(1));
-    const [name] = fake.instances.keys();
+    await vi.waitFor(() =>
+      expect(fake.requests.some((entry) => entry.method === "PUT")).toBe(true),
+    );
+    expect(fake.instances.size).toBe(0);
+  });
 
-    const next = await provider.provision(
-      { botId: "bot-a", homePath: "/unused", providerKind: "incus", providerRef: name },
+  it.each([
+    ["stopped", { ...running(), status: "Stopped" }],
+    ["failed", { ...running(), status: "Error" }],
+  ])("replaces a %s instance of the same bot with a new one", async (_kind, instance) => {
+    const fake = new FakeIncus();
+    fake.instances.set("box", { ...instance, ephemeral: false });
+    const result = await providerFor(fake).provision(
+      { botId: "bot-a", homePath: "/unused", providerKind: "incus", providerRef: "box" },
       context,
     );
-    expect(next).toMatchObject({ providerRef: name, fresh: true });
-    expect(fake.instances.get(name!)?.config["user.rakazo-handed-out"]).toBe("true");
-    await expect(
-      provider.provision(
-        { botId: "bot-a", homePath: "/unused", providerKind: "incus", providerRef: name },
-        context,
-      ),
-    ).resolves.toMatchObject({ fresh: false });
+    expect(result).toMatchObject({ fresh: true });
+    expect(result.providerRef).not.toBe("box");
+    expect(fake.instances.has("box")).toBe(false);
   });
 
   it("removes a new instance that does not become ready", async () => {
@@ -561,20 +544,13 @@ describe("IncusSandboxProvider", () => {
   });
 
   it("rejects an instance that disappears while starting", async () => {
-    const fake = new FakeIncus();
-    fake.instances.set("box", { ...running(), status: "Starting" });
-    let reads = 0;
-    // The first reads settle on a starting instance; the readiness wait then finds it gone.
-    fake.onRead = (name) => {
-      reads += 1;
-      if (name === "box" && reads === 2) fake.instances.set("box", running());
-      if (name === "box" && reads === 3) fake.instances.delete("box");
-    };
+    const fake = new FakeIncus((command) => {
+      // The readiness probe finds the instance gone.
+      if (command.some((arg) => arg.includes("/dev/tcp"))) fake.instances.clear();
+      return { code: 1 };
+    });
     await expect(
-      providerFor(fake).provision(
-        { botId: "bot-a", homePath: "/unused", providerKind: "incus", providerRef: "box" },
-        context,
-      ),
+      providerFor(fake).provision({ botId: "bot-a", homePath: "/unused" }, context),
     ).rejects.toThrow("disappeared while starting");
   });
 
