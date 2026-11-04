@@ -1,5 +1,12 @@
 import type { VoiceProvider } from "./types";
-import { VOICE_DOC, homepage } from "./shared";
+import {
+  PRICING_SOURCES,
+  VOICE_DOC,
+  WORKLOAD,
+  homepage,
+  voicePriceTable,
+  voiceWorkloadTable,
+} from "./shared";
 
 export const openai: VoiceProvider = {
   slug: "openai",
@@ -7,13 +14,14 @@ export const openai: VoiceProvider = {
   does: "Speaks and transcribes",
   runs: "Hosted",
   bestFor: "Reusing an OpenAI key you already have",
-  title: "OpenAI text to speech for AI agents: voice for Rakazo bots",
+  title: "OpenAI TTS pricing, the gpt-4o-mini-tts shutdown and alternatives for AI agents",
   description:
-    "How Rakazo uses OpenAI text to speech and transcription so you can talk to your AI agents, hear replies and call them. Models, the 2027 shutdown, limits and setup.",
-  h1: "OpenAI text to speech for AI agents: voice with the key you have",
+    "OpenAI text to speech and transcription pricing in 2026: gpt-4o-mini-tts, tts-1, Whisper and gpt-4o-mini-transcribe per hour, the January 2027 shutdown and its replacement, and how it compares with ElevenLabs and others. Setup in Rakazo.",
+  h1: "OpenAI text to speech for AI agents: pricing, shutdown dates and setup",
   intro: [
     "[OpenAI](https://openai.com) is best known for ChatGPT and its language models, and its API also turns text into speech and speech into text. If you already pay for OpenAI, the same kind of API key can give your agents a voice.",
     "[Rakazo](/) is an open source app for AI teammates that do real work. You talk to each bot in chat, and you can also talk to it by voice: hold the mic to speak, have replies read aloud, or call a bot in real time. Connect OpenAI and it does the speaking and the transcription. Rakazo runs the bot, decides what it says, and keeps the transcript in the chat.",
+    "This page covers what OpenAI's audio models cost as of November 2026, the shutdown of `gpt-4o-mini-tts` and the transcription models in early 2027, and how OpenAI compares with the alternatives.",
   ],
   scene: {
     bot: "Inbox Manager",
@@ -33,9 +41,97 @@ export const openai: VoiceProvider = {
       heading: "What is OpenAI text to speech?",
       paragraphs: [
         "OpenAI's [Audio API](https://developers.openai.com/api/docs/guides/text-to-speech) has a speech endpoint that reads text aloud in one of 13 built-in voices, such as Alloy, Coral, Marin and Cedar, and a transcription endpoint that turns a recording into text. Both are reached with an ordinary OpenAI API key.",
-        "OpenAI has announced that its current speech models, including `gpt-4o-mini-tts`, shut down on January 6, 2027. Its replacement, `gpt-realtime-2.1-mini`, works through the Realtime API instead of the speech endpoint. The `gpt-4o-mini-transcribe` transcription model follows on February 26, 2027.",
+        "The speech endpoint takes up to 4,096 characters per request and returns MP3, Opus, AAC, FLAC, WAV or raw PCM. With `gpt-4o-mini-tts` you can also pass instructions for tone, accent and pace. OpenAI says the voices are optimized for English, though they follow Whisper's language coverage.",
       ],
       image: true,
+    },
+    {
+      heading: "gpt-4o-mini-tts and Whisper are being shut down",
+      paragraphs: [
+        "OpenAI's [deprecations page](https://developers.openai.com/api/docs/deprecations) says `tts-1`, `tts-1-hd` and both snapshots of `gpt-4o-mini-tts` shut down on January 6, 2027. The replacement, `gpt-realtime-2.1-mini`, isn't supported on the speech endpoint: it works through the Realtime API over WebRTC, WebSocket or SIP. Developers on OpenAI's forum point out that a realtime model has to be prompted to read text exactly, which a speech endpoint never needed.",
+        "Transcription follows on February 26, 2027: `whisper-1`, `gpt-4o-transcribe`, `gpt-4o-mini-transcribe` and `gpt-4o-transcribe-diarize` all shut down, replaced by `gpt-transcribe` and `gpt-live-transcribe`.",
+        "Rakazo speaks with `gpt-4o-mini-tts` and transcribes with `gpt-4o-mini-transcribe` today. Until Rakazo moves to the newer models, OpenAI voice in Rakazo stops working on those dates.",
+      ],
+      table: {
+        caption: "OpenAI audio models and their shutdown dates",
+        columns: ["Model", "Used for", "Shuts down", "Replacement"],
+        rows: [
+          {
+            topic: "`gpt-4o-mini-tts` (Rakazo uses this)",
+            cells: ["Speech", "January 6, 2027", "`gpt-realtime-2.1-mini`, Realtime API only"],
+          },
+          {
+            topic: "`tts-1`, `tts-1-hd`",
+            cells: ["Speech", "January 6, 2027", "`gpt-realtime-2.1-mini`"],
+          },
+          {
+            topic: "`gpt-4o-mini-transcribe` (Rakazo uses this)",
+            cells: ["Transcription", "February 26, 2027", "`gpt-transcribe` or `gpt-live-transcribe`"],
+          },
+          {
+            topic: "`whisper-1`, `gpt-4o-transcribe`",
+            cells: ["Transcription", "February 26, 2027", "`gpt-transcribe` or `gpt-live-transcribe`"],
+          },
+        ],
+        note: "From [OpenAI's deprecations page](https://developers.openai.com/api/docs/deprecations), checked November 2026.",
+      },
+    },
+    {
+      heading: "OpenAI TTS pricing",
+      paragraphs: [
+        "OpenAI has no free tier for audio; you prepay API credit. The older speech models are billed per character, and the newer ones per token, which is why people find the pricing confusing. `gpt-4o-mini-tts` charges for the text you send and, much more, for the audio it returns. OpenAI used to estimate that at about $0.015 a minute; its pricing page no longer gives a per-minute figure, and some developers report bills above that estimate.",
+      ],
+      table: {
+        caption: "OpenAI speech and transcription prices, as of November 2026",
+        columns: ["Model", "Price", "About per hour"],
+        rows: [
+          {
+            topic: "`gpt-4o-mini-tts`",
+            cells: ["$0.60 per 1M text tokens in, $12 per 1M audio tokens out", "About $0.90"],
+          },
+          { topic: "`tts-1`", cells: ["$15 per 1M characters", "$0.81"] },
+          { topic: "`tts-1-hd`", cells: ["$30 per 1M characters", "$1.62"] },
+          {
+            topic: "`gpt-realtime-2.1-mini`",
+            cells: ["$10 per 1M audio tokens in, $20 per 1M audio tokens out", "Not published"],
+          },
+          { topic: "`gpt-4o-mini-transcribe`", cells: ["$0.003 a minute", "$0.18"] },
+          { topic: "`gpt-transcribe`", cells: ["$0.0045 a minute", "$0.27"] },
+          { topic: "`gpt-4o-transcribe`, Whisper", cells: ["$0.006 a minute", "$0.36"] },
+          { topic: "`gpt-live-transcribe`", cells: ["$0.017 a minute", "$1.02"] },
+        ],
+        note: "From [OpenAI's API pricing page](https://developers.openai.com/api/docs/pricing), checked November 2026. Hourly speech figures assume about 54,000 characters an hour; the `gpt-4o-mini-tts` figure uses OpenAI's earlier per-minute estimate.",
+      },
+    },
+    {
+      heading: "What a talking Rakazo bot costs on OpenAI",
+      paragraphs: [
+        "Rakazo calls OpenAI with your key, so OpenAI bills you and Rakazo adds nothing. The voice key is stored separately from any OpenAI key you use for models, but both draw on the same OpenAI account if you use the same project.",
+        `${WORKLOAD} On OpenAI that is about $13.50 of speech and $2.70 of transcription: roughly $16 a month, among the cheapest hosted options, until the shutdown.`,
+      ],
+      table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", [
+        "openai",
+        "elevenlabs",
+        "fish",
+        "cartesia",
+        "selfHosted",
+      ]),
+    },
+    {
+      heading: "OpenAI TTS vs ElevenLabs and other voice APIs",
+      paragraphs: [
+        "OpenAI is cheap and simple, with a small fixed set of voices. ElevenLabs and Fish Audio sound more natural to most listeners and let you use cloned voices; Cartesia is faster to start talking. OpenAI's custom voices exist but are limited to eligible customers through sales, and Rakazo doesn't use them.",
+      ],
+      table: voicePriceTable("OpenAI compared with other voice APIs", [
+        "openai",
+        "openaiTts1",
+        "elevenlabs",
+        "cartesia",
+        "fish",
+        "deepgram",
+        "google",
+        "selfHosted",
+      ]),
     },
     {
       heading: "What you can do with OpenAI in Rakazo",
@@ -54,17 +150,18 @@ export const openai: VoiceProvider = {
     {
       heading: "When to choose OpenAI",
       paragraphs: [
-        "Choose OpenAI when you already have an OpenAI account and want voice working in a few minutes, with clear voices and solid transcription from one key. Because its speech models are scheduled to shut down, treat it as a convenient start rather than a long-term pick, until Rakazo moves to OpenAI's newer models.",
-        "[ElevenLabs](/voice-providers/elevenlabs/) also speaks and transcribes, with more natural voices and support for your own cloned ones. [Cartesia](/voice-providers/cartesia/) is built for fast, interruptible calls but only speaks. [Fish Audio](/voice-providers/fish-audio/) offers cloning and expressive speech. If you like OpenAI's API shape but want audio on your own hardware, a [self-hosted](/voice-providers/self-hosted/) server such as Kokoro or Whisper speaks the same protocol. [macOS voices](/voice-providers/macos/) need no key when your server runs on a Mac. The [comparison](/voice-providers/) puts them side by side.",
+        "Choose OpenAI when you already have an OpenAI account and want voice working in a few minutes, with clear voices and solid transcription from one key at a low price. Because its speech and transcription models are scheduled to shut down, treat it as a convenient start rather than a long-term pick, until Rakazo moves to OpenAI's newer models.",
+        "[ElevenLabs](/voice-providers/elevenlabs/) also speaks and transcribes, with more natural voices and support for your own cloned ones. [Cartesia](/voice-providers/cartesia/) is built for fast, interruptible calls but only speaks. [Fish Audio](/voice-providers/fish-audio/) offers cloning and expressive speech at a similar price to OpenAI. If you like OpenAI's API shape but want audio on your own hardware, a [self-hosted](/voice-providers/self-hosted/) server such as Kokoro or Whisper speaks the same protocol. [Server (Mac)](/voice-providers/macos/) needs no key when your server runs on a Mac. The [comparison](/voice-providers/) puts them side by side.",
       ],
     },
     {
-      heading: "Limits",
+      heading: "Limits and gotchas",
       bullets: [
         "Rakazo speaks with `gpt-4o-mini-tts`, which OpenAI shuts down on January 6, 2027, and transcribes with `gpt-4o-mini-transcribe`, which follows on February 26, 2027. Until Rakazo moves to newer models, OpenAI voice stops working on those dates.",
         "The models are fixed. You can't choose `tts-1`, a newer model or a different transcription model from Rakazo.",
         "Rakazo offers OpenAI's 13 built-in voices. It doesn't send tone instructions, and custom voices made in your OpenAI account aren't supported.",
         "Each sentence is generated as a finished clip and played in order, rather than streamed, so there is a short pause before the bot starts talking.",
+        "OpenAI keeps speech requests for up to 30 days for abuse monitoring and doesn't train on API data by default. Transcription requests aren't retained. Zero data retention needs OpenAI's approval.",
         "OpenAI's usage policies ask you to tell listeners the voice is AI-generated. Keep that in mind if a bot's voice reaches people outside your team.",
         "Calls and hold-to-talk are a server setting. On a self-hosted server they stay off until the admin turns them on.",
       ],
@@ -93,14 +190,24 @@ export const openai: VoiceProvider = {
   },
   faq: [
     {
-      question: "Can I use OpenAI text to speech for an AI agent?",
+      question: "How much does OpenAI text to speech cost?",
       answer:
-        "Yes. In Rakazo, connect OpenAI in **Settings → Voice** and your bots can read replies aloud, take calls and transcribe what you say. Note that OpenAI shuts down its current speech models on January 6, 2027.",
+        "As of November 2026, `tts-1` costs $15 and `tts-1-hd` $30 per million characters. `gpt-4o-mini-tts` costs $0.60 per million text tokens in and $12 per million audio tokens out, which OpenAI used to estimate at about $0.015 a minute, roughly $0.90 an hour. There is no free tier.",
+    },
+    {
+      question: "How much does the Whisper API cost?",
+      answer:
+        "Whisper and `gpt-4o-transcribe` cost $0.006 a minute ($0.36 an hour), `gpt-4o-mini-transcribe` $0.003 a minute, and the newer `gpt-transcribe` $0.0045 a minute. Whisper and the gpt-4o transcription models shut down on February 26, 2027.",
     },
     {
       question: "Is gpt-4o-mini-tts being deprecated?",
       answer:
         "Yes. OpenAI says `tts-1`, `tts-1-hd` and `gpt-4o-mini-tts` shut down on January 6, 2027, and points to `gpt-realtime-2.1-mini` through the Realtime API. Rakazo uses `gpt-4o-mini-tts` today, so OpenAI voice in Rakazo depends on moving to the new model before then.",
+    },
+    {
+      question: "Can I use OpenAI text to speech for an AI agent?",
+      answer:
+        "Yes. In Rakazo, connect OpenAI in **Settings → Voice** and your bots can read replies aloud, take calls and transcribe what you say. Note the shutdown dates above.",
     },
     {
       question: "Which OpenAI voices can a Rakazo bot use?",
@@ -110,7 +217,7 @@ export const openai: VoiceProvider = {
     {
       question: "OpenAI vs ElevenLabs for voice agents?",
       answer:
-        "Both speak and transcribe in Rakazo. OpenAI is convenient if you already have a key and offers a fixed set of voices. [ElevenLabs](/voice-providers/elevenlabs/) sounds more natural, lets you use voices you clone, and isn't affected by OpenAI's 2027 shutdown.",
+        "Both speak and transcribe in Rakazo. OpenAI costs less, around $0.90 an hour of speech against $2.16 for ElevenLabs Flash v2.5, and offers a fixed set of voices. [ElevenLabs](/voice-providers/elevenlabs/) sounds more natural, lets you use voices you clone, and isn't affected by OpenAI's 2027 shutdown.",
     },
     {
       question: "Can I use a self-hosted Whisper server instead?",
@@ -124,6 +231,17 @@ export const openai: VoiceProvider = {
       href: "https://developers.openai.com/api/docs/guides/text-to-speech",
     },
     { label: "OpenAI, deprecations", href: "https://developers.openai.com/api/docs/deprecations" },
+    PRICING_SOURCES.openai,
+    { label: "OpenAI, your data", href: "https://developers.openai.com/api/docs/guides/your-data" },
+    {
+      label: "OpenAI community, TTS shutdown email",
+      href: "https://community.openai.com/t/tts-shutdown-email-tts-1-gpt-4o-mini-tts-jan-6-2027-isnt-on-the-deprecations-page/1402731",
+    },
+    PRICING_SOURCES.elevenlabsApi,
+    PRICING_SOURCES.cartesia,
+    PRICING_SOURCES.fish,
+    PRICING_SOURCES.deepgram,
+    PRICING_SOURCES.google,
     VOICE_DOC,
   ],
 };
