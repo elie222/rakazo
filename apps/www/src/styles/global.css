@@ -943,14 +943,8 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
 
 .site-footer__columns {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, auto));
-  gap: 40px;
-}
-
-@media (max-width: 960px) {
-  .site-footer {
-    flex-direction: column;
-  }
+  grid-template-columns: repeat(3, minmax(140px, auto));
+  gap: 48px;
 }
 
 .site-footer__column h2 {
@@ -2986,6 +2980,18 @@ button.product-demo__dock-icon {
   min-width: 7.5rem;
   color: var(--ink);
   font-weight: 600;
+}
+
+.alt-table th a {
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.alt-table th a:hover,
+.alt-table th a:focus-visible {
+  text-decoration-color: currentColor;
 }
 
 .alt-page .alt-index {

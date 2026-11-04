@@ -10,7 +10,7 @@ import {
   type Locale,
 } from "../i18n/locales";
 import { HUB_CARDS } from "../alternatives";
-import { SANDBOXES, sandboxPath } from "../sandboxes";
+import { SANDBOXES_PATH } from "../sandboxes";
 import { getHomeCopy } from "../i18n/home";
 import type { HomeCopy } from "../i18n/home";
 import {
@@ -58,6 +58,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
     links: [
       { href: "/download/", label: linkLabels.download },
       { href: SELF_HOST_GUIDE_PATH, label: linkLabels.docs },
+      { href: SANDBOXES_PATH, label: linkLabels.sandboxes },
       { href: PLUGIN_SUBMIT_PATH, label: linkLabels.submitPlugin },
       { href: CHANGELOG_URL, label: linkLabels.changelog, external: true },
       { href: GITHUB_URL, label: "GitHub", external: true },
@@ -69,13 +70,6 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
       ...HUB_CARDS.map((card) => ({ href: card.href, label: card.name })),
       { href: "/alternatives/", label: linkLabels.all },
     ],
-  },
-  {
-    heading: linkLabels.sandboxes,
-    links: SANDBOXES.map((sandbox) => ({
-      href: sandboxPath(sandbox.slug),
-      label: sandbox.slug === "your-computer" ? linkLabels.yourComputer : sandbox.name,
-    })),
   },
   {
     heading: linkLabels.company,

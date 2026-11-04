@@ -5,6 +5,55 @@ export const SANDBOXES_PATH = "/sandboxes/";
 export const SANDBOXES_UPDATED = "November 4, 2026";
 export const COMPUTER_PROVIDERS_DOCS_PATH = "/docs/self-host-sandbox-providers/";
 
+export const SANDBOXES_HUB = {
+  title: "Best sandboxes for AI agents in 2026: E2B, Daytona, Novita, Railway, Boat, Docker and Kubernetes",
+  description:
+    "A comparison of the sandboxes Rakazo bots can use as their computer: hosted, on your own machine or cluster, or your own Mac or PC.",
+  h1: "Best sandboxes for AI agents in 2026",
+  intro: [
+    "An AI agent that browses, runs code or uses apps needs a computer of its own. A sandbox gives it one, away from your files and your other machines.",
+    "Rakazo can give each bot a computer on any of the providers below. This page compares them on where the computer runs, what it keeps between sessions, and who each one suits. It is not a benchmark.",
+  ],
+  choose: [
+    {
+      heading: "No cloud account",
+      text: "Docker is Rakazo's default and runs on the machine you self-host on. Kubernetes runs on a cluster you already have, with optional gVisor or Kata isolation.",
+    },
+    {
+      heading: "Hosted, away from your server",
+      text: "E2B is the remote option Rakazo's live tests run on. Novita pauses with memory, so bots come back to the same open programs. Daytona and Boat keep each computer's disk, and Boat gives every bot its own Chrome logins.",
+    },
+    {
+      heading: "One account for everything",
+      text: "Railway runs Rakazo, its database and the bot computers from one template, at the cost of rebuilding computers from saved files after they stop.",
+    },
+    {
+      heading: "Windows or mainland China",
+      text: "Wuying lets bots use a Windows cloud computer you already have on Alibaba Cloud.",
+    },
+    {
+      heading: "Your real apps",
+      text: "The desktop app can let bots use your own Mac or PC. It is not a sandbox, so only turn it on for bots you trust.",
+    },
+  ],
+  faq: [
+    {
+      question: "What is an AI agent sandbox?",
+      answer:
+        "An isolated computer where an agent can run commands, use a browser and change files without touching yours. In Rakazo it is the bot's computer, which you can watch and take over.",
+    },
+    {
+      question: "Do I need a sandbox provider to run Rakazo?",
+      answer: "No. Docker computers work out of the box when you self-host, with no cloud account.",
+    },
+    {
+      question: "Can I switch providers later?",
+      answer:
+        "Yes. Rakazo saves each bot's workspace on its own side, so a new computer on another provider starts from the same files. Software installed outside the workspace doesn't move.",
+    },
+  ],
+} as const;
+
 export type SandboxImage = {
   webp: string;
   avif?: string;
@@ -17,8 +66,12 @@ export type SandboxImage = {
 export type Sandbox = {
   /** Path segment. The page is served at `/sandboxes/${slug}/`. */
   slug: string;
-  /** Short name used in the footer and in links between sandbox pages. */
+  /** Short name used on the hub and in links between sandbox pages. */
   name: string;
+  /** Hub comparison: where the computer runs, what survives between sessions, who it suits. */
+  runsOn: string;
+  keeps: string;
+  bestFor: string;
   title: string;
   description: string;
   h1: string;
@@ -58,6 +111,9 @@ export const SANDBOXES: readonly Sandbox[] = [
   {
     slug: "e2b",
     name: "E2B",
+    runsOn: "Hosted Linux sandbox",
+    keeps: "Its files, paused with the computer",
+    bestFor: "Public or multi-user deployments",
     title: "E2B for AI agents: run Rakazo bot computers on E2B",
     description:
       "Give each Rakazo bot a Linux desktop on E2B. Screen, terminal, files and browser, paused instead of deleted when idle.",
@@ -103,6 +159,9 @@ export const SANDBOXES: readonly Sandbox[] = [
   {
     slug: "daytona",
     name: "Daytona",
+    runsOn: "Hosted Linux sandbox",
+    keeps: "Its disk",
+    bestFor: "Teams already on Daytona",
     title: "Daytona for AI agents: run Rakazo bot computers on Daytona",
     description:
       "Give each Rakazo bot a Linux desktop in a Daytona sandbox. Screen, commands and files, stopped by Rakazo when idle.",
@@ -147,6 +206,9 @@ export const SANDBOXES: readonly Sandbox[] = [
   {
     slug: "novita",
     name: "Novita",
+    runsOn: "Hosted Linux sandbox",
+    keeps: "Files, browser logins and running programs",
+    bestFor: "Bots that pick up where they left off",
     title: "Novita Agent Sandbox for AI agents: run Rakazo bot computers on Novita",
     description:
       "Give each Rakazo bot a Linux desktop on Novita's Agent Sandbox. Paused computers keep their files, browser logins and running programs.",
@@ -191,6 +253,9 @@ export const SANDBOXES: readonly Sandbox[] = [
   {
     slug: "railway",
     name: "Railway",
+    runsOn: "Your Railway account",
+    keeps: "The workspace Rakazo saved",
+    bestFor: "Running everything in one Railway account",
     title: "Railway for AI agents: run Rakazo and its bot computers on Railway",
     description:
       "Run Rakazo, its database and your bots' computers in one Railway account, from one template.",
@@ -231,6 +296,9 @@ export const SANDBOXES: readonly Sandbox[] = [
   {
     slug: "boat",
     name: "Boat",
+    runsOn: "Hosted Linux VM in the EU",
+    keeps: "Its disk and each bot's Chrome profile",
+    bestFor: "Many bots with separate logins",
     title: "Boat for AI agents: run Rakazo bot computers on Boat",
     description:
       "Give each Rakazo bot a Linux desktop on a Boat cloud VM, with its own Chrome profile and logins.",
@@ -269,6 +337,9 @@ export const SANDBOXES: readonly Sandbox[] = [
   {
     slug: "wuying",
     name: "Wuying",
+    runsOn: "Your Alibaba Cloud Windows desktop",
+    keeps: "The desktop's own disk",
+    bestFor: "Alibaba Cloud teams and mainland China",
     title: "Wuying cloud computer for AI agents: let Rakazo bots use Alibaba Cloud desktops",
     description:
       "Let Rakazo bots work on a Windows cloud computer you already have in Alibaba Cloud Wuying (Elastic Desktop Service).",
@@ -316,6 +387,9 @@ export const SANDBOXES: readonly Sandbox[] = [
   {
     slug: "docker",
     name: "Docker",
+    runsOn: "Your own machine",
+    keeps: "Files on your disk",
+    bestFor: "Self-hosting with no cloud account",
     title: "Run AI agents in Docker: self-hosted computers for Rakazo bots",
     description:
       "Rakazo gives each bot a Docker container with a desktop and browser on your own machine. No cloud account, no per-minute bill.",
@@ -363,6 +437,9 @@ export const SANDBOXES: readonly Sandbox[] = [
   {
     slug: "kubernetes",
     name: "Kubernetes",
+    runsOn: "Your own cluster",
+    keeps: "The workspace Rakazo saved, or a volume",
+    bestFor: "Teams that already run Kubernetes",
     title: "AI agent sandboxes on Kubernetes: one pod per Rakazo bot computer",
     description:
       "Run each Rakazo bot computer as a locked-down pod on your own cluster, with optional gVisor or Kata isolation.",
@@ -405,6 +482,9 @@ export const SANDBOXES: readonly Sandbox[] = [
   {
     slug: "your-computer",
     name: "Your computer",
+    runsOn: "Your Mac or PC, no isolation",
+    keeps: "Everything; it's your machine",
+    bestFor: "Bots that need your real apps and logins",
     title: "Let an AI agent use your own computer",
     description:
       "With the Rakazo desktop app, bots can run commands and use apps on the Mac or PC the app runs on.",
@@ -480,6 +560,8 @@ export function sandboxMarkdown(sandbox: Sandbox): string {
     "## FAQ",
     "",
     ...sandbox.faq.flatMap((item) => [`### ${item.question}`, "", item.answer, ""]),
+    `[All sandboxes for AI agents](${SITE_URL}${SANDBOXES_PATH})`,
+    "",
     "## Other places to run bot computers",
     "",
     ...SANDBOXES.filter((other) => other.slug !== sandbox.slug).map(
@@ -490,5 +572,37 @@ export function sandboxMarkdown(sandbox: Sandbox): string {
     "",
     ...sandbox.sources.map((source) => `- [${source.label}](${source.href})`),
     "",
+  ].join("\n");
+}
+
+function cell(value: string): string {
+  return value.replaceAll("|", "\\|");
+}
+
+/** Markdown twin of the sandboxes hub. */
+export function sandboxesHubMarkdown(): string {
+  return [
+    `# ${SANDBOXES_HUB.h1}`,
+    "",
+    ...SANDBOXES_HUB.intro.flatMap((paragraph) => [paragraph, ""]),
+    `Updated ${SANDBOXES_UPDATED}.`,
+    "",
+    "## Compared",
+    "",
+    "| Sandbox | Runs on | Keeps between sessions | Best for |",
+    "| --- | --- | --- | --- |",
+    ...SANDBOXES.map(
+      (sandbox) =>
+        `| [${cell(sandbox.name)}](${SITE_URL}${sandboxPath(sandbox.slug)}) | ${cell(sandbox.runsOn)} | ${cell(sandbox.keeps)} | ${cell(sandbox.bestFor)} |`,
+    ),
+    "",
+    "## How to choose",
+    "",
+    ...SANDBOXES_HUB.choose.flatMap((item) => [`### ${item.heading}`, "", item.text, ""]),
+    `[Computer providers guide](${SITE_URL}${COMPUTER_PROVIDERS_DOCS_PATH})`,
+    "",
+    "## FAQ",
+    "",
+    ...SANDBOXES_HUB.faq.flatMap((item) => [`### ${item.question}`, "", item.answer, ""]),
   ].join("\n");
 }

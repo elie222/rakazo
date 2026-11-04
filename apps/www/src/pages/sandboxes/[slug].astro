@@ -8,6 +8,7 @@ import { ogPublicPath } from "../../og-pages";
 import {
   COMPUTER_PROVIDERS_DOCS_PATH,
   SANDBOXES,
+  SANDBOXES_PATH,
   SANDBOXES_UPDATED,
   sandboxPath,
 } from "../../sandboxes";
@@ -35,6 +36,7 @@ const others = SANDBOXES.filter((other) => other.slug !== sandbox.slug);
   ogImage={ogPublicPath(`sandbox-${sandbox.slug}`)}
   markdownAlternate={`${sandboxPath(sandbox.slug).slice(0, -1)}.md`}
 >
+  <p class="alt-crumb"><a href={SANDBOXES_PATH}>Sandboxes</a></p>
   <h1>{sandbox.h1}</h1>
   <p class="page-updated">Updated {SANDBOXES_UPDATED}.</p>
   {sandbox.intro.map((paragraph) => <p><InlineCode text={paragraph} /></p>)}
@@ -80,6 +82,7 @@ const others = SANDBOXES.filter((other) => other.slug !== sandbox.slug);
   <ul>
     {others.map((other) => <li><a href={sandboxPath(other.slug)}>{other.name}</a></li>)}
   </ul>
+  <p><a href={SANDBOXES_PATH}>Compare all sandboxes for AI agents</a></p>
 
   <h2>Sources</h2>
   <ul class="source-list">
