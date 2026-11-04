@@ -6,6 +6,12 @@ import {
   integrationPlatformsHubMarkdown,
 } from "./integration-platforms";
 import { SANDBOXES, sandboxesHubMarkdown, sandboxMarkdown, sandboxPath } from "./sandboxes";
+import {
+  VOICE_PROVIDERS,
+  voiceProviderMarkdown,
+  voiceProviderPath,
+  voiceProvidersHubMarkdown,
+} from "./voice-providers";
 import { BRAND_COLORS, BRAND_LOGOS } from "./brand";
 import { GROK_ALTERNATIVE_MARKDOWN } from "./grok-alternative";
 import { OPENCLAW_MARKDOWN, SELF_HOST_MARKDOWN } from "./guide";
@@ -91,6 +97,7 @@ ${home.cta.copy}
 - [Integrations](https://rakazo.com/integrations/)
 - [Sandboxes for AI agents](https://rakazo.com/sandboxes/)
 - [Integration platforms for AI agents](https://rakazo.com/integration-platforms/)
+- [Voice providers for AI agents](https://rakazo.com/voice-providers/)
 - [Blog](https://rakazo.com/blog/)
 - [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
 - [Pricing](https://rakazo.com/pricing/): free to self-host, or hosted with your own model or Rakazo credits.
@@ -211,6 +218,7 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [Integrations](https://rakazo.com/integrations/): every app a bot can connect to. [Markdown list](https://rakazo.com/integrations.md); each app page has a Markdown version with its actions.
 - [Sandboxes for AI agents](https://rakazo.com/sandboxes/): where bot computers can run, compared, with a page per provider. Each page has a Markdown version.
 - [Integration platforms for AI agents](https://rakazo.com/integration-platforms/): Composio, Pipedream, MCP servers and API connectors compared, with a page for each. Each page has a Markdown version.
+- [Voice providers for AI agents](https://rakazo.com/voice-providers/): ElevenLabs, OpenAI, Cartesia, Fish Audio, self-hosted speech servers and macOS voices compared, with a page for each. Each page has a Markdown version.
 - [Submit a plugin](https://rakazo.com/plugins/submit/): list a plugin in the Rakazo marketplace. [Markdown with the API](https://rakazo.com/plugins/submit.md).
 - [Blog](https://rakazo.com/blog/)
 - [Releases](https://github.com/elie222/rakazo/releases)
@@ -296,6 +304,11 @@ const MARKDOWN_DOCUMENTS = new Map<string, string>([
   ...ALTERNATIVES.map((page) => [`/${page.slug}`, alternativeMarkdown(page)] as const),
   ["/sandboxes", sandboxesHubMarkdown()],
   ["/integration-platforms", integrationPlatformsHubMarkdown()],
+  ["/voice-providers", voiceProvidersHubMarkdown()],
+  ...VOICE_PROVIDERS.map(
+    (provider) =>
+      [voiceProviderPath(provider.slug).slice(0, -1), voiceProviderMarkdown(provider)] as const,
+  ),
   ...INTEGRATION_PLATFORMS.map(
     (platform) =>
       [integrationPlatformPath(platform.slug).slice(0, -1), integrationPlatformMarkdown(platform)] as const,
