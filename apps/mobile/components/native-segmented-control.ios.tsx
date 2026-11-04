@@ -1,7 +1,7 @@
 import { Host, Picker, Text } from "@expo/ui/swift-ui";
 import { disabled as disable, labelsHidden, pickerStyle, tag } from "@expo/ui/swift-ui/modifiers";
-import { hapticSelection } from "../lib/haptics";
 import { useResolvedAppearance } from "../lib/native";
+import { selectionChangeHandler } from "../lib/native-control-actions";
 import type { NativeSegmentedControlProps } from "../lib/native-controls";
 import { SegmentedPills } from "./segmented-pills";
 
@@ -15,11 +15,7 @@ export function NativeSegmentedControl<T extends string>({
 }: NativeSegmentedControlProps<T>) {
   const scheme = useResolvedAppearance();
   const selected = options.some((option) => option.value === value) ? value : undefined;
-  const select = (next: T) => {
-    if (disabled || next === value) return;
-    hapticSelection();
-    onChange(next);
-  };
+  const select = selectionChangeHandler(value, disabled, onChange);
   if (selected === undefined) {
     return (
       <SegmentedPills

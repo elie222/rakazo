@@ -46,14 +46,10 @@ export function setHapticsEnabled(value: boolean): Promise<void> {
   changedLocally = true;
   notify();
   // Keep rapid toggles in order on disk without delaying the switch or feedback gate.
-  writeTask = writeTask.then(async () => {
-    try {
-      await SecureStore.setItemAsync(STORAGE_KEY, String(value));
-    } catch {
-      // A failed save must not undo the in-memory preference or block the next save.
-    }
-  });
-  return writeTask;
+  const writing = writeTask.then(() => SecureStore.setItemAsync(STORAGE_KEY, String(value)));
+  // Report this save's failure to the caller while allowing the next save to run.
+  writeTask = writing.catch(() => undefined);
+  return writing;
 }
 
 function perform(effect: () => Promise<void>): void {

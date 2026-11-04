@@ -97,6 +97,9 @@ import {
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
 import { errorText } from "../../lib/user-error";
 
+// Saves outlive the screen; a later visit must supersede its older errors and retries.
+let hapticsSaveVersion = 0;
+
 export default function Account() {
   const sideInsets = useSideInsets();
   const { t, locale } = useI18n();
@@ -185,6 +188,23 @@ export default function Account() {
     getHapticsEnabled,
     getHapticsEnabled,
   );
+  function updateHaptics(value: boolean) {
+    const version = ++hapticsSaveVersion;
+    const isCurrent = () => version === hapticsSaveVersion && getHapticsEnabled() === value;
+    void setHapticsEnabled(value).catch(() => {
+      if (!isCurrent()) return;
+      Alert.alert(t("Haptics"), t("Could not save"), [
+        { text: t("Cancel"), style: "cancel" },
+        {
+          text: t("Retry"),
+          onPress: () => {
+            if (isCurrent()) updateHaptics(value);
+          },
+        },
+      ]);
+    });
+  }
+
   const loadRemoteImagesLabel = t("Load web images automatically");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const stackOptions = useStackedSettings();
@@ -630,11 +650,7 @@ export default function Account() {
             title={t("Language")}
             value={UI_LOCALE_LABELS[locale]}
           />
-          <SettingsSwitch
-            label={t("Haptics")}
-            value={hapticsEnabled}
-            onChange={(value) => void setHapticsEnabled(value)}
-          />
+          <SettingsSwitch label={t("Haptics")} value={hapticsEnabled} onChange={updateHaptics} />
         </SettingsGroup>
 
         {Platform.OS === "android" ? (

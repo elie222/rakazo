@@ -278,10 +278,47 @@ describe("mobile haptics", () => {
     storage.setItemAsync.mockRejectedValueOnce(new Error("storage unavailable"));
     const haptics = await import("./haptics");
     await haptics.loadHapticsPreference();
-    await expect(haptics.setHapticsEnabled(false)).resolves.toBeUndefined();
+    await expect(haptics.setHapticsEnabled(false)).rejects.toThrow("storage unavailable");
     expect(haptics.getHapticsEnabled()).toBe(false);
+    haptics.hapticSelection();
+    expectNoFeedback();
     await haptics.setHapticsEnabled(true);
     expect(values.get("rakazo.haptics")).toBe("true");
+  });
+
+  it("persists a retried off choice after reporting its first save failure", async () => {
+    storage.setItemAsync.mockRejectedValueOnce(new Error("storage unavailable"));
+    const haptics = await import("./haptics");
+    await haptics.loadHapticsPreference();
+    await expect(haptics.setHapticsEnabled(false)).rejects.toThrow("storage unavailable");
+    expect(haptics.getHapticsEnabled()).toBe(false);
+    await haptics.setHapticsEnabled(false);
+    expect(values.get("rakazo.haptics")).toBe("false");
+    vi.resetModules();
+    const reloaded = await import("./haptics");
+    await reloaded.loadHapticsPreference();
+    expect(reloaded.getHapticsEnabled()).toBe(false);
+  });
+
+  it("reports each queued write's own error while continuing with newer toggles", async () => {
+    const firstError = new Error("first failed");
+    const secondError = new Error("second failed");
+    storage.setItemAsync.mockRejectedValueOnce(firstError).mockRejectedValueOnce(secondError);
+    const haptics = await import("./haptics");
+    await haptics.loadHapticsPreference();
+    const first = haptics.setHapticsEnabled(false);
+    const second = haptics.setHapticsEnabled(true);
+    const third = haptics.setHapticsEnabled(false);
+    expect(haptics.getHapticsEnabled()).toBe(false);
+    await expect(first).rejects.toBe(firstError);
+    await expect(second).rejects.toBe(secondError);
+    await third;
+    expect(storage.setItemAsync.mock.calls).toEqual([
+      ["rakazo.haptics", "false"],
+      ["rakazo.haptics", "true"],
+      ["rakazo.haptics", "false"],
+    ]);
+    expect(values.get("rakazo.haptics")).toBe("false");
   });
 
   it("swallows synchronous and rejected native failures", async () => {

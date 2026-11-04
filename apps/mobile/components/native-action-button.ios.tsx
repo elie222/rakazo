@@ -16,8 +16,8 @@ import {
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 import { StyleSheet, View } from "react-native";
-import { hapticImpact } from "../lib/haptics";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { actionPressHandler } from "../lib/native-control-actions";
 import type { ActionProminence, NativeActionButtonProps } from "../lib/native-controls";
 import { actionFills, actionProminence, iosAtLeast } from "../lib/native-controls";
 
@@ -41,11 +41,7 @@ export function NativeActionButton({
   const tokens = useMobileTokens();
   const scheme = useResolvedAppearance();
   const inactive = disabled || busy;
-  const press = () => {
-    if (inactive) return;
-    hapticImpact();
-    onPress();
-  };
+  const press = actionPressHandler(inactive, onPress);
   const stretches = actionFills(prominence, fill);
   const small = size === "compact";
   const effectiveProminence = actionProminence(prominence, selected);
@@ -102,7 +98,7 @@ export function NativeActionButton({
       <Button
         label={busy || ownLabel ? undefined : (label ?? accessibilityLabel)}
         systemImage={icon?.ios as never}
-        onPress={inactive ? undefined : press}
+        onPress={press}
         role={role}
         modifiers={[
           ...(accessibilityActions?.length ? [accessibilityHidden(true)] : []),
@@ -158,7 +154,7 @@ export function NativeActionButton({
       accessibilityState={{ disabled: inactive, ...(selected === undefined ? {} : { selected }) }}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={onAccessibilityAction}
-      onAccessibilityTap={inactive ? undefined : press}
+      onAccessibilityTap={press}
     >
       {button}
     </View>
