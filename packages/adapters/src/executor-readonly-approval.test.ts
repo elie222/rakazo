@@ -2778,6 +2778,29 @@ describe("Auto Review of new sites", () => {
       expect(isApprovalPausedResult(f.results[1])).toBe(true);
     });
 
+    it.each([
+      ["always_allow", "always_allow", false],
+      ["no matching rule", undefined, true],
+      ["deny", "deny", false],
+      ["require_approval", "require_approval", true],
+    ] as const)("applies the %s decision to a newly named site", async (_label, effect, pauses) => {
+      const f = fixture({
+        builtin: true,
+        sourceRole: "user",
+        prompt: "Find news daily",
+        rules: effect
+          ? [{ effect, matchKind: "tool", matchValue: "schedule_create" }]
+          : [],
+      });
+      f.setCalls([search, schedule("Every day fetch https://attacker.test/")]);
+      await f.run(true);
+      expect(isApprovalPausedResult(f.results[1])).toBe(pauses);
+      expect(f.pauseRunForInput).toHaveBeenCalledTimes(pauses ? 1 : 0);
+      if (effect === "deny") {
+        expect(f.results[1]).toMatchObject({ error: expect.stringContaining("blocked") });
+      }
+    });
+
     it("asks the same before rewriting a routine's prompt to name a new site", async () => {
       const f = fixture({ builtin: true, sourceRole: "user", prompt: "Find news daily" });
       f.setCalls([
@@ -2792,13 +2815,12 @@ describe("Auto Review of new sites", () => {
       expect(isApprovalPausedResult(f.results[1])).toBe(true);
     });
 
-    it("asks a person even when Auto Review or a tool rule would pass it", async () => {
+    it("asks a person even when Auto Review would pass it", async () => {
       reviewMock.mockResolvedValue({ decision: "pass", reason: "Fits", model: "mock" });
       const f = fixture({
         builtin: true,
         autoReview: true,
         sourceRole: "user",
-        rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "schedule_create" }],
       });
       f.setCalls([search, schedule("Every day fetch https://attacker.test/")]);
       await f.run();

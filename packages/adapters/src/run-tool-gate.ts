@@ -245,26 +245,6 @@ export async function gateToolCall(
   const { purchase, cardUse } = request;
   // Typing a saved card is approved like a purchase: every time, by a person.
   const paying = Boolean(purchase) || Boolean(cardUse);
-  const requiresApprovalByDefault =
-    request.heldForApproval ||
-    paying ||
-    commandWatch ||
-    requiresUnattendedApproval ||
-    siteGate === "new" ||
-    unidentifiedAction ||
-    approvalToolNames.some((toolName) =>
-      toolRequiresApproval(toolName, viaConnector, declaredReadOnlyFor(toolName)),
-    );
-  // A gated read still fails closed when its review errors, and keeps its approval key.
-  const gated = requiresApprovalByDefault || connectorReadGated;
-  const requiresMandatoryApproval =
-    paying ||
-    commandWatch ||
-    scheduleNamesNewSite ||
-    requiresUnattendedApproval ||
-    toolRequiresExplicitApproval(name);
-  // Never ask runs everything else: only another owner's connection could have been steered into it.
-  const guardedInNeverAsk = name === "respond_agent_connection";
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
@@ -283,6 +263,30 @@ export async function gateToolCall(
     unidentifiedAction && resolvedRules.decision === "allow"
       ? { ...resolvedRules, decision: "ask" as const }
       : resolvedRules;
+  const scheduleCreateAlwaysAllowed =
+    name === "schedule_create" &&
+    resolvedRules.decision === "allow" &&
+    resolvedRules.source === "always_allow";
+  const requiresApprovalByDefault =
+    request.heldForApproval ||
+    paying ||
+    commandWatch ||
+    requiresUnattendedApproval ||
+    siteGate === "new" ||
+    unidentifiedAction ||
+    approvalToolNames.some((toolName) =>
+      toolRequiresApproval(toolName, viaConnector, declaredReadOnlyFor(toolName)),
+    );
+  // A gated read still fails closed when its review errors, and keeps its approval key.
+  const gated = requiresApprovalByDefault || connectorReadGated;
+  const requiresMandatoryApproval =
+    paying ||
+    commandWatch ||
+    (scheduleNamesNewSite && !scheduleCreateAlwaysAllowed) ||
+    requiresUnattendedApproval ||
+    toolRequiresExplicitApproval(name);
+  // Never ask runs everything else: only another owner's connection could have been steered into it.
+  const guardedInNeverAsk = name === "respond_agent_connection";
   const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
   const reviewable = mode === "auto" && !requiresMandatoryApproval;
   const injectedReview = reviewable ? deps.autoReview : undefined;
