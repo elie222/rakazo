@@ -5377,6 +5377,10 @@ td:last-child .pricing-hint__tip {
   margin-top: 8px;
 }
 
+.sandbox-section > p + p {
+  margin-top: 12px;
+}
+
 .alt-page ol.sandbox-steps {
   display: grid;
   gap: 10px;
