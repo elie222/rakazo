@@ -74,6 +74,13 @@ describe.skipIf(!databaseAvailable)("routine silence eval through the product", 
         {
           expect(request) {
             expect(JSON.stringify(request.messages)).toContain("stay silent");
+            // The wake is forced early, but the agent is told it is the routine's 9:00 due time.
+            const told = /That is (\S+) \(UTC\)|Current date and time: \w+, (\S+) \(UTC\)/.exec(
+              JSON.stringify(request.messages),
+            );
+            const toldAt = new Date(told?.[1] ?? told?.[2] ?? "");
+            expect(toldAt.getUTCMinutes()).toBe(0);
+            expect(toldAt.getTime()).toBeGreaterThanOrEqual(Date.now() - 1_000);
             if (index === 1 && replies[0] === releaseReply)
               expect(JSON.stringify(request.messages)).toContain(releaseReply);
           },

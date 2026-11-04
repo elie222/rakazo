@@ -1667,7 +1667,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           // A hang-up turn is read, not heard: no spoken-reply constraint.
           voiceCall && !callEndRun ? voiceCallInstruction(disabledBuiltinTools) : undefined,
           // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
-          formatCurrentTimeInstruction(new Date(), userTimeZone),
+          formatCurrentTimeInstruction(deps.now?.() ?? new Date(), userTimeZone),
           lateRoutineNote,
         ]
           .filter(Boolean)

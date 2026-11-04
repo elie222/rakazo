@@ -63,7 +63,11 @@ export type TrialOptions = {
   createApp: (
     services: EvalServices,
     messaging: MessagingTeamChatEmulator,
-    witnesses: { notifications: CapturingNotificationProvider; realtime: SilenceObserver },
+    witnesses: {
+      notifications: CapturingNotificationProvider;
+      realtime: SilenceObserver;
+      now: () => Date;
+    },
   ) => Promise<EvalApp>;
 };
 const WAITING_STATUSES = ["waiting_input", "waiting_approval", "paused"];
@@ -158,7 +162,10 @@ export async function runTrial(
       });
   };
   try {
-    handles = await options.createApp(services, messaging, { notifications, realtime });
+    // A forced wake runs now; the agent is told it is the routine's due time instead.
+    let clockShiftMs = 0;
+    const now = () => new Date(Date.now() + clockShiftMs);
+    handles = await options.createApp(services, messaging, { notifications, realtime, now });
     const prisma = asSystem(handles.prisma);
     db = prisma;
     realtime.attach(prisma);
@@ -572,6 +579,7 @@ export async function runTrial(
           timezone: routine.timezone,
           createdAt: routine.createdAt.toISOString(),
         };
+        if (routine.nextRunAt) clockShiftMs = Math.max(0, routine.nextRunAt.getTime() - Date.now());
         const scheduledFor = new Date(Date.now() - 1_000);
         await prisma.routine.update({
           where: { id: routine.id },

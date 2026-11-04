@@ -265,6 +265,8 @@ type CreateAppOverrides = Partial<AppEnv> & {
   contextStrategy?: AgentContextStrategy;
   /** Test-only stand-in for desktops connected to this server. */
   userDevices?: UserDeviceGateway;
+  /** Test-only present moment the agent is told. */
+  now?: () => Date;
 };
 
 async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
@@ -287,6 +289,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     runtime: runtimeOverride,
     contextStrategy,
     userDevices: userDevicesOverride,
+    now,
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
@@ -691,6 +694,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     userDevices: userDevicesOverride ?? userDevices,
     paymentWallet,
     shutdownSignal: shutdown.signal,
+    now,
   });
 
   const jobHandlers = createBackgroundJobHandlers({
