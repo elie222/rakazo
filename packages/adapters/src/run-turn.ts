@@ -137,6 +137,16 @@ export async function consumeRunEvents(
       if (!(error instanceof RunHistoryWriteError)) throw error;
     }
   };
+  // A quiet model call or a long tool streams no events, so Stop would otherwise go unseen
+  // until the next event or heartbeat. The shared throttle keeps this at one read a second.
+  const watch = setInterval(() => {
+    void runLeaseLost(ctx)
+      .then((lost) => {
+        if (lost) ctx.abortController.abort();
+      })
+      .catch(() => {});
+  }, 1_000);
+  watch.unref?.();
   try {
     for await (const event of withRuntimeCleanup(events, ctx.abortController)) {
       if (ctx.state.approval.pausePending) return true;
@@ -213,6 +223,7 @@ export async function consumeRunEvents(
     }
     return false;
   } finally {
+    clearInterval(watch);
     // Run completion clears thinking too; never let this replace the turn's own outcome.
     await publishThinking(false).catch(() => {});
   }
