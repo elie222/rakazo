@@ -7,6 +7,7 @@ import type {
   CommandResponse,
   FileUrlResponse,
   SandboxStateEnum,
+  SandboxTypeEnum,
   SavedSnapshot,
 } from "@boatdev/sdk";
 import { BoatApi, Configuration, FetchError, followCommand } from "@boatdev/sdk";
@@ -33,10 +34,12 @@ import type {
 import {
   SandboxDamagedError,
   SandboxRateLimitError,
+  SandboxSizeUnavailableError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
+import type { ComputerSize } from "@rakazo/contracts";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -101,6 +104,13 @@ const BOAT_SNAPSHOT_BUILD_TTL_SECONDS = 30 * 60;
 const BOAT_SNAPSHOT_RETRY_MS = 15 * 60_000;
 /** How long a process waits to look again after a failed lookup or while another saves it. */
 const BOAT_SNAPSHOT_LOOKUP_RETRY_MS = 60_000;
+
+/** Boat's machine type for each computer size: 4, 8 and 16 vCPUs with 8, 16 and 32 GB. */
+const BOAT_MACHINE_TYPES: Record<ComputerSize, SandboxTypeEnum> = {
+  standard: "default",
+  large: "large",
+  xlarge: "xlarge",
+};
 
 /** The Boat API surface the adapter uses. Failures are the SDK's raw `ResponseError`s. */
 export type BoatSandboxSdk = Pick<
@@ -252,6 +262,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
       savedAt?: Date;
+      size?: ComputerSize;
     },
     context: AdapterContext,
   ): Promise<ComputerRef> {
@@ -273,13 +284,16 @@ export class BoatSandboxProvider implements SandboxProvider {
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
       savedAt?: Date;
+      size?: ComputerSize;
     },
     context: AdapterContext,
   ): Promise<ComputerRef> {
+    const type = request.size ? BOAT_MACHINE_TYPES[request.size] : undefined;
     if (request.providerRef && request.providerKind === "boat") {
       try {
         const started = await this.ensureRunnable(request.providerRef, context.signal, {
           savedAt: request.savedAt,
+          type,
         });
         return { ...this.ref(request.providerRef, request.botId, false), started };
       } catch (error) {
@@ -299,6 +313,7 @@ export class BoatSandboxProvider implements SandboxProvider {
               RAKAZO_SANDBOX: "computer",
             },
             ...(from ? { from } : {}),
+            ...(type ? { type } : {}),
           },
         },
         { signal: context.signal },
@@ -309,12 +324,14 @@ export class BoatSandboxProvider implements SandboxProvider {
       created = await create(from);
     } catch (error) {
       if (!from || !(error instanceof BoatApiError) || error.code !== "snapshot_not_found") {
-        throw error;
+        throw boatSizeError(error);
       }
       // Removed from the account since this process saw it; rebuild it and install as before.
       this.baseSnapshot = undefined;
       this.computerSnapshotMissing();
-      created = await create();
+      created = await create().catch((failure: unknown) => {
+        throw boatSizeError(failure);
+      });
     }
     return this.ref(created.sandbox.id, request.botId, true);
   }
@@ -864,7 +881,7 @@ export class BoatSandboxProvider implements SandboxProvider {
   private async ensureRunnable(
     id: string,
     signal?: AbortSignal,
-    reconnect?: { savedAt?: Date },
+    reconnect?: { savedAt?: Date; type?: SandboxTypeEnum },
   ): Promise<boolean> {
     let deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
     let started = false;
@@ -890,7 +907,8 @@ export class BoatSandboxProvider implements SandboxProvider {
           logRecovery("gone", "checkpoint_newer");
           throw boatSandboxGone(id);
         }
-        await this.resume(id, signal);
+        // Only a reconnect moves the sandbox to another size; other wakes keep the one it has.
+        await this.resume(id, signal, reconnect?.type);
         started = true;
       } else if (sandbox.state === "error" && !recovering) {
         logRecovery("wait", await this.recover(id, signal));
@@ -950,15 +968,19 @@ export class BoatSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async resume(id: string, signal?: AbortSignal): Promise<void> {
+  private async resume(id: string, signal?: AbortSignal, type?: SandboxTypeEnum): Promise<void> {
     try {
       await this.client.resume(
-        { sandboxId: id, resumeRequest: { noEnv: true, ttlSeconds: BOAT_TTL_SECONDS } },
+        {
+          sandboxId: id,
+          resumeRequest: { noEnv: true, ttlSeconds: BOAT_TTL_SECONDS, ...(type ? { type } : {}) },
+        },
         { signal },
       );
     } catch (error) {
       // Another job's resume is already bringing it up; the caller waits for that one.
-      if (!(error instanceof BoatApiError) || error.code !== "sandbox_resuming") throw error;
+      if (!(error instanceof BoatApiError) || error.code !== "sandbox_resuming")
+        throw boatSizeError(error);
     }
   }
 
@@ -1622,6 +1644,18 @@ function utf8Tail(text: string): string {
   let start = bytes.length - BOAT_COMMAND_TAIL_BYTES;
   while (start < bytes.length && ((bytes[start] ?? 0) & 0xc0) === 0x80) start += 1;
   return bytes.subarray(start).toString();
+}
+
+/** Boat refusing a machine type becomes the neutral size error; anything else is unchanged. */
+function boatSizeError(error: unknown): unknown {
+  if (!(error instanceof BoatApiError)) return error;
+  if (error.code === "machine_class_plan_required") {
+    return new SandboxSizeUnavailableError("not_offered", { cause: error });
+  }
+  if (error.code === "type_too_small") {
+    return new SandboxSizeUnavailableError("too_small", { cause: error });
+  }
+  return error;
 }
 
 function nextPoll(pause: number, max = BOAT_POLL_MAX_MS): number {

@@ -1,3 +1,4 @@
+import type { ComputerSize } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { runAsSystem } from "./row-security.js";
 
@@ -62,6 +63,18 @@ export async function sandboxAllowancePlan(
         ? BYOK_SANDBOX_ALLOWANCE_CENTS
         : Math.floor(((billing?.creditAmountCents ?? 0) * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
   return { limitCents, since };
+}
+
+/**
+ * The machine size a Space's computers start at, which its organization's plan decides. Every
+ * plan runs standard computers today. A computer moves to this size when it next starts or
+ * resumes, so a plan change reaches running computers on their next resume.
+ */
+export async function planComputerSize(
+  _prisma: Pick<PrismaClient, "space" | "organization">,
+  _spaceId: string,
+): Promise<ComputerSize> {
+  return "standard";
 }
 
 /** The latest monthly anniversary of `start` at or before `now`, on a shorter month's last day. */

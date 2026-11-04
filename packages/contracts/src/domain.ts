@@ -27,6 +27,9 @@ import { SettingsScopeSchema } from "./settings-scope.js";
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
 export type ComputerMode = z.infer<typeof ComputerModeSchema>;
 
+/** How big a machine a cloud computer runs on. Providers without sizes ignore it. */
+export type ComputerSize = "standard" | "large" | "xlarge";
+
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
 
