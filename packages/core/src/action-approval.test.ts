@@ -60,7 +60,9 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("list_secrets", false)).toBe(false);
     // A random value the bot cannot read exposes nothing, and never replaces a saved credential.
     expect(toolRequiresApproval("generate_secret", false)).toBe(false);
-    expect(toolRequiresApproval("delete_bot", false)).toBe(true);
+    expect(toolRequiresApproval("delete_bot", false)).toBe(false);
+    expect(toolRequiresApproval("delete_bot", true, true)).toBe(true);
+    expect(toolRequiresApproval("delete_bot", true, false)).toBe(true);
     expect(toolRequiresApproval("archive_bot", false)).toBe(true);
     expect(toolRequiresApproval("cloud_agent_launch", false)).toBe(true);
     expect(toolRequiresApproval("create_space", false)).toBe(true);

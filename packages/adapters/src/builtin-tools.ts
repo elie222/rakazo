@@ -108,7 +108,6 @@ export const DELEGATION_TOOL_NAMES = new Set<string>([
   "run_subagent",
   "spawn_bot",
   "archive_bot",
-  "delete_bot",
   "handoff_to_bot",
   "message_bot",
   ...FLEET_TOOL_NAMES,
