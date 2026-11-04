@@ -1,4 +1,5 @@
 import { ALTERNATIVES, alternativeMarkdown } from "./alternatives";
+import { SANDBOXES, sandboxesHubMarkdown, sandboxMarkdown, sandboxPath } from "./sandboxes";
 import { BRAND_COLORS, BRAND_LOGOS } from "./brand";
 import { GROK_ALTERNATIVE_MARKDOWN } from "./grok-alternative";
 import { OPENCLAW_MARKDOWN, SELF_HOST_MARKDOWN } from "./guide";
@@ -82,6 +83,7 @@ ${home.cta.copy}
 - [Alternatives](https://rakazo.com/alternatives/)
 - [Docs](https://rakazo.com/docs/)
 - [Integrations](https://rakazo.com/integrations/)
+- [Sandboxes for AI agents](https://rakazo.com/sandboxes/)
 - [Blog](https://rakazo.com/blog/)
 - [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
 - [Pricing](https://rakazo.com/pricing/): free to self-host, or hosted with your own model or Rakazo credits.
@@ -200,6 +202,7 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [OpenClaw comparison](https://rakazo.com/openclaw-alternative/)
 - [Docs](https://rakazo.com/docs/): getting started, using Rakazo, and self-hosting. Each page has a Markdown version.
 - [Integrations](https://rakazo.com/integrations/): every app a bot can connect to. [Markdown list](https://rakazo.com/integrations.md); each app page has a Markdown version with its actions.
+- [Sandboxes for AI agents](https://rakazo.com/sandboxes/): where bot computers can run, compared, with a page per provider. Each page has a Markdown version.
 - [Submit a plugin](https://rakazo.com/plugins/submit/): list a plugin in the Rakazo marketplace. [Markdown with the API](https://rakazo.com/plugins/submit.md).
 - [Blog](https://rakazo.com/blog/)
 - [Releases](https://github.com/elie222/rakazo/releases)
@@ -283,6 +286,10 @@ const MARKDOWN_DOCUMENTS = new Map<string, string>([
   ["/plugins/submit", PLUGIN_SUBMIT_MARKDOWN],
   ["/alternatives", roundupMarkdown()],
   ...ALTERNATIVES.map((page) => [`/${page.slug}`, alternativeMarkdown(page)] as const),
+  ["/sandboxes", sandboxesHubMarkdown()],
+  ...SANDBOXES.map(
+    (sandbox) => [sandboxPath(sandbox.slug).slice(0, -1), sandboxMarkdown(sandbox)] as const,
+  ),
   ["/terms", TERMS_MARKDOWN],
 ]);
 
