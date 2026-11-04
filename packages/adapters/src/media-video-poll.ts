@@ -262,14 +262,8 @@ export async function pollMediaVideo(deps: MediaVideoDeps, payload: { jobId: str
     (!unanswered || Date.now() - job.createdAt.getTime() >= MEDIA_POLL_DEADLINE_MS + ERROR_GRACE_MS)
   ) {
     // Still unfinished after the final check: report it failed. Only a released or abandoned
-    // claim is taken, so a check still in flight decides instead, and a video already attached
-    // keeps trying to post.
+    // claim is taken, so a check still in flight decides instead.
     settled = await deps.prisma.$transaction(async (tx) => {
-      const current = await tx.externalEffect.findUnique({
-        where: { id: job.id },
-        select: { result: true },
-      });
-      if ((current?.result as { artifactId?: unknown } | null)?.artifactId) return false;
       const failed = await tx.externalEffect.updateMany({
         where: {
           id: job.id,
@@ -358,7 +352,7 @@ export async function reconcileMediaVideos(
         status: { in: PENDING_STATUSES },
         updatedAt: { lt: new Date(now - STALLED_MS) },
       },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
       take: pageSize,
       ...(after ? { cursor: { id: after }, skip: 1 } : {}),
       select: { id: true, createdAt: true },

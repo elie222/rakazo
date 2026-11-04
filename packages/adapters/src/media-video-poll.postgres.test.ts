@@ -304,10 +304,10 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     expect(await h2.messages()).toHaveLength(1);
   });
 
-  it("keeps trying to post an attached video past the deadline instead of failing it", async () => {
+  it("retries posting a stored video past the deadline, then reports it failed", async () => {
     const h = await setup();
     const jobId = await h.submit();
-    // The video was stored, but posting it has not succeeded yet.
+    // The video was stored, but posting it keeps failing.
     await runAsSystem("test fixture", () =>
       prisma.externalEffect.update({
         where: { id: jobId },
@@ -320,6 +320,10 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     expect((await h.job(jobId)).status).toBe("media_pending");
     expect(h.recovered()).toContain(jobId);
     expect(await h.wakes()).toHaveLength(0);
+    await h.age(jobId, MEDIA_POLL_DEADLINE_MS + 20 * 60_000);
+    await h.poll(jobId);
+    expect((await h.job(jobId)).status).toBe("media_failed");
+    expect(await h.wakes()).toHaveLength(1);
   });
 
   it("retries provider errors past the deadline before reporting the video failed", async () => {
