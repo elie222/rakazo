@@ -968,6 +968,7 @@ export function computerSupportsTerminal(kind: string): boolean {
     kind === "daytona" ||
     kind === "boat" ||
     kind === "kubernetes" ||
+    kind === "incus" ||
     kind === "fake"
   );
 }
