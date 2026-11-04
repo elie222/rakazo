@@ -200,9 +200,9 @@ involved.
 Computers without the URL, certificate or key fall back to `none`.
 
 Each instance is unprivileged, without nesting, with an isolated id map (its own range of host
-uids) and the limits above, all set on the instance so a profile cannot loosen them. Every command
-runs as the image's user (uid 1000) with no privilege escalation, the same boundary as a Docker
-computer. Instances are labelled `user.rakazo-bot-id=<bot id>`, and one carrying another bot's id is
+uids) and the limits above, all set on the instance so a profile cannot loosen them. The image's
+own start command and every command run as the image's user (uid 1000) with no privilege
+escalation, the same boundary as a Docker computer, so a custom image must keep that command. Instances are labelled `user.rakazo-bot-id=<bot id>`, and one carrying another bot's id is
 never reused or deleted. They are ephemeral: Incus deletes one when it stops, and the saved
 workspace is the persistence boundary, copied in when a computer starts and saved back when it
 stops, as on Kubernetes. Only cache paths and the screen size are set in the instance environment.
@@ -227,6 +227,8 @@ incus network acl rule add rakazo-computers egress action=reject \
   destination=0.0.0.0/8,10.0.0.0/8,100.64.0.0/10,127.0.0.0/8,169.254.0.0/16,172.16.0.0/12,192.0.0.0/24,192.168.0.0/16,198.18.0.0/15,224.0.0.0/3
 incus network acl rule add rakazo-computers egress action=reject protocol=tcp destination=::1/128,fc00::/7,fe80::/10
 incus network acl rule add rakazo-computers egress action=reject protocol=udp destination=::1/128,fc00::/7,fe80::/10
+incus network acl rule add rakazo-computers egress action=reject protocol=icmp6 icmp_type=128 \
+  destination=::1/128,fc00::/7,fe80::/10
 # Screens, from the address the API, worker and web connect from.
 incus network acl rule add rakazo-computers ingress action=allow protocol=tcp \
   source=<rakazo-server-address> destination_port=6100
@@ -246,8 +248,9 @@ incus config trust add-certificate rakazo.crt --restricted --projects rakazo
 
 The ACL sits on each computer's network device, so it also keeps computers from reaching each
 other and other instances on the bridge; it needs the `nftables` firewall driver. Connections to a
-computer are refused except to the screen port. The IP filtering options stop a computer from
-spoofing addresses or sending router advertisements to the host. Set
+computer are refused except to the screen port. IPv6 neighbour discovery keeps working because only
+echo requests are refused among ICMPv6 messages to private addresses. The IP filtering options stop
+a computer from spoofing addresses or sending router advertisements to the host. Set
 `INCUS_SANDBOX_PROJECT=rakazo` and the certificate and key from `rakazo.crt` and `rakazo.key`.
 
 ## `wuying`

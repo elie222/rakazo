@@ -22,6 +22,8 @@ import {
 export const COMPUTER_IMAGE_WORKSPACE = "/home/rakazo";
 const WORKSPACE = COMPUTER_IMAGE_WORKSPACE;
 const MAX_FILE_BYTES = 64 * 1024 * 1024;
+/** How long the `timeout` wrapper waits after SIGTERM before it kills the command's process group. */
+export const COMMAND_KILL_AFTER_MS = 5_000;
 const BULK_TRANSFER_TIMEOUT_MS = 30 * 60_000;
 
 // The pinned Computer image is deliberately immutable at runtime and runs as
@@ -412,7 +414,7 @@ function withTimeout(command: string[], timeoutMs: number): string[] {
   return [
     "timeout",
     "--signal=TERM",
-    "--kill-after=5s",
+    `--kill-after=${COMMAND_KILL_AFTER_MS / 1_000}s`,
     `${Math.max(1, Math.ceil(timeoutMs / 1_000))}s`,
     ...command,
   ];

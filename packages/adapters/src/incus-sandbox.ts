@@ -24,6 +24,7 @@ import { Agent, request as httpRequest } from "undici";
 import WebSocket from "ws";
 import type { RawExecEvent } from "./exec-computer.js";
 import {
+  COMMAND_KILL_AFTER_MS,
   computerNameForBot,
   ExecComputer,
   COMPUTER_IMAGE_WORKSPACE as WORKSPACE,
@@ -48,10 +49,15 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const STOP_TIMEOUT_MS = 60_000;
 const OPERATION_WAIT_SECONDS = 20;
 // Closing an exec's websockets kills only the command itself, so a cancelled command is sent
-// SIGTERM first; the `timeout` wrapper passes it to the whole process group.
-const TERMINATE_GRACE_MS = 2_000;
+// SIGTERM first. The `timeout` wrapper passes it to the whole process group and kills the group
+// if it is still there after its kill-after delay, so the streams stay open past that.
+const TERMINATE_GRACE_MS = COMMAND_KILL_AFTER_MS + 2_000;
 // The computer image runs as `USER 1000:1000`; Incus runs exec as root unless told otherwise.
 const IMAGE_USER = 1000;
+// The computer image's own command (its Dockerfile CMD). The instance starts it without privilege
+// escalation, as Docker and Kubernetes computers start, which a restricted project cannot set on
+// the container itself.
+const IMAGE_COMMAND = "/usr/bin/env -u LD_PRELOAD /usr/local/bin/rakazo-computer";
 // Names the bot that owns an instance. An instance carrying another bot's value is never
 // reused or replaced.
 const BOT_ID_KEY = "user.rakazo-bot-id";
@@ -381,6 +387,7 @@ export class IncusSandboxProvider implements SandboxProvider {
         "security.privileged": "false",
         "security.nesting": "false",
         "security.idmap.isolated": "true",
+        "oci.entrypoint": `setpriv --no-new-privs -- ${IMAGE_COMMAND}`,
         ...Object.fromEntries(
           Object.entries(environment).map(([key, value]) => [`environment.${key}`, value]),
         ),
@@ -395,13 +402,31 @@ export class IncusSandboxProvider implements SandboxProvider {
   }
 
   private async create(name: string, botId: string, signal: AbortSignal): Promise<void> {
-    const response = await this.request(
+    const accepted = await this.request(
       "POST",
       "/1.0/instances",
       signal,
       this.instanceSpec(name, botId),
     );
-    expectSuccess(await this.waitOperation(response, signal, CREATE_TIMEOUT_MS));
+    try {
+      expectSuccess(await this.waitOperation(accepted, signal, CREATE_TIMEOUT_MS));
+    } catch (error) {
+      // Incus finishes creating and starting the instance after the caller gives up.
+      if (signal.aborted) void this.discard(accepted, name, botId);
+      throw error;
+    }
+  }
+
+  /** Removes an instance whose start was abandoned, once Incus has finished creating it. */
+  private async discard(accepted: IncusResponse, name: string, botId: string): Promise<void> {
+    try {
+      await this.waitOperation(accepted, AbortSignal.timeout(CREATE_TIMEOUT_MS), CREATE_TIMEOUT_MS);
+      const signal = AbortSignal.timeout(STOP_TIMEOUT_MS);
+      const instance = await this.instance(name, signal);
+      if (instance?.config?.[BOT_ID_KEY] === botId) await this.remove(name, signal);
+    } catch {
+      // The next start for this bot finds and replaces whatever is left.
+    }
   }
 
   /**
@@ -612,8 +637,7 @@ export class IncusSandboxProvider implements SandboxProvider {
       let started: IncusResponse;
       try {
         started = await this.request("POST", `${instancePath(name)}/exec`, requests.signal, {
-          // Docker and Kubernetes computers forbid privilege escalation for the same image. A
-          // restricted project cannot set that on the container, so each command sets it itself.
+          // Commands do not descend from the image's command, so each sets this itself.
           command: ["setpriv", "--no-new-privs", "--", ...command],
           "wait-for-websocket": true,
           interactive: tty,

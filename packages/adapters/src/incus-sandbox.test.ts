@@ -1,4 +1,6 @@
 import { X509Certificate } from "node:crypto";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { PeerCertificate } from "node:tls";
 import { rootCertificates } from "node:tls";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
@@ -84,6 +86,8 @@ class FakeIncus implements IncusClient {
   /** Lets a test change an instance between the provider's reads. */
   onRead?: (name: string) => void;
   failCreate?: (name: string) => void;
+  /** Holds instance creation until it settles, as an image download does. */
+  createGate?: Promise<void>;
   private readonly operations = new Map<string, Promise<Record<string, unknown>>>();
   private readonly secrets = new Map<string, { exec: Exec; fd: string }>();
   private next = 0;
@@ -161,8 +165,11 @@ class FakeIncus implements IncusClient {
     if (this.instances.has(name)) throw new IncusError(`Instance "${name}" already exists`, 500);
     this.failCreate?.(name);
     const config = body.config as Record<string, string>;
-    this.instances.set(name, { ...running(config["user.rakazo-bot-id"]), config: { ...config } });
-    return this.operation(Promise.resolve({ status: "Success", status_code: 200 }));
+    const created = (this.createGate ?? Promise.resolve()).then(() => {
+      this.instances.set(name, { ...running(config["user.rakazo-bot-id"]), config: { ...config } });
+      return { status: "Success", status_code: 200 };
+    });
+    return this.operation(created);
   }
 
   private exec(body: Record<string, unknown>): IncusResponse {
@@ -350,6 +357,16 @@ describe("IncusSandboxProvider", () => {
         "environment.VNC_RESOLUTION": "1280x800",
       },
     });
+    // The image's own command starts without privilege escalation, so nothing it launches,
+    // such as the window manager's menu, can regain it.
+    const dockerfile = readFileSync(
+      path.join(import.meta.dirname, "../../../infra/sandboxes/computer/Dockerfile"),
+      "utf8",
+    );
+    const imageCommand = JSON.parse(dockerfile.match(/^CMD (\[.*\])$/m)![1]!) as string[];
+    expect((create!.body as { config: Record<string, string> }).config["oci.entrypoint"]).toBe(
+      `setpriv --no-new-privs -- ${imageCommand.join(" ")}`,
+    );
     // Only image paths and settings reach the instance environment.
     const environment = Object.entries((create!.body as { config: Record<string, string> }).config)
       .filter(([key]) => key.startsWith("environment."))
@@ -487,6 +504,27 @@ describe("IncusSandboxProvider", () => {
     );
     expect(result).toMatchObject({ providerRef: "box", fresh: true });
     expect(fake.requests.some((entry) => entry.method === "DELETE")).toBe(true);
+  });
+
+  it("removes an instance whose start was cancelled once Incus has created it", async () => {
+    const fake = new FakeIncus();
+    let release!: () => void;
+    fake.createGate = new Promise((resolve) => (release = resolve));
+    const controller = new AbortController();
+    const provisioning = providerFor(fake).provision(
+      { botId: "bot-a", homePath: "/unused" },
+      { ...context, signal: controller.signal },
+    );
+    await vi.waitFor(() =>
+      expect(fake.requests.some((entry) => entry.path.startsWith("/1.0/instances?"))).toBe(true),
+    );
+    controller.abort();
+    await expect(provisioning).rejects.toThrow();
+    release();
+    await vi.waitFor(() =>
+      expect(fake.requests.some((entry) => entry.method === "PUT")).toBe(true),
+    );
+    expect(fake.instances.size).toBe(0);
   });
 
   it("removes a new instance that does not become ready", async () => {
@@ -629,8 +667,11 @@ describe("IncusSandboxProvider", () => {
         { type: "exit", code: 130 },
       ]);
       expect(fake.execs[0]?.signals).toEqual([15]);
+      // The streams outlast the wrapper's kill-after delay, so a command that ignores SIGTERM
+      // is killed with its process group rather than orphaned when they close.
+      await vi.advanceTimersByTimeAsync(6_000);
       expect(fake.execs[0]?.closed.has("1")).toBe(false);
-      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(1_000);
       expect(fake.execs[0]?.closed).toEqual(new Set(["0", "1", "2", "control"]));
     } finally {
       vi.useRealTimers();
