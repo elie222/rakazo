@@ -134,6 +134,8 @@ export function useAccountDeletion({
       transparent={Platform.OS !== "ios"}
       animationType={Platform.OS === "ios" ? "slide" : "fade"}
       presentationStyle={Platform.OS === "ios" ? "pageSheet" : "overFullScreen"}
+      // A swipe goes through close(), so it is off while a deletion is in flight.
+      allowSwipeDismissal={!pending}
       onRequestClose={close}
     >
       <KeyboardAvoidingView

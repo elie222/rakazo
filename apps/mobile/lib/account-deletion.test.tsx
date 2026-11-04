@@ -52,15 +52,18 @@ vi.mock("react-native", () => {
       children,
       transparent,
       presentationStyle,
+      allowSwipeDismissal,
     }: Props & {
       transparent?: boolean;
       presentationStyle?: string;
+      allowSwipeDismissal?: boolean;
     }) =>
       createElement(
         "section",
         {
           "data-transparent": String(transparent ?? false),
           "data-presentation": presentationStyle,
+          "data-swipe": String(allowSwipeDismissal ?? false),
         },
         children,
       ),
@@ -162,6 +165,8 @@ describe("passwordless account deletion", () => {
     await open();
     const sheet = container.querySelector("section")!;
     expect(sheet.dataset.presentation).toBe("pageSheet");
+    // The sheet can be swiped away while nothing is in flight; the swipe goes through close().
+    expect(sheet.dataset.swipe).toBe("true");
     expect(sheet.dataset.transparent).toBe("false");
     // The actions stay clear of the home indicator.
     expect((sheet.firstElementChild as HTMLElement).style.paddingBottom).toBe("34px");
