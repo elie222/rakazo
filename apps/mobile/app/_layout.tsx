@@ -472,10 +472,11 @@ function LayoutContent() {
                     <Stack.Screen
                       name="new-organization"
                       options={{
-                        title: t("Create organization"),
-                        presentation: "modal",
-                        gestureEnabled: true,
-                        headerBackVisible: false,
+                        headerShown: false,
+                        presentation: "formSheet",
+                        sheetAllowedDetents: "fitToContents",
+                        sheetGrabberVisible: true,
+                        contentStyle: { backgroundColor: native.groupedPage },
                       }}
                     />
                     <Stack.Screen name="artifacts" options={glassHeaderOptions(t("Artifacts"))} />

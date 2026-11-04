@@ -1,19 +1,19 @@
-import { Stack, useRouter } from "expo-router";
+import { typeScale } from "@rakazo/ui-tokens";
+import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
-import { Alert, ScrollView, Text, TextInput } from "react-native";
+import { Alert, StyleSheet, Text, View } from "react-native";
 import { NativeActionButton } from "../components/native-action-button";
-import { cancelHeaderOptions } from "../components/sheet-header";
+import { SettingsGroup, SettingsInputRow } from "../components/settings-group";
 import { rpc } from "../lib/api";
+import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
-import { native, useMobileTokens } from "../lib/native";
+import { native, useThemedStyles } from "../lib/native";
 import { refreshOrganizations, switchOrganization, useOrganizations } from "../lib/organizations";
-import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function NewOrganization() {
-  const sideInsets = useSideInsets();
   const { t } = useI18n();
-  const tokens = useMobileTokens();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const organizations = useOrganizations().data;
   const [name, setName] = useState("");
@@ -44,41 +44,41 @@ export default function NewOrganization() {
   }
 
   return (
-    <>
-      <Stack.Screen options={cancelHeaderOptions(t("Cancel"), () => router.back())} />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
-        contentContainerStyle={{ padding: 24 }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Name")}</Text>
-        <TextInput
+    <View style={styles.content}>
+      <Text accessibilityRole="header" style={styles.title}>
+        {t("Create organization")}
+      </Text>
+      <SettingsGroup>
+        <SettingsInputRow
           accessibilityLabel={t("Name")}
           autoFocus
-          value={name}
+          editable={!pending}
           maxLength={60}
+          placeholder={t("Name")}
+          value={name}
           onChangeText={setName}
           onSubmitEditing={() => void create()}
-          placeholderTextColor={tokens.mutedForeground}
           returnKeyType="done"
-          style={{
-            marginTop: 8,
-            backgroundColor: native.fill,
-            borderRadius: 11,
-            padding: 14,
-            color: tokens.foreground,
-            fontSize: 16,
-          }}
         />
-        {error ? <Text style={{ color: tokens.destructive, marginTop: 14 }}>{error}</Text> : null}
-        <NativeActionButton
-          disabled={!name.trim() || pending}
-          label={pending ? t("Creating…") : t("Create")}
-          onPress={() => void create()}
-          style={{ marginTop: 20 }}
-        />
-      </ScrollView>
-    </>
+      </SettingsGroup>
+      {error ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error}
+        </Text>
+      ) : null}
+      <NativeActionButton
+        disabled={!name.trim() || pending}
+        label={pending ? t("Creating…") : t("Create")}
+        onPress={() => void create()}
+      />
+    </View>
   );
+}
+
+function createStyles() {
+  return StyleSheet.create({
+    content: { paddingHorizontal: 20, paddingTop: 28, paddingBottom: 24, gap: 20 },
+    title: { ...typeScale.title, color: native.label, textAlign: "center" },
+    error: { ...typeScale.caption, color: mobileTokens().destructive },
+  });
 }

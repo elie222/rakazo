@@ -49,6 +49,7 @@ describePostgres("organizations (PostgreSQL)", () => {
   let emulator: BillingEmulator;
   let billing: ReturnType<typeof createBillingService>;
   let sequence = 0;
+  const artifacts = { remove: vi.fn(async () => undefined) };
 
   const deps = () =>
     ({
@@ -57,7 +58,7 @@ describePostgres("organizations (PostgreSQL)", () => {
       sandbox: sandbox as unknown as SandboxProvider,
       home,
       jobs: { cancel: vi.fn(), enqueue: vi.fn() } as unknown as JobPublisher,
-      artifacts: { remove: vi.fn() } as unknown as ArtifactStore,
+      artifacts: artifacts as unknown as ArtifactStore,
       dataDir: root,
       billing,
     }) as unknown as RouterDeps;
@@ -361,6 +362,37 @@ describePostgres("organizations (PostgreSQL)", () => {
 
     await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
     expect(sandbox.destroyed).toEqual([`sb-retry-${suffix}`]);
+  });
+
+  it("keeps a Space whose files could not be removed, and removes them on a retry", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const storageKey = `blob-org-${suffix}`;
+    await system.artifact.create({
+      data: {
+        spaceId: work.id,
+        userId: ada.userId,
+        name: "plan.txt",
+        mimeType: "text/plain",
+        size: 4,
+        hash: "hash-org",
+        storageKey,
+      },
+    });
+    artifacts.remove.mockRejectedValueOnce(new Error("storage unavailable"));
+
+    await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
+      "storage unavailable",
+    );
+    expect(await system.space.findUnique({ where: { id: work.id } })).not.toBeNull();
+
+    await client(ada).organizations.remove({ organizationId: work.id });
+
+    await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
+    expect(artifacts.remove).toHaveBeenLastCalledWith(
+      storageKey,
+      expect.objectContaining({ spaceId: work.id }),
+    );
   });
 
   it("hides nothing when cancelling the organization's billing fails", async () => {

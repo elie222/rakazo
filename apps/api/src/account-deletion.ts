@@ -167,18 +167,20 @@ async function deleteClaimedSpaces(
   );
 
   for (const spaceId of input.spaceIds) {
+    // Files go before the row that lists them, so a failed removal is found again on retry.
+    const artifacts = await deps.prisma.artifact.findMany({
+      where: { spaceId },
+      select: { storageKey: true },
+    });
+    await settleAll(
+      artifacts.map(({ storageKey }) => deps.artifacts.remove(storageKey, context(spaceId))),
+    );
     const deleted = await deleteClaimedSpace(deps.prisma, {
       spaceId,
       claimId: input.claimId,
       soleMemberId: input.soleMemberId,
     });
     if (!deleted) continue;
-    const cleanup = await Promise.allSettled(
-      deleted.artifactKeys.map((storageKey) => deps.artifacts.remove(storageKey, context(spaceId))),
-    );
-    for (const result of cleanup) {
-      if (result.status === "rejected") getLogger().error("space file cleanup", result.reason);
-    }
     if (deps.secrets) await forgetPageShareSecrets(deps.secrets, deleted.pageShareSecrets);
   }
 }
