@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-04
+
+### Security
+
+- Every desktop update now has to be signed. Windows releases can no longer be built unsigned. Linux AppImage updates now come with a signature, and the app refuses to install an update whose signature is missing or does not match. Linux installs from before this release can't check signatures yet, so they accept this update the same way as before. Every update after it is checked.
+
+### Added
+
+- The vault holds payment cards and contacts (addresses, phones and emails) next to logins, API keys and variables. Each item has a title you choose, such as "Home" or "Work card", and an optional note on when the bot should use it. **Settings → Vault** is one list that opens each item in place, and a chat request is a short row with an **Add** button.
+- In **Approvals** settings you can add a rule for a tool by name before the bot ever asks about it, and switch any saved tool, connector or site rule between **Allow**, **Ask** and **Block**.
+- Phone notifications show which agent sent them, with its name and picture. On iOS a push from an agent appears like a message from a contact, and on Android as a conversation message.
+- Activity groups chats into **Needs attention**, **Working**, **Unread** and **Recent**. Each section folds, and empty ones are hidden.
+- A routine run can create new schedules for follow-up work. It still can't change existing ones.
+- A bot is told when its computer's disk is 85% full. From 90% you see a warning on that computer, with a button that asks the bot to clean up.
+
+### Changed
+
+- Dark mode has clearer contrast, chat text is a little larger, and each bot has one bright color shared by its avatar, name and your message bubbles.
+- How your bots look is now one account setting, **Bot style** in Settings (Original or Rakazo), instead of a choice on every new bot. Changing it restyles all your bots, except one you gave its own style in its avatar editor.
+- Text fields no longer have a grey fill that made them look disabled.
+- A bot rewriting its own instructions no longer posts an "Instructions updated" card in the chat.
+- A failed daily check-in no longer notifies the bot's owner, and the bot isn't tried again for a week.
+- Usage moved out of the account menu; it is still in Settings.
+- Computer saves skip folders that build tools mark as rebuildable caches, so build output no longer pushes a home past the save limit.
+- On deployments with hosted billing, the saved copy of a computer's files is deleted 30 days after a paid plan ends, or after 90 days without use on accounts that never paid. The organization's owner gets a warning email about a week before, and choosing a plan, buying credits or using the computer cancels it. Self-hosted deployments without billing are not affected.
+
+### Fixed
+
+- Opening a chat with a busy bot no longer makes the conversation jump when the row saying what the bot is doing appears.
+- Deleting a group always removes its stored files and its page links, even when stopping its cancelled runs fails.
+- A bot with long instructions can edit them again. It now reads them in full before rewriting, instead of getting a shortened copy and refusing to make the edit.
+- The Android app builds from source again.
+
 ## [0.5.0] - 2026-11-03
 
 ### Security

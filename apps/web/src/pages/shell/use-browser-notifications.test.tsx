@@ -72,9 +72,12 @@ const rpc = {
   },
 } as unknown as Pick<RpcClient, "notifications">;
 
+const noBots: Bot[] = [];
+
 function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
   useBrowserNotifications(
-    { current: [] as Bot[] },
+    noBots,
+    { current: noBots },
     {
       rpc,
       activeBotId: { current: botId },

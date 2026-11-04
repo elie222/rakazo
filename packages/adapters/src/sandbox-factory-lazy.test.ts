@@ -16,12 +16,15 @@ vi.mock("@alicloud/openapi-core", () => {
 vi.mock("@darabonba/typescript", () => {
   throw new Error("Darabonba loaded on default path");
 });
+vi.mock("railway", () => {
+  throw new Error("Railway SDK loaded on default path");
+});
 
 import { createRunSandbox } from "./index.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
 
-describe("optional Wuying loading", () => {
-  it("does not evaluate Wuying or Alibaba modules through the default factory or barrel", async () => {
+describe("optional provider loading", () => {
+  it("does not evaluate Wuying, Alibaba, or Railway SDK modules through the default factory or barrel", async () => {
     expect(
       (
         await createSandboxProvider("docker", {

@@ -6,6 +6,7 @@ import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/browser-notifications";
+import { notificationIcon, prepareNotificationIcons } from "../../lib/notification-icon";
 import type { RpcClient } from "../../lib/rpc";
 
 type PendingBrowserNotification = {
@@ -27,9 +28,11 @@ type ChatAlertOptions = {
  * the server's alerts for every other chat.
  */
 export function useBrowserNotifications(
+  bots: Bot[],
   botsRef: RefObject<Bot[]>,
   { rpc, activeBotId, activeGroupId, openChat }: ChatAlertOptions,
 ) {
+  useEffect(() => prepareNotificationIcons(bots), [bots]);
   const openChatRef = useRef(openChat);
   openChatRef.current = openChat;
   useEffect(() => {
@@ -51,8 +54,11 @@ export function useBrowserNotifications(
       )
         return;
       try {
+        const bot = botsRef.current.find((candidate) => candidate.id === alert.botId);
+        const icon = bot ? notificationIcon(bot) : undefined;
         const notification = new Notification(alert.title, {
           body: alert.body,
+          ...(icon ? { icon } : {}),
           // Per chat and kind: a repeat replaces its copy, but a question after a reply still pops up.
           tag: `${alert.threadId}:${alert.kind}`,
         });
@@ -116,7 +122,10 @@ export function useBrowserNotifications(
         windowFocused: document.hasFocus(),
         permission: Notification.permission,
         notifiedEventIds: notifiedBrowserEvents.current,
-        show: (title, body, tag) => new Notification(title, { body, tag }),
+        show: (title, body, tag) => {
+          const icon = notificationIcon(currentBot);
+          new Notification(title, { body, tag, ...(icon ? { icon } : {}) });
+        },
       },
     );
     return result !== "pending";

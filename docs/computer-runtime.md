@@ -79,7 +79,7 @@ The E2B adapter uses `@e2b/desktop` and the Novita adapter uses `novita-sandbox`
 
 ## Daytona backend
 
-The database stores the provider kind and opaque `providerRef`. That reference is an acceleration path, not durable data. It is passed back only to the same provider kind. A missing machine or a provider-kind change creates a replacement and restores its workspace through the provider-neutral contract.
+The Daytona adapter uses `@daytona/sdk` for lifecycle, commands, and files. It creates sandboxes from `DAYTONA_SNAPSHOT` when set, with Daytona's auto-stop and auto-delete turned off, so Rakazo's idle timer decides when a computer stops and a leaked sandbox bills until it is removed. Waking a sandbox Daytona has archived copies its disk back first, so start allows up to 10 minutes. Bot commands run through Daytona's process API and return their output when they finish rather than streaming it. The shared Linux runtime installs the desktop if the snapshot lacks it, which makes the first start slower, and serves each bot's screen through a signed Daytona preview URL that expires after an hour and is revoked on stop.
 
 ## Boat backend
 
@@ -88,6 +88,8 @@ The Boat adapter uses Boat's official TypeScript SDK for lifecycle, command, and
 Boat stop archives the machine and resume reconnects the same opaque sandbox id. Each bot’s Chrome profile lives under the portable workspace and is included in checkpoint/export. Boat states the API cannot recover from (deleted, cancelled, snapshot data expired, or an `error` that recover cannot fix) are reported as gone, so the computer is replaced and restored from its last checkpoint.
 
 ## Persistence
+
+The database stores the provider kind and opaque `providerRef`. That reference is an acceleration path, not durable data. It is passed back only to the same provider kind. A missing machine or a provider-kind change creates a replacement and restores its workspace through the provider-neutral contract.
 
 The portable computer workspace is the durable boundary. E2B uses `/home/user/rakazo-home`; Docker and local providers expose the equivalent home. Browser profiles are rooted under `.browser-profiles` in that workspace on E2B. Rakazo checkpoints transferred workspaces into `AgentHomeStore` at run completion or failure, before explicit stop, and before idle suspension. Docker mounts the Rakazo-owned home directly and only advances its revision marker at those boundaries. New or replacement machines import the latest stored workspace before use.
 

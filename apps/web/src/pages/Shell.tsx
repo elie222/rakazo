@@ -377,6 +377,7 @@ function SpaceShell() {
     redirectKeepingOverlay,
   });
   const { notifyBrowserForEvent, flushPendingBrowserNotifications } = useBrowserNotifications(
+    bots,
     botsRef,
     {
       rpc,
@@ -1093,6 +1094,7 @@ function SpaceShell() {
               onSpeak={speakMessage}
               onOpenComputer={computerControls.onOpenComputer}
               onOpenImportSetup={openImportSetup}
+              rpc={rpc}
             />
           )}
         </div>
