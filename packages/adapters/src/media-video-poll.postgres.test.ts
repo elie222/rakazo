@@ -118,6 +118,7 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     const enqueued: BackgroundJob[] = [];
     const queue = { down: false };
     // Each "process" gets fresh dependencies; nothing but the database survives a restart.
+    const limits: { maxUploadSizeBytes?: number } = {};
     const process = () => {
       const jobs: JobPublisher = {
         enqueue: async (job) => {
@@ -133,6 +134,7 @@ describePostgres("background video delivery (PostgreSQL)", () => {
         events: { notify: vi.fn(async () => undefined) },
         artifacts: createArtifactStore(dataDir, prisma, {}),
         mediaGeneration: media,
+        ...limits,
       };
     };
     const tenant = { spaceId: user.id, userId: user.id };
@@ -205,6 +207,7 @@ describePostgres("background video delivery (PostgreSQL)", () => {
       queue,
       age,
       stall,
+      limits,
       recovered,
       submit,
       poll,
@@ -317,6 +320,36 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     expect((await h.job(jobId)).status).toBe("media_pending");
     expect(h.recovered()).toContain(jobId);
     expect(await h.wakes()).toHaveLength(0);
+  });
+
+  it("retries provider errors past the deadline before reporting the video failed", async () => {
+    const h = await setup();
+    const jobId = await h.submit();
+    h.media.remote = "error";
+    await h.age(jobId, MEDIA_POLL_DEADLINE_MS + 60_000);
+    await h.poll(jobId);
+    expect((await h.job(jobId)).status).toBe("media_pending");
+    expect(await h.wakes()).toHaveLength(0);
+    await h.age(jobId, MEDIA_POLL_DEADLINE_MS + 20 * 60_000);
+    await h.poll(jobId);
+    expect((await h.job(jobId)).status).toBe("media_failed");
+    expect(await h.wakes()).toHaveLength(1);
+  });
+
+  it("reports a finished video that cannot be stored as failed after the deadline", async () => {
+    const h = await setup();
+    const jobId = await h.submit();
+    h.media.remote = "completed";
+    h.limits.maxUploadSizeBytes = 1;
+    await h.poll(jobId);
+    // The claim is released, so later checks and the deadline can still settle it.
+    expect((await h.job(jobId)).status).toBe("media_pending");
+    expect(await h.messages()).toHaveLength(0);
+    // Errors get the same grace past the deadline as provider errors.
+    await h.age(jobId, MEDIA_POLL_DEADLINE_MS + 20 * 60_000);
+    await h.poll(jobId);
+    expect((await h.job(jobId)).status).toBe("media_failed");
+    expect(await h.wakes()).toHaveLength(1);
   });
 
   it("still delivers when the turn that asked was stopped or closed", async () => {

@@ -15,6 +15,8 @@ import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
 export const MEDIA_POLL_DEADLINE_MS = 60 * 60_000;
 /** A poll lock held this long belongs to a worker that died; a live poll finishes well within it. */
 const ABANDONED_POLL_LOCK_MS = 10 * 60_000;
+/** How long past the deadline provider errors are retried before the video is reported failed. */
+const ERROR_GRACE_MS = 15 * 60_000;
 /** Longer than the widest poll interval, so a job left this long lost its scheduled poll. */
 const STALLED_MS = 10 * 60_000;
 const PENDING_STATUSES = ["media_pending", "media_polling"];
@@ -252,7 +254,13 @@ export async function pollMediaVideo(deps: MediaVideoDeps, payload: { jobId: str
     }),
   });
   let settled = result?.status === "completed" || result?.status === "failed";
-  if (!settled && expired) {
+  // A final check that errored is no answer; keep trying a little longer before giving up.
+  const unanswered = Boolean(result && "error" in result);
+  if (
+    !settled &&
+    expired &&
+    (!unanswered || Date.now() - job.createdAt.getTime() >= MEDIA_POLL_DEADLINE_MS + ERROR_GRACE_MS)
+  ) {
     // Still unfinished after the final check: report it failed. Only a released or abandoned
     // claim is taken, so a check still in flight decides instead, and a video already attached
     // keeps trying to post.
