@@ -899,7 +899,10 @@ export async function resolveStoredModelAuth(
   provider: string,
   opts: Pick<ResolveModelOpts, "oauth" | "signal" | "now"> = {},
 ): ReturnType<typeof resolveModelAuth> {
-  if (!oauthRefreshDue(plaintext, opts.now ?? Date.now())) {
+  // One clock reading, so the locked and unlocked paths agree on whether a refresh is due.
+  const now = opts.now ?? Date.now();
+  opts = { ...opts, now };
+  if (!oauthRefreshDue(plaintext, now)) {
     return resolveModelAuth(plaintext, provider, opts);
   }
   const { secretId } = credential;

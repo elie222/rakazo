@@ -24,6 +24,7 @@ import {
   refreshStoredModelCredential,
   resolveModelApiKey,
   resolveModelAuth,
+  resolveStoredModelAuth,
   secretValuesToRedact,
   serializeModelSecret,
   terminalOAuthRefreshErrorMarker,
@@ -1098,6 +1099,34 @@ describe("refreshExpiredModelCredential", () => {
     } finally {
       timeout.mockRestore();
       vi.useRealTimers();
+    }
+  });
+
+  it("decides whether a refresh is due from one clock reading", async () => {
+    const start = 1_000_000;
+    // The token turns due 5 ms after the first reading.
+    const held = oauthCred({ access: "old", expires: start + 5 * 60_000 + 5 });
+    const plaintext = serializeModelSecret({ kind: "oauth", credential: held });
+    const { prisma, secretStore } = secretRow(plaintext);
+    const oauth = stubOAuth(async () => oauthCred({ access: "new", expires: start + 3_600_000 }));
+    const clock = vi
+      .spyOn(Date, "now")
+      .mockReturnValueOnce(start)
+      .mockReturnValue(start + 10);
+    try {
+      const resolved = await resolveStoredModelAuth(
+        prisma,
+        secretStore,
+        scope,
+        { secretId: "secret-1" },
+        plaintext,
+        CHATGPT_OAUTH_PROVIDER,
+        { oauth },
+      );
+      expect(resolved.apiKey).toBe("old");
+      expect(oauth.refresh).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
     }
   });
 
