@@ -566,7 +566,17 @@ async function deliverRow(
   let accepted = false;
   try {
     if (row.kind === "group" || row.kind === "intro") {
-      if (!row.threadId) {
+      // A reply a deactivated person's bot queued for a group is not posted after all.
+      const source = row.sourceMessageId
+        ? await deps.prisma.message.findUnique({
+            where: { id: row.sourceMessageId },
+            select: { thread: { select: { userId: true } } },
+          })
+        : null;
+      if (
+        !row.threadId ||
+        (source && (await accountDeactivated(deps.prisma, source.thread.userId)))
+      ) {
         await deps.prisma.messagingOutbound.update({
           where: { id: row.id },
           data: { status: "failed" },

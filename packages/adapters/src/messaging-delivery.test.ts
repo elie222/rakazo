@@ -141,6 +141,7 @@ function createDeps(overrides: {
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     message: {
+      findUnique: vi.fn(async (): Promise<{ thread: { userId: string } } | null> => null),
       findMany: vi.fn(
         async () =>
           overrides.messages ?? [
@@ -598,6 +599,32 @@ describe("deliverMessagingOutbound", () => {
     expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
   });
 
+  it("does not post a group reply queued by a person who has since been deactivated", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [
+        {
+          id: "out-group",
+          idempotencyKey: "group:1",
+          kind: "group",
+          threadId: "group-thread",
+          sourceMessageId: "m-1",
+          body: "a group reply queued before deactivation",
+          status: "pending",
+          providerHandle: null,
+        },
+      ],
+    });
+    vi.mocked(deps.prisma.message.findUnique).mockResolvedValue({
+      thread: { userId: "user-1" },
+    } as never);
+    deps.prisma.user.findUnique.mockResolvedValue({ deactivatedAt: new Date() });
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
+  });
+
   it("does not send a connect invite after the connection was revoked", async () => {
     const deps = createDeps({
       run: null,
@@ -834,6 +861,7 @@ function createChannelDeps(
   const txMock = {
     thread: { update: vi.fn(async () => ({ nextMessageSeq: 5, nextEventSeq: 10 })) },
     message: {
+      findUnique: vi.fn(async (): Promise<{ thread: { userId: string } } | null> => null),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const message = { id: `ctx-${contextMessages.length + 1}`, seq: 4, ...data };
         contextMessages.push(message);
