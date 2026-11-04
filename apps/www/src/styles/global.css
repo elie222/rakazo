@@ -3178,7 +3178,7 @@ td:last-child .pricing-hint__tip {
   text-align: left;
 }
 
-.table-note {
+.sandbox-section .table-note {
   margin-top: 8px;
   color: var(--muted);
   font-size: 14px;
