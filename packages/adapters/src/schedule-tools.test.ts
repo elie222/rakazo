@@ -1312,6 +1312,7 @@ describe("changeUserTimezone", () => {
         },
       },
       $transaction: async (run: (client: unknown) => Promise<unknown>) => run(prisma),
+      $queryRaw: async () => [],
     };
     const deps = {
       prisma,
@@ -1409,9 +1410,21 @@ describe("changeUserTimezone", () => {
   });
 
   it.each([
-    { case: "several crons", crons: ["0 9 * * 1", "0 12 * * 1"], nextRunAt: null },
-    { case: "an inactive routine", crons: ["0 9 * * 1"], nextRunAt: null, active: false },
-  ])("moves only the zone label of $case", async ({ crons, nextRunAt, active }) => {
+    {
+      case: "several crons, zone behind",
+      crons: ["0 9 * * 1", "0 12 * * 1"],
+      nextRunAt: "2026-11-09T07:00:00.000Z",
+      to: "Europe/London",
+      moved: "2026-11-09T09:00:00.000Z",
+    },
+    {
+      case: "several crons, zone ahead",
+      crons: ["0 9 * * 1", "0 12 * * 1"],
+      nextRunAt: "2026-11-09T07:00:00.000Z",
+      to: "Asia/Tokyo",
+      moved: "2026-11-09T00:00:00.000Z",
+    },
+  ])("retimes the pending run of an active routine with $case", async ({ crons, nextRunAt, to, moved }) => {
     const { deps, rows } = account([
       {
         spaceId: base.spaceId,
@@ -1420,15 +1433,39 @@ describe("changeUserTimezone", () => {
         name: "Weekly",
         crons,
         timezone: "Africa/Cairo",
-        active: active ?? true,
+        active: true,
         watch: null,
-        nextRunAt,
+        nextRunAt: new Date(nextRunAt),
+      },
+    ]);
+
+    await changeUserTimezone(deps, "user-1", to);
+
+    expect(rows[0]).toMatchObject({ timezone: to, crons, nextRunAt: new Date(moved) });
+  });
+
+  it("moves only the zone label of an inactive routine", async () => {
+    const { deps, rows } = account([
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "Weekly",
+        crons: ["0 9 * * 1"],
+        timezone: "Africa/Cairo",
+        active: false,
+        watch: null,
+        nextRunAt: null,
       },
     ]);
 
     await changeUserTimezone(deps, "user-1", "Europe/London");
 
-    expect(rows[0]).toMatchObject({ timezone: "Europe/London", crons, nextRunAt });
+    expect(rows[0]).toMatchObject({
+      timezone: "Europe/London",
+      crons: ["0 9 * * 1"],
+      nextRunAt: null,
+    });
   });
 
   it("moves nothing when the account had no saved zone", async () => {

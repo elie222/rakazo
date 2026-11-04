@@ -45,6 +45,7 @@ function fakeAccount(ownerStartedRun = true, tainted = false, nextApprovedTool?:
       },
     },
     $transaction: async (run: (client: unknown) => Promise<unknown>) => run(prisma),
+    $queryRaw: async () => [],
   };
   const ctx = {
     deps: {

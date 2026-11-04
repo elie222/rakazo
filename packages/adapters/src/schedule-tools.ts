@@ -15,6 +15,7 @@ import {
   zonedDateTime,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import { runAsSystemInTransaction } from "@rakazo/db";
 
 import { localDateTime } from "./current-time.js";
 import { validateRoutineWatch } from "./routine-watch.js";
@@ -278,29 +279,40 @@ export async function changeUserTimezone(
 ): Promise<void> {
   const woken: { id: string; nextRunAt: Date }[] = [];
   await deps.prisma.$transaction(async (tx) => {
-    const user = await tx.user.findUnique({ where: { id: userId }, select: { timezone: true } });
-    if (!user || user.timezone === timezone) return;
-    await tx.user.update({ where: { id: userId }, data: { timezone } });
-    if (!timezone || !user.timezone) return;
-    const routines = await tx.routine.findMany({ where: { userId, timezone: user.timezone } });
-    for (const routine of routines) {
-      const nextRunAt = nextRunAtAfterTimezoneMove(routine, timezone);
-      const movedNext = nextRunAt?.getTime() !== routine.nextRunAt?.getTime();
-      // The zone and the timing it was computed from are part of the write, so a run that
-      // fired meanwhile keeps its advance and the routine keeps its old zone.
-      const { count } = await tx.routine.updateMany({
-        where: {
-          id: routine.id,
-          userId,
-          timezone: user.timezone,
-          ...(movedNext ? { nextRunAt: routine.nextRunAt } : {}),
-        },
-        data: { timezone, ...(movedNext ? { nextRunAt } : {}) },
-      });
-      if (count === 1 && movedNext && routine.active && nextRunAt) {
-        woken.push({ id: routine.id, nextRunAt });
+    // The user's routines sit in every space they own one in, and a tenant scope only
+    // sees its own space's rows, so the move runs as an explicit cross-space bypass.
+    await runAsSystemInTransaction(tx, "move the user's routines in all their spaces", async () => {
+      // The lock serializes overlapping zone saves: each reads the previous zone only
+      // after the last save committed, so no routine keeps an intermediate zone.
+      await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${userId} FOR UPDATE`;
+      const user = await tx.user.findUnique({ where: { id: userId }, select: { timezone: true } });
+      if (!user || user.timezone === timezone) return;
+      await tx.user.update({ where: { id: userId }, data: { timezone } });
+      if (!timezone || !user.timezone) return;
+      // Lock the rows about to move, so a run firing meanwhile cannot advance one between
+      // the read and the write: its claim lands after the commit and re-derives from the
+      // moved schedule.
+      await tx.$queryRaw`SELECT id FROM "routines" WHERE "userId" = ${userId} AND timezone = ${user.timezone} FOR UPDATE`;
+      const routines = await tx.routine.findMany({ where: { userId, timezone: user.timezone } });
+      for (const routine of routines) {
+        const nextRunAt = nextRunAtAfterTimezoneMove(routine, timezone);
+        const movedNext = nextRunAt?.getTime() !== routine.nextRunAt?.getTime();
+        // The zone and the timing it was computed from are part of the write, so a change
+        // that slipped through anyway keeps its advance and the routine its old zone.
+        const { count } = await tx.routine.updateMany({
+          where: {
+            id: routine.id,
+            userId,
+            timezone: user.timezone,
+            ...(movedNext ? { nextRunAt: routine.nextRunAt } : {}),
+          },
+          data: { timezone, ...(movedNext ? { nextRunAt } : {}) },
+        });
+        if (count === 1 && movedNext && routine.active && nextRunAt) {
+          woken.push({ id: routine.id, nextRunAt });
+        }
       }
-    }
+    });
   });
   // Enqueue after the commit, like every routine write; the reconciler repairs a miss.
   for (const routine of woken) {
@@ -311,8 +323,8 @@ export async function changeUserTimezone(
 /**
  * The next run after a routine's zone moves with the account: an active repeat keeps its
  * local time in the new zone. Anything else keeps its pending instant — a one-shot is an
- * absolute time, a watch checks on its own interval, and a row with several crons or no
- * crons follows the new zone from its pending occurrence, which the next tick computes.
+ * absolute time, a watch checks on its own interval, and a row with no crons has nothing
+ * to retime.
  */
 function nextRunAtAfterTimezoneMove(
   routine: {
@@ -328,20 +340,40 @@ function nextRunAtAfterTimezoneMove(
     !routine.active ||
     routine.watch != null ||
     isOneShotRoutineCrons(routine.crons) ||
-    routine.crons.length !== 1
+    routine.crons.length === 0
   ) {
     return routine.nextRunAt;
   }
-  const cron = routine.crons[0] ?? "";
-  let timing: Record<string, unknown> = { cron };
   const due = routine.nextRunAt;
-  if (due && due.getTime() > Date.now()) {
-    const moved = carriedRunAtForTimezone(cron, due, routine.timezone, timezone);
-    if (moved.carried) return moved.carried;
-    if (moved.startAt) timing = { cron, startAt: moved.startAt };
+  if (routine.crons.length === 1) {
+    let timing: Record<string, unknown> = { cron: routine.crons[0] };
+    if (due && due.getTime() > Date.now()) {
+      const moved = carriedRunAtForTimezone(
+        routine.crons[0] ?? "",
+        due,
+        routine.timezone,
+        timezone,
+      );
+      if (moved.carried) return moved.carried;
+      if (moved.startAt) timing = { cron: routine.crons[0], startAt: moved.startAt };
+    }
+    const resolved = resolveScheduleTiming(timing, timezone);
+    return resolved.ok ? resolved.nextRunAt : routine.nextRunAt;
   }
-  const resolved = resolveScheduleTiming(timing, timezone);
-  return resolved.ok ? resolved.nextRunAt : routine.nextRunAt;
+  // Several crons keep plain cron matches (their interval anchors are unknown), so the
+  // pending occurrence's local time is carried the same way; a zone behind restarts from
+  // when it was due, so no occurrence is skipped.
+  if (due && due.getTime() > Date.now()) {
+    const local = zonedDateTime(wallClock(due, routine.timezone), timezone);
+    if (local && local.getTime() <= due.getTime()) {
+      if (local.getTime() > Date.now()) return local;
+      return nextCronDateAcross(routine.crons, new Date(), timezone) ?? routine.nextRunAt;
+    }
+    return (
+      nextCronDateAcross(routine.crons, new Date(due.getTime() - 1), timezone) ?? routine.nextRunAt
+    );
+  }
+  return nextCronDateAcross(routine.crons, new Date(), timezone) ?? routine.nextRunAt;
 }
 
 /** Each routine is an unattended model run, so a looping bot must not stack them. */

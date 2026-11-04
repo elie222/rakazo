@@ -125,6 +125,7 @@ describe("account preferences", () => {
         ),
       },
       $transaction: vi.fn(async (run: (client: unknown) => Promise<unknown>) => run(prisma)),
+      $queryRaw: vi.fn(async () => []),
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
