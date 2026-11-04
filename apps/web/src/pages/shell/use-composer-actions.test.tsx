@@ -429,3 +429,34 @@ it("clears the reply a finished send used when no newer one was picked", async (
 
   expect(latest.replyTarget).toBeNull();
 });
+
+it("keeps a newer excerpt of the same message picked while its older send is in flight", async () => {
+  const message = replyCandidate("m-1");
+  act(() => {
+    latest.setReplyTarget(message);
+    latest.setReplyQuote("first excerpt");
+  });
+  let finishSend!: () => void;
+  rpc.threads.send.mockReturnValue(
+    new Promise((resolve) => {
+      finishSend = () => resolve({ runId: "run-1", taskId: "task-1" });
+    }),
+  );
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("hello", [], "nonce-1");
+  });
+  await flush();
+  // Re-arming the same message object with a different excerpt must read as
+  // a newer pick, not as the reply the in-flight send still holds.
+  act(() => {
+    latest.setReplyTarget(message);
+    latest.setReplyQuote("second excerpt");
+  });
+
+  finishSend();
+  await act(async () => void (await sent));
+
+  expect(latest.replyTarget).toBe(message);
+  expect(latest.replyQuote).toBe("second excerpt");
+});

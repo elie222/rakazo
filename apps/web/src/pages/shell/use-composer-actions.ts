@@ -134,14 +134,20 @@ export function useComposerActions({
   // reply instead of failing the send.
   const activeReplyTarget = replyTarget;
   const activeReplyQuote = replyTarget ? replyQuote : null;
+  // The armed reply as one value: a newer pick of the same message with a
+  // different excerpt is still a newer pick.
+  const armedReply = useRef({ target: activeReplyTarget, quote: activeReplyQuote });
+  armedReply.current = { target: activeReplyTarget, quote: activeReplyQuote };
   const clearReply = useCallback(() => {
     setReplyTarget(null);
     setReplyQuote(null);
   }, []);
   /** Clears the reply a send carried; one picked while it was in flight stays armed. */
   const clearSentReply = useCallback((sent: ThreadMessage | null, sentQuote: string | null) => {
-    setReplyTarget((current) => (current === sent ? null : current));
-    setReplyQuote((current) => (current === sentQuote ? null : current));
+    if (armedReply.current.target === sent && armedReply.current.quote === sentQuote) {
+      setReplyTarget(null);
+      setReplyQuote(null);
+    }
   }, []);
   const runError = threadRunError(activeSnapshot, dismissedRunErrorIds);
   const displayedRunError = !sendError ? runError : null;
