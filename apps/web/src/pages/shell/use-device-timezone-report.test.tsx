@@ -30,7 +30,7 @@ async function mountReport(adoptTimezone: AdoptTimezone, saved: string | null) {
   document.body.append(container);
   const root = createRoot(container);
   let bump: () => void = () => {};
-  function Harness() {
+  function Harness({ saved }: { saved: string | null }) {
     bump = useDeviceTimezoneReport(
       { preferences: { adoptTimezone } } as unknown as Rpc,
       me(saved),
@@ -38,10 +38,14 @@ async function mountReport(adoptTimezone: AdoptTimezone, saved: string | null) {
     );
     return null;
   }
-  await act(async () => root.render(<Harness />));
+  const rerender = async (nextSaved: string | null) => {
+    await act(async () => root.render(<Harness saved={nextSaved} />));
+  };
+  await rerender(saved);
   return {
     apply,
     manualSave: bump,
+    rerender,
     cleanup: async () => {
       await act(async () => root.unmount());
       container.remove();
@@ -84,6 +88,23 @@ it("a delayed report answer never repaints a newer manual save", async () => {
     // The stale answer arrives after it: the chosen zone stays on screen.
     await act(async () => answer.resolve(me(localTimezone())));
     expect(harness.apply).not.toHaveBeenCalled();
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+it("a fresh bootstrap zone after a matching cached seed still reports", async () => {
+  const answer = deferred<Me>();
+  const adoptTimezone = vi.fn(() => answer.promise);
+  // The cached seed paints this device's zone, so the shell starts quiet.
+  const harness = await mountReport(adoptTimezone, localTimezone());
+  try {
+    expect(adoptTimezone).not.toHaveBeenCalled();
+    // Another device moved the account; the fresh bootstrap brings that zone.
+    await harness.rerender(savedZone);
+    expect(adoptTimezone).toHaveBeenCalledWith({ timezone: localTimezone() });
+    await act(async () => answer.resolve(me(localTimezone())));
+    expect(harness.apply).toHaveBeenCalledWith(me(localTimezone()));
   } finally {
     await harness.cleanup();
   }

@@ -4,7 +4,8 @@ import { localTimezone } from "../../lib/local-timezone";
 import type { createSpaceRpc } from "../../lib/rpc";
 
 /**
- * Reports the device's zone for the account whenever the shell's `me` arrives and the tab
+ * Reports the device's zone for the account whenever the shell's `me` arrives, its saved
+ * zone changes under it (a cached seed replaced by the fresh bootstrap), or the tab
  * returns to the foreground, while the saved zone differs from the device's. The server
  * keeps a zone the user picked by hand, so a report never fights a choice; a report whose
  * answer arrives after a newer manual save is dropped, so a delayed answer cannot repaint
@@ -34,9 +35,10 @@ export function useDeviceTimezoneReport(
       .catch(() => {});
   }, []);
   const hasMe = me != null;
+  const savedZone = me?.timezone ?? null;
   useEffect(() => {
     if (hasMe) report();
-  }, [hasMe, report]);
+  }, [hasMe, savedZone, report]);
   useEffect(() => {
     const onForeground = () => report();
     document.addEventListener("visibilitychange", onForeground);
