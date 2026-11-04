@@ -964,7 +964,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const requestSession = async (request: Request) => {
     // The bearer plugin turns a signed `Authorization: Bearer` into the session cookie.
-    const session = await auth.api.getSession({ headers: request.headers });
+    // A sign-out's deferred push unregistration retries until its server answers; a normal
+    // read would refresh the session it is about to end and keep it alive, so this one
+    // RPC reads its session without refreshing it.
+    const unregisteringPush = new URL(request.url).pathname === "/rpc/notifications/unregisterPush";
+    const session = await auth.api.getSession({
+      headers: request.headers,
+      ...(unregisteringPush ? { query: { disableRefresh: true } } : {}),
+    });
     if (!session?.user) return null;
     const actor = await actorFromMembership(
       requireMembership(prisma, session.user.id, request.headers.get("x-rakazo-space-id")),

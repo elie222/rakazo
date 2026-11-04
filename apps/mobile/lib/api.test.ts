@@ -2149,6 +2149,94 @@ describe("mobile API authentication", () => {
     await resetApiBase();
   });
 
+  it("a reconcile suspended mid-read leaves a starting switch's record alone", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
+    store.set(
+      "rakazo.pending_sign_out",
+      JSON.stringify([
+        {
+          apiBase: "http://127.0.0.1:3100",
+          token: "token-a",
+          headers: {},
+          recordedAt: Date.now(),
+          provisional: true,
+        },
+      ]),
+    );
+    mockSecureStore(store);
+    let releaseSessionRead: (() => void) | undefined;
+    let sessionReads = 0;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token") {
+        sessionReads += 1;
+        if (sessionReads === 1)
+          await new Promise<void>((resolve) => {
+            releaseSessionRead = resolve;
+          });
+      }
+      return store.get(key) ?? null;
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token") throw new Error("device locked");
+      store.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token") throw new Error("device locked");
+      store.set(key, value);
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    // The reconcile suspends reading the session; the switch starts while it waits.
+    const settling = flushPendingSignOut(true);
+    await vi.waitFor(() => expect(sessionReads).toBeGreaterThanOrEqual(1));
+    const switching = saveApiBase("https://second-server.example");
+    await vi.waitFor(() => expect(sessionReads).toBeGreaterThanOrEqual(2));
+    releaseSessionRead?.();
+    await settling;
+    await expect(switching).resolves.toMatchObject({ ok: false });
+
+    expect(fetchMock.mock.calls).toEqual([]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    expect(store.get("rakazo.session_token")).toBe("token-a");
+  });
+
+  it("keeps the reconcile gate held while an earlier switch still runs", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
+    mockSecureStore(store);
+    let failEndpointWrite: (() => void) | undefined;
+    let endpointWrites = 0;
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.api_base") {
+        endpointWrites += 1;
+        if (endpointWrites === 1) {
+          await new Promise((_resolve, reject) => {
+            failEndpointWrite = () => reject(new Error("device locked"));
+          });
+        }
+      }
+      store.set(key, value);
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    // This switch clears the old credentials, then parks before committing.
+    const first = saveApiBase("https://second-server.example");
+    await vi.waitFor(() => expect(failEndpointWrite).toBeTruthy());
+    // An overlapping session-less switch finishes, which once dropped the single gate.
+    const second = await saveApiBase("https://third-server.example");
+    expect(second).toMatchObject({ ok: true });
+
+    // A retry during the parked switch must not deliver its provisional record.
+    await flushPendingSignOut();
+    expect(fetchMock.mock.calls).toEqual([]);
+
+    failEndpointWrite?.();
+    await expect(first).resolves.toMatchObject({ ok: false });
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    expect(store.get("rakazo.session_token")).toBe("token-a");
+  });
+
   it("records no revocation when switching servers without a session", async () => {
     const store = new Map<string, string>();
     mockSecureStore(store);

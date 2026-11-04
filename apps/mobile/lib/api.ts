@@ -448,11 +448,11 @@ export async function saveApiBase(
   if (parsed.url === defaultApiBase() && Object.keys(headers).length === 0) return resetApiBase();
   const previous = currentApiBase();
   const switching = parsed.url !== previous;
-  if (switching) switchingEndpoint = true;
+  if (switching) endpointChanges += 1;
   try {
     return await saveApiBaseLocked(parsed, previous, headers, switching);
   } finally {
-    if (switching) switchingEndpoint = false;
+    if (switching) endpointChanges -= 1;
   }
 }
 
@@ -522,11 +522,11 @@ export async function resetApiBase(): Promise<EndpointResult> {
   const previous = currentApiBase();
   const url = defaultApiBase();
   const switching = url !== previous;
-  if (switching) switchingEndpoint = true;
+  if (switching) endpointChanges += 1;
   try {
     return await resetApiBaseLocked(previous, url, switching);
   } finally {
-    if (switching) switchingEndpoint = false;
+    if (switching) endpointChanges -= 1;
   }
 }
 
@@ -943,11 +943,8 @@ let pendingSignOutAbsent = true;
 let flushingPendingSignOut: Promise<void> | undefined;
 /** Orders every read-modify-write of the record list; network calls never run inside it. */
 let pendingSignOutWrites: Promise<unknown> = Promise.resolve();
-/**
- * True while a server switch is between recording its provisional revocation and committing or
- * rolling back; reconcile leaves the switch's record alone meanwhile.
- */
-let switchingEndpoint = false;
+/** Endpoint changes in flight; reconcile leaves a switch's records alone while any runs. */
+let endpointChanges = 0;
 
 function queuePendingSignOutWrite<T>(step: () => Promise<T>): Promise<T> {
   const result = pendingSignOutWrites.then(step, step);
@@ -1093,20 +1090,23 @@ async function promotePendingSignOut(record: PendingSignOut): Promise<void> {
 /**
  * Resolves records a dying server switch left behind. A provisional record whose session is still
  * the active one on its server belongs to a switch that never completed, and the session it would
- * revoke is still in use; every other provisional record is promoted for delivery. The session
- * token is read only when there is something to resolve, so launches with no records stay quiet.
+ * revoke is still in use; every other provisional record is promoted for delivery. Everything is
+ * revalidated inside the queued step — a switch may start, finish or roll back while this waits —
+ * so a reconcile that raced a switch's start leaves its records alone.
  */
 async function reconcileProvisionalSignOuts(): Promise<void> {
-  // A live switch owns its provisional record until it commits or rolls back.
-  if (switchingEndpoint) return;
   const initial = await readPendingSignOuts();
   if (!initial.ok || !initial.records.some((record) => record.provisional)) return;
-  const snapshot = await snapshotSessionToken();
-  if (!snapshot.ok) return;
-  const activeToken = snapshot.value;
   await queuePendingSignOutWrite(async () => {
     const read = await readPendingSignOuts();
-    if (!read.ok) return;
+    if (!read.ok || !read.records.some((record) => record.provisional)) return;
+    if (endpointChanges > 0) return;
+    const snapshot = await snapshotSessionToken();
+    if (!snapshot.ok) return;
+    // Re-read after the snapshot's wait too: nothing between this check and the write awaits,
+    // so a switch that starts now queues its own record behind this step.
+    if (endpointChanges > 0) return;
+    const activeToken = snapshot.value;
     let resolvedAny = false;
     const resolved: PendingSignOut[] = [];
     for (const record of livePendingSignOuts(read.records)) {
