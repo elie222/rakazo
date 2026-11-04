@@ -1419,6 +1419,83 @@ describe("mobile API authentication", () => {
     await resetApiBase();
   });
 
+  describe.each(["/rpc/notifications/unregisterPush", "/api/auth/sign-out"])(
+    "redirected revocation response from %s",
+    (redirectedPath) => {
+      it.each([
+        [200, true, "http://127.0.0.1:3100"],
+        [401, true, "http://127.0.0.1:3100"],
+        [200, false, "https://other-server.example"],
+        [401, false, "https://other-server.example"],
+        [200, false, "http://127.0.0.1:3100/login"],
+      ])(
+        "retains the record for status %s, redirected %s, URL %s",
+        async (status, redirected, url) => {
+          const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+          mockSecureStore(store);
+          vi.stubGlobal(
+            "fetch",
+            vi.fn(async (input: string) => {
+              if (!input.endsWith(redirectedPath)) return jsonResponse({});
+              const response = new Response("{}", { status });
+              Object.defineProperties(response, {
+                redirected: { value: redirected },
+                url: { value: url === "http://127.0.0.1:3100" ? input : url },
+              });
+              return response;
+            }),
+          );
+
+          await signOut();
+
+          expect(pendingSignOutRecords(store)).toEqual([
+            { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+          ]);
+          vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => jsonResponse({})),
+          );
+          await flushPendingSignOut(true);
+          expect(pendingSignOutRecords(store)).toEqual([]);
+        },
+      );
+    },
+  );
+
+  it.each([200, 401, 503])(
+    "still sends sign-out after an unregistration 401 and sign-out status %s",
+    async (status) => {
+      const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+      mockSecureStore(store);
+      const fetchMock = vi.fn(
+        async (input: string) =>
+          new Response("{}", {
+            status: input.endsWith("/rpc/notifications/unregisterPush") ? 401 : status,
+          }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      await signOut();
+
+      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+        "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+        "http://127.0.0.1:3100/api/auth/sign-out",
+      ]);
+      expect(pendingSignOutRecords(store)).toHaveLength(status === 503 ? 1 : 0);
+      if (status === 503) {
+        const retry = vi.fn(async () => jsonResponse({}));
+        vi.stubGlobal("fetch", retry);
+        await flushPendingSignOut(true);
+        expect(retry.mock.calls).toHaveLength(1);
+        expect(retry).toHaveBeenCalledWith(
+          "http://127.0.0.1:3100/api/auth/sign-out",
+          expect.anything(),
+        );
+        expect(pendingSignOutRecords(store)).toEqual([]);
+      }
+    },
+  );
+
   it("keeps the pending revocation unless the server reports the session invalid", async () => {
     const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
     mockSecureStore(store);
@@ -2262,41 +2339,107 @@ describe("mobile API authentication", () => {
     expect(store.get("rakazo.session_token")).toBe("token-a");
   });
 
-  it("keeps the reconcile gate held while an earlier switch still runs", async () => {
-    const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
-    mockSecureStore(store);
-    let failEndpointWrite: (() => void) | undefined;
-    let endpointWrites = 0;
-    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
-      if (key === "rakazo.api_base") {
-        endpointWrites += 1;
-        if (endpointWrites === 1) {
-          await new Promise((_resolve, reject) => {
-            failEndpointWrite = () => reject(new Error("device locked"));
-          });
+  it.each(["save", "reset"])(
+    "serializes a %s behind an earlier switch rollback",
+    async (change) => {
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      await saveApiBase("https://old-server.example");
+      await restoreSessionToken("token-a");
+      let failEndpointWrite: (() => void) | undefined;
+      let endpointWrites = 0;
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        if (key === "rakazo.api_base") {
+          endpointWrites += 1;
+          if (endpointWrites === 1) {
+            await new Promise((_resolve, reject) => {
+              failEndpointWrite = () => reject(new Error("device locked"));
+            });
+          }
         }
+        store.set(key, value);
+      });
+      const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+      vi.stubGlobal("fetch", fetchMock);
+
+      // This switch clears the old credentials, then parks before committing.
+      const first = saveApiBase("https://second-server.example");
+      await vi.waitFor(() => expect(failEndpointWrite).toBeTruthy());
+      const second =
+        change === "save" ? saveApiBase("https://third-server.example") : resetApiBase();
+      try {
+        // Give the overlapping transaction and reconciliation the same storage window.
+        await flushPendingSignOut(true);
+        expect(fetchMock.mock.calls).toEqual([]);
+      } finally {
+        failEndpointWrite?.();
       }
-      store.set(key, value);
-    });
-    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
-    vi.stubGlobal("fetch", fetchMock);
+      await expect(first).resolves.toMatchObject({ ok: false });
+      await expect(second).resolves.toMatchObject({ ok: true });
+      expect(currentApiBase()).toBe(
+        change === "save" ? "https://third-server.example" : "http://127.0.0.1:3100",
+      );
+      expect(store.has("rakazo.session_token")).toBe(false);
+      expect(pendingSignOutRecords(store)).toEqual([
+        { apiBase: "https://old-server.example", token: "token-a" },
+      ]);
+      await resetApiBase();
+    },
+  );
 
-    // This switch clears the old credentials, then parks before committing.
-    const first = saveApiBase("https://second-server.example");
-    await vi.waitFor(() => expect(failEndpointWrite).toBeTruthy());
-    // An overlapping session-less switch finishes, which once dropped the single gate.
-    const second = await saveApiBase("https://third-server.example");
-    expect(second).toMatchObject({ ok: true });
+  it.each(["save", "reset"])(
+    "a %s rollback preserves a newer explicit sign-out record",
+    async (change) => {
+      vi.spyOn(Date, "now").mockReturnValue(Date.now());
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      if (change === "reset") await saveApiBase("https://old-server.example");
+      const apiBase = currentApiBase();
+      await restoreSessionToken("token-a");
+      await selectSpace("space-old");
+      let releaseRollback!: () => void;
+      const rollbackStarted = new Promise<void>((resolve) => {
+        vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+          if (key === "rakazo.space_rollback" && value) {
+            resolve();
+            await new Promise<void>((release) => {
+              releaseRollback = release;
+            });
+            throw new Error("device locked");
+          }
+          store.set(key, value);
+        });
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          throw new Error("offline");
+        }),
+      );
 
-    // A retry during the parked switch must not deliver its provisional record.
-    await flushPendingSignOut();
-    expect(fetchMock.mock.calls).toEqual([]);
-
-    failEndpointWrite?.();
-    await expect(first).resolves.toMatchObject({ ok: false });
-    expect(pendingSignOutRecords(store)).toEqual([]);
-    expect(store.get("rakazo.session_token")).toBe("token-a");
-  });
+      const switching =
+        change === "save" ? saveApiBase("https://second-server.example") : resetApiBase();
+      await rollbackStarted;
+      // The provisional record is durable; the old session has not been cleared yet.
+      const signingOut = signOut();
+      try {
+        await vi.waitFor(() => {
+          const records = JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]");
+          expect(records).toHaveLength(1);
+          expect(records[0].provisional).toBeUndefined();
+        });
+      } finally {
+        releaseRollback();
+      }
+      await expect(switching).resolves.toMatchObject({ ok: false });
+      await signingOut;
+      expect(pendingSignOutRecords(store)).toEqual([{ apiBase, token: "token-a" }]);
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        store.set(key, value);
+      });
+      await resetApiBase();
+    },
+  );
 
   it("aborts a server switch when the session cannot be read", async () => {
     const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);

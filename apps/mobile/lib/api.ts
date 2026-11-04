@@ -139,6 +139,15 @@ function bumpSpaceSelectionGeneration(): void {
   selectedSpaceChanged();
 }
 
+/** Orders complete endpoint transactions, including credential rollback. */
+let endpointChangeQueue: Promise<unknown> = Promise.resolve();
+
+function queueEndpointChange(step: () => Promise<EndpointResult>): Promise<EndpointResult> {
+  const result = endpointChangeQueue.then(step);
+  endpointChangeQueue = result.catch(() => undefined);
+  return result;
+}
+
 /** Keeps a timeout or cancel reason; turns transport and parsing detail into copy. */
 function requestError(error: unknown, signal: AbortSignal): unknown {
   return signal.aborted ? (signal.reason ?? error) : new Error(errorText(error), { cause: error });
@@ -477,14 +486,16 @@ export async function saveApiBase(
   const parsed = normalizeApiBase(input);
   if (!parsed.ok) return parsed;
   if (parsed.url === defaultApiBase() && Object.keys(headers).length === 0) return resetApiBase();
-  const previous = currentApiBase();
-  const switching = parsed.url !== previous;
-  if (switching) endpointChanges += 1;
-  try {
-    return await saveApiBaseLocked(parsed, previous, headers, switching);
-  } finally {
-    if (switching) endpointChanges -= 1;
-  }
+  return queueEndpointChange(async () => {
+    const previous = currentApiBase();
+    const switching = parsed.url !== previous;
+    if (switching) endpointChanges += 1;
+    try {
+      return await saveApiBaseLocked(parsed, previous, headers, switching);
+    } finally {
+      if (switching) endpointChanges -= 1;
+    }
+  });
 }
 
 /** The endpoint change, run with the reconcile gate held for the whole switch. */
@@ -556,15 +567,17 @@ async function saveApiBaseLocked(
 }
 
 export async function resetApiBase(): Promise<EndpointResult> {
-  const previous = currentApiBase();
-  const url = defaultApiBase();
-  const switching = url !== previous;
-  if (switching) endpointChanges += 1;
-  try {
-    return await resetApiBaseLocked(previous, url, switching);
-  } finally {
-    if (switching) endpointChanges -= 1;
-  }
+  return queueEndpointChange(async () => {
+    const previous = currentApiBase();
+    const url = defaultApiBase();
+    const switching = url !== previous;
+    if (switching) endpointChanges += 1;
+    try {
+      return await resetApiBaseLocked(previous, url, switching);
+    } finally {
+      if (switching) endpointChanges -= 1;
+    }
+  });
 }
 
 /** The reset, run with the reconcile gate held for the whole switch. */
@@ -961,7 +974,7 @@ type PendingSignOut = {
   recordedAt: number;
   /** A server switch's record is deliverable only once the switch has committed. */
   provisional?: boolean;
-  /** Set once the unregistration was delivered; that half is never sent again. */
+  /** Set once the unregistration was answered with success or 401; that half is not sent again. */
   unregistered?: boolean;
   /** When a delivered unregistration last renewed the session on a server that still refreshes it. */
   renewedAt?: number;
@@ -1080,12 +1093,17 @@ async function savePendingSignOut(record: PendingSignOut): Promise<boolean> {
   });
 }
 
-/** Removes one record by key, so a revocation recorded meanwhile stays. */
+/** Removes the captured record, preserving a newer sign-out that replaced a provisional one. */
 async function removePendingSignOut(record: PendingSignOut): Promise<void> {
   await queuePendingSignOutWrite(async () => {
     const read = await readPendingSignOuts();
     if (!read.ok) return;
-    const kept = read.records.filter((existing) => !samePendingSignOut(existing, record));
+    const kept = read.records.filter(
+      (existing) =>
+        !samePendingSignOut(existing, record) ||
+        existing.recordedAt !== record.recordedAt ||
+        Boolean(existing.provisional) !== Boolean(record.provisional),
+    );
     if (kept.length === read.records.length) return;
     if (await writePendingSignOuts(kept)) pendingSignOutAbsent = kept.length === 0;
   });
@@ -1178,8 +1196,8 @@ async function reconcileProvisionalSignOuts(): Promise<void> {
  * Delivers a pending revocation to its server: the push unregistration, then the session
  * revocation. A half with a hard answer is never sent again — on older servers the
  * authenticated unregistration renews the session, so repeating it could keep the session
- * alive — and the record completes only when both halves are answered: success, or the
- * session reported invalid.
+ * alive. The unregistration's 401 can also mean missing membership, so only the sign-out's
+ * success or 401 proves the session is gone; both halves must have a hard answer to complete.
  */
 async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered" | "retry"> {
   const send = async (path: string, body: string) => {
@@ -1189,8 +1207,7 @@ async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered
       const response = await withAbort(
         fetch(`${record.apiBase}${path}`, {
           method: "POST",
-          // The record's own captured headers go out as they were; a redirect of them anywhere
-          // else must fail instead of silently forwarding this server's secrets.
+          // Reject redirects where supported; native fetch also needs response validation below.
           redirect: "error",
           headers: {
             "content-type": "application/json",
@@ -1205,9 +1222,12 @@ async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered
         controller.signal,
         "Request timed out",
       );
+      // React Native can follow redirects regardless of the requested redirect policy.
+      if (response.redirected || (response.url && response.url !== `${record.apiBase}${path}`))
+        return "retry";
       if (response.status >= 200 && response.status < 300) return "delivered";
-      // Only the server reporting the session itself invalid (401) proves there is nothing left
-      // to revoke. Every other answer — a refusing proxy, throttling, a server failure — retries.
+      // A sign-out 401 means the session is invalid; the RPC also uses it for missing membership.
+      // Other answers — a refusing proxy, throttling, a server failure — retry.
       return response.status === 401 ? "final" : "retry";
     } catch {
       return "retry";
@@ -1218,10 +1238,8 @@ async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered
   let retrying = false;
   if (!record.unregistered) {
     const unregistered = await send("/rpc/notifications/unregisterPush", '{"json":{}}');
-    // Servers that still refresh this RPC's session renew it here; age the record from now.
-    if (unregistered === "delivered") await markPendingSignOutProgress(record, Date.now());
-    // An invalid session leaves nothing to unregister or revoke.
-    if (unregistered === "final") return "delivered";
+    // Servers that still refresh this RPC's session can renew it even without a membership.
+    if (unregistered !== "retry") await markPendingSignOutProgress(record, Date.now());
     retrying = unregistered === "retry";
   }
   // The sign-out is attempted even when the unregistration could not get through, like the
