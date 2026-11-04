@@ -2,7 +2,7 @@
 -- (a device zone only lands while the account has none).
 ALTER TABLE "user" ADD COLUMN "timezoneSource" TEXT;
 
--- Accounts that already have a zone keep it as a hand-picked one: a saved zone cannot
--- be told from a chosen one, and a chosen zone must survive the next device report.
--- "Use {zone}" in Settings returns an account to its device.
-UPDATE "user" SET "timezoneSource" = 'manual' WHERE "timezone" IS NOT NULL;
+-- Accounts that already have a zone start following the device: every current user gets
+-- the new behavior at once. A zone that was picked by hand may move when its owner
+-- travels; picking one again keeps it from then on.
+UPDATE "user" SET "timezoneSource" = 'device' WHERE "timezone" IS NOT NULL;
