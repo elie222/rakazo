@@ -125,6 +125,46 @@ describe("screen reconnect", () => {
     expect(screen.report("disconnected", 4_000 + SCREEN_RECONNECT_STABLE_MS)).toBe("reconnect");
     expect(screen.delayMs()).toBe(SCREEN_RECONNECT_DELAY_MS);
   });
+
+  it("starts over after a retry someone pressed", () => {
+    // The screen ran out of tries and showed its error; the person pressed Retry, which is a
+    // fresh try at the screen rather than another reload of the same trouble.
+    const screen = createScreenReconnect();
+    screen.loaded();
+    screen.report("connected", 0);
+    screen.report("disconnected", 1_000);
+    for (let retry = 2; retry <= SCREEN_RECONNECT_TRIES; retry += 1) {
+      screen.loaded();
+      screen.report("failed", retry * 1_000);
+    }
+    screen.loaded();
+    expect(screen.report("failed", 9_000)).toBe("error");
+    screen.reset();
+    screen.loaded();
+    screen.report("connected", 10_000);
+    expect(screen.report("disconnected", 11_000)).toBe("reconnect");
+    expect(screen.delayMs()).toBe(SCREEN_RECONNECT_DELAY_MS);
+  });
+
+  it("keeps measuring a connection's life when the wall clock jumps backwards", () => {
+    vi.useFakeTimers();
+    try {
+      const screen = createScreenReconnect();
+      screen.loaded();
+      screen.report("connected");
+      vi.advanceTimersByTime(1_000);
+      expect(screen.report("disconnected")).toBe("reconnect");
+      screen.loaded();
+      screen.report("connected");
+      vi.advanceTimersByTime(SCREEN_RECONNECT_STABLE_MS);
+      // The wall clock is corrected backwards; the connection really stayed up.
+      vi.setSystemTime(Date.now() - 60_000);
+      expect(screen.report("disconnected")).toBe("reconnect");
+      expect(screen.delayMs()).toBe(SCREEN_RECONNECT_DELAY_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("screen reconnects per computer", () => {

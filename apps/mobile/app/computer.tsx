@@ -291,7 +291,17 @@ export default function Computer() {
 
   // A screen that drops after connecting loads again by itself now and then; the load goes
   // through the screen's full authorization, so a revoked one stays closed.
+  // One reconnect at a time: once its reload is on its way, the same drop's further reports
+  // must not start another.
+  const screenReconnecting = useRef(false);
+  // Each bot's screen has its own reconnect budget, so switching bots starts a fresh one.
+  const screenReconnectBot = useRef<string | undefined>(botId);
   const screenReconnect = useRef(createScreenReconnect());
+  if (screenReconnectBot.current !== botId) {
+    screenReconnectBot.current = botId;
+    screenReconnect.current = createScreenReconnect();
+    screenReconnecting.current = false;
+  }
   const screenReconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const screenReconnectWait = useRef<AbortController | null>(null);
   const currentScreenUrl = useRef<string | null>(null);
@@ -312,6 +322,10 @@ export default function Computer() {
         );
         return;
       }
+      // One reconnect at a time: while its reload is still on its way, further reports of the
+      // same drop only describe it again and must not start a second reload.
+      if (screenReconnecting.current) return;
+      screenReconnecting.current = true;
       clearTimeout(screenReconnectTimer.current);
       screenReconnectWait.current?.abort();
       const wait = new AbortController();
@@ -327,19 +341,27 @@ export default function Computer() {
           async (signal) => (probe ? screenPageStatus(probe, fetch, signal) : 200),
           { signal: wait.signal },
         ).then((outcome) => {
-          if (outcome !== "cancelled") void reloadScreen();
+          if (outcome === "cancelled") {
+            screenReconnecting.current = false;
+            return;
+          }
+          void reloadScreen();
         });
       }, delay);
     },
     [reloadScreen, t],
   );
-  const onScreenLoadStart = useCallback(() => screenReconnect.current.loaded(), []);
+  const onScreenLoadStart = useCallback(() => {
+    screenReconnecting.current = false;
+    screenReconnect.current.loaded();
+  }, []);
   // Closing the screen, leaving the app or a new screen URL (taking or releasing control)
   // cancels a pending reconnect.
   useEffect(
     () => () => {
       screenReconnectWait.current?.abort();
       clearTimeout(screenReconnectTimer.current);
+      screenReconnecting.current = false;
     },
     // A renewed link for the same screen keeps the page and the pending reconnect.
     [computerOpen, foreground, embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null],
@@ -482,7 +504,11 @@ export default function Computer() {
       label={t("Retry screen")}
       prominence="primary"
       size="default"
-      onPress={() => void reloadScreen()}
+      onPress={() => {
+        // A pressed retry starts the screen's reconnects over, with their whole budget.
+        screenReconnect.current.reset();
+        void reloadScreen();
+      }}
     />
   ) : null;
 

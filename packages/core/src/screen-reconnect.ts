@@ -47,6 +47,11 @@ export type ScreenReconnect = {
   /** A new page load: only a drop after this load connected can reconnect by itself. */
   loaded(): void;
   /**
+   * A retry someone pressed starts the screen over: its tries and its trouble are forgotten.
+   * A page load alone never does this, so an automatic reload keeps the budget.
+   */
+  reset(): void;
+  /**
    * The wait before the reconnect that report last asked for: one delay after a drop, doubled
    * for each try this trouble has already taken.
    */
@@ -57,6 +62,16 @@ export type ScreenReconnect = {
    */
   report(state: ScreenPageState, now?: number): "reconnect" | "error" | "none";
 };
+
+/**
+ * The clock a connection's life is measured on. A corrected wall clock can jump backwards,
+ * which would make a connection that stayed up look like one that only flashed; a clock that
+ * only moves forward cannot.
+ */
+function stableClock(): number {
+  const clock = (globalThis as { performance?: { now(): number } }).performance;
+  return clock ? clock.now() : Date.now();
+}
 
 /**
  * Reconnects a screen that dropped after connecting, as often as each connection stays up,
@@ -77,10 +92,17 @@ export function createScreenReconnect(): ScreenReconnect {
       connected = false;
       freshLoad = true;
     },
+    reset() {
+      connected = false;
+      reconnecting = false;
+      freshLoad = false;
+      tries = 0;
+      connectedAt = undefined;
+    },
     delayMs() {
       return SCREEN_RECONNECT_DELAY_MS * 2 ** Math.max(0, tries - 1);
     },
-    report(state, now = Date.now()) {
+    report(state, now = stableClock()) {
       if (state === "connected") {
         if (!connected) connectedAt = now;
         connected = true;

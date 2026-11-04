@@ -349,6 +349,11 @@ export function useComputerState({
     });
   }
 
+  /** A retry the user pressed starts the visible screen's reconnects over. */
+  function resetScreenReconnect() {
+    screenReconnects.current.for(computerBotIdRef.current ?? "").reset();
+  }
+
   return {
     computer,
     computerRef,
@@ -383,6 +388,7 @@ export function useComputerState({
     screenLoadError,
     setScreenLoadError,
     screenAwaitsRetry,
+    resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
   };
@@ -444,6 +450,7 @@ export function useComputerControls({
     screenLoadError,
     setScreenLoadError,
     screenAwaitsRetry,
+    resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
   } = state;
@@ -730,9 +737,11 @@ export function useComputerControls({
           if (!computerBot) return;
           setScreenLoadError(null);
           setScreenUrlLoadedBotId(null);
+          // An explicit retry clears any error and starts the screen's reconnects over;
+          // background screen reads clear only their own error.
+          screenAwaitsRetry.current = false;
+          resetScreenReconnect();
           if (computer?.state === "running") {
-            // An explicit retry clears any error; background screen reads clear only their own.
-            screenAwaitsRetry.current = false;
             setComputerError(null);
             setComputerErrorFromScreen(false);
             void refreshComputerScreen(computerBot.id);
