@@ -19,7 +19,12 @@ type Resolve = (
  * None set, or none usable, leaves the main model working the screen itself.
  */
 export async function resolveComputerRunModel(
-  deps: { prisma: PrismaClient; resolve: Resolve },
+  deps: {
+    prisma: PrismaClient;
+    resolve: Resolve;
+    /** The connection that serves a choice saved without one. */
+    connectionFor: (provider: string, modelId: string) => Promise<string | undefined>;
+  },
   scope: { userId: string; spaceId: string },
   main: AgentRunModel,
 ): Promise<AgentRunModel | undefined> {
@@ -27,15 +32,22 @@ export async function resolveComputerRunModel(
   if (!main.connectionId) return undefined;
   const { primary, backups } = await appliedModelRole(deps.prisma, scope, "computer");
   for (const choice of primary ? [primary, ...backups] : []) {
-    if (choice.provider === main.provider && choice.modelId === main.id) return undefined;
     try {
+      const connectionId =
+        choice.credentialId ?? (await deps.connectionFor(choice.provider, choice.modelId));
+      if (!connectionId) continue;
+      if (
+        choice.provider === main.provider &&
+        choice.modelId === main.id &&
+        connectionId === main.connectionId
+      )
+        return undefined;
       const model = await deps.resolve(
         choice.provider,
         choice.modelId,
-        choice.credentialId,
+        connectionId,
         choice.thinkingLevel ?? undefined,
       );
-      if (!model.connectionId) continue;
       // The same check computer mode runs, so a model it would refuse never breaks the run.
       computerTarget(model);
       return model;

@@ -233,7 +233,8 @@ export class PiAgentRuntime implements AgentRuntime {
         const savedMode = request.turnCheckpoint
           ? restoreTurnCheckpoint(request.turnCheckpoint, request.model).computerMode
           : undefined;
-        if (savedMode) {
+        // An executor that resolved the pinned models already passes them in.
+        if (savedMode && !request.computerModel) {
           const pinned = await restoreComputerModels(request, savedMode);
           request = { ...request, model: pinned.main, computerModel: pinned.computer };
         }

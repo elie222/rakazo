@@ -1258,10 +1258,24 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // Saved identities win on resume, including when the setting was cleared meanwhile.
         const computerModel =
           pinnedComputerModels?.computer ??
-          (scripted || checkpointModelResolver || !graphical
+          // A paused turn resumes with the models it started with, even one saved before this setting.
+          (scripted || computerCheckpoint || !graphical
             ? undefined
             : await resolveComputerRunModel(
-                { prisma: deps.prisma, resolve: resolveCheckpointModel },
+                {
+                  prisma: deps.prisma,
+                  resolve: resolveCheckpointModel,
+                  connectionFor: async (provider, modelId) =>
+                    (
+                      await findConnectedModelCredential(
+                        deps.prisma,
+                        deps.secretStore,
+                        run,
+                        provider,
+                        modelId,
+                      )
+                    )?.id,
+                },
                 { userId: run.userId, spaceId: run.spaceId },
                 mainRunModel,
               ));

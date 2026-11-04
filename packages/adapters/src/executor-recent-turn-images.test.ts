@@ -428,6 +428,20 @@ describe("computer settings reach the shared API/worker executor", () => {
     );
     await expect(request.onModelChange?.("unselected", "model")).rejects.toThrow(/not selected/);
   });
+  it("resumes a turn paused before a computer-use model was set without one", async () => {
+    const checkpoint = JSON.stringify({
+      version: 1,
+      provider: "openrouter",
+      model: TEXT_ONLY_MODEL,
+      systemPrompt: "fixture",
+      messages: [],
+      pendingToolCallId: "call",
+    });
+    const { request } = await runWithModel(TEXT_ONLY_MODEL, undefined, false, false, true, {
+      computer: { defaultModelId: VISION_MODEL, checkpoint },
+    });
+    expect(request.computerModel).toBeUndefined();
+  });
   it("does not switch when the computer-use model is the main model", async () => {
     const { request } = await runWithModel(VISION_MODEL, undefined, false, false, true, {
       computer: { defaultModelId: VISION_MODEL },

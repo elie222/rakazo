@@ -285,11 +285,15 @@ export function createRouterContext(deps: RouterDeps) {
       credential.secretId,
     );
     if (stored.status !== "loaded") return false;
-    const secret = parseModelSecret(stored.plaintext);
-    return (
-      secret.kind === "openai_compatible" &&
-      compatibleModelSeesImages(credential, secret, choice.modelId)
-    );
+    try {
+      const secret = parseModelSecret(stored.plaintext);
+      return (
+        secret.kind === "openai_compatible" &&
+        compatibleModelSeesImages(credential, secret, choice.modelId)
+      );
+    } catch {
+      return false;
+    }
   };
   /** The connection serving each choice (null when deployment-managed), the one runs use. */
   const validateRoleChoices = async (

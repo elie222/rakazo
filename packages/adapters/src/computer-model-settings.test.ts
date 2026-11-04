@@ -32,7 +32,8 @@ function setup(choices: ModelRoleChoice[] = [], unavailable: string[] = []) {
       return { ...main, provider, id, connectionId, thinkingLevel } as AgentRunModel;
     },
   );
-  return { prisma, resolve };
+  const connectionFor = vi.fn(async () => "account-a" as string | undefined);
+  return { prisma, resolve, connectionFor };
 }
 const vision = { provider: "anthropic", modelId: "claude-sonnet-4-5", credentialId: "account-b" };
 describe("computer-use model resolution", () => {
@@ -49,9 +50,24 @@ describe("computer-use model resolution", () => {
       connectionId: "account-b",
     });
   });
-  it("does not switch when the chosen model is the main model", async () => {
+  it("does not switch when the chosen model is the main model on its connection", async () => {
     const deps = setup([{ provider: main.provider, modelId: main.id }]);
     expect(await resolveComputerRunModel(deps, scope, main)).toBeUndefined();
+    expect(deps.connectionFor).toHaveBeenCalledWith(main.provider, main.id);
+  });
+  it("runs the main model's id on another account the member chose", async () => {
+    const deps = setup([{ provider: main.provider, modelId: main.id, credentialId: "account-b" }]);
+    expect(await resolveComputerRunModel(deps, scope, main)).toMatchObject({
+      id: main.id,
+      connectionId: "account-b",
+    });
+  });
+  it("runs a choice saved without a connection on the one that serves it", async () => {
+    const deps = setup([{ provider: "anthropic", modelId: "claude-sonnet-4-5" }]);
+    deps.connectionFor.mockResolvedValueOnce("account-c");
+    expect(await resolveComputerRunModel(deps, scope, main)).toMatchObject({
+      connectionId: "account-c",
+    });
   });
   it("takes the next choice when one is unavailable or cannot see", async () => {
     const deps = setup(
