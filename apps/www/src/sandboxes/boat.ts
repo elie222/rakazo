@@ -1,4 +1,4 @@
-import { PROVIDERS_DOC, RUNTIME_DOC, homepage } from "./shared";
+import { CLOUD_PLAN, PRICES_NOTE, PRICING, PROVIDERS_DOC, RUNTIME_DOC, homepage } from "./shared";
 import type { Sandbox } from "./types";
 
 export const boat: Sandbox = {
@@ -7,9 +7,9 @@ export const boat: Sandbox = {
   runsOn: "Hosted Ubuntu VM in the EU",
   keeps: "Its disk and each bot's Chrome profile",
   bestFor: "Many bots with separate logins",
-  title: "Boat AI agent sandbox: Linux VMs for Rakazo bots",
+  title: "Boat AI agent sandbox: pricing, limits and how Rakazo runs bots on Boat VMs",
   description:
-    "What Boat is, and how Rakazo runs AI agents on Boat VMs: a desktop you can watch, a terminal, and a separate Chrome profile for every bot. Setup, limits and FAQ.",
+    "Boat rents persistent Ubuntu VMs for AI agents from $20 a month. Its pricing, sizes and limits, what a bot's computer really costs compared with E2B and Daytona, and how Rakazo runs every bot on Boat.",
   h1: "Boat for AI agents: a cloud computer for every bot",
   intro: [
     "[Boat](https://boat.dev) rents out persistent Ubuntu virtual machines built for AI agents. Each one is a full Linux computer in the cloud that keeps its disk when it stops, so an agent can come back to the same files and installed tools later.",
@@ -36,8 +36,54 @@ export const boat: Sandbox = {
       paragraphs: [
         "[Boat](https://boat.dev) is a Y Combinator company that runs cloud VMs for agents. Its machines are Ubuntu VMs in EU regions. Unlike a short-lived code sandbox, a Boat machine is meant to stay around: you can stop it, and when it resumes the disk is still there.",
         "That makes it a good fit for an agent that works like a person at a desk. It signs in to websites, saves files and installs tools, and it expects all of that to still be there tomorrow.",
+        "Machines run in Germany, Finland and France. Boat doesn't name the hypervisor; each machine is a full VM rather than a container, with Docker available inside.",
       ],
       image: true,
+    },
+    {
+      heading: "Boat pricing",
+      paragraphs: [
+        "Boat bills machines by the second while they run, with a $20 minimum a month that counts entirely as machine time. Stopped machines don't bill for compute. New accounts get a 7-day trial with 25 compute hours.",
+      ],
+      table: {
+        caption: "Boat machine sizes as of November 2026",
+        columns: ["Size", "vCPU / memory / disk", "Per hour", "Full month"],
+        rows: [
+          { topic: "small", cells: ["2 / 4 GB / 51 GB", "$0.018", "$13"] },
+          { topic: "default", cells: ["4 / 8 GB / 51 GB", "$0.036", "$26"] },
+          { topic: "large", cells: ["8 / 16 GB / 111 GB", "$0.072", "$53"] },
+          { topic: "xlarge", cells: ["16 / 32 GB / 251 GB", "$0.200", "$146, on plans of $100 or more"] },
+        ],
+        note: `${PRICES_NOTE} Source: [boat.dev](https://boat.dev).`,
+      },
+      bullets: [
+        "The $20 minimum buys about 555 hours of the default size.",
+        "Saved snapshots cost $0.056 a day each. Rakazo keeps one base snapshot with the desktop tools installed, about $1.70 a month.",
+        "Starting machines faster than your plan's limit costs $0.03 to $0.07 a start.",
+        "Plans allow 100 to 2,000 machines running at once.",
+      ],
+    },
+    {
+      heading: "What a Rakazo computer costs on Boat",
+      paragraphs: [
+        "Rakazo creates Boat machines at the default size, 4 vCPU and 8 GB, which is twice the 2 vCPU / 4 GB other providers' pages on this site price. Bots in a workspace share one team computer by default, so one machine usually serves a whole team. Rakazo stops it after 10 minutes without use, and after two hours of continuous uptime unless a bot is still working or you are in control.",
+        "Because Boat is cheap per hour and has a monthly minimum, most small teams pay exactly $20. The table compares the same 4 vCPU / 8 GB computer on providers that bill per second.",
+      ],
+      table: {
+        caption: "One 4 vCPU / 8 GB computer a month",
+        columns: ["Provider", "4 hours a workday (88 hours)", "Around the clock (720 hours)"],
+        rows: [
+          { topic: "Boat", cells: ["$20, the minimum ($3.17 of usage)", "$25.92"] },
+          { topic: "[Novita](/sandboxes/novita/)", cells: ["$20.53", "$167.96"] },
+          { topic: "[E2B](/sandboxes/e2b/)", cells: ["$29.15", "$388.46, with the $150 Pro plan"] },
+          { topic: "[Daytona](/sandboxes/daytona/)", cells: ["$29.15", "$238.46"] },
+          { topic: "[Docker](/sandboxes/docker/) on a rented server", cells: ["€8.99 for a 4 vCPU / 8 GB Hetzner CX33", "€8.99"] },
+        ],
+        note: "Computed from each provider's rates, checked November 2026, before free credits. Daytona caps one sandbox at 4 vCPU / 8 GiB. The Docker server also has to run Rakazo itself. Your model provider bills separately.",
+      },
+      bullets: [
+        `On Rakazo Cloud you pay Rakazo, not Boat: ${CLOUD_PLAN}. Larger plans add bigger computers and more hours. See [pricing](/pricing/).`,
+      ],
     },
     {
       heading: "What your bots can do on a Boat computer",
@@ -62,7 +108,8 @@ export const boat: Sandbox = {
     {
       heading: "Limits",
       bullets: [
-        "Boat's regions are in the EU, and Rakazo doesn't offer a region choice or a custom image for Boat.",
+        "Boat's regions are in the EU, and Rakazo doesn't offer a region choice, a machine size or a custom image for Boat on a self-hosted install.",
+        "Boat is a young company. Its code isn't open source, and you can't run it on your own machines.",
         "Stopping keeps the disk but not running programs. A long job that was running when the computer stopped has to start again.",
         "Until Rakazo's base snapshot is ready, new computers install the desktop tools themselves, so the first ones start more slowly.",
         "Rakazo creates every Boat machine without your account's environment variables, so nothing from your Boat account leaks into a bot's computer. Anything a bot needs has to come through Rakazo.",
@@ -99,6 +146,16 @@ export const boat: Sandbox = {
         "Yes. In Rakazo each bot gets its own Chrome on a Boat desktop, with a persistent profile, and you can watch it or take over. Logins are not shared between bots.",
     },
     {
+      question: "How much does Boat cost?",
+      answer:
+        "From $0.018 an hour for 2 vCPU / 4 GB to $0.200 for 16 vCPU / 32 GB, billed per second, with a $20 minimum a month that counts as machine time. That minimum covers about 555 hours of the 4 vCPU / 8 GB size Rakazo uses. Prices as of November 2026.",
+    },
+    {
+      question: "Is there a free Boat plan?",
+      answer:
+        "No ongoing free plan. New accounts get a 7-day trial with 25 compute hours, then pay from $20 a month.",
+    },
+    {
       question: "Do Boat computers see my server's environment variables?",
       answer:
         "No. Rakazo always creates and resumes Boat machines without the account's environment, so your keys don't end up inside a bot's computer.",
@@ -106,7 +163,7 @@ export const boat: Sandbox = {
     {
       question: "Boat vs E2B for AI agents?",
       answer:
-        "Both give Rakazo bots a Linux desktop, terminal and files. Boat machines are long-lived VMs that keep their disk when stopped, and Rakazo Cloud runs on them. [E2B](/sandboxes/e2b/) pauses idle sandboxes and is open source. Rakazo keeps its own copy of each bot's workspace on both.",
+        "Both give Rakazo bots a Linux desktop, terminal and files. Boat machines are long-lived VMs that keep their disk when stopped, cost a flat $20 minimum for most small teams, and Rakazo Cloud runs on them. [E2B](/sandboxes/e2b/) bills every second at a higher rate, pauses idle sandboxes with their memory, runs in the US, and is open source. Rakazo keeps its own copy of each bot's workspace on both.",
     },
     {
       question: "Do I need Boat to self-host Rakazo?",
@@ -115,7 +172,13 @@ export const boat: Sandbox = {
     },
   ],
   sources: [
-    { label: "Boat", href: "https://boat.dev" },
+    PRICING.boat,
+    { label: "Boat docs, pricing", href: "https://docs.boat.dev/pricing" },
+    PRICING.e2b,
+    PRICING.daytona,
+    PRICING.novita,
+    PRICING.hetzner,
+    PRICING.rakazo,
     PROVIDERS_DOC,
     RUNTIME_DOC,
   ],

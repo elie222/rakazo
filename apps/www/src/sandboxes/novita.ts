@@ -1,4 +1,4 @@
-import { PROVIDERS_DOC, RUNTIME_DOC } from "./shared";
+import { PRICES_NOTE, PRICING, PROVIDERS_DOC, RUNTIME_DOC } from "./shared";
 import type { Sandbox } from "./types";
 
 export const novita: Sandbox = {
@@ -7,9 +7,9 @@ export const novita: Sandbox = {
   runsOn: "Hosted Linux sandbox",
   keeps: "Files, browser logins and running programs",
   bestFor: "Bots that pick up where they left off",
-  title: "Novita Agent Sandbox for AI agents: give each bot a computer that pauses",
+  title: "Novita Agent Sandbox for AI agents: pricing, limits and computers that pause",
   description:
-    "Run your AI agents' computers on Novita's Agent Sandbox with Rakazo. Idle computers pause with their memory, so a bot comes back to the same open browser and programs.",
+    "Novita Agent Sandbox pricing, limits and E2B compatibility, and how Rakazo runs AI agents' computers on it. Idle computers pause with their memory, so a bot comes back to the same open browser and programs.",
   h1: "Run your AI agents' computers on Novita",
   intro: [
     "Novita's Agent Sandbox gives AI agents their own Linux machines in the cloud, started and stopped through an API. Novita AI also sells model APIs and GPUs, and its sandbox works with the E2B SDK.",
@@ -36,8 +36,51 @@ export const novita: Sandbox = {
       paragraphs: [
         "[Novita AI](https://novita.ai) is a cloud platform for AI developers. Alongside model APIs and GPU instances, it runs the [Agent Sandbox](https://novita.ai/sandbox): isolated Linux machines that an agent can start in seconds, run commands in, and pause when it is done. A paused sandbox keeps its disk and memory, and resumes as the same machine.",
         "Novita offers a desktop image for these sandboxes, which is what Rakazo builds on. You need a Novita account and an API key. Usage is billed by Novita, not by Rakazo.",
+        "Sandboxes run in the US, in Phoenix by default. Novita describes the isolation only as system-level separation and doesn't name the technology.",
       ],
       image: true,
+    },
+    {
+      heading: "Novita sandbox pricing",
+      paragraphs: [
+        "Novita bills CPU and memory by the second while a sandbox runs, with no monthly fee. Pausing stops both. Paused sandboxes, templates and snapshots count as stored data, with 60 GB free per account. New accounts can get $100 of credit by answering a short setup survey, with no card needed.",
+      ],
+      table: {
+        caption: "Novita Agent Sandbox rates as of November 2026",
+        columns: ["What", "Price or limit"],
+        rows: [
+          { topic: "CPU", cells: ["$0.0000098 per vCPU-second, about $0.035 an hour"] },
+          { topic: "Memory", cells: ["$0.0000032 per GiB-second, about $0.012 an hour"] },
+          { topic: "Disk while running", cells: ["20 GB per sandbox, free"] },
+          { topic: "Stored data", cells: ["60 GB free per account, then $0.00009 per GB-hour"] },
+          { topic: "Free credit", cells: ["$100 after a setup survey"] },
+          { topic: "Free tier limits", cells: ["5 sandboxes at once, 1-hour sessions, up to 2 vCPU / 4 GB"] },
+          { topic: "Paid limits", cells: ["100 sandboxes at once, 24-hour sessions, up to 8 vCPU / 8 GB"] },
+        ],
+        note: `${PRICES_NOTE} Sources: [Novita sandbox pricing](https://docs.novita.ai/guides/sandbox-pricing) and the [sandbox overview](https://docs.novita.ai/guides/sandbox-overview).`,
+      },
+    },
+    {
+      heading: "What a Rakazo computer costs on Novita",
+      paragraphs: [
+        "Rakazo's `rakazo-computer` template on Novita is 2 vCPU and 4 GB, about $0.12 an hour while it runs. Bots in a workspace share one team computer by default, so this is usually the cost for a whole team. Rakazo pauses the computer after 10 minutes without use, so you pay for the hours bots work plus a short tail.",
+      ],
+      table: {
+        caption: "One 2 vCPU / 4 GB computer a month",
+        columns: ["Provider", "4 hours a workday (88 hours)", "Around the clock (720 hours)"],
+        rows: [
+          { topic: "Novita", cells: ["$10.26", "$83.98"] },
+          { topic: "[E2B](/sandboxes/e2b/)", cells: ["$14.57", "$269.23, with the $150 Pro plan"] },
+          { topic: "[Daytona](/sandboxes/daytona/)", cells: ["$14.57", "$119.23"] },
+          { topic: "[Boat](/sandboxes/boat/)", cells: ["$20 minimum, at 4 vCPU / 8 GB", "$25.92, at 4 vCPU / 8 GB"] },
+        ],
+        note: "Computed from each provider's rates, checked November 2026, before free credits. Your model provider bills separately.",
+      },
+      bullets: [
+        "The $100 credit covers about 850 hours of this computer.",
+        "A paused computer keeps its memory as stored data. A few paused computers fit within the 60 GB free allowance; beyond it, each extra 10 GB costs about $0.65 a month.",
+        "Around-the-clock use needs the paid tier, and even then a session ends after 24 hours. Rakazo's two-hour uptime cap pauses busy computers well before that anyway.",
+      ],
     },
     {
       heading: "What a bot can do on a Novita computer",
@@ -62,7 +105,8 @@ export const novita: Sandbox = {
       heading: "Limits",
       bullets: [
         "It needs a one-time template build in your Novita account. Rakazo does not fall back to Novita's larger stock desktop.",
-        "You can't pick a region from Rakazo.",
+        "You can't pick a region from Rakazo, and Novita's standard regions are in the US.",
+        "On the free tier a session lasts at most an hour and five sandboxes can run at once.",
         "Paused computers still use storage, which Novita bills and retains on its own terms.",
         "If Rakazo can't confirm that a command stopped, it pauses the computer and sets it aside. It stays paused until you choose Recover or Reset, so it is never resumed silently with a stuck command inside.",
         "Novita computers are for self-hosted Rakazo. Rakazo Cloud runs its computers on Boat.",
@@ -97,6 +141,16 @@ export const novita: Sandbox = {
   },
   faq: [
     {
+      question: "How much does Novita's Agent Sandbox cost?",
+      answer:
+        "$0.0000098 per vCPU-second and $0.0000032 per GiB-second as of November 2026, so a 2 vCPU / 4 GB sandbox costs about $0.12 an hour while running. Paused sandboxes bill only for stored data beyond 60 GB per account.",
+    },
+    {
+      question: "Is Novita cheaper than E2B?",
+      answer:
+        "Per second, yes: about 30% less for the same 2 vCPU / 4 GB computer, with no monthly fee for 24-hour sessions. Both pause with memory. [E2B](/sandboxes/e2b/) uses Firecracker microVMs, is open source and has more regions.",
+    },
+    {
       question: "Does a paused Novita sandbox keep running programs?",
       answer:
         "Yes. Pausing keeps the computer's memory as well as its disk, so open browser tabs and running programs carry on when Rakazo resumes it.",
@@ -120,6 +174,10 @@ export const novita: Sandbox = {
   sources: [
     { label: "Novita Agent Sandbox", href: "https://novita.ai/sandbox" },
     { label: "Novita sandbox overview", href: "https://docs.novita.ai/guides/sandbox-overview" },
+    PRICING.novita,
+    PRICING.e2b,
+    PRICING.daytona,
+    PRICING.boat,
     PROVIDERS_DOC,
     RUNTIME_DOC,
   ],

@@ -1,5 +1,5 @@
 import { GITHUB_URL } from "../site";
-import { PROVIDERS_DOC, RUNTIME_DOC } from "./shared";
+import { PRICES_NOTE, PRICING, PROVIDERS_DOC, RUNTIME_DOC } from "./shared";
 import type { Sandbox } from "./types";
 
 const RAILWAY_TEMPLATE_DOC = `${GITHUB_URL}/blob/main/infra/railway/README.md`;
@@ -10,9 +10,9 @@ export const railway: Sandbox = {
   runsOn: "Your Railway account",
   keeps: "The workspace Rakazo saved",
   bestFor: "Running everything in one Railway account",
-  title: "Railway sandboxes for AI agents: host Rakazo and its bot computers in one account",
+  title: "Railway sandboxes for AI agents: pricing, limits and hosting Rakazo in one account",
   description:
-    "Deploy Rakazo on Railway from one template: the app, Postgres and your AI agents' sandbox computers all run in your Railway account, with no separate sandbox provider.",
+    "Deploy Rakazo on Railway from one template: the app, Postgres and your AI agents' sandbox computers in one account. Railway's usage pricing for sandboxes, a worked monthly cost, and the limits per plan.",
   h1: "Run Rakazo and your agents' computers on Railway",
   intro: [
     "Railway is a cloud platform for deploying apps and databases without managing servers. It also runs sandboxes: short-lived Linux machines that a program can create through Railway's API.",
@@ -39,8 +39,51 @@ export const railway: Sandbox = {
       paragraphs: [
         "[Railway](https://railway.com) deploys services from a repository or image and gives them HTTPS domains, volumes and managed databases. Usage is billed to your Railway workspace. Its [sandboxes](https://docs.railway.com/sandboxes) are separate machines created on demand, which Rakazo uses as bot computers.",
         "Because the app and the computers live in the same account, you manage one set of credentials and one bill for hosting. Your model provider is still billed separately.",
+        "Each sandbox is its own virtual machine. New sandboxes run in US West unless a region is chosen.",
       ],
       image: true,
+    },
+    {
+      heading: "Railway pricing",
+      paragraphs: [
+        "Railway charges a small plan fee that counts toward usage, then bills per second. Sandboxes are billed at virtual machine rates for the CPU they actually use and the memory they actually hold, not for their size, so a mostly idle desktop costs much less than its ceiling. The Rakazo app and its database run as ordinary services at the cheaper container rates.",
+      ],
+      table: {
+        caption: "Railway plans and rates as of November 2026",
+        columns: ["Plan", "Trial and Free", "Hobby", "Pro"],
+        rows: [
+          { topic: "Plan fee", cells: ["$0. Trial gives $5 of credit, Free $1 a month", "$5 a month, including $5 of usage", "$20 a month per workspace, including $20 of usage"] },
+          { topic: "Largest sandbox", cells: ["2 vCPU / 2 GB", "8 vCPU / 8 GB", "32 vCPU / 32 GB"] },
+          { topic: "Sandbox idle timeout", cells: ["1 to 5 minutes, always on", "1 to 120 minutes, or off", "1 to 120 minutes, or off"] },
+          { topic: "Sandboxes running at once", cells: ["10", "50", "100"] },
+          { topic: "Sandbox CPU and memory", cells: ["$50 per vCPU-month used, $50 per GB-month held", "Same", "Same"] },
+          { topic: "App and database", cells: ["$20 per vCPU-month, $10 per GB-month", "Same", "Same"] },
+          { topic: "Volumes and egress", cells: ["$0.15 per GB-month, $0.05 per GB out", "Same", "Same"] },
+        ],
+        note: `${PRICES_NOTE} Sources: [Railway pricing](https://railway.com/pricing) and [Railway sandboxes](https://docs.railway.com/sandboxes).`,
+      },
+    },
+    {
+      heading: "What Rakazo on Railway costs a month",
+      paragraphs: [
+        "This example assumes the Hobby plan and one bot computer that runs 4 hours a workday, 88 hours a month, with a desktop and Chromium using about half a vCPU and 2.5 GB of memory on average. The Rakazo service and Postgres run all month. Actual use varies with what bots do, so treat these as estimates.",
+      ],
+      table: {
+        caption: "Estimated monthly bill on Railway Hobby",
+        columns: ["Part", "Assumption", "Cost"],
+        rows: [
+          { topic: "Bot computer", cells: ["0.5 vCPU and 2.5 GB, 88 hours", "About $18"] },
+          { topic: "Rakazo app", cells: ["About 1 GB and a tenth of a vCPU, all month", "About $12"] },
+          { topic: "Postgres and volumes", cells: ["A small database and a few GB of files", "About $4"] },
+          { topic: "Total", cells: ["The $5 plan fee counts toward this", "About $34"] },
+        ],
+        note: "Estimated from Railway's rates, checked November 2026. A computer left running around the clock at the same load would cost about $150 on its own. Your model provider bills separately.",
+      },
+      bullets: [
+        "Memory dominates: Railway counts the operating system and file cache as memory in use, so a browser with many tabs costs more than its CPU suggests.",
+        "Rakazo stops idle computers, and the template allows each user up to three, which keeps the bill bounded.",
+        "On Rakazo Cloud you don't need Railway at all; computers are included in the [plan](/pricing/).",
+      ],
     },
     {
       heading: "What a bot can do on a Railway computer",
@@ -67,7 +110,7 @@ export const railway: Sandbox = {
         "No pause. Stopping deletes the sandbox, and the next start restores the bot's saved workspace. Open programs and anything outside the workspace are lost.",
         "There is no terminal you can open yourself, and a command's output arrives when it finishes rather than while it runs.",
         "The desktop installs the first time a computer is used, which can take a few minutes.",
-        "On Railway's Trial and Free plans, the short idle timeout can delete a computer before its work is saved.",
+        "On Railway's Trial and Free plans, the short idle timeout can delete a computer before its work is saved, and computers are capped at 2 GB of memory, which is tight for a desktop and Chromium. Use Hobby or Pro.",
         "Each workspace file Rakazo saves is capped at 64 MiB by default (`RAILWAY_MAX_WORKSPACE_FILE_BYTES`).",
       ],
     },
@@ -101,6 +144,11 @@ export const railway: Sandbox = {
   },
   faq: [
     {
+      question: "How much do Railway sandboxes cost?",
+      answer:
+        "$50 per vCPU-month for CPU actually used and $50 per GB-month for memory actually held, billed per second, as of November 2026. A desktop that averages half a vCPU and 2.5 GB costs about $0.21 an hour while it runs. Plan fees start at $5 a month on Hobby, which counts toward usage.",
+    },
+    {
       question: "Can I host Rakazo on Railway?",
       answer:
         "Yes. The Rakazo template deploys the app, a Postgres database and its bot computers into your Railway account. It's meant for a personal deployment: public registration stays closed and you sign in as the owner.",
@@ -123,7 +171,9 @@ export const railway: Sandbox = {
   ],
   sources: [
     { label: "Railway", href: "https://railway.com" },
-    { label: "Railway sandboxes", href: "https://docs.railway.com/sandboxes" },
+    PRICING.railway,
+    { label: "Railway pricing", href: "https://railway.com/pricing" },
+    { label: "Railway, pricing reference", href: "https://docs.railway.com/reference/pricing" },
     { label: "Rakazo Railway template", href: RAILWAY_TEMPLATE_DOC },
     PROVIDERS_DOC,
     RUNTIME_DOC,

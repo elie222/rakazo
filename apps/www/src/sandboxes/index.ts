@@ -1,14 +1,24 @@
-import { absolute, articleMarkdown, cell } from "../provider-article/markdown";
-import type { ArticleHub, ArticleLink } from "../provider-article/types";
+import type { SourceLink } from "../alternatives";
+import { absolute, articleMarkdown, cell, sectionMarkdown } from "../provider-article/markdown";
+import type { ArticleHub, ArticleLink, ArticleSection } from "../provider-article/types";
 import { SITE_URL } from "../site";
 import { boat } from "./boat";
+import { HOSTED_SANDBOXES_TABLE } from "./compare";
 import { daytona } from "./daytona";
 import { docker } from "./docker";
 import { e2b } from "./e2b";
 import { kubernetes } from "./kubernetes";
 import { novita } from "./novita";
 import { railway } from "./railway";
-import { COMPUTER_PROVIDERS_DOCS_PATH, SANDBOXES_PATH, SANDBOXES_UPDATED, sandboxPath } from "./shared";
+import {
+  CLOUD_PLAN,
+  COMPUTER_PROVIDERS_DOCS_PATH,
+  PRICES_NOTE,
+  PRICING,
+  SANDBOXES_PATH,
+  SANDBOXES_UPDATED,
+  sandboxPath,
+} from "./shared";
 import type { Sandbox } from "./types";
 import { wuying } from "./wuying";
 import { yourComputer } from "./your-computer";
@@ -29,15 +39,185 @@ export const SANDBOXES: readonly Sandbox[] = [
   yourComputer,
 ];
 
+/** Hub sections after the comparison table: prices, the wider market, and isolation. */
+const HUB_SECTIONS: readonly ArticleSection[] = [
+  {
+    heading: "Pricing compared",
+    paragraphs: [
+      "Every price below is for the same workload: one bot computer with 2 vCPU and 4 GB of memory, enough for a Linux desktop, Chromium and a terminal, running 4 hours a workday, or 88 hours a month. Bots in a workspace share one team computer by default, so this is usually the bill for a whole team, not for each bot. Rakazo stops or pauses a hosted computer after 10 minutes without use, so you pay for roughly the hours bots work.",
+      `On Rakazo Cloud you don't pay a sandbox provider: computers run on Boat and come with the plan, ${CLOUD_PLAN}. See [pricing](/pricing/). The table is for a self-hosted Rakazo, where you bring your own provider.`,
+    ],
+    table: {
+      caption: "What a bot computer costs on each option Rakazo supports",
+      columns: ["Option", "How you pay", "Free to start", "88 hours a month", "Around the clock"],
+      rows: [
+        {
+          topic: "[Boat](/sandboxes/boat/)",
+          cells: [
+            "Per second, $20 monthly minimum",
+            "7-day trial, 25 hours",
+            "$20. Rakazo uses 4 vCPU / 8 GB here",
+            "$25.92",
+          ],
+        },
+        {
+          topic: "[E2B](/sandboxes/e2b/)",
+          cells: [
+            "Per second. Pro plan $150 a month",
+            "$100 one-time credit",
+            "$14.57",
+            "$269.23, Pro plan required",
+          ],
+        },
+        {
+          topic: "[Daytona](/sandboxes/daytona/)",
+          cells: ["Per second, no plan fee", "$200 credit", "$14.57", "$119.23"],
+        },
+        {
+          topic: "[Novita](/sandboxes/novita/)",
+          cells: ["Per second, no plan fee", "$100 credit after a survey", "$10.26", "$83.98"],
+        },
+        {
+          topic: "[Railway](/sandboxes/railway/)",
+          cells: [
+            "Per second for CPU and memory used, from $5 a month",
+            "$5 trial credit",
+            "About $18, plus about $16 for the app and database",
+            "About $150 for the computer",
+          ],
+        },
+        {
+          topic: "[Wuying](/sandboxes/wuying/)",
+          cells: [
+            "Hourly or monthly, plus disk",
+            "Alibaba Cloud promotions vary",
+            "About $17 at 4 vCPU / 8 GiB",
+            "About $57 on the unlimited plan",
+          ],
+        },
+        {
+          topic: "[Docker](/sandboxes/docker/)",
+          cells: [
+            "Your own server",
+            "Free software",
+            "A €16.49 server fits Rakazo and about 6 computers",
+            "Same",
+          ],
+        },
+        {
+          topic: "[Kubernetes](/sandboxes/kubernetes/)",
+          cells: [
+            "Your nodes, plus a control-plane fee on some clouds",
+            "Free software",
+            "A $96 DigitalOcean node fits about 3 computers",
+            "Same",
+          ],
+        },
+        {
+          topic: "[Your computer](/sandboxes/your-computer/)",
+          cells: ["Nothing extra", "Free", "Electricity", "About $3 for a Mac mini"],
+        },
+      ],
+      note: `${PRICES_NOTE} Usage before free credits. Each option's page shows the rates and assumptions behind its numbers.`,
+    },
+    bullets: [
+      "For a few hours a day, per-second providers are cheapest. Novita has the lowest rate of the hosted options Rakazo supports, and E2B and Daytona charge the same as each other.",
+      "Boat's $20 minimum covers about 555 hours of a bigger computer, so it is cheaper than E2B or Daytona once a computer runs more than about 120 hours a month, and by far around the clock.",
+      "A server you rent for Docker costs the same whether bots work or not. It's the cheapest way to run many computers, if you're happy to look after it.",
+    ],
+  },
+  {
+    heading: "Hosted sandboxes compared, including ones Rakazo doesn't support",
+    paragraphs: [
+      "Most sandboxes that come up as E2B alternatives are built for running code, not a desktop a person can watch. Modal, Vercel Sandbox, Northflank and Blaxel are good at that, and the table includes them for reference, but Rakazo doesn't support them. Rakazo also works with CreateOS and boxd, which don't have their own page here; the [computer providers guide](/docs/self-host-sandbox-providers/) covers them.",
+    ],
+    table: HOSTED_SANDBOXES_TABLE,
+    bullets: [
+      "None of the code-first sandboxes ships a desktop for a person to watch and take over, keeps each bot's browser logins apart, or saves a workspace that survives a switch of provider. Rakazo adds those on every provider it supports.",
+      "Session caps matter for agents. E2B's Hobby plan, Novita's free tier and Vercel's Hobby plan end a session within an hour, so a bot on a long research task needs a paid plan or a provider without a cap.",
+      "Daytona closed its source in June 2026. E2B is now the main open source hosted sandbox, and Northflank the main one that runs in your own cloud.",
+    ],
+  },
+  {
+    heading: "Isolation: containers, gVisor and microVMs",
+    paragraphs: [
+      "How strongly a sandbox separates a bot from everything else depends on what sits between them. Containers share the host's kernel, so a kernel bug can let a process out. gVisor puts a kernel written in user space in the way. A microVM gives every sandbox its own small kernel behind a hypervisor. Stronger boundaries cost a little speed and, on your own hardware, need virtualization support.",
+    ],
+    table: {
+      caption: "Isolation in AI agent sandboxes",
+      columns: ["Boundary", "Who uses it", "Good for", "Trade-off"],
+      rows: [
+        {
+          topic: "Container",
+          cells: [
+            "[Docker](/sandboxes/docker/), [Kubernetes](/sandboxes/kubernetes/) by default, [Daytona](/sandboxes/daytona/) by default",
+            "Your own bots on your own server",
+            "Shares the host's kernel",
+          ],
+        },
+        {
+          topic: "gVisor",
+          cells: [
+            "Modal, GKE Sandbox, [Kubernetes](/sandboxes/kubernetes/) with a runtime class",
+            "Stronger isolation without a hypervisor",
+            "Slower system calls",
+          ],
+        },
+        {
+          topic: "microVM: Firecracker, Kata, Cloud Hypervisor",
+          cells: [
+            "[E2B](/sandboxes/e2b/), CreateOS, Vercel Sandbox, Northflank, [Kubernetes](/sandboxes/kubernetes/) with Kata",
+            "Other people's bots and public instances",
+            "Needs KVM on your own hardware",
+          ],
+        },
+        {
+          topic: "Full VM",
+          cells: [
+            "[Boat](/sandboxes/boat/), [Railway](/sandboxes/railway/), [Wuying](/sandboxes/wuying/)",
+            "Long-lived computers",
+            "Slower to start than a microVM",
+          ],
+        },
+        {
+          topic: "None",
+          cells: [
+            "[Your computer](/sandboxes/your-computer/)",
+            "Work that needs your real apps",
+            "A bot can reach everything you can",
+          ],
+        },
+      ],
+    },
+  },
+];
+
+const HUB_SOURCES: readonly SourceLink[] = [
+  PRICING.boat,
+  PRICING.e2b,
+  PRICING.daytona,
+  PRICING.novita,
+  PRICING.railway,
+  PRICING.wuying,
+  PRICING.createos,
+  PRICING.modal,
+  PRICING.vercel,
+  PRICING.northflank,
+  PRICING.blaxel,
+  PRICING.hetzner,
+  PRICING.digitalocean,
+  { label: "DigitalOcean Kubernetes pricing", href: "https://www.digitalocean.com/pricing/kubernetes" },
+  PRICING.rakazo,
+];
+
 export const SANDBOXES_HUB = {
-  title:
-    "Best sandboxes for AI agents in 2026: Boat, E2B, Daytona, Novita, Railway, Docker and Kubernetes",
+  title: "Best AI agent sandboxes in 2026: pricing and comparison of Boat, E2B, Daytona, Modal, Vercel and more",
   description:
-    "Where should an AI agent's computer run? A comparison of hosted sandboxes, Docker, Kubernetes and your own Mac or PC, from the team behind Rakazo.",
+    "Where should an AI agent's computer run? Prices, isolation, session limits and self-hosting compared for Boat, E2B, Daytona, Novita, Railway, Docker and Kubernetes, with Modal, Vercel Sandbox and Northflank for reference.",
   h1: "Best sandboxes for AI agents in 2026",
   intro: [
     "An AI agent that only chats can't do much. To clean up an inbox, research a list of companies or fix a bug, it needs a computer: a browser it can sign in with, files it can keep, and a terminal to run things in. A sandbox is that computer, kept apart from yours so a mistake stays contained.",
-    "[Rakazo](/) is an open source app for AI teammates that do real work. You talk to each bot in chat, and each one gets its own computer. You can watch its screen and take over at any moment. Where that computer runs is your choice: a hosted sandbox, a container on your own server, a Kubernetes cluster, or your own Mac or PC. This page compares every option Rakazo supports.",
+    "[Rakazo](/) is an open source app for AI teammates that do real work. You talk to each bot in chat, and each one gets its own computer. You can watch its screen and take over at any moment. Where that computer runs is your choice: a hosted sandbox, a container on your own server, a Kubernetes cluster, or your own Mac or PC. This page compares every option Rakazo supports, with prices as of November 2026, and the popular sandboxes it doesn't support, so you can see where they fit.",
   ],
   scene: {
     bot: "Inbox Manager",
@@ -54,10 +234,15 @@ export const SANDBOXES_HUB = {
       },
     },
   },
+  sections: HUB_SECTIONS,
   choose: [
     {
       heading: "You want it hosted",
-      text: "[Boat](/sandboxes/boat/) is what Rakazo Cloud runs its own bot computers on: full Linux VMs where every bot keeps its own Chrome logins. [E2B](/sandboxes/e2b/) is the option Rakazo's live computer tests run on, and pauses idle computers instead of deleting them. [Novita](/sandboxes/novita/) pauses with memory, so a bot comes back to the same open programs. [Daytona](/sandboxes/daytona/) keeps each computer's disk and suits teams already using it.",
+      text: "[Boat](/sandboxes/boat/) is what Rakazo Cloud runs its own bot computers on: full Linux VMs where every bot keeps its own Chrome logins, for a $20 monthly minimum. [E2B](/sandboxes/e2b/) is the option Rakazo's live computer tests run on, gives every computer its own microVM, and pauses idle computers instead of deleting them. [Novita](/sandboxes/novita/) pauses with memory, so a bot comes back to the same open programs, at the lowest hourly rate. [Daytona](/sandboxes/daytona/) keeps each computer's disk, has no session cap, and suits teams already using it.",
+    },
+    {
+      heading: "You want the smallest bill",
+      text: "If bots work an hour or two a day, a per-second provider such as [Novita](/sandboxes/novita/) or [E2B](/sandboxes/e2b/) costs a few dollars a month. If they work most of the day, [Boat](/sandboxes/boat/)'s flat minimum or a [Docker](/sandboxes/docker/) server you rent is cheaper. Cheapest of all is a spare machine you already own.",
     },
     {
       heading: "You don't want a cloud account",
@@ -66,6 +251,10 @@ export const SANDBOXES_HUB = {
     {
       heading: "You want one bill",
       text: "[Railway](/sandboxes/railway/) runs Rakazo, its database and the bot computers from one template. The trade-off is that computers are rebuilt from saved files after they stop, so open programs don't survive.",
+    },
+    {
+      heading: "You run bots for other people",
+      text: "For a public or multi-user instance, keep computers off the server that runs Rakazo and behind a VM boundary: [E2B](/sandboxes/e2b/) or [Boat](/sandboxes/boat/) hosted, or [Kubernetes](/sandboxes/kubernetes/) with gVisor or Kata on your own cluster.",
     },
     {
       heading: "You need Windows, or you're in mainland China",
@@ -83,6 +272,31 @@ export const SANDBOXES_HUB = {
         "An isolated computer where an agent can run commands, use a browser and change files without touching your own machine. In Rakazo it's the bot's computer, which you can watch and take over.",
     },
     {
+      question: "How much does an AI agent sandbox cost?",
+      answer:
+        "Hosted sandboxes charge about $0.12 to $0.17 an hour for 2 vCPU and 4 GB while running, as of November 2026, so a computer used 4 hours a workday costs about $10 to $15 a month. Boat has a $20 monthly minimum that covers far more hours. Self-hosting costs whatever your server does.",
+    },
+    {
+      question: "What is the cheapest sandbox for AI agents?",
+      answer:
+        "A spare computer running [Docker](/sandboxes/docker/), which costs only electricity. Among the hosted options Rakazo supports, [Novita](/sandboxes/novita/) has the lowest hourly rate and [Boat](/sandboxes/boat/) is cheapest for computers that run most of the day.",
+    },
+    {
+      question: "Is the E2B sandbox free?",
+      answer:
+        "E2B's Hobby plan has no monthly fee and a one-time $100 credit, but sessions end after an hour. See [E2B pricing](/sandboxes/e2b/).",
+    },
+    {
+      question: "Does E2B use Firecracker?",
+      answer:
+        "Yes. Each [E2B](/sandboxes/e2b/) sandbox is a Firecracker microVM with its own kernel. Vercel Sandbox and CreateOS use Firecracker too; Modal uses gVisor.",
+    },
+    {
+      question: "Does Rakazo support Modal or Vercel Sandbox?",
+      answer:
+        "No. Rakazo supports Boat, E2B, Daytona, Novita, Railway, Wuying, CreateOS, boxd, Docker, Kubernetes, Incus and your own computer. Modal and Vercel Sandbox are compared above for reference.",
+    },
+    {
       question: "Do I need a sandbox provider to run Rakazo?",
       answer:
         "No. When you [self-host](/self-hosted-ai-agent/), Docker computers work out of the box with no cloud account. Hosted providers are optional.",
@@ -93,11 +307,17 @@ export const SANDBOXES_HUB = {
         "Yes. Rakazo keeps its own saved copy of each bot's workspace, so a new computer on another provider starts from the last saved version. Let bots finish and their computers stop before you switch, so recent changes are saved first. Software installed outside the workspace doesn't move.",
     },
     {
+      question: "Is Docker a real sandbox for AI agents?",
+      answer:
+        "It's a real boundary but not the strongest. Rakazo's containers drop every Linux capability and cap memory, CPU and processes, but they share the host's kernel. For bots you don't fully trust, use a microVM or VM: a hosted sandbox, or Kubernetes with gVisor or Kata.",
+    },
+    {
       question: "Which sandbox is the safest?",
       answer:
         "Hosted sandboxes and Kubernetes with gVisor or Kata keep a bot furthest from your own systems. Docker containers are hardened but share your server's kernel. Using your own computer gives a bot everything you can reach, by design.",
     },
   ],
+  sources: HUB_SOURCES,
 } as const;
 
 export const SANDBOXES_ARTICLE_HUB: ArticleHub = {
@@ -142,6 +362,7 @@ export function sandboxesHubMarkdown(): string {
         `| [${cell(sandbox.name)}](${SITE_URL}${sandboxPath(sandbox.slug)}) | ${cell(sandbox.runsOn)} | ${cell(sandbox.keeps)} | ${cell(sandbox.bestFor)} |`,
     ),
     "",
+    ...SANDBOXES_HUB.sections.flatMap(sectionMarkdown),
     "## How to choose",
     "",
     ...SANDBOXES_HUB.choose.flatMap((item) => [`### ${item.heading}`, "", absolute(item.text), ""]),
@@ -150,5 +371,9 @@ export function sandboxesHubMarkdown(): string {
     "## FAQ",
     "",
     ...SANDBOXES_HUB.faq.flatMap((item) => [`### ${item.question}`, "", absolute(item.answer), ""]),
+    "## Sources",
+    "",
+    ...SANDBOXES_HUB.sources.map((source) => `- [${source.label}](${source.href})`),
+    "",
   ].join("\n");
 }

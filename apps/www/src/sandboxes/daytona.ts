@@ -1,4 +1,5 @@
-import { PROVIDERS_DOC, RUNTIME_DOC, homepage } from "./shared";
+import { HOSTED_SANDBOXES_TABLE } from "./compare";
+import { PRICES_NOTE, PRICING, PROVIDERS_DOC, RUNTIME_DOC, homepage } from "./shared";
 import type { Sandbox } from "./types";
 
 export const daytona: Sandbox = {
@@ -7,13 +8,14 @@ export const daytona: Sandbox = {
   runsOn: "Hosted Linux sandbox",
   keeps: "Its disk",
   bestFor: "Teams already on Daytona",
-  title: "Daytona AI agent sandbox: desktops for Rakazo bots on Daytona",
+  title: "Daytona sandbox pricing, limits and alternatives in 2026: Daytona vs E2B for AI agents",
   description:
-    "What Daytona is, and how Rakazo runs AI agents in Daytona sandboxes: a Linux desktop, browser and terminal you can watch and take over. Setup, limits and FAQ.",
-  h1: "Daytona for AI agents: run your bots' computers on Daytona",
+    "Daytona sandbox pricing explained: per-second rates, the $200 credit, usage tiers and what an AI agent's desktop costs a month. Daytona vs E2B, Modal and Vercel, its closed-source move, and how Rakazo runs bots on Daytona.",
+  h1: "Daytona sandboxes for AI agents: pricing, limits and alternatives",
   intro: [
     "[Daytona](https://www.daytona.io) is a hosted service for running AI-generated code in sandboxes. Each sandbox is an isolated Linux machine with its own disk, which can be stopped, archived and started again later.",
     "[Rakazo](/) is an open source app for AI teammates that do real work. You talk to each bot in chat, and each one gets its own computer with a desktop, browser, terminal and files that you can watch and take over. If your team already uses Daytona, a self-hosted Rakazo can put those computers there. Daytona supplies the sandbox. Rakazo installs the desktop, gives each bot its own screen, saves its work, and decides when the sandbox stops.",
+    "This page covers what Daytona costs as of November 2026, the limits that catch people out, what its move to closed source means, and how it compares with E2B, Modal, Vercel Sandbox and the rest.",
   ],
   scene: {
     bot: "Talent Scout",
@@ -34,10 +36,57 @@ export const daytona: Sandbox = {
     {
       heading: "What is Daytona?",
       paragraphs: [
-        "[Daytona](https://www.daytona.io) gives developers and AI agents sandboxes they can create through an API. Sandboxes start from snapshots, can run in different targets, and keep their disk when they stop. A sandbox that has been archived is moved to cheaper storage and copied back when it wakes.",
-        "Daytona started as an open source project. Its public GitHub repository was archived in 2026, and its README says core development moved to a private codebase, so treat it as a hosted service rather than something you run yourself.",
+        "[Daytona](https://www.daytona.io) gives developers and AI agents sandboxes they can create through an API. Sandboxes start from snapshots, run in shared US or EU regions or in a region of your own, and keep their disk when they stop. A sandbox that has been archived is moved to cheaper storage and copied back when it wakes. Daytona claims sandbox creation in under 90 ms.",
+        "By default a Daytona sandbox is a container that shares its host's kernel. Linux VM, Windows and macOS sandboxes are also available, and only VMs can pause with their memory. Daytona reports SOC 2 Type II.",
       ],
       image: true,
+    },
+    {
+      heading: "Daytona pricing",
+      paragraphs: [
+        "Daytona has no plans or monthly fee. You pay per second for the CPU and memory a sandbox has while it runs, and per hour for disk beyond the first 5 GiB. New accounts get $200 of free compute with no card needed.",
+      ],
+      table: {
+        caption: "Daytona rates as of November 2026",
+        columns: ["What", "Price"],
+        rows: [
+          { topic: "CPU", cells: ["$0.0504 per vCPU-hour, billed per second"] },
+          { topic: "Memory", cells: ["$0.0162 per GiB-hour"] },
+          { topic: "Disk", cells: ["First 5 GiB free, then $0.000108 per GiB-hour"] },
+          { topic: "Windows sandboxes", cells: ["$0.0858 per vCPU-hour"] },
+          { topic: "GPUs", cells: ["From $0.57 an hour (RTX 4090) to $4.08 (B300), preemptible"] },
+          { topic: "Free credit", cells: ["$200, and up to $50,000 for startups"] },
+          { topic: "Enterprise", cells: ["Custom, with SSO, audit logs and your own cloud"] },
+        ],
+        note: `${PRICES_NOTE} Source: [Daytona pricing](https://www.daytona.io/pricing).`,
+      },
+      bullets: [
+        "What you pay depends on the sandbox's state. Running bills CPU, memory and disk. Stopped and paused bill disk only. Archived bills nothing. Snapshots keep billing for storage even after the sandbox is deleted.",
+        "Your account's tier caps the total CPU, memory and disk of everything running at once. Tier 1, with a verified email, allows 10 vCPU and 10 GiB in total. A $25 top-up with a card moves you to 100 vCPU and 200 GiB, and larger top-ups go further.",
+        "A single sandbox can have at most 4 vCPU, 8 GiB of memory and 10 GiB of disk.",
+      ],
+    },
+    {
+      heading: "What a Rakazo computer costs on Daytona",
+      paragraphs: [
+        "Rakazo doesn't set a size on Daytona, so a computer gets the size of the snapshot it starts from. Daytona's default is 1 vCPU and 1 GiB, which is tight for a desktop and Chromium. For real browser work, point `DAYTONA_SNAPSHOT` at a 2 vCPU / 4 GiB snapshot, such as Daytona's `daytona-medium` size. Bots in a workspace share one team computer by default, so this is usually the cost for a whole team.",
+        "Rakazo stops a Daytona computer after 10 minutes without use, and after two hours of continuous uptime unless a bot is still working or you are in control. A stopped computer bills only for disk.",
+      ],
+      table: {
+        caption: "One Rakazo computer on Daytona",
+        columns: ["How long it runs", "1 vCPU / 1 GiB (default)", "2 vCPU / 4 GiB"],
+        rows: [
+          { topic: "One hour", cells: ["$0.07", "$0.17"] },
+          { topic: "4 hours a workday, 88 hours a month", cells: ["$5.86", "$14.57"] },
+          { topic: "Around the clock, 720 hours", cells: ["$47.95", "$119.23"] },
+        ],
+        note: "Computed from Daytona's rates, checked November 2026, before the $200 credit. Disk under 5 GiB is free; an 8 GiB disk adds about $0.24 a month. Your model provider bills separately.",
+      },
+      bullets: [
+        "The $200 credit covers about 1,200 hours of a 2 vCPU / 4 GiB computer.",
+        "Tier 1's 10 GiB limit fits only two 2 vCPU / 4 GiB computers at once. Top up once to lift it.",
+        "On Rakazo Cloud you don't pay Daytona at all. Cloud computers run on [Boat](/sandboxes/boat/) and are included in the [plan](/pricing/).",
+      ],
     },
     {
       heading: "What your bots can do on a Daytona computer",
@@ -52,9 +101,29 @@ export const daytona: Sandbox = {
       ],
     },
     {
+      heading: "Daytona vs E2B and other alternatives",
+      paragraphs: [
+        "Daytona and E2B charge exactly the same per second, so price alone won't decide it. The differences are isolation, session limits, what survives a stop and who controls the code. The table prices the same 2 vCPU / 4 GB computer for 88 hours a month everywhere.",
+      ],
+      table: HOSTED_SANDBOXES_TABLE,
+      bullets: [
+        "**Daytona vs E2B.** Daytona has no monthly fee and no session cap, which suits long-running agents. [E2B](/sandboxes/e2b/) needs its $150 Pro plan for sessions over an hour, but every sandbox is a Firecracker microVM with its own kernel, it pauses with memory, and it is open source. In Rakazo, E2B starts from a ready desktop template and resumes in seconds; Daytona installs the desktop on first start.",
+        "**Daytona vs Modal.** Modal runs sandboxes on gVisor, costs about 45% more for this computer, and has GPUs and many regions. Rakazo doesn't support Modal.",
+        "**Daytona vs Vercel Sandbox.** Vercel uses Firecracker microVMs and bills CPU only while it is busy, but caps sessions at 24 hours and keeps only the filesystem. Rakazo doesn't support Vercel Sandbox.",
+        "**If you left because of the closed source.** E2B is the main open source hosted option. Northflank runs sandboxes in your own cloud. To keep everything on your own machines, Rakazo runs computers in [Docker](/sandboxes/docker/) or on [Kubernetes](/sandboxes/kubernetes/).",
+      ],
+    },
+    {
+      heading: "Is Daytona open source?",
+      paragraphs: [
+        "Not anymore. Daytona announced in June 2026 that it was going closed source, citing security. Its [GitHub repository](https://github.com/daytonaio/daytona) is archived, and the README says core development moved to a private codebase. The last public release, v0.190.0, remains under the AGPL-3.0 license, but it gets no updates.",
+        "That matters if you picked Daytona to self-host. Enterprise customers can still run Daytona in their own cloud, but the control plane is Daytona's. For a fully self-hosted setup with Rakazo, use [Docker](/sandboxes/docker/) or [Kubernetes](/sandboxes/kubernetes/).",
+      ],
+    },
+    {
       heading: "When to choose Daytona",
       paragraphs: [
-        "Choose Daytona when your team already has a Daytona account, billing or targets you want to reuse. Rakazo turns off Daytona's own auto-stop and auto-delete and stops computers with its own idle timer, so a computer doesn't disappear while a bot still needs it.",
+        "Choose Daytona when your team already has a Daytona account, billing or targets you want to reuse, or when you want hosted sandboxes with no monthly fee and no session cap. Rakazo turns off Daytona's own auto-stop and auto-delete and stops computers with its own idle timer, so a computer doesn't disappear while a bot still needs it.",
         "If you are picking a hosted provider from scratch, [E2B](/sandboxes/e2b/) starts from a ready desktop template and pauses idle computers, and [Boat](/sandboxes/boat/) is what Rakazo Cloud runs on. [Novita](/sandboxes/novita/) keeps open programs in memory when it pauses. To avoid a cloud account, use [Docker](/sandboxes/docker/) or [Kubernetes](/sandboxes/kubernetes/). The [sandbox comparison](/sandboxes/) has them all side by side.",
       ],
     },
@@ -62,9 +131,10 @@ export const daytona: Sandbox = {
       heading: "Limits",
       bullets: [
         "The first start of a new computer installs the desktop, so it is slower than later starts.",
-        "Waking an archived sandbox copies its disk back first and can take up to 10 minutes.",
+        "A computer stopped for 7 days is archived by Daytona. Waking it copies its disk back first and can take up to 10 minutes.",
         "A bot sees a command's output when the command finishes, not while it runs.",
         "Rakazo runs Linux computers only on Daytona, without volumes, and the only location choice is `DAYTONA_TARGET`.",
+        "Default sandboxes are containers that share their host's kernel, a weaker boundary than a microVM such as E2B's.",
         "Like other hosted providers that bill while running, a computer is stopped after two hours of continuous uptime by default unless a bot is still working on it or you are in control.",
       ],
     },
@@ -77,7 +147,7 @@ export const daytona: Sandbox = {
         "Create an API key in your Daytona account.",
         "Either set `SANDBOX_PROVIDER=daytona` and `DAYTONA_API_KEY` on the Rakazo API and worker, or sign in as an admin and choose Daytona under Settings → Computer, then paste the key.",
         "Optionally set `DAYTONA_API_URL` for a different Daytona endpoint and `DAYTONA_TARGET` for where sandboxes run. Both are also in Settings → Computer.",
-        "Optionally set `DAYTONA_SNAPSHOT` in the environment to start new computers from a Daytona snapshot of your own. Leave it unset to use Daytona's default.",
+        "Optionally set `DAYTONA_SNAPSHOT` in the environment to start new computers from a Daytona snapshot of your own, for example one with 2 vCPU and 4 GiB. Leave it unset to use Daytona's default.",
         "Open a bot's computer in Rakazo and wait for the first start to install the desktop.",
       ],
     },
@@ -85,9 +155,29 @@ export const daytona: Sandbox = {
   image: homepage("daytona", "Daytona", "The Daytona homepage, headed Run AI code."),
   faq: [
     {
+      question: "How much does a Daytona sandbox cost?",
+      answer:
+        "$0.0504 per vCPU-hour and $0.0162 per GiB-hour of memory, billed per second, as of November 2026. A 2 vCPU / 4 GiB sandbox costs about $0.17 an hour while running. Disk is free up to 5 GiB, and there is no monthly fee.",
+    },
+    {
+      question: "Is Daytona free?",
+      answer:
+        "New accounts get $200 of free compute with no card needed, which is about 1,200 hours of a 2 vCPU / 4 GiB sandbox. After that you pay for usage.",
+    },
+    {
       question: "Is Daytona open source?",
       answer:
-        "Not anymore in practice. Its GitHub repository was archived in 2026, and its README says core development moved to a private codebase. Rakazo uses Daytona's hosted service. For a fully self-hosted setup, use [Docker](/sandboxes/docker/) or [Kubernetes](/sandboxes/kubernetes/).",
+        "Not anymore. Daytona went closed source in June 2026, and its GitHub repository is archived. The last public release stays under AGPL-3.0 without updates. Rakazo uses Daytona's hosted service. For a fully self-hosted setup, use [Docker](/sandboxes/docker/) or [Kubernetes](/sandboxes/kubernetes/).",
+    },
+    {
+      question: "Daytona vs E2B: which is cheaper?",
+      answer:
+        "The per-second rates are identical. Daytona has no monthly fee and no session cap, so for long sessions it is cheaper than [E2B](/sandboxes/e2b/), which needs its $150 Pro plan for sessions over an hour. E2B gives each sandbox its own kernel and is open source.",
+    },
+    {
+      question: "What are the best Daytona alternatives?",
+      answer:
+        "[E2B](/sandboxes/e2b/) for an open source microVM sandbox, [Boat](/sandboxes/boat/) for a flat monthly price, [Novita](/sandboxes/novita/) for pausing with memory, or [Docker](/sandboxes/docker/) and [Kubernetes](/sandboxes/kubernetes/) to self-host. Outside Rakazo, Modal, Vercel Sandbox and Northflank are the usual picks.",
     },
     {
       question: "Can AI agents use a browser in Daytona?",
@@ -95,19 +185,30 @@ export const daytona: Sandbox = {
         "Yes. Rakazo installs a Linux desktop with Chromium in each Daytona sandbox. Every bot gets its own screen and browser profile, and you can watch it or take over.",
     },
     {
-      question: "Daytona vs E2B for AI agents?",
-      answer:
-        "Both run Rakazo bot computers with a desktop, terminal and files. [E2B](/sandboxes/e2b/) starts from a desktop template and pauses idle computers, and it is open source. On Daytona the first start installs the desktop, and waking an archived computer can take several minutes. Pick Daytona mainly if your team already uses it.",
-    },
-    {
       question: "Does Daytona delete idle sandboxes?",
       answer:
-        "Not the ones Rakazo creates. Rakazo turns off Daytona's auto-stop and auto-delete, and its own idle timer stops the computer, which keeps its disk.",
+        "Not the ones Rakazo creates. Rakazo turns off Daytona's auto-stop and auto-delete, and its own idle timer stops the computer, which keeps its disk. Daytona archives a computer that stays stopped for a week; it wakes more slowly but keeps its files.",
     },
   ],
   sources: [
     { label: "Daytona", href: "https://www.daytona.io" },
+    PRICING.daytona,
+    { label: "Daytona, sandboxes", href: "https://www.daytona.io/docs/en/sandboxes" },
+    { label: "Daytona, limits", href: "https://www.daytona.io/docs/en/limits" },
+    { label: "Daytona, billing", href: "https://www.daytona.io/docs/en/billing/" },
+    {
+      label: "Daytona is going closed source",
+      href: "https://www.daytona.io/dotfiles/updates/daytona-is-going-closed-source",
+    },
     { label: "Daytona on GitHub (archived)", href: "https://github.com/daytonaio/daytona" },
+    PRICING.e2b,
+    PRICING.modal,
+    PRICING.vercel,
+    PRICING.northflank,
+    PRICING.blaxel,
+    PRICING.novita,
+    PRICING.boat,
+    PRICING.createos,
     PROVIDERS_DOC,
     RUNTIME_DOC,
   ],
