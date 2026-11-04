@@ -3,7 +3,7 @@
 import type { Routine } from "@rakazo/contracts";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { act, createElement, useEffect } from "react";
+import { act, createElement, useEffect, useLayoutEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,7 +40,12 @@ const {
   focus: new Set<() => (() => void) | undefined>(),
   session: { generation: 0 },
   requestContext: vi.fn(),
-  screen: { options: {} as Record<string, unknown> },
+  screen: {
+    options: {} as Record<string, unknown>,
+    search: null as null | { onChangeText: (event: { nativeEvent: { text: string } }) => void },
+    // A short list makes FlatList ask for more as soon as it lays out, before effects run.
+    endOnLayout: false,
+  },
 }));
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
@@ -55,7 +60,7 @@ vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation
 vi.mock("./live-notifications", () => ({ afterChatNotifyChange }));
 vi.mock("./artifacts", () => ({
   listSpaceArtifacts,
-  matchesArtifactQuery: () => true,
+  matchesArtifactQuery: (item: { name: string }, query: string) => item.name.includes(query),
   removeArtifact: vi.fn(),
 }));
 vi.mock("expo-router", () => ({
@@ -66,7 +71,11 @@ vi.mock("expo-router", () => ({
     },
   },
   useRouter: () => ({ push }),
-  useNavigation: () => ({ setOptions: vi.fn() }),
+  useNavigation: () => ({
+    setOptions: (options: { headerSearchBarOptions?: typeof screen.search }) => {
+      screen.search = options.headerSearchBarOptions ?? null;
+    },
+  }),
   useLocalSearchParams: () => params.current,
   useFocusEffect: (effect: () => (() => void) | undefined) => {
     useEffect(effect, [effect]);
@@ -129,8 +138,11 @@ vi.mock("react-native", () => {
       keyExtractor?: (item: unknown) => string;
       renderItem?: (info: { item: unknown }) => ReactNode;
       onEndReached?: () => void;
-    }) =>
-      createElement(
+    }) => {
+      useLayoutEffect(() => {
+        if (screen.endOnLayout) onEndReached?.();
+      });
+      return createElement(
         "div",
         null,
         ListHeaderComponent,
@@ -142,7 +154,8 @@ vi.mock("react-native", () => {
         onEndReached
           ? createElement("button", { type: "button", onClick: onEndReached }, "End of list")
           : null,
-      ),
+      );
+    },
   };
 });
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
@@ -1359,4 +1372,112 @@ describe("artifacts opened for one bot", () => {
       limit: 30,
     });
   });
+
+  it("never pages the new filter with the old filter's cursor", async () => {
+    const file = (id: string, name: string, runId: string | null) => ({
+      id,
+      name,
+      botId: "bot-fixture",
+      groupId: null,
+      runId,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    });
+    listSpaceArtifacts.mockImplementation(
+      async (input: { madeByBots?: boolean; cursor?: string }) => {
+        if (input.cursor) throw new Error("page 2 failed");
+        return input.madeByBots
+          ? { items: [file("a", "report.md", "run-a")], nextCursor: null }
+          : { items: [file("u", "my-upload.txt", null)], nextCursor: "all-files-2" };
+      },
+    );
+    await render(createElement(ArtifactsScreen));
+    await act(async () =>
+      screen.search?.onChangeText({ nativeEvent: { text: "nothing-matches" } }),
+    );
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+      expect.objectContaining({ madeByBots: false, cursor: "all-files-2" }),
+    );
+    screen.endOnLayout = true;
+    try {
+      await act(async () => button("Made by bots").click());
+    } finally {
+      screen.endOnLayout = false;
+    }
+    const crossed = listSpaceArtifacts.mock.calls.filter(
+      ([input]) => input.madeByBots === true && input.cursor !== undefined,
+    );
+    expect(crossed).toEqual([]);
+  });
+
+  it("never pages another bot with the previous bot's cursor", async () => {
+    const file = (id: string, name: string, runId: string | null) => ({
+      id,
+      name,
+      botId: "bot-fixture",
+      groupId: null,
+      runId,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    });
+    listSpaceArtifacts.mockImplementation(async (input: { botId?: string; cursor?: string }) => {
+      if (input.cursor) throw new Error("page 2 failed");
+      return input.botId === "bot-fixture"
+        ? { items: [file("u", "my-upload.txt", null)], nextCursor: "fixture-2" }
+        : { items: [file("o", "other.txt", null)], nextCursor: null };
+    });
+    await render(createElement(ArtifactsScreen));
+    await act(async () =>
+      screen.search?.onChangeText({ nativeEvent: { text: "nothing-matches" } }),
+    );
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+      expect.objectContaining({ botId: "bot-fixture", cursor: "fixture-2" }),
+    );
+    screen.endOnLayout = true;
+    try {
+      await act(async () => button("Other").click());
+    } finally {
+      screen.endOnLayout = false;
+    }
+    const crossed = listSpaceArtifacts.mock.calls.filter(
+      ([input]) => input.botId !== "bot-fixture" && input.cursor !== undefined,
+    );
+    expect(crossed).toEqual([]);
+  });
+
+  for (const label of ["Fixture", "All files"]) {
+    it(`keeps paging after tapping the already chosen ${label}`, async () => {
+      listSpaceArtifacts.mockImplementation(async (input: { cursor?: string }) => ({
+        items: [
+          {
+            id: input.cursor ? "b" : "a",
+            name: input.cursor ? "second.md" : "first.md",
+            botId: "bot-fixture",
+            groupId: null,
+            runId: null,
+            description: null,
+            mimeType: "text/markdown",
+            size: 6,
+            version: 1,
+            versionCount: 1,
+            createdAt: "2026-11-01T00:00:00.000Z",
+          },
+        ],
+        nextCursor: input.cursor ? null : "page-2",
+      }));
+      await render(createElement(ArtifactsScreen));
+      expect(container.textContent).toContain("first.md");
+      await act(async () => button(label).click());
+      await act(async () => button("End of list").click());
+      expect(container.textContent).toContain("second.md");
+    });
+  }
 });

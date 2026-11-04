@@ -64,7 +64,14 @@ export default function ArtifactsScreen() {
   }
 
   const [items, setItems] = useState<MobileArtifactSummary[] | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  // A cursor only pages the filter it came from.
+  const [next, setNext] = useState<{
+    cursor: string;
+    botId: string | null;
+    madeByBots: boolean;
+  } | null>(null);
+  const nextCursor =
+    next?.botId === activeBotId && next.madeByBots === madeByBots ? next.cursor : null;
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -111,7 +118,7 @@ export default function ArtifactsScreen() {
       setLoadError(null);
       if (mode === "replace") {
         setItems(null);
-        setNextCursor(null);
+        setNext(null);
       }
       try {
         const page = await listSpaceArtifacts({
@@ -121,7 +128,7 @@ export default function ArtifactsScreen() {
         });
         if (generation !== generationRef.current) return;
         setItems(page.items);
-        setNextCursor(page.nextCursor);
+        setNext(page.nextCursor ? { cursor: page.nextCursor, botId, madeByBots } : null);
       } catch (error) {
         if (generation !== generationRef.current) return;
         if (mode === "replace") {
@@ -156,7 +163,7 @@ export default function ArtifactsScreen() {
       });
       if (generation !== generationRef.current) return;
       setItems((current) => (current ?? []).concat(page.items));
-      setNextCursor(page.nextCursor);
+      setNext(page.nextCursor ? { cursor: page.nextCursor, botId: activeBotId, madeByBots } : null);
       setSearchPageFailed(false);
     } catch {
       if (generation === generationRef.current) setSearchPageFailed(true);
