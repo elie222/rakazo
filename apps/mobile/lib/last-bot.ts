@@ -3,6 +3,7 @@ import { currentSessionGeneration } from "./session";
 
 const LAST_BOT_KEY = "rakazo.last_bot_id";
 const LAST_BOT_SPACE_KEY = "rakazo.last_bot_space_id";
+const READ_TIMEOUT_MS = 500;
 let writes: Promise<unknown> = Promise.resolve();
 
 function enqueueWrite(task: () => Promise<void>): Promise<void> {
@@ -25,16 +26,25 @@ export async function saveLastBotId(botId: string, spaceId: string | null) {
 
 export async function loadLastBotId() {
   const generation = currentSessionGeneration();
-  await writes;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
-    const botId = (await SecureStore.getItemAsync(LAST_BOT_KEY)) ?? "";
-    return generation === currentSessionGeneration() ? botId : "";
+    return await Promise.race([
+      writes.then(async () => {
+        const botId = (await SecureStore.getItemAsync(LAST_BOT_KEY)) ?? "";
+        return generation === currentSessionGeneration() ? botId : "";
+      }),
+      new Promise<string>((resolve) => {
+        timeout = setTimeout(() => resolve(""), READ_TIMEOUT_MS);
+      }),
+    ]);
   } catch {
     return "";
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
   }
 }
 
-/** Delete both keys after any in-flight save, before the next account can use them. */
+/** Delete both keys after any in-flight save; reads fail closed while cleanup is pending. */
 export async function clearLastBot() {
   return enqueueWrite(async () => {
     await SecureStore.deleteItemAsync(LAST_BOT_KEY).catch(() => undefined);

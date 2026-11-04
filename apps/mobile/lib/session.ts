@@ -47,17 +47,17 @@ function invalidateSessionCaches(keepUnsent = false, sameAccount = keepUnsent): 
   clearNetworkCache();
   // Another account must never see, or share, the previous owner's invite link.
   forgetReferrals();
-  const clearingDiskCaches: Promise<void>[] = [];
   for (const clear of sessionDiskCaches) {
     try {
-      clearingDiskCaches.push(Promise.resolve(clear(sameAccount)).catch(() => undefined));
+      // Optional caches must never hold up credential writes, even if their storage stalls.
+      void Promise.resolve(clear(sameAccount)).catch(() => undefined);
     } catch {
       // A failed disk wipe must not block the session change or the other wipes.
     }
   }
   const clearingArtifacts = keepUnsent ? undefined : invalidateArtifactCacheSession();
   return enqueueScopeWrite(async () => {
-    await Promise.all([clearingArtifacts, ...clearingDiskCaches]);
+    await clearingArtifacts;
     try {
       await SecureStore.deleteItemAsync(INTEGRATIONS_SCOPE_KEY);
     } catch {
