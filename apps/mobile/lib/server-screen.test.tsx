@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Server from "../app/server";
+import type * as ThreadFeedback from "./thread-feedback";
 import { hasUnsentSends } from "./thread-feedback";
 
 const server = vi.hoisted(() => ({
@@ -97,7 +98,7 @@ vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 vi.mock("./unsent-sends", () => ({ unsentSendsRestored: vi.fn(async () => true) }));
 vi.mock("./thread-feedback", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./thread-feedback")>()),
+  ...(await importOriginal<typeof ThreadFeedback>()),
   hasUnsentSends: vi.fn(() => false),
 }));
 

@@ -12,6 +12,7 @@ import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode, signOu
 import { replaceWithSignIn } from "./auth-routing";
 import { promptAccountDeletion } from "./delete-account-prompt";
 import { registerSettingsSheet } from "./settings-sheet";
+import type * as ThreadFeedback from "./thread-feedback";
 import { hasUnsentSends } from "./thread-feedback";
 
 type Pressed = {
@@ -46,7 +47,7 @@ vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./unsent-sends", () => ({ unsentSendsRestored: vi.fn(async () => true) }));
 // The unsent-message warning reads this without a screen subscription; tests flip it per case.
 vi.mock("./thread-feedback", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./thread-feedback")>()),
+  ...(await importOriginal<typeof ThreadFeedback>()),
   hasUnsentSends: vi.fn(() => false),
 }));
 vi.mock("expo-notifications", () => ({
