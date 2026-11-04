@@ -261,8 +261,8 @@ export class ComputerBrowserProvider implements BrowserProvider {
       live = await this.runLive(computer, probe, context);
     if (live?.ok !== true) {
       if (!cannotCheck(live?.error)) {
-        // The check started and failed (timed out, killed, a page it could not read): ask.
-        getLogger().warn("purchase check failed, asking", { error: live?.error });
+        // The check failed: return unknown so the executor refuses the unchecked action.
+        getLogger().warn("purchase check failed", { error: live?.error });
         return { purchase: { ...UNCHECKED_PURCHASE, steps: [] } };
       }
       if (!this.purchaseCheckWarned) {
