@@ -1313,6 +1313,65 @@ describe("mobile API authentication", () => {
     ]);
   });
 
+  it("does not deliver the revocation twice when a flush races the local clear", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    let finishClear!: () => void;
+    const clearHeld = new Promise<void>((release) => {
+      finishClear = release;
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token") await clearHeld;
+      store.delete(key);
+    });
+
+    const signingOut = signOut();
+    // The record is saved while the local clear still waits: this window must not let a
+    // flush deliver in parallel with the sign-out's own attempt.
+    await vi.waitFor(() => expect(pendingSignOutRecords(store)).toHaveLength(1));
+    const flushing = flushPendingSignOut(true);
+    finishClear();
+    await signingOut;
+    await flushing;
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("releases the delivery wait without delivering when the local clear fails", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key !== "rakazo.session_token") store.delete(key);
+      else throw new Error("device locked");
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key !== "rakazo.session_token") store.set(key, value);
+      else throw new Error("device locked");
+    });
+
+    await expect(signOut()).rejects.toThrow("Could not clear the local session");
+    expect(fetchMock).not.toHaveBeenCalled();
+    // The record stays, and the settled wait lets the next pass deliver it.
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+
+    await flushPendingSignOut(true);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
   it("clears the pending revocation when the server answers both requests", async () => {
     const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
     mockSecureStore(store);

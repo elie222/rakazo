@@ -1229,6 +1229,8 @@ async function deliverPendingSignOut(
       // Pruning can fail, and the preceding request can cross the hard deadline.
       if (Date.now() - record.recordedAt >= PENDING_SIGN_OUT_HARD_MAX_AGE_MS) return "expired";
       const response = await withAbort(
+        // Not fetchServer: it reads the headers configured for the current server, and after
+        // a switch those belong to the new one — only the record still carries this server's.
         fetch(`${record.apiBase}${path}`, {
           method: "POST",
           // Reject redirects where supported; native fetch also needs response validation below.
@@ -1360,26 +1362,42 @@ export async function signOut() {
     headers: serverHeaders(apiBase),
     recordedAt: Date.now(),
   };
-  // The record is written before the attempts: an app that dies mid-sign-out still revokes later.
-  if (revocation.token) {
-    // A failed write cannot block the local sign-out; the session still expires server-side.
-    await savePendingSignOut(revocation);
+  // The delivery is registered before the record is written: a pass that can see the record
+  // always has this delivery to wait for, so no flush delivers it in parallel with the
+  // sign-out's own attempt. The promise settles when the background delivery has finished,
+  // or at once when no delivery will run.
+  let settleDelivery!: () => void;
+  const deliverySettled = new Promise<void>((settle) => {
+    settleDelivery = settle;
+  });
+  let completion: Promise<void>;
+  signOutDelivery = completion = deliverySettled.finally(() => {
+    if (signOutDelivery === completion) signOutDelivery = undefined;
+  });
+  try {
+    // The record is written before the attempts: an app that dies mid-sign-out still revokes later.
+    if (revocation.token) {
+      // A failed write cannot block the local sign-out; the session still expires server-side.
+      await savePendingSignOut(revocation);
+    }
+    // The local session clears first: a server that accepts the connection but never answers
+    // must not keep this device signed in for the delivery's two request timeouts.
+    const sessionCleared = await clearSessionToken();
+    const spaceCleared = await clearSpace();
+    if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
+  } catch (error) {
+    // No delivery will run; release the passes waiting on this promise. The record stays
+    // for the next pass.
+    settleDelivery();
+    throw error;
   }
-  // The local session clears first: a server that accepts the connection but never answers
-  // must not keep this device signed in for the delivery's two request timeouts.
-  const sessionCleared = await clearSessionToken();
-  const spaceCleared = await clearSpace();
-  if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
   // Delivery waits on the same silent server, so it cannot hold the visible sign-out either.
   // It runs in the background; a flush first waits for it, so the two never deliver the same
   // record twice. The persisted record covers an attempt that dies with the process, and both
   // halves authenticate with the record's own token.
-  let completion: Promise<void>;
-  signOutDelivery = completion = deliverSignOutRecord(revocation)
+  void deliverSignOutRecord(revocation)
     .catch(() => undefined)
-    .finally(() => {
-      if (signOutDelivery === completion) signOutDelivery = undefined;
-    });
+    .finally(() => settleDelivery());
 }
 
 export async function deleteAccount(password?: string, token?: string) {
