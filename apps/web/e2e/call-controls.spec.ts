@@ -35,3 +35,45 @@ test("an ongoing call stays in reach on a page outside the shell", async ({ page
   await expect(call).toBeHidden();
   await expect(returnBar).toBeHidden();
 });
+
+test("a completed live call shows its saved spoken transcript", async ({ page }, testInfo) => {
+  await signup(page, `call-transcript-${Date.now()}@rakazo.test`, "password12", "Call Transcript");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  const botId = page.url().split("/").at(-1);
+  await page.route("**/rpc/threads/get", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    const snap = body.json;
+    snap.messages.push({
+      id: "saved-live-call",
+      threadId: snap.threadId,
+      seq: snap.cursor + 1,
+      role: "bot",
+      botId,
+      callId: "saved-call",
+      blocks: [
+        {
+          kind: "voice_call",
+          callId: "saved-call",
+          title: "Planning the day",
+          farewell: "Talk soon",
+          durationSeconds: 42,
+          transcript: [
+            { role: "user", text: "Can we plan the day together?" },
+            { role: "bot", text: "Of course. What would you like to start with?" },
+          ],
+        },
+      ],
+      createdAt: new Date().toISOString(),
+    });
+    await route.fulfill({ response, json: body });
+  });
+  await page.reload();
+  const card = page.getByTestId("voice-chat-card");
+  await card.getByRole("button", { name: /Show transcript/ }).click();
+  await expect(card).toContainText("Can we plan the day together?");
+  await expect(card).toContainText("Of course. What would you like to start with?");
+  await captureScreenshot(page, testInfo, "live-call-saved-transcript");
+});

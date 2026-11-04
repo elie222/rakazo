@@ -25,9 +25,3 @@ Calls have a 30-minute duration limit and a bounded transcript. There is no auto
 Live calls start on the loudspeaker. Once connected, the call card's **Speaker on/off** button switches between the built-in loudspeaker and earpiece. A rejected route leaves the selection unchanged and shows an error; tablets without an earpiece can keep using the speaker. This control is for live calls on Android, not message read-aloud or iOS. Hang-up and failed connections release the communication route and restore the previous audio mode. This native change requires a new APK.
 
 The Android implementation uses `AudioManager.setCommunicationDevice` on Android 12 and later, and the legacy speakerphone API on earlier supported versions. It explicitly selects built-in outputs; it is not a Bluetooth/headset device picker. Verify routing, volume, interruptions and cleanup on the target phone before treating a build as device-tested.
-
-## Keeping the feature through upgrades
-
-The server must retain `PHONE_CALLS_ENABLED=true` on both API and worker. The API, worker and web image must include the shared conversational contracts and adapter; the Android binary must contain both the live client and native audio-route module. A stock upgrade can remove these customizations even when the provider remains visible in settings.
-
-Keep the voice patch bundle outside the application checkout. Apply its common patch plus the server or Android patch to a clean branch at the chosen upstream release. Follow the bundle's README for dependency installation, build, signing, validation and rollback. Rebuild artifacts after applying patches; do not copy old compiled bundles over a new release. Keep the preview application ID and signing key unchanged and increase Android versionCode so an update preserves existing app data. Never bundle the provider API key or signing credentials with source patches.

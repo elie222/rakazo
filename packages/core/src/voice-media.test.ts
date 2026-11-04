@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import type { VoiceMediaStream } from "./voice-media.js";
 import { createVoiceMedia } from "./voice-media.js";
 
 it("releases late microphone permission results after hang-up", async () => {
@@ -7,7 +8,7 @@ it("releases late microphone permission results after hang-up", async () => {
   const peerClose = vi.fn();
   const media = createVoiceMedia({
     microphone: () =>
-      new Promise((r) => {
+      new Promise<VoiceMediaStream>((r) => {
         resolve = r;
       }),
     peer: () => ({ offer: async () => "offer", answer: async () => {}, close: peerClose }),

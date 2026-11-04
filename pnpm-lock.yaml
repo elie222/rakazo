@@ -167,8 +167,8 @@ importers:
         specifier: 57.0.26
         version: 57.0.26(@babel/core@7.29.7)(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(expo@57.0.31)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
       '@orpc/client':
-        specifier: 1.15.7
-        version: 1.15.7(@opentelemetry/api@1.9.1)
+        specifier: 1.16.1
+        version: 1.16.1(@opentelemetry/api@1.10.0)
       '@rakazo/chat-ui':
         specifier: workspace:*
         version: link:../../packages/chat-ui
@@ -318,8 +318,8 @@ importers:
         version: 0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
     devDependencies:
       '@orpc/contract':
-        specifier: 1.15.7
-        version: 1.15.7(@opentelemetry/api@1.9.1)
+        specifier: 1.16.1
+        version: 1.16.1(@opentelemetry/api@1.10.0)
       '@react-native/metro-config':
         specifier: 0.86.3
         version: 0.86.3(@babel/core@7.29.7)

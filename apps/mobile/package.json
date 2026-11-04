@@ -25,7 +25,7 @@
     "@config-plugins/react-native-webrtc": "15.0.2",
     "@expo/metro-runtime": "57.0.17",
     "@expo/ui": "57.0.26",
-    "@orpc/client": "1.15.7",
+    "@orpc/client": "1.16.1",
     "@rakazo/chat-ui": "workspace:*",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
@@ -77,7 +77,7 @@
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
-    "@orpc/contract": "1.15.7",
+    "@orpc/contract": "1.16.1",
     "@react-native/metro-config": "0.86.3",
     "@sentry/cli": "2.58.4",
     "@types/node": "24.13.3",

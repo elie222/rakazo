@@ -105,14 +105,8 @@
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
-        "UIBackgroundModes": [
-          "voip",
-          "audio",
-          "remote-notification"
-        ],
-        "NSUserActivityTypes": [
-          "INSendMessageIntent"
-        ]
+        "UIBackgroundModes": ["voip", "audio", "remote-notification"],
+        "NSUserActivityTypes": ["INSendMessageIntent"]
       },
       "entitlements": {
         "com.apple.developer.usernotifications.time-sensitive": true,
