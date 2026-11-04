@@ -36,14 +36,15 @@ const WEB_ORIGIN = "http://127.0.0.1:5180";
 /** Flows to run, in order. A flow with a window runs on the emulator resized to it. */
 const FLOWS: { name: string; window?: { size: string; density: string } }[] = [
   { name: "screenshots" },
-  // Native modules and system UI that release-build code shrinking could break.
-  { name: "native-features" },
   { name: "notification-demo" },
   // Needs the signed-in app the notification demo leaves behind; restores English itself.
   { name: "ui-locale-zh-tw" },
   { name: "keyboard-lifecycle" },
   // An unfolded foldable, about 750dp wide, where the chat list sits beside the open chat.
   { name: "split-view", window: { size: "1968x2184", density: "420" } },
+  // Native modules and system UI that release-build code shrinking could break. Last,
+  // because the messages, attachments, and calls it adds change what earlier flows match.
+  { name: "native-features" },
 ];
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
