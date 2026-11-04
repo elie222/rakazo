@@ -103,6 +103,12 @@ describe("classifyUpdaterFailure", () => {
     });
   });
 
+  it("keeps an HTTP error from the Linux signature URL a reported fault", () => {
+    for (const status of [403, 410, 500]) {
+      expect(classifyUpdaterFailure(new SignatureUnreachableError({ status })).kind).toBe("other");
+    }
+  });
+
   it("surfaces signing failures without leaking the updater's raw URL or path", () => {
     const failure = classifyUpdaterFailure(
       new Error("Code signature at https://private.invalid/update.zip did not pass validation"),
