@@ -86,7 +86,25 @@ jobs:
             echo "id=$BUILD_ID" >> "$GITHUB_OUTPUT"
           else
             eas build --platform android --profile production --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
-            echo "id=$(jq -r '.[0].id' "$RUNNER_TEMP/build.json")" >> "$GITHUB_OUTPUT"
+            jq '.[0]' "$RUNNER_TEMP/build.json" > "$RUNNER_TEMP/one.json"
+            mv "$RUNNER_TEMP/one.json" "$RUNNER_TEMP/build.json"
+            echo "id=$(jq -r '.id' "$RUNNER_TEMP/build.json")" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A bundle built without Firebase config never registers for push, so check the bundle
+      # itself: a supplied build may predate the current EAS environment.
+      - name: Require Firebase config in the bundle
+        run: |
+          set -euo pipefail
+          url="$(jq -r '.artifacts.buildUrl' "$RUNNER_TEMP/build.json")"
+          if [[ "$url" != https://* ]]; then
+            echo "EAS did not return an App Bundle download URL." >&2
+            exit 1
+          fi
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/rakazo.aab" "$url"
+          if ! unzip -p "$RUNNER_TEMP/rakazo.aab" base/resources.pb | grep -aq google_app_id; then
+            echo "This bundle was built without Firebase config, so Android push would not work." >&2
+            exit 1
           fi
 
       # The key stays out of the public eas.json; it is written to a temporary file for this upload.
