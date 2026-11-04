@@ -379,6 +379,15 @@ function SpaceShell() {
   const { notifyBrowserForEvent, flushPendingBrowserNotifications } = useBrowserNotifications(
     bots,
     botsRef,
+    {
+      rpc,
+      activeBotId,
+      activeGroupId,
+      openChat: (alert) => {
+        setMobileSidebarOpen(false);
+        navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
+      },
+    },
   );
   const { speakingMessageId, speakMessage } = useReadAloud({
     active,
