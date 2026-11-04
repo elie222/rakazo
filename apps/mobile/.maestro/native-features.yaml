@@ -159,15 +159,14 @@ tags:
     timeout: 15000
 
 # A voice call through a connected provider holds the microphone foreground service.
-# Device speech is chosen on first launch, so connect the provider before a fresh sign-in.
+# Picking the provider in Voice settings turns device speech off for calls.
 - evalScript: ${output.voice = http.get(RAKAZO_DEVICE_CONTROL_URL + '/connect-voice')}
 - assertTrue: ${output.voice.ok}
-- launchApp:
-    clearState: true
-    permissions:
-      notifications: allow
-      microphone: allow
-- runFlow: helpers/sign-in.yaml
+- openLink: "rakazo:///voice"
+- extendedWaitUntil:
+    visible: "Scripted"
+    timeout: 15000
+- tapOn: "Scripted"
 - openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
 - extendedWaitUntil:
     visible: "Message Researcher"
@@ -197,3 +196,11 @@ tags:
 - extendedWaitUntil:
     notVisible: "Hang up"
     timeout: 15000
+
+# Wiping app data while Android still tears down the call screens' task kills the next
+# flow's fresh launch, so stop the app and give that teardown time to finish.
+- stopApp
+- extendedWaitUntil:
+    visible: "Android finished removing the call task"
+    timeout: 15000
+    optional: true
