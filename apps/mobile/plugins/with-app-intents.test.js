@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
@@ -70,6 +71,7 @@ describe("withAppIntents prebuild", () => {
             cpSync: (...args) => copied.push(args.slice(0, 2)),
           };
         if (name === "node:path") return { join };
+        if (name === "./pbx-group") return createRequire(import.meta.url)("./pbx-group.js");
         if (name === "expo/config-plugins")
           return {
             withInfoPlist: (value, mod) => {

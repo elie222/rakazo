@@ -22,11 +22,13 @@ export const kubernetes: Sandbox = {
     where: "Computer on Kubernetes",
     ask: "triage last night's sentry reports and try to repro the worst one",
     reply: "on it. six new since midnight. reproducing the auth loop first.",
-    task: "Reproducing the auth loop in a terminal.",
-    screen: {
-      host: "sentry.io",
-      title: "Auth loop: P1",
-      lines: ["6 new reports", "4 reproduced", "Stale session token"],
+    computer: {
+      task: "Reproducing the auth loop in a terminal.",
+      screen: {
+        host: "sentry.io",
+        title: "Auth loop: P1",
+        lines: ["6 new reports", "4 reproduced", "Stale session token"],
+      },
     },
   },
   sections: [

@@ -452,6 +452,22 @@ describe("account preferences", () => {
     });
   });
 
+  it("saves the timezone and the language preference in one write", async () => {
+    const setup = preferencesDeps("organic", "Africa/Cairo");
+
+    const response = await updatePreferences(setup, {
+      timezone: "Europe/London",
+      locale: "pt-BR",
+    });
+
+    expect(response.status).toBe(200);
+    expect(setup.update).toHaveBeenCalledTimes(1);
+    expect(setup.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { timezone: "Europe/London", locale: "pt-BR" },
+    });
+  });
+
   it("moves routines that took the account zone to the new one", async () => {
     vi.useFakeTimers({ now: new Date("2026-11-04T12:00:00.000Z") });
     try {

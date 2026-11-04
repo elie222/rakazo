@@ -190,6 +190,27 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(descriptionInput).toHaveValue("Builds durable, source-backed research briefs.");
   await captureScreenshot(page, testInfo, "29-reloaded-bot-profile");
 
+  // Long instructions scroll inside their box instead of stretching the narrow panel.
+  const instructionsInput = settings.getByRole("textbox", { name: "Instructions", exact: true });
+  await instructionsInput.fill(
+    Array.from(
+      { length: 80 },
+      (_, index) => `${index + 1}. Cite a primary source for every claim.`,
+    ).join("\n"),
+  );
+  const instructionsSaved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/update") && response.ok(),
+  );
+  await instructionsInput.blur();
+  await instructionsSaved;
+  await expect(instructionsInput).toBeEnabled();
+  const scrollsInside = await instructionsInput.evaluate(
+    (field) => field.scrollHeight > field.clientHeight,
+  );
+  expect(scrollsInside).toBe(true);
+  await instructionsInput.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "29a-long-bot-instructions");
+
   // Wrap in the narrow dialog without pushing Delete below the Playwright viewport.
   const longUnbrokenName = "A".repeat(48);
   expect(longUnbrokenName.length).toBe(48);

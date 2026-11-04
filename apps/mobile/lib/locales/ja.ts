@@ -90,6 +90,8 @@ export const JA_MESSAGES: Record<string, string> = {
   Block: "ブロック",
   "Add a model in Settings to use this.": "使用するには設定でモデルを追加してください。",
   "Approval model": "承認モデル",
+  "Computer-use model": "コンピューター操作モデル",
+  "Same as main model": "メインモデルと同じ",
   "Main model": "メインモデル",
   "Add fallback": "バックアップモデルを追加",
   "Manage {provider}": "{provider} を管理",
@@ -1065,6 +1067,14 @@ export const JA_MESSAGES: Record<string, string> = {
   "Start plan": "プランを開始",
   "Switch to yearly": "年払いに切り替え",
   "Switch to yearly?": "年払いに切り替えますか？",
+  "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
+    "{vcpus} vCPU、{memoryGb} GB、月 {hours} 時間のコンピューター",
+  "Switch to {name}?": "{name} に切り替えますか？",
+  "The unused difference is credited to your next invoice.":
+    "未使用分の差額は次回の請求書に充当されます。",
+  "Your card is charged the prorated difference today.": "日割りの差額が本日カードに請求されます。",
+  "Your plan becomes {price} when your trial ends.":
+    "トライアル終了後、プランは {price} になります。",
   "Your card is charged {price} today, less the unused part of this month.":
     "本日カードに{price}が請求されます（今月の未使用分を差し引きます）。",
   "Your plan becomes {price} / year when your trial ends.":
@@ -1368,6 +1378,10 @@ export const JA_MESSAGES: Record<string, string> = {
     "{count}個のボットがスペースのデフォルトを使用するようになりました。",
   "Could not switch {failedNames}. Try again.":
     "{failedNames}を切り替えられませんでした。もう一度お試しください。",
+  "Create organization": "組織を作成",
+  Organization: "組織",
+  "Delete organization": "組織を削除",
+  "Type {name} to confirm": "確認のため {name} と入力",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

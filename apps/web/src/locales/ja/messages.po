@@ -405,6 +405,10 @@ msgstr "{title}（{savedAs} として保存）"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {#個のツール} other {#個のツール}}"
 
+#: src/components/ModelCredits.tsx
+msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
+msgstr "{vcpus} vCPU、{memoryGb} GB、月 {hours} 時間のコンピューター"
+
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
 msgid "@{0}"
@@ -1214,6 +1218,7 @@ msgstr "画像を読み取れません"
 #: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -1612,6 +1617,10 @@ msgstr "コンピューターはスリープ中です。開くと起動します
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "コンピューターは停止しています"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "コンピューター操作モデル"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2442,6 +2451,7 @@ msgstr ""
 msgid "Country"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2462,6 +2472,11 @@ msgstr "アカウントを作成"
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "グループを作成"
+
+#: src/components/CreateOrganizationDialog.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Create organization"
+msgstr "組織を作成"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
@@ -2608,6 +2623,7 @@ msgstr "デフォルトの範囲"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/archived-chats.tsx
 #: src/pages/shell/dialogs.tsx
@@ -2634,6 +2650,7 @@ msgstr "{0}を削除"
 #. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "{0}を削除しますか？"
@@ -2650,6 +2667,10 @@ msgstr "グループを削除"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "メモリも削除"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Delete organization"
+msgstr "組織を削除"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Delete section"
@@ -2670,6 +2691,7 @@ msgstr "削除済み"
 
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "削除中…"
@@ -4153,6 +4175,7 @@ msgstr "ミュート中"
 msgid "My computers"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4160,6 +4183,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4658,8 +4682,9 @@ msgid "Or paste an API key"
 msgstr "またはAPIキーを貼り付け"
 
 #: src/components/ComputerProviderSettings.tsx
+#: src/pages/settings-nav.ts
 msgid "Organization"
-msgstr ""
+msgstr "組織"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -4871,6 +4896,10 @@ msgstr "ピン留め"
 #: src/pages/Shell.tsx
 msgid "Pinned"
 msgstr "ピン留め済み"
+
+#: src/components/ModelCredits.tsx
+msgid "Plan"
+msgstr "プラン"
 
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
@@ -5498,6 +5527,10 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "{botName}と同じ"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Same as main model"
+msgstr "メインモデルと同じ"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -6190,6 +6223,10 @@ msgid "Switch"
 msgstr "切り替え"
 
 #: src/components/ModelCredits.tsx
+msgid "Switch to {tierTargetName}?"
+msgstr "{tierTargetName} に切り替えますか？"
+
+#: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "年払いに切り替え"
 
@@ -6322,6 +6359,10 @@ msgstr "選択したメモリプロバイダーはこのビルドでは利用で
 msgid "The shared link stops working"
 msgstr "共有リンクは使えなくなります"
 
+#: src/components/ModelCredits.tsx
+msgid "The unused difference is credited to your next invoice."
+msgstr "未使用分の差額は次回の請求書に充当されます。"
+
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
 msgstr "個別のモデル設定は解除されました。各ボットで再度選択できます。"
@@ -6390,6 +6431,7 @@ msgstr "この通話の呼び出しは終了しました。"
 msgid "This can't be undone."
 msgstr "この操作は元に戻せません。"
 
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "この操作は元に戻せません。"
@@ -6640,6 +6682,10 @@ msgstr "火曜日"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Type"
 msgstr "種類"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Type {name} to confirm"
+msgstr "確認のため{name}と入力してください"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"
@@ -7100,6 +7146,10 @@ msgstr "お使いのAnthropic"
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "本日カードに{annualPrice}が請求されます（今月の未使用分を差し引きます）。"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged the prorated difference today."
+msgstr "日割りの差額が本日カードに請求されます。"
+
 #: src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 msgstr "コンピューターのディスクがほぼいっぱいです。不要になったビルド出力やキャッシュを削除して空き容量を確保してください。"
@@ -7138,6 +7188,10 @@ msgstr "お使いのOpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "トライアル終了後、プランは年額 {annualPrice} になります。"
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {tierTargetLabel} when your trial ends."
+msgstr "トライアル終了後、プランは {tierTargetLabel} になります。"
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

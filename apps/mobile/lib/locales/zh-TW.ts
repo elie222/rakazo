@@ -79,6 +79,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Retry screen": "重新連線螢幕",
   "The screen connection closed.": "螢幕連線已關閉。",
   "Approval model": "核准模型",
+  "Computer-use model": "電腦操作模型",
+  "Same as main model": "與主模型相同",
   "Main model": "主模型",
   "Add fallback": "新增備援模型",
   "Manage {provider}": "管理 {provider}",
@@ -1061,6 +1063,12 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Start plan": "開始方案",
   "Switch to yearly": "切換為按年",
   "Switch to yearly?": "切換為按年付費？",
+  "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
+    "{vcpus} vCPU、{memoryGb} GB、每月 {hours} 小時電腦時數",
+  "Switch to {name}?": "切換到 {name}？",
+  "The unused difference is credited to your next invoice.": "未使用的差額將抵扣到你的下一張帳單。",
+  "Your card is charged the prorated difference today.": "今天將從你的卡片扣除按比例計算的差額。",
+  "Your plan becomes {price} when your trial ends.": "試用結束後，你的方案將變為 {price}。",
   "Your card is charged {price} today, less the unused part of this month.":
     "今天將從你的卡中扣款 {price}，並抵扣本月未使用的部分。",
   "Your plan becomes {price} / year when your trial ends.":
@@ -1343,6 +1351,10 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "1 bot now uses the space default.": "1 個機器人已改用空間預設模型。",
   "{count} bots now use the space default.": "{count} 個機器人已改用空間預設模型。",
   "Could not switch {failedNames}. Try again.": "無法切換 {failedNames}，請再試一次。",
+  "Create organization": "建立組織",
+  Organization: "組織",
+  "Delete organization": "刪除組織",
+  "Type {name} to confirm": "輸入 {name} 以確認",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

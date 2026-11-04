@@ -21,11 +21,13 @@ export const novita: Sandbox = {
     where: "Computer on Novita",
     ask: "pick the infra applicants back up where you stopped yesterday",
     reply: "same tab is still open on applicant 34. carrying on from there.",
-    task: "Back in Ashby where it paused.",
-    screen: {
-      host: "app.ashbyhq.com",
-      title: "Infra applicants",
-      lines: ["Resumed at applicant 34", "61 read · 9 shortlisted", "3 intros held"],
+    computer: {
+      task: "Back in Ashby where it paused.",
+      screen: {
+        host: "app.ashbyhq.com",
+        title: "Infra applicants",
+        lines: ["Resumed at applicant 34", "61 read · 9 shortlisted", "3 intros held"],
+      },
     },
   },
   sections: [

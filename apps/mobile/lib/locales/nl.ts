@@ -92,6 +92,8 @@ export const NL_MESSAGES: Record<string, string> = {
   Block: "Blokkeren",
   "Add a model in Settings to use this.": "Voeg een model toe in Instellingen om dit te gebruiken.",
   "Approval model": "Goedkeuringsmodel",
+  "Computer-use model": "Model voor computergebruik",
+  "Same as main model": "Zelfde als hoofdmodel",
   "Main model": "Hoofdmodel",
   "Add fallback": "Back-upmodel toevoegen",
   "Manage {provider}": "{provider} beheren",
@@ -1078,6 +1080,15 @@ export const NL_MESSAGES: Record<string, string> = {
   "Start plan": "Abonnement starten",
   "Switch to yearly": "Overstappen op jaarlijks",
   "Switch to yearly?": "Overstappen op jaarlijks?",
+  "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
+    "{vcpus} vCPU, {memoryGb} GB, {hours} computeruren per maand",
+  "Switch to {name}?": "Overstappen naar {name}?",
+  "The unused difference is credited to your next invoice.":
+    "Het ongebruikte verschil wordt verrekend met je volgende factuur.",
+  "Your card is charged the prorated difference today.":
+    "Je kaart wordt vandaag belast met het naar rato berekende verschil.",
+  "Your plan becomes {price} when your trial ends.":
+    "Je abonnement wordt {price} wanneer je proefperiode eindigt.",
   "Your card is charged {price} today, less the unused part of this month.":
     "Je kaart wordt vandaag belast met {price}, min het ongebruikte deel van deze maand.",
   "Your plan becomes {price} / year when your trial ends.":
@@ -1334,6 +1345,10 @@ export const NL_MESSAGES: Record<string, string> = {
   "{count} bots now use the space default.": "{count} bots gebruiken nu de spacestandaard.",
   "Could not switch {failedNames}. Try again.":
     "Kon {failedNames} niet overzetten. Probeer het opnieuw.",
+  "Create organization": "Organisatie aanmaken",
+  Organization: "Organisatie",
+  "Delete organization": "Organisatie verwijderen",
+  "Type {name} to confirm": "Typ {name} om te bevestigen",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

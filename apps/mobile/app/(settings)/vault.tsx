@@ -10,7 +10,7 @@ import * as Clipboard from "expo-clipboard";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useIdentityConfirmation } from "../../components/confirm-identity";
 import { ListSearchInput } from "../../components/list-search-input";
@@ -288,14 +288,17 @@ export default function Vault() {
             actions={VAULT_KINDS.map((kind) => ({ id: kind, title: vaultKindLabel(kind) }))}
             onPressAction={({ nativeEvent }) => startAdding(nativeEvent.event as VaultKind)}
           >
-            <Pressable
+            {/* A plain view: on Android the menu opens from its own Pressable, which a
+                nested Pressable would take the touch from. */}
+            <View
+              accessible
               accessibilityRole="button"
               accessibilityLabel={t("New item")}
               style={styles.add}
             >
               <NativeSymbol ios="plus" android="add" size={18} />
               <Text style={styles.addLabel}>{t("New item")}</Text>
-            </Pressable>
+            </View>
           </MenuView>
         ) : null}
         {items && items.length >= VAULT_SEARCH_MIN_ITEMS ? (

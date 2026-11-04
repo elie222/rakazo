@@ -24,11 +24,13 @@ export const railway: Sandbox = {
     where: "Computer on Railway",
     ask: "triage what came in over the weekend",
     reply: "on it. reproducing each report on my computer before i touch the issues.",
-    task: "Reproducing reports in Sentry.",
-    screen: {
-      host: "sentry.io",
-      title: "Auth loop: P1",
-      lines: ["6 new reports", "4 reproduced", "Stale session token"],
+    computer: {
+      task: "Reproducing reports in Sentry.",
+      screen: {
+        host: "sentry.io",
+        title: "Auth loop: P1",
+        lines: ["6 new reports", "4 reproduced", "Stale session token"],
+      },
     },
   },
   sections: [

@@ -91,6 +91,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Block: "Блокировать",
   "Add a model in Settings to use this.": "Добавьте модель в настройках, чтобы использовать это.",
   "Approval model": "Модель проверки действий",
+  "Computer-use model": "Модель для работы с компьютером",
+  "Same as main model": "Как у основной модели",
   "Main model": "Основная модель",
   "Add fallback": "Добавить резервную модель",
   "Manage {provider}": "Управление: {provider}",
@@ -1117,6 +1119,15 @@ export const RU_MESSAGES: Record<string, string> = {
   "Start plan": "Начать тариф",
   "Switch to yearly": "Перейти на годовой план",
   "Switch to yearly?": "Перейти на годовой план?",
+  "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
+    "{vcpus} vCPU, {memoryGb} ГБ, {hours} часов компьютера в месяц",
+  "Switch to {name}?": "Перейти на {name}?",
+  "The unused difference is credited to your next invoice.":
+    "Неиспользованная разница будет зачтена в следующий счёт.",
+  "Your card is charged the prorated difference today.":
+    "Сегодня с вашей карты спишут пропорциональную разницу.",
+  "Your plan becomes {price} when your trial ends.":
+    "После пробного периода тариф будет стоить {price}.",
   "Your card is charged {price} today, less the unused part of this month.":
     "Сегодня с карты спишется {price} за вычетом неиспользованной части месяца.",
   "Your plan becomes {price} / year when your trial ends.":
@@ -1375,6 +1386,10 @@ export const RU_MESSAGES: Record<string, string> = {
     "Ботов переведено на модель пространства по умолчанию: {count}.",
   "Could not switch {failedNames}. Try again.":
     "Не удалось переключить {failedNames}. Попробуйте снова.",
+  "Create organization": "Создать организацию",
+  Organization: "Организация",
+  "Delete organization": "Удалить организацию",
+  "Type {name} to confirm": "Введите {name} для подтверждения",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

@@ -1,6 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type {
   BillingByokCheckoutRequest,
+  BillingByokPlan,
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
@@ -14,8 +15,13 @@ import {
   BillingCustomerNotFoundError,
   BillingNoMonthlyCreditsError,
 } from "@rakazo/adapter-kit";
-import type { BillingCancellationReason } from "@rakazo/contracts";
-import { BILLING_CANCELLATION_REASONS, ModelCreditAmountSchema } from "@rakazo/contracts";
+import type { BillingCancellationReason, ByokTier } from "@rakazo/contracts";
+import {
+  BILLING_CANCELLATION_REASONS,
+  BYOK_TIERS,
+  ByokTierSchema,
+  ModelCreditAmountSchema,
+} from "@rakazo/contracts";
 import { z } from "zod";
 
 export const STRIPE_API_VERSION = "2026-09-30.endive";
@@ -72,6 +78,7 @@ const subscriptionSchema = z.object({
         current_period_end: z.number().nullish(),
         price: idSchema.extend({
           product: z.string().optional(),
+          lookup_key: z.string().nullish(),
           unit_amount: z.number().int().nullish(),
           recurring: z
             .object({ interval: z.string(), interval_count: z.number().int().nullish() })
@@ -284,7 +291,11 @@ export class StripeBillingProvider implements BillingProvider {
         line_items: [
           {
             quantity: 1,
-            price: await this.byokPrice(input.amountCents, interval),
+            price: await this.byokPrice({
+              tier: input.tier ?? "standard",
+              interval,
+              amountCents: input.amountCents,
+            }),
           },
         ],
         metadata,
@@ -300,7 +311,11 @@ export class StripeBillingProvider implements BillingProvider {
     return { url: session.url };
   }
 
-  async switchByokToYearly(customerId: string, subscriptionId: string, amountCents: number) {
+  async changeByokPlan(
+    customerId: string,
+    subscriptionId: string,
+    { from, to }: { from: BillingByokPlan; to: BillingByokPlan },
+  ) {
     // Re-read just before charging: a credit checkout may have completed since the caller checked.
     const subscriptions = await this.listSubscriptions(customerId);
     const live = (s: StripeSubscription) =>
@@ -312,34 +327,41 @@ export class StripeBillingProvider implements BillingProvider {
       !subscription ||
       !item ||
       !isByokPlan(subscription) ||
-      // Paid up and not cancelling: an overdue month must not be credited against the year.
+      // Paid up and not cancelling: an overdue period must not be credited against the new plan.
       (status !== "active" && status !== "trialing") ||
       subscription.cancel_at_period_end ||
       subscription.cancel_at != null ||
-      // One plan billed every month, as own-key checkout creates it.
+      // Still the one plan the caller saw, as own-key checkout creates it.
       subscription.items.data.length !== 1 ||
       (item.quantity ?? 1) !== 1 ||
-      item.price.recurring?.interval !== "month" ||
+      item.price.recurring?.interval !== from.interval ||
       (item.price.recurring.interval_count ?? 1) !== 1 ||
-      // Twelve months at the current price must still cost more than the year.
-      (item.price.unit_amount ?? 0) * 12 <= amountCents ||
+      item.price.unit_amount !== from.amountCents ||
+      byokTierOf(item.price.lookup_key) !== from.tier ||
       subscriptions.some((s) => live(s) && creditAmount(s.metadata?.rakazo_credit_cents))
     )
       return false;
-    // A new interval restarts the billing cycle today; the unused month is credited against it.
+    // A new interval restarts the billing cycle today; either way the unused part is credited.
     await this.request("POST", `/v1/subscriptions/${encodeURIComponent(subscription.id)}`, {
-      items: [{ id: item.id, price: await this.byokPrice(amountCents, "year"), quantity: 1 }],
+      items: [{ id: item.id, price: await this.byokPrice(to), quantity: 1 }],
       proration_behavior: "always_invoice",
       payment_behavior: "error_if_incomplete",
     });
     return true;
   }
 
-  private byokPrice(amountCents: number, interval: "month" | "year") {
+  /** The tier lives in the price's lookup key, so a plan changed in the billing portal keeps it. */
+  private byokPrice({ tier, interval, amountCents }: BillingByokPlan) {
+    const period = interval === "year" ? "yearly" : "monthly";
+    // Standard keeps the keys its existing prices were created under.
     return this.recurringPrice(
-      `rakazo_byok_${interval === "year" ? "yearly" : "monthly"}_${amountCents}`,
+      tier === "standard"
+        ? `${BYOK_PRICE_KEY_PREFIX}${period}_${amountCents}`
+        : `${BYOK_PRICE_KEY_PREFIX}${tier}_${period}_${amountCents}`,
       amountCents,
-      "Rakazo own-key plan",
+      tier === "standard"
+        ? "Rakazo own-key plan"
+        : `Rakazo own-key plan (${BYOK_TIERS[tier].name})`,
       interval,
     );
   }
@@ -886,6 +908,7 @@ function toSnapshot(
       ? {
           byokPlan: true,
           byokInterval: item.price.recurring?.interval === "year" ? "year" : "month",
+          byokTier: byokTierOf(item.price.lookup_key),
           ...(item.price.unit_amount != null
             ? { byokPriceCents: item.price.unit_amount * (item.quantity ?? 1) }
             : {}),
@@ -1005,6 +1028,17 @@ export function stripeBillingConfigFromEnv(env: {
 
 const BYOK_PLAN_METADATA = "rakazo_plan";
 const BALANCE_REFERENCE_METADATA = "rakazo_reference";
+
+const BYOK_PRICE_KEY_PREFIX = "rakazo_byok_";
+
+/** The tier named in an own-key price's lookup key; Standard's keys name none. */
+export function byokTierOf(lookupKey: string | null | undefined): ByokTier {
+  const named = lookupKey?.startsWith(BYOK_PRICE_KEY_PREFIX)
+    ? lookupKey.slice(BYOK_PRICE_KEY_PREFIX.length).split("_")[0]
+    : undefined;
+  const parsed = ByokTierSchema.safeParse(named);
+  return parsed.success ? parsed.data : "standard";
+}
 
 function isByokPlan(subscription: StripeSubscription) {
   return subscription.metadata?.[BYOK_PLAN_METADATA] === "byok";

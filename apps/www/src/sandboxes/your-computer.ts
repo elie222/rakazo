@@ -21,11 +21,13 @@ export const yourComputer: Sandbox = {
     where: "Your Mac",
     ask: "the offsite agenda is open in textedit, can you tidy it up?",
     reply: "sure. i'll ask before i use textedit on your mac.",
-    task: "Tidying the agenda in TextEdit.",
-    screen: {
-      host: "TextEdit",
-      title: "Offsite agenda.rtf",
-      lines: ["Day 1: arrivals and dinner", "Day 2: planning from 9am", "Harbor House held"],
+    computer: {
+      task: "Tidying the agenda in TextEdit.",
+      screen: {
+        host: "TextEdit",
+        title: "Offsite agenda.rtf",
+        lines: ["Day 1: arrivals and dinner", "Day 2: planning from 9am", "Harbor House held"],
+      },
     },
   },
   sections: [

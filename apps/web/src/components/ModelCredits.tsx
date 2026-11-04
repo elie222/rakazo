@@ -1,9 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { BillingStatus, ByokInterval } from "@rakazo/contracts";
+import type { BillingStatus, ByokInterval, ByokTier } from "@rakazo/contracts";
 import {
   ByokIntervalSchema,
+  ByokTierSchema,
+  byokTierChangeOffered,
   byokYearlySavingsPercent,
   byokYearlySwitchSavings,
+  COMPUTER_SIZE_SPECS,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
@@ -49,6 +52,7 @@ import { useSignOut } from "../lib/sign-out";
 import { AccountMenu } from "./AccountMenu";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
+type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
 
 /** Subscription states that still bill: access now, or resumed from the billing portal. */
 const LIVE_STATES: BillingStatus["state"][] = [
@@ -99,6 +103,91 @@ function ByokIntervalToggle({
         {savings > 0 ? <span className="text-success">−{savings}%</span> : null}
       </ToggleGroupItem>
     </ToggleGroup>
+  );
+}
+
+/** What a tier costs every `interval`; null when it is not offered at that interval. */
+function tierPriceCents(offer: TierOffer, interval: ByokInterval): number | null {
+  return interval === "year" ? offer.annualPriceCents : offer.monthlyPriceCents;
+}
+
+/** "8 vCPU, 16 GB, 100 computer hours a month" */
+function useTierComputer() {
+  const { t } = useLingui();
+  return (offer: TierOffer) => {
+    const { vcpus, memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];
+    const hours = offer.computerHours;
+    return t`${vcpus} vCPU, ${memoryGb} GB, ${hours} computer hours a month`;
+  };
+}
+
+/** The own-key plan's tiers at `interval`, each with its price and computer. */
+function ByokTierSelect({
+  tiers,
+  interval,
+  value,
+  disabled,
+  onChange,
+}: {
+  tiers: TierOffer[];
+  interval: ByokInterval;
+  value: ByokTier;
+  disabled?: boolean;
+  onChange: (offer: TierOffer) => void;
+}) {
+  const { t, i18n } = useLingui();
+  const computer = useTierComputer();
+  const offered = tiers.flatMap((offer) => {
+    const cents = tierPriceCents(offer, interval);
+    return cents === null
+      ? []
+      : [
+          {
+            offer,
+            price: formatBillingPrice(
+              { amount: cents, currency: "usd", interval, intervalCount: 1 },
+              i18n.locale,
+            ),
+          },
+        ];
+  });
+  return (
+    <Select
+      value={value}
+      disabled={disabled}
+      onValueChange={(next) => {
+        const chosen = offered.find(({ offer }) => offer.tier === next);
+        if (chosen) onChange(chosen.offer);
+      }}
+      items={offered.map(({ offer }) => ({ value: offer.tier, label: offer.name }))}
+    >
+      <SelectTrigger aria-label={t`Plan`} className="min-w-28">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false} align="start">
+        <SelectGroup>
+          {offered.map(({ offer, price }) => (
+            <SelectItem key={offer.tier} value={offer.tier} className="py-2">
+              <span className="flex flex-col gap-0.5">
+                <span>
+                  {offer.name} · {price}
+                </span>
+                <span className="text-xs text-muted-foreground">{computer(offer)}</span>
+              </span>
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** The free period's subscribe button, at the chosen tier and interval. */
+function SubscribeLabel({ price, annualPrice }: { price: string; annualPrice: string | null }) {
+  return annualPrice ? (
+    <Trans>Subscribe for {annualPrice} / year</Trans>
+  ) : (
+    <Trans>Subscribe for {price} / month</Trans>
   );
 }
 
@@ -339,8 +428,11 @@ export function ModelCreditsSettings({
   const [interval, setByokInterval] = useState<ByokInterval>("month");
   const [endTrialOpen, setEndTrialOpen] = useState(false);
   const [yearlyOpen, setYearlyOpen] = useState(false);
+  const [tierTarget, setTierTarget] = useState<TierOffer | null>(null);
+  const [checkoutTier, setCheckoutTier] = useState<ByokTier>("standard");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
+  const computer = useTierComputer();
   const balance = new Intl.NumberFormat(i18n.locale, {
     style: "currency",
     currency: "USD",
@@ -391,6 +483,37 @@ export function ModelCreditsSettings({
         }
       : null;
   const yearlySavings = byokYearlySwitchSavings(status);
+  const tiers = status.byokTiers ?? [];
+  const currentTier = tiers.find(
+    (offer) => offer.tier === ByokTierSchema.catch("standard").parse(status.byokTier),
+  );
+  const tierChange = byokTierChangeOffered(status) && currentTier;
+  const subscribedInterval = status.byokInterval ?? "month";
+  const tierTargetName = tierTarget?.name;
+  const tierTargetPrice = tierTarget && tierPriceCents(tierTarget, subscribedInterval);
+  const tierTargetLabel = tierTargetPrice
+    ? formatBillingPrice(
+        {
+          amount: tierTargetPrice,
+          currency: "usd",
+          interval: subscribedInterval,
+          intervalCount: 1,
+        },
+        i18n.locale,
+      )
+    : null;
+  // A free period subscribes at the tier it picks; without tiers, the plan's own prices apply.
+  const checkoutOffer = tiers.find((offer) => offer.tier === checkoutTier);
+  const checkoutMonthlyCents = checkoutOffer?.monthlyPriceCents ?? status.byokPriceCents;
+  const checkoutAnnualCents = checkoutOffer
+    ? checkoutOffer.annualPriceCents
+    : status.byokAnnualPriceCents;
+  const checkoutPrice = checkoutMonthlyCents
+    ? formatBillingAmount(checkoutMonthlyCents, "usd", i18n.locale)
+    : null;
+  const checkoutAnnualPrice = checkoutAnnualCents
+    ? formatBillingAmount(checkoutAnnualCents, "usd", i18n.locale)
+    : null;
   return (
     <div data-testid="model-credits" className="space-y-5">
       {ownKeyPlan ? (
@@ -402,16 +525,33 @@ export function ModelCreditsSettings({
           {ownKeyPlan.date ? (
             <p className="mt-2 text-sm text-muted-foreground">{ownKeyPlan.date}</p>
           ) : null}
-          {yearlySavings !== null ? (
-            <Button
-              className="mt-5"
-              variant="secondary"
-              disabled={pending}
-              onClick={() => setYearlyOpen(true)}
-            >
-              <Trans>Switch to yearly</Trans>
-              <span className="text-success">−{yearlySavings}%</span>
-            </Button>
+          {currentTier ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              {tierChange
+                ? computer(currentTier)
+                : `${currentTier.name} · ${computer(currentTier)}`}
+            </p>
+          ) : null}
+          {tierChange || yearlySavings !== null ? (
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              {tierChange ? (
+                <ByokTierSelect
+                  tiers={tiers}
+                  interval={subscribedInterval}
+                  value={currentTier.tier}
+                  disabled={pending}
+                  onChange={(offer) => {
+                    if (offer.tier !== currentTier.tier) setTierTarget(offer);
+                  }}
+                />
+              ) : null}
+              {yearlySavings !== null ? (
+                <Button variant="secondary" disabled={pending} onClick={() => setYearlyOpen(true)}>
+                  <Trans>Switch to yearly</Trans>
+                  <span className="text-success">−{yearlySavings}%</span>
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -442,29 +582,40 @@ export function ModelCreditsSettings({
         </p>
         {status.canManage ? (
           <div className="mt-5 flex flex-wrap items-center gap-3">
-            {freeUntil && status.byokPriceCents && status.byokAnnualPriceCents ? (
+            {freeUntil && tiers.length > 1 ? (
+              <ByokTierSelect
+                tiers={tiers}
+                interval={interval}
+                value={checkoutTier}
+                disabled={pending}
+                onChange={(offer) => setCheckoutTier(offer.tier)}
+              />
+            ) : null}
+            {freeUntil && checkoutMonthlyCents && checkoutAnnualCents ? (
               <ByokIntervalToggle
-                monthlyCents={status.byokPriceCents}
-                annualCents={status.byokAnnualPriceCents}
+                monthlyCents={checkoutMonthlyCents}
+                annualCents={checkoutAnnualCents}
                 value={interval}
                 onChange={setByokInterval}
               />
             ) : null}
-            {freeUntil && price ? (
+            {freeUntil && checkoutPrice ? (
               <Button
                 disabled={pending}
                 onClick={() =>
                   void action(async () => {
-                    const { url } = await rpc.billing.checkout({ interval });
+                    const { url } = await rpc.billing.checkout({
+                      interval: checkoutAnnualPrice ? interval : "month",
+                      ...(checkoutOffer ? { tier: checkoutTier } : {}),
+                    });
                     window.location.assign(url);
                   })
                 }
               >
-                {annualPrice && interval === "year" ? (
-                  <Trans>Subscribe for {annualPrice} / year</Trans>
-                ) : (
-                  <Trans>Subscribe for {price} / month</Trans>
-                )}
+                <SubscribeLabel
+                  price={checkoutPrice}
+                  annualPrice={interval === "year" ? checkoutAnnualPrice : null}
+                />
               </Button>
             ) : null}
             <Button
@@ -559,6 +710,48 @@ export function ModelCreditsSettings({
                 void action(async () => {
                   setYearlyOpen(false);
                   await rpc.billing.switchToYearly();
+                  await refresh();
+                })
+              }
+            >
+              <Trans>Switch</Trans>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={tierTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setTierTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <Trans>Switch to {tierTargetName}?</Trans>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {status.state === "trialing" ? (
+                <Trans>Your plan becomes {tierTargetLabel} when your trial ends.</Trans>
+              ) : (tierTargetPrice ?? 0) > (status.byokPriceCents ?? 0) ? (
+                <Trans>Your card is charged the prorated difference today.</Trans>
+              ) : (
+                <Trans>The unused difference is credited to your next invoice.</Trans>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <Trans>Cancel</Trans>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending}
+              onClick={() =>
+                void action(async () => {
+                  const tier = tierTarget?.tier;
+                  setTierTarget(null);
+                  if (!tier) return;
+                  await rpc.billing.changeTier({ tier });
                   await refresh();
                 })
               }

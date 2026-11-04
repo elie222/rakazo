@@ -405,6 +405,10 @@ msgstr "{title}, {savedAs} नाम से सेव होगा"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# टूल} other {# टूल}}"
 
+#: src/components/ModelCredits.tsx
+msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
+msgstr "{vcpus} vCPU, {memoryGb} GB, हर महीने {hours} कंप्यूटर घंटे"
+
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
 msgid "@{0}"
@@ -1214,6 +1218,7 @@ msgstr "तस्वीरें नहीं पढ़ सकता"
 #: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -1612,6 +1617,10 @@ msgstr ""
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "कंप्यूटर रुका हुआ है"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "कंप्यूटर उपयोग मॉडल"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2442,6 +2451,7 @@ msgstr ""
 msgid "Country"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2462,6 +2472,11 @@ msgstr "खाता बनाएं"
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "समूह बनाएं"
+
+#: src/components/CreateOrganizationDialog.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Create organization"
+msgstr "संगठन बनाएँ"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
@@ -2608,6 +2623,7 @@ msgstr "डिफ़ॉल्ट स्कोप"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/archived-chats.tsx
 #: src/pages/shell/dialogs.tsx
@@ -2634,6 +2650,7 @@ msgstr "{0} डिलीट करें"
 #. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "{0} डिलीट करें?"
@@ -2650,6 +2667,10 @@ msgstr "समूह डिलीट करें"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "मेमोरी भी डिलीट करें"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Delete organization"
+msgstr "संगठन हटाएँ"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Delete section"
@@ -2670,6 +2691,7 @@ msgstr "डिलीट किया गया"
 
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "डिलीट किया जा रहा है…"
@@ -4153,6 +4175,7 @@ msgstr "माइक बंद है"
 msgid "My computers"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4160,6 +4183,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4658,8 +4682,9 @@ msgid "Or paste an API key"
 msgstr "या एक API कुंजी पेस्ट करें"
 
 #: src/components/ComputerProviderSettings.tsx
+#: src/pages/settings-nav.ts
 msgid "Organization"
-msgstr ""
+msgstr "संगठन"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -4871,6 +4896,10 @@ msgstr "पिन करें"
 #: src/pages/Shell.tsx
 msgid "Pinned"
 msgstr "पिन किए गए"
+
+#: src/components/ModelCredits.tsx
+msgid "Plan"
+msgstr "प्लान"
 
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
@@ -5498,6 +5527,10 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "{botName} जैसा"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Same as main model"
+msgstr "मुख्य मॉडल जैसा"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -6190,6 +6223,10 @@ msgid "Switch"
 msgstr "बदलें"
 
 #: src/components/ModelCredits.tsx
+msgid "Switch to {tierTargetName}?"
+msgstr "{tierTargetName} पर स्विच करें?"
+
+#: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "वार्षिक पर जाएं"
 
@@ -6322,6 +6359,10 @@ msgstr "चयनित मेमोरी प्रोवाइडर इस �
 msgid "The shared link stops working"
 msgstr "शेयर किया गया लिंक काम करना बंद कर देगा"
 
+#: src/components/ModelCredits.tsx
+msgid "The unused difference is credited to your next invoice."
+msgstr "बिना इस्तेमाल का अंतर आपके अगले इनवॉइस में क्रेडिट हो जाएगा।"
+
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
 msgstr ""
@@ -6390,6 +6431,7 @@ msgstr "यह कॉल अब नहीं बज रही है।"
 msgid "This can't be undone."
 msgstr "इसे पूर्ववत नहीं किया जा सकता।"
 
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "इसे पूर्ववत नहीं किया जा सकता।"
@@ -6640,6 +6682,10 @@ msgstr "मंगलवार"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Type"
 msgstr ""
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Type {name} to confirm"
+msgstr "पुष्टि के लिए {name} लिखें"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"
@@ -7100,6 +7146,10 @@ msgstr "आपका Anthropic"
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "आज आपके कार्ड से {annualPrice} लिए जाएंगे, इस महीने के बचे हुए हिस्से को घटाकर।"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged the prorated difference today."
+msgstr "आपके कार्ड से आज आनुपातिक अंतर लिया जाएगा।"
+
 #: src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 msgstr "आपके कंप्यूटर की डिस्क लगभग भर गई है। जिन बिल्ड आउटपुट और कैश की अब ज़रूरत नहीं है, उन्हें हटाकर जगह खाली करें।"
@@ -7138,6 +7188,10 @@ msgstr "आपका OpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "ट्रायल खत्म होने पर आपका प्लान {annualPrice} / वर्ष हो जाएगा।"
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {tierTargetLabel} when your trial ends."
+msgstr "ट्रायल खत्म होने पर आपका प्लान {tierTargetLabel} हो जाएगा।"
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

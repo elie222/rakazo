@@ -117,7 +117,7 @@ export function accountRoutes(ctx: RouterContext) {
         return billing.status(context.actor);
       }),
       checkout: authed.billing.checkout.handler(async ({ context, input }) =>
-        requireBilling(deps).checkout(context.actor, input?.client, input?.interval),
+        requireBilling(deps).checkout(context.actor, input?.client, input?.interval, input?.tier),
       ),
       portal: authed.billing.portal.handler(async ({ context, input }) =>
         requireBilling(deps).portal(context.actor, input?.client),
@@ -130,6 +130,11 @@ export function accountRoutes(ctx: RouterContext) {
       switchToYearly: authed.billing.switchToYearly.handler(async ({ context }) => {
         const billing = requireBilling(deps);
         await billing.switchToYearly(context.actor);
+        return billing.status(context.actor);
+      }),
+      changeTier: authed.billing.changeTier.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        await billing.changeTier(context.actor, input.tier);
         return billing.status(context.actor);
       }),
       claimReferral: authed.billing.claimReferral.handler(async ({ context, input }) => {
@@ -156,18 +161,23 @@ export function accountRoutes(ctx: RouterContext) {
         const userId = context.actor.userId;
         const botAvatarSet = input.botAvatarSet;
         if (input.timezone !== undefined) {
-          // The routines that took the account zone keep their local schedule in the new one.
-          await changeUserTimezone(deps, userId, input.timezone);
-        }
-        // Waits for any bot creation holding the user row, so no new bot is missed below.
-        await deps.prisma.user.update({
-          where: { id: userId },
-          // An avatar style from an older app is accepted and ignored: there is only one.
-          data: {
+          // The routines that took the account zone keep their local schedule in the new
+          // one, and the other fields commit in the same save. The move's row lock still
+          // waits for any bot creation holding the user row, so no new bot is missed below.
+          await changeUserTimezone(deps, userId, input.timezone, {
             ...(input.locale === undefined ? {} : { locale: input.locale }),
             ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
-          },
-        });
+          });
+        } else {
+          await deps.prisma.user.update({
+            where: { id: userId },
+            // An avatar style from an older app is accepted and ignored: there is only one.
+            data: {
+              ...(input.locale === undefined ? {} : { locale: input.locale }),
+              ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+            },
+          });
+        }
         if (botAvatarSet !== undefined) {
           // Every bot of this user not pinned to another set follows the new default, in every
           // space they own bots in, announced like any edit so other devices redraw it.

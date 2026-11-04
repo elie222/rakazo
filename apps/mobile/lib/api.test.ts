@@ -19,6 +19,7 @@ import {
   blockText,
   captureApiRequestContext,
   changePassword,
+  clearSpace,
   currentApiBase,
   deleteAccount,
   fetchAccountSecurity,
@@ -2299,6 +2300,17 @@ describe("mobile API authentication", () => {
     );
   });
 
+  it("reports a failed clear when the remembered organization Spaces stay on the device", async () => {
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.org_spaces") throw new Error("device locked");
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.org_spaces") throw new Error("device locked");
+    });
+
+    await expect(clearSpace()).resolves.toBe(false);
+  });
+
   it("restores credentials when the new endpoint cannot be persisted", async () => {
     const previous = currentApiBase();
     vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
@@ -2319,6 +2331,7 @@ describe("mobile API authentication", () => {
       authorization: "Bearer session-token",
       "x-rakazo-space-id": "space-support",
     });
+    expect(SecureStore.deleteItemAsync).not.toHaveBeenCalledWith("rakazo.org_spaces");
   });
 
   it("restores a persisted space when its initial load failed", async () => {

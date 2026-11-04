@@ -405,6 +405,10 @@ msgstr "{title}, opgeslagen als {savedAs}"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# tool} other {# tools}}"
 
+#: src/components/ModelCredits.tsx
+msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
+msgstr "{vcpus} vCPU, {memoryGb} GB, {hours} computeruren per maand"
+
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
 msgid "@{0}"
@@ -1214,6 +1218,7 @@ msgstr "Kan afbeeldingen niet lezen"
 #: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -1612,6 +1617,10 @@ msgstr "De computer is in slaapstand. Open hem om hem te laten ontwaken."
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "De computer is gestopt"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "Model voor computergebruik"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2442,6 +2451,7 @@ msgstr ""
 msgid "Country"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2462,6 +2472,11 @@ msgstr "Account aanmaken"
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "Groep aanmaken"
+
+#: src/components/CreateOrganizationDialog.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Create organization"
+msgstr "Organisatie maken"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
@@ -2608,6 +2623,7 @@ msgstr "Standaardbereik"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/archived-chats.tsx
 #: src/pages/shell/dialogs.tsx
@@ -2634,6 +2650,7 @@ msgstr "{0} verwijderen"
 #. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "{0} verwijderen?"
@@ -2650,6 +2667,10 @@ msgstr "Groep verwijderen"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "Herinneringen ook verwijderen"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Delete organization"
+msgstr "Organisatie verwijderen"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Delete section"
@@ -2670,6 +2691,7 @@ msgstr "verwijderd"
 
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "Bezig met verwijderen…"
@@ -4153,6 +4175,7 @@ msgstr "Gedempt"
 msgid "My computers"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4160,6 +4183,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4658,8 +4682,9 @@ msgid "Or paste an API key"
 msgstr "Of plak een API-sleutel"
 
 #: src/components/ComputerProviderSettings.tsx
+#: src/pages/settings-nav.ts
 msgid "Organization"
-msgstr ""
+msgstr "Organisatie"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -4871,6 +4896,10 @@ msgstr "Vastzetten"
 #: src/pages/Shell.tsx
 msgid "Pinned"
 msgstr "Vastgezet"
+
+#: src/components/ModelCredits.tsx
+msgid "Plan"
+msgstr "Abonnement"
 
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
@@ -5498,6 +5527,10 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "Zelfde als {botName}"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Same as main model"
+msgstr "Zelfde als hoofdmodel"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -6190,6 +6223,10 @@ msgid "Switch"
 msgstr "Overstappen"
 
 #: src/components/ModelCredits.tsx
+msgid "Switch to {tierTargetName}?"
+msgstr "Overstappen naar {tierTargetName}?"
+
+#: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "Overstappen op jaarlijks"
 
@@ -6322,6 +6359,10 @@ msgstr "De gekozen geheugenaanbieder is niet beschikbaar in deze build."
 msgid "The shared link stops working"
 msgstr "De gedeelde link werkt dan niet meer"
 
+#: src/components/ModelCredits.tsx
+msgid "The unused difference is credited to your next invoice."
+msgstr "Het ongebruikte verschil wordt verrekend met je volgende factuur."
+
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
 msgstr ""
@@ -6390,6 +6431,7 @@ msgstr "Dit gesprek rinkelt niet meer."
 msgid "This can't be undone."
 msgstr "Dit kan niet ongedaan worden gemaakt."
 
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "Dit kan niet ongedaan worden gemaakt."
@@ -6640,6 +6682,10 @@ msgstr "dinsdag"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Type"
 msgstr "Type"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Type {name} to confirm"
+msgstr "Typ {name} om te bevestigen"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"
@@ -7100,6 +7146,10 @@ msgstr "Jouw Anthropic"
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "Je kaart wordt vandaag belast met {annualPrice}, min het ongebruikte deel van deze maand."
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged the prorated difference today."
+msgstr "Je kaart wordt vandaag belast met het naar rato berekende verschil."
+
 #: src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 msgstr "De schijf van je computer is bijna vol. Maak ruimte vrij door build-uitvoer en caches te verwijderen die je niet meer nodig hebt."
@@ -7138,6 +7188,10 @@ msgstr "Jouw OpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "Na je proefperiode kost je plan {annualPrice} per jaar."
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {tierTargetLabel} when your trial ends."
+msgstr "Je abonnement wordt {tierTargetLabel} wanneer je proefperiode eindigt."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

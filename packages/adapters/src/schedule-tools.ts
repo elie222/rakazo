@@ -16,6 +16,7 @@ import {
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { runAsSystemInTransaction } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 
 import { localDateTime } from "./current-time.js";
 import { validateRoutineWatch } from "./routine-watch.js";
@@ -283,12 +284,18 @@ async function sharedAccountZone(tx: Prisma.TransactionClient, userId: string): 
  * as a schedule_update zone change keeps it. A routine pinned to another zone stays, and so
  * does one stored while the account had no zone, which may be pinned to UTC on purpose.
  * Clearing the zone (`null`) only clears the account: a routine cannot hold no zone.
- * `timezone` is the already-validated zone the caller wants saved.
+ * `timezone` is the already-validated zone the caller wants saved; `other` holds the
+ * preference fields that came in the same save, so they commit with it or not at all.
  */
 export async function changeUserTimezone(
   deps: Pick<ScheduleToolDeps, "prisma" | "jobs">,
   userId: string,
   timezone: string | null,
+  other?: {
+    locale?: string;
+    botAvatarSet?: string;
+    marketingEmailOptOutAt?: Date | null;
+  },
 ): Promise<void> {
   const woken: { id: string; nextRunAt: Date }[] = [];
   await deps.prisma.$transaction(async (tx) => {
@@ -299,9 +306,9 @@ export async function changeUserTimezone(
       // after the last save committed, so no routine keeps an intermediate zone.
       await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${userId} FOR UPDATE`;
       const user = await tx.user.findUnique({ where: { id: userId }, select: { timezone: true } });
-      if (!user || user.timezone === timezone) return;
-      await tx.user.update({ where: { id: userId }, data: { timezone } });
-      if (!timezone || !user.timezone) return;
+      if (!user || (user.timezone === timezone && !other)) return;
+      await tx.user.update({ where: { id: userId }, data: { timezone, ...other } });
+      if (user.timezone === timezone || !timezone || !user.timezone) return;
       // Lock the rows about to move, so a run firing meanwhile cannot advance one between
       // the read and the write: its claim lands after the commit and re-derives from the
       // moved schedule. The read takes only the locked ids: a routine inserted after the
@@ -312,10 +319,24 @@ export async function changeUserTimezone(
       >`SELECT id FROM "routines" WHERE "userId" = ${userId} AND timezone = ${user.timezone} FOR UPDATE`;
       const routines = await tx.routine.findMany({
         where: { id: { in: locked.map((row) => row.id) }, userId, timezone: user.timezone },
+        select: {
+          id: true,
+          crons: true,
+          timezone: true,
+          nextRunAt: true,
+          active: true,
+          watch: true,
+        },
       });
+      // Rows whose next run keeps its instant move their zone label in one write; only
+      // the retimed ones need their own fenced update.
+      const relabeled: string[] = [];
       for (const routine of routines) {
         const nextRunAt = nextRunAtAfterTimezoneMove(routine, timezone);
-        const movedNext = nextRunAt?.getTime() !== routine.nextRunAt?.getTime();
+        if (nextRunAt?.getTime() === routine.nextRunAt?.getTime()) {
+          relabeled.push(routine.id);
+          continue;
+        }
         // The zone and the timing it was computed from are part of the write, so a change
         // that slipped through anyway keeps its advance and the routine its old zone.
         const { count } = await tx.routine.updateMany({
@@ -323,19 +344,31 @@ export async function changeUserTimezone(
             id: routine.id,
             userId,
             timezone: user.timezone,
-            ...(movedNext ? { nextRunAt: routine.nextRunAt } : {}),
+            nextRunAt: routine.nextRunAt,
           },
-          data: { timezone, ...(movedNext ? { nextRunAt } : {}) },
+          data: { timezone, nextRunAt },
         });
-        if (count === 1 && movedNext && routine.active && nextRunAt) {
+        if (count === 1 && routine.active && nextRunAt) {
           woken.push({ id: routine.id, nextRunAt });
         }
       }
+      if (relabeled.length) {
+        await tx.routine.updateMany({
+          where: { id: { in: relabeled }, userId, timezone: user.timezone },
+          data: { timezone },
+        });
+      }
     });
   });
-  // Enqueue after the commit, like every routine write; the reconciler repairs a miss.
+  // Enqueue after the commit, like every routine write. The save is committed by now, so
+  // a failing enqueue is logged instead of thrown: the reconciler repairs the missed
+  // wake, and the caller keeps the successful save. Every wakeup is attempted.
   for (const routine of woken) {
-    await deps.jobs.enqueue(routineWakeupJob(routine.id, routine.nextRunAt));
+    await deps.jobs
+      .enqueue(routineWakeupJob(routine.id, routine.nextRunAt))
+      .catch((error: unknown) => {
+        getLogger().error("timezone move wakeup enqueue", error);
+      });
   }
 }
 
