@@ -179,6 +179,11 @@ tags:
 - tapOn: "Reply"
 - assertVisible: "Cancel reply"
 - tapOn: "Cancel reply"
+# Bot actions live in the bot's profile header.
+- openLink: "rakazo:///bot-profile?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: "Bot actions"
+    timeout: 10000
 - tapOn: "Bot actions"
 - assertVisible: "Clear conversation"
 - takeScreenshot: "16-bot-actions"
