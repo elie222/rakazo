@@ -231,6 +231,10 @@ vi.mock("./passkey", () => ({
   passkeysAvailable: vi.fn(async () => false),
   renamePasskey: vi.fn(),
 }));
+vi.mock("./organizations", () => ({
+  activeOrganization: () => undefined,
+  useOrganizations: () => ({ data: undefined }),
+}));
 vi.mock("./push", () => ({ registerPushToken: vi.fn() }));
 vi.mock("./returning-user", () => ({ forgetSignedIn: vi.fn() }));
 vi.mock("./queued-save", () => ({ createQueuedSave: () => ({ save: vi.fn() }) }));

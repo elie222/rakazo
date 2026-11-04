@@ -469,6 +469,16 @@ function LayoutContent() {
                         headerBackVisible: false,
                       }}
                     />
+                    <Stack.Screen
+                      name="new-organization"
+                      options={{
+                        headerShown: false,
+                        presentation: "formSheet",
+                        sheetAllowedDetents: "fitToContents",
+                        sheetGrabberVisible: true,
+                        contentStyle: { backgroundColor: native.groupedPage },
+                      }}
+                    />
                     <Stack.Screen name="artifacts" options={glassHeaderOptions(t("Artifacts"))} />
                     <Stack.Screen name="artifact" options={{ title: t("Artifact") }} />
                     <Stack.Screen name="pages" options={glassHeaderOptions(t("Pages"))} />

@@ -42,6 +42,8 @@ const FLOWS: { name: string; window?: { size: string; density: string } }[] = [
   { name: "keyboard-lifecycle" },
   // An unfolded foldable, about 750dp wide, where the chat list sits beside the open chat.
   { name: "split-view", window: { size: "1968x2184", density: "420" } },
+  // It creates and deletes a second organization in the shared fixture account.
+  { name: "organizations" },
   // Native modules and system UI that release-build code shrinking could break. Last,
   // because the messages, attachments, and calls it adds change what earlier flows match.
   { name: "native-features" },

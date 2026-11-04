@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const account = vi.hoisted(() => ({ load: (_me: unknown) => {} }));
 
 vi.mock("../lib/rpc", () => ({
+  selectedSpaceId: () => null,
   rpc: {
     me: vi.fn(
       () =>

@@ -1218,6 +1218,7 @@ msgstr "无法读取图像"
 #: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2450,6 +2451,7 @@ msgstr "无法更新钱包"
 msgid "Country"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2470,6 +2472,11 @@ msgstr "创建账户"
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "创建群组"
+
+#: src/components/CreateOrganizationDialog.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Create organization"
+msgstr "创建组织"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
@@ -2616,6 +2623,7 @@ msgstr "默认范围"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/archived-chats.tsx
 #: src/pages/shell/dialogs.tsx
@@ -2642,6 +2650,7 @@ msgstr "删除 {0}"
 #. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "删除 {0}？"
@@ -2658,6 +2667,10 @@ msgstr "删除群组"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "同时删除记忆"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Delete organization"
+msgstr "删除组织"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Delete section"
@@ -2678,6 +2691,7 @@ msgstr "已删除"
 
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "正在删除…"
@@ -4161,6 +4175,7 @@ msgstr "已静音"
 msgid "My computers"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4168,6 +4183,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4666,8 +4682,9 @@ msgid "Or paste an API key"
 msgstr "或粘贴 API 密钥"
 
 #: src/components/ComputerProviderSettings.tsx
+#: src/pages/settings-nav.ts
 msgid "Organization"
-msgstr ""
+msgstr "组织"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -6414,6 +6431,7 @@ msgstr "这通电话已经不响了。"
 msgid "This can't be undone."
 msgstr "此操作无法撤销。"
 
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "此操作无法撤销。"
@@ -6664,6 +6682,10 @@ msgstr "周二"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Type"
 msgstr "类型"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Type {name} to confirm"
+msgstr "输入 {name} 以确认"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"

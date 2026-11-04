@@ -125,5 +125,11 @@
     "title": "Pages",
     "flow": "flows/pages.yaml",
     "screens": ["page", "page-share", "pages"]
+  },
+  {
+    "id": "organizations",
+    "title": "Organizations",
+    "flow": "flows/organizations.yaml",
+    "screens": ["account", "new-organization", "paywall", "index", "organization"]
   }
 ]

@@ -34,15 +34,36 @@ export function byokFreeUntil(credits: { byokFreeUntil: Date | null }, now = new
 export const FREE_MONTH_DAYS = 30;
 
 /** One statement, so concurrent grants each add their days. */
-export function extendByokFreePeriod(
+export async function extendByokFreePeriod(
   tx: Prisma.TransactionClient,
   organizationId: string,
   days: number,
 ) {
-  return tx.$executeRaw`
+  await tx.$executeRaw`
     UPDATE model_credit_accounts
     SET "byokFreeUntil" = GREATEST(COALESCE("byokFreeUntil", now()), now()) + make_interval(days => ${days}::int)
     WHERE "organizationId" = ${organizationId}`;
+}
+
+const SUBSCRIBED: Prisma.OrganizationWhereInput = {
+  billing: { is: { subscribedAt: { not: null } } },
+};
+const HAD_FREE_DAYS: Prisma.OrganizationWhereInput = {
+  modelCredits: { is: { byokFreeUntil: { not: null } } },
+};
+
+/** Survives the organization, so deleting it never earns its owner another trial. */
+async function markOwnersTrialUsed(
+  db: Pick<PrismaClient, "user"> | Prisma.TransactionClient,
+  organization: Prisma.OrganizationWhereInput,
+) {
+  await db.user.updateMany({
+    where: {
+      billingTrialUsedAt: null,
+      members: { some: { organization, role: { contains: "owner" } } },
+    },
+    data: { billingTrialUsedAt: new Date() },
+  });
 }
 
 export async function spaceHasModelAccess(prisma: PrismaClient, spaceId: string) {
@@ -210,6 +231,7 @@ export async function syncBillingSnapshot(
       where: { customerId, subscribedAt: null },
       data: { subscribedAt: startedAt },
     });
+    await markOwnersTrialUsed(prisma, { billing: { is: { customerId } } });
   }
   if (snapshot?.status === "active") {
     await prisma.billingAccount.updateMany({
@@ -262,6 +284,53 @@ export async function ownedBillingAccounts(
       ? [membership.organization.billing]
       : [],
   );
+}
+
+/** Before an organization's billing rows go, so a subscription that predates the user-level mark still counts. */
+export async function keepOrganizationTrialUse(prisma: PrismaClient, organizationId: string) {
+  await markOwnersTrialUsed(prisma, { id: organizationId, ...SUBSCRIBED });
+}
+
+/**
+ * One trial per person: any subscription uses it up. Free own-key days also use up the own-key
+ * trial, but not the managed plan's. Organizations that subscribed before the user-level mark
+ * existed still count, so older accounts need no backfill.
+ */
+export async function ownerHadTrial(
+  prisma: PrismaClient,
+  userId: string,
+  plan: "byok" | "managed",
+): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { billingTrialUsedAt: true },
+  });
+  if (user?.billingTrialUsedAt) return true;
+  const used = await prisma.member.findFirst({
+    where: {
+      userId,
+      role: { contains: "owner" },
+      organization: plan === "byok" ? { OR: [SUBSCRIBED, HAD_FREE_DAYS] } : SUBSCRIBED,
+    },
+    select: { id: true },
+  });
+  return used !== null;
+}
+
+/** Whether the organization's owner has used their one trial, whichever member is asking. */
+export async function organizationOwnerHadTrial(
+  prisma: PrismaClient,
+  organizationId: string,
+  plan: "byok" | "managed",
+): Promise<boolean> {
+  const members = await prisma.member.findMany({
+    where: { organizationId, role: { contains: "owner" } },
+    select: { userId: true, role: true },
+  });
+  for (const member of members) {
+    if (isOwnerRole(member.role) && (await ownerHadTrial(prisma, member.userId, plan))) return true;
+  }
+  return false;
 }
 
 function isOwnerRole(role: string): boolean {

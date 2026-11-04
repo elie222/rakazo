@@ -36,6 +36,7 @@ import {
   MICROS_PER_DOLLAR,
   needsBillingPortal,
   organizationForMember,
+  organizationOwnerHadTrial,
   organizationSeatCount,
   ownedBillingAccounts,
   reconcileCreditPurchase,
@@ -94,18 +95,21 @@ export interface BillingService {
   /** Pushes the organization's member count to the provider. Call when members change. */
   syncSeats(organizationId: string): Promise<void>;
   cancelForDeletedUser(userId: string): Promise<void>;
+  cancelForDeletedOrganization(organizationId: string): Promise<void>;
   claimReferral(actor: Actor, code: string): Promise<void>;
 }
 
 /**
  * Only the own-key plan has a trial: credits are resold at cost. An organization that has
- * subscribed before, or was given a free own-key period, has had its trial.
+ * subscribed before, or was given a free own-key period, has had its trial, and so has its owner
+ * when any organization of theirs has.
  */
 function byokTrialAvailable(
   account: { subscribedAt: Date | null } | null,
   credits: { byokFreeUntil: Date | null },
+  ownerHadOne: boolean,
 ) {
-  return !account?.subscribedAt && !credits.byokFreeUntil;
+  return !ownerHadOne && !account?.subscribedAt && !credits.byokFreeUntil;
 }
 
 /** A subscriber keeps the own-key price they signed up at until the subscription ends. */
@@ -180,6 +184,12 @@ export function createBillingService(deps: {
   async function managedOrganization(actor: Actor) {
     const found = await organization(actor);
     if (!found.isOwner) throw new ORPCError("FORBIDDEN");
+    // Deletion cancels billing once, so nothing may start a charge after it claims the org.
+    const deleting = await prisma.space.findFirst({
+      where: { organizationId: found.organizationId, isDefault: true, deletingAt: { not: null } },
+      select: { id: true },
+    });
+    if (deleting) throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
     return found;
   }
 
@@ -267,6 +277,11 @@ export function createBillingService(deps: {
     });
   }
 
+  async function cancel(account: BillingAccount) {
+    await provider.cancelCustomerSubscriptions(account.customerId);
+    await sync(account.customerId);
+  }
+
   async function newCustomer(actor: Actor, organizationId: string) {
     return (await provider.createCustomer({ email: actor.email, organizationId })).customerId;
   }
@@ -341,10 +356,11 @@ export function createBillingService(deps: {
   ) {
     const amountCents = byokTierPriceCents(tier, interval);
     if (amountCents === null || !provider.createByokCheckout) throw new ORPCError("NOT_FOUND");
-    const [account, credits, days] = await Promise.all([
+    const [account, credits, days, hadTrial] = await Promise.all([
       billingAccountFor(actor, organizationId),
       creditAccount(prisma, organizationId),
       trialDays(organizationId),
+      organizationOwnerHadTrial(prisma, organizationId, "byok"),
     ]);
     try {
       return await openCheckout(actor, account, true, (customerId) =>
@@ -353,7 +369,7 @@ export function createBillingService(deps: {
           amountCents,
           interval,
           tier,
-          ...(byokTrialAvailable(account, credits) ? { trialDays: days } : {}),
+          ...(byokTrialAvailable(account, credits, hadTrial) ? { trialDays: days } : {}),
           successUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
           cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
         }),
@@ -505,11 +521,12 @@ export function createBillingService(deps: {
             getLogger().error("access grant failed", error),
           );
         await expireModelCredits(prisma, organizationId);
-        const [credits, account, computerAllowance, days] = await Promise.all([
+        const [credits, account, computerAllowance, days, hadTrial] = await Promise.all([
           creditAccount(prisma, organizationId),
           billingAccountForOrganization(prisma, organizationId),
           deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
           trialDays(organizationId),
+          organizationOwnerHadTrial(prisma, organizationId, "byok"),
         ]);
         const freeUntil =
           credits.mode === "byok" &&
@@ -541,7 +558,8 @@ export function createBillingService(deps: {
           byokFreeUntil: freeUntil?.toISOString() ?? null,
           canManage: isOwner,
           trialAvailable:
-            BYOK_TIERS.standard.monthlyPriceCents !== null && byokTrialAvailable(account, credits),
+            BYOK_TIERS.standard.monthlyPriceCents !== null &&
+            byokTrialAvailable(account, credits, hadTrial),
           trialDays: days,
           state: (account?.status ?? "none") as BillingStatus["state"],
           price: account?.creditAmountCents
@@ -562,16 +580,17 @@ export function createBillingService(deps: {
         };
       }
       const { organizationId, isOwner } = await organization(actor);
-      const [account, currentPrice, days] = await Promise.all([
+      const [account, currentPrice, days, hadTrial] = await Promise.all([
         billingAccountForOrganization(prisma, organizationId),
         price(),
         trialDays(organizationId),
+        organizationOwnerHadTrial(prisma, organizationId, "managed"),
       ]);
       const status = account?.status ?? null;
       return {
         access: hasBillingAccess(status),
         canManage: isOwner,
-        trialAvailable: !account?.subscribedAt,
+        trialAvailable: !account?.subscribedAt && !hadTrial,
         trialDays: days,
         state: (status ?? "none") as BillingStatus["state"],
         price: currentPrice,
@@ -604,7 +623,10 @@ export function createBillingService(deps: {
         customerId: await newCustomer(actor, organizationId),
       });
       const seats = await organizationSeatCount(prisma, organizationId);
-      const trial = account.subscribedAt ? {} : { trialDays: await trialDays(organizationId) };
+      const trial =
+        account.subscribedAt || (await organizationOwnerHadTrial(prisma, organizationId, "managed"))
+          ? {}
+          : { trialDays: await trialDays(organizationId) };
       try {
         return await withLiveCustomer(actor, account, (customerId) =>
           provider.createCheckout({
@@ -687,10 +709,12 @@ export function createBillingService(deps: {
     },
 
     async cancelForDeletedUser(userId) {
-      for (const account of await ownedBillingAccounts(prisma, userId)) {
-        await provider.cancelCustomerSubscriptions(account.customerId);
-        await sync(account.customerId);
-      }
+      for (const account of await ownedBillingAccounts(prisma, userId)) await cancel(account);
+    },
+
+    async cancelForDeletedOrganization(organizationId) {
+      const account = await billingAccountForOrganization(prisma, organizationId);
+      if (account) await cancel(account);
     },
   };
 }

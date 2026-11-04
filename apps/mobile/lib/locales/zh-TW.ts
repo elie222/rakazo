@@ -1350,6 +1350,10 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "1 bot now uses the space default.": "1 個機器人已改用空間預設模型。",
   "{count} bots now use the space default.": "{count} 個機器人已改用空間預設模型。",
   "Could not switch {failedNames}. Try again.": "無法切換 {failedNames}，請再試一次。",
+  "Create organization": "建立組織",
+  Organization: "組織",
+  "Delete organization": "刪除組織",
+  "Type {name} to confirm": "輸入 {name} 以確認",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

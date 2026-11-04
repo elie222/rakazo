@@ -1219,6 +1219,7 @@ msgstr "無法讀取影像"
 #: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2451,6 +2452,7 @@ msgstr ""
 msgid "Country"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2471,6 +2473,11 @@ msgstr "建立帳號"
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "建立群組"
+
+#: src/components/CreateOrganizationDialog.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Create organization"
+msgstr "建立組織"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
@@ -2617,6 +2624,7 @@ msgstr "預設範圍"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/archived-chats.tsx
 #: src/pages/shell/dialogs.tsx
@@ -2643,6 +2651,7 @@ msgstr "刪除 {0}"
 #. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "刪除 {0}？"
@@ -2659,6 +2668,10 @@ msgstr "刪除群組"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "同時刪除記憶"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Delete organization"
+msgstr "刪除組織"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Delete section"
@@ -2679,6 +2692,7 @@ msgstr "已刪除"
 
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "正在刪除…"
@@ -4162,6 +4176,7 @@ msgstr "已靜音"
 msgid "My computers"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4169,6 +4184,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4667,8 +4683,9 @@ msgid "Or paste an API key"
 msgstr "或貼上 API 金鑰"
 
 #: src/components/ComputerProviderSettings.tsx
+#: src/pages/settings-nav.ts
 msgid "Organization"
-msgstr ""
+msgstr "組織"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -6415,6 +6432,7 @@ msgstr "此通話已不在響鈴中。"
 msgid "This can't be undone."
 msgstr "此操作無法復原。"
 
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "此操作無法復原。"
@@ -6665,6 +6683,10 @@ msgstr "週二"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Type"
 msgstr "類型"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Type {name} to confirm"
+msgstr "輸入 {name} 以確認"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"

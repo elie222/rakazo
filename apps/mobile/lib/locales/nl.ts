@@ -1344,6 +1344,10 @@ export const NL_MESSAGES: Record<string, string> = {
   "{count} bots now use the space default.": "{count} bots gebruiken nu de spacestandaard.",
   "Could not switch {failedNames}. Try again.":
     "Kon {failedNames} niet overzetten. Probeer het opnieuw.",
+  "Create organization": "Organisatie aanmaken",
+  Organization: "Organisatie",
+  "Delete organization": "Organisatie verwijderen",
+  "Type {name} to confirm": "Typ {name} om te bevestigen",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

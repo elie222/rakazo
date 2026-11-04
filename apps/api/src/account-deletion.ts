@@ -6,13 +6,19 @@ import {
   removeDeletedBotsFromLegacyTeamHome,
   toComputerRef,
 } from "@rakazo/adapters";
+import type { Prisma } from "@rakazo/db";
 import {
+  claimOrganizationForDeletion,
   claimSpacesLeavingWithAccount,
+  deleteClaimedSpace,
+  deleteEmptyOrganization,
   deletePageShareSecrets,
-  deleteSpaceLeavingWithAccount,
+  keepOrganizationTrialUse,
   recordComputerRunEnd,
+  releaseOrganizationDeletionClaim,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { BillingService } from "./billing.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
 
 /**
@@ -21,17 +27,104 @@ import type { SpaceDeletionDeps } from "./space-deletion.js";
  * failure keeps the handle and deleting again resumes from what is left.
  */
 export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: string): Promise<void> {
-  const context = (spaceId: string, botId?: string): AdapterContext => ({
-    operationId: `account-delete:${userId}`,
-    traceId: `account-delete:${userId}`,
-    spaceId,
+  const { claimId, spaceIds } = await claimSpacesLeavingWithAccount(deps.prisma, userId);
+  const leaving = { OR: [{ userId }, { spaceId: { in: spaceIds } }] };
+  await deleteClaimedSpaces(deps, {
     userId,
-    ...(botId ? { botId } : {}),
-    signal: new AbortController().signal,
+    operationId: `account-delete:${userId}`,
+    claimId,
+    spaceIds,
+    soleMemberId: userId,
+    bots: leaving,
+    computers: leaving,
   });
-  const leaving = await claimSpacesLeavingWithAccount(deps.prisma, userId);
+
+  // Pages in Spaces that stay go with the user row; their links' tokens leave the store now.
+  const memberPageSecrets = await deps.prisma.$transaction((tx) =>
+    deletePageShareSecrets(tx, { userId, spaceId: { notIn: spaceIds } }),
+  );
+  if (deps.secrets) await forgetPageShareSecrets(deps.secrets, memberPageSecrets);
+
+  // Bot deletion cleans these best-effort; here a failure fails the account deletion, and the
+  // retry finds the ids again in bot_deletions.
+  const deletions = await deps.prisma.botDeletion.findMany({
+    where: { deletedByUserId: userId, spaceId: { notIn: spaceIds } },
+    select: { id: true, spaceId: true },
+  });
+  const deletedBySpace = new Map<string, string[]>();
+  for (const { id, spaceId } of deletions)
+    deletedBySpace.set(spaceId, [...(deletedBySpace.get(spaceId) ?? []), id]);
+  await settleAll(
+    [...deletedBySpace].map(([spaceId, botIds]) =>
+      removeDeletedBotsFromLegacyTeamHome(deps, spaceId, botIds),
+    ),
+  );
+}
+
+/**
+ * Claiming hides the organization from the owner's list. Its subscriptions are cancelled before
+ * anything is destroyed, and a billing failure releases the claim, so the organization stays as it
+ * was; any later failure leaves the Spaces claimed, and deleting again finishes.
+ */
+export async function deleteOrganization(
+  deps: SpaceDeletionDeps & { billing?: Pick<BillingService, "cancelForDeletedOrganization"> },
+  userId: string,
+  organizationId: string,
+): Promise<void> {
+  const { claimId, spaceIds, fresh } = await claimOrganizationForDeletion(deps.prisma, {
+    userId,
+    organizationId,
+  });
+  try {
+    await keepOrganizationTrialUse(deps.prisma, organizationId);
+    await deps.billing?.cancelForDeletedOrganization(organizationId);
+  } catch (error) {
+    if (fresh) await releaseOrganizationDeletionClaim(deps.prisma, { organizationId, claimId });
+    throw error;
+  }
+  const inOrganization = { spaceId: { in: spaceIds } };
+  // The claim leaves the owner as its only member, so every Space goes: its files can go before
+  // the rows that list them, and a failed removal is found again on retry.
+  const artifacts = await deps.prisma.artifact.findMany({
+    where: inOrganization,
+    select: { spaceId: true, storageKey: true },
+  });
+  await settleAll(
+    artifacts.map(({ spaceId, storageKey }) =>
+      deps.artifacts.remove(
+        storageKey,
+        adapterContext(`organization-delete:${organizationId}`, userId, spaceId),
+      ),
+    ),
+  );
+  await deleteClaimedSpaces(deps, {
+    userId,
+    operationId: `organization-delete:${organizationId}`,
+    claimId,
+    spaceIds,
+    bots: inOrganization,
+    computers: inOrganization,
+  });
+  await deleteEmptyOrganization(deps.prisma, organizationId);
+}
+
+/** Tears down the bots and computers matched, then deletes the claimed Spaces and their files. */
+async function deleteClaimedSpaces(
+  deps: SpaceDeletionDeps,
+  input: {
+    userId: string;
+    operationId: string;
+    claimId: string;
+    spaceIds: string[];
+    soleMemberId?: string;
+    bots: Prisma.BotWhereInput;
+    computers: Prisma.ComputerWhereInput;
+  },
+): Promise<void> {
+  const context = (spaceId: string, botId?: string) =>
+    adapterContext(input.operationId, input.userId, spaceId, botId);
   const bots = await deps.prisma.bot.findMany({
-    where: { OR: [{ userId }, { spaceId: { in: leaving } }] },
+    where: input.bots,
     select: {
       id: true,
       userId: true,
@@ -51,23 +144,8 @@ export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: stri
     ),
   );
 
-  // Bot deletion cleans these best-effort; here a failure fails the account deletion, and the
-  // retry finds the ids again in bot_deletions.
-  const deletions = await deps.prisma.botDeletion.findMany({
-    where: { deletedByUserId: userId, spaceId: { notIn: leaving } },
-    select: { id: true, spaceId: true },
-  });
-  const deletedBySpace = new Map<string, string[]>();
-  for (const { id, spaceId } of deletions)
-    deletedBySpace.set(spaceId, [...(deletedBySpace.get(spaceId) ?? []), id]);
-  await settleAll(
-    [...deletedBySpace].map(([spaceId, botIds]) =>
-      removeDeletedBotsFromLegacyTeamHome(deps, spaceId, botIds),
-    ),
-  );
-
   const computers = await deps.prisma.computer.findMany({
-    where: { OR: [{ userId }, { spaceId: { in: leaving } }] },
+    where: input.computers,
     select: {
       id: true,
       spaceId: true,
@@ -96,14 +174,12 @@ export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: stri
     }),
   );
 
-  // Pages in Spaces that stay go with the user row; their links' tokens leave the store now.
-  const memberPageSecrets = await deps.prisma.$transaction((tx) =>
-    deletePageShareSecrets(tx, { userId, spaceId: { notIn: leaving } }),
-  );
-  if (deps.secrets) await forgetPageShareSecrets(deps.secrets, memberPageSecrets);
-
-  for (const spaceId of leaving) {
-    const deleted = await deleteSpaceLeavingWithAccount(deps.prisma, { spaceId, userId });
+  for (const spaceId of input.spaceIds) {
+    const deleted = await deleteClaimedSpace(deps.prisma, {
+      spaceId,
+      claimId: input.claimId,
+      soleMemberId: input.soleMemberId,
+    });
     if (!deleted) continue;
     const cleanup = await Promise.allSettled(
       deleted.artifactKeys.map((storageKey) => deps.artifacts.remove(storageKey, context(spaceId))),
@@ -113,6 +189,22 @@ export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: stri
     }
     if (deps.secrets) await forgetPageShareSecrets(deps.secrets, deleted.pageShareSecrets);
   }
+}
+
+function adapterContext(
+  operationId: string,
+  userId: string,
+  spaceId: string,
+  botId?: string,
+): AdapterContext {
+  return {
+    operationId,
+    traceId: operationId,
+    spaceId,
+    userId,
+    ...(botId ? { botId } : {}),
+    signal: new AbortController().signal,
+  };
 }
 
 /** Runs every teardown, then fails with the first error so a retry finishes the rest. */
