@@ -101,6 +101,7 @@ import {
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
 import { clearSetup, readSetup, readUiLocale, writeSetup, writeUiLocale } from "./setup-store.js";
+import { stopLocalStackItem } from "./stop-local-stack.js";
 import { createSystemSpeech } from "./system-speech.js";
 import type { UserDeviceAccess } from "./user-device.js";
 import { createUserDeviceAccess, deviceName } from "./user-device.js";
@@ -762,18 +763,15 @@ function installApplicationMenu() {
     accelerator: "CmdOrCtrl+Shift+K",
     click: () => showSetupWindow(),
   };
-  const stopStack: Electron.MenuItemConstructorOptions = {
-    id: "stop-local-stack",
-    label: t("Stop Local Stack"),
-    // The stack keeps running after quit (bots are always on); this is the explicit off switch.
-    click: () => {
-      if (currentSetup?.mode === "new") {
-        hostComputer?.activate(false);
-        installApplicationMenu();
-        void localStack.stop();
-      }
+  const stopStack = stopLocalStackItem({
+    mode: currentSetup?.mode,
+    phase: localStack.state().phase,
+    stop: () => {
+      hostComputer?.activate(false);
+      installApplicationMenu();
+      void localStack.stop().finally(() => installApplicationMenu());
     },
-  };
+  });
   const isMac = process.platform === "darwin";
   // The page handles these chords itself and stops them, so a key press runs them once; the menu
   // shows them and runs them on click. The page decides whether each one applies right now.
