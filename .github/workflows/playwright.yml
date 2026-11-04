@@ -67,6 +67,12 @@ jobs:
         # Skip --with-deps: GitHub ubuntu-latest already has Chromium's OS libraries,
         # and apt-get against azure.archive.ubuntu.com can stall until the job timeout.
         run: pnpm --filter @rakazo/web exec playwright install chromium
+      - name: Install CJK fonts
+        timeout-minutes: 4
+        # Chromium needs system fallback fonts to render Chinese, Japanese and Korean screenshots.
+        run: |
+          sudo timeout 90s apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo timeout 90s apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends fonts-noto-cjk
       - name: Install agent-browser
         timeout-minutes: 2
         # The page-browser tests run the computer image's helper, which drives Chromium through it.
