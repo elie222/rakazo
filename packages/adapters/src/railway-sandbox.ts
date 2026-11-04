@@ -133,8 +133,8 @@ export class RailwaySandboxProvider implements SandboxProvider {
     },
     context: AdapterContext,
   ): Promise<ComputerRef> {
-    context.signal.throwIfAborted();
     const railway = await loadRailway();
+    context.signal.throwIfAborted();
     if (request.providerRef && request.providerKind === "railway") {
       try {
         const sandbox = await this.lookup(
