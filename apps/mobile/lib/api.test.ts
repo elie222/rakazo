@@ -1316,7 +1316,16 @@ describe("mobile API authentication", () => {
   it("does not deliver the revocation twice when a flush races the local clear", async () => {
     const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
     mockSecureStore(store);
-    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    let releaseFirst!: (response: Response) => void;
+    const heldResponse = new Promise<Response>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let calls = 0;
+    const fetchMock = vi.fn<typeof globalThis.fetch>((_url) => {
+      calls += 1;
+      if (calls === 1) return heldResponse;
+      return Promise.resolve(jsonResponse({}));
+    });
     vi.stubGlobal("fetch", fetchMock);
     let finishClear!: () => void;
     const clearHeld = new Promise<void>((release) => {
@@ -1328,12 +1337,13 @@ describe("mobile API authentication", () => {
     });
 
     const signingOut = signOut();
-    // The record is saved while the local clear still waits: this window must not let a
-    // flush deliver in parallel with the sign-out's own attempt.
+    // The record is saved while the local clear still waits; whichever side reaches the
+    // delivery first, the other must join it, not send the revocation again.
     await vi.waitFor(() => expect(pendingSignOutRecords(store)).toHaveLength(1));
     const flushing = flushPendingSignOut(true);
     finishClear();
     await signingOut;
+    releaseFirst(jsonResponse({}));
     await flushing;
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
@@ -1343,7 +1353,120 @@ describe("mobile API authentication", () => {
     expect(pendingSignOutRecords(store)).toEqual([]);
   });
 
-  it("releases the delivery wait without delivering when the local clear fails", async () => {
+  it("joins a pass that started before the sign-out instead of resending its record", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    // The pass parks inside its pruning read — past its delivery wait, with no sign-out
+    // registered yet. Once released, the sign-out's queued save lands before the pass's
+    // queued deciding read, so the record appears under a pass that is already running.
+    let listReads = 0;
+    let releaseListRead!: () => void;
+    let listReadStarted!: () => void;
+    const readStarted = new Promise<void>((resolve) => {
+      listReadStarted = resolve;
+    });
+    const readHeld = new Promise<void>((release) => {
+      releaseListRead = release;
+    });
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key !== "rakazo.pending_sign_out") return store.get(key) ?? null;
+      listReads += 1;
+      if (listReads === 2) {
+        listReadStarted();
+        await readHeld;
+      }
+      return store.get(key) ?? null;
+    });
+    let releaseFirst!: (response: Response) => void;
+    let firstStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const heldResponse = new Promise<Response>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let calls = 0;
+    const fetchMock = vi.fn<typeof globalThis.fetch>((_url) => {
+      calls += 1;
+      if (calls === 1) {
+        firstStarted();
+        return heldResponse;
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    let finishClear!: () => void;
+    const clearHeld = new Promise<void>((release) => {
+      finishClear = release;
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token") await clearHeld;
+      store.delete(key);
+    });
+
+    const flushing = flushPendingSignOut(true);
+    await readStarted;
+    const signingOut = signOut();
+    releaseListRead();
+    await started;
+    finishClear();
+    await signingOut;
+    releaseFirst(jsonResponse({}));
+    await flushing;
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("joins the earlier sign-out's delivery instead of resending it", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
+    mockSecureStore(store);
+    let releaseFirst!: (response: Response) => void;
+    const heldResponse = new Promise<Response>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let calls = 0;
+    const fetchMock = vi.fn<typeof globalThis.fetch>((_url) => {
+      calls += 1;
+      if (calls === 1) return heldResponse;
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Account A signs out; the old server holds its unregistration. Account B signs in
+    // on the same server and signs out; B's delivery completes while A's is in flight.
+    await signOut();
+    store.set("rakazo.session_token", "token-b");
+    await signOut();
+    await vi.waitFor(() =>
+      expect(pendingSignOutRecords(store)).toEqual([
+        { apiBase: "http://127.0.0.1:3100", token: "token-a" },
+      ]),
+    );
+
+    const flushing = flushPendingSignOut(true);
+    // The fixed pass joins A's held delivery and stays pending; a pass that resends
+    // A's unregistration finishes on its own.
+    const raced = await Promise.race([
+      flushing.then(() => "settled"),
+      new Promise((resolve) => setTimeout(() => resolve("waiting"), 100)),
+    ]);
+    expect(raced).toBe("waiting");
+    releaseFirst(jsonResponse({}));
+    await flushing;
+
+    expect(fetchMock.mock.calls).toHaveLength(4);
+    const unregistered = fetchMock.mock.calls
+      .filter(([url]) => String(url).endsWith("/rpc/notifications/unregisterPush"))
+      .map(([, init]) => (init?.headers as Record<string, string> | undefined)?.authorization);
+    expect(unregistered).toEqual(["Bearer token-a", "Bearer token-b"]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("does not deliver when the local clear fails and the next pass delivers the record", async () => {
     const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
     mockSecureStore(store);
     const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
@@ -1640,6 +1763,16 @@ describe("mobile API authentication", () => {
         vi.stubGlobal("fetch", fetchMock);
 
         await signOut();
+        // The sign-out's own delivery answers both halves; a pass that arrives while it
+        // is still in flight joins it, so wait for its progress write before retrying.
+        await vi.waitFor(() => {
+          const record = JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]")[0];
+          expect(record).toMatchObject(
+            redirectedPath === "/rpc/notifications/unregisterPush"
+              ? { renewedAt: expect.any(Number) }
+              : { unregistered: true },
+          );
+        });
         await flushPendingSignOut(true);
 
         expect(pendingSignOutRecords(store)).toHaveLength(1);

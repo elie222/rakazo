@@ -1006,8 +1006,8 @@ let pendingSignOutAbsent = true;
 let lastPendingSignOutFlushAt = 0;
 /** The one in-flight flush; triggers that arrive meanwhile join it instead of starting their own. */
 let flushingPendingSignOut: Promise<void> | undefined;
-/** The delivery a sign-out started in the background; a flush waits for it before its own pass. */
-let signOutDelivery: Promise<void> | undefined;
+/** Delivery attempts in flight, keyed by the session each one revokes (server base, token). */
+const deliveringSignOuts = new Map<string, Promise<void>>();
 /** Orders every read-modify-write of the record list; network calls never run inside it. */
 let pendingSignOutWrites: Promise<unknown> = Promise.resolve();
 /** Endpoint changes in flight; reconcile leaves a switch's records alone while any runs. */
@@ -1287,11 +1287,29 @@ async function deliverPendingSignOut(
   return retrying || signedOut === "retry" ? "retry" : "delivered";
 }
 
-/** Delivers a revocation and removes its record once both halves have a hard answer. */
-async function deliverSignOutRecord(record: PendingSignOut): Promise<void> {
-  if ((await deliverPendingSignOut(record)) !== "retry" && record.token) {
-    await removePendingSignOut(record);
-  }
+/**
+ * Delivers a record once at a time and removes it after a hard answer. A sign-out's
+ * background attempt and any retry pass share the attempt already in flight for the
+ * same session, so the revocation is never sent twice concurrently; unrelated records
+ * deliver independently.
+ */
+function deliverSignOutRecord(record: PendingSignOut): Promise<void> {
+  const key = `${record.apiBase}\n${record.token}`;
+  const inFlight = deliveringSignOuts.get(key);
+  if (inFlight) return inFlight;
+  const delivery = (async () => {
+    try {
+      if ((await deliverPendingSignOut(record)) !== "retry" && record.token) {
+        await removePendingSignOut(record);
+      }
+    } catch {
+      // Delivery problems never surface; the record waits for the next pass.
+    } finally {
+      deliveringSignOuts.delete(key);
+    }
+  })();
+  deliveringSignOuts.set(key, delivery);
+  return delivery;
 }
 
 /** One delivery pass; a newer delivery registered while it ran keeps the slot. */
@@ -1309,9 +1327,6 @@ function startPendingSignOutPass(): Promise<void> {
 async function pendingSignOutPass(): Promise<void> {
   try {
     lastPendingSignOutFlushAt = Date.now();
-    // A sign-out's background delivery may still be running; a pass that starts now
-    // would deliver its record twice, so the pass first waits for that delivery.
-    await signOutDelivery;
     await reconcileProvisionalSignOuts();
     await prunePendingSignOuts();
     // This read decides whether later non-forced flushes may skip the store, so it takes
@@ -1330,9 +1345,6 @@ async function pendingSignOutPass(): Promise<void> {
       // Removal is by record, so a revocation recorded during this pass is not touched.
       await deliverSignOutRecord(record);
     }
-    // A sign-out may have registered its delivery while this pass read the store; a caller
-    // awaiting this pass must not observe it still running afterwards.
-    await signOutDelivery;
   } catch {
     // Records stay; the next connectivity window tries again.
   }
@@ -1362,42 +1374,21 @@ export async function signOut() {
     headers: serverHeaders(apiBase),
     recordedAt: Date.now(),
   };
-  // The delivery is registered before the record is written: a pass that can see the record
-  // always has this delivery to wait for, so no flush delivers it in parallel with the
-  // sign-out's own attempt. The promise settles when the background delivery has finished,
-  // or at once when no delivery will run.
-  let settleDelivery!: () => void;
-  const deliverySettled = new Promise<void>((settle) => {
-    settleDelivery = settle;
-  });
-  let completion: Promise<void>;
-  signOutDelivery = completion = deliverySettled.finally(() => {
-    if (signOutDelivery === completion) signOutDelivery = undefined;
-  });
-  try {
-    // The record is written before the attempts: an app that dies mid-sign-out still revokes later.
-    if (revocation.token) {
-      // A failed write cannot block the local sign-out; the session still expires server-side.
-      await savePendingSignOut(revocation);
-    }
-    // The local session clears first: a server that accepts the connection but never answers
-    // must not keep this device signed in for the delivery's two request timeouts.
-    const sessionCleared = await clearSessionToken();
-    const spaceCleared = await clearSpace();
-    if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
-  } catch (error) {
-    // No delivery will run; release the passes waiting on this promise. The record stays
-    // for the next pass.
-    settleDelivery();
-    throw error;
+  // The record is written before the attempts: an app that dies mid-sign-out still revokes later.
+  if (revocation.token) {
+    // A failed write cannot block the local sign-out; the session still expires server-side.
+    await savePendingSignOut(revocation);
   }
+  // The local session clears first: a server that accepts the connection but never answers
+  // must not keep this device signed in for the delivery's two request timeouts.
+  const sessionCleared = await clearSessionToken();
+  const spaceCleared = await clearSpace();
+  if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
   // Delivery waits on the same silent server, so it cannot hold the visible sign-out either.
-  // It runs in the background; a flush first waits for it, so the two never deliver the same
-  // record twice. The persisted record covers an attempt that dies with the process, and both
-  // halves authenticate with the record's own token.
-  void deliverSignOutRecord(revocation)
-    .catch(() => undefined)
-    .finally(() => settleDelivery());
+  // It runs in the background and owns the record while it runs: a retry pass joins the same
+  // attempt instead of sending the revocation twice. The persisted record covers an attempt
+  // that dies with the process, and both halves authenticate with the record's own token.
+  void deliverSignOutRecord(revocation);
 }
 
 export async function deleteAccount(password?: string, token?: string) {
