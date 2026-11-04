@@ -478,11 +478,16 @@ describe("computer screen", () => {
     expect(screens.mounts).toBeGreaterThan(mounted);
     report({ rakazoScreen: "connected" });
     expect(view.textContent).not.toContain("Could not connect to the computer screen");
-    // The first drop after connecting reconnects by itself; only a drop it can't ride out shows.
+    // Every drop after a connection reconnects by itself, and so does a reload that raced a
+    // restart and never connected; only reloads that stop connecting show the error.
     report({ rakazoScreen: "disconnected" });
     expect(view.textContent).not.toContain("The screen connection closed.");
     report({ rakazoScreen: "disconnected" });
-    expect(view.textContent).toContain("The screen connection closed.");
+    expect(view.textContent).not.toContain("The screen connection closed.");
+    report({ rakazoScreen: "failed" });
+    expect(view.textContent).not.toContain("Could not connect to the computer screen");
+    report({ rakazoScreen: "failed" });
+    expect(view.textContent).toContain("Could not connect to the computer screen");
     vi.useRealTimers();
   });
 
@@ -830,13 +835,13 @@ describe("computer screen", () => {
       // It asks the server's status-only probe, never the computer's page itself.
       expect(String((fetchStub.mock.calls[0] as unknown[])[0])).toContain("rakazo_probe=1");
 
-      // A second drop soon after is left showing; Retry is the user's.
+      // A second drop soon after reconnects again: every restart of a working screen does.
       await load();
       await post('{"rakazoScreen":"connected"}');
       await post('{"rakazoScreen":"disconnected"}');
       await wait(1100);
       await settle();
-      expect(screens.mounts).toBe(opened + 1);
+      expect(screens.mounts).toBe(opened + 2);
     });
 
     it("waits for a screen the API can't check yet before loading it again", async () => {

@@ -27,9 +27,9 @@ let container: HTMLDivElement;
 let root: Root;
 let state: ComputerState;
 let codes = 0;
-const screenUrl = vi.fn(async () => ({
-  url: `wuying://desktop?desktop_id=ecd-1&region_id=cn-hangzhou&auth_code=code-${++codes}&view_only=true`,
-}));
+let screenUrlFactory: () => string = () =>
+  `wuying://desktop?desktop_id=ecd-1&region_id=cn-hangzhou&auth_code=code-${++codes}&view_only=true`;
+const screenUrl = vi.fn(async () => ({ url: screenUrlFactory() }));
 
 /** The hook with the frame the panel draws: gone while an error replaces the screen. */
 function Harness() {
@@ -64,6 +64,8 @@ async function report(rakazoScreen: string) {
 beforeEach(async () => {
   vi.useFakeTimers();
   codes = 0;
+  screenUrlFactory = () =>
+    `wuying://desktop?desktop_id=ecd-1&region_id=cn-hangzhou&auth_code=code-${++codes}&view_only=true`;
   screenUrl.mockClear();
   vi.stubGlobal(
     "fetch",
@@ -97,7 +99,7 @@ it("shows a Wuying screen's failure and waits for Retry rather than spend anothe
   expect(container.querySelector("iframe")).toBeNull();
 });
 
-it("keeps a live Wuying frame's code, and reconnects one drop with a fresh code", async () => {
+it("keeps a live Wuying frame's code, and reconnects every drop with a fresh code", async () => {
   await read();
   await report("connected");
   await read();
@@ -108,18 +110,71 @@ it("keeps a live Wuying frame's code, and reconnects one drop with a fresh code"
   });
   expect(code()).toBe("code-3");
   await report("connected");
-  // A second drop within the allowance waits for Retry.
+  // A second drop, however soon, is a restart again: it reconnects rather than waits for Retry.
   await report("disconnected");
-  expect(state.screenLoadError).toBe("The screen connection closed.");
+  expect(state.screenLoadError).toBeNull();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1_000);
   });
-  expect(screenUrl).toHaveBeenCalledTimes(3);
+  expect(code()).toBe("code-4");
+  expect(screenUrl).toHaveBeenCalledTimes(4);
+});
+
+it("shows a Wuying screen's error only after its reloads stop connecting", async () => {
+  await read();
+  await report("connected");
+  await report("disconnected");
+  // The reload races the restart and never connects; each failure loads a fresh code, waiting
+  // longer each time, until the retries run out and the error waits for Retry.
+  for (const wait of [1_000, 2_000, 4_000]) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(wait);
+    });
+    expect(state.screenLoadError).toBeNull();
+    await report("failed");
+  }
+  expect(state.screenLoadError).toBe("Could not connect to the computer screen");
 });
 
 it("never caches a Wuying login code", async () => {
   await read();
   expect(state.computerCacheRef.current.get("bot-1")?.screenUrl).toBeNull();
+});
+
+it("reconnects a proxied screen whose reload raced a restart, without the error", async () => {
+  screenUrlFactory = () => "/novnc/session/view/1.restart/vnc.html";
+  await read();
+  await report("connected");
+  // The screen restarts under the viewer: the proxy closes the socket, the app reloads the
+  // page, and the screen server refuses that reload's connection once.
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  await report("failed");
+  expect(state.screenLoadError).toBeNull();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2_000);
+  });
+  await report("connected");
+  expect(state.screenLoadError).toBeNull();
+  expect(container.querySelector("iframe")).not.toBeNull();
+});
+
+it("shows a proxied screen's error only after its reloads stop connecting", async () => {
+  screenUrlFactory = () => "/novnc/session/view/1.stuck/vnc.html";
+  await read();
+  await report("connected");
+  await report("disconnected");
+  for (const wait of [1_000, 2_000, 4_000]) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(wait);
+    });
+    expect(state.screenLoadError).toBeNull();
+    await report("failed");
+  }
+  expect(state.screenLoadError).toBe("Could not connect to the computer screen");
+  expect(container.querySelector("iframe")).toBeNull();
 });
 
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {

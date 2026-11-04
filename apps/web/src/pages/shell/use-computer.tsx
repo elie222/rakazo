@@ -10,7 +10,6 @@ import type {
 import {
   createScreenReconnects,
   isRetryableError,
-  SCREEN_RECONNECT_DELAY_MS,
   screenProbeUrl,
   waitForScreenPage,
 } from "@rakazo/core";
@@ -177,10 +176,11 @@ export function useComputerState({
         ) {
           screenRefocus.current.dropped(document.activeElement === screenFrame);
           const botId = computerBotIdRef.current;
+          const delay = screenReconnect().delayMs();
           clearTimeout(reconnect);
           reconnect = setTimeout(() => {
             if (botId && !stopped.signal.aborted) void refreshComputerScreen(botId);
-          }, SCREEN_RECONNECT_DELAY_MS);
+          }, delay);
           return;
         }
         screenRefocus.current.forget();
@@ -191,6 +191,7 @@ export function useComputerState({
         screenRefocus.current.dropped(document.activeElement === screenFrame);
         clearTimeout(reconnect);
         const url = embeddableScreenUrl(screenUrl);
+        const delay = screenReconnect().delayMs();
         reconnect = setTimeout(() => {
           // Wait out an API that can't be reached, so the one reconnect isn't spent on it.
           void waitForScreenPage(
@@ -206,7 +207,7 @@ export function useComputerState({
             // A refusal shows once the new frame's own check runs.
             else setScreenFrameKey((key) => key + 1);
           });
-        }, SCREEN_RECONNECT_DELAY_MS);
+        }, delay);
         return;
       }
       const error = screenFrameError(message, fallback);

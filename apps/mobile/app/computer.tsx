@@ -4,7 +4,6 @@ import {
   createScreenReconnect,
   displayName,
   isRetryableError,
-  SCREEN_RECONNECT_DELAY_MS,
   screenProbeUrl,
   waitForScreenPage,
 } from "@rakazo/core";
@@ -318,6 +317,7 @@ export default function Computer() {
       const wait = new AbortController();
       screenReconnectWait.current = wait;
       const url = currentScreenUrl.current;
+      const delay = screenReconnect.current.delayMs();
       screenReconnectTimer.current = setTimeout(() => {
         // Wait out an API that can't be reached, so the one reconnect isn't spent on it; the
         // reload then shows whatever the page answers.
@@ -329,7 +329,7 @@ export default function Computer() {
         ).then((outcome) => {
           if (outcome !== "cancelled") void reloadScreen();
         });
-      }, SCREEN_RECONNECT_DELAY_MS);
+      }, delay);
     },
     [reloadScreen, t],
   );
