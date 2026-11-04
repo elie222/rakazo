@@ -24,8 +24,9 @@ function searchable(node: Text) {
 /**
  * Lowercases a message's visible text one character at a time, remembering where each
  * resulting code unit came from, so a match maps back to the DOM even when lowercasing
- * changes a character's length or the match crosses a link or bold text. Whitespace collapses
- * the way the page shows it, except in code blocks.
+ * changes a character's length or the match crosses a link or bold text. Any run of whitespace
+ * counts as one space, in messages and queries alike, since prose collapses it on screen while
+ * sent messages and code keep it.
  */
 function messageText(message: Element) {
   const walker = message.ownerDocument.createTreeWalker(
@@ -46,7 +47,6 @@ function messageText(message: Element) {
     }
     const node = current as Text;
     if (!searchable(node)) continue;
-    const preserved = Boolean(node.parentElement?.closest("pre"));
     const nodeBlock = node.parentElement?.closest(BLOCK) ?? null;
     // Separate paragraphs, so the end of one and the start of the next never form a match.
     if (block && nodeBlock !== block) {
@@ -57,7 +57,7 @@ function messageText(message: Element) {
     const value = node.nodeValue ?? "";
     for (let at = 0; at < value.length; ) {
       const char = String.fromCodePoint(value.codePointAt(at) ?? 0);
-      if (!preserved && SPACE.test(char)) {
+      if (SPACE.test(char)) {
         if (!SPACE.test(text.at(-1) ?? "")) {
           text += " ";
           units.push({ node, start: at, end: at + char.length });
@@ -78,7 +78,7 @@ function messageText(message: Element) {
 
 /** Every case-insensitive match of `query` in the chat messages under `root`, in document order. */
 export function findTextRanges(root: ParentNode, query: string): Range[] {
-  const needle = fold(query);
+  const needle = fold(query).replace(/\s+/g, " ");
   if (!needle.trim()) return [];
   const ranges: Range[] = [];
   for (const message of root.querySelectorAll(MESSAGE)) {

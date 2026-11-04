@@ -33,10 +33,11 @@ describe("findTextRanges", () => {
     expect(found(transcript("<p>alpha</p><p>beta</p>"), "alphabeta")).toEqual([]);
   });
 
-  it("matches whitespace the way the page shows it, but keeps code blocks exact", () => {
+  it("treats any run of whitespace as one space", () => {
     const root = transcript("<p>alpha\n  beta</p>", "<pre>one  two</pre>");
     expect(found(root, "alpha beta")).toEqual(["alpha\n  beta"]);
-    expect(found(root, "one two")).toEqual([]);
+    expect(found(root, "alpha   beta")).toEqual(["alpha\n  beta"]);
+    expect(found(root, "one two")).toEqual(["one  two"]);
     expect(found(root, "one  two")).toEqual(["one  two"]);
   });
 
