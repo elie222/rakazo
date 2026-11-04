@@ -65,7 +65,8 @@ Runs when the bot receives a message in Slack. Needs [Slack connected](./messagi
 
 ## On mobile
 
-The mobile app lists a bot's routines from its profile. Tap **+** to create one, or tap a routine to
-change its name, instruction and schedules, pause it, test it or delete it. Webhook, Git event, Slack
+The mobile app lists a bot's routines from its profile. Tap **+** to create one. Tapping a routine
+shows its instruction, schedule, next run and run history, with a switch to pause it and a button to
+test it; **Edit routine** changes its name, instruction and schedules, or deletes it. Webhook, Git event, Slack
 message and change triggers, and a routine's own model, are set up in chat or the web or desktop
 app; mobile shows them and keeps them as they are.

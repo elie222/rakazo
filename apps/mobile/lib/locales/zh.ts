@@ -451,6 +451,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "This permanently deletes the routine and its run history.":
     "这将永久删除该例行任务及其运行记录。",
   "Could not delete routine": "无法删除例行任务",
+  "Edit routine": "编辑例行任务",
+  "Next run": "下次运行",
   "Add a schedule to run this routine.": "添加计划以运行此例行任务。",
   "Add schedule": "添加计划",
   "Could not run routine": "无法运行例行任务",

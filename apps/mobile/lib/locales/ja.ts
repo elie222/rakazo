@@ -517,6 +517,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "This permanently deletes the routine and its run history.":
     "ルーティンとその実行履歴が完全に削除されます。",
   "Could not delete routine": "ルーティンを削除できませんでした",
+  "Edit routine": "ルーティンを編集",
+  "Next run": "次回の実行",
   "Add a schedule to run this routine.": "このルーティンを実行するスケジュールを追加してください。",
   "Add schedule": "スケジュールを追加",
   "Could not run routine": "ルーティンを実行できませんでした",

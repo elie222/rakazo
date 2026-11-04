@@ -529,6 +529,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "This permanently deletes the routine and its run history.":
     "Hiermee worden de routine en de uitvoergeschiedenis definitief verwijderd.",
   "Could not delete routine": "Routine verwijderen mislukt",
+  "Edit routine": "Routine bewerken",
+  "Next run": "Volgende uitvoering",
   "Add a schedule to run this routine.": "Voeg een schema toe om deze routine uit te voeren.",
   "Add schedule": "Schema toevoegen",
   "Could not run routine": "Routine uitvoeren mislukt",

@@ -476,6 +476,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "This permanently deletes the routine and its run history.":
     "Задача и история её запусков будут удалены безвозвратно.",
   "Could not delete routine": "Не удалось удалить задачу",
+  "Edit routine": "Изменить задачу",
+  "Next run": "Следующий запуск",
   "Add a schedule to run this routine.": "Добавьте расписание для запуска этой задачи.",
   "Add schedule": "Добавить расписание",
   "Could not run routine": "Не удалось запустить задачу",

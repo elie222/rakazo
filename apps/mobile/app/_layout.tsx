@@ -529,6 +529,10 @@ function LayoutContent() {
                     />
                     <Stack.Screen name="routines" options={glassHeaderOptions(t("Routines"))} />
                     <Stack.Screen name="routine" options={glassHeaderOptions(t("Routine"))} />
+                    <Stack.Screen
+                      name="routine-runs"
+                      options={glassHeaderOptions(t("Run history"))}
+                    />
                     <Stack.Screen name="board" options={glassHeaderOptions(t("Board"))} />
                     <Stack.Screen name="computer" options={{ title: t("Computer") }} />
                     <Stack.Screen

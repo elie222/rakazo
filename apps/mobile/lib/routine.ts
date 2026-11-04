@@ -33,13 +33,14 @@ function routineSchedule(routine: Routine, zone: string | undefined): string {
   return triggers && zone ? `${triggers} (${zone})` : triggers || zone || "";
 }
 
-export function routineStatusLine(routine: Routine): string {
+/** One line per trigger for a routine's detail; schedules name their zone when it isn't the device's. */
+export function routineTriggerRows(routine: Routine, deviceTimeZone: string | undefined): string[] {
+  const labels = cronLabels();
+  const zone = routine.timezone === deviceTimeZone ? "" : ` (${routine.timezone})`;
   return [
-    routine.active ? (routine.scheduleDelayed ? t("Schedule delayed") : t("Active")) : t("Paused"),
-    routineSchedule(routine, routine.timezone),
-  ]
-    .filter(Boolean)
-    .join(", ");
+    ...routine.crons.map((cron) => `${formatCron(cron, labels)}${zone}`),
+    ...routineTriggerNames(routine),
+  ];
 }
 
 /** A list row: the schedule, its zone only when it isn't the device's, and "Paused" only when paused. */

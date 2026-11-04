@@ -16,32 +16,34 @@ vi.mock("./routine-store", () => ({
   useBotRoutines: state.useBotRoutines,
   saveBotRoutine: vi.fn(),
   removeBotRoutine: vi.fn(),
+  setRoutineActive: vi.fn(),
 }));
+vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./i18n", () => {
   const t = (message: string) => message;
-  return { useI18n: () => ({ t }) };
+  return { useI18n: () => ({ t, locale: "en" }), dateLocaleForUi: () => "en-US" };
 });
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
+vi.mock("./cron", () => ({ cronLabels: () => ({}) }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 vi.mock("./routine", () => ({
   deviceTimeZone: () => "UTC",
-  routineTriggerNames: () => [],
-  routineStatusLine: (routine: { scheduleDelayed?: boolean }) =>
-    routine.scheduleDelayed ? "Schedule delayed" : "Active",
+  routineTriggerRows: () => ["Every day at 9:00 AM"],
 }));
 vi.mock("../components/settings-group", () => ({
   SettingsGroup: ({ children, footer }: { children?: ReactNode; footer?: string }) =>
     createElement("div", null, children, footer),
   SettingsLabel: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
   SettingsInputRow: () => null,
-  SettingsRow: ({ title }: { title: string }) => createElement("span", null, title),
+  SettingsRow: ({ title, value }: { title: string; value?: string }) =>
+    createElement("span", null, title, value),
   SettingsSwitch: () => null,
 }));
 vi.mock("../components/growing-text-input", () => ({ GrowingTextInput: () => null }));
 vi.mock("../components/routine-schedule-editor", () => ({ RoutineScheduleEditor: () => null }));
-vi.mock("../components/glass-title", () => ({ glassHeaderOptions: () => ({}) }));
+vi.mock("../components/glass-icon-button", () => ({ GlassIconButton: () => null }));
 vi.mock("../components/native-action-button", () => ({ NativeActionButton: () => null }));
 vi.mock("../components/routine-run-history", () => ({ RoutineRunHistory: () => null }));
 vi.mock("expo-router", () => ({
@@ -52,6 +54,7 @@ vi.mock("expo-router", () => ({
 vi.mock("react-native", () => ({
   ActivityIndicator: () => null,
   Alert: { alert: vi.fn() },
+  BackHandler: { addEventListener: () => ({ remove: vi.fn() }) },
   ScrollView: (props: { children?: ReactNode }) => element("div")(props),
   View: (props: { children?: ReactNode }) => element("div")(props),
   Text: (props: { children?: ReactNode }) => element("span")(props),
@@ -65,6 +68,7 @@ const routine = {
   prompt: "Prepare the report.",
   crons: ["0 9 * * *"],
   active: true,
+  nextRunAt: "2026-11-05T09:00:00.000Z",
   scheduleDelayed: true,
 };
 
@@ -99,7 +103,7 @@ it("shows a routine another member created without the editor", async () => {
   state.useBotRoutines.mockReturnValue({ routines: [{ ...routine, editable: false }] });
   await act(async () => root.render(createElement(RoutineDetail)));
   expect(container.textContent).toContain("Prepare the report.");
-  expect(container.textContent).not.toContain("Delete routine");
+  expect(container.textContent).not.toContain("Edit routine");
 });
 
 it("uses the shared routine store with focus-scoped polling enabled", () => {

@@ -4,13 +4,11 @@ import {
   clampIntervalAmount,
   cronFromPreset,
   cronIntervalAmounts,
-  formatCron,
   localizedClock,
 } from "@rakazo/core";
-import { cronLabels } from "../lib/cron";
 import { useI18n } from "../lib/i18n";
 import { MenuPicker } from "./menu-picker";
-import { SettingsGroup, SettingsInputRow, SettingsRow } from "./settings-group";
+import { SettingsGroup, SettingsInputRow } from "./settings-group";
 
 const UNITS: CronUnit[] = ["minutes", "hours", "days"];
 const TIMES = [
@@ -24,8 +22,9 @@ const TIMES = [
   "9:00 PM",
 ];
 const TIMED: CronFreq[] = ["Every day", "Weekdays", "Every week", "Every month"];
+const REMOVE = "remove";
 
-/** One schedule of a routine, as native menus; the group's label reads the schedule back. */
+/** One schedule of a routine, as native menus. Removing it is the last choice of its first menu. */
 export function RoutineScheduleEditor({
   value,
   onChange,
@@ -36,7 +35,6 @@ export function RoutineScheduleEditor({
   onRemove: () => void;
 }) {
   const { t, locale } = useI18n();
-  const labels = cronLabels(locale);
   const freqLabel: Record<CronFreq, string> = {
     "Every hour": t("Every hour"),
     "Every day": t("Every day"),
@@ -54,13 +52,20 @@ export function RoutineScheduleEditor({
   const times = TIMES.includes(value.time) ? TIMES : [...TIMES, value.time];
   const patch = (partial: Partial<CronPreset>) => onChange({ ...value, ...partial });
   return (
-    <SettingsGroup label={formatCron(cronFromPreset(value), labels)}>
+    <SettingsGroup>
       <MenuPicker
         key="freq"
         label={t("How often")}
         value={value.freq}
-        choices={CRON_FREQS.map((freq) => ({ key: freq, label: freqLabel[freq] }))}
+        choices={[
+          ...CRON_FREQS.map((freq) => ({ key: freq, label: freqLabel[freq] })),
+          { key: REMOVE, label: t("Remove schedule"), destructive: true },
+        ]}
         onChange={(key) => {
+          if (key === REMOVE) {
+            onRemove();
+            return;
+          }
           const freq = key as CronFreq;
           // Advanced starts from the schedule shown, so switching to it changes nothing yet.
           patch(freq === "Advanced" ? { freq, cron: cronFromPreset(value) } : { freq });
@@ -110,13 +115,6 @@ export function RoutineScheduleEditor({
           onChangeText={(cron) => patch({ cron })}
         />
       ) : null}
-      <SettingsRow
-        key="remove"
-        accessibilityRole="button"
-        destructive
-        title={t("Remove schedule")}
-        onPress={onRemove}
-      />
     </SettingsGroup>
   );
 }

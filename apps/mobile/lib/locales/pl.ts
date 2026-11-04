@@ -524,6 +524,8 @@ export const PL_MESSAGES: Record<string, string> = {
   "This permanently deletes the routine and its run history.":
     "Rutyna i historia jej uruchomień zostaną trwale usunięte.",
   "Could not delete routine": "Nie udało się usunąć rutyny",
+  "Edit routine": "Edytuj rutynę",
+  "Next run": "Następne uruchomienie",
   "Add a schedule to run this routine.": "Dodaj harmonogram, aby uruchamiać tę rutynę.",
   "Add schedule": "Dodaj harmonogram",
   "Could not run routine": "Nie udało się uruchomić rutyny",

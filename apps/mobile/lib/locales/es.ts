@@ -513,6 +513,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "This permanently deletes the routine and its run history.":
     "Esto elimina de forma permanente la rutina y su historial de ejecuciones.",
   "Could not delete routine": "No se pudo eliminar la rutina",
+  "Edit routine": "Editar rutina",
+  "Next run": "Próxima ejecución",
   "Add a schedule to run this routine.": "Añade un horario para ejecutar esta rutina.",
   "Add schedule": "Añadir horario",
   "Could not run routine": "No se pudo ejecutar la rutina",

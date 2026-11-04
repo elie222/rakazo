@@ -7,7 +7,12 @@ import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from 
 import { NativeSymbol } from "./native-symbol";
 import { Chevron } from "./row-accessories";
 
-export type MenuPickerChoice = { key: string; label: string };
+export type MenuPickerChoice = {
+  key: string;
+  label: string;
+  /** An action shown in red, such as removing the item the row picks for. */
+  destructive?: boolean;
+};
 
 /** Native choice menu shared by rows with different layouts. */
 export function MenuPickerMenu({
@@ -42,7 +47,7 @@ export function MenuPickerMenu({
           id: `choice:${choice.key}`,
           title: choice.label,
           state: choice.key === value ? "on" : "off",
-          attributes: { disabled },
+          attributes: { disabled, destructive: choice.destructive },
         }))}
         colorScheme={colorScheme}
         onPressAction={(event) => {
