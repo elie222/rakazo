@@ -1392,29 +1392,31 @@ export async function signOut() {
     headers: serverHeaders(apiBase),
     recordedAt: Date.now(),
   };
-  // The delivery slot is reserved before the record is written: a pass that sees the record
-  // joins this sign-out's delivery instead of starting its own, even while the local clear
-  // still holds the sign-out. The delivery reads the record from the store, so progress
-  // another attempt persisted is never repeated.
+  // The delivery slot is reserved before the record is written, but only when it is free:
+  // a pass that sees the record joins this sign-out's delivery instead of starting its own,
+  // even while the local clear still holds the sign-out, and a delivery already in flight
+  // for this session keeps its place and its progress — this sign-out joins it too.
   const key = `${revocation.apiBase}\n${revocation.token}`;
+  let persisted = false;
   let settled!: () => void;
   const reserved = new Promise<void>((release) => {
     settled = release;
   });
-  deliveringSignOuts.set(key, reserved);
+  if (!deliveringSignOuts.get(key)) deliveringSignOuts.set(key, reserved);
   const releaseReservation = () => {
     settled();
     if (deliveringSignOuts.get(key) === reserved) deliveringSignOuts.delete(key);
   };
   const deliverReserved = () => {
-    // A newer sign-out that took over the slot delivers this session's record itself.
+    // A newer owner of the slot delivers this session's record itself.
     if (deliveringSignOuts.get(key) !== reserved) {
       releaseReservation();
       return;
     }
-    void (
-      revocation.token ? deliverStoredSignOutRecord(revocation) : runSignOutDelivery(revocation)
-    )
+    // A persisted record is delivered as the store holds it, so progress another attempt
+    // persisted is never repeated; a record that could not be persisted is delivered
+    // as captured.
+    void (persisted ? deliverStoredSignOutRecord(revocation) : runSignOutDelivery(revocation))
       .catch(() => undefined)
       .finally(releaseReservation);
   };
@@ -1422,7 +1424,7 @@ export async function signOut() {
     // The record is written before the attempts: an app that dies mid-sign-out still revokes later.
     if (revocation.token) {
       // A failed write cannot block the local sign-out; the session still expires server-side.
-      await savePendingSignOut(revocation);
+      persisted = await savePendingSignOut(revocation);
     }
     // The local session clears first: a server that accepts the connection but never answers
     // must not keep this device signed in for the delivery's two request timeouts.

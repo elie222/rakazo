@@ -1510,6 +1510,77 @@ describe("mobile API authentication", () => {
     expect(pendingSignOutRecords(store)).toEqual([]);
   });
 
+  it("joins a delivery a launch flush already started for the pending record", async () => {
+    // An interrupted sign-out left the session active and its revocation pending.
+    const store = new Map<string, string>([
+      ["rakazo.session_token", "session-token"],
+      [
+        "rakazo.pending_sign_out",
+        JSON.stringify([
+          {
+            apiBase: "http://127.0.0.1:3100",
+            token: "session-token",
+            headers: {},
+            recordedAt: Date.now(),
+          },
+        ]),
+      ],
+    ]);
+    mockSecureStore(store);
+    let releaseFirst!: (response: Response) => void;
+    const heldResponse = new Promise<Response>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let calls = 0;
+    const fetchMock = vi.fn<typeof globalThis.fetch>((_url) => {
+      calls += 1;
+      if (calls === 1) return heldResponse;
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    // The launch flush starts delivering the pending record; its unregistration is held.
+    const flushing = flushPendingSignOut(true);
+    await vi.waitFor(() => expect(calls).toBe(1));
+    // Signing out again must join that delivery, not replace it with another one.
+    await signOut();
+    releaseFirst(jsonResponse({}));
+    await flushing;
+
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    // The sign-out re-recorded its revocation; a later pass delivers it once more.
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+  });
+
+  it("delivers the captured revocation when the record cannot be persisted", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.pending_sign_out") throw new Error("device locked");
+      store.set(key, value);
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await signOut();
+
+    // The write failed, so the store holds no record to deliver: the captured
+    // revocation still reaches the server.
+    await vi.waitFor(() =>
+      expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+        "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+        "http://127.0.0.1:3100/api/auth/sign-out",
+      ]),
+    );
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
   it("does not deliver when the local clear fails and the next pass delivers the record", async () => {
     const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
     mockSecureStore(store);
