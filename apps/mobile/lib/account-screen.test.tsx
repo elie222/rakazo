@@ -231,6 +231,10 @@ vi.mock("./passkey", () => ({
   passkeysAvailable: vi.fn(async () => false),
   renamePasskey: vi.fn(),
 }));
+vi.mock("./organizations", () => ({
+  activeOrganization: () => undefined,
+  useOrganizations: () => ({ data: undefined }),
+}));
 vi.mock("./push", () => ({ registerPushToken: vi.fn() }));
 vi.mock("./returning-user", () => ({ forgetSignedIn: vi.fn() }));
 vi.mock("./queued-save", () => ({ createQueuedSave: () => ({ save: vi.fn() }) }));
@@ -458,6 +462,7 @@ it.each([false, true])(
         "Vault",
         "Integrations",
         "Skills",
+        "Memory",
         "Messaging",
         "AI data sharing",
       ];
@@ -474,6 +479,7 @@ it.each([false, true])(
       for (const [title, href] of [
         ["Models", "/models"],
         ["Vault", "/vault"],
+        ["Memory", "/memory"],
         ["Messaging", "/messaging"],
       ]) {
         events.length = 0;

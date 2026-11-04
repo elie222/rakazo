@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { INVITED_TRIAL_WEEKS } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   accountDeletionEmail,
@@ -103,6 +104,76 @@ describe("email languages", () => {
     expect(emailLocale(null, headers("en-US,es;q=0.9"))).toBe("en");
     expect(emailLocale(null, headers("*"))).toBe("en");
     expect(emailLocale(null, null)).toBe("en");
+    expect(emailLocale("pl-PL", headers("es-ES,es;q=0.9"))).toBe("pl");
+    expect(emailLocale(null, headers("pl-PL,pl;q=0.9,en;q=0.8"))).toBe("pl");
+    expect(emailLocale(null, headers("it-IT,pl;q=0.9,en;q=0.8"))).toBe("pl");
+    expect(emailLocale(null, headers("en-US,pl;q=0.9"))).toBe("en");
+  });
+
+  it("renders Polish account emails with exact links, escaped codes and names", async () => {
+    const url = "https://app.example.test/reset?token=fake&callbackURL=%2Fsign-in";
+    const name = "Żaneta <Account>";
+    const code = "<123456>";
+    const user = { id: "user-1", email: "user@example.test", name };
+    const locale = emailLocale("pl-PL");
+    const messages = await Promise.all([
+      verificationEmail(user.email, url, locale),
+      signInCodeEmail(user.email, code, locale),
+      passwordResetEmail(user, url, locale),
+      accountDeletionEmail(user.email, code, locale),
+      identityCodeEmail(user.email, code, locale),
+    ]);
+    for (const message of messages) {
+      expect(message.html).toContain('lang="pl"');
+      expect(message.html).toContain('dir="ltr"');
+      expect(Object.values(CATALOGS.pl!)).toContain(message.subject);
+      expect(message.text).not.toMatch(/\{\w+\}/);
+    }
+    for (const index of [0, 2]) {
+      expect(messages[index]?.text).toContain(url);
+      expect(messages[index]?.html).toContain(`href="${url.replaceAll("&", "&amp;")}"`);
+    }
+    for (const index of [1, 3, 4]) {
+      expect(messages[index]?.text).toContain(code);
+      expect(messages[index]?.html).toContain("&lt;123456&gt;");
+      expect(messages[index]?.html).not.toContain(code);
+    }
+    expect(messages[2]?.text).toContain(name);
+    expect(messages[2]?.html).toContain("Żaneta &lt;Account&gt;");
+  });
+
+  it("interpolates Polish product emails without changing dates, names or unsubscribe links", async () => {
+    const user = { id: "user-1", email: "user@example.test", name: "Żaneta" };
+    const url = "https://app.example.test";
+    const unsubscribeUrl = `${url}/unsubscribe?token=fake-token`;
+    const deletionDate = new Date("2030-01-15T00:00:00Z");
+    const deletion = await homeDeletionEmail(user, deletionDate, "plan-ended", url, "pl");
+    const welcome = await welcomeEmail(user, unsubscribeUrl, "pl");
+    const referral = await referralEmail(user, url, unsubscribeUrl, "pl");
+    const name = "Example <Plugin>";
+    const plugin = await pluginSubmissionReviewedEmail(
+      { email: user.email, name, status: "approved", reason: null },
+      "pl",
+    );
+    for (const message of [deletion, welcome, referral, plugin]) {
+      expect(message.html).toContain('lang="pl"');
+      expect(message.html).toContain('dir="ltr"');
+      expect(message.text).not.toMatch(/\{\w+\}/);
+    }
+    const formattedDate = new Intl.DateTimeFormat("pl", {
+      dateStyle: "long",
+      timeZone: "UTC",
+    }).format(deletionDate);
+    expect(deletion.text).toContain(formattedDate);
+    expect(referral.text).toContain(String(INVITED_TRIAL_WEEKS));
+    expect(plugin.subject).toContain(name);
+    expect(plugin.text).toContain(name);
+    expect(plugin.html).toContain("Example &lt;Plugin&gt;");
+    for (const message of [welcome, referral]) {
+      expect(message.text).toContain(user.name);
+      expect(message.text).toContain(unsubscribeUrl);
+      expect(message.headers?.["List-Unsubscribe"]).toBe(`<${unsubscribeUrl}>`);
+    }
   });
 
   it("writes a code email in Spanish", async () => {

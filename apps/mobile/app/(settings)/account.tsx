@@ -62,6 +62,7 @@ import {
   setLiveNotificationSettings,
 } from "../../lib/live-notifications";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
+import { activeOrganization, useOrganizations } from "../../lib/organizations";
 import type { MobilePasskey } from "../../lib/passkey";
 import {
   addPasskey,
@@ -101,6 +102,7 @@ export default function Account() {
   const router = useRouter();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
+  const botStyleRequest = useRef(0);
   const account = accountDisplay(me ?? {}, t("Your account"));
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -185,6 +187,7 @@ export default function Account() {
   const updateLabel = formatUpdateLabel(versionInfo.update, t);
   const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
   const approvals = useApprovalSettings(ACCOUNT_SETTINGS);
+  const organizations = useOrganizations().data;
   const settingsLink = ({ title, href }: { title: string; href: Extract<Href, string> }) => (
     <SettingsRow
       key={href}
@@ -444,6 +447,19 @@ export default function Account() {
           {focus !== "usage" ? usageBlock : null}
         </SettingsGroup>
 
+        {organizations ? (
+          <SettingsGroup>
+            <SettingsRow
+              key="organization"
+              accessibilityRole="button"
+              chevron="right"
+              onPress={() => router.push("/organization")}
+              title={t("Organization")}
+              value={activeOrganization(organizations)?.name}
+            />
+          </SettingsGroup>
+        ) : null}
+
         {(security?.sso && !security.ssoLinked) || canChangePassword ? (
           <SettingsGroup>
             {security?.sso && !security.ssoLinked ? (
@@ -563,6 +579,41 @@ export default function Account() {
           />
         </View>
 
+        {me?.botAvatarSet ? (
+          <View accessibilityLabel={t("Bot style")} style={styles.section}>
+            <SettingsLabel>{t("Bot style")}</SettingsLabel>
+            <NativeSegmentedControl
+              accessibilityLabel={t("Bot style")}
+              onChange={(botAvatarSet) => {
+                const previous = me.botAvatarSet;
+                // Only the latest tap's reply may land, so a slower earlier save can't undo it.
+                const request = ++botStyleRequest.current;
+                setMe((current) => (current ? { ...current, botAvatarSet } : current));
+                rpc("preferences/update", { botAvatarSet })
+                  .then((next) => {
+                    // Take only the style, so an older snapshot can't undo another edit.
+                    if (request !== botStyleRequest.current) return;
+                    setMe((current) =>
+                      current ? { ...current, botAvatarSet: next.botAvatarSet } : next,
+                    );
+                  })
+                  .catch(() => {
+                    if (request !== botStyleRequest.current) return;
+                    setMe((current) =>
+                      current ? { ...current, botAvatarSet: previous } : current,
+                    );
+                    Alert.alert(t("Couldn't update bot style"));
+                  });
+              }}
+              options={[
+                { value: "organic", label: t("Original") },
+                { value: "rakazo", label: t("Rakazo") },
+              ]}
+              value={me.botAvatarSet}
+            />
+          </View>
+        ) : null}
+
         <SettingsGroup>
           <SettingsRow
             accessibilityRole="button"
@@ -681,6 +732,7 @@ export default function Account() {
                 : []),
               { title: t("Integrations"), href: "/integrations" },
               { title: t("Skills"), href: "/skills" },
+              { title: t("Memory"), href: "/memory" },
               ...(messagingEnabled ? [{ title: t("Messaging"), href: "/messaging" } as const] : []),
               { title: t("AI data sharing"), href: "/ai-data-sharing" },
             ] as const

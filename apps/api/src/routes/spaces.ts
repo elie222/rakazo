@@ -37,6 +37,7 @@ import {
   spaceSettingOverrides,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { otherSpaceOfBot } from "../bot-space.js";
 import type { RouterDeps } from "../router.js";
 import { listRoutinesDto } from "../routines.js";
 import { deleteSpaceWithContent } from "../space-deletion.js";
@@ -90,14 +91,6 @@ async function afterSpaceDeparture(
       }),
     ),
   );
-  syncSeatsLater(deps, departure.organizationId);
-}
-
-/** Seat counts follow membership; a provider hiccup must not undo the change. */
-function syncSeatsLater(deps: RouterDeps, organizationId: string): void {
-  void deps.billing?.syncSeats(organizationId).catch((error) => {
-    getLogger().error("billing seat sync failed", error);
-  });
 }
 
 /**
@@ -149,6 +142,9 @@ export function spacesRoutes(ctx: RouterContext) {
           } catch (error) {
             if (error instanceof SpaceLimitError || error instanceof InvalidSpaceNameError) {
               throw new ORPCError("BAD_REQUEST", { message: error.message });
+            }
+            if (error instanceof SpaceDeletionInProgressError) {
+              throw new ORPCError("CONFLICT", { message: error.message });
             }
             throw error;
           }
@@ -344,7 +340,6 @@ export function spacesRoutes(ctx: RouterContext) {
               actor: { type: "user", id: context.actor.userId },
               spaceId: accepted.spaceId,
             });
-            syncSeatsLater(deps, accepted.organizationId);
           }
           return { spaceId: accepted.spaceId };
         }),
@@ -359,7 +354,12 @@ export function spacesRoutes(ctx: RouterContext) {
         groupRepos.listGroups(actor, { archived: true }),
       ]);
       const { bots, groups, botSections } = navigation.current;
-      const active = bots.find((bot) => bot.id === input.botId) ?? bots[0];
+      const requested = bots.find((bot) => bot.id === input.botId);
+      const botSpaceId =
+        input.botId && !requested
+          ? await otherSpaceOfBot(deps.prisma, actor, input.botId)
+          : undefined;
+      const active = requested ?? bots[0];
       const [thread, routines] = active
         ? await Promise.all([
             resolveThreadTarget(deps.prisma, actor, { botId: active.id }).then((target) =>
@@ -378,6 +378,7 @@ export function spacesRoutes(ctx: RouterContext) {
         thread,
         routines,
         spaces: navigation.spaces,
+        ...(botSpaceId ? { botSpaceId } : {}),
       };
     }),
   };
@@ -509,6 +510,7 @@ async function memberSpaceNavigation(
           unread: bot.unread,
           preview: bot.preview,
           status: bot.status,
+          threadStatus: bot.threadStatus,
           runErrorId: bot.runErrorId,
           updatedAt: bot.updatedAt,
         })),

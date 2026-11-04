@@ -5,6 +5,7 @@ import { act, useCallback, useMemo, useRef } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { rpc } from "../../lib/rpc";
 import { Transcript } from "./transcript";
 
 const messageRenders = vi.hoisted(() => new Map<string, number>());
@@ -71,6 +72,7 @@ function Host({ messages }: { messages: ThreadMessage[] }) {
   const react = useCallback(async () => undefined, []);
   return (
     <Transcript
+      rpc={rpc}
       scrollRef={scrollRef}
       scrollRequest={null}
       onScrollRequestHandled={reply}

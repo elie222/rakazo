@@ -41,6 +41,13 @@ const hotQueries = [
       ORDER BY "createdAt" DESC, id DESC LIMIT 1`,
   },
   {
+    name: "a user's latest finished run in a Space",
+    index: "runs_recent_activity_idx",
+    sql: `SELECT "completedAt" FROM runs WHERE "spaceId" = $1 AND "userId" = $1
+      AND status IN ('completed', 'failed', 'cancelled') AND trigger NOT IN ('tickets')
+      AND "completedAt" IS NOT NULL ORDER BY "completedAt" DESC LIMIT 1`,
+  },
+  {
     name: "a thread's messages after a cursor",
     index: "messages_threadId_seq_key",
     sql: `SELECT id FROM messages WHERE "threadId" = $1 AND seq > 0 ORDER BY seq LIMIT 100`,

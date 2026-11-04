@@ -18,6 +18,8 @@ import { SidebarFooter } from "../../components/SidebarFooter";
 import { useBilling } from "../../components/SubscriptionGate";
 import { formatBillingDate } from "../../lib/billing";
 import type { BotsSidebarDensity } from "../../lib/bots-sidebar-density-pref";
+import { switchOrganization, useOrganizations } from "../../lib/organizations";
+import { useQueryUserId } from "../../lib/query";
 import type { Panel } from "../../lib/right-panel-state";
 import { useSignOut } from "../../lib/sign-out";
 import { ActivityList } from "../ActivityList";
@@ -66,6 +68,7 @@ export function ShellSidebar({
   openSettings,
   openIntegrations,
   openSkills,
+  openSpaceChat,
 }: {
   isMobile: boolean;
   mobileOpen: boolean;
@@ -94,6 +97,7 @@ export function ShellSidebar({
   openSettings: (section: SettingsSection) => void;
   openIntegrations: () => void;
   openSkills: () => void;
+  openSpaceChat: (spaceId: string, path: string) => void;
 }) {
   const { t } = useLingui();
   const {
@@ -154,20 +158,17 @@ export function ShellSidebar({
             toggleActivityMode();
           }}
           searchOpen={searchOpen && !mini}
-          onSearch={
-            activityMode && !mini
-              ? undefined
-              : () => {
-                  if (searchOpen && !mini) {
-                    setQuery("");
-                    setSearchOpen(false);
-                    return;
-                  }
-                  if (mini) setCollapsedPref(false);
-                  setSearchOpen(true);
-                  focusSidebarSearch();
-                }
-          }
+          onSearch={() => {
+            if (searchOpen && !mini) {
+              if (activityMode) setActivityFilters({ ...activityFilters, query: "" });
+              else setQuery("");
+              setSearchOpen(false);
+              return;
+            }
+            if (mini) setCollapsedPref(false);
+            setSearchOpen(true);
+            focusSidebarSearch();
+          }}
           setBotsSidebarCollapsedPref={setCollapsedPref}
           bots={bots}
           setMobileSidebarOpen={setMobileOpen}
@@ -176,7 +177,12 @@ export function ShellSidebar({
           setNewSpaceOpen={setNewSpaceOpen}
           setCreateBotOpen={setCreateBotOpen}
         />
-        {mini || !(activityMode || searchOpen || query) ? null : (
+        {mini ||
+        !(
+          searchOpen ||
+          query ||
+          (activityMode && (activityFilterCount > 0 || activityFiltersExpanded))
+        ) ? null : (
           <InputGroup
             data-testid="sidebar-search"
             className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input border border-border text-muted-foreground focus-within:border-ring"
@@ -197,11 +203,8 @@ export function ShellSidebar({
                   event.keyCode === 229
                 )
                   return;
-                if (activityMode) {
-                  setActivityFilters({ ...activityFilters, query: "" });
-                  return;
-                }
-                setQuery("");
+                if (activityMode) setActivityFilters({ ...activityFilters, query: "" });
+                else setQuery("");
                 setSearchOpen(false);
               }}
               placeholder={activityMode ? t`Search runs` : t`Search`}
@@ -287,6 +290,7 @@ export function ShellSidebar({
           openSettings={openSettings}
           openIntegrations={openIntegrations}
           openSkills={openSkills}
+          openSpaceChat={openSpaceChat}
         />
       </Sidebar>
     </>
@@ -304,6 +308,7 @@ function ShellSidebarFooter({
   openSettings,
   openIntegrations,
   openSkills,
+  openSpaceChat,
 }: {
   mini: boolean;
   logos: Array<{ name: string; logo?: string | null }>;
@@ -315,8 +320,11 @@ function ShellSidebarFooter({
   openSettings: (section: SettingsSection) => void;
   openIntegrations: () => void;
   openSkills: () => void;
+  openSpaceChat: (spaceId: string, path: string) => void;
 }) {
   const { t, i18n } = useLingui();
+  const userId = useQueryUserId();
+  const { organizations, activeOrganizationId } = useOrganizations();
   const { status: billing, showPlans } = useBilling();
   const freeUntil =
     billing?.funding === "byok" &&
@@ -407,6 +415,13 @@ function ShellSidebarFooter({
         }}
         signingOut={signingOut}
         logOutError={logOutError}
+        organizations={organizations}
+        activeOrganizationId={activeOrganizationId}
+        onSwitchOrganization={(organization) => {
+          setMenuOpen(false);
+          if (organization.id !== activeOrganizationId)
+            void switchOrganization(userId, organization, openSpaceChat);
+        }}
       />
       {referral ? (
         <InviteDialog referral={referral} open={inviteOpen} onOpenChange={setInviteOpen} />

@@ -12,10 +12,17 @@ name: Billing
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 01-billing
+- tapOn: "Standard"
+- extendedWaitUntil:
+    visible: "Max · .*"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-billing-tiers
 - openLink: "rakazo:///wallet"
 - extendedWaitUntil:
     visible: "Disconnect"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 02-wallet
+- takeScreenshot: 03-wallet

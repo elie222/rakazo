@@ -12,7 +12,8 @@ import {
 import { Button, Input, Textarea } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useState } from "react";
-import { rpc } from "../lib/rpc";
+import type { RpcClient } from "../lib/rpc";
+import { rpc as selectedSpaceRpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { BuiCard } from "./ai/primitives";
 import { OptionRow, optionLetter } from "./OptionRow";
@@ -68,6 +69,8 @@ export type AskCardProps = {
   onAnswer: (text: string, fields?: LoginFieldInput[], remember?: false) => Promise<void>;
   /** Turns down a secret request without a value. */
   onDismiss: () => Promise<void>;
+  /** The chat's space; Undo goes there even if another tab selects a different space. */
+  rpc?: RpcClient;
 };
 
 /** A question, approval or protected-input request from the bot. */
@@ -79,7 +82,7 @@ export function AskCard(props: AskCardProps) {
   );
 }
 
-function PromptAskCard({ block, canAnswer, onAnswer }: AskCardProps) {
+function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: AskCardProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
   const [answer, setAnswer] = useState(block.instructionUpdate?.after ?? "");

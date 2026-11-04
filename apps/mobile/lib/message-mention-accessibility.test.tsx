@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { ComponentProps } from "react";
-import { act } from "react";
+import { act, createContext } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MobileSnapshot } from "./api";
@@ -38,6 +38,7 @@ vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));
 vi.mock("./native", () => ({ native: {}, useResolvedAppearance: () => "dark" }));
 
 vi.mock("@rakazo/chat-ui/native", () => ({
+  MarkdownLongPressContext: createContext(undefined),
   ChatMarkdown: () => null,
   plainTextLinkParts: (text: string) =>
     text

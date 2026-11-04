@@ -294,19 +294,14 @@ export async function leaveSpace(prisma: PrismaClient, input: SpaceRef): Promise
 }
 
 /**
- * Before deleting an account: leave every Space in organizations the user does
- * not own, so what they made there passes to each Space's owner, and return the
- * organizations they own, which go with the account (shared Spaces included).
+ * Before deleting an account: leave every Space it was invited into, so what it made there passes
+ * to each Space's owner. Its own organizations go with the account, shared Spaces included.
  */
 export async function prepareAccountDeletion(
   prisma: PrismaClient,
   userId: string,
-): Promise<{
-  ownedOrganizationIds: string[];
-  departures: Array<SpaceDeparture & { spaceId: string }>;
-}> {
-  const ownedOrganizationIds = await personalOrganizationIds(prisma, userId);
-  const owned = new Set(ownedOrganizationIds);
+): Promise<Array<SpaceDeparture & { spaceId: string }>> {
+  const owned = new Set(await personalOrganizationIds(prisma, userId));
   const memberships = await prisma.spaceMember.findMany({
     where: { userId },
     select: { spaceId: true, role: true, space: { select: { organizationId: true } } },
@@ -319,7 +314,7 @@ export async function prepareAccountDeletion(
     const { spaceId } = membership;
     departures.push({ spaceId, ...(await departSpace(prisma, { spaceId, userId })) });
   }
-  return { ownedOrganizationIds, departures };
+  return departures;
 }
 
 /**

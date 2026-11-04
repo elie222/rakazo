@@ -16,7 +16,12 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@rakazo/chat-ui/web", () => ({
   ChatMarkdown: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
-const rpc = vi.hoisted(() => ({ bots: { update: vi.fn(async () => ({})) } }));
+const { rpc, spaceRpc } = vi.hoisted(() => {
+  const client = () => ({
+    bots: { update: vi.fn(async () => ({})), restoreInstructions: vi.fn(async () => ({})) },
+  });
+  return { rpc: client(), spaceRpc: client() };
+});
 vi.mock("../lib/rpc", () => ({ rpc }));
 // A card's editor lists the vault's saved contacts; these cards need none.
 vi.mock("./vault/use-vault-contacts", () => ({ useVaultContacts: () => [] }));
@@ -785,4 +790,50 @@ it("shows the site a replace card moves the login from only to the person answer
   expect(container.textContent).not.toContain(replaced);
   await render(true, "answered");
   expect(container.textContent).not.toContain(replaced);
+});
+
+it("sends Undo to the chat's space, not the one selected in another tab", async () => {
+  vi.clearAllMocks();
+  const card = (block: AskBlock) =>
+    act(async () =>
+      root.render(
+        <AskCard
+          key={block.text}
+          block={block}
+          canAnswer
+          canDismiss
+          onAnswer={async () => undefined}
+          onDismiss={async () => undefined}
+          rpc={spaceRpc as never}
+        />,
+      ),
+    );
+  await card({
+    kind: "ask",
+    text: "Instructions updated",
+    status: "answered",
+    instructionUpdate: {
+      botId: "bot-1",
+      undoVersionId: "version-1",
+      before: "Old",
+      after: "New",
+      reason: "Asked",
+    },
+  });
+  await act(async () => button("Undo")?.click());
+  await card({
+    kind: "ask",
+    text: "Settings updated",
+    status: "answered",
+    settingsUpdate: {
+      botId: "bot-1",
+      before: { modelProvider: null, modelId: null, thinkingLevel: null },
+      after: { modelProvider: "google", modelId: "gemini-3.8-flash", thinkingLevel: "high" },
+    },
+  });
+  await act(async () => button("Undo")?.click());
+  expect(spaceRpc.bots.restoreInstructions).toHaveBeenCalledTimes(1);
+  expect(spaceRpc.bots.update).toHaveBeenCalledTimes(1);
+  expect(rpc.bots.restoreInstructions).not.toHaveBeenCalled();
+  expect(rpc.bots.update).not.toHaveBeenCalled();
 });

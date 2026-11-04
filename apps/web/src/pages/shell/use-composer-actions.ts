@@ -134,9 +134,20 @@ export function useComposerActions({
   // reply instead of failing the send.
   const activeReplyTarget = replyTarget;
   const activeReplyQuote = replyTarget ? replyQuote : null;
+  // The armed reply as one value: a newer pick of the same message with a
+  // different excerpt is still a newer pick.
+  const armedReply = useRef({ target: activeReplyTarget, quote: activeReplyQuote });
+  armedReply.current = { target: activeReplyTarget, quote: activeReplyQuote };
   const clearReply = useCallback(() => {
     setReplyTarget(null);
     setReplyQuote(null);
+  }, []);
+  /** Clears the reply a send carried; one picked while it was in flight stays armed. */
+  const clearSentReply = useCallback((sent: ThreadMessage | null, sentQuote: string | null) => {
+    if (armedReply.current.target === sent && armedReply.current.quote === sentQuote) {
+      setReplyTarget(null);
+      setReplyQuote(null);
+    }
   }, []);
   const runError = threadRunError(activeSnapshot, dismissedRunErrorIds);
   const displayedRunError = !sendError ? runError : null;
@@ -194,13 +205,9 @@ export function useComposerActions({
 
   useEffect(() => () => cancelFocusPrompt(), []);
 
+  // Switching chats keeps other chats' pending attachments with their previews;
+  // only the open chat's files are shown and sent (activePendingAttachments).
   useEffect(() => {
-    const threadKey = inGroup ? groupId : activeId;
-    setPendingAttachments((current) => {
-      const stale = current.filter((attachment) => attachment.threadKey !== threadKey);
-      revokePendingAttachmentPreviews(stale);
-      return attachmentsForThread(current, threadKey);
-    });
     clearReply();
     setAttachmentNotice(null);
     setSendError(null);
@@ -296,7 +303,8 @@ export function useComposerActions({
           continue;
         }
         next.push({
-          id: `${file.name}-${file.size}-${file.lastModified}-${next.length}`,
+          // A client id, not file metadata: two picks of equal metadata are separate attachments.
+          id: newClientId(),
           threadKey,
           file,
           previewUrl: mimeType.startsWith("image/") ? URL.createObjectURL(file) : undefined,
@@ -316,6 +324,15 @@ export function useComposerActions({
     revokePendingAttachmentPreviews([attachment]);
     setPendingAttachments((current) => current.filter((item) => item.id !== attachment.id));
   }, []);
+  /** A deleted chat's files can never be sent: drop them and release their previews. */
+  const discardThreadAttachments = useCallback((threadKey: string) => {
+    setPendingAttachments((current) => {
+      const discarded = attachmentsForThread(current, threadKey);
+      if (!discarded.length) return current;
+      revokePendingAttachmentPreviews(discarded);
+      return current.filter((attachment) => !discarded.includes(attachment));
+    });
+  }, []);
   const sendMessage = useCallback(
     async (
       draft: string,
@@ -327,6 +344,9 @@ export function useComposerActions({
       const initialGroupTarget = activeGroupId.current;
       if ((!initialBotTarget && !initialGroupTarget) || sending) return false;
       const editsAtSend = draftEdits.current;
+      // The reply this send carries; a reply picked after this point is for the next message.
+      const replyAtSend = activeReplyTarget;
+      const replyQuoteAtSend = activeReplyQuote;
       const originThreadKey = initialGroupTarget ?? initialBotTarget;
       const attachments = attachmentsForThread(pendingAttachments, originThreadKey);
       const plan = resolveComposerSendPlan({
@@ -378,7 +398,7 @@ export function useComposerActions({
             accepted = true;
           }
           dropDelayedSetup();
-          clearReply();
+          clearSentReply(replyAtSend, replyQuoteAtSend);
           revokePendingAttachmentPreviews(attachments);
           setPendingAttachments((current) =>
             current.filter((attachment) => !attachments.includes(attachment)),
@@ -453,7 +473,7 @@ export function useComposerActions({
         }
         uploadedSendArtifacts.current.delete(clientNonce);
         dropDelayedSetup();
-        clearReply();
+        clearSentReply(replyAtSend, replyQuoteAtSend);
         revokePendingAttachmentPreviews(attachments);
         // Keep files picked while this send was in flight.
         setPendingAttachments((current) =>
@@ -501,7 +521,7 @@ export function useComposerActions({
       activeReplyQuote,
       activeSnapshot?.messages,
       pageSession,
-      clearReply,
+      clearSentReply,
       flushPendingBrowserNotifications,
       navigate,
       pendingAttachments,
@@ -581,6 +601,7 @@ export function useComposerActions({
     fileInputRef,
     onAttachmentPick,
     removeAttachment,
+    discardThreadAttachments,
     replyTarget: activeReplyTarget,
     replyQuote: activeReplyQuote,
     setReplyTarget,

@@ -19,6 +19,7 @@ import { voiceForBot } from "./bot-voices";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";
 import { fetchServer } from "./server-headers";
+import { subscribeSessionGeneration } from "./session";
 import { errorText, voiceAccountErrorText } from "./user-error";
 
 /** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
@@ -109,6 +110,14 @@ export function stopSpeaking(owner?: SpeechOwner): void {
   stopVoicePlayback();
 }
 
+// A sign-out, account switch or server switch ends playback: the rest of the
+// queue belongs to the session that started it, and the next session must
+// neither hear it nor see its speaker in the dock.
+subscribeSessionGeneration(() => {
+  stopVoicePlayback();
+  announcedSpeaker = undefined;
+});
+
 let playsInBackground = false;
 
 /**
@@ -158,8 +167,32 @@ function releasePlayback(epoch: number, stillOwner: boolean, keepForQueue: boole
  */
 export async function speakQueue(items: SpeechQueueItem[]): Promise<boolean> {
   const epoch = beginSpeech();
-  speechQueue = items;
-  return advanceSpeechQueue(epoch);
+  // One context for the whole queue, taken before anything plays: a queued
+  // reply must never capture the server or account of a later session.
+  let requestContext: ApiRequestContext | undefined;
+  try {
+    requestContext = await captureApiRequestContext();
+  } catch (error) {
+    // The session or server changed while capturing; that change already
+    // stopped this queue, so this is not a "no voice is set up" outcome.
+    if (!isCurrentSpeech(epoch)) return true;
+    throw error;
+  }
+  if (!isCurrentSpeech(epoch)) return true;
+  speechQueue = items.map((item) => ({
+    ...item,
+    requestContext: item.requestContext ?? requestContext,
+  }));
+  try {
+    return await advanceSpeechQueue(epoch);
+  } catch (error) {
+    // The session change (or a newer Play or Stop) that ended this queue can
+    // leave its request failing late, e.g. with the old session's revoked
+    // token; the next session's screen must not hear about that. Playback
+    // that still owns the epoch keeps reporting its errors.
+    if (!isCurrentSpeech(epoch)) return true;
+    throw error;
+  }
 }
 
 async function advanceSpeechQueue(epoch: number): Promise<boolean> {

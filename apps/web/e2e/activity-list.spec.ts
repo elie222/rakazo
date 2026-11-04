@@ -82,6 +82,9 @@ test("sidebar Working and Recent surface active and terminal runs", async ({ pag
   await expect(activityRow(page, "Chief")).toContainText(/keep working|Running|Queued|Starting/i);
   await page.emulateMedia({ colorScheme: "light" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  // Activity opens without the search field; Search reveals it with the Filters toggle.
+  await expect(aside.getByTestId("sidebar-search")).toHaveCount(0);
+  await aside.getByTestId("sidebar-search-trigger").click();
   const filtersButton = aside.getByRole("button", { name: "Filters", exact: true });
   await expect(filtersButton).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByTestId("activity-status-filter")).toBeHidden();
@@ -102,9 +105,12 @@ test("sidebar Working and Recent surface active and terminal runs", async ({ pag
   await expect(activityRow(page, "Chief")).toHaveCount(0);
   // Run searches must never invoke the space-wide search surface.
   await expect(aside.getByText("No runs match these filters.")).toBeVisible();
+  // Escape clears the run search and closes it, as it does for the space search.
   await runSearch.press("Escape");
-  await expect(runSearch).toHaveValue("");
+  await expect(runSearch).toHaveCount(0);
   await expect(activityRow(page, "Chief")).toBeVisible();
+  await aside.getByTestId("sidebar-search-trigger").click();
+  await expect(runSearch).toHaveValue("");
   await filtersButton.focus();
   await page.keyboard.press("Enter");
   await expect(filtersButton).toHaveAttribute("aria-expanded", "true");
@@ -121,8 +127,8 @@ test("sidebar Working and Recent surface active and terminal runs", async ({ pag
   await captureActivitySidebar(page, testInfo, "58c-activity-now-dark");
   await page.emulateMedia({ colorScheme: "light" });
   await runSearch.fill("Chief");
+  // Search stays open across the switch, now searching the space instead of runs.
   await activityToggle.click();
-  await aside.getByTestId("sidebar-search-trigger").click();
   const normalSearch = aside.getByRole("textbox", { name: "Search", exact: true });
   await expect(normalSearch).toHaveValue("");
   await normalSearch.fill("Chief");
@@ -148,6 +154,8 @@ test("sidebar Working and Recent surface active and terminal runs", async ({ pag
   await captureActivitySidebar(page, testInfo, "59-activity-recent");
 
   const activitySearch = aside.getByRole("textbox", { name: "Search runs", exact: true });
+  if (!(await activitySearch.isVisible()))
+    await aside.getByTestId("sidebar-search-trigger").click();
   await expect(aside.getByRole("textbox")).toHaveCount(1);
   await activitySearch.fill("Chief");
   await expect(activityRow(page, "Chief")).toBeVisible();
@@ -254,6 +262,7 @@ test("activity filters keep retry when a refresh fails", async ({ page }, testIn
   await expect(activityRow(page, "Chief").getByText("just now", { exact: true })).toBeVisible();
   await expect(activityRow(page, "Helper")).toContainText("Update from Scout: filter me");
   await captureActivitySidebar(page, testInfo, "61a-activity-first-minute");
+  await aside.getByTestId("sidebar-search-trigger").click();
   const activitySearch = aside.getByRole("textbox", { name: "Search runs", exact: true });
   await activitySearch.fill("Update from Scout");
   await expect(activityRow(page, "Helper")).toBeVisible();
@@ -278,7 +287,7 @@ test("activity filters keep retry when a refresh fails", async ({ page }, testIn
   await expect(aside.getByRole("status", { name: "Loading activity…" })).toBeVisible();
   await expect(aside.getByText("No runs match these filters.")).toHaveCount(0);
   await expect.poll(() => releaseHang !== null).toBe(true);
-  releaseHang?.();
+  releaseHang!();
   await expect(aside.getByRole("status", { name: "Loading activity…" })).toBeHidden({
     timeout: 20_000,
   });

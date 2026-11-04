@@ -410,6 +410,10 @@ msgstr "{title}，儲存為 {savedAs}"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# 個工具} other {# 個工具}}"
 
+#: src/components/ModelCredits.tsx
+msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
+msgstr "{vcpus} vCPU、{memoryGb} GB、每月 {hours} 小時電腦時數"
+
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
 msgid "@{0}"
@@ -1039,6 +1043,10 @@ msgstr "頭像工作室"
 msgid "Back"
 msgstr "返回"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Back or forward"
+msgstr "上一頁或下一頁"
+
 #: src/components/pages/PageNotice.tsx
 msgid "Back to chat"
 msgstr "返回聊天"
@@ -1132,6 +1140,10 @@ msgstr "機器人螢幕"
 msgid "Bot screen preview"
 msgstr "機器人螢幕預覽"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Bot style"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
 msgstr "機器人的模型"
@@ -1224,6 +1236,7 @@ msgstr "無法讀取影像"
 #: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -1289,6 +1302,10 @@ msgstr "更換模型"
 msgid "Change password"
 msgstr "修改密碼"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "更換伺服器"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "正在修改…"
@@ -1304,6 +1321,10 @@ msgstr ""
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Chat Completions"
 msgstr ""
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Chat details"
+msgstr "聊天詳細資料"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1455,6 +1476,7 @@ msgstr "正在清空…"
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/chat-find-bar.tsx
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "關閉"
@@ -1564,6 +1586,7 @@ msgid "Command"
 msgstr "命令"
 
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr ""
 
@@ -1622,6 +1645,10 @@ msgstr "電腦正在休眠，開啟即可喚醒。"
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "電腦已停止"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "電腦操作模型"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1698,6 +1725,7 @@ msgstr "連線 API 金鑰"
 
 #: src/components/SidebarFooter.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Connect apps"
 msgstr "連接應用程式"
 
@@ -2452,6 +2480,10 @@ msgstr "無法載入此頁面。請再試一次。"
 msgid "Couldn't load your wallet"
 msgstr ""
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update bot style"
+msgstr ""
+
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "無法更新訊息設定"
@@ -2468,6 +2500,7 @@ msgstr ""
 msgid "Country"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2488,6 +2521,11 @@ msgstr "建立帳號"
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "建立群組"
+
+#: src/components/CreateOrganizationDialog.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Create organization"
+msgstr "建立組織"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
@@ -2634,6 +2672,7 @@ msgstr "預設範圍"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/archived-chats.tsx
 #: src/pages/shell/dialogs.tsx
@@ -2660,6 +2699,7 @@ msgstr "刪除 {0}"
 #. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "刪除 {0}？"
@@ -2676,6 +2716,10 @@ msgstr "刪除群組"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "同時刪除記憶"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Delete organization"
+msgstr "刪除組織"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Delete section"
@@ -2696,6 +2740,7 @@ msgstr "已刪除"
 
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "正在刪除…"
@@ -2746,6 +2791,10 @@ msgstr "詳細資訊"
 #: src/pages/PluginsOverlay.tsx
 msgid "Developer"
 msgstr ""
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Dictate"
+msgstr "聽寫"
 
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
@@ -3205,6 +3254,11 @@ msgstr ""
 msgid "Find a page"
 msgstr "尋找頁面"
 
+#: src/pages/shell/chat-find-bar.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Find in chat"
+msgstr "在聊天中尋找"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Find models"
@@ -3235,6 +3289,10 @@ msgstr "已完成。"
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "正在完成 MCP 連線…"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Focus message"
+msgstr "移至訊息欄"
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -3320,6 +3378,10 @@ msgstr "送朋友 {weeks} 週免費"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "返回首頁"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Go to bot"
+msgstr "前往機器人"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Grant"
@@ -3688,6 +3750,11 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "金鑰"
+
+#: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Keyboard shortcuts"
+msgstr "鍵盤快速鍵"
 
 #: src/components/vault/kinds.tsx
 msgid "Keys"
@@ -4216,6 +4283,7 @@ msgstr "已靜音"
 msgid "My computers"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4223,6 +4291,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4291,6 +4360,7 @@ msgstr "永不詢問"
 
 #: src/components/VaultSettings.tsx
 #: src/pages/shell/chat-context.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New"
 msgstr "新增"
 
@@ -4322,6 +4392,7 @@ msgstr "新增群組"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New group chat"
 msgstr "新增群組聊天"
 
@@ -4367,6 +4438,14 @@ msgstr "新增工作項目"
 #: src/components/VaultSettings.tsx
 msgid "New variable"
 msgstr ""
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Next match"
+msgstr "下一個相符項目"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Next or previous bot"
+msgstr "下一個或上一個機器人"
 
 #: src/components/markdown-copy.tsx
 msgid "Next page"
@@ -4722,13 +4801,15 @@ msgid "Or paste an API key"
 msgstr "或貼上 API 金鑰"
 
 #: src/components/ComputerProviderSettings.tsx
+#: src/pages/settings-nav.ts
 msgid "Organization"
-msgstr ""
+msgstr "組織"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "組織 API 金鑰"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Original"
 msgstr ""
@@ -4936,6 +5017,10 @@ msgstr "置頂"
 msgid "Pinned"
 msgstr "置頂"
 
+#: src/components/ModelCredits.tsx
+msgid "Plan"
+msgstr "方案"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "播放 {name}"
@@ -4986,6 +5071,10 @@ msgstr "預覽 {0}"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "此檔案類型無法預覽，請下載後檢視。"
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Previous match"
+msgstr "上一個相符項目"
 
 #: src/components/markdown-copy.tsx
 msgid "Previous page"
@@ -5041,6 +5130,7 @@ msgstr "Pull request"
 msgid "Queued"
 msgstr "排隊中"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
 msgstr "Rakazo"
@@ -5568,6 +5658,10 @@ msgstr ""
 msgid "Same as {botName}"
 msgstr "與 {botName} 相同"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Same as main model"
+msgstr "與主模型相同"
+
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "週六"
@@ -5683,6 +5777,10 @@ msgstr "搜尋應用程式"
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
 msgstr "搜尋成品…"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Search bots"
+msgstr "搜尋機器人"
 
 #: src/pages/shell/command-palette.tsx
 msgid "Search bots, actions, and settings"
@@ -5817,6 +5915,7 @@ msgstr "伺服器 URL"
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "設定"
@@ -6259,6 +6358,10 @@ msgid "Switch"
 msgstr "切換"
 
 #: src/components/ModelCredits.tsx
+msgid "Switch to {tierTargetName}?"
+msgstr "切換到 {tierTargetName}？"
+
+#: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "切換為按年"
 
@@ -6391,6 +6494,10 @@ msgstr "所選記憶供應商在此版本中不可用。"
 msgid "The shared link stops working"
 msgstr "共用連結將失效"
 
+#: src/components/ModelCredits.tsx
+msgid "The unused difference is credited to your next invoice."
+msgstr "未使用的差額將抵扣到你的下一張帳單。"
+
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
 msgstr "已清除機器人的個別模型設定。你可以隨時為各機器人重新選擇模型。"
@@ -6459,6 +6566,7 @@ msgstr "此通話已不在響鈴中。"
 msgid "This can't be undone."
 msgstr "此操作無法復原。"
 
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "此操作無法復原。"
@@ -6622,6 +6730,10 @@ msgstr "收件人："
 msgid "Today"
 msgstr "今天"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Toggle sidebar"
+msgstr "顯示或隱藏側邊欄"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "Token"
@@ -6688,6 +6800,10 @@ msgstr "試用於 {day} 結束"
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "為防止濫用，試用期的時數較少。"
 
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "受信任的網站"
@@ -6713,6 +6829,10 @@ msgstr "週二"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Type"
 msgstr "類型"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Type {name} to confirm"
+msgstr "輸入 {name} 以確認"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"
@@ -7173,6 +7293,10 @@ msgstr "你的 Anthropic"
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "今天將從你的卡中扣款 {annualPrice}，並抵扣本月未使用的部分。"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged the prorated difference today."
+msgstr "今天將從你的卡片扣除按比例計算的差額。"
+
 #: src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 msgstr "電腦的磁碟快滿了。請刪除不再需要的建置輸出和快取，以釋放空間。"
@@ -7215,6 +7339,10 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "試用結束後，你的方案將變為每年 {annualPrice}。"
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {tierTargetLabel} when your trial ends."
+msgstr "試用結束後，你的方案將變為 {tierTargetLabel}。"
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

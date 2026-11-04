@@ -453,7 +453,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
           unread: true,
           runs: [{ id: "run-failed", status: "failed" }],
         },
-        runs: [{ status: "running" }],
+        runs: [{ status: "running", threadId: "group-thread" }],
       },
     ]);
     const repos = createRepos({
@@ -493,6 +493,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         parentBotId: null,
         preview: "Waiting for a reply",
         status: "running",
+        threadStatus: "idle",
         runErrorId: "run-failed",
         updatedAt: "2026-08-19T12:00:00.000Z",
       },

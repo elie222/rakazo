@@ -34,6 +34,7 @@ import {
   activeRunSelection,
   previewFromBlocks,
   primaryActiveRun,
+  threadRunStatus,
   withLatestBotRuns,
 } from "./thread-listing.js";
 import { withTransactionRetry } from "./transaction-retry.js";
@@ -230,6 +231,7 @@ export function createRepos(
         parentBotId: bot.parentBotId,
         preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
         status: activeRun?.status ?? "idle",
+        threadStatus: threadRunStatus(bot.runs, bot.thread.id),
         runErrorId: rosterRunErrorId(bot.thread.runs[0], activeRun),
         updatedAt: rosterUpdatedAt(bot.thread.messages[0], bot.updatedAt).toISOString(),
       };
@@ -470,7 +472,7 @@ export function createRepos(
             if (messages.length === 0) break;
           }
           const activeRun = primaryActiveRun(bot.runs);
-          return mapBot(
+          const mapped = mapBot(
             bot,
             preview,
             activeRun?.status ?? "idle",
@@ -482,6 +484,7 @@ export function createRepos(
                 : [],
             ),
           );
+          return { ...mapped, threadStatus: threadRunStatus(bot.runs, mapped.threadId) };
         }),
       );
     },
@@ -513,6 +516,8 @@ export function createRepos(
         fleetManagement?: boolean;
         color?: string;
         avatarSet?: BotAvatarSet;
+        /** Copy a pin as is (duplicates); otherwise a set other than the default pins the bot. */
+        avatarSetPinned?: boolean;
         avatarFamily?: number;
         parentBotId?: string | null;
         computerMode?: ComputerMode;
@@ -572,7 +577,14 @@ export function createRepos(
             where: { spaceId: actor.spaceId },
             _max: { position: true },
           });
-          const avatarSet = input.avatarSet ?? DEFAULT_NEW_BOT_AVATAR_SET;
+          // A bot follows its owner's default set unless created with another, which pins it.
+          // Held until this bot commits, so a concurrent default change restyles it afterwards.
+          const [owner] = await tx.$queryRaw<{ botAvatarSet: string }[]>`
+            SELECT "botAvatarSet" FROM "user" WHERE id = ${actor.userId} FOR SHARE`;
+          const defaultSet = owner
+            ? resolveBotAvatarSet(owner.botAvatarSet)
+            : DEFAULT_NEW_BOT_AVATAR_SET;
+          const avatarSet = input.avatarSet ?? defaultSet;
           // Only Original balances existing looks; seeded logo colours need no roster read.
           const avatar = chooseBotAvatar(
             avatarSet === "organic"
@@ -603,6 +615,7 @@ export function createRepos(
               fleetManagement: input.fleetManagement,
               color: avatar.color,
               avatarSet,
+              avatarSetPinned: input.avatarSetPinned ?? avatarSet !== defaultSet,
               position: (positions._max.position ?? -1) + 1,
               parentBotId: input.parentBotId ?? null,
               computerId: teamComputer.id,

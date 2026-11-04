@@ -15,7 +15,8 @@ import {
   zonedDateTime,
 } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { Prisma } from "@rakazo/db";
+import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 
 import { localDateTime } from "./current-time.js";
 import { validateRoutineWatch } from "./routine-watch.js";
@@ -29,8 +30,8 @@ export const SCHEDULE_TOOL_NAMES = new Set([
   "schedule_cancel",
 ]);
 
-/** A routine run may list or cancel routines, but not write new unattended work. */
-const ROUTINE_RUN_HIDDEN_TOOLS = new Set(["schedule_create", "schedule_update"]);
+/** Routine runs may create, list, or cancel routines, but may not update them. */
+const ROUTINE_RUN_HIDDEN_TOOLS = new Set(["schedule_update"]);
 
 export function filterBuiltinToolsForRun<T extends { name: string }>(
   tools: T[],
@@ -264,6 +265,169 @@ export async function userTimeZone(prisma: PrismaClient, userId: string): Promis
   return timezone && TimeZoneSchema.safeParse(timezone).success ? timezone : "UTC";
 }
 
+/**
+ * The account zone under a share lock, for an insert sharing this transaction: a
+ * concurrent zone change either committed first (the fresh row starts in the new zone) or
+ * waits for this transaction's lock, and the change then moves the fresh row too.
+ */
+async function sharedAccountZone(tx: Prisma.TransactionClient, userId: string): Promise<string> {
+  const [row] = await tx.$queryRaw<
+    Array<{ timezone: string | null }>
+  >`SELECT timezone FROM "user" WHERE id = ${userId} FOR SHARE`;
+  const timezone = row?.timezone;
+  return timezone && TimeZoneSchema.safeParse(timezone).success ? timezone : "UTC";
+}
+
+/**
+ * Save the account timezone and move the routines that took it: every routine of the user
+ * whose zone is the previous account zone keeps its local schedule in the new one, exactly
+ * as a schedule_update zone change keeps it. A routine pinned to another zone stays, and so
+ * does one stored while the account had no zone, which may be pinned to UTC on purpose.
+ * Clearing the zone (`null`) only clears the account: a routine cannot hold no zone.
+ * `timezone` is the already-validated zone the caller wants saved; `other` holds the
+ * preference fields that came in the same save, so they commit with it or not at all.
+ */
+export async function changeUserTimezone(
+  deps: Pick<ScheduleToolDeps, "prisma" | "jobs">,
+  userId: string,
+  timezone: string | null,
+  other?: {
+    locale?: string;
+    botAvatarSet?: string;
+    marketingEmailOptOutAt?: Date | null;
+  },
+): Promise<void> {
+  const woken: { id: string; nextRunAt: Date }[] = [];
+  await deps.prisma.$transaction(async (tx) => {
+    // The user's routines sit in every space they own one in, and a tenant scope only
+    // sees its own space's rows, so the move runs as an explicit cross-space bypass.
+    await runAsSystemInTransaction(tx, "move the user's routines in all their spaces", async () => {
+      // The lock serializes overlapping zone saves: each reads the previous zone only
+      // after the last save committed, so no routine keeps an intermediate zone.
+      await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${userId} FOR UPDATE`;
+      const user = await tx.user.findUnique({ where: { id: userId }, select: { timezone: true } });
+      if (!user || (user.timezone === timezone && !other)) return;
+      await tx.user.update({ where: { id: userId }, data: { timezone, ...other } });
+      if (user.timezone === timezone || !timezone || !user.timezone) return;
+      // Lock the rows about to move, so a run firing meanwhile cannot advance one between
+      // the read and the write: its claim lands after the commit and re-derives from the
+      // moved schedule. The read takes only the locked ids: a routine inserted after the
+      // locking snapshot is not locked here, and its creator read the zone under a share
+      // lock this change waited for, so it already carries the new zone.
+      const locked = await tx.$queryRaw<
+        Array<{ id: string }>
+      >`SELECT id FROM "routines" WHERE "userId" = ${userId} AND timezone = ${user.timezone} FOR UPDATE`;
+      const routines = await tx.routine.findMany({
+        where: { id: { in: locked.map((row) => row.id) }, userId, timezone: user.timezone },
+        select: {
+          id: true,
+          crons: true,
+          timezone: true,
+          nextRunAt: true,
+          active: true,
+          watch: true,
+        },
+      });
+      // Rows whose next run keeps its instant move their zone label in one write; only
+      // the retimed ones need their own fenced update.
+      const relabeled: string[] = [];
+      for (const routine of routines) {
+        const nextRunAt = nextRunAtAfterTimezoneMove(routine, timezone);
+        if (nextRunAt?.getTime() === routine.nextRunAt?.getTime()) {
+          relabeled.push(routine.id);
+          continue;
+        }
+        // The zone and the timing it was computed from are part of the write, so a change
+        // that slipped through anyway keeps its advance and the routine its old zone.
+        const { count } = await tx.routine.updateMany({
+          where: {
+            id: routine.id,
+            userId,
+            timezone: user.timezone,
+            nextRunAt: routine.nextRunAt,
+          },
+          data: { timezone, nextRunAt },
+        });
+        if (count === 1 && routine.active && nextRunAt) {
+          woken.push({ id: routine.id, nextRunAt });
+        }
+      }
+      if (relabeled.length) {
+        await tx.routine.updateMany({
+          where: { id: { in: relabeled }, userId, timezone: user.timezone },
+          data: { timezone },
+        });
+      }
+    });
+  });
+  // Enqueue after the commit, like every routine write. The save is committed by now, so
+  // a failing enqueue is logged instead of thrown: the reconciler repairs the missed
+  // wake, and the caller keeps the successful save. Every wakeup is attempted.
+  for (const routine of woken) {
+    await deps.jobs
+      .enqueue(routineWakeupJob(routine.id, routine.nextRunAt))
+      .catch((error: unknown) => {
+        getLogger().error("timezone move wakeup enqueue", error);
+      });
+  }
+}
+
+/**
+ * The next run after a routine's zone moves with the account: an active repeat keeps its
+ * local time in the new zone. Anything else keeps its pending instant — a one-shot is an
+ * absolute time, a watch checks on its own interval, and a row with no crons has nothing
+ * to retime.
+ */
+function nextRunAtAfterTimezoneMove(
+  routine: {
+    crons: string[];
+    timezone: string;
+    nextRunAt: Date | null;
+    active: boolean;
+    watch: unknown;
+  },
+  timezone: string,
+): Date | null {
+  if (
+    !routine.active ||
+    routine.watch != null ||
+    isOneShotRoutineCrons(routine.crons) ||
+    routine.crons.length === 0
+  ) {
+    return routine.nextRunAt;
+  }
+  const due = routine.nextRunAt;
+  if (routine.crons.length === 1) {
+    let timing: Record<string, unknown> = { cron: routine.crons[0] };
+    if (due && due.getTime() > Date.now()) {
+      const moved = carriedRunAtForTimezone(
+        routine.crons[0] ?? "",
+        due,
+        routine.timezone,
+        timezone,
+      );
+      if (moved.carried) return moved.carried;
+      if (moved.startAt) timing = { cron: routine.crons[0], startAt: moved.startAt };
+    }
+    const resolved = resolveScheduleTiming(timing, timezone);
+    return resolved.ok ? resolved.nextRunAt : routine.nextRunAt;
+  }
+  // Several crons keep plain cron matches (their interval anchors are unknown), so the
+  // pending occurrence's local time is carried the same way; a zone behind restarts from
+  // when it was due, so no occurrence is skipped.
+  if (due && due.getTime() > Date.now()) {
+    const local = zonedDateTime(wallClock(due, routine.timezone), timezone);
+    if (local && local.getTime() <= due.getTime()) {
+      if (local.getTime() > Date.now()) return local;
+      return nextCronDateAcross(routine.crons, new Date(), timezone) ?? routine.nextRunAt;
+    }
+    return (
+      nextCronDateAcross(routine.crons, new Date(due.getTime() - 1), timezone) ?? routine.nextRunAt
+    );
+  }
+  return nextCronDateAcross(routine.crons, new Date(), timezone) ?? routine.nextRunAt;
+}
+
 /** Each routine is an unattended model run, so a looping bot must not stack them. */
 export const MAX_ACTIVE_ROUTINES_PER_BOT = 50;
 
@@ -309,37 +473,49 @@ export async function createScheduleFromTool(
     };
   }
 
-  const parsedTimezone = TimeZoneSchema.safeParse(
-    input.timezone ?? (await userTimeZone(deps.prisma, input.userId)),
-  );
-  if (!parsedTimezone.success) {
-    return { error: parsedTimezone.error.issues.map((issue) => issue.message).join("; ") };
+  if (input.timezone !== undefined) {
+    const parsedTimezone = TimeZoneSchema.safeParse(input.timezone);
+    if (!parsedTimezone.success) {
+      return { error: parsedTimezone.error.issues.map((issue) => issue.message).join("; ") };
+    }
   }
-  const timezone = parsedTimezone.data;
   if (input.schedule.watch !== undefined) {
-    return createWatchFromTool(deps, { ...input, name, prompt, timezone });
+    return createWatchFromTool(deps, { ...input, name, prompt });
   }
-  const resolved = resolveScheduleTiming(input.schedule, timezone);
-  if (!resolved.ok) return { error: resolved.error };
-
-  const row = await deps.prisma.routine.create({
-    data: {
-      spaceId: input.spaceId,
-      botId: routineBotId,
-      userId: input.userId,
-      threadId: routineThreadId,
-      name,
-      prompt,
-      crons: [resolved.cron],
-      timezone,
-      notify: true,
-      active: true,
-      nextRunAt: resolved.nextRunAt,
-    },
-  });
+  // A named zone needs no coordination with a zone change. The account's zone is read
+  // under a share lock in the same transaction as the insert, so the two cannot cross.
+  let wakeAt: Date | undefined;
+  const insertRoutine = (client: Pick<Prisma.TransactionClient, "routine">, timezone: string) => {
+    const resolved = resolveScheduleTiming(input.schedule, timezone);
+    if (!resolved.ok) return { error: resolved.error } as const;
+    wakeAt = resolved.nextRunAt;
+    return client.routine.create({
+      data: {
+        spaceId: input.spaceId,
+        botId: routineBotId,
+        userId: input.userId,
+        threadId: routineThreadId,
+        name,
+        prompt,
+        crons: [resolved.cron],
+        timezone,
+        notify: true,
+        active: true,
+        nextRunAt: resolved.nextRunAt,
+      },
+    });
+  };
+  const row =
+    input.timezone !== undefined
+      ? await insertRoutine(deps.prisma, input.timezone)
+      : await deps.prisma.$transaction(async (tx) => {
+          const timezone = await sharedAccountZone(tx, input.userId);
+          return insertRoutine(tx, timezone);
+        });
+  if ("error" in row) return { error: row.error };
 
   try {
-    await deps.jobs.enqueue(routineWakeupJob(row.id, resolved.nextRunAt));
+    await deps.jobs.enqueue(routineWakeupJob(row.id, wakeAt!));
   } catch {
     try {
       await deps.prisma.routine.delete({ where: { id: row.id } });
@@ -371,7 +547,7 @@ export async function createScheduleFromTool(
     name: row.name,
     cron: row.crons[0],
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
-    oneShot: resolved.oneShot,
+    oneShot: isOneShotRoutineCrons(row.crons),
     ...describeRoutineTiming(row),
   };
 }
@@ -386,7 +562,7 @@ async function createWatchFromTool(
     threadId: string;
     name: string;
     prompt: string;
-    timezone: string;
+    timezone?: string;
     schedule: Record<string, unknown>;
   },
 ) {
@@ -419,22 +595,32 @@ async function createWatchFromTool(
     return { error: error instanceof Error ? error.message : "Invalid change trigger." };
   }
   const nextRunAt = new Date(Date.now() + 2_000);
-  const row = await deps.prisma.routine.create({
-    data: {
-      spaceId: input.spaceId,
-      botId: input.botId,
-      userId: input.userId,
-      threadId: input.threadId,
-      name: input.name,
-      prompt: input.prompt,
-      crons: [],
-      timezone: input.timezone,
-      notify: true,
-      active: true,
-      watch: parsed.data as Prisma.InputJsonValue,
-      nextRunAt,
-    },
-  });
+  // As with a timed routine, a defaulted zone is read under a share lock in the same
+  // transaction as the insert, so a zone change cannot cross the creation.
+  const insertWatch = (client: Pick<Prisma.TransactionClient, "routine">, timezone: string) =>
+    client.routine.create({
+      data: {
+        spaceId: input.spaceId,
+        botId: input.botId,
+        userId: input.userId,
+        threadId: input.threadId,
+        name: input.name,
+        prompt: input.prompt,
+        crons: [],
+        timezone,
+        notify: true,
+        active: true,
+        watch: parsed.data as Prisma.InputJsonValue,
+        nextRunAt,
+      },
+    });
+  const row =
+    input.timezone !== undefined
+      ? await insertWatch(deps.prisma, input.timezone)
+      : await deps.prisma.$transaction(async (tx) => {
+          const timezone = await sharedAccountZone(tx, input.userId);
+          return insertWatch(tx, timezone);
+        });
   try {
     await deps.jobs.enqueue(routineWakeupJob(row.id, nextRunAt));
   } catch {
@@ -492,6 +678,28 @@ export async function listSchedulesFromTool(
 }
 
 const TIMING_FIELDS = ["cron", "every", "unit", "runAt", "delayMinutes", "delaySeconds"] as const;
+
+/**
+ * The pending occurrence a timezone move keeps. A new timezone alone keeps the next run's
+ * local time, so a start set for later holds. In a timezone behind, the first run is the
+ * first one from when it was due (`startAt` restarts it there), so none is skipped. An
+ * uneven step recurs from its last run: by its fixed gap, which no timezone moves, or by
+ * local days, so it keeps its local time either way.
+ */
+function carriedRunAtForTimezone(
+  cron: string,
+  due: Date,
+  fromTimezone: string,
+  toTimezone: string,
+): { carried: Date | null; startAt?: string } {
+  const local = zonedDateTime(wallClock(due, fromTimezone), toTimezone);
+  const step = unevenInterval(cron);
+  if (step && step.unit !== "days") return { carried: due };
+  if (local && (step || local.getTime() <= due.getTime())) {
+    return { carried: local.getTime() > Date.now() ? local : null };
+  }
+  return { carried: null, startAt: due.toISOString() };
+}
 
 /**
  * Edit one of this bot's routines in place: name, prompt, timing (with startAt), or active.
@@ -553,7 +761,7 @@ export async function updateScheduleFromTool(
   const active = input.active ?? existing.active;
   let crons = existing.crons;
   let nextRunAt = existing.nextRunAt;
-  let carried: Date | undefined;
+  let carried: Date | null = null;
   const oneShot = isOneShotRoutineCrons(existing.crons);
   if (retime) {
     let timing = input.schedule;
@@ -568,18 +776,11 @@ export async function updateScheduleFromTool(
       }
       const cron = existing.crons[0] ?? "";
       timing = { ...input.schedule, cron };
-      // A new timezone alone keeps the next run's local time, so a start set for later holds.
-      // In a timezone behind, the first run is the first one from when it was due, so none is
-      // skipped. An uneven step recurs from its last run: by its fixed gap, which no timezone
-      // moves, or by local days, so it keeps its local time either way.
       const due = existing.nextRunAt;
       if (!isScheduleValueProvided(input.schedule.startAt) && due && due.getTime() > Date.now()) {
-        const local = zonedDateTime(wallClock(due, existing.timezone), timezone);
-        const step = unevenInterval(cron);
-        if (step && step.unit !== "days") carried = due;
-        else if (local && (step || local <= due)) {
-          if (local.getTime() > Date.now()) carried = local;
-        } else timing = { ...timing, startAt: due.toISOString() };
+        const moved = carriedRunAtForTimezone(cron, due, existing.timezone, timezone);
+        carried = moved.carried;
+        if (moved.startAt) timing = { ...timing, startAt: moved.startAt };
       }
     }
     const resolved = resolveScheduleTiming(timing, timezone);

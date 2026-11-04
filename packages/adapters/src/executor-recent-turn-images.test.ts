@@ -30,6 +30,7 @@ const VISION_MODEL = "openai/gpt-4o";
 type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
 type Gate = { reached: Deferred<void>; release: Deferred<void> };
 type RunHooks = {
+  computer?: { defaultModelId?: string; checkpoint?: string };
   runtimeGate?: Gate;
   notificationGate?: Gate;
   computerLeaseRenewal?: () => Promise<boolean>;
@@ -169,7 +170,16 @@ async function runWithModel(
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
-      findFirst: vi.fn(async () => ({ bot: { notifyOnFinish: true }, thread: { groupId: null } })),
+      findFirst: vi.fn(async () => ({
+        bot: {
+          id: run.botId,
+          name: "Boris",
+          color: "blue",
+          avatarSet: "default",
+          notifyOnFinish: true,
+        },
+        thread: { groupId: null },
+      })),
       updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         Object.assign(run, data);
         return { count: 1 };
@@ -247,7 +257,9 @@ async function runWithModel(
         // The run reads its main model first and its fallbacks just before the model call.
         if (backupReadFails && prisma.userModelRoleChoice.findMany.mock.calls.length > 1)
           throw new Error("Backup list unavailable");
-        return switchModel ? [{ ...switchModel, position: 1, thinkingLevel: null }] : [];
+        return switchModel
+          ? [{ ...switchModel, position: 1, thinkingLevel: null as string | null }]
+          : [];
       }),
     },
 
@@ -272,6 +284,64 @@ async function runWithModel(
       ]),
     },
   };
+  if (hooks?.computer) {
+    const computerModelId = hooks.computer.defaultModelId;
+    prisma.userModelRoleChoice.findMany.mockImplementation(async ({ where }) =>
+      where.role === "main"
+        ? [
+            {
+              provider: "openrouter",
+              modelId,
+              credentialId: "main-conn",
+              position: 0,
+              thinkingLevel: "high",
+            },
+          ]
+        : where.role === "computer" && computerModelId
+          ? [
+              {
+                provider: "openrouter",
+                modelId: computerModelId,
+                credentialId: "main-conn",
+                position: 0,
+                thinkingLevel: null,
+              },
+            ]
+          : [],
+    );
+    const credential = {
+      id: "main-conn",
+      userId: run.userId,
+      provider: "openrouter",
+      secretId: "test-secret",
+      defaultModel: modelId,
+      userPreferences: [],
+    };
+    prisma.userModelPreference.findFirst.mockResolvedValue({
+      userId: run.userId,
+      credentialId: credential.id,
+      modelId,
+      thinkingLevel: "high",
+      isDefault: true,
+      credential,
+    });
+    prisma.userModelCredential.findFirst.mockImplementation(async (...args: unknown[]) => {
+      const input = args[0] as { where: { id?: string } };
+      return (!input.where.id || input.where.id === "main-conn" ? credential : null) as never;
+    });
+    prisma.secret.findFirst.mockResolvedValue({
+      id: "test-secret",
+      ciphertext: "encrypted",
+    } as never);
+    prisma.externalEffect.findMany.mockImplementation(async (...args: unknown[]) => {
+      const input = args[0] as { where: { kind?: string } };
+      return (
+        input.where.kind === "runtime_checkpoint" && hooks.computer?.checkpoint
+          ? [{ result: hooks.computer.checkpoint }]
+          : []
+      ) as never;
+    });
+  }
   const finalizeRun = vi.fn(async () =>
     finalizeSuccessfully ? { continuationRunId: null } : null,
   );
@@ -285,7 +355,7 @@ async function runWithModel(
     deploymentModelKey: "fake-deployment-key",
     runtime: { describe: () => ({ capabilities: { scripted } }), run: runtimeRun },
     sandbox: {
-      describe: () => ({ capabilities: { graphical: false } }),
+      describe: () => ({ capabilities: { graphical: Boolean(hooks?.computer) } }),
       releaseScreen,
       writeFile,
       listFiles: vi.fn(async () => []),
@@ -315,6 +385,7 @@ async function runWithModel(
     jobs: { enqueue: vi.fn(async () => undefined) },
     notifications: hooks?.notificationGate ? { send: notificationSend } : undefined,
     secrets: [],
+    secretStore: { load: async () => "fake-key" },
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
   const execution = executor.continueRun(run.id, "worker-1");
@@ -337,6 +408,103 @@ async function runWithModel(
     notificationSend,
   };
 }
+
+describe("computer settings reach the shared API/worker executor", () => {
+  it("hands screen work to the chosen model without changing main effort", async () => {
+    const { prisma, request } = await runWithModel(TEXT_ONLY_MODEL, undefined, false, false, true, {
+      computer: { defaultModelId: VISION_MODEL },
+    });
+    expect(request.model).toMatchObject({
+      id: TEXT_ONLY_MODEL,
+      connectionId: "main-conn",
+      thinkingLevel: "high",
+    });
+    expect(request.computerModel).toMatchObject({ id: VISION_MODEL, connectionId: "main-conn" });
+    expect(request.tools?.some((tool) => tool.name === "computer_observe")).toBe(true);
+    expect(request.currentTurnImages).toBeUndefined();
+    prisma.run.updateMany.mockClear();
+    await expect(
+      request.onModelChange?.(request.computerModel!.provider, request.computerModel!.id, true),
+    ).resolves.toBeUndefined();
+    // Retries and pins rerun the run's model, so computer mode never becomes it.
+    expect(prisma.run.updateMany).not.toHaveBeenCalled();
+    // The same model reached as a backup outside computer mode does become the run's model.
+    await request.onModelChange?.(request.computerModel!.provider, request.computerModel!.id);
+    expect(prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { modelProvider: "openrouter", modelId: VISION_MODEL } }),
+    );
+    prisma.run.updateMany.mockClear();
+    await expect(
+      request.onModelChange?.(request.model.provider, request.model.id),
+    ).resolves.toBeUndefined();
+    expect(prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { modelProvider: request.model.provider, modelId: TEXT_ONLY_MODEL },
+      }),
+    );
+    await expect(request.onModelChange?.("unselected", "model")).rejects.toThrow(/not selected/);
+  });
+  it("resumes a turn paused before a computer-use model was set without one", async () => {
+    const checkpoint = JSON.stringify({
+      version: 1,
+      provider: "openrouter",
+      model: TEXT_ONLY_MODEL,
+      systemPrompt: "fixture",
+      messages: [],
+      pendingToolCallId: "call",
+    });
+    const { request } = await runWithModel(TEXT_ONLY_MODEL, undefined, false, false, true, {
+      computer: { defaultModelId: VISION_MODEL, checkpoint },
+    });
+    expect(request.computerModel).toBeUndefined();
+  });
+  it("does not switch when the computer-use model is the main model", async () => {
+    const { request } = await runWithModel(VISION_MODEL, undefined, false, false, true, {
+      computer: { defaultModelId: VISION_MODEL },
+    });
+    expect(request.computerModel).toBeUndefined();
+    expect(request.tools?.some((tool) => tool.name === "computer_observe")).toBe(true);
+  });
+  it("resolves resumed pins after settings are cleared and refuses an unpinned account", async () => {
+    const pin = {
+      provider: "openrouter",
+      id: VISION_MODEL,
+      connectionId: "main-conn",
+      auth: "api-key",
+      thinkingLevel: "medium",
+    };
+    const checkpoint = JSON.stringify({
+      version: 1,
+      provider: "openrouter",
+      model: VISION_MODEL,
+      systemPrompt: "fixture",
+      messages: [],
+      pendingToolCallId: "call",
+      computerMode: {
+        version: 1,
+        mode: "computer",
+        main: { ...pin, thinkingLevel: "high" },
+        computer: pin,
+      },
+    });
+    const { request } = await runWithModel(VISION_MODEL, undefined, false, false, true, {
+      computer: { checkpoint },
+    });
+    expect(request.computerModel).toMatchObject({
+      provider: pin.provider,
+      id: pin.id,
+      connectionId: pin.connectionId,
+    });
+    expect(request.turnCheckpoint).toBe(checkpoint);
+    await expect(request.onModelChange?.(pin.provider, pin.id)).resolves.toBeUndefined();
+    expect(
+      await request.resolveFallbackModel?.("openrouter", VISION_MODEL, "main-conn"),
+    ).toMatchObject({ connectionId: "main-conn", thinkingLevel: "high" });
+    await expect(
+      request.resolveFallbackModel?.("openrouter", VISION_MODEL, "other"),
+    ).rejects.toThrow();
+  });
+});
 
 describe("recent turn images follow model vision", () => {
   it("does not send history images to a text-only model", async () => {

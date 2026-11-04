@@ -638,6 +638,8 @@ export function ThreadComposer({
               ) : null}
               <TextInput
                 ref={inputRef}
+                // The iOS file-drop module attaches images pasted into this field only.
+                testID="chat-composer"
                 onChangeText={updateDraft}
                 selection={selection}
                 onSelectionChange={(event) => {

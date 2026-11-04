@@ -1,0 +1,43 @@
+---
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import PlanCard from "../components/PlanCard.astro";
+import PricingComparison from "../components/PricingComparison.astro";
+import { githubStarsLabel } from "../github";
+import Button from "../components/Button.astro";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { CREDITS_PLAN, PRICING_PLANS } from "../pricing";
+
+const starsLabel = await githubStarsLabel();
+---
+
+<BaseLayout
+  title="Pricing · Rakazo"
+  markdownAlternate="/pricing.md"
+  description="Self-host Rakazo for free, or let us host it with your own model or Rakazo credits."
+>
+  <div class="container">
+    <Header starsLabel={starsLabel} />
+    <main id="main" class="pricing">
+      <h1 class="section-heading">Pricing</h1>
+      <div class="pricing__plans">
+        {
+          PRICING_PLANS.map((plan, index) => (
+            <PlanCard plan={plan} primary={index > 0} attr={`pricing-${index}`} />
+          ))
+        }
+      </div>
+      <section class="pricing__credits" aria-label={CREDITS_PLAN.name}>
+        <p>
+          <strong>{CREDITS_PLAN.name}</strong>
+          {CREDITS_PLAN.price} · {CREDITS_PLAN.note}
+        </p>
+        <Button href={CREDITS_PLAN.action.href} variant="secondary" data-attr="pricing-credits">
+          {CREDITS_PLAN.action.label}
+        </Button>
+      </section>
+      <PricingComparison />
+    </main>
+    <Footer />
+  </div>
+</BaseLayout>
