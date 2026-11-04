@@ -167,7 +167,8 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
         rpc("threads/answerCall", target, { requestContext: context }),
       );
       answered = true;
-      // A sign-out or server switch mid-answer hangs up below with the answer's own session.
+      // The session changed mid-answer: rpc drops the hang-up below locally, because its
+      // context belongs to the old generation, so the server keeps the call answered.
       if (generation !== currentSessionGeneration())
         throw new Error(t("Something went wrong. Try again."));
       const voice = await rpc("voice/status", {}, { requestContext: context });

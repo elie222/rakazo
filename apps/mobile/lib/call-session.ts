@@ -126,6 +126,8 @@ let callSessionGeneration = 0;
 let callId = "";
 /** Requests for this call that must persist before its server-side hang-up. */
 const callSends = createCallSendTracker();
+/** Hang-ups this session still owes its server; a sign-out waits briefly for them to land. */
+const hangUps = new Set<Promise<void>>();
 /** The run this call's last turn started: replies to anything else are not spoken. */
 let callRunId: string | null = null;
 let deps: CallDeps = productionDeps();
@@ -276,7 +278,11 @@ export function endCall(): void {
     const { botId } = state;
     const closingCallId = callId;
     const closeServerCall = deps.endCall;
-    callSends.closeAfterSends(closingCallId, () => closeServerCall(botId, closingCallId));
+    const closed = callSends.closeAfterSends(closingCallId, () =>
+      closeServerCall(botId, closingCallId),
+    );
+    hangUps.add(closed);
+    void closed.then(() => hangUps.delete(closed));
   }
   if (state) {
     deps.waitSound("release");
@@ -306,6 +312,26 @@ export function endCall(): void {
   if (!state) return;
   state = null;
   emit();
+}
+
+/** How long a sign-out waits for a call's server hang-up before it signs out anyway. */
+export const SIGN_OUT_HANG_UP_MS = 3_000;
+
+/**
+ * Hangs up while the session still exists, waiting at most `SIGN_OUT_HANG_UP_MS` for pending
+ * sends and the hang-up. The sign-out that follows revokes the session, so a hang-up still
+ * queued after that is dropped: by then its request may carry no one's or another user's token.
+ */
+export async function endCallBeforeSignOut(): Promise<void> {
+  endCall();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    Promise.all(hangUps),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, SIGN_OUT_HANG_UP_MS);
+    }),
+  ]);
+  clearTimeout(timer);
 }
 
 export function toggleMute(): void {
