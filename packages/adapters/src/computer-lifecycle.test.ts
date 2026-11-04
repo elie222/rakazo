@@ -15,6 +15,7 @@ import {
   SandboxSizeUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
+import type * as Db from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { clearThread, planComputerSize } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -38,7 +39,7 @@ import { SandboxUnsafeStopError } from "./sandbox-errors.js";
 
 // The plan's size is read from billing, which these Prisma doubles do not model.
 vi.mock("@rakazo/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@rakazo/db")>()),
+  ...(await importOriginal<typeof Db>()),
   planComputerSize: vi.fn(async () => "standard"),
 }));
 

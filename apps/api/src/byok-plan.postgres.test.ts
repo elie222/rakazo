@@ -1,4 +1,6 @@
-import { BillingEmulator } from "@rakazo/adapters";
+import type { SandboxProvider } from "@rakazo/adapter-kit";
+import type * as Adapters from "@rakazo/adapters";
+import { BillingEmulator, sandboxAllowance } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { BYOK_TIERS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -9,8 +11,14 @@ import {
   planComputerSize,
   spaceHasModelAccess,
 } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBillingService } from "./billing.js";
+
+// Computer use is read from runs and deployment settings that other suites share; tests set it.
+vi.mock("@rakazo/adapters", async (importOriginal) => ({
+  ...(await importOriginal<typeof Adapters>()),
+  sandboxAllowance: vi.fn(async () => null),
+}));
 
 const dbTests =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
@@ -249,5 +257,36 @@ dbTests("own-key plan", () => {
     // A plan set to cancel stays as it is.
     provider.subscriptions.at(-1)!.cancelAtPeriodEnd = true;
     await expect(service.changeTier(actor, "pro")).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("moves to a smaller tier only once this month's computer use fits it", async () => {
+    const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
+    for (const subscription of provider.subscriptions) subscription.status = "canceled";
+    await service.sync(customer);
+    await service.checkout(actor, undefined, "month", "max");
+    provider.completeByokCheckout(customer);
+    provider.subscriptions.at(-1)!.status = "active";
+    const metered = createBillingService({
+      prisma,
+      provider,
+      sandbox: {} as SandboxProvider,
+      webOrigin: "https://example.test",
+    });
+    // $25 of computer time, more than Pro's $20 a month.
+    vi.mocked(sandboxAllowance).mockResolvedValue({
+      limitMicros: 40_000_000,
+      usedMicros: 25_000_000,
+    });
+    await expect(metered.changeTier(actor, "pro")).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(metered.changeTier(actor, "standard")).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    vi.mocked(sandboxAllowance).mockResolvedValue({
+      limitMicros: 40_000_000,
+      usedMicros: 15_000_000,
+    });
+    await metered.changeTier(actor, "pro");
+    await expect(metered.status(actor)).resolves.toMatchObject({ byokTier: "pro" });
+    vi.mocked(sandboxAllowance).mockResolvedValue(null);
   });
 });

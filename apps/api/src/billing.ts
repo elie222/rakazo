@@ -299,7 +299,11 @@ export function createBillingService(deps: {
   ) {
     if (!serialize) return withLiveCustomer(actor, account, call);
     // Opening another recurring checkout expires the old one.
-    const { organizationId } = account;
+    return withCheckoutLease(account.organizationId, () => withLiveCustomer(actor, account, call));
+  }
+
+  /** Runs `work` holding the organization's checkout lease, one at a time across API instances. */
+  async function withCheckoutLease<T>(organizationId: string, work: () => Promise<T>) {
     const deadline = Date.now() + CHECKOUT_LEASE_MS;
     let leaseId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
     while (!leaseId) {
@@ -308,7 +312,7 @@ export function createBillingService(deps: {
       leaseId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
     }
     try {
-      return await withLiveCustomer(actor, account, call);
+      return await work();
     } finally {
       await releaseCheckoutLease(prisma, organizationId, leaseId);
     }
@@ -373,33 +377,46 @@ export function createBillingService(deps: {
     const { organizationId } = await managedOrganization(actor);
     const stored = await billingAccountForOrganization(prisma, organizationId);
     if (!stored) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
-    // Decide from the provider, not a snapshot a missed webhook may have left stale.
-    await sync(stored.customerId);
-    const account = await billingAccountForOrganization(prisma, organizationId);
-    const conflict = () => new ORPCError("CONFLICT", { message: "No own-key plan to change" });
-    const subscribed = subscribedByokPrice(account);
-    if (
-      !account?.subscriptionId ||
-      !subscribed ||
-      account.creditAmountCents ||
-      account.cancelAtPeriodEnd ||
-      // Paid up: an overdue period must not be credited against the new plan.
-      (account.status !== "active" && account.status !== "trialing")
-    )
-      throw conflict();
-    const from = {
-      tier: subscribed.tier,
-      interval: subscribed.interval,
-      amountCents: subscribed.cents,
-    };
-    const to = target(from);
-    if (!to) throw conflict();
-    const changed = await provider.changeByokPlan(account.customerId, account.subscriptionId, {
-      from,
-      to,
+    // One change at a time, so a second owner's change is decided from the first one's result.
+    await withCheckoutLease(organizationId, async () => {
+      // Decide from the provider, not a snapshot a missed webhook may have left stale.
+      await sync(stored.customerId);
+      const account = await billingAccountForOrganization(prisma, organizationId);
+      const conflict = () => new ORPCError("CONFLICT", { message: "No own-key plan to change" });
+      const subscribed = subscribedByokPrice(account);
+      if (
+        !account?.subscriptionId ||
+        !subscribed ||
+        account.creditAmountCents ||
+        account.cancelAtPeriodEnd ||
+        // Paid up: an overdue period must not be credited against the new plan.
+        (account.status !== "active" && account.status !== "trialing")
+      )
+        throw conflict();
+      const from = {
+        tier: subscribed.tier,
+        interval: subscribed.interval,
+        amountCents: subscribed.cents,
+      };
+      const to = target(from);
+      if (!to) throw conflict();
+      // A smaller allowance takes effect at once, so this period's computer use must already fit it;
+      // otherwise an upgrade could buy a period's hours and a downgrade refund almost all of it.
+      const allowanceCents = BYOK_TIERS[to.tier].computerAllowanceCents;
+      if (allowanceCents < BYOK_TIERS[from.tier].computerAllowanceCents && deps.sandbox) {
+        const allowance = await sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId);
+        if (allowance && allowance.usedMicros > (allowanceCents * MICROS_PER_DOLLAR) / 100)
+          throw new ORPCError("CONFLICT", {
+            message: "This month's computer use is more than the smaller plan includes",
+          });
+      }
+      const changed = await provider.changeByokPlan!(account.customerId, account.subscriptionId, {
+        from,
+        to,
+      });
+      await sync(account.customerId);
+      if (!changed) throw conflict();
     });
-    await sync(account.customerId);
-    if (!changed) throw conflict();
   }
 
   return {

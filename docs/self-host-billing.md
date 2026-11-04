@@ -23,6 +23,7 @@ computer size; a computer that cannot start at its size starts at its current on
 Subscribers can change tier from Billing at the same interval, and monthly subscribers can switch
 to yearly, which charges the yearly price less the unused part of the month. A tier change charges
 the prorated difference now, and a downgrade credits the unused difference to the next invoice.
+A downgrade is refused while this period's computer use is above the smaller tier's allowance.
 Both are offered only to a paid-up plan that is not cancelling and has no monthly credits; the
 yearly switch also only when it saves money. Billing reads a plan's period and tier from its price
 on every sync, so a switch made in the Stripe billing portal also shows correctly. Portal plan
