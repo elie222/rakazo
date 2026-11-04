@@ -43,6 +43,18 @@ describe("createChatAlerts", () => {
     await iterator.return(undefined);
   });
 
+  it("keeps only the newest alerts for a stream that stops reading", async () => {
+    const fanout = fakeFanout();
+    const alerts = createChatAlerts(fanout as never);
+    const iterator = alerts.follow("user-1");
+    const first = iterator.next();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (let i = 0; i < 30; i++) await alerts.publish("user-1", { ...alert, body: `Alert ${i}` });
+    expect((await first).value.body).toBe("Alert 0");
+    expect((await iterator.next()).value.body).toBe("Alert 10");
+    await iterator.return(undefined);
+  });
+
   it("ends the stream on abort", async () => {
     const controller = new AbortController();
     const iterator = createChatAlerts(fakeFanout() as never).follow("user-1", controller.signal);

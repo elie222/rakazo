@@ -8,6 +8,9 @@ export interface ChatAlerts {
   follow(userId: string, signal?: AbortSignal): AsyncGenerator<ChatAlert>;
 }
 
+/** A stream that stops reading keeps only the newest alerts. */
+const MAX_QUEUED_ALERTS = 20;
+
 export function chatAlertTopic(userId: string): string {
   return `chat-alerts:${userId}`;
 }
@@ -25,19 +28,18 @@ export function createChatAlerts(realtime?: RealtimeFanout): ChatAlerts {
       const queue: ChatAlert[] = [];
       let wake: (() => void) | undefined;
       const unsubscribe = realtime
-        ? await realtime
-            .subscribe(chatAlertTopic(userId), (payload) => {
-              let parsed: unknown;
-              try {
-                parsed = JSON.parse(payload);
-              } catch {
-                return;
-              }
-              const alert = ChatAlertSchema.safeParse(parsed);
-              if (!alert.success) return;
-              queue.push(alert.data);
-              wake?.();
-            })
+        ? await realtime.subscribe(chatAlertTopic(userId), (payload) => {
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(payload);
+            } catch {
+              return;
+            }
+            const alert = ChatAlertSchema.safeParse(parsed);
+            if (!alert.success) return;
+            if (queue.push(alert.data) > MAX_QUEUED_ALERTS) queue.shift();
+            wake?.();
+          })
         : async () => {};
       try {
         while (!signal?.aborted) {
