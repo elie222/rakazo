@@ -50,8 +50,9 @@ tags:
 - takeScreenshot: "04-inbox"
 
 - tapOn: "Activity"
+# The fixture's bot replies arrive unread, so Activity always has its Unread section.
 - extendedWaitUntil:
-    visible: "Recent"
+    visible: "Unread"
     timeout: 10000
 - takeScreenshot: "05-activity"
 
