@@ -89,6 +89,7 @@ export const Transcript = memo(function Transcript({
   onAddRoutine,
   voiceReady,
   speakingMessageId,
+  callHoldsSpeaker,
   onSpeak,
   onOpenComputer,
   onOpenImportSetup,
@@ -139,6 +140,7 @@ export const Transcript = memo(function Transcript({
   onAddRoutine: (name: string, prompt: string) => void;
   voiceReady: boolean;
   speakingMessageId: string | null;
+  callHoldsSpeaker: boolean;
   onSpeak: (message: ThreadMessage) => void;
   onOpenComputer: (botId?: string) => void;
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
@@ -605,6 +607,7 @@ export const Transcript = memo(function Transcript({
                       onAddRoutine={onAddRoutine}
                       voiceReady={voiceReady}
                       speaking={speakingMessageId === message.id}
+                      callHoldsSpeaker={callHoldsSpeaker}
                       onSpeak={onSpeak}
                       onOpenComputer={onOpenComputer}
                       onOpenImportSetup={onOpenImportSetup}

@@ -83,5 +83,5 @@ export function useReadAloud({
     if (text && id) readAloud(text, { botId: id, messageId: message.id });
   }, []);
 
-  return { speakingMessageId, speakMessage };
+  return { speakingMessageId, speakMessage, callHoldsSpeaker: callBotId !== undefined };
 }
