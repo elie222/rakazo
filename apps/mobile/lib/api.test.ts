@@ -1422,6 +1422,33 @@ describe("mobile API authentication", () => {
   describe.each(["/rpc/notifications/unregisterPush", "/api/auth/sign-out"])(
     "redirected revocation response from %s",
     (redirectedPath) => {
+      it.each([200, 401])("retries a same-origin login page with status %s", async (status) => {
+        const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+        mockSecureStore(store);
+        const fetchMock = vi.fn(async (input: string) => {
+          if (!input.endsWith(redirectedPath)) return jsonResponse({});
+          const response = new Response("<html>Sign in</html>", { status });
+          Object.defineProperties(response, {
+            redirected: { value: true },
+            url: { value: "http://127.0.0.1:3100/login" },
+          });
+          return response;
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        await signOut();
+        await flushPendingSignOut(true);
+
+        expect(pendingSignOutRecords(store)).toHaveLength(1);
+        const record = JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]")[0];
+        expect(record.unregistered).toBe(
+          redirectedPath === "/rpc/notifications/unregisterPush" ? undefined : true,
+        );
+        expect(fetchMock.mock.calls.filter(([url]) => url.endsWith(redirectedPath))).toHaveLength(
+          2,
+        );
+      });
+
       it.each([200, 401])("accepts a same-origin redirected status %s", async (status) => {
         const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
         mockSecureStore(store);
@@ -1658,6 +1685,47 @@ describe("mobile API authentication", () => {
       "http://127.0.0.1:3100/api/auth/sign-out",
       "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
       "http://127.0.0.1:3100/api/auth/sign-out",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+  });
+
+  it("records possible renewal at a login redirect without marking unregistration delivered", async () => {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const startedAt = Date.now();
+    let now = startedAt;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn(async (input: string) => {
+      if (now === startedAt) throw new Error("offline");
+      if (input.endsWith("/rpc/notifications/unregisterPush")) {
+        const response = new Response("<html>Sign in</html>", { status: 200 });
+        Object.defineProperties(response, {
+          redirected: { value: true },
+          url: { value: "http://127.0.0.1:3100/login" },
+        });
+        return response;
+      }
+      return new Response("{}", { status: 503 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await signOut();
+
+    now = startedAt + 29 * dayMs;
+    await flushPendingSignOut(true);
+    now = startedAt + 31 * dayMs;
+    await flushPendingSignOut(true);
+
+    expect(pendingSignOutRecords(store)).toHaveLength(1);
+    const record = JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]")[0];
+    expect(record.unregistered).toBeUndefined();
+    expect(record.renewedAt).toBe(now);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
       "http://127.0.0.1:3100/api/auth/sign-out",
     ]);
   });

@@ -951,10 +951,10 @@ export async function fetchMobileJson<T>(
 const PENDING_SIGN_OUT_KEY = "rakazo.pending_sign_out";
 /**
  * An undelivered record is dropped once no server session could remain. Better-auth expires a
- * session 7 days after its last use, and the only call that keeps using a signed-out session is
- * the record's own unregistration. Servers this app updates read that RPC without refreshing
- * the session; older servers renew it, so the record conservatively ages from the later of its
- * writing and a delivered unregistration; 30 days covers both and longer overrides.
+ * session 7 days after its last use. Older servers refresh the authenticated unregistration;
+ * a same-origin redirect can also follow a request that refreshed the session. This record
+ * conservatively ages from the later of its writing and a possible renewal; 30 days covers
+ * both and longer overrides.
  */
 const PENDING_SIGN_OUT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 /** Answered-request retries wait at least this long, so a dead old server is not retried per request. */
@@ -976,7 +976,7 @@ type PendingSignOut = {
   provisional?: boolean;
   /** Set once the unregistration was answered with success or 401; that half is not sent again. */
   unregistered?: boolean;
-  /** When a delivered unregistration last renewed the session on a server that still refreshes it. */
+  /** When an unregistration or same-origin redirect may last have renewed the session. */
   renewedAt?: number;
 };
 
@@ -1120,10 +1120,10 @@ async function prunePendingSignOuts(): Promise<void> {
   });
 }
 
-/** Persists a delivered unregistration, so that half is never sent again after a restart. */
+/** Records possible renewal separately from confirmed unregistration delivery. */
 async function markPendingSignOutProgress(
   record: PendingSignOut,
-  renewedAt: number,
+  progress: { renewedAt: number; unregistered?: true },
 ): Promise<void> {
   await queuePendingSignOutWrite(async () => {
     const read = await readPendingSignOuts();
@@ -1132,7 +1132,7 @@ async function markPendingSignOutProgress(
     const kept = read.records.map((existing) => {
       if (!samePendingSignOut(existing, record)) return existing;
       updated = true;
-      return { ...existing, unregistered: true, renewedAt };
+      return { ...existing, ...progress };
     });
     if (updated) await writePendingSignOuts(kept);
   });
@@ -1222,10 +1222,16 @@ async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered
         controller.signal,
         "Request timed out",
       );
-      // Native fetch can follow redirects. A same-origin answer may have renewed the session,
-      // so record its progress; another origin (or an unknown redirect target) proves nothing.
+      // Native fetch can follow redirects. Only the intended endpoint confirms delivery;
+      // another path on this server may have renewed the session before redirecting to login.
       if (response.url) {
-        if (new URL(response.url).origin !== new URL(record.apiBase).origin) return "retry";
+        const requested = new URL(`${record.apiBase}${path}`);
+        const answered = new URL(response.url);
+        if (answered.origin !== requested.origin) return "retry";
+        if (answered.pathname.replace(/\/$/, "") !== requested.pathname.replace(/\/$/, "")) {
+          await markPendingSignOutProgress(record, { renewedAt: Date.now() });
+          return "retry";
+        }
       } else if (response.redirected) {
         return "retry";
       }
@@ -1243,7 +1249,8 @@ async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered
   if (!record.unregistered) {
     const unregistered = await send("/rpc/notifications/unregisterPush", '{"json":{}}');
     // Servers that still refresh this RPC's session can renew it even without a membership.
-    if (unregistered !== "retry") await markPendingSignOutProgress(record, Date.now());
+    if (unregistered !== "retry")
+      await markPendingSignOutProgress(record, { renewedAt: Date.now(), unregistered: true });
     retrying = unregistered === "retry";
   }
   // The sign-out is attempted even when the unregistration could not get through, like the
