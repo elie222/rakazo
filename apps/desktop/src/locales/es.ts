@@ -206,4 +206,9 @@ export const ES_MESSAGES: Record<string, string> = {
   "Toggle Sidebar": "Mostrar u ocultar la barra lateral",
   "Search…": "Buscar…",
   "The window closed before the app loaded.": "La ventana se cerró antes de que cargara la app.",
+  "New Group Chat": "Nuevo chat grupal",
+  "Connect Apps…": "Conectar apps…",
+  "Chat Details": "Detalles del chat",
+  Help: "Ayuda",
+  "Keyboard Shortcuts": "Atajos de teclado",
 };

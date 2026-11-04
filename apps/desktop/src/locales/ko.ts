@@ -187,4 +187,9 @@ export const KO_MESSAGES: Record<string, string> = {
   "Toggle Sidebar": "사이드바 전환",
   "Search…": "검색…",
   "The window closed before the app loaded.": "앱을 불러오기 전에 윈도우가 닫혔습니다.",
+  "New Group Chat": "새 그룹 채팅",
+  "Connect Apps…": "앱 연결…",
+  "Chat Details": "채팅 세부정보",
+  Help: "도움말",
+  "Keyboard Shortcuts": "키보드 단축키",
 };

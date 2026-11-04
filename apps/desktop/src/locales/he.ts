@@ -185,4 +185,9 @@ export const HE_MESSAGES: Record<string, string> = {
   "Toggle Sidebar": "הצגה/הסתרה של סרגל הצד",
   "Search…": "חיפוש…",
   "The window closed before the app loaded.": "החלון נסגר לפני שהאפליקציה נטענה.",
+  "New Group Chat": "צ׳אט קבוצתי חדש",
+  "Connect Apps…": "חיבור אפליקציות…",
+  "Chat Details": "פרטי הצ׳אט",
+  Help: "עזרה",
+  "Keyboard Shortcuts": "קיצורי מקלדת",
 };

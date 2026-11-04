@@ -1030,6 +1030,10 @@ msgstr "Studio d'avatars"
 msgid "Back"
 msgstr "Retour"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Back or forward"
+msgstr "Précédent ou suivant"
+
 #: src/components/pages/PageNotice.tsx
 msgid "Back to chat"
 msgstr "Retour au chat"
@@ -1300,6 +1304,10 @@ msgstr ""
 msgid "Chat Completions"
 msgstr ""
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Chat details"
+msgstr "Détails de la discussion"
+
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
 msgstr "Paramètres de discussion"
@@ -1559,6 +1567,7 @@ msgid "Command"
 msgstr "Commande"
 
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr ""
 
@@ -1697,6 +1706,7 @@ msgstr "Connecter la clé API"
 
 #: src/components/SidebarFooter.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Connect apps"
 msgstr "Connecter des applications"
 
@@ -2743,6 +2753,10 @@ msgstr "Détails"
 msgid "Developer"
 msgstr ""
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Dictate"
+msgstr "Dicter"
+
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
 msgstr ""
@@ -3228,6 +3242,10 @@ msgstr "Terminé."
 msgid "Finishing MCP connection…"
 msgstr "Finalisation de la connexion MCP…"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Focus message"
+msgstr "Aller au message"
+
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "Mot de passe oublié ?"
@@ -3312,6 +3330,10 @@ msgstr "Offrez {weeks} semaines gratuites à un ami"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "Retour à l’accueil"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Go to bot"
+msgstr "Aller à un bot"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Grant"
@@ -3663,6 +3685,11 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "clé"
+
+#: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Keyboard shortcuts"
+msgstr "Raccourcis clavier"
 
 #: src/components/vault/kinds.tsx
 msgid "Keys"
@@ -4252,6 +4279,7 @@ msgstr "Ne jamais demander"
 
 #: src/components/VaultSettings.tsx
 #: src/pages/shell/chat-context.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New"
 msgstr ""
 
@@ -4283,6 +4311,7 @@ msgstr "Nouveau groupe"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New group chat"
 msgstr "Nouvelle discussion de groupe"
 
@@ -4328,6 +4357,10 @@ msgstr ""
 #: src/components/VaultSettings.tsx
 msgid "New variable"
 msgstr ""
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Next or previous bot"
+msgstr "Bot suivant ou précédent"
 
 #: src/components/markdown-copy.tsx
 msgid "Next page"
@@ -5648,6 +5681,10 @@ msgstr "Rechercher des applications"
 msgid "Search artifacts…"
 msgstr "Rechercher des artefacts…"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Search bots"
+msgstr "Rechercher des bots"
+
 #: src/pages/shell/command-palette.tsx
 msgid "Search bots, actions, and settings"
 msgstr ""
@@ -5781,6 +5818,7 @@ msgstr "URL du serveur"
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "Paramètres"
@@ -6590,6 +6628,10 @@ msgstr "À :"
 #: src/pages/shell/chat-context.tsx
 msgid "Today"
 msgstr "Aujourd'hui"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Toggle sidebar"
+msgstr "Afficher ou masquer la barre latérale"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"

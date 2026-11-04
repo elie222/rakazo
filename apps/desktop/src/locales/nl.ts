@@ -194,4 +194,9 @@ export const NL_MESSAGES: Record<string, string> = {
   "Search…": "Zoek…",
   "The window closed before the app loaded.":
     "Het venster werd gesloten voordat de app was geladen.",
+  "New Group Chat": "Nieuwe groepschat",
+  "Connect Apps…": "Apps koppelen…",
+  "Chat Details": "Chatdetails",
+  Help: "Help",
+  "Keyboard Shortcuts": "Sneltoetsen",
 };

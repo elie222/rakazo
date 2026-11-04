@@ -195,4 +195,9 @@ export const DE_MESSAGES: Record<string, string> = {
   "Search…": "Suchen …",
   "The window closed before the app loaded.":
     "Das Fenster wurde geschlossen, bevor die App geladen war.",
+  "New Group Chat": "Neuer Gruppenchat",
+  "Connect Apps…": "Apps verbinden …",
+  "Chat Details": "Chatdetails",
+  Help: "Hilfe",
+  "Keyboard Shortcuts": "Tastaturkurzbefehle",
 };

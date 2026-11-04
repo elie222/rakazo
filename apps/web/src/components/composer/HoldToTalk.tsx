@@ -118,6 +118,11 @@ export function useHoldToTalk({
     setRecording(next);
   }, []);
 
+  const startHandsFree = useCallback(() => {
+    if (disabled || recordingRef.current) return;
+    start(true);
+  }, [disabled, start]);
+
   return {
     recording,
     transcribing,
@@ -126,6 +131,7 @@ export function useHoldToTalk({
     notice,
     submit,
     cancel,
+    startHandsFree,
     buttonProps: {
       onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
         if (disabled || event.button !== 0 || recordingRef.current) return;
@@ -163,8 +169,7 @@ export function useHoldToTalk({
       },
       onClick: (event: { detail: number }) => {
         // detail 0 is a keyboard press; pointer presses are handled above.
-        if (event.detail !== 0 || disabled || recordingRef.current) return;
-        start(true);
+        if (event.detail === 0) startHandsFree();
       },
       onContextMenu: (event: { preventDefault: () => void }) => event.preventDefault(),
     },

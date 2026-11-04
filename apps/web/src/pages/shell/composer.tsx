@@ -60,6 +60,7 @@ import {
   MentionOptionIcon,
   slashActionLabel,
 } from "./composer-mentions";
+import { isApplePlatform, primaryModifier } from "./shell-shortcuts";
 import { useComposerLayout } from "./use-composer-layout";
 
 const ATTACHMENT_ACCEPT = attachmentPickerAccept(navigator.userAgent);
@@ -231,6 +232,29 @@ const ComposerBody = memo(function Composer({
     composerFieldRef,
     expanded,
   } = useComposerLayout(draft, selectedSkill !== null);
+  // Cmd/Ctrl+D in the message field dictates hands-free, like a keyboard press on the mic button,
+  // and sends once pressed again. The field hides while recording, so the key is heard window-wide.
+  const dictateKey = useRef({ talk, available: false });
+  dictateKey.current = { talk, available: Boolean(phoneCallsEnabled) && draft.trim().length === 0 };
+  useEffect(() => {
+    const apple = isApplePlatform();
+    function onKey(event: KeyboardEvent) {
+      if (event.repeat || event.altKey || event.shiftKey || event.key?.toLowerCase() !== "d")
+        return;
+      if (!primaryModifier(event, apple)) return;
+      const { talk, available } = dictateKey.current;
+      if (talk.recording) {
+        if (!talk.recording.locked || talk.transcribing) return;
+        event.preventDefault();
+        talk.submit();
+      } else if (available && document.activeElement === textareaRef.current) {
+        event.preventDefault();
+        talk.startHandsFree();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [textareaRef]);
   const pendingCaret = useRef<ComposerMentionRange | null>(null);
   const completedSelection = useRef<number | null>(null);
   useLayoutEffect(() => {
