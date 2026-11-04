@@ -69,6 +69,7 @@ export const PRICING_SOURCES = {
     href: "https://console.groq.com/docs/speech-to-text",
   },
   assemblyai: { label: "AssemblyAI, pricing", href: "https://www.assemblyai.com/pricing" },
+  hetzner: { label: "Hetzner, cloud servers", href: "https://www.hetzner.com/cloud/" },
 } satisfies Record<string, SourceLink>;
 
 
@@ -156,7 +157,6 @@ export const RATES = {
   cartesiaAgentsMinute: 0.03,
   fish: 15,
   fishDrama3: 50,
-  fishDrama3Promo: 10,
   fishTranscribeHour: 0.36,
   /** Fish Audio app plans: price, yearly price per month, credits, and the minutes its plan page says they buy. */
   fishPlans: {
@@ -283,7 +283,7 @@ const PRICE_ROWS = {
       `${usd(RATES.fish)} per 1M bytes`,
       perHourOfSpeech(RATES.fish),
       usd(RATES.fishTranscribeHour),
-      "`s2.1-pro-free` costs nothing until November 30, 2026",
+      `Free app plan, about ${RATES.fishPlans.free.minutes} minutes a month`,
       "Built in, speaks and transcribes",
     ],
   },
@@ -381,7 +381,27 @@ export function voicePriceTable(caption: string, rows: readonly VoicePriceRow[])
   };
 }
 
-/** Sources for every row in {@link PRICE_ROWS}, for pages that show the full table. */
+const S = PRICING_SOURCES;
+
+/** The pricing pages behind each row of {@link PRICE_ROWS}. */
+const PRICE_ROW_SOURCES: Record<VoicePriceRow, readonly SourceLink[]> = {
+  elevenlabs: [S.elevenlabsApi],
+  elevenlabsV4: [S.elevenlabsApi],
+  openai: [S.openai],
+  openaiTts1: [S.openai],
+  cartesia: [S.cartesia],
+  fish: [S.fish, S.fishPlans],
+  selfHosted: [],
+  hostedKokoro: [S.deepinfra, S.together],
+  macos: [],
+  deepgram: [S.deepgram],
+  google: [S.google, S.googleStt],
+  azure: [S.azure],
+  polly: [S.polly, S.transcribe],
+  inworld: [S.inworld],
+};
+
+/** Sources for every price on the voice pages, for the hub. */
 export const ALL_PRICING_SOURCES: readonly SourceLink[] = Object.values(PRICING_SOURCES);
 
 /** The worked example: daily minutes of speech and of transcription, over 30 days. */
@@ -507,6 +527,47 @@ const WORKLOAD_ROWS = {
 } satisfies Record<string, { topic: string; cells: readonly string[] }>;
 
 export type VoiceWorkloadRow = keyof typeof WORKLOAD_ROWS;
+
+/** The pricing pages behind each row of {@link WORKLOAD_ROWS}. */
+const WORKLOAD_ROW_SOURCES: Record<VoiceWorkloadRow, readonly SourceLink[]> = {
+  elevenlabs: [S.elevenlabsApi],
+  openai: [S.openai],
+  cartesia: [S.cartesia],
+  fish: [S.fish],
+  selfHosted: [],
+  selfHostedCloud: [S.hetzner],
+  macos: [],
+  deepgram: [S.deepgram],
+  google: [S.google, S.googleStt],
+  azure: [S.azure],
+};
+
+/**
+ * A page's own sources followed by the pricing pages behind the shared tables it shows,
+ * without repeats, so a page can't show a price without linking where it came from.
+ */
+export function withPricingSources(
+  own: readonly SourceLink[],
+  tables: { prices?: readonly VoicePriceRow[]; workload?: readonly VoiceWorkloadRow[] },
+): SourceLink[] {
+  const all = [
+    ...own,
+    ...(tables.prices ?? []).flatMap((row) => PRICE_ROW_SOURCES[row]),
+    ...(tables.workload ?? []).flatMap((row) => WORKLOAD_ROW_SOURCES[row]),
+  ];
+  return all.filter((source, index) => all.findIndex((other) => other.href === source.href) === index);
+}
+
+/** "cheaper than", "more expensive than" or, within 10%, "about the same as". */
+export function priceVersus(price: number, other: number): string {
+  if (Math.abs(price - other) <= other * 0.1) return "about the same as";
+  return price < other ? "cheaper than" : "more expensive than";
+}
+
+/** One price as a share of another, such as "about 38% of". */
+export function shareOf(price: number, other: number): string {
+  return `about ${Math.round((price / other) * 100)}% of`;
+}
 
 /** What the {@link WORKLOAD} costs a month on the chosen options. */
 export function voiceWorkloadTable(

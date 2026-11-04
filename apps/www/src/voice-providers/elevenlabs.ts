@@ -12,8 +12,12 @@ import {
   count,
   credits,
   homepage,
+  cartesiaPerMillion,
   perHourOfSpeech,
+  priceVersus,
+  shareOf,
   usd,
+  withPricingSources,
   voicePriceTable,
   voiceWorkloadTable,
 } from "./shared";
@@ -26,6 +30,20 @@ function scaled(dailyMinutes: number, part: "speech" | "both"): number {
 }
 
 const PLANS = RATES.elevenlabsPlans;
+const FLASH = RATES.elevenlabsFlash;
+
+const WORKLOAD_SHOWN = ["elevenlabs", "openai", "cartesia", "fish", "selfHosted", "deepgram"] as const;
+const COMPARED = [
+  "elevenlabs",
+  "elevenlabsV4",
+  "openai",
+  "cartesia",
+  "fish",
+  "deepgram",
+  "google",
+  "azure",
+  "selfHosted",
+] as const;
 
 const FLASH_HOUR = perHourOfSpeech(RATES.elevenlabsFlash);
 const V4_HOUR = perHourOfSpeech(RATES.elevenlabsV4);
@@ -157,37 +175,23 @@ export const elevenlabs: VoiceProvider = {
         `${WORKLOAD} On ElevenLabs that comes to ${usd(WORKLOAD_COST.elevenlabs.speech)} of Flash v2.5 speech and ${usd(WORKLOAD_COST.elevenlabs.transcription)} of Scribe v2 transcription: ${aboutTotal("elevenlabs").toLowerCase()} a month. A light user who hears and speaks 10 minutes a day pays around $${Math.round(scaled(10, "both"))}; a bot that talks for two hours a day costs about $${Math.round(scaled(120, "speech") / 10) * 10} in speech alone.`,
         "Two things lower the bill. In Chrome on a desktop, the mic uses the browser's own speech recognition, so that transcription costs nothing. And a self-hosted Rakazo can set `VOICE_SUMMARY_MIN_CHARS` so long replies are read as a short summary instead of in full, which cuts characters at the cost of one extra model call.",
       ],
-      table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", [
-        "elevenlabs",
-        "openai",
-        "cartesia",
-        "fish",
-        "selfHosted",
-        "deepgram",
-      ]),
+      table: voiceWorkloadTable(
+        "One bot, 30 minutes of speech and 30 of transcription a day",
+        WORKLOAD_SHOWN,
+      ),
     },
     {
       heading: "ElevenLabs vs OpenAI, Cartesia, Fish Audio and Deepgram",
       paragraphs: [
-        "ElevenLabs is not the cheapest voice. Per character, Flash v2.5 costs about the same as Cartesia, more than Deepgram's Aura-2, and more than twice Fish Audio or OpenAI's older models. What you pay for is voice quality, the size of the voice library and cloning that people consistently rate among the best.",
+        `ElevenLabs is not the cheapest voice. Per character, Flash v2.5 is ${priceVersus(FLASH, cartesiaPerMillion("startup"))} Cartesia on its Startup plan and ${priceVersus(FLASH, RATES.deepgram)} Deepgram's Aura-2, while Fish Audio costs ${shareOf(RATES.fish, FLASH)} its price and OpenAI's \`tts-1\` ${shareOf(RATES.openaiTts1, FLASH)} it. What you pay for is voice quality, the size of the voice library and cloning that people consistently rate among the best.`,
       ],
-      table: voicePriceTable("ElevenLabs compared with other voice APIs", [
-        "elevenlabs",
-        "elevenlabsV4",
-        "openai",
-        "cartesia",
-        "fish",
-        "deepgram",
-        "google",
-        "azure",
-        "selfHosted",
-      ]),
+      table: voicePriceTable("ElevenLabs compared with other voice APIs", COMPARED),
     },
     {
       heading: "ElevenLabs alternatives",
       paragraphs: [
-        "The best alternative depends on why you're leaving. If it's price, [Fish Audio](/voice-providers/fish-audio/) is less than half the per-character cost, with cloning and a big voice library, and a [self-hosted](/voice-providers/self-hosted/) Kokoro server costs only hardware. If it's latency on calls, [Cartesia](/voice-providers/cartesia/) is built for it, though in Rakazo it only speaks. If you already pay OpenAI, [OpenAI](/voice-providers/openai/) is the quickest start, but its speech model shuts down on January 6, 2027.",
-        `Outside Rakazo, Deepgram is strong at transcription (Nova-3 from ${usd(RATES.deepgramBatchHour)} an hour) with cheaper but plainer Aura-2 voices; Google, Azure and Amazon Polly are cheap at scale and come with cloud compliance paperwork; Hume and Inworld focus on expressive or low-cost voices for agents. PlayHT, once a common alternative, shut down at the end of 2025. Rakazo has no built-in connection for any of these.`,
+        `The best alternative depends on why you're leaving. If it's price, [Fish Audio](/voice-providers/fish-audio/) costs ${shareOf(RATES.fish, FLASH)} the per-character price, with cloning and a big voice library, and a [self-hosted](/voice-providers/self-hosted/) Kokoro server costs only hardware. If it's latency on calls, [Cartesia](/voice-providers/cartesia/) is built for it, though in Rakazo it only speaks. If you already pay OpenAI, [OpenAI](/voice-providers/openai/) is the quickest start, but its speech model shuts down on January 6, 2027.`,
+        `Outside Rakazo, Deepgram is strong at transcription (Nova-3 from ${usd(RATES.deepgramBatchHour)} an hour) with Aura-2 voices that are ${priceVersus(RATES.deepgram, FLASH)} Flash v2.5 but plainer; Google, Azure and Amazon Polly are cheap at scale and come with cloud compliance paperwork; Hume and Inworld focus on expressive or low-cost voices for agents. PlayHT, once a common alternative, shut down at the end of 2025. Rakazo has no built-in connection for any of these.`,
       ],
     },
     {
@@ -279,7 +283,7 @@ export const elevenlabs: VoiceProvider = {
     {
       question: "Deepgram vs ElevenLabs: which is better?",
       answer:
-        `Deepgram is stronger and cheaper at transcription, with streaming Nova-3 around ${usd(RATES.deepgramStreamHour)} an hour. ElevenLabs sounds more natural and clones voices. Many voice-agent builders use Deepgram to listen and ElevenLabs to speak. Rakazo connects to ElevenLabs but not Deepgram.`,
+        `Deepgram specializes in transcription and is a common choice for the listening side of voice agents, but per hour it is ${priceVersus(RATES.deepgramStreamHour, RATES.elevenlabsScribeRealtimeHour)} ElevenLabs: streaming Nova-3 costs ${usd(RATES.deepgramStreamHour)} against ${usd(RATES.elevenlabsScribeRealtimeHour)} for Scribe v2 Realtime, and batch ${usd(RATES.deepgramBatchHour)} against ${usd(RATES.elevenlabsScribeHour)}. ElevenLabs sounds more natural and clones voices; Deepgram's Aura-2 voices are ${priceVersus(RATES.deepgram, FLASH)} Flash v2.5. Many voice-agent builders use Deepgram to listen and ElevenLabs to speak. Rakazo connects to ElevenLabs but not Deepgram.`,
     },
     {
       question: "Do I need ElevenLabs to use Rakazo?",
@@ -287,7 +291,8 @@ export const elevenlabs: VoiceProvider = {
         "No. Voice is optional, and Rakazo works fully in text. On the mobile app, a bot can also use your phone's own voice for calls.",
     },
   ],
-  sources: [
+  sources: withPricingSources(
+    [
     { label: "ElevenLabs", href: "https://elevenlabs.io" },
     PRICING_SOURCES.elevenlabs,
     PRICING_SOURCES.elevenlabsApi,
@@ -300,12 +305,8 @@ export const elevenlabs: VoiceProvider = {
       label: "ElevenLabs, zero retention mode",
       href: "https://elevenlabs.io/docs/developers/resources/zero-retention-mode",
     },
-    PRICING_SOURCES.openai,
-    PRICING_SOURCES.cartesia,
-    PRICING_SOURCES.fish,
-    PRICING_SOURCES.deepgram,
-    PRICING_SOURCES.google,
-    PRICING_SOURCES.azure,
     VOICE_DOC,
-  ],
+    ],
+    { prices: COMPARED, workload: WORKLOAD_SHOWN },
+  ),
 };

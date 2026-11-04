@@ -1,6 +1,8 @@
 import type { VoiceProvider } from "./types";
 import { GITHUB_URL } from "../site";
-import { VOICE_DOC, VOICE_MODELS_DOC, voicePriceTable } from "./shared";
+import { VOICE_DOC, VOICE_MODELS_DOC, voicePriceTable, withPricingSources } from "./shared";
+
+const COMPARED = ["macos", "selfHosted", "openai", "fish", "elevenlabs", "cartesia"] as const;
 
 export const macos: VoiceProvider = {
   slug: "macos",
@@ -54,14 +56,7 @@ export const macos: VoiceProvider = {
       paragraphs: [
         "Nothing. The voices come with macOS, run on the Mac's own processor, and have no usage limit. That's the whole case for them: a bot that reads replies all day costs the same as one that never speaks. The trade-off is quality, since even Premium voices sound less natural than the best hosted ones, and there's no transcription.",
       ],
-      table: voicePriceTable("macOS voices compared with paid voice APIs", [
-        "macos",
-        "selfHosted",
-        "openai",
-        "fish",
-        "elevenlabs",
-        "cartesia",
-      ]),
+      table: voicePriceTable("macOS voices compared with paid voice APIs", COMPARED),
     },
     {
       heading: "What you can do with macOS voices in Rakazo",
@@ -147,7 +142,8 @@ export const macos: VoiceProvider = {
         "No. Premium voices are clear and pleasant, but hosted voices from [ElevenLabs](/voice-providers/elevenlabs/) or [Fish Audio](/voice-providers/fish-audio/) sound noticeably more human. macOS voices are free and private, which is why they're worth trying first.",
     },
   ],
-  sources: [
+  sources: withPricingSources(
+    [
     {
       label: "Apple, change the voice your Mac uses to speak text",
       href: "https://support.apple.com/guide/mac-help/mchlp2290/mac",
@@ -156,5 +152,7 @@ export const macos: VoiceProvider = {
     VOICE_DOC,
     VOICE_MODELS_DOC,
     { label: "Rakazo, self-hosting", href: `${GITHUB_URL}/blob/main/docs/self-host.md` },
-  ],
+    ],
+    { prices: COMPARED },
+  ),
 };

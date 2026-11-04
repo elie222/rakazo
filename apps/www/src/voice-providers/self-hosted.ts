@@ -12,7 +12,11 @@ import {
   usd,
   voicePriceTable,
   voiceWorkloadTable,
+  withPricingSources,
 } from "./shared";
+
+const WORKLOAD_SHOWN = ["selfHosted", "selfHostedCloud", "openai", "fish", "elevenlabs", "cartesia"] as const;
+const COMPARED = ["selfHosted", "hostedKokoro", "macos", "openai", "fish", "elevenlabs"] as const;
 
 /** RunPod RTX 4090 per hour, community and secure, as of November 2026. */
 const GPU_HOUR = { low: 0.34, high: 0.89 };
@@ -152,14 +156,7 @@ export const selfHosted: VoiceProvider = {
         `${WORKLOAD} Hosted, that costs ${aboutTotal("openai").toLowerCase()} on OpenAI to ${usd(WORKLOAD_COST.cartesia.speech)} on Cartesia a month. Self-hosted on hardware you already have, it costs close to nothing, and on a small rented server about ${usd(RATES.cpuServerMonth)}. A GPU only pays off with many users: at ${usd(GPU_HOUR.low)} an hour, always on, it costs more than ElevenLabs until you generate about ${GPU_BREAK_EVEN_HOURS} hours of speech a month.`,
         "What you give up is polish. The best hosted voices still sound more natural than Kokoro, cloning is easier, and someone else keeps the server running.",
       ],
-      table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", [
-        "selfHosted",
-        "selfHostedCloud",
-        "openai",
-        "fish",
-        "elevenlabs",
-        "cartesia",
-      ]),
+      table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", WORKLOAD_SHOWN),
     },
     {
       heading: "Hosted servers that copy OpenAI's audio API",
@@ -167,14 +164,7 @@ export const selfHosted: VoiceProvider = {
         `**Self-hosted** isn't limited to your own machine. It accepts any public HTTPS address with an API key, so a hosted service that serves OpenAI's audio endpoints can work there too: DeepInfra and Together AI host Kokoro for ${usd(RATES.deepinfraKokoro)} and ${usd(RATES.togetherKokoro)} per million characters, and Groq serves Whisper for ${usd(RATES.groqWhisperHour)} an hour. We haven't tested these with Rakazo, and two details matter. Rakazo sends speech and transcription to the same address, so the service needs to do both. And the voice list comes from the server; when a server doesn't publish one, Rakazo offers Kokoro's voice names, which only work if the service runs Kokoro.`,
         "Deepgram, Google, Azure and Amazon use their own API shapes, so **Self-hosted** can't reach them directly.",
       ],
-      table: voicePriceTable("Self-hosted and hosted open models compared", [
-        "selfHosted",
-        "hostedKokoro",
-        "macos",
-        "openai",
-        "fish",
-        "elevenlabs",
-      ]),
+      table: voicePriceTable("Self-hosted and hosted open models compared", COMPARED),
     },
     {
       heading: "What you can do with self-hosted voice in Rakazo",
@@ -267,7 +257,8 @@ export const selfHosted: VoiceProvider = {
         "Private addresses are refused until the server sets `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker. If Rakazo runs in Docker, `localhost` is the container itself, so use `host.docker.internal` or the machine's network address.",
     },
   ],
-  sources: [
+  sources: withPricingSources(
+    [
     { label: "Kokoro-FastAPI", href: "https://github.com/remsky/Kokoro-FastAPI" },
     { label: "Kokoro-82M model", href: "https://huggingface.co/hexgrad/Kokoro-82M" },
     { label: "Speaches", href: "https://github.com/speaches-ai/speaches" },
@@ -280,12 +271,11 @@ export const selfHosted: VoiceProvider = {
       href: "https://artificialanalysis.ai/text-to-speech/leaderboard",
     },
     { label: "RunPod, pricing", href: "https://www.runpod.io/pricing" },
-    { label: "Hetzner, cloud servers", href: "https://www.hetzner.com/cloud/" },
-    PRICING_SOURCES.deepinfra,
-    PRICING_SOURCES.together,
+    PRICING_SOURCES.hetzner,
     PRICING_SOURCES.groq,
-    PRICING_SOURCES.openai,
     VOICE_DOC,
     VOICE_MODELS_DOC,
-  ],
+    ],
+    { prices: COMPARED, workload: WORKLOAD_SHOWN },
+  ),
 };

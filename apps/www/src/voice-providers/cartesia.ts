@@ -14,10 +14,15 @@ import {
   credits,
   homepage,
   perHourOfSpeech,
+  priceVersus,
   usd,
   voicePriceTable,
   voiceWorkloadTable,
+  withPricingSources,
 } from "./shared";
+
+const WORKLOAD_SHOWN = ["cartesia", "elevenlabs", "openai", "fish", "macos"] as const;
+const COMPARED = ["cartesia", "elevenlabs", "openai", "fish", "deepgram", "inworld", "selfHosted"] as const;
 
 const { pro, startup, scale } = RATES.cartesiaPlans;
 const FREE_CREDITS = RATES.cartesiaFreeCredits;
@@ -144,29 +149,15 @@ export const cartesia: VoiceProvider = {
         "Rakazo calls Cartesia with your key, so Cartesia bills you and Rakazo adds nothing. Because Rakazo uses Cartesia only to speak, transcription is free: your browser, the desktop app or your phone does the listening.",
         `${WORKLOAD} That is about ${count(WORKLOAD_CHARS)} credits, which fits inside the Startup plan's ${count(startup.credits)}: ${usd(startup.price)} a month. On Pro you'd pay ${usd(pro.price)} plus about $${Math.round(onPro(WORKLOAD_CHARS))} of overage, so Startup is the better fit at this volume. Someone who hears 10 minutes a day uses about ${count(LIGHT_CHARS)} credits, which is Pro plus about $${Math.round(onPro(LIGHT_CHARS))} of overage.`,
       ],
-      table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", [
-        "cartesia",
-        "elevenlabs",
-        "openai",
-        "fish",
-        "macos",
-      ]),
+      table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", WORKLOAD_SHOWN),
     },
     {
       heading: "Cartesia vs ElevenLabs",
       paragraphs: [
-        `Both make natural, clonable voices for agents, and per character they cost about the same: Cartesia ${usd(LOW)} to ${usd(HIGH)} per million depending on plan, ElevenLabs Flash v2.5 ${usd(RATES.elevenlabsFlash)}. The differences are elsewhere. Cartesia is designed around latency, and in tests with lots of interruptions the difference is noticeable. ElevenLabs has the larger voice library, the more expressive top model (Eleven v4), and its own transcription. Reviewers rate Cartesia's English highly but say other languages trail ElevenLabs.`,
+        `Both make natural, clonable voices for agents. Per character, Cartesia on its Startup plan is ${priceVersus(cartesiaPerMillion("startup"), RATES.elevenlabsFlash)} ElevenLabs Flash v2.5: Cartesia costs ${usd(LOW)} to ${usd(HIGH)} per million depending on plan, ElevenLabs ${usd(RATES.elevenlabsFlash)}. The differences are elsewhere. Cartesia is designed around latency, and in tests with lots of interruptions the difference is noticeable. ElevenLabs has the larger voice library, the more expressive top model (Eleven v4), and its own transcription. Reviewers rate Cartesia's English highly but say other languages trail ElevenLabs.`,
         "In Rakazo the practical difference is transcription: ElevenLabs does both directions with one key, while Cartesia only speaks, so the mic depends on your device's speech recognition.",
       ],
-      table: voicePriceTable("Cartesia compared with ElevenLabs and other voice APIs", [
-        "cartesia",
-        "elevenlabs",
-        "openai",
-        "fish",
-        "deepgram",
-        "inworld",
-        "selfHosted",
-      ]),
+      table: voicePriceTable("Cartesia compared with ElevenLabs and other voice APIs", COMPARED),
     },
     {
       heading: "What you can do with Cartesia in Rakazo",
@@ -253,7 +244,8 @@ export const cartesia: VoiceProvider = {
         "No. Sonic and Ink are hosted models; Enterprise customers can arrange on-premises deployment through sales. For open models, see [self-hosted voice](/voice-providers/self-hosted/).",
     },
   ],
-  sources: [
+  sources: withPricingSources(
+    [
     { label: "Cartesia", href: "https://cartesia.ai" },
     PRICING_SOURCES.cartesia,
     {
@@ -264,11 +256,8 @@ export const cartesia: VoiceProvider = {
       label: "eesel, Cartesia Sonic 3 vs ElevenLabs",
       href: "https://www.eesel.ai/blog/cartesia-sonic-3-vs-elevenlabs",
     },
-    PRICING_SOURCES.elevenlabsApi,
-    PRICING_SOURCES.openai,
-    PRICING_SOURCES.fish,
-    PRICING_SOURCES.deepgram,
-    PRICING_SOURCES.inworld,
     VOICE_DOC,
-  ],
+    ],
+    { prices: COMPARED, workload: WORKLOAD_SHOWN },
+  ),
 };

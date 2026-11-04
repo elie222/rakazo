@@ -11,12 +11,25 @@ import {
   count,
   homepage,
   perHourOfSpeech,
+  priceVersus,
+  speechHourCost,
   usd,
   voicePriceTable,
   voiceWorkloadTable,
+  withPricingSources,
 } from "./shared";
 
+const WORKLOAD_SHOWN = ["openai", "elevenlabs", "fish", "cartesia", "selfHosted"] as const;
+const COMPARED = ["openai", "openaiTts1", "elevenlabs", "cartesia", "fish", "deepgram", "google", "selfHosted"] as const;
+
 const TRANSCRIBE = RATES.openaiTranscribeMinute;
+const MINI_TTS_HOUR = RATES.openaiMiniTtsMinute * 60;
+/** Whether OpenAI is the cheapest hosted option in Rakazo for the worked example. */
+const CHEAPEST_HOSTED = (["elevenlabs", "cartesia", "fish"] as const).every(
+  (other) =>
+    WORKLOAD_COST.openai.speech + WORKLOAD_COST.openai.transcription <
+    WORKLOAD_COST[other].speech + WORKLOAD_COST[other].transcription,
+);
 /** A per-minute price as published, which can run to tenths of a cent ("$0.0045"). */
 function perMinute(price: number): string {
   return `$${price}`;
@@ -137,31 +150,16 @@ export const openai: VoiceProvider = {
       heading: "What a talking Rakazo bot costs on OpenAI",
       paragraphs: [
         "Rakazo calls OpenAI with your key, so OpenAI bills you and Rakazo adds nothing. The voice key is stored separately from any OpenAI key you use for models, but both draw on the same OpenAI account if you use the same project.",
-        `${WORKLOAD} On OpenAI that is about ${usd(WORKLOAD_COST.openai.speech)} of speech and ${usd(WORKLOAD_COST.openai.transcription)} of transcription: ${aboutTotal("openai").toLowerCase()} a month, among the cheapest hosted options, until the shutdown.`,
+        `${WORKLOAD} On OpenAI that is about ${usd(WORKLOAD_COST.openai.speech)} of speech and ${usd(WORKLOAD_COST.openai.transcription)} of transcription: ${aboutTotal("openai").toLowerCase()} a month, ${CHEAPEST_HOSTED ? "the cheapest hosted option in Rakazo" : "among the cheaper hosted options"}, until the shutdown.`,
       ],
-      table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", [
-        "openai",
-        "elevenlabs",
-        "fish",
-        "cartesia",
-        "selfHosted",
-      ]),
+      table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", WORKLOAD_SHOWN),
     },
     {
       heading: "OpenAI TTS vs ElevenLabs and other voice APIs",
       paragraphs: [
         "OpenAI is cheap and simple, with a small fixed set of voices. ElevenLabs and Fish Audio sound more natural to most listeners and let you use cloned voices; Cartesia is faster to start talking. OpenAI's custom voices exist but are limited to eligible customers through sales, and Rakazo doesn't use them.",
       ],
-      table: voicePriceTable("OpenAI compared with other voice APIs", [
-        "openai",
-        "openaiTts1",
-        "elevenlabs",
-        "cartesia",
-        "fish",
-        "deepgram",
-        "google",
-        "selfHosted",
-      ]),
+      table: voicePriceTable("OpenAI compared with other voice APIs", COMPARED),
     },
     {
       heading: "What you can do with OpenAI in Rakazo",
@@ -247,7 +245,7 @@ export const openai: VoiceProvider = {
     {
       question: "OpenAI vs ElevenLabs for voice agents?",
       answer:
-        `Both speak and transcribe in Rakazo. OpenAI costs less, around ${OPENAI_MINI_TTS.perHour} an hour of speech against ${perHourOfSpeech(RATES.elevenlabsFlash)} for ElevenLabs Flash v2.5, and offers a fixed set of voices. [ElevenLabs](/voice-providers/elevenlabs/) sounds more natural, lets you use voices you clone, and isn't affected by OpenAI's 2027 shutdown.`,
+        `Both speak and transcribe in Rakazo. Per hour of speech, OpenAI is ${priceVersus(MINI_TTS_HOUR, speechHourCost(RATES.elevenlabsFlash))} ElevenLabs Flash v2.5, around ${OPENAI_MINI_TTS.perHour} against ${perHourOfSpeech(RATES.elevenlabsFlash)}, and offers a fixed set of voices. [ElevenLabs](/voice-providers/elevenlabs/) sounds more natural, lets you use voices you clone, and isn't affected by OpenAI's 2027 shutdown.`,
     },
     {
       question: "Can I use a self-hosted Whisper server instead?",
@@ -255,7 +253,8 @@ export const openai: VoiceProvider = {
         "Yes, where your server offers it. Choose [Self-hosted](/voice-providers/self-hosted/) in **Settings → Voice** and enter the address of any OpenAI-compatible speech server, such as Kokoro for speech or Whisper for transcription.",
     },
   ],
-  sources: [
+  sources: withPricingSources(
+    [
     {
       label: "OpenAI, text to speech",
       href: "https://developers.openai.com/api/docs/guides/text-to-speech",
@@ -267,11 +266,8 @@ export const openai: VoiceProvider = {
       label: "OpenAI community, TTS shutdown email",
       href: "https://community.openai.com/t/tts-shutdown-email-tts-1-gpt-4o-mini-tts-jan-6-2027-isnt-on-the-deprecations-page/1402731",
     },
-    PRICING_SOURCES.elevenlabsApi,
-    PRICING_SOURCES.cartesia,
-    PRICING_SOURCES.fish,
-    PRICING_SOURCES.deepgram,
-    PRICING_SOURCES.google,
     VOICE_DOC,
-  ],
+    ],
+    { prices: COMPARED, workload: WORKLOAD_SHOWN },
+  ),
 };

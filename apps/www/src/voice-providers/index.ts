@@ -9,6 +9,7 @@ import { openai } from "./openai";
 import { selfHosted } from "./self-hosted";
 import {
   ALL_PRICING_SOURCES,
+  cartesiaPerMillion,
   RATES,
   VOICE_DOC,
   VOICE_DOCS_PATH,
@@ -19,6 +20,7 @@ import {
   count,
   millions,
   perHourOfSpeech,
+  speechHourCost,
   usd,
   voicePriceTable,
   voiceProviderPath,
@@ -59,6 +61,19 @@ function listed(names: readonly string[]): string {
 }
 
 const BILL_ADVICE = `Speech is usually the larger charge, so how much your bots say matters more than how much you say${TRANSCRIPTION_HEAVY.length ? `. The exception is where a free speech allowance covers most of the month, as with ${listed(TRANSCRIPTION_HEAVY)} here, which leaves transcription as the main cost` : ""}. In Chrome on a desktop or in the mobile app, your device often does the transcription for free. A self-hosted Rakazo can also set \`VOICE_SUMMARY_MIN_CHARS\` so long replies are read as a short summary instead of in full.`;
+
+/** Hosted options in Rakazo whose speech costs under a dollar an hour. */
+const UNDER_A_DOLLAR = [
+  { name: "[Fish Audio](/voice-providers/fish-audio/)", hour: speechHourCost(RATES.fish) },
+  { name: "[OpenAI](/voice-providers/openai/)", hour: RATES.openaiMiniTtsMinute * 60 },
+  { name: "[ElevenLabs](/voice-providers/elevenlabs/)", hour: speechHourCost(RATES.elevenlabsFlash) },
+  {
+    name: "[Cartesia](/voice-providers/cartesia/)",
+    hour: speechHourCost(cartesiaPerMillion("scale")),
+  },
+]
+  .filter((option) => option.hour < 1)
+  .map((option) => option.name);
 
 const HUB_SECTIONS: readonly ArticleSection[] = [
   {
@@ -192,7 +207,7 @@ export const VOICE_PROVIDERS_HUB = {
     },
     {
       heading: "You want the lowest bill",
-      text: "Free options first: [Server (Mac)](/voice-providers/macos/) if Rakazo runs on a Mac, or a [self-hosted](/voice-providers/self-hosted/) Kokoro and Whisper server on hardware you already own. Among hosted APIs, [Fish Audio](/voice-providers/fish-audio/) and [OpenAI](/voice-providers/openai/) both cost under a dollar per hour of speech.",
+      text: `Free options first: [Server (Mac)](/voice-providers/macos/) if Rakazo runs on a Mac, or a [self-hosted](/voice-providers/self-hosted/) Kokoro and Whisper server on hardware you already own. Among hosted APIs, ${listed(UNDER_A_DOLLAR)} ${UNDER_A_DOLLAR.length > 1 ? "each cost" : "costs"} under a dollar per hour of speech.`,
     },
     {
       heading: "You already have an OpenAI key",
@@ -220,7 +235,7 @@ export const VOICE_PROVIDERS_HUB = {
     {
       question: "Which text to speech API is free?",
       answer:
-        `macOS voices and open models such as Kokoro are free to run yourself. Among hosted APIs, Google gives ${millions(RATES.googleFreeChars)} Chirp 3 HD characters a month, Azure ${millions(RATES.azureFreeChars)}, ElevenLabs ${count(RATES.elevenlabsPlans.free.credits)} credits for non-commercial use, Cartesia ${count(RATES.cartesiaFreeCredits)} credits, and Fish Audio's \`s2.1-pro-free\` model costs nothing until November 30, 2026.`,
+        `macOS voices and open models such as Kokoro are free to run yourself. Among hosted APIs, Google gives ${millions(RATES.googleFreeChars)} Chirp 3 HD characters a month, Azure ${millions(RATES.azureFreeChars)}, ElevenLabs ${count(RATES.elevenlabsPlans.free.credits)} credits for non-commercial use, Cartesia ${count(RATES.cartesiaFreeCredits)} credits, and Fish Audio's free app plan about ${RATES.fishPlans.free.minutes} minutes of speech.`,
     },
     {
       question: "What is the most accurate speech to text API?",
