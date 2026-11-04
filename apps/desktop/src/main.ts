@@ -824,7 +824,10 @@ function installApplicationMenu() {
       { role: "delete", label: t("Delete") },
       { role: "selectAll", label: t("Select All") },
       { type: "separator" },
-      command(t("Search…"), "CmdOrCtrl+F", "search"),
+      // A server page older than this menu handles Cmd/Ctrl+F itself (as bot search) but ignores
+      // a click on this item, which it has no command for.
+      command(t("Find…"), "CmdOrCtrl+F", "find"),
+      command(t("Search Bots…"), "CmdOrCtrl+Shift+F", "search"),
       ...(isMac ? macEdit : []),
     ],
   };

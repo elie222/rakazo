@@ -67,6 +67,7 @@ export const DESKTOP_MENU_COMMANDS = [
   "integrations",
   "chat-panel",
   "shortcuts",
+  "find",
 ] as const;
 
 export type DesktopMenuCommand = (typeof DESKTOP_MENU_COMMANDS)[number];

@@ -112,14 +112,23 @@ describe("shellShortcut", () => {
     expect(shellShortcut(keyEvent({ key: "ArrowLeft", altKey: true }), windowsBrowser)).toBeNull();
   });
 
-  it("searches and jumps to the first nine bots in the desktop app", () => {
+  it("finds in the chat, searches bots and jumps to the first nine in the desktop app", () => {
     expect(shellShortcut(keyEvent({ key: "f", metaKey: true }), macApp)).toEqual({
-      type: "search",
+      type: "find",
     });
     expect(shellShortcut(keyEvent({ key: "f", ctrlKey: true }), windowsApp)).toEqual({
+      type: "find",
+    });
+    expect(shellShortcut(keyEvent({ key: "F", metaKey: true, shiftKey: true }), macApp)).toEqual({
       type: "search",
     });
+    expect(
+      shellShortcut(keyEvent({ key: "F", ctrlKey: true, shiftKey: true }), windowsApp),
+    ).toEqual({ type: "search" });
     expect(shellShortcut(keyEvent({ key: "f", ctrlKey: true }), macApp)).toBeNull();
+    expect(
+      shellShortcut(keyEvent({ key: "F", metaKey: true, shiftKey: true }), macBrowser),
+    ).toBeNull();
     expect(shellShortcut(keyEvent({ key: "1", metaKey: true }), macApp)).toEqual({
       type: "bot",
       index: 0,

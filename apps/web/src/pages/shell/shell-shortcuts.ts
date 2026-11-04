@@ -9,7 +9,7 @@ export type ShellShortcut =
   | { type: "bot"; index: number };
 
 /**
- * Browsers keep Cmd+F, Cmd+1–9 and their history chords, so those only reach the desktop app.
+ * Browsers keep Cmd+F (their own find already covers the chat), Cmd+1–9 and their history chords, so those only reach the desktop app.
  * Apple keyboards use Cmd alone for the newer chords, since Ctrl+B and Ctrl+F move the caret there.
  */
 export type ShortcutHost = { desktop: boolean; apple: boolean };
@@ -53,7 +53,7 @@ export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellSh
   if (primary && !event.altKey && !event.shiftKey) {
     if (key === "b") return { type: "toggle-sidebar" };
     if (key === "i") return { type: "focus-composer" };
-    if (host.desktop && key === "f") return { type: "search" };
+    if (host.desktop && key === "f") return { type: "find" };
     if (host.desktop && /^[1-9]$/.test(key)) return { type: "bot", index: Number(key) - 1 };
     if (host.desktop && host.apple && (key === "[" || key === "]")) {
       return { type: key === "[" ? "back" : "forward" };
@@ -62,6 +62,7 @@ export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellSh
   if (primary && event.shiftKey && !event.altKey) {
     // Browsers open a private window on this chord before the page sees it.
     if (host.desktop && key === "n") return { type: "new-group" };
+    if (host.desktop && key === "f") return { type: "search" };
     if (key === "m") return { type: "integrations" };
     // The code, because Shift turns the comma into another character on most layouts.
     if (event.code === "Comma") return { type: "chat-panel" };
