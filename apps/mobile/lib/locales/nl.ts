@@ -788,6 +788,12 @@ export const NL_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Deze tool altijd toestaan",
   "Always allow {site}": "{site} altijd toestaan",
   "Replaces the login saved for {site}": "Vervangt de opgeslagen login voor {site}",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "Iedereen in de ruimte van deze bot kan de chats lezen die hij via {app} krijgt.",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "Sites waarop je inlogt, blijven ingelogd voor iedereen in deze ruimte",
+  "The bot's browser stays signed in for everyone in this space":
+    "De browser van de bot blijft ingelogd voor iedereen in deze ruimte",
   "Could not submit answer": "Antwoord insturen mislukt",
   Deny: "Weigeren",
   "Please try again.": "Probeer het opnieuw.",
@@ -1175,11 +1181,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "{label}, below": "{label}, onder",
   Invite: "Uitnodigen",
   "Leave space": "Space verlaten",
-  "Everyone in this space sees all its chats, bots and memory.":
-    "Iedereen in deze space ziet alle chats, bots en het geheugen.",
-  "Your other spaces stay private.": "Je andere spaces blijven privé.",
-  "A bot uses the accounts of whoever messages it, and anyone here can read its reply.":
-    "Een bot gebruikt de accounts van wie hem een bericht stuurt, en iedereen hier kan zijn antwoord lezen.",
   "Leave {name}?": "{name} verlaten?",
   "Could not load members": "Kan leden niet laden",
   "Could not create invite link": "Kan uitnodigingslink niet maken",

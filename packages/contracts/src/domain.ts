@@ -588,7 +588,7 @@ export const RoutineSchema = z.object({
   /** Computed by the server; absent on older servers. Not a worker-health diagnosis. */
   scheduleDelayed: z.boolean().optional(),
   createdAt: z.string(),
-  /** False when another Space member created it; only its creator can change it. */
+  /** Older servers send false for another member's routine; any member can now change it. */
   editable: z.boolean().optional(),
 });
 export type Routine = z.infer<typeof RoutineSchema>;
@@ -1351,6 +1351,8 @@ export const ComputerStatusSchema = z.object({
   terminalAvailable: z.boolean(),
   /** Set only while the user should see that the disk is nearly full. */
   diskFullPercent: z.number().int().min(0).max(100).optional(),
+  /** True when other people share the Space, and with it this computer and its browser sign-ins. */
+  shared: z.boolean().optional(),
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 

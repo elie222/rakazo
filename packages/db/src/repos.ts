@@ -25,7 +25,7 @@ import {
 import { chooseBotAvatar } from "./bot-avatar-choice.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
-import { ensureComputerRecord, parseComputerMode } from "./computers.js";
+import { ensureComputerRecord, parseComputerMode, teamComputerUserId } from "./computers.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { withNewestThreadMessages } from "./preview-messages.js";
 import { BotSectionNameConflictError, IsolationError } from "./scope.js";
@@ -599,7 +599,7 @@ export function createRepos(
           const teamComputer = await ensureComputerRecord(tx, {
             mode: "team",
             spaceId: actor.spaceId,
-            userId: actor.userId,
+            userId: await teamComputerUserId(tx, actor),
             kind,
           });
           const created = await tx.bot.create({
@@ -749,13 +749,17 @@ export function createRepos(
       const kind = bot.computer.kind;
       // Keep ensure + bot link in one transaction so a capped quota lock covers
       // both steps (a computer row alone does not count until a live bot refs it).
-      // Computers stay with the bot's creator, whoever in the space changes the mode.
+      // A private computer stays with the bot's creator, whoever in the space changes the mode;
+      // the team one is the Space's.
       const updated = await withTransactionRetry(() =>
         prisma.$transaction(async (tx) => {
           const computer = await ensureComputerRecord(tx, {
             mode,
             spaceId: actor.spaceId,
-            userId: bot.userId,
+            userId:
+              mode === "team"
+                ? await teamComputerUserId(tx, { spaceId: actor.spaceId, userId: bot.userId })
+                : bot.userId,
             botId,
             kind,
           });

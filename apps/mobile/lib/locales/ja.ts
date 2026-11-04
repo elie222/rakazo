@@ -775,6 +775,12 @@ export const JA_MESSAGES: Record<string, string> = {
   "Always allow this tool": "このツールを常に許可",
   "Always allow {site}": "{site} を常に許可",
   "Replaces the login saved for {site}": "{site} に保存されたログインを置き換えます",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "このボットのスペースにいる全員が、{app} から届くチャットを読めます。",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "サインインしたサイトは、このスペースの全員に対してサインインしたままになります",
+  "The bot's browser stays signed in for everyone in this space":
+    "ボットのブラウザは、このスペースの全員に対してサインインしたままになります",
   "Could not submit answer": "回答を送信できませんでした",
   Deny: "拒否",
   "Please try again.": "もう一度お試しください。",
@@ -1376,11 +1382,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Submit a plugin": "プラグインを申請",
   Invite: "招待",
   "Leave space": "スペースから退出",
-  "Everyone in this space sees all its chats, bots and memory.":
-    "このスペースの全員が、すべてのチャット、ボット、メモリーを見られます。",
-  "Your other spaces stay private.": "ほかのスペースは非公開のままです。",
-  "A bot uses the accounts of whoever messages it, and anyone here can read its reply.":
-    "ボットはメッセージを送った人のアカウントを使い、ここにいる全員がその返信を読めます。",
   "Leave {name}?": "{name}から退出しますか？",
   "Could not load members": "メンバーを読み込めませんでした",
   "Could not create invite link": "招待リンクを作成できませんでした",

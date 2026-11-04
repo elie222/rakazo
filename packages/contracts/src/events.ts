@@ -143,6 +143,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     replaces: z.object({ id: z.string().max(64), origin: z.string().max(2048) }).optional(),
     /** The fields a login card asks for, by label; absent means DEFAULT_LOGIN_FIELD_LABELS. */
     loginFields: LoginFieldLabels.optional(),
+    /** On a login card in a shared Space: the site stays signed in for everyone in it. */
+    sharedBrowser: z.literal(true).optional(),
     /** On a fetch approval, the site an "always" answer allows. */
     site: z.string().optional(),
     status: z.enum(["pending", "answered"]).optional(),

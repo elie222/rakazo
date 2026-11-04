@@ -754,6 +754,12 @@ export const ES_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Permitir siempre esta herramienta",
   "Always allow {site}": "Permitir siempre {site}",
   "Replaces the login saved for {site}": "Reemplaza el inicio de sesión guardado para {site}",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "Todos en el espacio de este bot pueden leer los chats que recibe de {app}.",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "Los sitios en los que inicies sesión siguen con la sesión iniciada para todos en este espacio",
+  "The bot's browser stays signed in for everyone in this space":
+    "El navegador del bot sigue con la sesión iniciada para todos en este espacio",
   "Could not submit answer": "No se pudo enviar la respuesta",
   Deny: "Denegar",
   "Please try again.": "Inténtalo de nuevo.",
@@ -1320,11 +1326,6 @@ export const ES_MESSAGES: Record<string, string> = {
   Members: "Miembros",
   Invite: "Invitar",
   "Leave space": "Salir del espacio",
-  "Everyone in this space sees all its chats, bots and memory.":
-    "Todos en este espacio ven todos sus chats, bots y memoria.",
-  "Your other spaces stay private.": "Tus otros espacios siguen siendo privados.",
-  "A bot uses the accounts of whoever messages it, and anyone here can read its reply.":
-    "Un bot usa las cuentas de quien le escribe, y cualquiera aquí puede leer su respuesta.",
   "Leave {name}?": "¿Salir de {name}?",
   "Could not load members": "No se pudieron cargar los miembros",
   "Could not create invite link": "No se pudo crear el enlace de invitación",

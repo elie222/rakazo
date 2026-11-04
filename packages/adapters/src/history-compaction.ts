@@ -40,10 +40,7 @@ export function nextCompactionBatchRange(
   historyCompactedUpToSeq: number | null,
   batchSize: number,
 ): { fromSeqExclusive: number; take: number } {
-  return {
-    fromSeqExclusive: historyCompactedUpToSeq ?? NOTHING_COMPACTED,
-    take: batchSize,
-  };
+  return { fromSeqExclusive: historyCompactedUpToSeq ?? NOTHING_COMPACTED, take: batchSize };
 }
 
 export const COMPACTION_BATCH_SIZE = 50;
@@ -239,28 +236,8 @@ export interface CompactHistoryDeps {
   }) => Promise<AgentRunRequest["model"]>;
 }
 
-async function compactionUserId(
-  prisma: PrismaClient,
-  thread: { spaceId: string; userId: string; botId: string },
-): Promise<string> {
-  const member = await prisma.spaceMember.findUnique({
-    where: {
-      spaceId_userId: { spaceId: thread.spaceId, userId: thread.userId },
-    },
-    select: { userId: true },
-  });
-  if (member) return thread.userId;
-  const bot = await prisma.bot.findUnique({
-    where: { id: thread.botId },
-    select: { userId: true },
-  });
-  return bot?.userId ?? thread.userId;
-}
-
 export async function compactHistory(deps: CompactHistoryDeps, threadId: string): Promise<void> {
-  const thread = await deps.prisma.thread.findUniqueOrThrow({
-    where: { id: threadId },
-  });
+  const thread = await deps.prisma.thread.findUniqueOrThrow({ where: { id: threadId } });
   if (!thread.botId) return;
   const previousCursor = thread.historyCompactedUpToSeq;
   const previousGeneration = thread.historyCompactionGeneration;
@@ -412,17 +389,11 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   // text keyed off the prompt, so summarizing with it would save nonsense to external memory and
   // advance the cursor past messages that are then lost from both stores. Skip instead.
   const deploymentFallback = resolveDeploymentModel();
-  // In a shared space the thread's creator may have left; summarize as the bot's creator
-  // (reassigned to the space owner on departure) so the credential still belongs to a member.
-  const userId = await compactionUserId(deps.prisma, {
-    spaceId: thread.spaceId,
-    userId: thread.userId,
-    botId: thread.botId,
-  });
+  // Departure hands a shared thread to the Space's owner, so this is always a member.
+  const { spaceId, botId, userId } = thread;
   const resolveModel = deps.resolveModel;
-  const { spaceId, botId } = thread;
   const model = resolveModel
-    ? // Their credentials are only readable as them, not as the thread's departed creator.
+    ? // Their credentials are only readable as them.
       await runAsTenant({ spaceId, userId }, () => resolveModel({ userId, spaceId, botId }))
     : deps.deploymentModelConfigured
       ? {

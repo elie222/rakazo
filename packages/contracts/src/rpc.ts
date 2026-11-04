@@ -1230,9 +1230,14 @@ export const appContract = {
     status: oc.output(MessagingStatusSchema),
     link: {
       /** Issue a short-lived code the user sends to the line from a chat app. */
-      start: oc
-        .input(z.object({ botId: Id }))
-        .output(z.object({ code: z.string(), expiresAt: z.string() })),
+      start: oc.input(z.object({ botId: Id })).output(
+        z.object({
+          code: z.string(),
+          expiresAt: z.string(),
+          /** Others share the bot's Space, so they can read the chats this link brings in. */
+          shared: z.boolean().optional(),
+        }),
+      ),
     },
     identities: {
       setBot: oc

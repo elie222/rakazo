@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { Actor, OrganizationList } from "@rakazo/contracts";
+import { GUEST_ROLE } from "./billing.js";
 import { createOrganizationWithDefaultSpace } from "./bootstrap-user.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { IsolationError } from "./scope.js";
 import {
   claimSpaceForDeletion,
+  homeOrganizationId,
   lockOrganizationSpaces,
   normalizeSpaceName,
   SpaceDeletionInProgressError,
@@ -73,22 +75,25 @@ export async function createOrganizationForUser(
   return { id: orgId, name, defaultSpaceId: orgId };
 }
 
-/** Every organization the user is a member of; only those they own can be managed. */
+/**
+ * Every organization the user is a member of; only those they own can be managed. One they are
+ * only a guest in stays out: its Spaces shared with them show with their own.
+ */
 export async function listMemberOrganizations(
   prisma: PrismaClient,
   actor: Pick<Actor, "userId" | "spaceId">,
 ): Promise<OrganizationList> {
-  const [current, organizations, memberships] = await Promise.all([
-    prisma.space.findUnique({ where: { id: actor.spaceId }, select: { organizationId: true } }),
+  const [activeOrganizationId, organizations, memberships] = await Promise.all([
+    homeOrganizationId(prisma, actor),
     prisma.organization.findMany({
-      where: { members: { some: { userId: actor.userId } }, ...LIVE },
+      where: { members: { some: { userId: actor.userId, role: { not: GUEST_ROLE } } }, ...LIVE },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: {
         id: true,
         name: true,
         spaces: { where: { isDefault: true }, select: { id: true }, take: 1 },
         members: { where: { userId: actor.userId }, select: { role: true }, take: 1 },
-        _count: { select: { members: true } },
+        _count: { select: { members: { where: { role: { not: GUEST_ROLE } } } } },
       },
     }),
     prisma.spaceMember.findMany({
@@ -97,9 +102,8 @@ export async function listMemberOrganizations(
       select: { spaceId: true, organizationId: true },
     }),
   ]);
-  if (!current) throw new IsolationError();
   return {
-    activeOrganizationId: current.organizationId,
+    activeOrganizationId,
     organizations: organizations.map((organization) => ({
       id: organization.id,
       name: organization.name,
@@ -123,7 +127,10 @@ export async function renameOrganization(
   const { count } = await prisma.organization.updateMany({
     where: {
       id: input.organizationId,
-      members: { some: { userId: input.userId, role: OWNER }, every: { userId: input.userId } },
+      members: {
+        some: { userId: input.userId, role: OWNER },
+        every: { OR: [{ userId: input.userId }, { role: GUEST_ROLE }] },
+      },
       ...LIVE,
     },
     data: { name },
@@ -150,8 +157,13 @@ export async function claimOrganizationForDeletion(
             where: { organizationId: input.organizationId, userId: input.userId, role: OWNER },
             select: { id: true },
           }),
+          // Guests only joined Spaces it shared; they lose those with it.
           tx.member.count({
-            where: { organizationId: input.organizationId, userId: { not: input.userId } },
+            where: {
+              organizationId: input.organizationId,
+              userId: { not: input.userId },
+              role: { not: GUEST_ROLE },
+            },
           }),
           tx.member.count({
             where: {

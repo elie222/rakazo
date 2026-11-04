@@ -21,3 +21,6 @@ CREATE INDEX "space_invites_spaceId_createdAt_idx" ON "space_invites"("spaceId",
 
 ALTER TABLE "space_invites" ADD CONSTRAINT "space_invites_spaceId_fkey" FOREIGN KEY ("spaceId") REFERENCES "spaces"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "space_invites" ADD CONSTRAINT "space_invites_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Who holds user control of a computer, so one person never gets another's lease.
+ALTER TABLE "computers" ADD COLUMN "controlUserId" TEXT;

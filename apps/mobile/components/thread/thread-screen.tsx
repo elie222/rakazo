@@ -189,12 +189,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     JSON.stringify([userId, sessionEpoch, botId, groupId, requestedThreadId]),
     mentionBots,
   );
-  const attachments = useThreadAttachments({
-    botId,
-    groupId,
-    readOnly,
-    uploadConfig,
-  });
+  const attachments = useThreadAttachments({ botId, groupId, readOnly, uploadConfig });
   const draftScope = useMemo(
     () => composerDraftScope(userId, botId, groupId),
     [userId, botId, groupId],
@@ -230,10 +225,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           color: bot.color,
           avatarSet: bot.avatarSet,
         })),
-        groups: mentionGroups.map((group) => ({
-          id: group.id,
-          name: group.name,
-        })),
+        groups: mentionGroups.map((group) => ({ id: group.id, name: group.name })),
         routines: mentionRoutines.map((routine) => ({
           id: routine.id,
           name: routine.name,
@@ -404,19 +396,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
 
   const openBot = useCallback(
     (id: string, botName: string) =>
-      router.push({
-        pathname: "/thread",
-        params: { botId: id, name: botName },
-      }),
+      router.push({ pathname: "/thread", params: { botId: id, name: botName } }),
     [router],
   );
 
   const openComputer = useCallback(
     (id: string, botName: string) =>
-      router.push({
-        pathname: "/computer",
-        params: { botId: id, name: botName },
-      }),
+      router.push({ pathname: "/computer", params: { botId: id, name: botName } }),
     [router],
   );
 
@@ -457,10 +443,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     openComputer,
     // A chat attachment opens the version it was sent with, not the newest.
     previewFile: (artifactId) =>
-      router.push({
-        pathname: "/artifact",
-        params: { artifactId, exact: "1" },
-      }),
+      router.push({ pathname: "/artifact", params: { artifactId, exact: "1" } }),
     previewImage: (target) =>
       router.push({
         pathname: "/image",

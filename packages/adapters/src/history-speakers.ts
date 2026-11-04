@@ -129,8 +129,8 @@ export async function loadThreadSpeakers(
 }
 
 /**
- * The label of a person's line. A messaging group's line names its own sender inside the text,
- * and its stored author is whoever connected the channel, so it stays "User".
+ * The label of a person's line. A messaging group's line names its own sender inside the text
+ * and stores no author, since that sender may not belong to the Space, so it stays "User".
  */
 export function personLineSpeaker(
   people: ReadonlyMap<string, string> | null | undefined,

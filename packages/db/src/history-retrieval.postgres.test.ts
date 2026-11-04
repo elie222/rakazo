@@ -21,9 +21,7 @@ postgres("history retrieval (PostgreSQL)", () => {
   };
   beforeAll(async () => {
     pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
-    prisma = new PrismaClient({
-      adapter: new PrismaPg(pool, { schema: "pg_temp" }),
-    });
+    prisma = new PrismaClient({ adapter: new PrismaPg(pool, { schema: "pg_temp" }) });
     await pool.query(`
       CREATE TEMP TABLE bots (id text PRIMARY KEY, "spaceId" text, "userId" text, "archivedAt" timestamptz);
       CREATE TEMP TABLE threads (id text PRIMARY KEY, "spaceId" text, "userId" text, "botId" text, "groupId" text);
@@ -73,11 +71,7 @@ postgres("history retrieval (PostgreSQL)", () => {
         ('waiting-3','waiting-peer',NULL),
         ('waiting-direct-message','waiting-peer',NULL);
     `);
-    const group = {
-      ...scope,
-      threadId: "waiting-group-thread",
-      allowMyChats: true,
-    };
+    const group = { ...scope, threadId: "waiting-group-thread", allowMyChats: true };
     const ids = (result: Awaited<ReturnType<typeof searchHistory>>) =>
       result.messages.map((message) => message.messageId).sort();
     expect(ids(await searchHistory(prisma, group, { query: "waitingprobe" }))).toEqual([
@@ -90,29 +84,16 @@ postgres("history retrieval (PostgreSQL)", () => {
       ),
     ).toEqual(["waiting-1", "waiting-2"]);
     expect(
-      (
-        await readHistory(prisma, group, {
-          messageId: "waiting-2",
-          textOffset: 0,
-        })
-      ).messages,
+      (await readHistory(prisma, group, { messageId: "waiting-2", textOffset: 0 })).messages,
     ).toEqual([]);
     expect(
       (
-        await readHistory(prisma, group, {
-          messageId: "waiting-1",
-          direction: "newer",
-        })
+        await readHistory(prisma, group, { messageId: "waiting-1", direction: "newer" })
       ).messages.map((m) => m.messageId),
     ).toEqual(["waiting-3"]);
     const granted = { ...scope, allowMyChats: true };
     expect(
-      ids(
-        await searchHistory(prisma, granted, {
-          scope: "my_chats",
-          query: "waitingprobe",
-        }),
-      ),
+      ids(await searchHistory(prisma, granted, { scope: "my_chats", query: "waitingprobe" })),
     ).toEqual(["waiting-1", "waiting-3"]);
     expect(
       (
@@ -123,39 +104,23 @@ postgres("history retrieval (PostgreSQL)", () => {
       ).messages,
     ).toEqual([]);
     expect(
-      (
-        await readHistory(prisma, granted, {
-          threadId: group.threadId,
-          messageId: "waiting-2",
-        })
-      ).messages,
+      (await readHistory(prisma, granted, { threadId: group.threadId, messageId: "waiting-2" }))
+        .messages,
     ).toEqual([]);
     await pool.query(`UPDATE steering_messages SET "runId" = 'assigned-run'
       WHERE "botId" IN ('synthetic-bot','waiting-peer') AND "messageId" IN ('waiting-2','waiting-direct-message')`);
     expect(
-      ids(
-        await searchHistory(prisma, granted, {
-          scope: "my_chats",
-          query: "waitingprobe",
-        }),
-      ),
+      ids(await searchHistory(prisma, granted, { scope: "my_chats", query: "waitingprobe" })),
     ).toEqual(["waiting-1", "waiting-2", "waiting-3", "waiting-direct-message"]);
     expect(
-      (
-        await readHistory(prisma, group, {
-          messageId: "waiting-2",
-          textOffset: 0,
-        })
-      ).messages.map((m) => m.messageId),
+      (await readHistory(prisma, group, { messageId: "waiting-2", textOffset: 0 })).messages.map(
+        (m) => m.messageId,
+      ),
     ).toEqual(["waiting-2"]);
     await pool.query(`DELETE FROM steering_messages WHERE "messageId" LIKE 'waiting-%'`);
   });
   it.each([
-    {
-      text: String.raw`back\slash`,
-      query: String.raw`back\slash`,
-      matches: true,
-    },
+    { text: String.raw`back\slash`, query: String.raw`back\slash`, matches: true },
     { text: 'say "hi"', query: 'say "hi"', matches: true },
     { text: "50%_off", query: "50%_off", matches: true },
     { text: "line\nbreak", query: "line\nbreak", matches: true },
@@ -176,9 +141,7 @@ postgres("history retrieval (PostgreSQL)", () => {
   );
   it("finds a distant fact in 10,000 messages using the full text index", async () => {
     const querySpy = vi.spyOn(prisma, "$queryRaw");
-    const results = await searchHistory(prisma, scope, {
-      query: "exports batching",
-    });
+    const results = await searchHistory(prisma, scope, { query: "exports batching" });
     const authorizedQuery = querySpy.mock.calls[0]![0] as Prisma.Sql;
     querySpy.mockRestore();
     expect(results.messages.map((message) => message.messageId)).toEqual(["m-100"]);
@@ -295,12 +258,8 @@ postgres("history retrieval (PostgreSQL)", () => {
     ).toEqual([]);
     // The cutoff belongs only to search: live explicit evidence and linked outcomes remain readable.
     expect(
-      (
-        await readHistory(prisma, historicalScope, {
-          messageId: "m-10",
-          limit: 1,
-        })
-      ).messages[0]!.messageId,
+      (await readHistory(prisma, historicalScope, { messageId: "m-10", limit: 1 })).messages[0]!
+        .messageId,
     ).toBe("m-10");
   });
   it("uses UTC day boundaries and preserves offset instants with inclusive after and exclusive before", async () => {
@@ -431,9 +390,7 @@ postgres("history retrieval (PostgreSQL)", () => {
   it("indexes persisted subagent conclusions and retrieves them as linked outcomes", async () => {
     await pool.query(`INSERT INTO messages VALUES ('subagent-result','synthetic-thread',11999,'bot',NULL,NULL,now(),
       '[{"kind":"subagent","agentId":"synthetic-agent","name":"Research","task":"Inspect exports","status":"completed","result":"ledger-indexer produced aurora-investigation.txt"}]');`);
-    const result = await searchHistory(prisma, scope, {
-      query: "ledger-indexer",
-    });
+    const result = await searchHistory(prisma, scope, { query: "ledger-indexer" });
     expect(result.messages[0]!.text).toContain("ledger-indexer");
     expect(result.messages[0]!.text).toContain("aurora-investigation.txt");
   });
@@ -442,9 +399,7 @@ postgres("history retrieval (PostgreSQL)", () => {
         'synthetic-bot',NULL,'running',now(),NULL);
       INSERT INTO messages VALUES ('task-only-message','synthetic-thread',11998,'bot','task-only-run',NULL,now(),
         '[{"kind":"subagent","agentId":"synthetic-agent","name":"Research","task":"Inspect quartz routing congestion","status":"running","result":""}]');`);
-    const search = await searchHistory(prisma, scope, {
-      query: "quartz routing congestion",
-    });
+    const search = await searchHistory(prisma, scope, { query: "quartz routing congestion" });
     expect(search.messages.map((message) => message.messageId)).toEqual(["task-only-message"]);
     const read = await readHistory(prisma, scope, {
       messageId: search.messages[0]!.messageId,
@@ -468,11 +423,7 @@ postgres("history retrieval (PostgreSQL)", () => {
     ).toEqual([]);
     await pool.query("DELETE FROM messages WHERE id = 'task-only-message'");
     expect(
-      (
-        await searchHistory(prisma, scope, {
-          query: "quartz routing congestion",
-        })
-      ).messages,
+      (await searchHistory(prisma, scope, { query: "quartz routing congestion" })).messages,
     ).toEqual([]);
   });
   it("retrieves source-less background work only through a surviving private output", async () => {
@@ -480,10 +431,7 @@ postgres("history retrieval (PostgreSQL)", () => {
       ('background-run','synthetic-space','synthetic-user','synthetic-thread','synthetic-bot',NULL,'completed',now(),now());
       INSERT INTO messages VALUES ('background-result','synthetic-thread',12000,'bot','background-run',NULL,now(),
         '[{"kind":"text","text":"Background investigation complete"}]');`);
-    const result = await readHistory(prisma, scope, {
-      messageId: "background-result",
-      limit: 1,
-    });
+    const result = await readHistory(prisma, scope, { messageId: "background-result", limit: 1 });
     expect(result.runs.map((run) => run.id)).toEqual(["background-run"]);
     expect(
       (
@@ -615,12 +563,7 @@ postgres("history retrieval (PostgreSQL)", () => {
     } while (textOffset !== undefined);
     expect(collected).toBe(original);
     expect(
-      (
-        await readHistory(prisma, scope, {
-          messageId: "m-1",
-          linkedRunId: "paging-run-00",
-        })
-      ).runs,
+      (await readHistory(prisma, scope, { messageId: "m-1", linkedRunId: "paging-run-00" })).runs,
     ).toEqual([]);
   });
   it("searches original-backed snapshots and pages from a short source to linked outcomes and open work", async () => {
@@ -632,10 +575,7 @@ postgres("history retrieval (PostgreSQL)", () => {
         'navigation-source','completed',now(),now());
       INSERT INTO messages VALUES ('navigation-result','synthetic-thread',16001,'bot','navigation-complete-run',NULL,now(),
         '[{"kind":"subagent","task":"Inspect navigation","result":"Navigation diagnostic final result: ledger-indexer"}]');`);
-    const search = await searchHistory(prisma, scope, {
-      query: "navigation canary",
-      limit: 1,
-    });
+    const search = await searchHistory(prisma, scope, { query: "navigation canary", limit: 1 });
     expect(search.messages[0]!.messageId).toBe("navigation-source");
     const source = await readHistory(prisma, scope, {
       messageId: search.messages[0]!.messageId,
@@ -660,12 +600,8 @@ postgres("history retrieval (PostgreSQL)", () => {
     expect(newer.runs[0]!.id).toBe("navigation-complete-run");
     await pool.query("UPDATE runs SET status = 'completed' WHERE id = 'navigation-open-run'");
     expect(
-      (
-        await readHistory(prisma, scope, {
-          messageId: "navigation-source",
-          limit: 1,
-        })
-      ).snapshots[0]!.openRunIds,
+      (await readHistory(prisma, scope, { messageId: "navigation-source", limit: 1 })).snapshots[0]!
+        .openRunIds,
     ).toEqual([]);
     await pool.query("DELETE FROM messages WHERE id IN ('navigation-source','navigation-result')");
     expect((await searchHistory(prisma, scope, { query: "navigation canary" })).messages).toEqual(
@@ -689,9 +625,7 @@ postgres("history retrieval (PostgreSQL)", () => {
         (message) => message.messageId,
       ),
     ).toEqual(["channel-result", "channel-source"]);
-    const read = await readHistory(prisma, channelScope, {
-      messageId: "channel-source",
-    });
+    const read = await readHistory(prisma, channelScope, { messageId: "channel-source" });
     expect(read.messages.map((message) => message.messageId)).toEqual([
       "channel-source",
       "channel-result",
@@ -767,10 +701,7 @@ postgres("history retrieval (PostgreSQL)", () => {
     );
     expect(JSON.stringify(explained.rows)).toContain("synthetic_history_fts");
     expect(result.queries).toEqual(["quasar", "VIOLET"]);
-    const single = await searchHistory(prisma, grant, {
-      scope: "my_chats",
-      query: "quasar",
-    });
+    const single = await searchHistory(prisma, grant, { scope: "my_chats", query: "quasar" });
     expect(single.queries).toEqual(["quasar"]);
     for (const hit of single.messages) expect(hit.matchedQueryIndexes).toEqual([0]);
     // A page holds at most five hits; the sixth is on the next one.
@@ -801,11 +732,7 @@ postgres("history retrieval (PostgreSQL)", () => {
     ).toHaveLength(4);
     expect(
       (
-        await searchHistory(prisma, grant, {
-          ...input,
-          after: "2026-02-02",
-          before: "2026-02-03",
-        })
+        await searchHistory(prisma, grant, { ...input, after: "2026-02-02", before: "2026-02-03" })
       ).messages.map((hit) => hit.messageId),
     ).toEqual(["cross-structured"]);
     for (const [kind, ids] of [
@@ -861,20 +788,14 @@ postgres("history retrieval (PostgreSQL)", () => {
     expect(linked.runs[0]?.id).toBe("cross-peer-run");
     expect(linked.runs[0]?.outcomes[0]?.messageId).toBe("cross-reply");
     expect(linked.runs[0]?.artifacts[0]?.id).toBe("cross-artifact");
-    const missing = await readHistory(prisma, grant, {
-      threadId: "missing",
-      messageId: "missing",
-    });
+    const missing = await readHistory(prisma, grant, { threadId: "missing", messageId: "missing" });
     for (const threadId of [
       "cross-space-thread",
       "cross-archived-thread",
       "cross-archived-group-thread",
     ]) {
       expect(
-        await readHistory(prisma, grant, {
-          threadId,
-          messageId: `cross-${threadId}`,
-        }),
+        await readHistory(prisma, grant, { threadId, messageId: `cross-${threadId}` }),
       ).toEqual(missing);
     }
     for (const denied of [

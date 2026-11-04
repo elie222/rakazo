@@ -350,6 +350,12 @@ export const RU_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Всегда разрешать этот инструмент",
   "Always allow {site}": "Всегда разрешать {site}",
   "Replaces the login saved for {site}": "Заменяет сохранённый вход для {site}",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "Все в пространстве этого бота могут читать чаты, которые он получает из {app}.",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "Сайты, на которых вы входите, остаются в аккаунте для всех в этом пространстве",
+  "The bot's browser stays signed in for everyone in this space":
+    "Браузер бота остаётся в аккаунте для всех в этом пространстве",
   "Always allowed": "Всегда разрешено",
   "Android blocked notifications.": "Android заблокировал уведомления.",
   Answer: "Ответить",
@@ -1214,11 +1220,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "{label}, below": "{label}, ниже",
   Invite: "Пригласить",
   "Leave space": "Покинуть пространство",
-  "Everyone in this space sees all its chats, bots and memory.":
-    "Все участники этого пространства видят все его чаты, ботов и память.",
-  "Your other spaces stay private.": "Ваши другие пространства остаются личными.",
-  "A bot uses the accounts of whoever messages it, and anyone here can read its reply.":
-    "Бот использует аккаунты того, кто ему пишет, и все здесь могут прочитать его ответ.",
   "Leave {name}?": "Покинуть {name}?",
   "Could not load members": "Не удалось загрузить участников",
   "Could not create invite link": "Не удалось создать ссылку-приглашение",

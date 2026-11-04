@@ -26,7 +26,6 @@ import { useEffect, useState } from "react";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { SettingsGroup } from "./SettingsRows";
-import { SharedSpaceRules } from "./SharedSpaceRules";
 
 type Confirm = { kind: "remove"; member: SpaceMember } | { kind: "leave" };
 
@@ -147,7 +146,6 @@ export function SpaceMembersSettings({
         )}
       </SettingsGroup>
       {members && error ? <p className="px-1 text-[13px] text-destructive">{error}</p> : null}
-      <SharedSpaceRules className="max-w-md px-1 text-[13px]" />
       {canManage ? (
         <div className="flex flex-col items-start gap-3">
           <Button

@@ -18,7 +18,6 @@ import {
   listRoutinesDto,
   mapRoutine,
   nextRoutineDate,
-  routineDto,
   routineNextRunAt,
   routineRowData,
   routineTestRunNonce,
@@ -47,7 +46,7 @@ export function routinesRoutes(ctx: RouterContext) {
         });
         return bots.map((bot) => ({
           botId: bot.id,
-          routines: rows.filter((row) => row.botId === bot.id).map(routineDto),
+          routines: rows.filter((row) => row.botId === bot.id).map(mapRoutine),
         }));
       }),
       history: authed.routines.history.handler(async ({ context, input }) =>

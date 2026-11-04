@@ -81,7 +81,6 @@ describe("routine mention batch endpoint", () => {
     expect(body).toHaveLength(100);
     expect(body[0].botId).toBe("bot-0");
     expect(body[0].routines.map((row: { id: string }) => row.id)).toEqual(["bot-0-2", "bot-0-1"]);
-    expect(body[0].routines[0].editable).toBe(true);
     expect(h.findBots).toHaveBeenCalledExactlyOnceWith({
       where: { id: { in: ids }, spaceId: actor.spaceId, archivedAt: null },
       select: { id: true },

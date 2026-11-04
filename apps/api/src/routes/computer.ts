@@ -54,6 +54,7 @@ import {
   IsolationError,
   parseComputerMode,
   recordComputerRunEnd,
+  spaceIsShared,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { scrollPoint } from "../computer-input.js";
@@ -338,6 +339,7 @@ export function computerRoutes(ctx: RouterContext) {
         if (!bot.computer?.providerRef || bot.computer.state !== "running") {
           throw new ORPCError("BAD_REQUEST", { message: "computer must be running" });
         }
+        assertNotAnotherPersonsControl(bot.computer, context.actor);
         if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id) {
           await bindWaitingTakeoverToControl(deps, {
             spaceId: context.actor.spaceId,
@@ -380,13 +382,17 @@ export function computerRoutes(ctx: RouterContext) {
         const executionRun = executionLease
           ? await deps.prisma.run.findUnique({
               where: { id: executionLease.runId },
-              select: { botId: true, status: true },
+              select: { botId: true, status: true, userId: true },
             })
           : null;
         const waitingForTakeover =
           executionRun?.botId === bot.id &&
           (executionRun.status === "waiting_takeover" ||
             bot.computer.controlRunId === executionLease?.runId);
+        // A run that asked a person to take over waits for that person, not whoever opens the screen.
+        if (waitingForTakeover && executionRun?.userId !== context.actor.userId) {
+          throw new ORPCError("CONFLICT", { message: "The bot is waiting for someone else" });
+        }
         if (
           executionBlocksUserTakeover({
             hasLease: Boolean(executionLease),
@@ -416,6 +422,7 @@ export function computerRoutes(ctx: RouterContext) {
             controlLeaseExpiresAt: expiresAt,
             controlBotId: bot.id,
             controlRunId: waitingForTakeover ? executionLease?.runId : null,
+            controlUserId: context.actor.userId,
             state: "running",
           },
         });
@@ -426,6 +433,7 @@ export function computerRoutes(ctx: RouterContext) {
           if (!hasActiveComputerControl(current) || current.controlBotId !== bot.id) {
             throw new ORPCError("CONFLICT", { message: "Computer control changed; try again" });
           }
+          assertNotAnotherPersonsControl(current, context.actor);
           await bindWaitingTakeoverToControl(deps, {
             spaceId: context.actor.spaceId,
             threadId: bot.thread?.id,
@@ -488,6 +496,8 @@ export function computerRoutes(ctx: RouterContext) {
         return { leaseId, expiresAt: expiresAt.toISOString() };
       }),
       release: authed.computer.release.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (bot.computer) assertNotAnotherPersonsControl(bot.computer, context.actor);
         await releaseComputerControl(deps, context.actor, input.botId, input.reason);
         return { ok: true as const };
       }),
@@ -895,10 +905,33 @@ async function computerStatus(
     botId,
     botName: bot.name,
   });
-  return toComputerStatus(botId, bot.computer, busyBotName);
+  return toComputerStatus(
+    botId,
+    bot.computer,
+    busyBotName,
+    await spaceIsShared(deps.prisma, actor.spaceId),
+  );
 }
 
 /** Hand the user's screen control for this bot back, continuing any run waiting on it. */
+/** Members share a Space's computers, but only the person holding control can keep or end it. */
+function assertNotAnotherPersonsControl(
+  computer: Parameters<typeof hasActiveComputerControl>[0] & {
+    controlHolder: string;
+    controlUserId: string | null;
+  },
+  actor: Actor,
+): void {
+  if (
+    computer.controlHolder === "user" &&
+    hasActiveComputerControl(computer) &&
+    computer.controlUserId !== null &&
+    computer.controlUserId !== actor.userId
+  ) {
+    throw new ORPCError("CONFLICT", { message: "Someone else is using this computer" });
+  }
+}
+
 export async function releaseComputerControl(
   deps: RouterDeps,
   actor: Actor,

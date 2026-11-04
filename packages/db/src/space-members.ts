@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { isOwnerRole } from "./billing.js";
+import { GUEST_ROLE, isOwnerRole } from "./billing.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
@@ -8,15 +8,28 @@ import { appendEventInTransaction, createPendingSteeringRun } from "./events.js"
 import type { RunTeardownTarget } from "./groups.js";
 import { snapshotRunTeardownTargets } from "./groups.js";
 import { runAsSystem } from "./row-security.js";
-import { lockSpaceDeletion, personalOrganizationIds, SpaceNotFoundError } from "./spaces.js";
+import {
+  fallbackSpaceForMember,
+  lockSpaceDeletion,
+  personalOrganizationIds,
+  SpaceNotFoundError,
+} from "./spaces.js";
 import { activeRunStatuses } from "./thread-listing.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 export const SPACE_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Open links per Space, so a lost or leaked batch stays small. */
+export const MAX_OPEN_SPACE_INVITES = 20;
 
-/** Owner-only actions. `code` lets an RPC boundary answer FORBIDDEN as-is. */
+export class SpaceInviteLimitError extends Error {
+  constructor() {
+    super("Too many open invite links; wait for some to be used or expire");
+    this.name = "SpaceInviteLimitError";
+  }
+}
+
+/** Owner-only actions; the API answers FORBIDDEN. */
 export class SpaceOwnerRequiredError extends Error {
-  readonly code = "FORBIDDEN";
   constructor() {
     super("Only the space owner can do that");
     this.name = "SpaceOwnerRequiredError";
@@ -67,6 +80,14 @@ export type SpaceDeparture = {
   /** Newest run.cancelled seq per thread, for realtime fanout. */
   events: Array<{ threadId: string; seq: number }>;
 };
+
+/** Whether other people belong to the Space, so they share its chats, computers and browser. */
+export async function spaceIsShared(
+  db: Pick<PrismaClient, "spaceMember">,
+  spaceId: string,
+): Promise<boolean> {
+  return (await db.spaceMember.count({ where: { spaceId }, take: 2 })) > 1;
+}
 
 export async function requireSpaceOwner(
   db: Pick<PrismaClient, "spaceMember">,
@@ -127,6 +148,10 @@ export async function createSpaceInvite(
   input: SpaceRef,
 ): Promise<{ token: string; expiresAt: Date }> {
   await requireSpaceOwner(prisma, input);
+  const open = await prisma.spaceInvite.count({
+    where: { spaceId: input.spaceId, acceptedAt: null, expiresAt: { gt: new Date() } },
+  });
+  if (open >= MAX_OPEN_SPACE_INVITES) throw new SpaceInviteLimitError();
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SPACE_INVITE_TTL_MS);
   await prisma.spaceInvite.create({
@@ -234,7 +259,7 @@ export async function acceptSpaceInvite(
               id: memberId,
               organizationId,
               userId: input.userId,
-              role: "member",
+              role: GUEST_ROLE,
               createdAt: now,
             },
           });
@@ -256,7 +281,8 @@ export async function acceptSpaceInvite(
             role: "member",
             createdAt: now,
           },
-          update: {},
+          // An invite into the default Space finds the trigger's row, which copied the org role.
+          update: { role: "member" },
         });
         return { ...result, joined: true };
       },
@@ -394,6 +420,7 @@ async function departSpace(prisma: PrismaClient, input: SpaceRef): Promise<Space
           await moveSections(tx, { spaceId, fromUserId: userId, toUserId: ownerId });
           const reassign = { where: { spaceId, userId }, data: { userId: ownerId } };
           await tx.bot.updateMany(reassign);
+          await tx.thread.updateMany(reassign);
           await tx.chatGroup.updateMany(reassign);
           // Their computers go with the bots, so the computer limit counts them for the owner.
           await tx.computer.updateMany(reassign);
@@ -432,6 +459,7 @@ async function departSpace(prisma: PrismaClient, input: SpaceRef): Promise<Space
           };
           await tx.mcpServer.deleteMany({ where: onlyHere });
           await tx.capabilityInstall.deleteMany({ where: onlyHere });
+          await tx.agentSkill.deleteMany({ where: onlyHere });
           await tx.mcpServerSpace.deleteMany({ where: own });
           await tx.capabilityInstallSpace.deleteMany({ where: own });
           await tx.agentSkillSpace.deleteMany({ where: own });
@@ -448,6 +476,7 @@ async function departSpace(prisma: PrismaClient, input: SpaceRef): Promise<Space
           await tx.secret.deleteMany({ where: own });
           // Model, voice and role preferences, setting overrides and AI consents cascade from here.
           await tx.spaceMember.delete({ where: { id: departing.id } });
+          await rehomeSharedItems(tx, { spaceId, userId });
           await tx.member.deleteMany({
             where: {
               organizationId: departing.organizationId,
@@ -467,6 +496,39 @@ async function departSpace(prisma: PrismaClient, input: SpaceRef): Promise<Space
       ),
     ),
   );
+}
+
+/**
+ * What the departing person made available in other Spaces of theirs was homed in this one, and
+ * would go when it does. It moves to their fallback Space, unless that Space already has one with
+ * the same name.
+ */
+async function rehomeSharedItems(tx: Prisma.TransactionClient, input: SpaceRef): Promise<void> {
+  const { spaceId, userId } = input;
+  const home = await fallbackSpaceForMember(tx, userId);
+  if (!home) return;
+  const own = { spaceId, userId };
+  const [servers, skills, taken, takenSkills] = await Promise.all([
+    tx.mcpServer.findMany({ where: own, select: { id: true, slug: true } }),
+    tx.agentSkill.findMany({ where: own, select: { id: true, name: true } }),
+    tx.mcpServer.findMany({ where: { spaceId: home, userId }, select: { slug: true } }),
+    tx.agentSkill.findMany({ where: { spaceId: home, userId }, select: { name: true } }),
+  ]);
+  const slugs = new Set(taken.map((server) => server.slug));
+  const names = new Set(takenSkills.map((skill) => skill.name.toLowerCase()));
+  await tx.mcpServer.updateMany({
+    where: { id: { in: servers.filter((server) => !slugs.has(server.slug)).map(({ id }) => id) } },
+    data: { spaceId: home },
+  });
+  await tx.agentSkill.updateMany({
+    where: {
+      id: {
+        in: skills.filter((skill) => !names.has(skill.name.toLowerCase())).map(({ id }) => id),
+      },
+    },
+    data: { spaceId: home },
+  });
+  await tx.capabilityInstall.updateMany({ where: own, data: { spaceId: home } });
 }
 
 /** Sections are unique per (space, person, name): merge into the owner's same-named one. */

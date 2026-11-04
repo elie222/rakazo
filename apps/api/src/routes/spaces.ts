@@ -14,6 +14,8 @@ import {
   createSpaceForMember,
   createSpaceInvite,
   fallbackSpaceForMember,
+  GUEST_ROLE,
+  homeOrganizationId,
   InvalidSpaceNameError,
   IsolationError,
   isOwnerRole,
@@ -27,12 +29,12 @@ import {
   runAsTenant,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
   SpaceDeletionInProgressError,
+  SpaceInviteLimitError,
   SpaceInviteNotFoundError,
   SpaceLimitError,
   SpaceMemberNotFoundError,
   SpaceNotFoundError,
   SpaceOwnerCannotLeaveError,
-  SpaceOwnerRequiredError,
   setSpaceSettingOverride,
   spaceSettingOverrides,
 } from "@rakazo/db";
@@ -53,10 +55,11 @@ function mapSpaceMemberError(error: unknown): never {
   ) {
     throw new ORPCError("NOT_FOUND", { message: error.message });
   }
-  if (error instanceof SpaceOwnerRequiredError) {
-    throw new ORPCError("FORBIDDEN", { message: error.message });
-  }
-  if (error instanceof CannotRemoveSpaceOwnerError || error instanceof SpaceOwnerCannotLeaveError) {
+  if (
+    error instanceof CannotRemoveSpaceOwnerError ||
+    error instanceof SpaceOwnerCannotLeaveError ||
+    error instanceof SpaceInviteLimitError
+  ) {
     throw new ORPCError("BAD_REQUEST", { message: error.message });
   }
   if (error instanceof SpaceDeletionInProgressError) {
@@ -107,10 +110,7 @@ async function asMemberOf<T>(
     where: { spaceId, userId: actor.userId },
     select: { id: true },
   });
-  if (!member)
-    throw new ORPCError("NOT_FOUND", {
-      message: new SpaceNotFoundError().message,
-    });
+  if (!member) throw new ORPCError("NOT_FOUND", { message: new SpaceNotFoundError().message });
   return runAsTenant({ spaceId, userId: actor.userId }, fn);
 }
 
@@ -403,9 +403,13 @@ async function memberSpaceNavigation(
   repos: ReturnType<typeof createRepos>,
   groupRepos: ReturnType<typeof createGroupRepos>,
 ): Promise<SpaceNavigation> {
-  // Every organization: a Space shared with the member lives in its owner's organization.
+  // The member's own organization, plus every Space shared with them from someone else's.
+  const organizationId = await homeOrganizationId(deps.prisma, actor);
   const memberships = await deps.prisma.spaceMember.findMany({
-    where: { userId: actor.userId },
+    where: {
+      userId: actor.userId,
+      OR: [{ organizationId }, { member: { role: GUEST_ROLE } }],
+    },
     select: {
       spaceId: true,
       role: true,

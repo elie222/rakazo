@@ -68,9 +68,7 @@ function formatApprovalAnswer(
     return allowsSpace(actions) ? t("Allowed in this space") : t("Allowed once");
   if (approval && answer === "always") return t("Always allowed");
   if (approval && answer === "deny") return t("Denied");
-  return t("Answered: {answer}", {
-    answer: selectedAskActionLabel(answer, actions),
-  });
+  return t("Answered: {answer}", { answer: selectedAskActionLabel(answer, actions) });
 }
 
 export type MessageActionProps = Pick<
@@ -351,22 +349,10 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
         {...actionProps}
         style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}
       >
-        <Text
-          style={{
-            color: tokens.mutedForeground,
-            fontSize: 12,
-            textAlign: "center",
-          }}
-        >
+        <Text style={{ color: tokens.mutedForeground, fontSize: 12, textAlign: "center" }}>
           {messagingProviderLabel(channelMessage.provider, channelMessage.transport)}
         </Text>
-        <Text
-          style={{
-            color: tokens.mutedForeground,
-            fontSize: 13.5,
-            textAlign: "center",
-          }}
-        >
+        <Text style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}>
           {channelMessage.fromLabel}: {channelMessage.text}
         </Text>
       </Pressable>
@@ -476,11 +462,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               ) : (
                 <Text
                   {...actionProps}
-                  style={{
-                    color: tokens.mutedForeground,
-                    marginTop: 12,
-                    ...typeScale.caption,
-                  }}
+                  style={{ color: tokens.mutedForeground, marginTop: 12, ...typeScale.caption }}
                 >
                   {t("No longer active")}
                 </Text>
@@ -545,10 +527,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           <View style={hasInlineImages ? bubbleStyle : undefined}>
             {(showBotSenderName || authorName) && speaker ? (
               <Text
-                style={{
-                  color: speakerColor ?? tokens.mutedForeground,
-                  ...typeScale.footnote,
-                }}
+                style={{ color: speakerColor ?? tokens.mutedForeground, ...typeScale.footnote }}
               >
                 {speaker}
               </Text>
@@ -868,13 +847,7 @@ function AgentEventLabel({
           size={12}
           color={tokens.mutedForeground}
         />
-        <Text
-          style={{
-            color: tokens.mutedForeground,
-            fontSize: 13.5,
-            textAlign: "center",
-          }}
-        >
+        <Text style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}>
           {label}
         </Text>
       </View>

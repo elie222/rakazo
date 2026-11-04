@@ -3,6 +3,7 @@ import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
 import { BYOK_TIERS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { IsolationError } from "./scope.js";
 
 const ACCESS_STATUSES = new Set(["trialing", "active", "past_due"]);
 
@@ -243,15 +244,39 @@ export async function syncBillingSnapshot(
   return (await prisma.billingAccount.count({ where: { customerId } })) > 0;
 }
 
-/** Billable seats: every organization member, never fewer than one. */
+/** Billable seats: every organization member but guests, never fewer than one. */
 export async function organizationSeatCount(
   prisma: PrismaClient,
   organizationId: string,
 ): Promise<number> {
-  const members = await prisma.member.count({ where: { organizationId } });
+  const members = await prisma.member.count({
+    where: { organizationId, role: { not: GUEST_ROLE } },
+  });
   return Math.max(1, members);
 }
 
+/** The org role of someone who belongs to an organization only through Spaces they were invited to. */
+export const GUEST_ROLE = "guest";
+
+/** The oldest organization the user owns, where their own Spaces live. */
+export async function ownedOrganizationId(
+  db: Pick<PrismaClient, "member">,
+  userId: string,
+): Promise<string> {
+  const memberships = await db.member.findMany({
+    where: { userId },
+    select: { organizationId: true, role: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const owned = memberships.find((membership) => isOwnerRole(membership.role));
+  if (!owned) throw new IsolationError();
+  return owned.organizationId;
+}
+
+/**
+ * The organization that pays for this person's work in a Space: the Space's own, or for a guest
+ * their own oldest organization, so a shared Space never bills its owner for someone else.
+ */
 export async function organizationForMember(
   prisma: PrismaClient,
   input: { spaceId: string; userId: string },
@@ -268,6 +293,9 @@ export async function organizationForMember(
     select: { role: true },
   });
   if (!member) return null;
+  if (member.role === GUEST_ROLE) {
+    return { organizationId: await ownedOrganizationId(prisma, input.userId), isOwner: true };
+  }
   return { organizationId: space.organizationId, isOwner: isOwnerRole(member.role) };
 }
 

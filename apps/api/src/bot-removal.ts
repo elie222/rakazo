@@ -1,4 +1,3 @@
-import { ORPCError } from "@orpc/server";
 import { destroyBot } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { createRepos } from "@rakazo/db";
@@ -13,11 +12,7 @@ export function createBotRemoval(deps: RouterDeps, repos: ReturnType<typeof crea
   ) => {
     const bot = await repos.getBot(actor, botId, { includeArchived: true });
     // Any member can archive; only the bot's creator or the space owner deletes for good.
-    if (bot.userId !== actor.userId) {
-      await requireSpaceOwner(deps.prisma, actor).catch(() => {
-        throw new ORPCError("FORBIDDEN");
-      });
-    }
+    if (bot.userId !== actor.userId) await requireSpaceOwner(deps.prisma, actor);
     await destroyBot(
       {
         prisma: deps.prisma,

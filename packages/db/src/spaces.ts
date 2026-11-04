@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { displayName } from "@rakazo/core";
-import { isOwnerRole } from "./billing.js";
+import { GUEST_ROLE, isOwnerRole, ownedOrganizationId } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import type { PageShareSecret } from "./page-shares.js";
@@ -198,22 +198,22 @@ export async function createSpaceForMember(
   return { id: spaceId, name };
 }
 
-/** The org role of someone who belongs to an organization only through Spaces they were invited to. */
-export const GUEST_ROLE = "guest";
-
-/** The oldest organization the user owns, where their own Spaces live. */
-async function ownedOrganizationId(
-  db: Pick<PrismaClient, "member">,
-  userId: string,
+/**
+ * The organization whose Spaces a person sees around this one: its own, unless they are a guest
+ * there, in which case their oldest own organization.
+ */
+export async function homeOrganizationId(
+  db: Pick<PrismaClient, "spaceMember" | "member">,
+  actor: { userId: string; spaceId: string },
 ): Promise<string> {
-  const memberships = await db.member.findMany({
-    where: { userId },
-    select: { organizationId: true, role: true },
-    orderBy: { createdAt: "asc" },
+  const membership = await db.spaceMember.findUnique({
+    where: { spaceId_userId: { spaceId: actor.spaceId, userId: actor.userId } },
+    select: { organizationId: true, member: { select: { role: true } } },
   });
-  const owned = memberships.find((membership) => isOwnerRole(membership.role));
-  if (!owned) throw new IsolationError();
-  return owned.organizationId;
+  if (!membership) throw new IsolationError();
+  return membership.member.role === GUEST_ROLE
+    ? ownedOrganizationId(db, actor.userId)
+    : membership.organizationId;
 }
 
 /**

@@ -323,6 +323,12 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Always allow this tool": "始终允许此工具",
   "Always allow {site}": "始终允许 {site}",
   "Replaces the login saved for {site}": "替换为 {site} 保存的登录信息",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "此机器人空间中的每个人都能阅读它从 {app} 收到的聊天。",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "你登录的网站会为此空间中的每个人保持登录",
+  "The bot's browser stays signed in for everyone in this space":
+    "机器人的浏览器会为此空间中的每个人保持登录",
   "Always allowed": "已始终允许",
   "Android blocked notifications.": "Android 已阻止通知。",
   Answer: "接听",
@@ -1186,11 +1192,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{label}, below": "{label}，下方",
   Invite: "邀请",
   "Leave space": "退出空间",
-  "Everyone in this space sees all its chats, bots and memory.":
-    "此空间中的每个人都能看到其中所有的聊天、机器人和记忆。",
-  "Your other spaces stay private.": "你的其他空间仍保持私密。",
-  "A bot uses the accounts of whoever messages it, and anyone here can read its reply.":
-    "机器人会使用给它发消息的人的账户，这里的每个人都能看到它的回复。",
   "Leave {name}?": "退出 {name}？",
   "Could not load members": "无法加载成员",
   "Could not create invite link": "无法创建邀请链接",

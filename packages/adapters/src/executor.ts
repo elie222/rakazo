@@ -256,19 +256,12 @@ async function verbatimMcpServersForRun(
       verbatimResults: true,
       enabled: true,
       ...availableInSpace(scope),
-      AND: [
-        {
-          OR: [{ allBots: true }, { assignments: { some: { botId: scope.botId } } }],
-        },
-      ],
+      AND: [{ OR: [{ allBots: true }, { assignments: { some: { botId: scope.botId } } }] }],
     },
     select: { id: true, slug: true },
   });
   if (!servers?.length) return undefined;
-  return {
-    ids: servers.map((server) => server.id),
-    slugs: servers.map((server) => server.slug),
-  };
+  return { ids: servers.map((server) => server.id), slugs: servers.map((server) => server.slug) };
 }
 
 export function createRunExecutor(executorDeps: ExecutorDeps) {
@@ -479,12 +472,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // Acquiring the computer can requeue a busy run. Count that wait as queue
         // time, and only stamp execution once this attempt can use its computer.
         const executionStarted = await deps.prisma.run.updateMany({
-          where: {
-            id: runId,
-            status: "running",
-            leaseOwner: workerId,
-            leaseFence: fence,
-          },
+          where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
           data: { startedAt: executionStartedAt, lateSince: firstLateSince },
         });
         if (executionStarted.count !== 1) {
@@ -1022,10 +1010,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               }).then(
                 (role) => role.backups,
                 (error: unknown) => {
-                  getLogger().warn("Backup models could not be loaded", {
-                    runId,
-                    error,
-                  });
+                  getLogger().warn("Backup models could not be loaded", { runId, error });
                   return [];
                 },
               ));
@@ -1067,10 +1052,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           return undefined;
         };
         let start: Awaited<ReturnType<typeof startOnBackup>>;
-        let primaryFailure = {
-          message: MISSING_MODEL_RUN_ERROR,
-          accountFailure: true,
-        };
+        let primaryFailure = { message: MISSING_MODEL_RUN_ERROR, accountFailure: true };
         let retryPrimary: unknown;
         if (selectedProvider && selectedModelId) {
           if (await modelAccessDenied()) {
@@ -1138,12 +1120,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // used; modelPinned is what keeps that record from becoming the next choice.
         if (!run.modelPinned) {
           await deps.prisma.run.updateMany({
-            where: {
-              id: runId,
-              status: "running",
-              leaseOwner: workerId,
-              leaseFence: fence,
-            },
+            where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
             data: { modelProvider: runModelProvider, modelId: runModelId },
           });
         }
@@ -1290,11 +1267,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const paymentWallet = deps.paymentWallet;
         const paymentWalletEnabled = paymentWallet
           ? await paymentWalletConnected(
-              {
-                prisma: deps.prisma,
-                secretStore: deps.secretStore,
-                paymentWallet,
-              },
+              { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
               run.userId,
             )
           : false;
@@ -1356,12 +1329,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           (run.trigger === "user" || run.trigger === "follow_up") && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
                 where: { id: run.sourceMessageId },
-                select: {
-                  clientNonce: true,
-                  role: true,
-                  blocks: true,
-                  threadId: true,
-                },
+                select: { clientNonce: true, role: true, blocks: true, threadId: true },
               })
             : null;
         // Calls carry no schema flag: the sending client encodes them in the clientNonce.
@@ -1546,10 +1514,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             pendingTurnCheckpoints: new Map(),
             storedTurnCheckpoint,
           },
-          screen: {
-            lastFrameId: undefined,
-            unchangedVisualStreak: { count: 0 },
-          },
+          screen: { lastFrameId: undefined, unchangedVisualStreak: { count: 0 } },
           toolCallStreak: { key: undefined, count: 0 },
           overLimitActionCalls: 0,
           toolResults: new Map(),
@@ -1705,9 +1670,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           : buildApprovalContinuation(
               approvedEffects,
               (request) => redactSecrets(JSON.stringify(request), runSecrets),
-              {
-                exposedToolNames: new Set(partitionTools(tools).listed.map((tool) => tool.name)),
-              },
+              { exposedToolNames: new Set(partitionTools(tools).listed.map((tool) => tool.name)) },
             );
         const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
         let userTimeZone: string | null | undefined;
@@ -1863,10 +1826,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           fallbackModels.map((candidate) => fallbackKey(candidate.provider, candidate.modelId)),
         );
         // Provider kind and model id only: custom endpoints are identified by kind, never host.
-        const activeModel = {
-          "model.provider": runModelProvider,
-          "model.id": runModelId,
-        };
+        const activeModel = { "model.provider": runModelProvider, "model.id": runModelId };
         // Shutdown must not finalize the attempt. The finally block queues the run
         // when this worker still owns it.
         const interruptedByShutdown = async () => {
@@ -2022,12 +1982,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 effects.pendingTurnCheckpoints.set(executionId, capture);
               },
               resumeToolResult: {
-                content: [
-                  {
-                    type: "text",
-                    text: takeoverResume?.promptNote ?? taskPrompt,
-                  },
-                ],
+                content: [{ type: "text", text: takeoverResume?.promptNote ?? taskPrompt }],
               },
               script,
               allowSilentEmpty: allowSilentEmptyRun,
@@ -2173,9 +2128,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             });
             return;
           }
-          throw new Error("Run setup failed; retrying", {
-            cause: reportedSetupError,
-          });
+          throw new Error("Run setup failed; retrying", { cause: reportedSetupError });
         }
       } finally {
         getLogger().info("run.computer", {
@@ -2194,12 +2147,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // paused or requeued run keeps its sessions for its next attempt. A
         // successful finalisation already ended the state, and the terminal row
         // this reads then only repeats that.
-        if (
-          await runEndedForThisWorker(deps.prisma, {
-            runId,
-            leaseOwner: workerId,
-          })
-        ) {
+        if (await runEndedForThisWorker(deps.prisma, { runId, leaseOwner: workerId })) {
           endRunConnectorState(runId);
         }
         if (!lease.retainComputer) {

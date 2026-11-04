@@ -16,7 +16,10 @@ export function parseComputerMode(scope: string): ComputerMode {
 export type ComputerKeyInput = {
   mode: ComputerMode;
   spaceId: string;
-  /** The bot owner's user id. A team computer is shared only by one user's bots in a space. */
+  /**
+   * Who the computer is kept for. A team computer belongs to the Space's owner, so in a Space
+   * shared with others every member's bots use one Team Computer (see `teamComputerUserId`).
+   */
   userId: string;
   botId?: string;
 };
@@ -51,6 +54,22 @@ export function legacyTeamHomeKey(spaceId: string) {
 }
 
 type ComputerDb = Pick<PrismaClient, "computer">;
+
+/**
+ * The person a Space's Team Computer is kept for: its owner. Members of a shared Space use the
+ * owner's, so the Space has one computer and one browser whoever made the bot.
+ */
+export async function teamComputerUserId(
+  db: Pick<PrismaClient, "spaceMember">,
+  input: { spaceId: string; userId: string },
+): Promise<string> {
+  const owner = await db.spaceMember.findFirst({
+    where: { spaceId: input.spaceId, role: { contains: "owner" } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { userId: true },
+  });
+  return owner?.userId ?? input.userId;
+}
 type ComputerTx = Pick<Prisma.TransactionClient, "computer" | "$queryRaw">;
 type ComputerClient = ComputerDb & Partial<Pick<PrismaClient, "$transaction" | "$queryRaw">>;
 type RestoreTx = ComputerTx & Pick<Prisma.TransactionClient, "bot">;

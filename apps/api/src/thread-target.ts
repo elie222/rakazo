@@ -47,6 +47,7 @@ import {
   lockSpaceGroup,
   primaryActiveRun,
   retireWaitingQuestionInTransaction,
+  spaceIsShared,
   touchGroupUpdatedAt,
   transientRunEventsWhere,
 } from "@rakazo/db";
@@ -442,12 +443,13 @@ export async function threadSnapshot(
   // otherwise advance the client cursor past thread.message.created while the
   // ask message page still omits it — leaving waiting_input with no AskCard.
   if (target.kind === "bot") {
-    const [busyBotName, core] = await Promise.all([
+    const [busyBotName, shared, core] = await Promise.all([
       resolveBusyBotName(deps.prisma, {
         computerId: target.bot.computer?.id,
         botId: target.botId,
         botName: target.bot.name,
       }),
+      spaceIsShared(deps.prisma, target.bot.spaceId),
       deps.prisma.$transaction(
         async (tx) => {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR SHARE`;
@@ -536,7 +538,7 @@ export async function threadSnapshot(
       olderCursor: core.messagePage.olderCursor,
       run: core.run ? mapRun(core.run) : null,
       activeRuns: core.activeRuns.map(mapRun),
-      computer: toComputerStatus(target.botId, target.bot.computer, busyBotName),
+      computer: toComputerStatus(target.botId, target.bot.computer, busyBotName, shared),
     };
   }
 

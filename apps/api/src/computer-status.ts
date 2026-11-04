@@ -70,6 +70,7 @@ export function toComputerStatus(
     diskDismissedPercent?: number | null;
   } | null,
   busyBotName: string | null = null,
+  shared = false,
 ): ComputerStatus {
   const kind = (computer?.kind ?? "fake") as ComputerStatus["kind"];
   const state =
@@ -96,6 +97,7 @@ export function toComputerStatus(
     diskPercent > (computer?.diskDismissedPercent ?? 0);
   return {
     botId,
+    ...(shared ? { shared } : {}),
     mode: computer?.scope === "dedicated" ? "dedicated" : "team",
     kind,
     state,

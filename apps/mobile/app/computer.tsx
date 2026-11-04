@@ -744,6 +744,19 @@ export default function Computer() {
                 />
               </View>
             </SafeAreaView>
+            {hasControl && computer?.shared ? (
+              <Text
+                testID="computer-shared-browser"
+                style={{
+                  color: tokens.mutedForeground,
+                  fontSize: 12,
+                  paddingHorizontal: 14,
+                  paddingBottom: 4,
+                }}
+              >
+                {t("Sites you sign in to stay signed in for everyone in this space")}
+              </Text>
+            ) : null}
             <View style={{ flex: 1, backgroundColor: tokens.card }}>
               {foreground && loadedScreenUrl ? (
                 <ScreenWebView

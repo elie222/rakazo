@@ -125,16 +125,12 @@ export function mapRoutine(row: {
   };
 }
 
+/** Any member may change a routine; editing it hands it to them (see routines.update). */
 export async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: string) {
   const rows = await deps.prisma.routine.findMany({
     where: { botId, spaceId: actor.spaceId },
   });
-  return rows.map(routineDto);
-}
-
-/** Any member may change a routine; editing it hands it to them (see routines.update). */
-export function routineDto(row: Parameters<typeof mapRoutine>[0]) {
-  return { ...mapRoutine(row), editable: true };
+  return rows.map(mapRoutine);
 }
 
 export function createRoutineAnnouncer(deps: RouterDeps) {
@@ -159,7 +155,7 @@ export function createRoutineAnnouncer(deps: RouterDeps) {
   return announceRoutine;
 }
 
-/** The caller's own routine on a bot they may use, the check behind every routine test run. */
+/** A routine in the caller's Space on a bot they may use, the check behind every routine test run. */
 export async function routineTestTarget(
   prisma: PrismaClient,
   repos: RouterContext["repos"],

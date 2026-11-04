@@ -119,6 +119,14 @@ export function ComputerOverlay({
                 </span>
               )
             ) : null}
+            {!recordingSkill && hasControl && computer?.shared ? (
+              <span
+                data-testid="computer-shared-browser"
+                className="min-w-0 truncate text-[13px] text-muted-foreground"
+              >
+                <Trans>Sites you sign in to stay signed in for everyone in this space</Trans>
+              </span>
+            ) : null}
           </div>
           <div className="flex items-center gap-3">
             {composerRunning ? (

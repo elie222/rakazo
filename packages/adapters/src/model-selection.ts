@@ -7,7 +7,12 @@ import {
   usableModelId,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { chooseModelCredential, findModelCredential, findModelCredentialById } from "@rakazo/db";
+import {
+  chooseModelCredential,
+  findModelCredential,
+  findModelCredentialById,
+  organizationForMember,
+} from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { modelCredentialDto } from "./model-connect.js";
 import { compatibleModelSeesImages, modelAcceptsImageInput } from "./model-vision.js";
@@ -900,13 +905,13 @@ export async function hasHostedModelCredits(
 ): Promise<boolean> {
   const deployment = resolveDeploymentModel();
   if (!deployment.configured || deployment.provider !== provider) return false;
-  const space = await prisma.space.findFirst({
-    where: { id: scope.spaceId, organization: { members: { some: { userId: scope.userId } } } },
-    select: {
-      organization: { select: { modelCredits: { select: { mode: true, balanceMicros: true } } } },
-    },
-  });
-  const credits = space?.organization.modelCredits;
+  const payer = await organizationForMember(prisma, scope);
+  const credits = payer
+    ? await prisma.modelCreditAccount.findUnique({
+        where: { organizationId: payer.organizationId },
+        select: { mode: true, balanceMicros: true },
+      })
+    : null;
   if (credits?.mode === "credits") return true;
   if (!credits || credits.balanceMicros <= 0n) return false;
   return !(await prisma.userModelCredential.findFirst({

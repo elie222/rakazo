@@ -123,18 +123,7 @@ export default function SpaceMembersScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {!members && !error ? <ActivityIndicator /> : null}
         {members ? (
-          <SettingsGroup
-            accessibilityLabel={t("Members")}
-            footer={[
-              t("Everyone in this space sees all its chats, bots and memory."),
-              t("Your other spaces stay private."),
-              t(
-                "A bot uses the accounts of whoever messages it, and anyone here can read its reply.",
-              ),
-            ]
-              .map((rule) => `• ${rule}`)
-              .join("\n")}
-          >
+          <SettingsGroup accessibilityLabel={t("Members")}>
             {members.members.map((member) => {
               const display = accountDisplay(member, member.email);
               const row = (

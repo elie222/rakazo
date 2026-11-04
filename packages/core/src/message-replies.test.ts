@@ -50,12 +50,7 @@ describe("shared reply presentation", () => {
   });
 });
 
-const image: MessageBlock = {
-  kind: "image",
-  artifactId: "photo",
-  mimeType: "image/png",
-  name: "",
-};
+const image: MessageBlock = { kind: "image", artifactId: "photo", mimeType: "image/png", name: "" };
 const file: MessageBlock = {
   kind: "file",
   artifactId: "document",
@@ -96,10 +91,7 @@ it("strips unknown preview and attachment fields and preserves known metadata in
     source: "cache",
     attachment: { ...image, contentBase64: "bytes", size: 12 },
   };
-  expect(ReplyPreviewSchema.safeParse(cachedPreview)).toEqual({
-    success: true,
-    data: preview,
-  });
+  expect(ReplyPreviewSchema.safeParse(cachedPreview)).toEqual({ success: true, data: preview });
   expect(replyMetadata({ replyPreview: cachedPreview }).replyPreview).toEqual(preview);
 });
 it("still rejects missing or invalid known preview and attachment fields", () => {
@@ -111,10 +103,7 @@ it("still rejects missing or invalid known preview and attachment fields", () =>
     false,
   );
   expect(
-    ReplyPreviewSchema.safeParse({
-      ...preview,
-      attachment: { ...image, mimeType: 12 },
-    }).success,
+    ReplyPreviewSchema.safeParse({ ...preview, attachment: { ...image, mimeType: 12 } }).success,
   ).toBe(false);
 });
 
@@ -167,11 +156,7 @@ describe("channelMessageSender", () => {
 });
 
 describe("previewMessageText", () => {
-  const labels = {
-    photo: "Photo",
-    attachment: "Attachment",
-    message: "Message",
-  };
+  const labels = { photo: "Photo", attachment: "Attachment", message: "Message" };
 
   it("joins text, reading bot Markdown as plain text", () => {
     expect(
@@ -213,18 +198,8 @@ describe("previewMessageText", () => {
   });
 
   it("falls back to attachment labels, then a generic label", () => {
-    const image = {
-      kind: "image",
-      artifactId: "a",
-      mimeType: "image/png",
-      name: "a.png",
-    } as const;
-    const file = {
-      kind: "file",
-      artifactId: "f",
-      mimeType: "application/pdf",
-      size: 1,
-    } as const;
+    const image = { kind: "image", artifactId: "a", mimeType: "image/png", name: "a.png" } as const;
+    const file = { kind: "file", artifactId: "f", mimeType: "application/pdf", size: 1 } as const;
     expect(previewMessageText({ role: "user", blocks: [image] }, labels)).toBe("Photo");
     expect(previewMessageText({ role: "user", blocks: [{ ...file, name: "a.pdf" }] }, labels)).toBe(
       "a.pdf",
@@ -242,10 +217,7 @@ describe("page card replies", () => {
       [{ kind: "page", pageId: "p1", version: 2, title: "Q3 plan" }],
       "bot",
     );
-    expect(ReplyPreviewSchema.parse(card)).toMatchObject({
-      page: true,
-      text: "Q3 plan",
-    });
+    expect(ReplyPreviewSchema.parse(card)).toMatchObject({ page: true, text: "Q3 plan" });
     expect(isPageOriginReply({ replyPreview: card })).toBe(true);
     expect(isPageOriginReply({ replyPreview: card, replyQuote: "Q3 plan" })).toBe(false);
     const text = messageReplyPreview([{ kind: "text", text: "hi" }], "bot");

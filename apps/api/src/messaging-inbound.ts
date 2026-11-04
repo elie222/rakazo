@@ -921,7 +921,6 @@ async function handleChannelEvent(
       threadId: thread.id,
       botId: identity.botId,
       userId: identity.userId,
-      authorUserId: senderIdentity?.userId,
       blocks: [block],
       prompt,
       trigger: "messaging",
