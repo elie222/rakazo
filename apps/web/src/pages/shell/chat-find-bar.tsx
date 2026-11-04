@@ -80,8 +80,7 @@ export function ChatFindBar({
   }
 
   return (
-    <div
-      role="search"
+    <search
       className="flex items-center gap-1 rounded-xl border border-border bg-popover p-1 shadow-md"
       data-testid="chat-find"
     >
@@ -137,6 +136,6 @@ export function ChatFindBar({
       <Button variant="ghost" size="icon-sm" aria-label={t`Close`} onClick={onClose}>
         <X size={16} strokeWidth={1.8} />
       </Button>
-    </div>
+    </search>
   );
 }
