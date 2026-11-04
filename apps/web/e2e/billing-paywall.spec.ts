@@ -5,7 +5,7 @@ import { captureScreenshot, completeOnboarding, openUserSettings, signup } from 
 
 const price = { amount: 1200, currency: "usd", interval: "month", intervalCount: 1 } as const;
 
-function billingStatus(overrides: Record<string, unknown>): BillingStatus {
+function billingStatus(overrides: Partial<BillingStatus>): BillingStatus {
   return {
     access: false,
     canManage: true,
@@ -366,18 +366,32 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   });
   await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
   await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
-  const tiers = [
-    ["standard", "Standard", 1500, 14400, "standard", 25],
-    ["pro", "Pro", 4900, 46800, "large", 100],
-    ["max", "Max", 14900, 142800, "xlarge", 200],
-  ].map(([tier, name, monthlyPriceCents, annualPriceCents, computerSize, computerHours]) => ({
-    tier,
-    name,
-    monthlyPriceCents,
-    annualPriceCents,
-    computerSize,
-    computerHours,
-  }));
+  const tiers: NonNullable<BillingStatus["byokTiers"]> = [
+    {
+      tier: "standard",
+      name: "Standard",
+      monthlyPriceCents: 1500,
+      annualPriceCents: 14400,
+      computerSize: "standard",
+      computerHours: 25,
+    },
+    {
+      tier: "pro",
+      name: "Pro",
+      monthlyPriceCents: 4900,
+      annualPriceCents: 46800,
+      computerSize: "large",
+      computerHours: 100,
+    },
+    {
+      tier: "max",
+      name: "Max",
+      monthlyPriceCents: 14900,
+      annualPriceCents: 142800,
+      computerSize: "xlarge",
+      computerHours: 200,
+    },
+  ];
   let status = billingStatus({
     access: true,
     trialAvailable: false,
