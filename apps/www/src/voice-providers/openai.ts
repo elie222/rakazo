@@ -16,6 +16,16 @@ import {
   voiceWorkloadTable,
 } from "./shared";
 
+const TRANSCRIBE = RATES.openaiTranscribeMinute;
+/** A per-minute price as published, which can run to tenths of a cent ("$0.0045"). */
+function perMinute(price: number): string {
+  return `$${price}`;
+}
+function transcribeRow(topic: string, minute: number) {
+  return { topic, cells: [`${perMinute(minute)} a minute`, usd(minute * 60)] };
+}
+const MINI_TTS_TOKENS = `${usd(RATES.openaiMiniTtsTextIn)} per 1M text tokens in, ${usd(RATES.openaiMiniTtsAudioOut)} per 1M audio tokens out`;
+
 export const openai: VoiceProvider = {
   slug: "openai",
   name: "OpenAI",
@@ -87,7 +97,7 @@ export const openai: VoiceProvider = {
     {
       heading: "OpenAI TTS pricing",
       paragraphs: [
-        "OpenAI has no free tier for audio; you prepay API credit. The older speech models are billed per character, and the newer ones per token, which is why people find the pricing confusing. `gpt-4o-mini-tts` charges for the text you send and, much more, for the audio it returns. OpenAI used to estimate that at about $0.015 a minute; its pricing page no longer gives a per-minute figure, and some developers report bills above that estimate.",
+        `OpenAI has no free tier for audio; you prepay API credit. The older speech models are billed per character, and the newer ones per token, which is why people find the pricing confusing. \`gpt-4o-mini-tts\` charges for the text you send and, much more, for the audio it returns. OpenAI used to estimate that at about ${perMinute(RATES.openaiMiniTtsMinute)} a minute; its pricing page no longer gives a per-minute figure, and some developers report bills above that estimate.`,
       ],
       table: {
         caption: "OpenAI speech and transcription prices, as of November 2026",
@@ -96,7 +106,7 @@ export const openai: VoiceProvider = {
           {
             topic: "`gpt-4o-mini-tts`",
             cells: [
-              "$0.60 per 1M text tokens in, $12 per 1M audio tokens out",
+              MINI_TTS_TOKENS,
               `About ${OPENAI_MINI_TTS.perHour}`,
             ],
           },
@@ -110,12 +120,15 @@ export const openai: VoiceProvider = {
           },
           {
             topic: "`gpt-realtime-2.1-mini`",
-            cells: ["$10 per 1M audio tokens in, $20 per 1M audio tokens out", "Not published"],
+            cells: [
+              `${usd(RATES.openaiRealtimeMiniAudioIn)} per 1M audio tokens in, ${usd(RATES.openaiRealtimeMiniAudioOut)} per 1M audio tokens out`,
+              "Not published",
+            ],
           },
-          { topic: "`gpt-4o-mini-transcribe`", cells: ["$0.003 a minute", "$0.18"] },
-          { topic: "`gpt-transcribe`", cells: ["$0.0045 a minute", "$0.27"] },
-          { topic: "`gpt-4o-transcribe`, Whisper", cells: ["$0.006 a minute", "$0.36"] },
-          { topic: "`gpt-live-transcribe`", cells: ["$0.017 a minute", "$1.02"] },
+          transcribeRow("`gpt-4o-mini-transcribe`", TRANSCRIBE.mini),
+          transcribeRow("`gpt-transcribe`", TRANSCRIBE.gpt),
+          transcribeRow("`gpt-4o-transcribe`, Whisper", TRANSCRIBE.gpt4o),
+          transcribeRow("`gpt-live-transcribe`", TRANSCRIBE.live),
         ],
         note: `From [OpenAI's API pricing page](https://developers.openai.com/api/docs/pricing), checked November 2026. Hourly speech figures assume about ${count(CHARS_PER_HOUR)} characters an hour; the \`gpt-4o-mini-tts\` figure uses OpenAI's earlier estimate of $${RATES.openaiMiniTtsMinute} a minute.`,
       },
@@ -209,12 +222,12 @@ export const openai: VoiceProvider = {
     {
       question: "How much does OpenAI text to speech cost?",
       answer:
-        `As of November 2026, \`tts-1\` costs ${usd(RATES.openaiTts1)} and \`tts-1-hd\` ${usd(RATES.openaiTts1Hd)} per million characters. \`gpt-4o-mini-tts\` costs $0.60 per million text tokens in and $12 per million audio tokens out, which OpenAI used to estimate at about $${RATES.openaiMiniTtsMinute} a minute, roughly ${OPENAI_MINI_TTS.perHour} an hour. There is no free tier.`,
+        `As of November 2026, \`tts-1\` costs ${usd(RATES.openaiTts1)} and \`tts-1-hd\` ${usd(RATES.openaiTts1Hd)} per million characters. \`gpt-4o-mini-tts\` costs ${usd(RATES.openaiMiniTtsTextIn)} per million text tokens in and ${usd(RATES.openaiMiniTtsAudioOut)} per million audio tokens out, which OpenAI used to estimate at about ${perMinute(RATES.openaiMiniTtsMinute)} a minute, roughly ${OPENAI_MINI_TTS.perHour} an hour. There is no free tier.`,
     },
     {
       question: "How much does the Whisper API cost?",
       answer:
-        "Whisper and `gpt-4o-transcribe` cost $0.006 a minute ($0.36 an hour), `gpt-4o-mini-transcribe` $0.003 a minute, and the newer `gpt-transcribe` $0.0045 a minute. Whisper and the gpt-4o transcription models shut down on February 26, 2027.",
+        `Whisper and \`gpt-4o-transcribe\` cost ${perMinute(TRANSCRIBE.gpt4o)} a minute (${usd(RATES.openaiWhisperHour)} an hour), \`gpt-4o-mini-transcribe\` ${perMinute(TRANSCRIBE.mini)} a minute, and the newer \`gpt-transcribe\` ${perMinute(TRANSCRIBE.gpt)} a minute. Whisper and the gpt-4o transcription models shut down on February 26, 2027.`,
     },
     {
       question: "Is gpt-4o-mini-tts being deprecated?",

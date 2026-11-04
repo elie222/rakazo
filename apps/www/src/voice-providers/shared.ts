@@ -83,26 +83,69 @@ export function usd(amount: number): string {
   return `$${rounded.toFixed(2)}`;
 }
 
+/** Millions of characters, such as "1M" or "0.5M". */
+export function millions(value: number): string {
+  return `${value / 1_000_000}M`;
+}
+
+/** A credit allowance: "100,000", or "1.8M" from a million up. */
+export function credits(value: number): string {
+  return value >= 1_000_000 ? millions(value) : count(value);
+}
+
 /** Thousands separators, such as "810,000". */
 export function count(value: number): string {
   return Math.round(value).toLocaleString("en-US");
 }
 
-/** Cost of an hour of speech at {@link CHARS_PER_HOUR}, from a price per 1M characters. */
-export function perHourOfSpeech(pricePerMillion: number): string {
-  return usd((pricePerMillion * CHARS_PER_HOUR) / 1_000_000);
+/** Cost in dollars of an hour of speech at {@link CHARS_PER_HOUR}, from a price per 1M characters. */
+export function speechHourCost(pricePerMillion: number): number {
+  return (pricePerMillion * CHARS_PER_HOUR) / 1_000_000;
 }
 
-/** Per-unit prices, as of November 2026, behind every voice table and worked example. */
+/** {@link speechHourCost}, formatted. */
+export function perHourOfSpeech(pricePerMillion: number): string {
+  return usd(speechHourCost(pricePerMillion));
+}
+
+/** OpenAI's per-minute transcription prices, as of November 2026. */
+const OPENAI_TRANSCRIBE_MINUTE = {
+  mini: 0.003,
+  gpt: 0.0045,
+  gpt4o: 0.006,
+  live: 0.017,
+} as const;
+
+/**
+ * Prices in US dollars, as of November 2026, behind every voice table, worked example and
+ * sentence that quotes one. Speech is per 1M characters unless the name says otherwise.
+ */
 export const RATES = {
   elevenlabsFlash: 40,
   elevenlabsV4: 80,
   elevenlabsScribeHour: 0.22,
+  elevenlabsScribeRealtimeHour: 0.39,
+  elevenlabsAgentsMinute: 0.08,
+  elevenlabsPlans: {
+    free: { price: 0, credits: 10_000 },
+    starter: { price: 6, credits: 30_000 },
+    creator: { price: 22, credits: 121_000 },
+    pro: { price: 99, credits: 600_000 },
+    scale: { price: 299, credits: 1_800_000 },
+    business: { price: 990, credits: 6_000_000 },
+  },
   openaiMiniTtsMinute: 0.015,
+  openaiMiniTtsTextIn: 0.6,
+  openaiMiniTtsAudioOut: 12,
+  openaiRealtimeMiniAudioIn: 10,
+  openaiRealtimeMiniAudioOut: 20,
   openaiTts1: 15,
   openaiTts1Hd: 30,
-  openaiMiniTranscribeHour: 0.18,
+  openaiTranscribeMinute: OPENAI_TRANSCRIBE_MINUTE,
+  openaiMiniTranscribeHour: OPENAI_TRANSCRIBE_MINUTE.mini * 60,
+  openaiWhisperHour: OPENAI_TRANSCRIBE_MINUTE.gpt4o * 60,
   /** Cartesia plans: price a month and credits included; Sonic uses one credit per character. */
+  cartesiaFreeCredits: 20_000,
   cartesiaPlans: {
     pro: { price: 5, credits: 100_000, overage: 65 },
     startup: { price: 49, credits: 1_250_000, overage: 45 },
@@ -110,10 +153,21 @@ export const RATES = {
   },
   /** Ink transcription uses 3 credits per second of audio. */
   cartesiaInkCreditsPerHour: 3 * 3600,
+  cartesiaAgentsMinute: 0.03,
   fish: 15,
+  fishDrama3: 50,
+  fishDrama3Promo: 10,
   fishTranscribeHour: 0.36,
+  /** Fish Audio app plans: price, yearly price per month, credits, and the minutes its plan page says they buy. */
+  fishPlans: {
+    free: { price: 0, yearly: 0, credits: 8_000, minutes: 7 },
+    plus: { price: 15, yearly: 11, credits: 250_000, minutes: 200 },
+    pro: { price: 100, yearly: 75, credits: 2_000_000, minutes: 1_620 },
+  },
   deepgram: 30,
   deepgramBatchHour: 0.258,
+  deepgramStreamHour: 0.462,
+  deepgramCredit: 200,
   googleChirp: 30,
   googleFreeChars: 1_000_000,
   googleSttHour: 0.96,
@@ -122,12 +176,21 @@ export const RATES = {
   azureFreeChars: 500_000,
   azureFreeHours: 5,
   azureRealtimeHour: 1,
+  azureBatchHour: 0.18,
   pollyNeural: 16,
   pollyGenerative: 30,
+  transcribeBatchHour: 0.36,
+  transcribeStreamHour: 0.6,
   inworld: 25,
   inworldFlash: 15,
+  inworldSttHour: 0.15,
+  assemblyaiHour: { low: 0.15, high: 0.45 },
+  groqWhisperHour: 0.04,
   deepinfraKokoro: 0.99,
+  deepinfraWhisperHour: 0.012,
   togetherKokoro: 4,
+  /** A small rented CPU server (Hetzner CX33, €8.99), in dollars a month. */
+  cpuServerMonth: 10,
 } as const;
 
 /** Effective Cartesia price per 1M characters on a plan. */
@@ -170,7 +233,7 @@ const PRICE_ROWS = {
       usd(RATES.elevenlabsFlash),
       perHourOfSpeech(RATES.elevenlabsFlash),
       `${usd(RATES.elevenlabsScribeHour)} (Scribe v2)`,
-      "10,000 credits a month, non-commercial",
+      `${count(RATES.elevenlabsPlans.free.credits)} credits a month, non-commercial`,
       "Built in, speaks and transcribes",
     ],
   },
@@ -199,7 +262,7 @@ const PRICE_ROWS = {
     cells: [
       `${usd(RATES.openaiTts1)} or ${usd(RATES.openaiTts1Hd)}`,
       `${perHourOfSpeech(RATES.openaiTts1)} or ${perHourOfSpeech(RATES.openaiTts1Hd)}`,
-      "$0.36 (Whisper)",
+      `${usd(RATES.openaiWhisperHour)} (Whisper)`,
       "None",
       "Not used",
     ],
@@ -210,7 +273,7 @@ const PRICE_ROWS = {
       `${usd(cartesiaLow)} to ${usd(cartesiaHigh)}, by plan`,
       `${perHourOfSpeech(cartesiaLow)} to ${perHourOfSpeech(cartesiaHigh)}`,
       `${cartesiaInkPerHour("scale")} to ${cartesiaInkPerHour("pro")} (Ink, not used by Rakazo)`,
-      "20,000 credits a month",
+      `${count(RATES.cartesiaFreeCredits)} credits a month`,
       "Built in, speaks only",
     ],
   },
@@ -239,7 +302,7 @@ const PRICE_ROWS = {
     cells: [
       `${usd(RATES.deepinfraKokoro)} or ${usd(RATES.togetherKokoro)}`,
       `${perHourOfSpeech(RATES.deepinfraKokoro)} or ${perHourOfSpeech(RATES.togetherKokoro)}`,
-      "Whisper from $0.012 (DeepInfra)",
+      `Whisper from $${RATES.deepinfraWhisperHour} (DeepInfra)`,
       "Pay as you go",
       "Possibly through **Self-hosted**, untested",
     ],
@@ -259,8 +322,8 @@ const PRICE_ROWS = {
     cells: [
       usd(RATES.deepgram),
       perHourOfSpeech(RATES.deepgram),
-      `${usd(RATES.deepgramBatchHour)} batch, $0.46 streaming`,
-      "$200 credit",
+      `${usd(RATES.deepgramBatchHour)} batch, ${usd(RATES.deepgramStreamHour)} streaming`,
+      `${usd(RATES.deepgramCredit)} credit`,
       "Not available",
     ],
   },
@@ -270,7 +333,7 @@ const PRICE_ROWS = {
       usd(RATES.googleChirp),
       perHourOfSpeech(RATES.googleChirp),
       usd(RATES.googleSttHour),
-      "1M characters a month",
+      `${millions(RATES.googleFreeChars)} characters a month`,
       "Not available",
     ],
   },
@@ -279,8 +342,8 @@ const PRICE_ROWS = {
     cells: [
       `${usd(RATES.azureNeural)} or ${usd(RATES.azureHd)}`,
       `${perHourOfSpeech(RATES.azureNeural)} or ${perHourOfSpeech(RATES.azureHd)}`,
-      `${usd(RATES.azureRealtimeHour)} real time, $0.18 batch`,
-      "0.5M characters and 5 hours a month",
+      `${usd(RATES.azureRealtimeHour)} real time, ${usd(RATES.azureBatchHour)} batch`,
+      `${millions(RATES.azureFreeChars)} characters and ${RATES.azureFreeHours} hours a month`,
       "Not available",
     ],
   },
@@ -289,7 +352,7 @@ const PRICE_ROWS = {
     cells: [
       `${usd(RATES.pollyNeural)} or ${usd(RATES.pollyGenerative)}`,
       `${perHourOfSpeech(RATES.pollyNeural)} or ${perHourOfSpeech(RATES.pollyGenerative)}`,
-      "$0.36 batch, $0.60 streaming (Transcribe)",
+      `${usd(RATES.transcribeBatchHour)} batch, ${usd(RATES.transcribeStreamHour)} streaming (Transcribe)`,
       "Neural: 1M characters a month for a year",
       "Not available",
     ],
@@ -299,7 +362,7 @@ const PRICE_ROWS = {
     cells: [
       `${usd(RATES.inworld)} or ${usd(RATES.inworldFlash)}`,
       `${perHourOfSpeech(RATES.inworld)} or ${perHourOfSpeech(RATES.inworldFlash)}`,
-      "$0.15",
+      usd(RATES.inworldSttHour),
       "Up to 70 minutes of speech",
       "Not available",
     ],
@@ -322,7 +385,7 @@ export function voicePriceTable(caption: string, rows: readonly VoicePriceRow[])
 export const ALL_PRICING_SOURCES: readonly SourceLink[] = Object.values(PRICING_SOURCES);
 
 /** The worked example: daily minutes of speech and of transcription, over 30 days. */
-const WORKLOAD_DAILY_MINUTES = 30;
+export const WORKLOAD_DAILY_MINUTES = 30;
 export const WORKLOAD_HOURS = (WORKLOAD_DAILY_MINUTES * 30) / 60;
 export const WORKLOAD_CHARS = WORKLOAD_HOURS * CHARS_PER_HOUR;
 
@@ -413,7 +476,7 @@ const WORKLOAD_ROWS = {
   },
   selfHostedCloud: {
     topic: "Self-hosted on a small rented CPU server",
-    cells: ["Included", "Included", "About $10, slower"],
+    cells: ["Included", "Included", `About ${usd(RATES.cpuServerMonth)}, slower`],
   },
   macos: {
     topic: "[Server (Mac)](/voice-providers/macos/)",
@@ -426,7 +489,9 @@ const WORKLOAD_ROWS = {
   google: {
     topic: "Google Cloud (not in Rakazo)",
     cells: [
-      cost.google.speech === 0 ? "$0, inside the free 1M" : usd(cost.google.speech),
+      cost.google.speech === 0
+        ? `$0, inside the free ${millions(RATES.googleFreeChars)}`
+        : usd(cost.google.speech),
       usd(cost.google.transcription),
       aboutTotal("google"),
     ],
@@ -434,7 +499,7 @@ const WORKLOAD_ROWS = {
   azure: {
     topic: "Azure AI Speech (not in Rakazo)",
     cells: [
-      `${usd(cost.azure.speech)} after the free 0.5M`,
+      `${usd(cost.azure.speech)} after the free ${millions(RATES.azureFreeChars)}`,
       `${usd(cost.azure.transcription)} after ${RATES.azureFreeHours} free hours`,
       aboutTotal("azure"),
     ],

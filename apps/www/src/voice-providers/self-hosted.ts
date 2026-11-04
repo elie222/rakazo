@@ -1,6 +1,5 @@
 import type { VoiceProvider } from "./types";
 import {
-  CHARS_PER_HOUR,
   PRICING_SOURCES,
   RATES,
   VOICE_DOC,
@@ -9,6 +8,7 @@ import {
   WORKLOAD_COST,
   aboutTotal,
   homepage,
+  speechHourCost,
   usd,
   voicePriceTable,
   voiceWorkloadTable,
@@ -17,7 +17,7 @@ import {
 /** RunPod RTX 4090 per hour, community and secure, as of November 2026. */
 const GPU_HOUR = { low: 0.34, high: 0.89 };
 const HOURS_A_MONTH = 24 * 30;
-const ELEVENLABS_HOUR = (RATES.elevenlabsFlash * CHARS_PER_HOUR) / 1_000_000;
+const ELEVENLABS_HOUR = speechHourCost(RATES.elevenlabsFlash);
 /** Hours of speech a month at which an always-on GPU costs the same as ElevenLabs Flash v2.5. */
 const GPU_BREAK_EVEN_HOURS = Math.round((GPU_HOUR.low * HOURS_A_MONTH) / ELEVENLABS_HOUR);
 
@@ -126,7 +126,13 @@ export const selfHosted: VoiceProvider = {
         columns: ["Machine", "Cost", "Good for"],
         rows: [
           { topic: "A computer you already own", cells: ["Electricity only", "Kokoro and a small Whisper for one household or team"] },
-          { topic: "Small cloud CPU server, 4 vCPU and 8 GB", cells: ["From about €9 a month (Hetzner)", "Kokoro; Whisper is slow on long clips"] },
+          {
+            topic: "Small cloud CPU server, 4 vCPU and 8 GB",
+            cells: [
+              `From about ${usd(RATES.cpuServerMonth)} a month (Hetzner, €8.99)`,
+              "Kokoro; Whisper is slow on long clips",
+            ],
+          },
           { topic: "Mac mini", cells: ["From $899 (M6)", "Kokoro and Whisper or Parakeet on mlx-audio, quickly"] },
           {
             topic: "Rented RTX 4090",
@@ -143,7 +149,7 @@ export const selfHosted: VoiceProvider = {
     {
       heading: "Self-hosted vs hosted voice APIs",
       paragraphs: [
-        `${WORKLOAD} Hosted, that costs ${aboutTotal("openai").toLowerCase()} on OpenAI to ${usd(WORKLOAD_COST.cartesia.speech)} on Cartesia a month. Self-hosted on hardware you already have, it costs close to nothing, and on a small rented server about $10. A GPU only pays off with many users: at ${usd(GPU_HOUR.low)} an hour, always on, it costs more than ElevenLabs until you generate about ${GPU_BREAK_EVEN_HOURS} hours of speech a month.`,
+        `${WORKLOAD} Hosted, that costs ${aboutTotal("openai").toLowerCase()} on OpenAI to ${usd(WORKLOAD_COST.cartesia.speech)} on Cartesia a month. Self-hosted on hardware you already have, it costs close to nothing, and on a small rented server about ${usd(RATES.cpuServerMonth)}. A GPU only pays off with many users: at ${usd(GPU_HOUR.low)} an hour, always on, it costs more than ElevenLabs until you generate about ${GPU_BREAK_EVEN_HOURS} hours of speech a month.`,
         "What you give up is polish. The best hosted voices still sound more natural than Kokoro, cloning is easier, and someone else keeps the server running.",
       ],
       table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", [
@@ -158,7 +164,7 @@ export const selfHosted: VoiceProvider = {
     {
       heading: "Hosted servers that copy OpenAI's audio API",
       paragraphs: [
-        "**Self-hosted** isn't limited to your own machine. It accepts any public HTTPS address with an API key, so a hosted service that serves OpenAI's audio endpoints can work there too: DeepInfra and Together AI host Kokoro for $0.99 and $4 per million characters, and Groq serves Whisper for $0.04 an hour. We haven't tested these with Rakazo, and two details matter. Rakazo sends speech and transcription to the same address, so the service needs to do both. And the voice list comes from the server; when a server doesn't publish one, Rakazo offers Kokoro's voice names, which only work if the service runs Kokoro.",
+        `**Self-hosted** isn't limited to your own machine. It accepts any public HTTPS address with an API key, so a hosted service that serves OpenAI's audio endpoints can work there too: DeepInfra and Together AI host Kokoro for ${usd(RATES.deepinfraKokoro)} and ${usd(RATES.togetherKokoro)} per million characters, and Groq serves Whisper for ${usd(RATES.groqWhisperHour)} an hour. We haven't tested these with Rakazo, and two details matter. Rakazo sends speech and transcription to the same address, so the service needs to do both. And the voice list comes from the server; when a server doesn't publish one, Rakazo offers Kokoro's voice names, which only work if the service runs Kokoro.`,
         "Deepgram, Google, Azure and Amazon use their own API shapes, so **Self-hosted** can't reach them directly.",
       ],
       table: voicePriceTable("Self-hosted and hosted open models compared", [
@@ -248,7 +254,7 @@ export const selfHosted: VoiceProvider = {
     {
       question: "Is self-hosting Whisper cheaper than the Whisper API?",
       answer:
-        "For one person, on hardware you already have, yes: it costs only electricity, against $0.36 an hour for OpenAI's Whisper or $0.18 for `gpt-4o-mini-transcribe`. Renting a GPU just for transcription costs more than the API unless you transcribe many hours a day.",
+        `For one person, on hardware you already have, yes: it costs only electricity, against ${usd(RATES.openaiWhisperHour)} an hour for OpenAI's Whisper or ${usd(RATES.openaiMiniTranscribeHour)} for \`gpt-4o-mini-transcribe\`. Renting a GPU just for transcription costs more than the API unless you transcribe many hours a day.`,
     },
     {
       question: "Does self-hosted voice work offline?",

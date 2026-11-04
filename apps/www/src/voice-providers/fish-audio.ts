@@ -16,12 +16,7 @@ import {
   voiceWorkloadTable,
 } from "./shared";
 
-/** App plans as Fish Audio's plan page lists them: credits and the minutes of speech it says they buy. */
-const FISH_PLANS = {
-  free: { credits: 8_000, minutes: 7 },
-  plus: { credits: 250_000, minutes: 200 },
-  pro: { credits: 2_000_000, minutes: 1_620 },
-};
+const FISH_PLANS = RATES.fishPlans;
 const creditsPerMinute = Object.values(FISH_PLANS).map((plan) => plan.credits / plan.minutes);
 /** The credits per minute the plan page implies, rounded to the nearest 50. */
 const CREDITS_PER_MINUTE_RANGE = [Math.min(...creditsPerMinute), Math.max(...creditsPerMinute)]
@@ -81,7 +76,7 @@ export const fishAudio: VoiceProvider = {
           {
             topic: "Plus",
             cells: [
-              "$15, or $11 billed yearly",
+              `${usd(FISH_PLANS.plus.price)}, or ${usd(FISH_PLANS.plus.yearly)} billed yearly`,
               count(FISH_PLANS.plus.credits),
               count(FISH_PLANS.plus.minutes),
               "10 private, 1 professional",
@@ -90,7 +85,7 @@ export const fishAudio: VoiceProvider = {
           {
             topic: "Pro",
             cells: [
-              "$100, or $75 billed yearly",
+              `${usd(FISH_PLANS.pro.price)}, or ${usd(FISH_PLANS.pro.yearly)} billed yearly`,
               count(FISH_PLANS.pro.credits),
               count(FISH_PLANS.pro.minutes),
               "Unlimited, 5 professional",
@@ -117,7 +112,13 @@ export const fishAudio: VoiceProvider = {
             topic: "`s1`",
             cells: [`${usd(RATES.fish)} per 1M bytes, retiring December 31, 2026`, S2_HOUR],
           },
-          { topic: "`drama-3`", cells: ["$50 per 1M bytes ($10 until November 12, 2026)", perHourOfSpeech(50)] },
+          {
+            topic: "`drama-3`",
+            cells: [
+              `${usd(RATES.fishDrama3)} per 1M bytes (${usd(RATES.fishDrama3Promo)} until November 12, 2026)`,
+              perHourOfSpeech(RATES.fishDrama3),
+            ],
+          },
           { topic: "`transcribe-1-pro` (Rakazo's default)", cells: [
               `${usd(RATES.fishTranscribeHour)} per audio hour`,
               usd(RATES.fishTranscribeHour),
@@ -220,7 +221,7 @@ export const fishAudio: VoiceProvider = {
     {
       question: "How much does Fish Audio cost?",
       answer:
-        `As of November 2026, the app has a Free plan, Plus at $15 a month ($11 billed yearly) and Pro at $100 ($75 yearly). The API is pay as you go: ${usd(RATES.fish)} per million bytes of text for S2.1 Pro, about ${S2_HOUR} per hour of English speech, and ${usd(RATES.fishTranscribeHour)} per hour of transcription.`,
+        `As of November 2026, the app has a Free plan, Plus at ${usd(FISH_PLANS.plus.price)} a month (${usd(FISH_PLANS.plus.yearly)} billed yearly) and Pro at ${usd(FISH_PLANS.pro.price)} (${usd(FISH_PLANS.pro.yearly)} yearly). The API is pay as you go: ${usd(RATES.fish)} per million bytes of text for S2.1 Pro, about ${S2_HOUR} per hour of English speech, and ${usd(RATES.fishTranscribeHour)} per hour of transcription.`,
     },
     {
       question: "Is Fish Audio free?",
@@ -240,7 +241,7 @@ export const fishAudio: VoiceProvider = {
     {
       question: "Does the Fish Audio API do speech to text?",
       answer:
-        "Yes. Rakazo uses it to transcribe what you say when you hold the mic or talk on a call, with `transcribe-1-pro` by default, at $0.36 per hour of audio.",
+        `Yes. Rakazo uses it to transcribe what you say when you hold the mic or talk on a call, with \`transcribe-1-pro\` by default, at ${usd(RATES.fishTranscribeHour)} per hour of audio.`,
     },
     {
       question: "Which Fish Audio model does Rakazo use?",

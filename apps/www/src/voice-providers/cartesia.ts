@@ -7,9 +7,11 @@ import {
   VOICE_DOC,
   WORKLOAD,
   WORKLOAD_CHARS,
+  WORKLOAD_DAILY_MINUTES,
   cartesiaInkPerHour,
   cartesiaPerMillion,
   count,
+  credits,
   homepage,
   perHourOfSpeech,
   usd,
@@ -17,13 +19,15 @@ import {
   voiceWorkloadTable,
 } from "./shared";
 
-const { pro, startup } = RATES.cartesiaPlans;
-const FREE_CREDITS = 20_000;
-/** Pro's price plus overage for a month of this many characters. */
+const { pro, startup, scale } = RATES.cartesiaPlans;
+const FREE_CREDITS = RATES.cartesiaFreeCredits;
+/** Overage on the Pro plan for a month of this many characters. */
 function onPro(chars: number): number {
   return (Math.max(0, chars - pro.credits) * pro.overage) / 1_000_000;
 }
-const LIGHT_CHARS = ((10 * 30) / 60) * CHARS_PER_HOUR;
+/** Characters a month for someone who hears 10 minutes a day, scaled from the worked example. */
+const LIGHT_CHARS = (WORKLOAD_CHARS * 10) / WORKLOAD_DAILY_MINUTES;
+
 const LOW = cartesiaPerMillion("scale");
 const HIGH = cartesiaPerMillion("pro");
 
@@ -88,10 +92,31 @@ export const cartesia: VoiceProvider = {
           "Speech requests at once",
         ],
         rows: [
-          { topic: "Free", cells: ["$0", "20,000", "None", "No", "2"] },
-          { topic: "Pro", cells: ["$5", "100,000", "$65", "Instant", "3"] },
-          { topic: "Startup", cells: ["$49", "1.25M", "$45", "Instant, 2 Professional", "5"] },
-          { topic: "Scale", cells: ["$299", "8M", "$38", "Instant, 4 Professional", "15"] },
+          { topic: "Free", cells: ["$0", count(FREE_CREDITS), "None", "No", "2"] },
+          {
+            topic: "Pro",
+            cells: [usd(pro.price), credits(pro.credits), usd(pro.overage), "Instant", "3"],
+          },
+          {
+            topic: "Startup",
+            cells: [
+              usd(startup.price),
+              credits(startup.credits),
+              usd(startup.overage),
+              "Instant, 2 Professional",
+              "5",
+            ],
+          },
+          {
+            topic: "Scale",
+            cells: [
+              usd(scale.price),
+              credits(scale.credits),
+              usd(scale.overage),
+              "Instant, 4 Professional",
+              "15",
+            ],
+          },
           { topic: "Enterprise", cells: ["Custom", "Custom", "Custom", "Custom", "Custom"] },
         ],
         note: "From [Cartesia's pricing page](https://cartesia.ai/pricing), checked November 2026. Paid plans include commercial use; the page doesn't say for Free.",
@@ -100,7 +125,7 @@ export const cartesia: VoiceProvider = {
     {
       heading: "Cartesia cost per hour of speech",
       paragraphs: [
-        `Dividing each plan's price by its credits gives the effective rate. Smaller plans cost more per character, and the Free plan's ${count(FREE_CREDITS)} credits cover about ${Math.round(FREE_CREDITS / CHARS_PER_MINUTE)} minutes of speech a month. Cartesia's managed voice agents are priced separately at $0.03 a minute plus the language model and telephony.`,
+        `Dividing each plan's price by its credits gives the effective rate. Smaller plans cost more per character, and the Free plan's ${count(FREE_CREDITS)} credits cover about ${Math.round(FREE_CREDITS / CHARS_PER_MINUTE)} minutes of speech a month. Cartesia's managed voice agents are priced separately at ${usd(RATES.cartesiaAgentsMinute)} a minute plus the language model and telephony.`,
       ],
       table: {
         caption: "Cartesia effective rates, as of November 2026",
@@ -200,7 +225,7 @@ export const cartesia: VoiceProvider = {
     {
       question: "How much does Cartesia cost?",
       answer:
-        `As of November 2026, Cartesia has a Free plan with 20,000 credits a month, Pro at $5 for 100,000, Startup at $49 for 1.25 million and Scale at $299 for 8 million. Sonic uses one credit per character, so speech costs about ${usd(LOW)} to ${usd(HIGH)} per million characters, roughly ${perHourOfSpeech(LOW)} to ${perHourOfSpeech(HIGH)} per hour.`,
+        `As of November 2026, Cartesia has a Free plan with ${count(FREE_CREDITS)} credits a month, Pro at ${usd(pro.price)} for ${credits(pro.credits)}, Startup at ${usd(startup.price)} for ${credits(startup.credits)} and Scale at ${usd(scale.price)} for ${credits(scale.credits)}. Sonic uses one credit per character, so speech costs about ${usd(LOW)} to ${usd(HIGH)} per million characters, roughly ${perHourOfSpeech(LOW)} to ${perHourOfSpeech(HIGH)} per hour.`,
     },
     {
       question: "Cartesia vs ElevenLabs: which is better for AI agents?",

@@ -15,7 +15,11 @@ import {
   VOICE_PROVIDERS_PATH,
   VOICE_PROVIDERS_UPDATED,
   WORKLOAD,
+  WORKLOAD_COST,
+  count,
+  millions,
   perHourOfSpeech,
+  usd,
   voicePriceTable,
   voiceProviderPath,
   voiceWorkloadTable,
@@ -34,6 +38,27 @@ export const VOICE_PROVIDERS: readonly VoiceProvider[] = [
   selfHosted,
   macos,
 ];
+
+const WORKLOAD_NAMES: Record<keyof typeof WORKLOAD_COST, string> = {
+  elevenlabs: "ElevenLabs",
+  openai: "OpenAI",
+  cartesia: "Cartesia",
+  fish: "Fish Audio",
+  deepgram: "Deepgram",
+  google: "Google",
+  azure: "Azure",
+};
+
+/** Options in the worked example where transcription costs more than speech, such as after a free speech allowance. */
+const TRANSCRIPTION_HEAVY = (Object.keys(WORKLOAD_COST) as (keyof typeof WORKLOAD_COST)[])
+  .filter((key) => WORKLOAD_COST[key].transcription > WORKLOAD_COST[key].speech)
+  .map((key) => WORKLOAD_NAMES[key]);
+
+function listed(names: readonly string[]): string {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? "");
+}
+
+const BILL_ADVICE = `Speech is usually the larger charge, so how much your bots say matters more than how much you say${TRANSCRIPTION_HEAVY.length ? `. The exception is where a free speech allowance covers most of the month, as with ${listed(TRANSCRIPTION_HEAVY)} here, which leaves transcription as the main cost` : ""}. In Chrome on a desktop or in the mobile app, your device often does the transcription for free. A self-hosted Rakazo can also set \`VOICE_SUMMARY_MIN_CHARS\` so long replies are read as a short summary instead of in full.`;
 
 const HUB_SECTIONS: readonly ArticleSection[] = [
   {
@@ -62,7 +87,7 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
     heading: "What a talking AI agent costs a month",
     paragraphs: [
       WORKLOAD,
-      "Speech is most of the bill. Transcription is cheap everywhere, and in Chrome on a desktop or in the mobile app your device often does it for free. A self-hosted Rakazo can also set `VOICE_SUMMARY_MIN_CHARS` so long replies are read as a short summary instead of in full.",
+      BILL_ADVICE,
     ],
     table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", [
       "macos",
@@ -126,12 +151,12 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
       "Plenty of good voice APIs have no built-in connection in Rakazo. Here is how they compare, so you can judge what you'd be missing.",
     ],
     bullets: [
-      "Deepgram is best known for transcription: Nova-3 costs $0.26 an hour in batch and $0.46 streaming, with a $200 starting credit, and many voice agents use it to listen. Its Aura-2 voices cost $30 per million characters and sound plainer than ElevenLabs. It uses its own API, not OpenAI's.",
-      "Google Cloud's Chirp 3 HD voices cost $30 per million characters with the first million free each month, and its Speech-to-Text costs about $0.96 an hour. Gemini's speech models are billed per token.",
-      "Azure AI Speech has neural voices at $15 per million characters, HD voices at $22, and transcription from $0.18 an hour in batch, with a monthly free tier of 0.5 million characters and 5 hours.",
-      "Amazon Polly's neural voices cost $16 and generative voices $30 per million characters. Amazon Transcribe costs about $0.36 an hour in batch.",
-      "Inworld sells low-cost voices for agents, $15 to $25 per million characters. Hume's Octave focuses on emotional delivery; its rates were no longer on its pricing page in November 2026.",
-      "AssemblyAI ($0.15 to $0.45 an hour) and Groq's hosted Whisper ($0.04 an hour) are strong for transcription. Groq serves OpenAI's audio API shape, so it may be reachable through **Self-hosted**, but Rakazo would send speech there too.",
+      `Deepgram is best known for transcription: Nova-3 costs ${usd(RATES.deepgramBatchHour)} an hour in batch and ${usd(RATES.deepgramStreamHour)} streaming, with a ${usd(RATES.deepgramCredit)} starting credit, and many voice agents use it to listen. Its Aura-2 voices cost ${usd(RATES.deepgram)} per million characters and sound plainer than ElevenLabs. It uses its own API, not OpenAI's.`,
+      `Google Cloud's Chirp 3 HD voices cost ${usd(RATES.googleChirp)} per million characters with the first ${millions(RATES.googleFreeChars)} free each month, and its Speech-to-Text costs about ${usd(RATES.googleSttHour)} an hour. Gemini's speech models are billed per token.`,
+      `Azure AI Speech has neural voices at ${usd(RATES.azureNeural)} per million characters, HD voices at ${usd(RATES.azureHd)}, and transcription from ${usd(RATES.azureBatchHour)} an hour in batch, with a monthly free tier of ${millions(RATES.azureFreeChars)} characters and ${RATES.azureFreeHours} hours.`,
+      `Amazon Polly's neural voices cost ${usd(RATES.pollyNeural)} and generative voices ${usd(RATES.pollyGenerative)} per million characters. Amazon Transcribe costs about ${usd(RATES.transcribeBatchHour)} an hour in batch.`,
+      `Inworld sells low-cost voices for agents, ${usd(RATES.inworldFlash)} to ${usd(RATES.inworld)} per million characters. Hume's Octave focuses on emotional delivery; its rates were no longer on its pricing page in November 2026.`,
+      `AssemblyAI (${usd(RATES.assemblyaiHour.low)} to ${usd(RATES.assemblyaiHour.high)} an hour) and Groq's hosted Whisper (${usd(RATES.groqWhisperHour)} an hour) are strong for transcription. Groq serves OpenAI's audio API shape, so it may be reachable through **Self-hosted**, but Rakazo would send speech there too.`,
       "PlayHT, once a common ElevenLabs alternative, shut down its platform and API at the end of 2025.",
     ],
   },
@@ -195,7 +220,7 @@ export const VOICE_PROVIDERS_HUB = {
     {
       question: "Which text to speech API is free?",
       answer:
-        "macOS voices and open models such as Kokoro are free to run yourself. Among hosted APIs, Google gives 1 million Chirp 3 HD characters a month, Azure 0.5 million, ElevenLabs 10,000 credits for non-commercial use, Cartesia 20,000 credits, and Fish Audio's `s2.1-pro-free` model costs nothing until November 30, 2026.",
+        `macOS voices and open models such as Kokoro are free to run yourself. Among hosted APIs, Google gives ${millions(RATES.googleFreeChars)} Chirp 3 HD characters a month, Azure ${millions(RATES.azureFreeChars)}, ElevenLabs ${count(RATES.elevenlabsPlans.free.credits)} credits for non-commercial use, Cartesia ${count(RATES.cartesiaFreeCredits)} credits, and Fish Audio's \`s2.1-pro-free\` model costs nothing until November 30, 2026.`,
     },
     {
       question: "What is the most accurate speech to text API?",
@@ -205,12 +230,12 @@ export const VOICE_PROVIDERS_HUB = {
     {
       question: "Is there an API that can convert audio to text?",
       answer:
-        "Yes, many: OpenAI's transcription endpoint, ElevenLabs Scribe, Fish Audio, Deepgram, AssemblyAI, Google and Azure all do, from about $0.04 to $1 an hour. In Rakazo, ElevenLabs, OpenAI, Fish Audio and self-hosted servers transcribe what you say.",
+        `Yes, many: OpenAI's transcription endpoint, ElevenLabs Scribe, Fish Audio, Deepgram, AssemblyAI, Google and Azure all do, from about ${usd(RATES.groqWhisperHour)} to ${usd(RATES.azureRealtimeHour)} an hour. In Rakazo, ElevenLabs, OpenAI, Fish Audio and self-hosted servers transcribe what you say.`,
     },
     {
       question: "Is the Whisper API free?",
       answer:
-        "No. OpenAI charges $0.006 a minute for Whisper, and it shuts down on February 26, 2027. The Whisper model itself is open source, so you can run it free on your own hardware and connect it to Rakazo as a [self-hosted](/voice-providers/self-hosted/) server.",
+        `No. OpenAI charges ${usd(RATES.openaiWhisperHour)} an hour for Whisper, and it shuts down on February 26, 2027. The Whisper model itself is open source, so you can run it free on your own hardware and connect it to Rakazo as a [self-hosted](/voice-providers/self-hosted/) server.`,
     },
     {
       question: "Is Deepgram text to speech?",
