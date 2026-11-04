@@ -140,27 +140,13 @@ function createDeps(
     messagingChannel: {
       findMany: vi.fn(async () => [{ id: channel.id }]),
       findUnique: vi.fn(async () => channel),
+      // The transaction's roster read and write share the channel object's state.
+      findUniqueOrThrow: vi.fn(async () => channel),
       upsert: vi.fn(async () => channel),
-      update: vi.fn(async () => ({ ...channel, introPostedAt: new Date() })),
-      updateMany: vi.fn(
-        async ({
-          where,
-          data,
-        }: {
-          where: { id: string; OR?: Array<Record<string, unknown>> };
-          data: { rosterSeenAt?: Date };
-        }) => {
-          if (where.id !== channel.id || !data.rosterSeenAt) return { count: 0 };
-          const newer = where.OR?.some((clause) =>
-            clause.rosterSeenAt === null
-              ? channel.rosterSeenAt === null
-              : channel.rosterSeenAt instanceof Date && data.rosterSeenAt! > channel.rosterSeenAt,
-          );
-          if (!newer) return { count: 0 };
-          channel.rosterSeenAt = data.rosterSeenAt;
-          return { count: 1 };
-        },
-      ),
+      update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        Object.assign(channel, data);
+        return channel;
+      }),
     },
     messagingChannelMember: {
       findUnique: vi.fn(
@@ -343,6 +329,7 @@ function createDeps(
           })),
         ),
         agentConnection: prisma.agentConnection,
+        messagingChannel: prisma.messagingChannel,
         messagingChannelMember: prisma.messagingChannelMember,
         messagingOutbound: prisma.messagingOutbound,
         messagingIdentity: prisma.messagingIdentity,
@@ -1915,6 +1902,52 @@ describe("createMessagingInboundHandler channel routing", () => {
 
     expect(gone.status).toBe("left");
     expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-2")).toBe(false);
+  });
+
+  it("does not discover members or queue invitations from a delayed older roster", async () => {
+    const deps = createDeps();
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...groupEvent,
+      handle: "handle-new",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111", "+15554444444"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(deps.members.map((member) => member.address)).not.toContain("+15554444444");
+  });
+
+  it("ignores a roster whose time is not newer than the newest one seen", async () => {
+    const joined = {
+      id: "cm-z",
+      channelId: "ch-1",
+      address: "+15553333333",
+      identityId: null,
+      status: "approved",
+    };
+    const deps = createDeps({ members: [joined] });
+    const handle = createMessagingInboundHandler(deps);
+    const at = new Date("2026-11-04T10:01:00.000Z");
+    await handle({
+      ...groupEvent,
+      handle: "handle-first",
+      participants: ["+15551111111", "+15553333333"],
+      rosterAt: at,
+    });
+    await handle({
+      ...groupEvent,
+      handle: "handle-conflict",
+      participants: ["+15551111111"],
+      rosterAt: at,
+    });
+
+    expect(joined.status).toBe("approved");
   });
 
   it("sanitizes attacker-controlled channel names before storing them", async () => {
