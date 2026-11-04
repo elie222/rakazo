@@ -104,7 +104,9 @@ capTextScaling();
 configureForegroundNotifications();
 registerSessionDiskCache(clearSavedChats);
 registerSessionDiskCache(clearQueries);
-registerSessionDiskCache(() => void clearLastBot());
+registerSessionDiskCache((sameAccount) => {
+  if (!sameAccount) return clearLastBot();
+});
 installClientUpdates();
 registerSessionDiskCache(() => void clearAppBadge());
 // Keep the splash up until the saved appearance applies, so the first frame isn't in the OS scheme.

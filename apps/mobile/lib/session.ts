@@ -31,30 +31,33 @@ function enqueueScopeWrite<T>(task: () => Promise<T>): Promise<T> {
   return next;
 }
 
-const sessionDiskCaches = new Set<() => void>();
+const sessionDiskCaches = new Set<(sameAccount: boolean) => void | Promise<void>>();
 
-/** Registers a disk cache that every session change (sign-in, sign-out, server switch) deletes. */
-export function registerSessionDiskCache(clear: () => void): void {
+/** Registers a cache wipe; a verified same-account replacement can keep account-scoped data. */
+export function registerSessionDiskCache(
+  clear: (sameAccount: boolean) => void | Promise<void>,
+): void {
   sessionDiskCaches.add(clear);
 }
 
 /** `keepUnsent` is for a new token of the same account and server; its unsent messages stay. */
-function invalidateSessionCaches(keepUnsent = false): Promise<void> {
+function invalidateSessionCaches(keepUnsent = false, sameAccount = keepUnsent): Promise<void> {
   scopeInvalidated = true;
   if (!keepUnsent) clearFailedSends();
   clearNetworkCache();
   // Another account must never see, or share, the previous owner's invite link.
   forgetReferrals();
+  const clearingDiskCaches: Promise<void>[] = [];
   for (const clear of sessionDiskCaches) {
     try {
-      clear();
+      clearingDiskCaches.push(Promise.resolve(clear(sameAccount)).catch(() => undefined));
     } catch {
       // A failed disk wipe must not block the session change or the other wipes.
     }
   }
   const clearingArtifacts = keepUnsent ? undefined : invalidateArtifactCacheSession();
   return enqueueScopeWrite(async () => {
-    await clearingArtifacts;
+    await Promise.all([clearingArtifacts, ...clearingDiskCaches]);
     try {
       await SecureStore.deleteItemAsync(INTEGRATIONS_SCOPE_KEY);
     } catch {
@@ -163,12 +166,13 @@ export async function loadSessionToken() {
   return snapshot.ok ? snapshot.value : "";
 }
 
-export async function saveSessionToken(token: string) {
+/** `sameAccount` requires a verified replacement on the current server. */
+export async function saveSessionToken(token: string, sameAccount = false) {
   const generation = ++sessionGeneration;
   publishSessionGeneration(false);
   sessionInvalidated = true;
   sessionFallback = undefined;
-  const clearingScope = invalidateSessionCaches();
+  const clearingScope = invalidateSessionCaches(false, sameAccount);
   // Marked before the token lands, so an account deletion that clears it afterwards also clears the mark.
   await rememberSignedIn();
   await enqueueScopeWrite(() => SecureStore.setItemAsync(SESSION_KEY, token));
@@ -247,10 +251,11 @@ export async function restoreSessionToken(token: string) {
 export async function replaceSessionTokenIfCurrent(
   generation: number,
   token: string,
+  sameAccount = false,
 ): Promise<boolean> {
   if (generation !== sessionGeneration) return false;
   try {
-    await saveSessionToken(token);
+    await saveSessionToken(token, sameAccount);
   } catch (error) {
     // The server already revoked the stored token; keep the replacement in memory unless
     // something else changed the session meanwhile, and still report that it was not saved.
