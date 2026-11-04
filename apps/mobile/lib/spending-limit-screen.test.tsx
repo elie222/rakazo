@@ -117,9 +117,9 @@ function button(text: string) {
 /** Answers the system prompt the amount row opens. */
 function enter(text: string) {
   const [, , buttons] = mocks.prompt.mock.calls.at(-1)!;
-  return (buttons as Array<{ text: string; onPress?: (value: string) => void }>)
-    .find((entry) => entry.text === "Save")!
-    .onPress!(text);
+  return (buttons as Array<{ text: string; onPress?: (value: string) => void }>).find(
+    (entry) => entry.text === "Save",
+  )!.onPress!(text);
 }
 
 it("sets a limit from the amount, then changes how often it resets, and removes it", async () => {
