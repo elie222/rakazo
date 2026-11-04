@@ -19,9 +19,16 @@ RUNTIME = "1.0.12"
 SWIFT_FILE = "apps/mobile/modules/rakazo-foo/ios/FooModule.swift"
 
 
-def app_json(version):
-    """The mobile manifest, with only the keys the OTA decision reads."""
-    return json.dumps({"expo": {"version": version, "extra": {"eas": {"projectId": "test"}}}})
+def app_json(version, icon_key=None):
+    """The mobile manifest, with only the keys the OTA decision reads.
+
+    The pretty layout keeps a clean merge possible: two sides that adopt the same
+    version and touch disjoint keys merge without a conflict.
+    """
+    extra = {"eas": {"projectId": "test"}}
+    if icon_key is not None:
+        extra["iconKey"] = icon_key
+    return json.dumps({"expo": {"version": version, "extra": extra}}, indent=2) + "\n"
 
 
 def update(commit, runtime, rollback=False):
@@ -42,7 +49,7 @@ class FixtureRepository:
     """A git history that reproduces the risky sequence: a version bump, then a native
     change, then a JavaScript-only change, plus a commit that never reached main."""
 
-    def __init__(self, path, lockfile=False, native_change=True):
+    def __init__(self, path, lockfile=False, native_change=True, merged_native=False):
         self.path = path
         self.git("init", "--quiet", "-b", "main")
         self.git("config", "user.email", "ota-base-test@example.com")
@@ -50,7 +57,10 @@ class FixtureRepository:
         root_files = {"apps/mobile/app.json": app_json(OLD_RUNTIME)}
         if lockfile:
             root_files["pnpm-lock.yaml"] = (REPO / "pnpm-lock.yaml").read_text()
-        self.commit("start at an older runtime", root_files)
+        self.root = self.commit("start at an older runtime", root_files)
+        if merged_native:
+            self.build_merged_native_history()
+            return
         self.bump = self.commit("introduce the runtime version", {"apps/mobile/app.json": app_json(RUNTIME)})
         if native_change:
             self.native = self.commit(
@@ -67,6 +77,34 @@ class FixtureRepository:
             "change JavaScript off main", {"apps/mobile/lib/side.ts": "export const side = 3;\n"}
         )
         self.git("checkout", "--quiet", "main")
+
+    def build_merged_native_history(self):
+        """Main adopts the runtime and ships binaries, then merges a branch that had
+        adopted the same version on its own and added a native module. A path-filtered
+        log simplifies the merge into the branch, hiding main's adoption."""
+        self.bump = self.commit(
+            "introduce the runtime version on main", {"apps/mobile/app.json": app_json(RUNTIME)}
+        )
+        self.git("checkout", "--quiet", "-b", "feature", self.root)
+        self.native = self.commit(
+            "adopt the runtime off main and add a native module",
+            {
+                "apps/mobile/app.json": app_json(RUNTIME, icon_key="feature"),
+                SWIFT_FILE: "import Foundation\n",
+                "apps/mobile/lib/use-foo.ts": "export const useFoo = 1;\n",
+            },
+        )
+        self.git("checkout", "--quiet", "main")
+        subprocess.run(
+            ["git", "-C", str(self.path), "merge", "--quiet", "--no-edit", "feature"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self.head = self.commit(
+            "change JavaScript only", {"apps/mobile/lib/other.ts": "export const other = 2;\n"}
+        )
+        self.off_history = None
 
     def git(self, *args):
         return subprocess.check_output(["git", "-C", str(self.path), *args], text=True).strip()
@@ -95,10 +133,12 @@ class OtaBaseTestCase(unittest.TestCase):
         self.scripts = scripts
         return directory
 
-    def decide(self, response):
+    def decide(self, response, env=None):
         return subprocess.check_output(
             ["bash", str(self.scripts / "ota-base.sh"), response],
             cwd=self.repo.path,
+            env=dict(os.environ, **env) if env else None,
+            stdin=subprocess.DEVNULL,
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
@@ -142,15 +182,46 @@ class OtaBaseDecisionTests(OtaBaseTestCase):
         )
         self.assertIn(SWIFT_FILE, self.diff_files(self.repo.bump, self.repo.head))
 
+    def test_merged_native_change_diffs_from_mains_adoption(self):
+        # A path-filtered log simplifies the merge into the branch and hides main's
+        # adoption; the base must still be the commit main shipped binaries from.
+        self.build_repository(merged_native=True)
+        self.assertEqual(self.decide(NO_UPDATES), self.repo.bump)
+        self.assertIn(SWIFT_FILE, self.diff_files(self.repo.bump, self.repo.head))
+        self.assertNotIn(SWIFT_FILE, self.diff_files(self.repo.native, self.repo.head))
+
     def test_unusable_lookup_reports_unknown(self):
         for response in (
             "",
             "not json",
+            "null",
+            json.dumps({}),
+            json.dumps({"status": "ok"}),
             json.dumps({"errors": [{"message": "Expo is down"}]}),
             updates_response(update("0" * 40, RUNTIME)),
         ):
             with self.subTest(response=response):
                 self.assertEqual(self.decide(response), "unknown")
+
+    def test_an_empty_body_stays_unknown_even_where_jq_exits_zero(self):
+        # Some CI images run a jq that reads an empty body as no input and exits 0,
+        # which must not turn an unreachable Expo into "no published update".
+        shim = pathlib.Path(tempfile.mkdtemp(prefix="ota-base-jq-"))
+        self.addCleanup(shutil.rmtree, shim, ignore_errors=True)
+        jq = shutil.which("jq")
+        (shim / "jq").write_text(
+            "#!/usr/bin/env bash\n"
+            "for arg in \"$@\"; do\n"
+            f'  if [[ "$arg" != -* && -f "$arg" ]]; then exec "{jq}" "$@"; fi\n'
+            "done\n"
+            'input="$(cat)"\n'
+            'if [[ -z "$input" ]]; then exit 0; fi\n'
+            f'printf \'%s\' "$input" | "{jq}" "$@"\n'
+        )
+        (shim / "jq").chmod(0o755)
+        self.assertEqual(
+            self.decide("", env={"PATH": f"{shim}:{os.environ['PATH']}"}), "unknown"
+        )
 
     def test_rollback_update_is_not_a_published_update(self):
         self.assertEqual(
@@ -271,6 +342,12 @@ class OtaBaseStepTests(OtaBaseTestCase):
         publish, summary = self.run_step(updates_response(update("0" * 40, RUNTIME)))
         self.assertEqual(publish, "publish=false")
         self.assertIn("Could not determine the last published update", summary)
+
+    def test_blocks_when_the_native_change_arrived_through_a_merge(self):
+        self.build_repository(lockfile=True, merged_native=True)
+        publish, summary = self.run_step(NO_UPDATES)
+        self.assertEqual(publish, "publish=false")
+        self.assertIn(SWIFT_FILE, summary)
 
     def test_blocks_when_expo_is_unreachable(self):
         publish, summary = self.run_step("", transport_failure=True)

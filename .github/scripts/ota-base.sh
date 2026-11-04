@@ -15,31 +15,37 @@ runtime="$(jq -r .expo.version "$root/apps/mobile/app.json")"
 
 # The GraphQL API reports failures inside an HTTP 200 body, and transport failures
 # leave no body; neither may read as "no published update", because a broken lookup
-# must block publishing instead of widening the comparison.
-published="$(
-  jq -er --arg runtime "$runtime" '
-    if has("errors") or (.data.app.byId | type) != "object" or
-       (.data.app.byId | has("updateBranchByName") | not) then
-      error("no usable update data")
-    else
-      .data.app.byId.updateBranchByName
-      | if . == null then []
-        elif (.updates | type) == "array" then .updates
-        else error("malformed updates") end
-      | . as $updates
-      | map(select(.runtimeVersion == $runtime and (.isRollBackToEmbedded | not)))[0] as $update
-      | if $update == null and ($updates | length) >= 50 then
-          error("update lookup is incomplete")
-        elif $update == null then
-          ""
-        elif ($update.gitCommitHash | type) != "string" or $update.gitCommitHash == "" then
-          error("missing published commit")
-        else
-          $update.gitCommitHash
-        end
-    end
-  ' <<<"$response"
-)" || published="unknown"
+# must block publishing instead of widening the comparison. Some jq builds also read
+# an empty body as no input and exit 0, so validate the body before parsing it.
+if [[ -z "$response" ]] ||
+  ! jq -e 'type == "object" and (has("data") or has("errors"))' <<<"$response" >/dev/null 2>&1; then
+  published="unknown"
+else
+  published="$(
+    jq -er --arg runtime "$runtime" '
+      if has("errors") or (.data.app.byId | type) != "object" or
+         (.data.app.byId | has("updateBranchByName") | not) then
+        error("no usable update data")
+      else
+        .data.app.byId.updateBranchByName
+        | if . == null then []
+          elif (.updates | type) == "array" then .updates
+          else error("malformed updates") end
+        | . as $updates
+        | map(select(.runtimeVersion == $runtime and (.isRollBackToEmbedded | not)))[0] as $update
+        | if $update == null and ($updates | length) >= 50 then
+            error("update lookup is incomplete")
+          elif $update == null then
+            ""
+          elif ($update.gitCommitHash | type) != "string" or $update.gitCommitHash == "" then
+            error("missing published commit")
+          else
+            $update.gitCommitHash
+          end
+      end
+    ' <<<"$response"
+  )" || published="unknown"
+fi
 
 # A published update this checkout has no object for cannot anchor the diff either.
 if [[ -n "$published" && "$published" != "unknown" ]] &&
@@ -62,7 +68,10 @@ fi
 # Every build of this runtime was made from the commit that first carried the version
 # or a later one, so the oldest commit with this version anchors the diff: a version
 # that returned after a bump keeps the older anchor, and builds from before the bump
-# stay covered too. A shallow clone cannot prove where the version was introduced.
+# stay covered too. Walk main's first-parent history: a path-filtered log simplifies
+# a merge into whichever side kept the file, so it can hide an earlier adoption behind
+# a branch that carried the same version. A shallow clone cannot prove where the
+# version was introduced.
 if [[ "$(git -C "$root" rev-parse --is-shallow-repository)" == "true" ]]; then
   echo "no-base"
   exit 0
@@ -73,7 +82,7 @@ while read -r commit; do
     jq -r .expo.version)" == "$runtime" ]]; then
     base="$commit"
   fi
-done < <(git -C "$root" log --format=%H -- apps/mobile/app.json)
+done < <(git -C "$root" log --first-parent --format=%H -- apps/mobile/app.json)
 if [[ -n "$base" ]]; then
   echo "$base"
 else
