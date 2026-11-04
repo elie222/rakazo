@@ -49,3 +49,28 @@ it.each(examples)("%s offers manual copying when copying fails", async (label, m
   await vi.waitFor(() => expect(field?.selectionEnd).toBe(text.length));
   expect(field?.selectionStart).toBe(0);
 });
+
+it("Copy rows offers the text from the click when the table changes before the failure", async () => {
+  let fail: () => void = () => undefined;
+  Object.defineProperty(navigator, "clipboard", {
+    value: {
+      writeText: () =>
+        new Promise<void>((_, reject) => {
+          fail = () => reject();
+        }),
+    },
+    configurable: true,
+  });
+  document.execCommand = vi.fn(() => false);
+  await act(async () => root.render(<ChatMarkdown>{"| Item |\n| --- |\n| apple |"}</ChatMarkdown>));
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Copy rows"]')?.click(),
+  );
+  // Streaming updates the table while the copy is still in flight.
+  await act(async () =>
+    root.render(<ChatMarkdown>{"| Item |\n| --- |\n| avocado |"}</ChatMarkdown>),
+  );
+  await act(async () => fail());
+  const field = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea');
+  expect(field?.value).toBe("Item\napple");
+});

@@ -97,3 +97,37 @@ it("offers the message for manual copying when copying fails", async () => {
   expect(field?.value).toBe("Answer text");
   await vi.waitFor(() => expect(document.activeElement).toBe(field));
 });
+
+it("offers the text from the click when the message changes before the failure", async () => {
+  let fail: () => void = () => undefined;
+  Object.defineProperty(navigator, "clipboard", {
+    value: {
+      writeText: () =>
+        new Promise<void>((_, reject) => {
+          fail = () => reject();
+        }),
+    },
+    configurable: true,
+  });
+  stubExecCommand(() => false);
+  await click(document.querySelector<HTMLButtonElement>('button[aria-label="More"]'));
+  await click(menuItem("Copy"));
+
+  const changed: ThreadMessage = { ...message, blocks: [{ kind: "text", text: "Changed text" }] };
+  act(() =>
+    root.render(
+      <MessageHoverActions
+        message={changed}
+        side="start"
+        onReply={vi.fn()}
+        onMarkUnread={vi.fn()}
+        onReact={vi.fn<(message: ThreadMessage, reaction: MessageReaction) => Promise<void>>()}
+      />,
+    ),
+  );
+  await act(async () => fail());
+
+  const field = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea');
+  expect(field?.value).toBe("Answer text");
+  Reflect.deleteProperty(navigator, "clipboard");
+});

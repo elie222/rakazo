@@ -82,7 +82,7 @@ function preserveSkippedTableText() {
 
 function CopyButton({ read, label }: { read: () => string; label: string }) {
   const copy = useMarkdownCopy();
-  const [copied, copyText, copyFailed, resetCopy] = useCopyText();
+  const [copied, copyText, copyFailed, resetCopy, failedText] = useCopyText();
 
   return (
     <>
@@ -97,7 +97,7 @@ function CopyButton({ read, label }: { read: () => string; label: string }) {
       <CopyTextFallback
         open={copyFailed}
         onOpenChange={resetCopy}
-        text={copyFailed ? read() : ""}
+        text={failedText}
         label={label}
       />
     </>

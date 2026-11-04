@@ -41,15 +41,22 @@ export function writeClipboard(text: string): Promise<boolean> {
 
 /**
  * Copy text and report a short-lived "copied" flag for button feedback, and whether the last
- * copy failed so the caller can offer the text to select by hand.
+ * copy failed so the caller can offer the text to select by hand. Only the newest attempt's
+ * outcome counts, and its exact text travels with the failure, so a result that arrives out of
+ * order or a content change after the click cannot put different text in the fallback dialog.
  */
 export function useCopyText(): [
   copied: boolean,
   copy: (text: string) => void,
   failed: boolean,
   reset: () => void,
+  failedText: string,
 ] {
-  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const [state, setState] = useState<{ status: "idle" | "copied" | "failed"; text: string }>({
+    status: "idle",
+    text: "",
+  });
+  const attemptRef = useRef(0);
   const timerRef = useRef<number | null>(null);
 
   useEffect(
@@ -60,12 +67,28 @@ export function useCopyText(): [
   );
 
   const copy = (text: string) => {
+    const attempt = ++attemptRef.current;
+    if (timerRef.current) window.clearTimeout(timerRef.current);
     void writeClipboard(text).then((ok) => {
-      if (timerRef.current) window.clearTimeout(timerRef.current);
-      setState(ok ? "copied" : "failed");
-      if (ok) timerRef.current = window.setTimeout(() => setState("idle"), 2000);
+      // A newer attempt superseded this one; its outcome decides.
+      if (attempt !== attemptRef.current) return;
+      setState({ status: ok ? "copied" : "failed", text: ok ? "" : text });
+      if (ok) {
+        timerRef.current = window.setTimeout(() => {
+          timerRef.current = null;
+          if (attempt !== attemptRef.current) return;
+          setState({ status: "idle", text: "" });
+        }, 2000);
+      }
     });
   };
 
-  return [state === "copied", copy, state === "failed", () => setState("idle")];
+  const reset = () => {
+    // A copy still in flight must not reopen the dialog with its late failure.
+    attemptRef.current++;
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    setState({ status: "idle", text: "" });
+  };
+
+  return [state.status === "copied", copy, state.status === "failed", reset, state.text];
 }

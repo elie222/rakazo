@@ -38,7 +38,7 @@ export function ComputersUnavailableHint({
   const [provider, setProvider] = useState(initialProvider);
   const [phase, setPhase] = useState<SandboxAvailabilityPhase>("idle");
   const [failureMessage, setFailureMessage] = useState<string | null>(null);
-  const [copied, copy, copyFailed, resetCopy] = useCopyText();
+  const [copied, copy, copyFailed, resetCopy, copyFailedText] = useCopyText();
   const onRecoveredRef = useRef(onRecovered);
   onRecoveredRef.current = onRecovered;
   const onRecoveryDismissedRef = useRef(onRecoveryDismissed);
@@ -92,7 +92,7 @@ export function ComputersUnavailableHint({
       <CopyTextFallback
         open={copyFailed}
         onOpenChange={resetCopy}
-        text={sandboxEnvGuidanceText()}
+        text={copyFailedText}
         label={t`Copy .env example`}
       />
       {phase === "loading" ? (

@@ -79,7 +79,10 @@ export const TableCard = memo(function TableCard({
   const { columns, aligns, rows, schemaKey, dataSignature, numericColumns, minWidths, rowKeys } =
     table;
   const copy = useMarkdownCopy();
-  const [copyFailed, setCopyFailed] = useState(false);
+  // The text the failed attempt submitted, or null: streaming or sorting must not change what
+  // the fallback dialog offers.
+  const [copyFailedText, setCopyFailedText] = useState<string | null>(null);
+  const copyAttempt = useRef(0);
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -143,14 +146,24 @@ export const TableCard = memo(function TableCard({
   };
 
   const copyRows = () => {
-    void writeClipboard(tableToTsv(columns, sortedRows)).then((ok) => {
-      setCopyFailed(!ok);
+    const text = tableToTsv(columns, sortedRows);
+    const attempt = ++copyAttempt.current;
+    void writeClipboard(text).then((ok) => {
+      // A newer click or a dismissed dialog superseded this attempt.
+      if (attempt !== copyAttempt.current) return;
+      setCopyFailedText(ok ? null : text);
       if (!ok) return;
       setCopiedSignature(dataSignature);
       announce(copy.copied);
       window.clearTimeout(copiedTimer.current);
       copiedTimer.current = window.setTimeout(() => setCopiedSignature(null), 1500);
     });
+  };
+
+  const dismissCopyFailed = () => {
+    // A copy still in flight must not reopen the dialog with its late failure.
+    copyAttempt.current++;
+    setCopyFailedText(null);
   };
 
   const downloadCsv = () => {
@@ -272,9 +285,9 @@ export const TableCard = memo(function TableCard({
   return (
     <Dialog open={expanded} onOpenChange={setExpanded}>
       <CopyTextFallback
-        open={copyFailed}
-        onOpenChange={setCopyFailed}
-        text={copyFailed ? tableToTsv(columns, sortedRows) : ""}
+        open={copyFailedText !== null}
+        onOpenChange={dismissCopyFailed}
+        text={copyFailedText ?? ""}
         label={copy.copyRows}
       />
       <div className="rk-table-card rk-table-box" data-testid="table-card">

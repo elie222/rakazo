@@ -34,7 +34,7 @@ export function MessageHoverActions({
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
-  const [copied, copy, copyFailed, resetCopy] = useCopyText();
+  const [copied, copy, copyFailed, resetCopy, copyFailedText] = useCopyText();
   const [moreOpen, setMoreOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
 
@@ -129,7 +129,7 @@ export function MessageHoverActions({
       <CopyTextFallback
         open={copyFailed}
         onOpenChange={resetCopy}
-        text={copyableMessageText(message)}
+        text={copyFailedText}
         label={t`Copy`}
       />
     </MessageHoverMetadata>
