@@ -437,7 +437,16 @@ from `routine.created` events, because `schedule_cancel` deletes the routine.
 The `initiative-meaning-v1` rubric grades the follow-up's chat and push by meaning:
 they must ask about the outstanding item without claiming it arrived or
 inventing details. Calibration anchors cover a paraphrase, another
-language, a false receipt, and a bare alert. No live baseline is claimed yet.
+language, a false receipt, and a bare alert.
+
+The November 2026 baseline, two runs of three trials per case on the default
+small deployment model with a larger one judging, never set a follow-up the user
+declined or one for an item already closed. The open-loop and closed-early cases
+passed half the time. On the misses the bot set no follow-up, or answered the
+promise with a clarifying question, which these cases count as a failure. The
+runner wakes the follow-up right away rather than at the promised time, so a bot
+that notices the lease is not due yet may schedule another check; that shows up
+as a second follow-up.
 
 ### Bot memory evals
 

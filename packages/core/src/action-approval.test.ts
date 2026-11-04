@@ -155,6 +155,10 @@ describe("connectorToolRequiresApproval", () => {
     expect(connectorToolRequiresApproval("get_or_create_contact", true)).toBe(true);
     expect(connectorToolRequiresApproval("profile_card", true)).toBe(true);
   });
+
+  it("still requires approval for a declared read whose name says load", () => {
+    expect(connectorToolRequiresApproval("warehouse-load-rows", true)).toBe(true);
+  });
 });
 
 describe("resolveActionApprovalDetail", () => {
@@ -165,6 +169,33 @@ describe("resolveActionApprovalDetail", () => {
     const base = { toolName: "gmail_read_thread", connectorKind: "gmail", rules };
     expect(resolveActionApprovalDetail(base).decision).toBe("allow");
     expect(resolveActionApprovalDetail({ ...base, readOnly: false }).decision).toBe("ask");
+  });
+
+  it("pipedream-connector-rule", () => {
+    const deny = (matchValue: string) => [
+      { effect: "deny" as const, matchKind: "connector" as const, matchValue },
+    ];
+    expect(
+      resolveActionApprovalDetail({
+        toolName: "gmail-delete-email",
+        readOnly: false,
+        rules: deny("gmail"),
+      }).decision,
+    ).toBe("deny");
+    expect(
+      resolveActionApprovalDetail({
+        toolName: "google_calendar-delete-event",
+        readOnly: false,
+        rules: deny("google_calendar"),
+      }).decision,
+    ).toBe("deny");
+    expect(
+      resolveActionApprovalDetail({
+        toolName: "gmail-delete-email",
+        readOnly: false,
+        rules: [{ effect: "require_approval", matchKind: "category", matchValue: "email" }],
+      }).decision,
+    ).toBe("ask");
   });
 });
 
@@ -290,6 +321,30 @@ describe("connectorKindFromToolName", () => {
     expect(
       connectorKindFromToolName("microsoft_outlook_send_email", ["microsoft", "microsoft_outlook"]),
     ).toBe("microsoft_outlook");
+  });
+
+  it("matches a known kind before a hyphen and keeps the longest slug", () => {
+    const kinds = ["gmail", "google_calendar", "github"];
+    expect(connectorKindFromToolName("gmail-find-email", kinds)).toBe("gmail");
+    expect(connectorKindFromToolName("gmail-delete-email", kinds)).toBe("gmail");
+    expect(connectorKindFromToolName("gmail-bulk-archive-emails", kinds)).toBe("gmail");
+    expect(connectorKindFromToolName("google_calendar-list-events", kinds)).toBe("google_calendar");
+    expect(connectorKindFromToolName("google_calendar-delete-event", kinds)).toBe(
+      "google_calendar",
+    );
+    expect(connectorKindFromToolName("gmail_send_email", kinds)).toBe("gmail");
+    expect(
+      connectorKindFromToolName("microsoft_outlook_send_email", ["microsoft", "microsoft_outlook"]),
+    ).toBe("microsoft_outlook");
+  });
+
+  it("reads a plain slug before the first hyphen when no kind is known", () => {
+    expect(connectorKindFromToolName("gmail-find-email")).toBe("gmail");
+    expect(connectorKindFromToolName("google_calendar-list-events")).toBe("google_calendar");
+    expect(connectorKindFromToolName("gmail_send_email")).toBe("gmail");
+    expect(connectorKindFromToolName("COMPOSIO_MULTI_EXECUTE_TOOL")).toBe("composio");
+    expect(connectorKindFromToolName("mcp__server__tool")).toBe("mcp");
+    expect(connectorKindFromToolName("mcp__server-tool")).toBe("mcp");
   });
 });
 
