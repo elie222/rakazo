@@ -123,6 +123,18 @@ class FakeIncus implements IncusClient {
     }
     if (parts[0] !== "instances") throw new IncusError("not found", 404);
     const name = parts[1];
+    if (method === "GET" && !name) {
+      const [, botId] =
+        /^config\.user\.rakazo-bot-id eq (\S+)$/.exec(url.searchParams.get("filter") ?? "") ?? [];
+      return {
+        metadata: [...this.instances]
+          .filter(([, instance]) => instance.config["user.rakazo-bot-id"] === botId)
+          .map(([instanceName, instance]) => ({
+            name: instanceName,
+            ...structuredClone(instance),
+          })),
+      };
+    }
     if (method === "POST" && !name) return this.create(body as Record<string, unknown>);
     if (!name) throw new IncusError("not found", 404);
     this.onRead?.(name);
@@ -608,6 +620,30 @@ describe("IncusSandboxProvider", () => {
       await expect(provider.isRunning(computer, context)).resolves.toBe(false);
     },
   );
+
+  it.each(["stop", "destroy"] as const)(
+    "%s never removes another bot's instance",
+    async (method) => {
+      const fake = new FakeIncus();
+      fake.instances.set("box", running("bot-b"));
+      await expect(providerFor(fake)[method](computer, context)).rejects.toThrow(
+        "belongs to another bot",
+      );
+      expect(fake.instances.get("box")?.status).toBe("Running");
+    },
+  );
+
+  it("removes this bot's instances that no saved reference points to before starting", async () => {
+    const fake = new FakeIncus();
+    fake.instances.set("orphan", running());
+    fake.instances.set("stopped-ref", { ...running(), status: "Stopped", ephemeral: false });
+    fake.instances.set("other-bot", running("bot-b"));
+    const result = await providerFor(fake).provision(
+      { botId: "bot-a", homePath: "/unused", providerKind: "incus", providerRef: "stopped-ref" },
+      context,
+    );
+    expect([...fake.instances.keys()].sort()).toEqual([result.providerRef, "other-bot"].sort());
+  });
 
   it("deletes an instance that stays after stopping", async () => {
     const fake = new FakeIncus();
