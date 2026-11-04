@@ -59,7 +59,7 @@ export const HOSTED_SANDBOXES_TABLE: ArticleTable = {
       topic: "[Daytona](/sandboxes/daytona/)",
       cells: [
         "Yes",
-        "Containers by default, VMs available",
+        "Containers, which is how Rakazo creates them. VMs available outside Rakazo",
         workday(RATES.daytona),
         "No cap",
         "Disk. Memory only on VM sandboxes",

@@ -138,7 +138,7 @@ export const docker: Sandbox = {
     {
       question: "Is Docker safe enough for AI agents?",
       answer:
-        "For a personal or team server you control, a locked-down container is a reasonable boundary. Rakazo drops every capability, blocks privilege escalation and caps memory, CPU and processes. A container still shares the host kernel, so for strangers' bots or a public instance, prefer a hosted sandbox or Kubernetes with gVisor or Kata.",
+        "For a personal or team server you control, a locked-down container is a reasonable boundary. Rakazo drops every capability, blocks privilege escalation and caps memory, CPU and processes. A container still shares the host kernel, so for strangers' bots or a public instance, prefer a provider with its own kernel per computer, such as [E2B](/sandboxes/e2b/) or [Boat](/sandboxes/boat/), or Kubernetes with gVisor or Kata.",
     },
     {
       question: "Can I run AI agents in Docker on a Mac?",

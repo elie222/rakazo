@@ -1,7 +1,6 @@
 import {
   BOAT,
   BOAT_RAKAZO,
-  CLOUD_PLAN,
   E2B_PRO_FEE,
   METHOD_NOTE,
   MONTH_HOURS,
@@ -128,7 +127,7 @@ export const boat: Sandbox = {
         note: "Computed from each provider's rates, checked November 2026, before free credits. Daytona caps one sandbox at 4 vCPU / 8 GiB. The Docker server also has to run Rakazo itself. Your model provider bills separately.",
       },
       bullets: [
-        `On Rakazo Cloud you pay Rakazo, not Boat: ${CLOUD_PLAN}. Larger plans add bigger computers and more hours. See [pricing](/pricing/).`,
+        "On Rakazo Cloud you pay Rakazo, not Boat: computers come with the plan, and the [pricing page](/pricing/) lists the computer hours and size each plan includes.",
       ],
     },
     {

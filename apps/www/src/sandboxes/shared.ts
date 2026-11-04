@@ -1,4 +1,3 @@
-import { BYOK_TIERS, COMPUTER_SIZE_SPECS, sandboxAllowanceHours } from "@rakazo/contracts";
 import type { SourceLink } from "../alternatives";
 import { GITHUB_URL, SITE_URL } from "../site";
 import type { SandboxImage } from "./types";
@@ -34,12 +33,6 @@ export const RUNTIME_DOC: SourceLink = {
   label: "Rakazo, computer runtime and isolation",
   href: `${GITHUB_URL}/blob/main/docs/computer-runtime.md`,
 };
-
-const CLOUD = BYOK_TIERS.standard;
-const CLOUD_SPECS = COMPUTER_SIZE_SPECS[CLOUD.computerSize];
-
-/** Rakazo Cloud's entry plan, from the constants the app bills with. */
-export const CLOUD_PLAN = `${CLOUD.monthlyPriceCents === null ? "free" : `$${CLOUD.monthlyPriceCents / 100} a month`}, with ${Math.floor(sandboxAllowanceHours(CLOUD.computerAllowanceCents))} computer hours on ${CLOUD_SPECS.vcpus} vCPU / ${CLOUD_SPECS.memoryGb} GB included`;
 
 /** Small print under every price table. */
 export const PRICES_NOTE =

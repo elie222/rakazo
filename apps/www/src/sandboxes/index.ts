@@ -13,7 +13,6 @@ import { railway } from "./railway";
 import {
   BOAT,
   BOAT_RAKAZO,
-  CLOUD_PLAN,
   COMPUTER_PROVIDERS_DOCS_PATH,
   DAYTONA_CREDIT,
   E2B_CREDIT,
@@ -79,7 +78,7 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
     id: "pricing",
     paragraphs: [
       `Every price on these pages is for the same workload: one bot computer with 2 vCPU and 4 GB of memory, enough for a Linux desktop, Chromium and a terminal, running 4 hours a workday (${WORKDAY_HOURS} hours a month) or around the clock (${MONTH_HOURS} hours). Bots in a workspace share one team computer by default, so this is usually the bill for a whole team, not for each bot. Rakazo stops or pauses a hosted computer after 10 minutes without use, so you pay for roughly the hours bots work. Where a provider or Rakazo can't use that size, the row says which size it prices.`,
-      `On Rakazo Cloud you don't pay a sandbox provider: computers run on Boat and come with the plan, ${CLOUD_PLAN}. See [pricing](/pricing/). The table is for a self-hosted Rakazo, where you bring your own provider.`,
+      `On Rakazo Cloud you don't pay a sandbox provider: computers run on Boat and come with the plan, and the [pricing page](/pricing/) lists the computer hours each plan includes. The table is for a self-hosted Rakazo, where you bring your own provider.`,
     ],
     table: {
       caption: "What a bot computer costs on each option Rakazo supports",
@@ -200,7 +199,7 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
         {
           topic: "microVM: Firecracker, Kata, Cloud Hypervisor",
           cells: [
-            "[E2B](/sandboxes/e2b/), CreateOS, Vercel Sandbox, Northflank, [Kubernetes](/sandboxes/kubernetes/) with Kata",
+            "[E2B](/sandboxes/e2b/), CreateOS, boxd, Vercel Sandbox, Northflank, [Kubernetes](/sandboxes/kubernetes/) with Kata",
             "Other people's bots and public instances",
             "Needs KVM on your own hardware",
           ],
@@ -336,7 +335,7 @@ export const SANDBOXES_HUB = {
     {
       question: "Is Docker a real sandbox for AI agents?",
       answer:
-        "It's a real boundary but not the strongest. Rakazo's containers drop every Linux capability and cap memory, CPU and processes, but they share the host's kernel. For bots you don't fully trust, use a microVM or VM: a hosted sandbox, or Kubernetes with gVisor or Kata.",
+        "It's a real boundary but not the strongest. Rakazo's containers drop every Linux capability and cap memory, CPU and processes, but they share the host's kernel. For bots you don't fully trust, pick a provider that gives each computer its own kernel as Rakazo uses it: [E2B](/sandboxes/e2b/) and CreateOS (Firecracker microVMs), boxd (microVMs), [Boat](/sandboxes/boat/) and [Railway](/sandboxes/railway/) (full VMs), or [Kubernetes](/sandboxes/kubernetes/) with Kata. gVisor on Kubernetes is a middle ground. Not every hosted sandbox qualifies: Rakazo creates [Daytona](/sandboxes/daytona/) computers as Daytona's default containers, which share the host's kernel, and Novita doesn't say what it uses.",
     },
   ],
   sources: HUB_SOURCES,
