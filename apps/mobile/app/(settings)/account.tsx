@@ -29,6 +29,7 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../../components/settings-group";
+import { SpendingLimitRow } from "../../components/spending-limit-row";
 import { createAccountNameEditor } from "../../lib/account-name-editor";
 import type { MobileMe } from "../../lib/api";
 import {
@@ -709,6 +710,7 @@ export default function Account() {
               onPress={() => router.push("/approvals")}
             />
           ) : null}
+          <SpendingLimitRow key="spending-limit" disabled={pending} />
           {(
             [
               { title: t("Vault"), href: "/vault" },

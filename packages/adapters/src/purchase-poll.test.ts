@@ -71,6 +71,9 @@ describe("pollPurchase", () => {
     const env = await setup();
     env.approve();
     await env.poll();
+    expect(env.spending.payments).toEqual([
+      expect.objectContaining({ operationKey: "op-1", releasedAt: null }),
+    ]);
     expect(env.row()).toMatchObject({
       status: "approved",
       nextPollAt: null,
@@ -125,6 +128,10 @@ describe("pollPurchase", () => {
     vi.useFakeTimers({ now: Date.now() + PURCHASE_POLL_DEADLINE_MS + 1 });
     await env.poll();
     expect(env.row()).toMatchObject({ status: "expired", nextPollAt: null });
+    // No money moved, so it no longer counts against the spending limit.
+    expect(env.spending.payments).toEqual([
+      expect.objectContaining({ operationKey: "op-1", releasedAt: expect.any(Date) }),
+    ]);
     expect(env.runs).toEqual([
       expect.objectContaining({ clientNonce: "purchase-wake:purchase-1:expired" }),
     ]);

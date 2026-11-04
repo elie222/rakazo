@@ -168,6 +168,8 @@ export async function browserActFromTool(
     uploadRoots?: string[];
     /** The purchase the user approved for this call; its clicks alone may complete it. */
     approvedPurchase?: PurchaseApproval;
+    /** Called when the approved purchase was clearly not pressed, so it is not counted as spent. */
+    releasePurchase?: () => Promise<void>;
   } = {},
 ) {
   try {
@@ -312,6 +314,18 @@ export async function browserActFromTool(
       { actions, downloads: options.downloads?.folder, signal: context.signal },
       context,
     );
+    // A purchase the page refused (it changed, or another step failed first) never went through.
+    if (
+      approvedSteps.length &&
+      result.uncertain === false &&
+      result.completed <= Math.min(...approvedSteps)
+    ) {
+      await options.releasePurchase?.().catch((error: unknown) =>
+        getLogger().warn("unpaid purchase could not be released", {
+          errorName: error instanceof Error ? error.name : typeof error,
+        }),
+      );
+    }
     // A code the page took is spent. One it clearly refused goes back, so a fill on the right page
     // can use it; any doubt about the outcome keeps it spent, never typed twice.
     if (codeTyped && result.uncertain === false && result.completed <= codeTyped.index) {
@@ -327,8 +341,11 @@ export async function browserActFromTool(
     );
   } catch (error) {
     context.signal.throwIfAborted();
-    if (error instanceof BrowserToolInputError)
+    if (error instanceof BrowserToolInputError) {
+      // Refused before the page was asked: nothing was pressed or paid.
+      if (options.approvedPurchase) await options.releasePurchase?.().catch(() => undefined);
       return { ...refusedInput(error.message), completed: 0 };
+    }
     return formatBrowserResult(
       {
         ok: false,

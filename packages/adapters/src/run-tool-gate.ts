@@ -79,6 +79,7 @@ import { callMediaTool } from "./run-tools-files.js";
 import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer.js";
 import { connectorTrustKeys } from "./run-trust.js";
 import { watchFromTool } from "./schedule-tools.js";
+import { pagePaymentPrecheck, paysWithWallet, recordPagePayment } from "./spending-gate.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
 
@@ -365,6 +366,22 @@ export async function gateToolCall(
       },
     };
   }
+  // A pay click counts against the user's spending limit, unless it pays with a wallet purchase,
+  // which was counted when it was requested. One the limit refuses is refused before the card.
+  const spends = purchase && !paysWithWallet(args) ? purchase : undefined;
+  const spender = {
+    userId: run.userId,
+    spaceId: run.spaceId,
+    botId: ctx.bot.id,
+    threadId: ctx.thread.id,
+  };
+  if (spends && nextApprovedTool !== name) {
+    const refused = await pagePaymentPrecheck(deps.prisma, spender, spends);
+    if (refused) {
+      await auditToolCall(ctx, name, "denied", { reason: "spending_limit" });
+      return { result: { error: refused } };
+    }
+  }
   let reviewReason: string | undefined;
   let gateDecision: "ask" | "allow" = plan === "ask" ? "ask" : "allow";
   const needsApprovalEarly = plan === "ask" || plan === "judge";
@@ -590,6 +607,15 @@ export async function gateToolCall(
   } else if (call.bypassApproval && applied) {
     const early = await call.claimOrReturn("intended");
     if (early !== undefined) return { result: early };
+  }
+  // Counted as the approved click is about to be pressed: another payment may have used the room
+  // while the card waited.
+  if (spends) {
+    const refused = await recordPagePayment(deps.prisma, spender, spends, effectKey);
+    if (refused) {
+      await auditToolCall(ctx, name, "denied", { reason: "spending_limit" });
+      return { result: await call.finish({ error: refused }) };
+    }
   }
   // Past the gate: this destination is now one the run was given. A search result's exact
   // URL trusts only that URL, never the rest of its site.

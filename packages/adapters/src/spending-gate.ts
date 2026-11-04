@@ -1,0 +1,85 @@
+import type { PurchaseStatus } from "@rakazo/adapter-kit";
+import { formatMinorAmount, parsePageAmount } from "@rakazo/core";
+import type { PaymentInput, PaymentRefusal, PrismaClient } from "@rakazo/db";
+import { checkPayment, recordPayment, releasePayment } from "@rakazo/db";
+import type { PurchaseApproval } from "./purchase-gate.js";
+
+const PERIOD_TEXT = { day: "a day", week: "a week", month: "a month", none: "in total" } as const;
+
+/** What the bot is told when a payment is refused by the user's spending limit. */
+export function spendingRefusalError(refusal: PaymentRefusal): string {
+  const { limit, spent } = refusal;
+  const money = (amount: number) => formatMinorAmount(amount, limit.currency);
+  if (refusal.refused === "unchecked")
+    return `The total couldn't be read in ${limit.currency.toUpperCase()}, the currency of the user's spending limit, so it can't be counted against it and nothing was paid. Don't retry; tell the user.`;
+  return `This would go over the user's spending limit of ${money(limit.amount)} ${PERIOD_TEXT[limit.period]} (${money(spent)} spent), so nothing was paid. Don't retry; tell the user.`;
+}
+
+type Run = { userId: string; spaceId: string; botId: string; threadId: string };
+
+/** A pay click as a payment: the page's host and the amount it shows, null when unreadable. */
+function pagePayment(run: Run, purchase: PurchaseApproval, operationKey: string): PaymentInput {
+  const parsed = purchase.site ? parsePageAmount(purchase.amount) : null;
+  return {
+    operationKey,
+    ...run,
+    site: purchase.site,
+    amount: parsed?.amount ?? null,
+    currency: parsed?.currency ?? null,
+  };
+}
+
+/**
+ * The call types a card or pay token the wallet issued for this purchase: the wallet purchase was
+ * already counted, so its click is not counted again.
+ */
+export function paysWithWallet(args: Record<string, unknown>): boolean {
+  const actions = Array.isArray(args.actions) ? (args.actions as unknown[]) : [];
+  return actions.some((raw) => {
+    const step = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    return (
+      step.kind === "fill_pay_token" ||
+      (step.kind === "fill_card" &&
+        typeof step.purchase === "string" &&
+        step.purchase.trim() !== "")
+    );
+  });
+}
+
+/** Refused before the card is shown, so the user isn't asked for a payment that can't go through. */
+export async function pagePaymentPrecheck(
+  prisma: Pick<PrismaClient, "spendingLimit" | "payment" | "user">,
+  run: Run,
+  purchase: PurchaseApproval,
+): Promise<string | undefined> {
+  const refusal = await checkPayment(prisma, pagePayment(run, purchase, ""));
+  return refusal ? spendingRefusalError(refusal) : undefined;
+}
+
+/** Counted just before the approved click is pressed; refused if it no longer fits. */
+export async function recordPagePayment(
+  prisma: Pick<PrismaClient, "$transaction">,
+  run: Run,
+  purchase: PurchaseApproval,
+  operationKey: string,
+): Promise<string | undefined> {
+  const refusal = await recordPayment(prisma, pagePayment(run, purchase, operationKey));
+  return refusal ? spendingRefusalError(refusal) : undefined;
+}
+
+/** Wallet statuses where no money moved. */
+const UNPAID: ReadonlySet<string> = new Set<PurchaseStatus>([
+  "denied",
+  "expired",
+  "canceled",
+  "failed",
+]);
+
+/** Stop counting a wallet purchase once it can no longer be paid. */
+export async function releaseUnpaidPurchase(
+  prisma: Pick<PrismaClient, "payment">,
+  operationKey: string,
+  status: string,
+): Promise<void> {
+  if (UNPAID.has(status)) await releasePayment(prisma, operationKey);
+}

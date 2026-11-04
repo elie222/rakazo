@@ -3,7 +3,7 @@ import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { ComputerCommand } from "@rakazo/contracts";
 import { COMPUTER_COMMAND_OUTPUT_MAX_CHARS } from "@rakazo/contracts";
 import { redactSecrets, sandboxCommandTimeoutMs } from "@rakazo/core";
-import { RunHistoryWriteError } from "@rakazo/db";
+import { RunHistoryWriteError, releasePayment } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { redactShellStreams } from "./agent-environment.js";
 import {
@@ -185,6 +185,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
             downloads,
             redactions,
             approvedPurchase: paying,
+            releasePurchase: () => releasePayment(deps.prisma, call.effectKey),
             // Team bots may send only their own folder or shared/ off the computer; a
             // private computer's helper already confines uploads to its home folder.
             uploadRoots:

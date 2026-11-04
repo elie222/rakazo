@@ -1420,6 +1420,21 @@ export const RU_MESSAGES: Record<string, string> = {
   "Discard changes?": "Отменить изменения?",
   Discard: "Не сохранять",
   "Could not delete note": "Не удалось удалить заметку",
+  "Spending limit": "Лимит расходов",
+  Amount: "Сумма",
+  Currency: "Валюта",
+  Daily: "Ежедневно",
+  Weekly: "Еженедельно",
+  "No reset": "Без сброса",
+  "Enter an amount": "Введите сумму",
+  "{amount} a day": "{amount} в день",
+  "{amount} a week": "{amount} в неделю",
+  "{amount} a month": "{amount} в месяц",
+  "{amount} in total": "{amount} всего",
+  "{amount} spent today": "Потрачено сегодня: {amount}",
+  "{amount} spent this week": "Потрачено на этой неделе: {amount}",
+  "{amount} spent this month": "Потрачено в этом месяце: {amount}",
+  "{amount} spent": "Потрачено: {amount}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

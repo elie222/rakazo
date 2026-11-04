@@ -1387,6 +1387,21 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Discard changes?": "要放弃更改吗？",
   Discard: "放弃",
   "Could not delete note": "无法删除笔记",
+  "Spending limit": "支出上限",
+  Amount: "金额",
+  Currency: "币种",
+  Daily: "每天",
+  Weekly: "每周",
+  "No reset": "不重置",
+  "Enter an amount": "请输入金额",
+  "{amount} a day": "每天 {amount}",
+  "{amount} a week": "每周 {amount}",
+  "{amount} a month": "每月 {amount}",
+  "{amount} in total": "总计 {amount}",
+  "{amount} spent today": "今天已花费 {amount}",
+  "{amount} spent this week": "本周已花费 {amount}",
+  "{amount} spent this month": "本月已花费 {amount}",
+  "{amount} spent": "已花费 {amount}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

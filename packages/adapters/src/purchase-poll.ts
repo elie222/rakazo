@@ -13,6 +13,7 @@ import {
   PENDING_PURCHASE_STATUSES,
   PURCHASE_POLL_MS,
 } from "./purchase-service.js";
+import { releaseUnpaidPurchase } from "./spending-gate.js";
 
 /** Providers expire approval requests after 30 minutes; stop asking a little later. */
 export const PURCHASE_POLL_DEADLINE_MS = 35 * 60_000;
@@ -127,6 +128,7 @@ async function settle(
       },
     });
     if (!updated.count) return null;
+    await releaseUnpaidPurchase(tx, purchase.operationKey, next.status);
     if (!wake) return { nextPollAt };
     const clientNonce = `purchase-wake:${purchase.id}:${next.status}`;
     // A status that comes back (approved, needs_action, approved) already woke the bot once.
