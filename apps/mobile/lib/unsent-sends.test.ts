@@ -2,7 +2,7 @@ import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import { router } from "expo-router";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { loadVerifiedIntegrationsScope } from "./session";
+import { loadVerifiedIntegrationsScope, snapshotSessionToken } from "./session";
 import type { SendAttempt } from "./thread-feedback";
 import {
   configureUnsentSends,
@@ -38,6 +38,7 @@ vi.mock("./session", () => ({
     spaceId: "space-a",
     selectionId: "space-a",
   })),
+  snapshotSessionToken: vi.fn(async () => ({ ok: true, value: "fake-token" })),
   subscribeSessionGeneration: (listener: () => void) => {
     session.listener = listener;
     return () => {};
@@ -132,12 +133,66 @@ describe("unsentSendsRestored", () => {
     unblockRestore();
     await restored;
     expect(restoreUnsentSends).toHaveBeenCalledOnce();
+    await expect(unsentSendsRestored()).resolves.toBe(true);
   });
 
-  it("settles when a restore attempt fails", async () => {
+  it("reports an unknown queue when a signed-in restore fails", async () => {
     session.generation = 21;
     vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("store unreadable"));
     await expect(prepareUnsentSends()).rejects.toThrow("store unreadable");
-    await expect(unsentSendsRestored()).resolves.toBeUndefined();
+    await expect(unsentSendsRestored()).resolves.toBe(false);
+  });
+
+  it("treats a failed restore while signed out as an empty queue", async () => {
+    session.generation = 22;
+    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("signed out"));
+    vi.mocked(snapshotSessionToken).mockResolvedValueOnce({ ok: true, value: "" });
+    await expect(prepareUnsentSends()).rejects.toThrow("signed out");
+    await expect(unsentSendsRestored()).resolves.toBe(true);
+  });
+
+  it("follows a restore that replaces the awaited one", async () => {
+    session.generation = 23;
+    const scopeA = deferred();
+    const scopeB = deferred();
+    vi.mocked(loadVerifiedIntegrationsScope)
+      .mockImplementationOnce(() => scopeA.promise)
+      .mockImplementationOnce(() => scopeB.promise);
+    const first = prepareUnsentSends().catch(() => undefined);
+    let settled = false;
+    const restored = unsentSendsRestored().then((value) => {
+      settled = true;
+      return value;
+    });
+    // A newer session supersedes the first attempt, which then fails its generation check.
+    session.generation = 24;
+    void prepareUnsentSends();
+    scopeA.resolve();
+    await first;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+
+    scopeB.resolve();
+    await expect(restored).resolves.toBe(true);
+    expect(restoreUnsentSends).toHaveBeenCalledOnce();
   });
 });
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<{
+    apiBase: string;
+    userId: string;
+    spaceId: string;
+    selectionId: string;
+  }>((done) => {
+    resolve = () =>
+      done({
+        apiBase: "https://api.example.test",
+        userId: "user-a",
+        spaceId: "space-a",
+        selectionId: "space-a",
+      });
+  });
+  return { promise, resolve };
+}

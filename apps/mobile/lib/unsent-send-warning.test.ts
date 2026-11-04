@@ -12,7 +12,7 @@ vi.mock("./i18n", () => ({ t: (text: string) => text }));
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(hasUnsentSends).mockReturnValue(false);
-  vi.mocked(unsentSendsRestored).mockResolvedValue(undefined);
+  vi.mocked(unsentSendsRestored).mockResolvedValue(true);
 });
 
 it("proceeds without a prompt when no unsent messages wait", async () => {
@@ -23,8 +23,8 @@ it("proceeds without a prompt when no unsent messages wait", async () => {
 it("waits for the persisted queue to load before deciding nothing is unsent", async () => {
   let restoreUnblocked!: () => void;
   vi.mocked(unsentSendsRestored).mockReturnValue(
-    new Promise<void>((resolve) => {
-      restoreUnblocked = resolve;
+    new Promise<boolean>((resolve) => {
+      restoreUnblocked = () => resolve(true);
     }),
   );
   vi.mocked(hasUnsentSends).mockReturnValue(false);
@@ -36,6 +36,15 @@ it("waits for the persisted queue to load before deciding nothing is unsent", as
 
   vi.mocked(hasUnsentSends).mockReturnValue(true);
   restoreUnblocked();
+  await vi.waitFor(() => expect(Alert.alert).toHaveBeenCalledOnce());
+  vi.mocked(Alert.alert).mock.calls[0]![2]![0]!.onPress?.();
+  await expect(pending).resolves.toBe(false);
+});
+
+it("asks when the persisted queue could not be restored", async () => {
+  vi.mocked(unsentSendsRestored).mockResolvedValue(false);
+  vi.mocked(hasUnsentSends).mockReturnValue(false);
+  const pending = confirmUnsentSendLoss("sign-out");
   await vi.waitFor(() => expect(Alert.alert).toHaveBeenCalledOnce());
   vi.mocked(Alert.alert).mock.calls[0]![2]![0]!.onPress?.();
   await expect(pending).resolves.toBe(false);

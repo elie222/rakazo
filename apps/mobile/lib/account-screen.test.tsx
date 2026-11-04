@@ -43,7 +43,7 @@ const { element, account } = vi.hoisted(() => ({
 }));
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./unsent-sends", () => ({ unsentSendsRestored: vi.fn(async () => undefined) }));
+vi.mock("./unsent-sends", () => ({ unsentSendsRestored: vi.fn(async () => true) }));
 // The unsent-message warning reads this without a screen subscription; tests flip it per case.
 vi.mock("./thread-feedback", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./thread-feedback")>()),

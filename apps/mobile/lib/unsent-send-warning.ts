@@ -12,9 +12,8 @@ export type UnsentSendLossAction = "sign-out" | "server-switch";
  */
 export async function confirmUnsentSendLoss(action: UnsentSendLossAction): Promise<boolean> {
   // The persisted queue loads asynchronously at startup; reading the in-memory list
-  // before that lands would treat a not-yet-restored queue as empty.
-  await unsentSendsRestored();
-  if (!hasUnsentSends()) return true;
+  // before that lands, or after it failed, would treat an unknown queue as empty.
+  if ((await unsentSendsRestored()) && !hasUnsentSends()) return true;
   const confirmLabel = action === "sign-out" ? t("Sign out anyway") : t("Switch anyway");
   const message =
     action === "sign-out"

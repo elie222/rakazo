@@ -20,6 +20,7 @@ import {
   currentSessionGeneration,
   loadSessionToken,
   loadVerifiedIntegrationsScope,
+  snapshotSessionToken,
   subscribeSessionGeneration,
 } from "./session";
 import type { OutboxScope } from "./thread-feedback";
@@ -67,19 +68,31 @@ async function loadUnsentSends(): Promise<void> {
   restoreUnsentSends();
 }
 
-/** The latest restore attempt, never rejected: settled means the in-memory queue reflects the disk. */
-let restoreAttempt: Promise<void> = Promise.resolve();
+/** The latest restore attempt, never rejected: true when the in-memory queue reflects the disk. */
+let restoreAttempt: Promise<boolean> = Promise.resolve(true);
 
-/** Waits for the latest queue restore attempt, so a not-yet-loaded queue cannot look empty. */
-export function unsentSendsRestored(): Promise<void> {
-  return restoreAttempt;
+/**
+ * Waits for the latest queue restore, following any attempt that replaces it meanwhile, so a
+ * not-yet-loaded queue cannot look empty. False means the queue on disk is unknown.
+ */
+export async function unsentSendsRestored(): Promise<boolean> {
+  for (;;) {
+    const attempt = restoreAttempt;
+    const restored = await attempt;
+    if (attempt === restoreAttempt) return restored;
+  }
 }
 
 export function prepareUnsentSends(): Promise<void> {
   const attempt = loadUnsentSends();
+  // Signed out, the queue was cleared with the session, so a failed restore hides nothing.
   restoreAttempt = attempt.then(
-    () => undefined,
-    () => undefined,
+    () => true,
+    () =>
+      snapshotSessionToken().then(
+        (session) => session.ok && !session.value,
+        () => false,
+      ),
   );
   return attempt;
 }

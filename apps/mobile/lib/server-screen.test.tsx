@@ -95,7 +95,7 @@ vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("./server-headers", () => ({ serverHeaders: () => ({}) }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
-vi.mock("./unsent-sends", () => ({ unsentSendsRestored: vi.fn(async () => undefined) }));
+vi.mock("./unsent-sends", () => ({ unsentSendsRestored: vi.fn(async () => true) }));
 vi.mock("./thread-feedback", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./thread-feedback")>()),
   hasUnsentSends: vi.fn(() => false),
