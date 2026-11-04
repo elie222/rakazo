@@ -1354,6 +1354,15 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Organization: "組織",
   "Delete organization": "刪除組織",
   "Type {name} to confirm": "輸入 {name} 以確認",
+  "Could not load memory": "無法載入記憶",
+  "Nothing remembered yet": "尚未記住任何內容",
+  "This note changed": "這則筆記已變更",
+  "Use latest": "使用最新版本",
+  "Save mine": "儲存我的版本",
+  "This note no longer exists": "這則筆記已不存在",
+  "Discard changes?": "要捨棄變更嗎？",
+  Discard: "捨棄",
+  "Could not delete note": "無法刪除筆記",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

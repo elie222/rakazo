@@ -1381,6 +1381,15 @@ export const JA_MESSAGES: Record<string, string> = {
   Organization: "組織",
   "Delete organization": "組織を削除",
   "Type {name} to confirm": "確認のため {name} と入力",
+  "Could not load memory": "メモリを読み込めませんでした",
+  "Nothing remembered yet": "まだ何も記憶していません",
+  "This note changed": "このメモは変更されました",
+  "Use latest": "最新を使う",
+  "Save mine": "自分の版を保存",
+  "This note no longer exists": "このメモはもう存在しません",
+  "Discard changes?": "変更を破棄しますか？",
+  Discard: "破棄",
+  "Could not delete note": "メモを削除できませんでした",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

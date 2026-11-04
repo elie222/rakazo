@@ -1356,6 +1356,15 @@ export const ZH_MESSAGES: Record<string, string> = {
   Organization: "组织",
   "Delete organization": "删除组织",
   "Type {name} to confirm": "输入 {name} 以确认",
+  "Could not load memory": "无法加载记忆",
+  "Nothing remembered yet": "还没有记住任何内容",
+  "This note changed": "这条笔记已更改",
+  "Use latest": "使用最新版本",
+  "Save mine": "保存我的版本",
+  "This note no longer exists": "这条笔记已不存在",
+  "Discard changes?": "要放弃更改吗？",
+  Discard: "放弃",
+  "Could not delete note": "无法删除笔记",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

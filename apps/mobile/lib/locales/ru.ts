@@ -1389,6 +1389,15 @@ export const RU_MESSAGES: Record<string, string> = {
   Organization: "Организация",
   "Delete organization": "Удалить организацию",
   "Type {name} to confirm": "Введите {name} для подтверждения",
+  "Could not load memory": "Не удалось загрузить память",
+  "Nothing remembered yet": "Пока ничего не запомнено",
+  "This note changed": "Эта заметка изменилась",
+  "Use latest": "Взять последнюю",
+  "Save mine": "Сохранить мою",
+  "This note no longer exists": "Этой заметки больше нет",
+  "Discard changes?": "Отменить изменения?",
+  Discard: "Не сохранять",
+  "Could not delete note": "Не удалось удалить заметку",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
