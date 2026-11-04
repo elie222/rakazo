@@ -11,13 +11,37 @@ import { kubernetes } from "./kubernetes";
 import { novita } from "./novita";
 import { railway } from "./railway";
 import {
+  BOAT,
+  BOAT_RAKAZO,
   CLOUD_PLAN,
   COMPUTER_PROVIDERS_DOCS_PATH,
+  DAYTONA_CREDIT,
+  E2B_CREDIT,
+  E2B_PRO_FEE,
+  KUBERNETES_NODE_FITS,
+  MONTH_HOURS,
+  NOVITA_CREDIT,
   PRICES_NOTE,
   PRICING,
+  RATES,
   SANDBOXES_PATH,
   SANDBOXES_UPDATED,
+  SERVERS,
+  WORKDAY_HOURS,
+  WUYING,
+  aboutUsd,
+  boatMonthly,
+  dockerComputersFit,
+  euro,
+  hourly,
+  macMiniMonthly,
+  monthly,
+  railwayAppMonthly,
+  railwayComputerMonthly,
   sandboxPath,
+  usd,
+  wuyingPayAsYouGo,
+  wuyingUnlimited,
 } from "./shared";
 import type { Sandbox } from "./types";
 import { wuying } from "./wuying";
@@ -39,51 +63,61 @@ export const SANDBOXES: readonly Sandbox[] = [
   yourComputer,
 ];
 
+const perSecondRow = (rate: (typeof RATES)[keyof typeof RATES]) => [
+  usd(monthly(rate, WORKDAY_HOURS)),
+  usd(monthly(rate, MONTH_HOURS)),
+];
+const About = (amount: number) => `A${aboutUsd(amount).slice(1)}`;
+const boatBeatsE2bHours = Math.round(BOAT.minimum / hourly(RATES.e2b) / 10) * 10;
+const hostedHourly = [RATES.novita, RATES.e2b].map((rate) => hourly(rate));
+const hostedWorkday = [RATES.novita, RATES.e2b].map((rate) => monthly(rate, WORKDAY_HOURS));
+
 /** Hub sections after the comparison table: prices, the wider market, and isolation. */
 const HUB_SECTIONS: readonly ArticleSection[] = [
   {
     heading: "Pricing compared",
+    id: "pricing",
     paragraphs: [
-      "Every price below is for the same workload: one bot computer with 2 vCPU and 4 GB of memory, enough for a Linux desktop, Chromium and a terminal, running 4 hours a workday, or 88 hours a month. Bots in a workspace share one team computer by default, so this is usually the bill for a whole team, not for each bot. Rakazo stops or pauses a hosted computer after 10 minutes without use, so you pay for roughly the hours bots work.",
+      `Every price on these pages is for the same workload: one bot computer with 2 vCPU and 4 GB of memory, enough for a Linux desktop, Chromium and a terminal, running 4 hours a workday (${WORKDAY_HOURS} hours a month) or around the clock (${MONTH_HOURS} hours). Bots in a workspace share one team computer by default, so this is usually the bill for a whole team, not for each bot. Rakazo stops or pauses a hosted computer after 10 minutes without use, so you pay for roughly the hours bots work. Where a provider or Rakazo can't use that size, the row says which size it prices.`,
       `On Rakazo Cloud you don't pay a sandbox provider: computers run on Boat and come with the plan, ${CLOUD_PLAN}. See [pricing](/pricing/). The table is for a self-hosted Rakazo, where you bring your own provider.`,
     ],
     table: {
       caption: "What a bot computer costs on each option Rakazo supports",
-      columns: ["Option", "How you pay", "Free to start", "88 hours a month", "Around the clock"],
+      columns: ["Option", "How you pay", "Free to start", `${WORKDAY_HOURS} hours a month`, "Around the clock"],
       rows: [
         {
           topic: "[Boat](/sandboxes/boat/)",
           cells: [
-            "Per second, $20 monthly minimum",
+            `Per second, $${BOAT.minimum} monthly minimum`,
             "7-day trial, 25 hours",
-            "$20. Rakazo uses 4 vCPU / 8 GB here",
-            "$25.92",
+            `${usd(boatMonthly(BOAT.small.hour, WORKDAY_HOURS))}, the minimum`,
+            `${usd(boatMonthly(BOAT.small.hour, MONTH_HOURS))}, the minimum`,
           ],
         },
         {
           topic: "[E2B](/sandboxes/e2b/)",
           cells: [
-            "Per second. Pro plan $150 a month",
-            "$100 one-time credit",
-            "$14.57",
-            "$269.23, Pro plan required",
+            `Per second. Pro plan $${E2B_PRO_FEE} a month`,
+            `$${E2B_CREDIT} one-time credit`,
+            usd(monthly(RATES.e2b, WORKDAY_HOURS)),
+            `${usd(monthly(RATES.e2b, MONTH_HOURS))}. Hobby sessions end hourly; Pro (${usd(monthly(RATES.e2b, MONTH_HOURS) + E2B_PRO_FEE)}) allows 24 hours`,
           ],
         },
         {
           topic: "[Daytona](/sandboxes/daytona/)",
-          cells: ["Per second, no plan fee", "$200 credit", "$14.57", "$119.23"],
+          cells: ["Per second, no plan fee", `$${DAYTONA_CREDIT} credit`, ...perSecondRow(RATES.daytona)],
         },
         {
           topic: "[Novita](/sandboxes/novita/)",
-          cells: ["Per second, no plan fee", "$100 credit after a survey", "$10.26", "$83.98"],
+          cells: ["Per second, no plan fee", `$${NOVITA_CREDIT} credit after a survey`, ...perSecondRow(RATES.novita)],
         },
         {
           topic: "[Railway](/sandboxes/railway/)",
           cells: [
             "Per second for CPU and memory used, from $5 a month",
             "$5 trial credit",
-            "About $18, plus about $16 for the app and database",
-            "About $150 for the computer",
+            `${About(railwayComputerMonthly(WORKDAY_HOURS))} at typical use, plus ${aboutUsd(railwayAppMonthly)} for the app and database`,
+            `${About(railwayComputerMonthly(MONTH_HOURS))} for the computer`,
           ],
         },
         {
@@ -91,8 +125,8 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
           cells: [
             "Hourly or monthly, plus disk",
             "Alibaba Cloud promotions vary",
-            "About $17 at 4 vCPU / 8 GiB",
-            "About $57 on the unlimited plan",
+            `${About(wuyingPayAsYouGo(WORKDAY_HOURS))} at ${WUYING.size.vcpus} vCPU / ${WUYING.size.gb} GiB, the closest published size`,
+            `${About(wuyingUnlimited)} on the unlimited plan`,
           ],
         },
         {
@@ -100,7 +134,7 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
           cells: [
             "Your own server",
             "Free software",
-            "A €16.49 server fits Rakazo and about 6 computers",
+            `A ${euro(SERVERS.hetznerCx43)} server fits Rakazo and about ${dockerComputersFit(16)} computers`,
             "Same",
           ],
         },
@@ -109,20 +143,20 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
           cells: [
             "Your nodes, plus a control-plane fee on some clouds",
             "Free software",
-            "A $96 DigitalOcean node fits about 3 computers",
+            `A $${SERVERS.digitalOcean16} DigitalOcean node fits about ${KUBERNETES_NODE_FITS} computers`,
             "Same",
           ],
         },
         {
           topic: "[Your computer](/sandboxes/your-computer/)",
-          cells: ["Nothing extra", "Free", "Electricity", "About $3 for a Mac mini"],
+          cells: ["Nothing extra", "Free", "Electricity", `${About(macMiniMonthly(MONTH_HOURS))} for a Mac mini`],
         },
       ],
-      note: `${PRICES_NOTE} Usage before free credits. Each option's page shows the rates and assumptions behind its numbers.`,
+      note: `${PRICES_NOTE} Usage before free credits. Rakazo can't run Boat at 2 vCPU / 4 GB: it creates ${BOAT_RAKAZO.vcpus} vCPU / ${BOAT_RAKAZO.gb} GB machines, which cost ${usd(boatMonthly(BOAT_RAKAZO.hour, WORKDAY_HOURS))} and ${usd(boatMonthly(BOAT_RAKAZO.hour, MONTH_HOURS))}. Each option's page shows the rates and assumptions behind its numbers.`,
     },
     bullets: [
       "For a few hours a day, per-second providers are cheapest. Novita has the lowest rate of the hosted options Rakazo supports, and E2B and Daytona charge the same as each other.",
-      "Boat's $20 minimum covers about 555 hours of a bigger computer, so it is cheaper than E2B or Daytona once a computer runs more than about 120 hours a month, and by far around the clock.",
+      `Boat's $${BOAT.minimum} minimum covers about ${Math.floor(BOAT.minimum / BOAT_RAKAZO.hour)} hours of the bigger computer Rakazo uses, so it is cheaper than E2B or Daytona once a computer runs more than about ${boatBeatsE2bHours} hours a month, and by far around the clock.`,
       "A server you rent for Docker costs the same whether bots work or not. It's the cheapest way to run many computers, if you're happy to look after it.",
     ],
   },
@@ -238,7 +272,7 @@ export const SANDBOXES_HUB = {
   choose: [
     {
       heading: "You want it hosted",
-      text: "[Boat](/sandboxes/boat/) is what Rakazo Cloud runs its own bot computers on: full Linux VMs where every bot keeps its own Chrome logins, for a $20 monthly minimum. [E2B](/sandboxes/e2b/) is the option Rakazo's live computer tests run on, gives every computer its own microVM, and pauses idle computers instead of deleting them. [Novita](/sandboxes/novita/) pauses with memory, so a bot comes back to the same open programs, at the lowest hourly rate. [Daytona](/sandboxes/daytona/) keeps each computer's disk, has no session cap, and suits teams already using it.",
+      text: `[Boat](/sandboxes/boat/) is what Rakazo Cloud runs its own bot computers on: full Linux VMs where every bot keeps its own Chrome logins, for a $${BOAT.minimum} monthly minimum. [E2B](/sandboxes/e2b/) is the option Rakazo's live computer tests run on, gives every computer its own microVM, and pauses idle computers instead of deleting them. [Novita](/sandboxes/novita/) pauses with memory, so a bot comes back to the same open programs, at the lowest hourly rate. [Daytona](/sandboxes/daytona/) keeps each computer's disk, has no session cap, and suits teams already using it.`,
     },
     {
       heading: "You want the smallest bill",
@@ -273,8 +307,7 @@ export const SANDBOXES_HUB = {
     },
     {
       question: "How much does an AI agent sandbox cost?",
-      answer:
-        "Hosted sandboxes charge about $0.12 to $0.17 an hour for 2 vCPU and 4 GB while running, as of November 2026, so a computer used 4 hours a workday costs about $10 to $15 a month. Boat has a $20 monthly minimum that covers far more hours. Self-hosting costs whatever your server does.",
+      answer: `Hosted sandboxes charge about ${usd(hostedHourly[0])} to ${usd(hostedHourly[1])} an hour for 2 vCPU and 4 GB while running, as of November 2026, so a computer used 4 hours a workday costs about $${Math.round(hostedWorkday[0])} to $${Math.round(hostedWorkday[1])} a month. Boat has a $${BOAT.minimum} monthly minimum that covers far more hours. Self-hosting costs whatever your server does.`,
     },
     {
       question: "What is the cheapest sandbox for AI agents?",
@@ -283,13 +316,7 @@ export const SANDBOXES_HUB = {
     },
     {
       question: "Is the E2B sandbox free?",
-      answer:
-        "E2B's Hobby plan has no monthly fee and a one-time $100 credit, but sessions end after an hour. See [E2B pricing](/sandboxes/e2b/).",
-    },
-    {
-      question: "Does E2B use Firecracker?",
-      answer:
-        "Yes. Each [E2B](/sandboxes/e2b/) sandbox is a Firecracker microVM with its own kernel. Vercel Sandbox and CreateOS use Firecracker too; Modal uses gVisor.",
+      answer: `E2B's Hobby plan has no monthly fee and a one-time $${E2B_CREDIT} credit, but sessions end after an hour. See [E2B pricing](/sandboxes/e2b/).`,
     },
     {
       question: "Does Rakazo support Modal or Vercel Sandbox?",
@@ -310,11 +337,6 @@ export const SANDBOXES_HUB = {
       question: "Is Docker a real sandbox for AI agents?",
       answer:
         "It's a real boundary but not the strongest. Rakazo's containers drop every Linux capability and cap memory, CPU and processes, but they share the host's kernel. For bots you don't fully trust, use a microVM or VM: a hosted sandbox, or Kubernetes with gVisor or Kata.",
-    },
-    {
-      question: "Which sandbox is the safest?",
-      answer:
-        "Hosted sandboxes and Kubernetes with gVisor or Kata keep a bot furthest from your own systems. Docker containers are hardened but share your server's kernel. Using your own computer gives a bot everything you can reach, by design.",
     },
   ],
   sources: HUB_SOURCES,

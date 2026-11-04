@@ -1,5 +1,21 @@
 import type { ArticleTable } from "../provider-article/types";
-import { PRICES_NOTE } from "./shared";
+import {
+  BOAT,
+  BOAT_RAKAZO,
+  E2B_PRO_FEE,
+  PRICES_NOTE,
+  RATES,
+  WORKDAY_HOURS,
+  aboutUsd,
+  boatMonthly,
+  monthly,
+  railwayComputerMonthly,
+  usd,
+  vercelMonthly,
+} from "./shared";
+
+const workday = (rate: (typeof RATES)[keyof typeof RATES]) => usd(monthly(rate, WORKDAY_HOURS));
+const CREATEOS_DEFAULT_SHAPE = { vcpus: 2, gb: 2 };
 
 /**
  * Hosted sandboxes side by side, including ones Rakazo doesn't support, for the hub and the
@@ -11,7 +27,7 @@ export const HOSTED_SANDBOXES_TABLE: ArticleTable = {
     "Sandbox",
     "In Rakazo",
     "Isolation",
-    "88 hours at 2 vCPU / 4 GB",
+    `${WORKDAY_HOURS} hours at 2 vCPU / 4 GB`,
     "Longest session",
     "Kept when stopped",
     "Self-host or your cloud",
@@ -22,7 +38,7 @@ export const HOSTED_SANDBOXES_TABLE: ArticleTable = {
       cells: [
         "Yes. Rakazo Cloud runs on it",
         "Full VM per machine",
-        "$20 minimum. Rakazo's 4 vCPU / 8 GB size uses $3.17 of it",
+        `${usd(boatMonthly(BOAT.small.hour, WORKDAY_HOURS))}, the monthly minimum. Rakazo runs ${BOAT_RAKAZO.vcpus} vCPU / ${BOAT_RAKAZO.gb} GB, which is also ${usd(boatMonthly(BOAT_RAKAZO.hour, WORKDAY_HOURS))}`,
         "No fixed cap. Rakazo renews a 2-hour lease while in use",
         "Disk",
         "No",
@@ -33,7 +49,7 @@ export const HOSTED_SANDBOXES_TABLE: ArticleTable = {
       cells: [
         "Yes",
         "Firecracker microVM",
-        "$14.57, or $164.57 with the Pro plan",
+        `${workday(RATES.e2b)}, or ${usd(monthly(RATES.e2b, WORKDAY_HOURS) + E2B_PRO_FEE)} with the Pro plan`,
         "1 hour on Hobby, 24 hours on Pro",
         "Memory and disk, when paused",
         "Open source (Apache-2.0). Your cloud on Enterprise",
@@ -44,7 +60,7 @@ export const HOSTED_SANDBOXES_TABLE: ArticleTable = {
       cells: [
         "Yes",
         "Containers by default, VMs available",
-        "$14.57",
+        workday(RATES.daytona),
         "No cap",
         "Disk. Memory only on VM sandboxes",
         "Closed source since June 2026. Your cloud on Enterprise",
@@ -52,14 +68,21 @@ export const HOSTED_SANDBOXES_TABLE: ArticleTable = {
     },
     {
       topic: "[Novita](/sandboxes/novita/)",
-      cells: ["Yes", "Not stated", "$10.26", "1 hour free, 24 hours paid", "Memory and disk, when paused", "No"],
+      cells: [
+        "Yes",
+        "Not stated",
+        workday(RATES.novita),
+        "1 hour free, 24 hours paid",
+        "Memory and disk, when paused",
+        "No",
+      ],
     },
     {
       topic: "[Railway](/sandboxes/railway/)",
       cells: [
         "Yes",
         "VM",
-        "About $18, billed on CPU and memory actually used",
+        `${aboutUsd(railwayComputerMonthly(WORKDAY_HOURS))}, billed on CPU and memory actually used`,
         "Idle timeout up to 2 hours, or off",
         "Nothing. Rakazo restores the saved workspace",
         "No",
@@ -70,7 +93,7 @@ export const HOSTED_SANDBOXES_TABLE: ArticleTable = {
       cells: [
         "Yes, set up from the computer providers guide",
         "Firecracker microVM",
-        "$11.59. Rakazo's default 2 vCPU / 2 GB shape is $8.40",
+        `${workday(RATES.createos)} plus disk. Rakazo's default 2 vCPU / 2 GB shape is ${usd(monthly(RATES.createos, WORKDAY_HOURS, CREATEOS_DEFAULT_SHAPE))}`,
         "Not published",
         "Memory and disk, when paused. Both still billed",
         "No",
@@ -81,7 +104,7 @@ export const HOSTED_SANDBOXES_TABLE: ArticleTable = {
       cells: [
         "No",
         "gVisor, VM runtime optional",
-        "$20.94. The free plan's $30 monthly credit covers it",
+        `${workday(RATES.modal)}. The free plan's $30 monthly credit covers it`,
         "24 hours",
         "Filesystem snapshots. Memory snapshots are in alpha",
         "No",
@@ -92,7 +115,7 @@ export const HOSTED_SANDBOXES_TABLE: ArticleTable = {
       cells: [
         "No",
         "Firecracker microVM",
-        "About $9.71 at 10% CPU, $29.99 at full CPU",
+        `About ${usd(vercelMonthly(WORKDAY_HOURS, 0.1))} at 10% CPU, ${usd(vercelMonthly(WORKDAY_HOURS, 1))} at full CPU`,
         "45 minutes on Hobby, 24 hours on Pro",
         "Filesystem",
         "No",
@@ -100,11 +123,18 @@ export const HOSTED_SANDBOXES_TABLE: ArticleTable = {
     },
     {
       topic: "Northflank",
-      cells: ["No", "microVM (Kata, Cloud Hypervisor) or gVisor", "$5.87", "No cap", "Disk", "Your cloud or on-premises"],
+      cells: [
+        "No",
+        "microVM (Kata, Cloud Hypervisor) or gVisor",
+        workday(RATES.northflank),
+        "No cap",
+        "Disk",
+        "Your cloud or on-premises",
+      ],
     },
     {
       topic: "Blaxel",
-      cells: ["No", "microVM", "$14.57, billed on memory only", "Not published", "Memory, in standby", "No"],
+      cells: ["No", "microVM", `${workday(RATES.blaxel)}, billed on memory only`, "Not published", "Memory, in standby", "No"],
     },
   ],
   note: `${PRICES_NOTE} Usage only, before free credits, at each provider's default region. Vercel bills CPU only while it is busy, so its price depends on how hard the bot works.`,

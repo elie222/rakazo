@@ -1,6 +1,21 @@
 import { GITHUB_URL } from "../site";
-import { PRICES_NOTE, PRICING, PROVIDERS_DOC, RUNTIME_DOC } from "./shared";
+import {
+  MONTH_HOURS,
+  PRICES_NOTE,
+  PRICING,
+  PROVIDERS_DOC,
+  RAILWAY_ESTIMATE,
+  RUNTIME_DOC,
+  WORKDAY_HOURS,
+  aboutUsd,
+  railwayAppMonthly,
+  railwayComputerMonthly,
+} from "./shared";
 import type { Sandbox } from "./types";
+
+const { computer, app } = RAILWAY_ESTIMATE;
+const computerWorkday = railwayComputerMonthly(WORKDAY_HOURS);
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 const RAILWAY_TEMPLATE_DOC = `${GITHUB_URL}/blob/main/infra/railway/README.md`;
 
@@ -66,18 +81,18 @@ export const railway: Sandbox = {
     {
       heading: "What Rakazo on Railway costs a month",
       paragraphs: [
-        "This example assumes the Hobby plan and one bot computer that runs 4 hours a workday, 88 hours a month, with a desktop and Chromium using about half a vCPU and 2.5 GB of memory on average. The Rakazo service and Postgres run all month. Actual use varies with what bots do, so treat these as estimates.",
+        `Railway bills what a computer actually uses rather than its size, so this estimate departs from [the method on the comparison page](/sandboxes/#pricing). It assumes the Hobby plan and one bot computer running 4 hours a workday, ${WORKDAY_HOURS} hours a month, with a desktop and Chromium using about ${computer.vcpus} vCPU and ${computer.gb} GB of memory on average. The Rakazo service and Postgres run all month. Actual use varies with what bots do.`,
       ],
       table: {
         caption: "Estimated monthly bill on Railway Hobby",
         columns: ["Part", "Assumption", "Cost"],
         rows: [
-          { topic: "Bot computer", cells: ["0.5 vCPU and 2.5 GB, 88 hours", "About $18"] },
-          { topic: "Rakazo app", cells: ["About 1 GB and a tenth of a vCPU, all month", "About $12"] },
-          { topic: "Postgres and volumes", cells: ["A small database and a few GB of files", "About $4"] },
-          { topic: "Total", cells: ["The $5 plan fee counts toward this", "About $34"] },
+          { topic: "Bot computer", cells: [`${computer.vcpus} vCPU and ${computer.gb} GB, ${WORKDAY_HOURS} hours`, capitalize(aboutUsd(computerWorkday))] },
+          { topic: "Rakazo app", cells: [`About ${app.gb} GB and ${app.vcpus} vCPU, all month`, capitalize(aboutUsd(railwayAppMonthly - RAILWAY_ESTIMATE.databaseAndVolumes))] },
+          { topic: "Postgres and volumes", cells: ["A small database and a few GB of files", capitalize(aboutUsd(RAILWAY_ESTIMATE.databaseAndVolumes))] },
+          { topic: "Total", cells: ["The $5 plan fee counts toward this", capitalize(aboutUsd(computerWorkday + railwayAppMonthly))] },
         ],
-        note: "Estimated from Railway's rates, checked November 2026. A computer left running around the clock at the same load would cost about $150 on its own. Your model provider bills separately.",
+        note: `Estimated from Railway's rates, checked November 2026. A computer left running around the clock at the same load would cost ${aboutUsd(railwayComputerMonthly(MONTH_HOURS))} on its own. Your model provider bills separately.`,
       },
       bullets: [
         "Memory dominates: Railway counts the operating system and file cache as memory in use, so a browser with many tabs costs more than its CPU suggests.",
@@ -143,11 +158,6 @@ export const railway: Sandbox = {
     caption: "Railway homepage, November 4, 2026.",
   },
   faq: [
-    {
-      question: "How much do Railway sandboxes cost?",
-      answer:
-        "$50 per vCPU-month for CPU actually used and $50 per GB-month for memory actually held, billed per second, as of November 2026. A desktop that averages half a vCPU and 2.5 GB costs about $0.21 an hour while it runs. Plan fees start at $5 a month on Hobby, which counts toward usage.",
-    },
     {
       question: "Can I host Rakazo on Railway?",
       answer:

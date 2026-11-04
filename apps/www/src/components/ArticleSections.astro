@@ -15,7 +15,7 @@ const { sections, image } = Astro.props;
 {
   sections.map((section) => (
     <section class="sandbox-section">
-      <h2>{section.heading}</h2>
+      <h2 id={section.id}>{section.heading}</h2>
       {section.paragraphs?.map((paragraph) => (
         <p>
           <ArticleText text={paragraph} />

@@ -1,5 +1,28 @@
-import { CLOUD_PLAN, PRICES_NOTE, PRICING, PROVIDERS_DOC, RUNTIME_DOC, homepage } from "./shared";
+import {
+  BOAT,
+  BOAT_RAKAZO,
+  CLOUD_PLAN,
+  E2B_PRO_FEE,
+  METHOD_NOTE,
+  MONTH_HOURS,
+  PRICES_NOTE,
+  PRICING,
+  PROVIDERS_DOC,
+  RATES,
+  RUNTIME_DOC,
+  SERVERS,
+  WORKDAY_HOURS,
+  boatMonthly,
+  euro,
+  homepage,
+  monthly,
+  usd,
+} from "./shared";
 import type { Sandbox } from "./types";
+
+const minimumHours = Math.floor(BOAT.minimum / BOAT_RAKAZO.hour);
+const fullMonth = (hour: number) => `$${Math.round(hour * 730)}`;
+const shape = (size: { vcpus: number; gb: number }) => `${size.vcpus} vCPU / ${size.gb} GB`;
 
 export const boat: Sandbox = {
   slug: "boat",
@@ -9,7 +32,7 @@ export const boat: Sandbox = {
   bestFor: "Many bots with separate logins",
   title: "Boat AI agent sandbox: pricing, limits and how Rakazo runs bots on Boat VMs",
   description:
-    "Boat rents persistent Ubuntu VMs for AI agents from $20 a month. Its pricing, sizes and limits, what a bot's computer really costs compared with E2B and Daytona, and how Rakazo runs every bot on Boat.",
+    `Boat rents persistent Ubuntu VMs for AI agents from $${BOAT.minimum} a month. Its pricing, sizes and limits, what a bot's computer really costs compared with E2B and Daytona, and how Rakazo runs every bot on Boat.`,
   h1: "Boat for AI agents: a cloud computer for every bot",
   intro: [
     "[Boat](https://boat.dev) rents out persistent Ubuntu virtual machines built for AI agents. Each one is a full Linux computer in the cloud that keeps its disk when it stops, so an agent can come back to the same files and installed tools later.",
@@ -43,21 +66,24 @@ export const boat: Sandbox = {
     {
       heading: "Boat pricing",
       paragraphs: [
-        "Boat bills machines by the second while they run, with a $20 minimum a month that counts entirely as machine time. Stopped machines don't bill for compute. New accounts get a 7-day trial with 25 compute hours.",
+        `Boat bills machines by the second while they run, with a $${BOAT.minimum} minimum a month that counts entirely as machine time. Stopped machines don't bill for compute. New accounts get a 7-day trial with 25 compute hours.`,
       ],
       table: {
         caption: "Boat machine sizes as of November 2026",
         columns: ["Size", "vCPU / memory / disk", "Per hour", "Full month"],
         rows: [
-          { topic: "small", cells: ["2 / 4 GB / 51 GB", "$0.018", "$13"] },
-          { topic: "default", cells: ["4 / 8 GB / 51 GB", "$0.036", "$26"] },
-          { topic: "large", cells: ["8 / 16 GB / 111 GB", "$0.072", "$53"] },
-          { topic: "xlarge", cells: ["16 / 32 GB / 251 GB", "$0.200", "$146, on plans of $100 or more"] },
+          { topic: "small", cells: [`${BOAT.small.vcpus} / ${BOAT.small.gb} GB / 51 GB`, `$${BOAT.small.hour}`, fullMonth(BOAT.small.hour)] },
+          { topic: "default", cells: [`${BOAT.default.vcpus} / ${BOAT.default.gb} GB / 51 GB`, `$${BOAT.default.hour}`, fullMonth(BOAT.default.hour)] },
+          { topic: "large", cells: [`${BOAT.large.vcpus} / ${BOAT.large.gb} GB / 111 GB`, `$${BOAT.large.hour}`, fullMonth(BOAT.large.hour)] },
+          {
+            topic: "xlarge",
+            cells: [`${BOAT.xlarge.vcpus} / ${BOAT.xlarge.gb} GB / 251 GB`, `$${BOAT.xlarge.hour.toFixed(3)}`, `${fullMonth(BOAT.xlarge.hour)}, on plans of $100 or more`],
+          },
         ],
         note: `${PRICES_NOTE} Source: [boat.dev](https://boat.dev).`,
       },
       bullets: [
-        "The $20 minimum buys about 555 hours of the default size.",
+        `The $${BOAT.minimum} minimum buys about ${minimumHours} hours of the default size.`,
         "Saved snapshots cost $0.056 a day each. Rakazo keeps one base snapshot with the desktop tools installed, about $1.70 a month.",
         "Starting machines faster than your plan's limit costs $0.03 to $0.07 a start.",
         "Plans allow 100 to 2,000 machines running at once.",
@@ -66,18 +92,38 @@ export const boat: Sandbox = {
     {
       heading: "What a Rakazo computer costs on Boat",
       paragraphs: [
-        "Rakazo creates Boat machines at the default size, 4 vCPU and 8 GB, which is twice the 2 vCPU / 4 GB other providers' pages on this site price. Bots in a workspace share one team computer by default, so one machine usually serves a whole team. Rakazo stops it after 10 minutes without use, and after two hours of continuous uptime unless a bot is still working or you are in control.",
-        "Because Boat is cheap per hour and has a monthly minimum, most small teams pay exactly $20. The table compares the same 4 vCPU / 8 GB computer on providers that bill per second.",
+        `${METHOD_NOTE} Rakazo can't run Boat at that size: it creates every machine at the default ${shape(BOAT_RAKAZO)}, so the table compares that size on providers that bill per second. Because Boat is cheap per hour and has a monthly minimum, most small teams pay exactly $${BOAT.minimum}.`,
       ],
       table: {
-        caption: "One 4 vCPU / 8 GB computer a month",
+        caption: `One ${shape(BOAT_RAKAZO)} computer a month`,
         columns: ["Provider", "4 hours a workday (88 hours)", "Around the clock (720 hours)"],
         rows: [
-          { topic: "Boat", cells: ["$20, the minimum ($3.17 of usage)", "$25.92"] },
-          { topic: "[Novita](/sandboxes/novita/)", cells: ["$20.53", "$167.96"] },
-          { topic: "[E2B](/sandboxes/e2b/)", cells: ["$29.15", "$388.46, with the $150 Pro plan"] },
-          { topic: "[Daytona](/sandboxes/daytona/)", cells: ["$29.15", "$238.46"] },
-          { topic: "[Docker](/sandboxes/docker/) on a rented server", cells: ["€8.99 for a 4 vCPU / 8 GB Hetzner CX33", "€8.99"] },
+          {
+            topic: "Boat",
+            cells: [
+              `${usd(boatMonthly(BOAT_RAKAZO.hour, WORKDAY_HOURS))}, the minimum (${usd(BOAT_RAKAZO.hour * WORKDAY_HOURS)} of usage)`,
+              usd(boatMonthly(BOAT_RAKAZO.hour, MONTH_HOURS)),
+            ],
+          },
+          {
+            topic: "[Novita](/sandboxes/novita/)",
+            cells: [usd(monthly(RATES.novita, WORKDAY_HOURS, BOAT_RAKAZO)), usd(monthly(RATES.novita, MONTH_HOURS, BOAT_RAKAZO))],
+          },
+          {
+            topic: "[E2B](/sandboxes/e2b/)",
+            cells: [
+              usd(monthly(RATES.e2b, WORKDAY_HOURS, BOAT_RAKAZO)),
+              `${usd(monthly(RATES.e2b, MONTH_HOURS, BOAT_RAKAZO) + E2B_PRO_FEE)}, with the $${E2B_PRO_FEE} Pro plan`,
+            ],
+          },
+          {
+            topic: "[Daytona](/sandboxes/daytona/)",
+            cells: [usd(monthly(RATES.daytona, WORKDAY_HOURS, BOAT_RAKAZO)), usd(monthly(RATES.daytona, MONTH_HOURS, BOAT_RAKAZO))],
+          },
+          {
+            topic: "[Docker](/sandboxes/docker/) on a rented server",
+            cells: [`${euro(SERVERS.hetznerCx33)} for a 4 vCPU / 8 GB Hetzner CX33`, euro(SERVERS.hetznerCx33)],
+          },
         ],
         note: "Computed from each provider's rates, checked November 2026, before free credits. Daytona caps one sandbox at 4 vCPU / 8 GiB. The Docker server also has to run Rakazo itself. Your model provider bills separately.",
       },
@@ -136,34 +182,8 @@ export const boat: Sandbox = {
   ),
   faq: [
     {
-      question: "What is Boat used for?",
-      answer:
-        "Running AI agents on persistent Linux VMs in the cloud. Rakazo uses Boat as the computer each bot works on, with a desktop, browser, terminal and files.",
-    },
-    {
-      question: "Can AI agents use a browser on Boat?",
-      answer:
-        "Yes. In Rakazo each bot gets its own Chrome on a Boat desktop, with a persistent profile, and you can watch it or take over. Logins are not shared between bots.",
-    },
-    {
-      question: "How much does Boat cost?",
-      answer:
-        "From $0.018 an hour for 2 vCPU / 4 GB to $0.200 for 16 vCPU / 32 GB, billed per second, with a $20 minimum a month that counts as machine time. That minimum covers about 555 hours of the 4 vCPU / 8 GB size Rakazo uses. Prices as of November 2026.",
-    },
-    {
-      question: "Is there a free Boat plan?",
-      answer:
-        "No ongoing free plan. New accounts get a 7-day trial with 25 compute hours, then pay from $20 a month.",
-    },
-    {
-      question: "Do Boat computers see my server's environment variables?",
-      answer:
-        "No. Rakazo always creates and resumes Boat machines without the account's environment, so your keys don't end up inside a bot's computer.",
-    },
-    {
       question: "Boat vs E2B for AI agents?",
-      answer:
-        "Both give Rakazo bots a Linux desktop, terminal and files. Boat machines are long-lived VMs that keep their disk when stopped, cost a flat $20 minimum for most small teams, and Rakazo Cloud runs on them. [E2B](/sandboxes/e2b/) bills every second at a higher rate, pauses idle sandboxes with their memory, runs in the US, and is open source. Rakazo keeps its own copy of each bot's workspace on both.",
+      answer: `Both give Rakazo bots a Linux desktop, terminal and files. Boat machines are long-lived VMs that keep their disk when stopped, cost a flat $${BOAT.minimum} minimum for most small teams, and Rakazo Cloud runs on them. [E2B](/sandboxes/e2b/) bills every second at a higher rate, pauses idle sandboxes with their memory, runs in the US, and is open source. Rakazo keeps its own copy of each bot's workspace on both.`,
     },
     {
       question: "Do I need Boat to self-host Rakazo?",

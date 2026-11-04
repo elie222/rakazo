@@ -26,6 +26,8 @@ export type ArticleTable = {
  */
 export type ArticleSection = {
   heading: string;
+  /** Anchor for links to this section, such as `pricing`. */
+  id?: string;
   paragraphs?: readonly string[];
   /** Shown after the paragraphs. */
   table?: ArticleTable;

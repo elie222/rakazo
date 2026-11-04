@@ -1,5 +1,19 @@
 import { GITHUB_URL } from "../site";
-import { PRICES_NOTE, PRICING } from "./shared";
+import {
+  BOAT_RAKAZO,
+  E2B_PRO_FEE,
+  MAC_MINI,
+  MONTH_HOURS,
+  PRICES_NOTE,
+  PRICING,
+  RATES,
+  WORKDAY_HOURS,
+  aboutUsd,
+  boatMonthly,
+  macMiniMonthly,
+  monthly,
+  usd,
+} from "./shared";
 import type { Sandbox } from "./types";
 
 export const yourComputer: Sandbox = {
@@ -67,10 +81,27 @@ export const yourComputer: Sandbox = {
         caption: "Your own computer next to a hosted sandbox, per month",
         columns: ["Option", "Isolation", "4 hours a workday", "Around the clock"],
         rows: [
-          { topic: "A Mac mini you already own", cells: ["None, by design", "Under $1 of electricity", "About $3 at 20 W average and $0.20 per kWh"] },
+          {
+            topic: "A Mac mini you already own",
+            cells: [
+              "None, by design",
+              `Under $${Math.ceil(macMiniMonthly(WORKDAY_HOURS))} of electricity`,
+              `A${aboutUsd(macMiniMonthly(MONTH_HOURS)).slice(1)} at ${MAC_MINI.watts} W average and $${MAC_MINI.kwh.toFixed(2)} per kWh`,
+            ],
+          },
           { topic: "[Docker](/sandboxes/docker/) on that same Mac", cells: ["Container", "Same electricity", "Same electricity"] },
-          { topic: "[E2B](/sandboxes/e2b/), 2 vCPU / 4 GB", cells: ["microVM", "$14.57", "$269.23, with the Pro plan"] },
-          { topic: "[Boat](/sandboxes/boat/), 4 vCPU / 8 GB", cells: ["VM", "$20 minimum", "$25.92"] },
+          {
+            topic: "[E2B](/sandboxes/e2b/), 2 vCPU / 4 GB",
+            cells: [
+              "microVM",
+              usd(monthly(RATES.e2b, WORKDAY_HOURS)),
+              `${usd(monthly(RATES.e2b, MONTH_HOURS))}, or ${usd(monthly(RATES.e2b, MONTH_HOURS) + E2B_PRO_FEE)} with Pro for 24-hour sessions`,
+            ],
+          },
+          {
+            topic: `[Boat](/sandboxes/boat/), ${BOAT_RAKAZO.vcpus} vCPU / ${BOAT_RAKAZO.gb} GB`,
+            cells: ["VM", `${usd(boatMonthly(BOAT_RAKAZO.hour, WORKDAY_HOURS))} minimum`, usd(boatMonthly(BOAT_RAKAZO.hour, MONTH_HOURS))],
+          },
         ],
         note: `${PRICES_NOTE} Electricity is an estimate; your rate and load will differ.`,
       },

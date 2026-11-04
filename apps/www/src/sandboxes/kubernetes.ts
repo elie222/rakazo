@@ -1,6 +1,24 @@
 import { GITHUB_URL } from "../site";
-import { PRICES_NOTE, PRICING, PROVIDERS_DOC, RUNTIME_DOC, homepage } from "./shared";
+import {
+  E2B_PRO_FEE,
+  KUBERNETES_NODE_FITS,
+  MONTH_HOURS,
+  PRICES_NOTE,
+  PRICING,
+  PROVIDERS_DOC,
+  RATES,
+  RUNTIME_DOC,
+  SERVERS,
+  WORKDAY_HOURS,
+  aboutUsd,
+  euro,
+  homepage,
+  monthly,
+} from "./shared";
 import type { Sandbox } from "./types";
+
+const FITS_WORD = ["no", "one", "two", "three", "four", "five"][KUBERNETES_NODE_FITS] ?? String(KUBERNETES_NODE_FITS);
+const CONTROL_PLANE = `about $${Math.round(SERVERS.controlPlane)}`;
 
 export const kubernetes: Sandbox = {
   slug: "kubernetes",
@@ -44,22 +62,22 @@ export const kubernetes: Sandbox = {
       heading: "What Kubernetes computers cost",
       paragraphs: [
         "Rakazo and Kubernetes are free, so you pay for the nodes the pods run on and, on some clouds, a fee for the cluster's control plane. Like a server, a node costs the same whether bots are busy or not.",
-        "Rakazo sets no CPU or memory limits unless you do. For a desktop and Chromium, 2 CPU and 4Gi per pod is a sensible start. Rakazo sets only limits, and Kubernetes then reserves the full limit for every pod, so an 8 vCPU / 16 GB node fits about three computers once the node's own system pods have their share.",
+        `Rakazo sets no CPU or memory limits unless you do. For a desktop and Chromium, 2 CPU and 4Gi per pod is a sensible start. Rakazo sets only limits, and Kubernetes then reserves the full limit for every pod, so an 8 vCPU / 16 GB node fits about ${FITS_WORD} computers once the node's own system pods have their share.`,
       ],
       table: {
         caption: "A small cluster for bot computers, per month",
         columns: ["Where", "Control plane", "One 8 vCPU node", "Notes"],
         rows: [
-          { topic: "DigitalOcean Kubernetes", cells: ["Free, or $40 for high availability", "$96 for 16 GB", "Simplest managed option at this size"] },
-          { topic: "Google Kubernetes Engine", cells: ["$0.10 an hour, about $73. A monthly free credit covers one zonal cluster", "Varies by machine type", "GKE Sandbox gives you gVisor with no extra fee"] },
-          { topic: "Amazon EKS", cells: ["$0.10 an hour, about $73. $0.60 an hour on extended support", "About $294 for an m7i.2xlarge with 32 GB", "m7i and similar types support nested virtualization, so Kata works"] },
+          { topic: "DigitalOcean Kubernetes", cells: ["Free, or $40 for high availability", `$${SERVERS.digitalOcean16} for 16 GB`, "Simplest managed option at this size"] },
+          { topic: "Google Kubernetes Engine", cells: [`$0.10 an hour, ${CONTROL_PLANE}. A monthly free credit covers one zonal cluster`, "Varies by machine type", "GKE Sandbox gives you gVisor with no extra fee"] },
+          { topic: "Amazon EKS", cells: [`$0.10 an hour, ${CONTROL_PLANE}. $0.60 an hour on extended support`, `About $${SERVERS.awsM7i2xlarge} for an m7i.2xlarge with 32 GB`, "m7i and similar types support nested virtualization, so Kata works"] },
           { topic: "Azure AKS", cells: ["Free tier without an SLA, or a paid tier", "Varies by VM size", "Microsoft suggests the free tier only up to 10 nodes"] },
-          { topic: "k3s on Hetzner", cells: ["Free, you run it", "€16.49 for a CX43 with 16 GB", "Kata needs nested virtualization, which Hetzner doesn't offer on cloud VMs; its dedicated servers work"] },
+          { topic: "k3s on Hetzner", cells: ["Free, you run it", `${euro(SERVERS.hetznerCx43)} for a CX43 with 16 GB`, "Kata needs nested virtualization, which Hetzner doesn't offer on cloud VMs; its dedicated servers work"] },
         ],
         note: `${PRICES_NOTE} Hetzner prices exclude VAT. AWS price for us-east-1 on demand.`,
       },
       bullets: [
-        "Three always-available computers on one DigitalOcean node cost $96 a month. The same three on [E2B](/sandboxes/e2b/) for 4 hours a workday would be about $44, and around the clock about $508 with the Pro plan. Kubernetes pays off when computers are busy most of the day or you already have spare capacity.",
+        `${FITS_WORD.charAt(0).toUpperCase() + FITS_WORD.slice(1)} always-available computers on one DigitalOcean node cost $${SERVERS.digitalOcean16} a month. The same ${FITS_WORD} on [E2B](/sandboxes/e2b/) for 4 hours a workday would be ${aboutUsd(KUBERNETES_NODE_FITS * monthly(RATES.e2b, WORKDAY_HOURS))}, and around the clock ${aboutUsd(KUBERNETES_NODE_FITS * monthly(RATES.e2b, MONTH_HOURS) + E2B_PRO_FEE)} with the Pro plan. Kubernetes pays off when computers are busy most of the day or you already have spare capacity.`,
         "Kata adds about 250m CPU and 160Mi of memory per pod for its VM. gVisor costs nothing extra but slows system calls, which a browser makes many of.",
         "Rakazo, the API and the worker need their own pods in the same cluster, plus a Postgres database.",
       ],
@@ -100,7 +118,6 @@ export const kubernetes: Sandbox = {
         "Rakazo doesn't create a NetworkPolicy. Add one that admits only the Rakazo API, worker and web pods to the computer pods and blocks their egress to private ranges.",
         "CPU and memory limits are unset unless you set them, so add limits or a namespace quota.",
         "Pods are disposable. Anything installed outside the workspace is gone when a pod is replaced, unless the home folder is on a volume.",
-        "Rakazo creates plain pods. It does not use the Kubernetes [Agent Sandbox](https://agent-sandbox.sigs.k8s.io) custom resource.",
       ],
     },
     {
@@ -124,26 +141,6 @@ export const kubernetes: Sandbox = {
     "The Kubernetes homepage, headed Production-Grade Container Orchestration.",
   ),
   faq: [
-    {
-      question: "Can I use gVisor or Kata Containers for AI agent sandboxes?",
-      answer:
-        "Yes, if your cluster has the runtime class installed. Set `KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME` and Rakazo puts it on every computer pod it creates.",
-    },
-    {
-      question: "How much does it cost to run AI agent sandboxes on Kubernetes?",
-      answer:
-        "The nodes, plus a control-plane fee on some clouds. One 8 vCPU / 16 GB node runs about three bot computers at 2 CPU and 4Gi each: $96 a month on DigitalOcean, whose control plane is free. GKE and EKS add about $73 a month per cluster, though GKE's free credit covers one zonal cluster.",
-    },
-    {
-      question: "What is Kubernetes Agent Sandbox?",
-      answer:
-        "A Kubernetes SIG project, in beta, that adds a `Sandbox` resource for AI agents with templates, warm pools and pause and resume. Isolation comes from a runtime class such as gVisor or Kata.",
-    },
-    {
-      question: "Does Rakazo use the Kubernetes Agent Sandbox project?",
-      answer:
-        "No. It creates ordinary pods with the Kubernetes API, so it needs no custom resources or extra controllers in your cluster.",
-    },
     {
       question: "Do bots lose their files when a pod is deleted?",
       answer:

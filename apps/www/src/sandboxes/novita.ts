@@ -1,5 +1,30 @@
-import { PRICES_NOTE, PRICING, PROVIDERS_DOC, RUNTIME_DOC } from "./shared";
+import {
+  BOAT_RAKAZO,
+  E2B_PRO_FEE,
+  METHOD_NOTE,
+  MONTH_HOURS,
+  NOVITA_CREDIT,
+  PRICES_NOTE,
+  PRICING,
+  PROVIDERS_DOC,
+  RATES,
+  RUNTIME_DOC,
+  WORKDAY_HOURS,
+  boatMonthly,
+  count,
+  hourly,
+  monthly,
+  perSecondUsd,
+  rateUsd,
+  usd,
+} from "./shared";
 import type { Sandbox } from "./types";
+
+const hour = hourly(RATES.novita);
+const workday = monthly(RATES.novita, WORKDAY_HOURS);
+const always = monthly(RATES.novita, MONTH_HOURS);
+const creditHours = Math.round(NOVITA_CREDIT / hour / 50) * 50;
+const discount = Math.round((1 - workday / monthly(RATES.e2b, WORKDAY_HOURS)) * 100);
 
 export const novita: Sandbox = {
   slug: "novita",
@@ -43,17 +68,17 @@ export const novita: Sandbox = {
     {
       heading: "Novita sandbox pricing",
       paragraphs: [
-        "Novita bills CPU and memory by the second while a sandbox runs, with no monthly fee. Pausing stops both. Paused sandboxes, templates and snapshots count as stored data, with 60 GB free per account. New accounts can get $100 of credit by answering a short setup survey, with no card needed.",
+        `Novita bills CPU and memory by the second while a sandbox runs, with no monthly fee. Pausing stops both. Paused sandboxes, templates and snapshots count as stored data, with 60 GB free per account. New accounts can get $${NOVITA_CREDIT} of credit by answering a short setup survey, with no card needed.`,
       ],
       table: {
         caption: "Novita Agent Sandbox rates as of November 2026",
         columns: ["What", "Price or limit"],
         rows: [
-          { topic: "CPU", cells: ["$0.0000098 per vCPU-second, about $0.035 an hour"] },
-          { topic: "Memory", cells: ["$0.0000032 per GiB-second, about $0.012 an hour"] },
+          { topic: "CPU", cells: [`${perSecondUsd(RATES.novita.vcpuHour)} per vCPU-second, about ${rateUsd(RATES.novita.vcpuHour)} an hour`] },
+          { topic: "Memory", cells: [`${perSecondUsd(RATES.novita.gbHour)} per GiB-second, about ${rateUsd(RATES.novita.gbHour)} an hour`] },
           { topic: "Disk while running", cells: ["20 GB per sandbox, free"] },
           { topic: "Stored data", cells: ["60 GB free per account, then $0.00009 per GB-hour"] },
-          { topic: "Free credit", cells: ["$100 after a setup survey"] },
+          { topic: "Free credit", cells: [`$${NOVITA_CREDIT} after a setup survey`] },
           { topic: "Free tier limits", cells: ["5 sandboxes at once, 1-hour sessions, up to 2 vCPU / 4 GB"] },
           { topic: "Paid limits", cells: ["100 sandboxes at once, 24-hour sessions, up to 8 vCPU / 8 GB"] },
         ],
@@ -63,23 +88,38 @@ export const novita: Sandbox = {
     {
       heading: "What a Rakazo computer costs on Novita",
       paragraphs: [
-        "Rakazo's `rakazo-computer` template on Novita is 2 vCPU and 4 GB, about $0.12 an hour while it runs. Bots in a workspace share one team computer by default, so this is usually the cost for a whole team. Rakazo pauses the computer after 10 minutes without use, so you pay for the hours bots work plus a short tail.",
+        `${METHOD_NOTE} Rakazo's \`rakazo-computer\` template on Novita is exactly that size, about ${usd(hour)} an hour while it runs.`,
       ],
       table: {
         caption: "One 2 vCPU / 4 GB computer a month",
         columns: ["Provider", "4 hours a workday (88 hours)", "Around the clock (720 hours)"],
         rows: [
-          { topic: "Novita", cells: ["$10.26", "$83.98"] },
-          { topic: "[E2B](/sandboxes/e2b/)", cells: ["$14.57", "$269.23, with the $150 Pro plan"] },
-          { topic: "[Daytona](/sandboxes/daytona/)", cells: ["$14.57", "$119.23"] },
-          { topic: "[Boat](/sandboxes/boat/)", cells: ["$20 minimum, at 4 vCPU / 8 GB", "$25.92, at 4 vCPU / 8 GB"] },
+          { topic: "Novita", cells: [usd(workday), usd(always)] },
+          {
+            topic: "[E2B](/sandboxes/e2b/)",
+            cells: [
+              usd(monthly(RATES.e2b, WORKDAY_HOURS)),
+              `${usd(monthly(RATES.e2b, MONTH_HOURS))}, or ${usd(monthly(RATES.e2b, MONTH_HOURS) + E2B_PRO_FEE)} with Pro for 24-hour sessions`,
+            ],
+          },
+          {
+            topic: "[Daytona](/sandboxes/daytona/)",
+            cells: [usd(monthly(RATES.daytona, WORKDAY_HOURS)), usd(monthly(RATES.daytona, MONTH_HOURS))],
+          },
+          {
+            topic: "[Boat](/sandboxes/boat/)",
+            cells: [
+              `${usd(boatMonthly(BOAT_RAKAZO.hour, WORKDAY_HOURS))} minimum, at the ${BOAT_RAKAZO.vcpus} vCPU / ${BOAT_RAKAZO.gb} GB size Rakazo uses`,
+              usd(boatMonthly(BOAT_RAKAZO.hour, MONTH_HOURS)),
+            ],
+          },
         ],
         note: "Computed from each provider's rates, checked November 2026, before free credits. Your model provider bills separately.",
       },
       bullets: [
-        "The $100 credit covers about 850 hours of this computer.",
+        `The $${NOVITA_CREDIT} credit covers about ${count(creditHours)} hours of this computer.`,
         "A paused computer keeps its memory as stored data. A few paused computers fit within the 60 GB free allowance; beyond it, each extra 10 GB costs about $0.65 a month.",
-        "Around-the-clock use needs the paid tier, and even then a session ends after 24 hours. Rakazo's two-hour uptime cap pauses busy computers well before that anyway.",
+        "Around-the-clock use needs the paid tier, where a session ends after 24 hours. Rakazo pauses a computer after two hours of uptime, but waits while a run is executing, someone controls the screen or a coding agent is working. A computer kept busy that long can reach Novita's 24-hour limit, which cuts the work off until the next resume.",
       ],
     },
     {
@@ -141,34 +181,13 @@ export const novita: Sandbox = {
   },
   faq: [
     {
-      question: "How much does Novita's Agent Sandbox cost?",
-      answer:
-        "$0.0000098 per vCPU-second and $0.0000032 per GiB-second as of November 2026, so a 2 vCPU / 4 GB sandbox costs about $0.12 an hour while running. Paused sandboxes bill only for stored data beyond 60 GB per account.",
-    },
-    {
       question: "Is Novita cheaper than E2B?",
-      answer:
-        "Per second, yes: about 30% less for the same 2 vCPU / 4 GB computer, with no monthly fee for 24-hour sessions. Both pause with memory. [E2B](/sandboxes/e2b/) uses Firecracker microVMs, is open source and has more regions.",
-    },
-    {
-      question: "Does a paused Novita sandbox keep running programs?",
-      answer:
-        "Yes. Pausing keeps the computer's memory as well as its disk, so open browser tabs and running programs carry on when Rakazo resumes it.",
+      answer: `Per second, yes: about ${discount}% less for the same 2 vCPU / 4 GB computer, with no monthly fee for 24-hour sessions. Both pause with memory. [E2B](/sandboxes/e2b/) uses Firecracker microVMs, is open source and has more regions.`,
     },
     {
       question: "Is Novita's sandbox compatible with E2B?",
       answer:
         "Novita's sandbox works with the E2B SDK. In Rakazo they are separate providers with their own settings, so you choose [Novita](/sandboxes/novita/) or [E2B](/sandboxes/e2b/) with `SANDBOX_PROVIDER`.",
-    },
-    {
-      question: "Why does Rakazo need its own Novita template?",
-      answer:
-        "The `rakazo-computer` template sizes the desktop at 2 vCPU and 4 GB instead of Novita's larger stock desktop. Rakazo requires it and won't start computers without it, so build it once with `pnpm sandbox:novita-template`.",
-    },
-    {
-      question: "Can I use Novita on Rakazo Cloud?",
-      answer:
-        "No. Rakazo Cloud runs its bot computers on [Boat](/sandboxes/boat/). Novita is an option when you [self-host Rakazo](/self-hosted-ai-agent/).",
     },
   ],
   sources: [

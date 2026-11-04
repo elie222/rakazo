@@ -1,6 +1,23 @@
 import { GITHUB_URL } from "../site";
-import { PRICES_NOTE, PRICING, PROVIDERS_DOC, RUNTIME_DOC, homepage } from "./shared";
+import {
+  BOAT,
+  DOCKER_MEMORY,
+  PRICES_NOTE,
+  PRICING,
+  PROVIDERS_DOC,
+  RATES,
+  RUNTIME_DOC,
+  SERVERS,
+  WORKDAY_HOURS,
+  dockerComputersFit,
+  euro,
+  homepage,
+  monthly,
+  usd,
+} from "./shared";
 import type { Sandbox } from "./types";
+
+const fits = (gb: number) => `About ${dockerComputersFit(gb)}`;
 
 export const docker: Sandbox = {
   slug: "docker",
@@ -45,23 +62,26 @@ export const docker: Sandbox = {
       heading: "What Docker computers cost",
       paragraphs: [
         "Docker Engine and Rakazo are free and open source, so the cost is the machine they run on. A server costs the same whether bots work one hour a day or all day, which is the main difference from hosted sandboxes that bill by the second.",
-        "Each computer is capped at 2 GB of memory and 2 CPUs by default. Most of the time a bot's desktop is waiting on the model, so memory usually runs out before CPU does. The table assumes about 4 GB for Rakazo itself and its database, and 2 GB for each computer. Bots in a workspace share one team computer by default, so one computer often serves a whole team.",
+        `Each computer is capped at ${DOCKER_MEMORY.computerGb} GB of memory and 2 CPUs by default. Most of the time a bot's desktop is waiting on the model, so memory usually runs out before CPU does. The table assumes about ${DOCKER_MEMORY.rakazoGb} GB for Rakazo itself and its database, and ${DOCKER_MEMORY.computerGb} GB for each computer.`,
       ],
       table: {
         caption: "Servers for a self-hosted Rakazo with Docker computers",
         columns: ["Server", "vCPU / memory", "Per month", "Computers that fit in memory"],
         rows: [
           { topic: "A spare Mac, PC or Linux box", cells: ["Whatever it has", "Electricity only", "Depends on its memory"] },
-          { topic: "Hetzner CX33", cells: ["4 / 8 GB", "€8.99", "2"] },
-          { topic: "Hetzner CX43", cells: ["8 / 16 GB", "€16.49", "About 6"] },
-          { topic: "DigitalOcean Basic Droplet", cells: ["8 / 16 GB", "$96", "About 6"] },
-          { topic: "Hetzner AX42 dedicated server", cells: ["8 cores, 16 threads / 64 GB", "From €79, plus €49 setup", "About 30, though fewer can work hard at once"] },
-          { topic: "AWS EC2 m7i.2xlarge", cells: ["8 / 32 GB", "About $294", "About 14"] },
+          { topic: "Hetzner CX33", cells: ["4 / 8 GB", euro(SERVERS.hetznerCx33), String(dockerComputersFit(8))] },
+          { topic: "Hetzner CX43", cells: ["8 / 16 GB", euro(SERVERS.hetznerCx43), fits(16)] },
+          { topic: "DigitalOcean Basic Droplet", cells: ["8 / 16 GB", `$${SERVERS.digitalOcean16}`, fits(16)] },
+          {
+            topic: "Hetzner AX42 dedicated server",
+            cells: ["8 cores, 16 threads / 64 GB", `From €${SERVERS.hetznerAx42}, plus €49 setup`, `${fits(64)}, though fewer can work hard at once`],
+          },
+          { topic: "AWS EC2 m7i.2xlarge", cells: ["8 / 32 GB", `About $${SERVERS.awsM7i2xlarge}`, fits(32)] },
         ],
         note: `${PRICES_NOTE} Hetzner prices exclude VAT, and its cloud plans have limited stock after two price rises in 2026. AWS price for us-east-1 on demand.`,
       },
       bullets: [
-        "For comparison, one 2 vCPU / 4 GB computer working 4 hours a workday costs $14.57 on [E2B](/sandboxes/e2b/) or [Daytona](/sandboxes/daytona/), and [Boat](/sandboxes/boat/)'s minimum is $20. A €16.49 server runs Rakazo and several computers for less, but you look after it.",
+        `For comparison, one 2 vCPU / 4 GB computer working 4 hours a workday costs ${usd(monthly(RATES.e2b, WORKDAY_HOURS))} on [E2B](/sandboxes/e2b/) or [Daytona](/sandboxes/daytona/), and [Boat](/sandboxes/boat/)'s minimum is $${BOAT.minimum}. A ${euro(SERVERS.hetznerCx43)} server runs Rakazo and several computers for less, but you look after it.`,
         "Computers share the server's CPU. If several bots run heavy pages at once, raise `RAKAZO_COMPUTER_CPUS` and `RAKAZO_COMPUTER_MEMORY` or pick a bigger server.",
         "Docker Engine on Linux is free for any use. On a Mac or Windows PC, Docker Desktop is free for personal use and companies under 250 employees and $10 million revenue, and costs $9 to $24 per user a month otherwise. OrbStack is $8 per user a month for commercial use.",
         "You still pay your model provider, unless you run models yourself.",
@@ -129,11 +149,6 @@ export const docker: Sandbox = {
       question: "Is this the same as Docker Sandboxes?",
       answer:
         "No. Docker Sandboxes is Docker's own microVM product for coding agents. It is free to run locally, and its hosted Cloud Sandboxes cost $0.14 an hour for 2 vCPU / 4 GB as of November 2026. Rakazo doesn't use it; it runs its computers as ordinary containers through its own supervisor.",
-    },
-    {
-      question: "How much does it cost to run AI agents in Docker?",
-      answer:
-        "Only the machine. A Hetzner server with 8 vCPU and 16 GB is €16.49 a month and fits Rakazo plus about six bot computers; a spare computer you already own costs only electricity. Your model provider bills separately.",
     },
     {
       question: "Do I need a cloud account to run bots in Docker?",
