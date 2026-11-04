@@ -102,6 +102,7 @@ export const SANDBOXES_HUB = {
 
 export const SANDBOXES_ARTICLE_HUB: ArticleHub = {
   label: "Sandboxes for AI agents",
+  compareLabel: "Compare all sandboxes",
   href: SANDBOXES_PATH,
   moreHeading: "More sandboxes for AI agents",
   guide: { label: "Computer providers guide", href: COMPUTER_PROVIDERS_DOCS_PATH },

@@ -62,7 +62,7 @@ export const apiConnectors: IntegrationPlatform = {
         "An OpenAPI document must list a server URL, give operations an `operationId` and be under 2 MB. Only the first 100 operations are imported, and request bodies are JSON.",
         "A GraphQL API must allow introspection. Larger schemas are cut to 100 operations, split between queries and mutations.",
         "APIs must be at public addresses. Localhost and private networks are refused unless the operator sets `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker, which allows them for every user. Cloud metadata addresses stay blocked.",
-        "Keys can't go in the URL, redirects aren't followed, each call has 30 seconds and responses over 1 MB are cut short.",
+        "The Settings form sends a key as a bearer token or a header. Connectors installed through Rakazo's API can also put it in the URL as a query parameter, so avoid that for sensitive keys. Redirects aren't followed, each call has 30 seconds and responses over 1 MB are cut short.",
       ],
     },
     {

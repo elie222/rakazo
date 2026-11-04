@@ -56,8 +56,10 @@ export type ArticleLink = {
 
 /** The hub an article belongs to. */
 export type ArticleHub = {
-  /** Breadcrumb and "compare all" label, e.g. "Sandboxes for AI agents". */
+  /** Breadcrumb label, e.g. "Sandboxes for AI agents". */
   label: string;
+  /** Link back to the hub under the cards, e.g. "Compare all sandboxes". */
+  compareLabel: string;
   href: string;
   /** Heading above the cards for sibling articles. */
   moreHeading: string;

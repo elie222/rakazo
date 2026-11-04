@@ -39,7 +39,7 @@ export function articleMarkdown(
     ...article.faq.flatMap((item) => [`### ${item.question}`, "", absolute(item.answer), ""]),
     `## ${options.hub.moreHeading}`,
     "",
-    `- [${options.hub.label}](${SITE_URL}${options.hub.href})`,
+    `- [${options.hub.compareLabel}](${SITE_URL}${options.hub.href})`,
     ...options.others.map((other) => `- [${other.name}](${SITE_URL}${other.href}): ${other.meta}`),
     "",
     "## Sources",

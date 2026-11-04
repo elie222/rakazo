@@ -90,6 +90,7 @@ export const INTEGRATION_PLATFORMS_HUB = {
 
 export const INTEGRATION_PLATFORMS_ARTICLE_HUB: ArticleHub = {
   label: "Integration platforms for AI agents",
+  compareLabel: "Compare all integration platforms",
   href: INTEGRATION_PLATFORMS_PATH,
   moreHeading: "More ways to give AI agents tools",
   guide: { label: "Tools and integrations guide", href: INTEGRATIONS_DOCS_PATH },

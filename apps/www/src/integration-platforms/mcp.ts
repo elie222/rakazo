@@ -74,7 +74,7 @@ export const mcp: IntegrationPlatform = {
       steps: [
         "Open **Integrations** from **Connect apps** at the bottom of the sidebar and choose **+**.",
         "Choose **Browse MCP servers**, search for the app and choose **Connect**. To enter a URL yourself, use **Manage MCP servers** → **Add server**.",
-        "Choose **Connect OAuth** and sign in if the server asks. If the provider only accepts its own client, add the client ID under **Advanced**.",
+        "Choose **Connect OAuth** and sign in if the server asks. If the provider only accepts a client you create in its console, open **Advanced**, add the **Redirect URI** shown there to that client, then enter its client ID, and its secret for a confidential client.",
         "Ask a bot to use the server and approve its first use, or choose **Use in this bot**.",
         "For a stdio server, an admin sets `MCP_STDIO_ENABLED` and `MCP_STDIO_ALLOWED_COMMANDS` on the API and worker, then adds it under **Add server** → **STDIO**.",
       ],
@@ -92,7 +92,7 @@ export const mcp: IntegrationPlatform = {
     {
       question: "How do I connect a remote MCP server that uses OAuth?",
       answer:
-        "Add its URL in **Integrations**, choose **Connect OAuth** and sign in with the app. Rakazo stores the grant encrypted and refreshes it. If the provider only accepts a client you create, enter its client ID under **Advanced**.",
+        "Add its URL in **Integrations**, choose **Connect OAuth** and sign in with the app. Rakazo stores the grant encrypted and refreshes it. If the provider only accepts a client you create, register the **Redirect URI** shown under **Advanced** with it, then enter its client ID there, plus the secret for a confidential client.",
     },
     {
       question: "Can I run local stdio MCP servers?",

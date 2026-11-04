@@ -97,7 +97,7 @@ const { article, hub, others, updated, ogId, markdownPath } = Astro.props;
   <ul class="sandbox-cards">
     {others.map((link) => <ProviderCard link={link} />)}
   </ul>
-  <p class="sandbox-all"><a href={hub.href}>Compare all</a></p>
+  <p class="sandbox-all"><a href={hub.href}>{hub.compareLabel}</a></p>
 
   <h2>Sources</h2>
   <ul class="source-list">
