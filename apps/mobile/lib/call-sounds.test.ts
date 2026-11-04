@@ -55,6 +55,9 @@ it.each(["start", "end"] as const)(
     expect(player.play).toHaveBeenCalledOnce();
     expect(player.remove).toHaveBeenCalledOnce();
     expect(setAudioModeAsync).not.toHaveBeenCalled();
+    expect(createAudioPlayer).toHaveBeenCalledWith(expect.anything(), {
+      keepAudioSessionActive: true,
+    });
   },
 );
 
@@ -63,6 +66,9 @@ it("plays waiting audio without changing the active recognition audio mode", asy
   await vi.advanceTimersByTimeAsync(0);
   expect(player.play).toHaveBeenCalledOnce();
   expect(setAudioModeAsync).not.toHaveBeenCalled();
+  expect(createAudioPlayer).toHaveBeenCalledWith(expect.anything(), {
+    keepAudioSessionActive: true,
+  });
 
   releaseWaitSound();
   await playing;

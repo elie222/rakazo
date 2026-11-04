@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   combineTranscript,
   Dictation,
+  MAX_ENDPOINT_RECORDING_MS,
   MAX_TRANSCRIPTION_RESPONSE_BYTES,
   TRANSCRIPTION_RESPONSE_TIMEOUT_MS,
   transcriptionLanguage,
@@ -627,6 +628,65 @@ describe("Dictation recorder fallback", () => {
     expect(onFinal).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledOnce();
     vi.useRealTimers();
+  });
+
+  it.each([
+    ["sends a recording that never goes quiet", 0.6, "hello"],
+    ["drops a recording that never heard speech", 0, ""],
+  ])("%s once it reaches the length cap", async (_case, loudness, final) => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.stubGlobal(
+      "AudioContext",
+      class {
+        state = "running";
+        createMediaStreamSource() {
+          return { connect() {} };
+        }
+        createAnalyser() {
+          return {
+            fftSize: 2048,
+            getByteTimeDomainData: (data: Uint8Array) =>
+              data.fill(Math.round(128 + loudness * 127)),
+          };
+        }
+        close() {
+          return Promise.resolve();
+        }
+      },
+    );
+    const track = { stop: vi.fn() };
+    vi.stubGlobal("navigator", {
+      mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })) },
+      language: "en-US",
+    });
+    const fetchMock = vi.fn(async () => Response.json({ text: "hello" }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal(
+      "MediaRecorder",
+      class {
+        state = "inactive";
+        ondataavailable: ((event: { data: Blob }) => void) | null = null;
+        onstop: (() => void) | null = null;
+        start() {
+          this.state = "recording";
+        }
+        stop() {
+          this.state = "inactive";
+          this.ondataavailable?.({ data: new Blob(["audio"], { type: "audio/webm" }) });
+          this.onstop?.();
+        }
+      },
+    );
+
+    const onFinal = vi.fn();
+    const dictation = new Dictation();
+    await dictation.listen({ mode: "endpoint", transcribe: true, onFinal });
+    await vi.advanceTimersByTimeAsync(MAX_ENDPOINT_RECORDING_MS - 80);
+    expect(onFinal).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(80);
+    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledExactlyOnceWith(final));
+    expect(fetchMock).toHaveBeenCalledTimes(final ? 1 : 0);
+    expect(track.stop).toHaveBeenCalledOnce();
   });
 
   it("does not let a replaced recorder tear down the new silence detector", async () => {

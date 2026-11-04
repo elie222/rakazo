@@ -43,6 +43,7 @@ const IDLE: DictationSnapshot = { status: "idle", transcript: "" };
 const ENDPOINT_SILENCE_MS = 1200;
 const ENDPOINT_TICK_MS = 80;
 const SILENCE_RMS = 0.035;
+export const MAX_ENDPOINT_RECORDING_MS = 30_000;
 export const TRANSCRIPTION_RESPONSE_TIMEOUT_MS = 70_000;
 export const MAX_TRANSCRIPTION_RESPONSE_BYTES = 64 * 1024;
 /** Web Speech codes that mean the cloud recognizer cannot be used. */
@@ -79,6 +80,14 @@ export function prefersServerDictation(): boolean {
   // iPadOS 13+ reports a desktop Safari user agent, so fall back to touch support.
   const touchPoints = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
   return touchPoints > 1 && /macintosh/i.test(agent);
+}
+
+export function usesServerDictation(transcribe: boolean | undefined): boolean {
+  return (
+    (prefersServerDictation() && transcribe !== false) ||
+    Boolean(desktopBridge()?.speech && transcribe) ||
+    (!webSpeechAvailable() && Boolean(transcribe))
+  );
 }
 
 /** Connected server transcription should take over after Web Speech cannot run. */
@@ -253,10 +262,7 @@ export class Dictation {
     // Desktop system speech is a fallback for an unconfigured transcription provider.
     // An unknown capability is not a refusal: a device whose browser cannot hold the
     // microphone open goes to the server even before the voice status has loaded.
-    if (
-      (prefersServerDictation() && opts.transcribe !== false) ||
-      (desktopBridge()?.speech && transcribe)
-    ) {
+    if (usesServerDictation(opts.transcribe)) {
       await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? ENDPOINT_SILENCE_MS, spaceId);
       return;
     }
@@ -268,10 +274,6 @@ export class Dictation {
         transcribe,
         spaceId,
       );
-      return;
-    }
-    if (transcribe) {
-      await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? ENDPOINT_SILENCE_MS, spaceId);
       return;
     }
     this.set({
@@ -512,9 +514,11 @@ export class Dictation {
       const data = new Uint8Array(analyser.fftSize);
       let heardSpeech = alreadyHeard;
       let silentFor = 0;
+      let recordedFor = 0;
       this.vadTimer = setInterval(() => {
         const media = this.media;
         if (this.token !== mine || !media || media.state === "inactive") return;
+        recordedFor += ENDPOINT_TICK_MS;
         analyser.getByteTimeDomainData(data);
         let sum = 0;
         for (const sample of data) {
@@ -525,11 +529,15 @@ export class Dictation {
         if (rms > SILENCE_RMS) {
           heardSpeech = true;
           silentFor = 0;
+        } else if (heardSpeech) {
+          silentFor += ENDPOINT_TICK_MS;
+        }
+        const full = recordedFor >= MAX_ENDPOINT_RECORDING_MS;
+        if (full && !heardSpeech) {
+          this.finish(this.snapshot.transcript, mine);
           return;
         }
-        if (!heardSpeech) return;
-        silentFor += ENDPOINT_TICK_MS;
-        if (silentFor < endpointMs) return;
+        if (!full && (!heardSpeech || silentFor < endpointMs)) return;
         this.stopVad();
         try {
           media.stop();

@@ -39,6 +39,7 @@ vi.mock("react-native", () => ({
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
 vi.mock("./voice", () => ({
   createSpeechOwner: () => Symbol("SpeechOwner"),
+  setCallAudio: vi.fn(async () => undefined),
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),
 }));
@@ -120,7 +121,11 @@ function fakes(opts: { onDevice?: boolean } = {}) {
   });
   const cues: string[] = [];
   const waits: string[] = [];
+  const audioSession: boolean[] = [];
   const deps: CallDeps = {
+    audio: async (active) => {
+      audioSession.push(active);
+    },
     cue: async (cue) => {
       cues.push(cue);
     },
@@ -160,6 +165,7 @@ function fakes(opts: { onDevice?: boolean } = {}) {
     deps,
     cues,
     waits,
+    audioSession,
     stopSpeaking,
     interim: (text: string) => handlers?.onInterim(text),
     hear: (text: string) => handlers?.onFinal(text),
@@ -194,6 +200,22 @@ describe("mobile call session", () => {
     endCall();
     await flush();
     expect(fake.closeCall).toHaveBeenCalledWith("bot-1", "incoming-1");
+  });
+
+  it("holds the call's audio session from pickup to hang-up", async () => {
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    expect(fake.audioSession).toEqual([true]);
+    expect(fake.cues).toEqual(["start"]);
+    fake.say("status please");
+    await flush();
+    fake.replyWith("message-1", "The task is ready.");
+    fake.speeches[0]?.resolve();
+    await flush();
+    expect(fake.audioSession).toEqual([true]);
+    endCall();
+    expect(fake.audioSession).toEqual([true, false]);
   });
 
   it("starts listening for the bot on the call", async () => {
@@ -1043,7 +1065,11 @@ describe("mobile call speech locales", () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(start).toHaveBeenCalledOnce();
-      expect.soft(start).toHaveBeenCalledWith({ lang, interimResults: true, continuous: true });
+      expect
+        .soft(start)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({ lang, interimResults: true, continuous: true }),
+        );
       listeners.get("result")?.({
         isFinal: false,
         results: [{ transcript: "status please" }],
@@ -1185,7 +1211,7 @@ describe("mobile call recognition recovery", () => {
     expect(fake.recordings).toHaveLength(0);
   });
 
-  it("falls back when the first start throws without reviving the failed session", async () => {
+  it("records one turn when the first start throws, then tries recognition again", async () => {
     const fake = await greetedCall(true, true);
     expect(fake.recordings).toHaveLength(1);
     fake.say("status please");
@@ -1194,10 +1220,11 @@ describe("mobile call recognition recovery", () => {
     fake.replyWith("message-1", "The task is ready.");
     await vi.advanceTimersByTimeAsync(0);
     expect(fake.recordings).toHaveLength(1);
+    expect(fake.start).toHaveBeenCalledOnce();
     fake.speeches[1]?.resolve();
     await vi.advanceTimersByTimeAsync(0);
-    expect(fake.recordings).toHaveLength(2);
-    expect(fake.start).toHaveBeenCalledOnce();
+    expect(fake.recordings).toHaveLength(1);
+    expect(fake.start).toHaveBeenCalledTimes(2);
   });
 
   it("falls back when restarting throws and keeps the new microphone open", async () => {

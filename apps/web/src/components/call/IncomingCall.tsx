@@ -4,7 +4,12 @@ import { nextIncomingCall, respondToIncomingCall } from "@rakazo/core";
 import { BotAvatar, Button, defaultBotAvatarValue } from "@rakazo/ui-web";
 import { Phone, PhoneOff } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { isLeavingSession, startCall, useCallSession } from "../../lib/call-session";
+import {
+  isLeavingSession,
+  prepareCallAudio,
+  startCall,
+  useCallSession,
+} from "../../lib/call-session";
 import { rpc, selectedSpaceId } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { CallWindow } from "./CallWindow";
@@ -154,6 +159,7 @@ export function IncomingCall({
 
   const answer = async () => {
     if (isLeavingSession()) return;
+    prepareCallAudio();
     setBusy(true);
     setError(null);
     const target = { botId: bot.id, callId: call.callId };
