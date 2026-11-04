@@ -709,6 +709,166 @@ describe("Dictation recorder fallback", () => {
     await vi.waitFor(() => expect(onFinal).toHaveBeenCalledWith("later"));
     vi.useRealTimers();
   });
+
+  it.each(["", "   "])(
+    "reports an empty final when endpoint transcription hears nothing (%j)",
+    async (text) => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      const level = { current: 0.6 };
+      class FakeAnalyser {
+        fftSize = 2048;
+        getByteTimeDomainData(data: Uint8Array) {
+          data.fill(Math.round(128 + level.current * 127));
+        }
+      }
+      class FakeContext {
+        state = "running";
+        createMediaStreamSource() {
+          return { connect() {} };
+        }
+        createAnalyser() {
+          return new FakeAnalyser();
+        }
+        close() {
+          return Promise.resolve();
+        }
+        resume() {
+          return Promise.resolve();
+        }
+      }
+      vi.stubGlobal("AudioContext", FakeContext);
+
+      const track = { stop: vi.fn() };
+      vi.stubGlobal("navigator", {
+        mediaDevices: {
+          getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })),
+        },
+        language: "en-US",
+      });
+      const fetchMock = vi.fn(async () => Response.json({ text }));
+      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal(
+        "MediaRecorder",
+        class {
+          state = "inactive";
+          ondataavailable: ((event: { data: Blob }) => void) | null = null;
+          onstop: (() => void) | null = null;
+          start() {
+            this.state = "recording";
+          }
+          stop() {
+            this.state = "inactive";
+            this.ondataavailable?.({ data: new Blob(["audio"], { type: "audio/webm" }) });
+            this.onstop?.();
+          }
+        },
+      );
+
+      const onFinal = vi.fn();
+      const dictation = new Dictation();
+      await dictation.listen({
+        mode: "endpoint",
+        transcribe: true,
+        endpointMs: 240,
+        onFinal,
+      });
+      // A cough, then the quiet gap whose end stops the recording.
+      await vi.advanceTimersByTimeAsync(80);
+      level.current = 0;
+      await vi.advanceTimersByTimeAsync(240);
+
+      await vi.waitFor(() => expect(onFinal).toHaveBeenCalledWith(""));
+      expect(onFinal).toHaveBeenCalledOnce();
+      expect(dictation.state.status).toBe("idle");
+      expect(dictation.state.error).toBeUndefined();
+      vi.useRealTimers();
+    },
+  );
+
+  it("reports an empty final when the endpoint recorder captured no audio", async () => {
+    class FakeAnalyser {
+      fftSize = 2048;
+      getByteTimeDomainData(data: Uint8Array) {
+        data.fill(200);
+      }
+    }
+    class FakeContext {
+      state = "running";
+      createMediaStreamSource() {
+        return { connect() {} };
+      }
+      createAnalyser() {
+        return new FakeAnalyser();
+      }
+      close() {
+        return Promise.resolve();
+      }
+      resume() {
+        return Promise.resolve();
+      }
+    }
+    vi.stubGlobal("AudioContext", FakeContext);
+
+    const track = { stop: vi.fn() };
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })),
+      },
+      language: "en-US",
+    });
+    const fetchMock = vi.fn(async () => Response.json({ text: "never asked" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const recorders: Array<{ stop: () => void }> = [];
+    vi.stubGlobal(
+      "MediaRecorder",
+      class {
+        state = "inactive";
+        ondataavailable: ((event: { data: Blob }) => void) | null = null;
+        onstop: (() => void) | null = null;
+        constructor() {
+          recorders.push(this as unknown as { stop: () => void });
+        }
+        start() {
+          this.state = "recording";
+        }
+        stop() {
+          this.state = "inactive";
+          this.onstop?.();
+        }
+      },
+    );
+
+    const onFinal = vi.fn();
+    const dictation = new Dictation();
+    await dictation.listen({
+      mode: "endpoint",
+      transcribe: true,
+      endpointMs: 240,
+      onFinal,
+    });
+    // The silence detector ended the turn with nothing on tape.
+    recorders[0]?.stop();
+
+    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledWith(""));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(dictation.state.status).toBe("idle");
+    expect(dictation.state.error).toBeUndefined();
+  });
+
+  it("keeps an empty hold final to itself", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ text: "" }));
+    stubRecorderFallback(fetchMock);
+    const onFinal = vi.fn();
+    const dictation = new Dictation();
+
+    await dictation.listen({ mode: "hold", transcribe: true, onFinal });
+    dictation.submitHold();
+
+    await vi.waitFor(() => expect(dictation.state.status).toBe("idle"));
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(onFinal).not.toHaveBeenCalled();
+    expect(dictation.state.error).toBeUndefined();
+  });
 });
 
 describe("combineTranscript", () => {
