@@ -44,8 +44,8 @@ export async function scheduleMediaPoll(
   jobId: string,
   createdAt = new Date(),
 ): Promise<void> {
-  await jobs.enqueue(mediaPollJob(jobId, nextMediaPollAt(createdAt))).catch(() => {
-    getLogger().warn("media poll deferred to reconciliation");
+  await jobs.enqueue(mediaPollJob(jobId, nextMediaPollAt(createdAt))).catch((error) => {
+    getLogger().warn("media.poll_deferred", { "media.job_id": jobId, error });
   });
 }
 
@@ -291,8 +291,12 @@ export async function pollMediaVideo(deps: MediaVideoDeps, payload: { jobId: str
   if (!settled) await scheduleMediaPoll(deps.jobs, job.id, job.createdAt);
   // The run reconciler recovers a queued wake after an enqueue failure.
   if (wakeRunId)
-    await deps.jobs.enqueue(runContinueJob(wakeRunId)).catch(() => {
-      getLogger().warn("media wake deferred to reconciliation");
+    await deps.jobs.enqueue(runContinueJob(wakeRunId)).catch((error) => {
+      getLogger().warn("media.wake_deferred", {
+        "media.job_id": job.id,
+        "run.id": wakeRunId,
+        error,
+      });
     });
 }
 
@@ -368,7 +372,9 @@ export async function reconcileMediaVideos(
           keepExisting: true,
           replaceLockedBefore: new Date(now - ABANDONED_POLL_LOCK_MS),
         })
-        .catch(() => getLogger().warn("media poll recovery deferred"));
+        .catch((error) =>
+          getLogger().warn("media.poll_recovery_deferred", { "media.job_id": job.id, error }),
+        );
     }
     if (page.length < pageSize) return;
     after = page.at(-1)?.id;

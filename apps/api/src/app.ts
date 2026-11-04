@@ -47,6 +47,7 @@ import {
   createConnectorStack,
   createIdleComputerSweeper,
   createJobReconciler,
+  createMediaGenerationProvider,
   createMessagingContextLoader,
   createMessagingTeamChatHistory,
   createMessagingTeamChatSender,
@@ -87,6 +88,7 @@ import {
   RunStarter,
   reconcileCloudAgents,
   reconcileComputerUpdates,
+  reconcileMediaVideos,
   reconcilePurchases,
   removePiUserSessions,
   resolveDeploymentModel,
@@ -640,9 +642,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   // One cache serves models.list, selection validation, and run-time model
   // resolution alike, so a list call warms the run path in this process.
   const codexCatalog = new CodexCatalogCache();
+  // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
+  const mediaGeneration = createMediaGenerationProvider();
   const executor = createRunExecutor({
     billingEnabled: modelCreditsEnabled,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
+    mediaGeneration,
     contextStrategy,
     prisma,
     runtime,
@@ -712,6 +717,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     messaging,
     cloudAgent,
     paymentWallet,
+    mediaGeneration,
+    maxUploadSizeBytes: env.maxUploadSizeBytes,
   });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
@@ -729,6 +736,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         }),
         reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
         reconcilePurchases: () => reconcilePurchases({ prisma, jobs, paymentWallet }),
+        reconcileMediaVideos: () => reconcileMediaVideos({ prisma, jobs, mediaGeneration }),
         reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
         reconcileStrategicInitiatives: createStrategicInitiativeReconciler({
           prisma,
