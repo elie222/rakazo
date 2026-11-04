@@ -152,6 +152,24 @@ describe("unsentSendsRestored", () => {
     await expect(unsentSendsRestored()).resolves.toBe(false);
   });
 
+  it("treats an unread queue as known once clearing the session made it readable", async () => {
+    session.generation = 26;
+    vi.mocked(unsentSendsReadable).mockReturnValueOnce(false);
+    await prepareUnsentSends();
+    await expect(unsentSendsRestored()).resolves.toBe(false);
+    // Sign-out cleared the queue; no new restore runs before a server switch asks again.
+    await expect(unsentSendsRestored()).resolves.toBe(true);
+  });
+
+  it("treats a failed restore as known once the session is gone", async () => {
+    session.generation = 27;
+    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("store unreadable"));
+    await expect(prepareUnsentSends()).rejects.toThrow("store unreadable");
+    await expect(unsentSendsRestored()).resolves.toBe(false);
+    vi.mocked(snapshotSessionToken).mockResolvedValueOnce({ ok: true, value: "" });
+    await expect(unsentSendsRestored()).resolves.toBe(true);
+  });
+
   it("treats a failed restore while signed out as an empty queue", async () => {
     session.generation = 22;
     vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("signed out"));
