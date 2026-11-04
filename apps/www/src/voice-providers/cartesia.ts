@@ -9,6 +9,7 @@ import {
   WORKLOAD_CHARS,
   WORKLOAD_DAILY_MINUTES,
   cartesiaInkPerHour,
+  CARTESIA_RANGE,
   cartesiaPerMillion,
   count,
   credits,
@@ -33,8 +34,8 @@ function onPro(chars: number): number {
 /** Characters a month for someone who hears 10 minutes a day, scaled from the worked example. */
 const LIGHT_CHARS = (WORKLOAD_CHARS * 10) / WORKLOAD_DAILY_MINUTES;
 
-const LOW = cartesiaPerMillion("scale");
-const HIGH = cartesiaPerMillion("pro");
+const LOW = CARTESIA_RANGE.low;
+const HIGH = CARTESIA_RANGE.high;
 
 function planRow(plan: keyof typeof RATES.cartesiaPlans, label: string) {
   const perMillion = cartesiaPerMillion(plan);

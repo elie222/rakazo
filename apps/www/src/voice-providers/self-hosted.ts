@@ -5,8 +5,9 @@ import {
   VOICE_DOC,
   VOICE_MODELS_DOC,
   WORKLOAD,
-  WORKLOAD_COST,
+  WORKLOAD_NAMES,
   aboutTotal,
+  workloadExtremes,
   homepage,
   speechHourCost,
   usd,
@@ -23,6 +24,8 @@ const GPU_HOUR = { low: 0.34, high: 0.89 };
 const HOURS_A_MONTH = 24 * 30;
 const ELEVENLABS_HOUR = speechHourCost(RATES.elevenlabsFlash);
 /** Hours of speech a month at which an always-on GPU costs the same as ElevenLabs Flash v2.5. */
+const HOSTED = workloadExtremes();
+
 const GPU_BREAK_EVEN_HOURS = Math.round((GPU_HOUR.low * HOURS_A_MONTH) / ELEVENLABS_HOUR);
 
 export const selfHosted: VoiceProvider = {
@@ -153,7 +156,7 @@ export const selfHosted: VoiceProvider = {
     {
       heading: "Self-hosted vs hosted voice APIs",
       paragraphs: [
-        `${WORKLOAD} Hosted, that costs ${aboutTotal("openai").toLowerCase()} on OpenAI to ${usd(WORKLOAD_COST.cartesia.speech)} on Cartesia a month. Self-hosted on hardware you already have, it costs close to nothing, and on a small rented server about ${usd(RATES.cpuServerMonth)}. A GPU only pays off with many users: at ${usd(GPU_HOUR.low)} an hour, always on, it costs more than ElevenLabs until you generate about ${GPU_BREAK_EVEN_HOURS} hours of speech a month.`,
+        `${WORKLOAD} Hosted, that ranges from ${aboutTotal(HOSTED.cheapest).toLowerCase()} on ${WORKLOAD_NAMES[HOSTED.cheapest]} to ${aboutTotal(HOSTED.dearest).toLowerCase()} on ${WORKLOAD_NAMES[HOSTED.dearest]} a month. Self-hosted on hardware you already have, it costs close to nothing, and on a small rented server about ${usd(RATES.cpuServerMonth)}. A GPU only pays off with many users: at ${usd(GPU_HOUR.low)} an hour, always on, it costs more than ElevenLabs until you generate about ${GPU_BREAK_EVEN_HOURS} hours of speech a month.`,
         "What you give up is polish. The best hosted voices still sound more natural than Kokoro, cloning is easier, and someone else keeps the server running.",
       ],
       table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", WORKLOAD_SHOWN),

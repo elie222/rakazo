@@ -9,7 +9,10 @@ import { openai } from "./openai";
 import { selfHosted } from "./self-hosted";
 import {
   ALL_PRICING_SOURCES,
-  cartesiaPerMillion,
+  CARTESIA_RANGE,
+  TRANSCRIPTION_HOURLY,
+  WORKLOAD_NAMES,
+  transcriptionRange,
   RATES,
   VOICE_DOC,
   VOICE_DOCS_PATH,
@@ -41,20 +44,12 @@ export const VOICE_PROVIDERS: readonly VoiceProvider[] = [
   macos,
 ];
 
-const WORKLOAD_NAMES: Record<keyof typeof WORKLOAD_COST, string> = {
-  elevenlabs: "ElevenLabs",
-  openai: "OpenAI",
-  cartesia: "Cartesia",
-  fish: "Fish Audio",
-  deepgram: "Deepgram",
-  google: "Google",
-  azure: "Azure",
-};
-
 /** Options in the worked example where transcription costs more than speech, such as after a free speech allowance. */
 const TRANSCRIPTION_HEAVY = (Object.keys(WORKLOAD_COST) as (keyof typeof WORKLOAD_COST)[])
   .filter((key) => WORKLOAD_COST[key].transcription > WORKLOAD_COST[key].speech)
   .map((key) => WORKLOAD_NAMES[key]);
+
+const TRANSCRIPTION_RANGE = transcriptionRange();
 
 function listed(names: readonly string[]): string {
   return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? "");
@@ -69,7 +64,7 @@ const UNDER_A_DOLLAR = [
   { name: "[ElevenLabs](/voice-providers/elevenlabs/)", hour: speechHourCost(RATES.elevenlabsFlash) },
   {
     name: "[Cartesia](/voice-providers/cartesia/)",
-    hour: speechHourCost(cartesiaPerMillion("scale")),
+    hour: speechHourCost(CARTESIA_RANGE.low),
   },
 ]
   .filter((option) => option.hour < 1)
@@ -245,7 +240,7 @@ export const VOICE_PROVIDERS_HUB = {
     {
       question: "Is there an API that can convert audio to text?",
       answer:
-        `Yes, many: OpenAI's transcription endpoint, ElevenLabs Scribe, Fish Audio, Deepgram, AssemblyAI, Google and Azure all do, from about ${usd(RATES.groqWhisperHour)} to ${usd(RATES.azureRealtimeHour)} an hour. In Rakazo, ElevenLabs, OpenAI, Fish Audio and self-hosted servers transcribe what you say.`,
+        `Yes, many: ${listed(Object.keys(TRANSCRIPTION_HOURLY))} all do. Across the models and modes on this page, prices run from about ${usd(TRANSCRIPTION_RANGE.low.price)} an hour (${TRANSCRIPTION_RANGE.low.name}) to ${usd(TRANSCRIPTION_RANGE.high.price)} (${TRANSCRIPTION_RANGE.high.name}). In Rakazo, ElevenLabs, OpenAI, Fish Audio and self-hosted servers transcribe what you say.`,
     },
     {
       question: "Is the Whisper API free?",

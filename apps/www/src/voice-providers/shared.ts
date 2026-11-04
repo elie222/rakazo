@@ -211,7 +211,7 @@ export const OPENAI_MINI_TTS = {
   perMillion: `$${Math.round(OPENAI_MINI_TTS_PER_MILLION)}`,
 };
 
-export const PRICE_NOTE = `Prices in US dollars from each provider's pricing page, checked November 2026. An hour of speech is taken as about ${count(CHARS_PER_HOUR)} characters (150 words a minute); real voices run a little faster or slower.`;
+export const PRICE_NOTE = `Prices in US dollars from each provider's pricing page, checked November 2026. An hour of speech is taken as about ${count(CHARS_PER_HOUR)} characters (150 words a minute); real voices run a little faster or slower. Fish Audio bills per UTF-8 byte, which is one byte per character in English.`;
 
 const PRICE_COLUMNS = [
   "Option",
@@ -222,8 +222,18 @@ const PRICE_COLUMNS = [
   "In Rakazo",
 ] as const;
 
-const cartesiaLow = cartesiaPerMillion("scale");
-const cartesiaHigh = cartesiaPerMillion("pro");
+/** Cartesia plans ordered by effective price per character, cheapest first. */
+export const CARTESIA_PLANS_BY_RATE = (
+  Object.keys(RATES.cartesiaPlans) as (keyof typeof RATES.cartesiaPlans)[]
+).sort((a, b) => cartesiaPerMillion(a) - cartesiaPerMillion(b));
+const cartesiaCheapest = CARTESIA_PLANS_BY_RATE[0] ?? "scale";
+const cartesiaDearest = CARTESIA_PLANS_BY_RATE.at(-1) ?? "pro";
+export const CARTESIA_RANGE = {
+  low: cartesiaPerMillion(cartesiaCheapest),
+  high: cartesiaPerMillion(cartesiaDearest),
+};
+const cartesiaLow = CARTESIA_RANGE.low;
+const cartesiaHigh = CARTESIA_RANGE.high;
 
 /** One source of truth for the per-unit prices every voice article compares. */
 const PRICE_ROWS = {
@@ -272,7 +282,7 @@ const PRICE_ROWS = {
     cells: [
       `${usd(cartesiaLow)} to ${usd(cartesiaHigh)}, by plan`,
       `${perHourOfSpeech(cartesiaLow)} to ${perHourOfSpeech(cartesiaHigh)}`,
-      `${cartesiaInkPerHour("scale")} to ${cartesiaInkPerHour("pro")} (Ink, not used by Rakazo)`,
+      `${cartesiaInkPerHour(cartesiaCheapest)} to ${cartesiaInkPerHour(cartesiaDearest)} (Ink, not used by Rakazo)`,
       `${count(RATES.cartesiaFreeCredits)} credits a month`,
       "Built in, speaks only",
     ],
@@ -280,7 +290,7 @@ const PRICE_ROWS = {
   fish: {
     topic: "[Fish Audio](/voice-providers/fish-audio/) S2.1 Pro",
     cells: [
-      `${usd(RATES.fish)} per 1M bytes`,
+      `${usd(RATES.fish)} per 1M bytes, the same as characters in English`,
       perHourOfSpeech(RATES.fish),
       usd(RATES.fishTranscribeHour),
       `Free app plan, about ${RATES.fishPlans.free.minutes} minutes a month`,
@@ -457,10 +467,60 @@ export const WORKLOAD_COST = {
   },
 } satisfies Record<string, { speech: number; transcription: number }>;
 
-/** "About $36": a monthly total rounded to whole dollars. */
-export function aboutTotal(option: keyof typeof WORKLOAD_COST): string {
+export type WorkloadOption = keyof typeof WORKLOAD_COST;
+
+export const WORKLOAD_NAMES: Record<WorkloadOption, string> = {
+  elevenlabs: "ElevenLabs",
+  openai: "OpenAI",
+  cartesia: "Cartesia",
+  fish: "Fish Audio",
+  deepgram: "Deepgram",
+  google: "Google",
+  azure: "Azure",
+};
+
+/** The worked example's monthly total on an option. */
+export function workloadTotal(option: WorkloadOption): number {
   const { speech, transcription } = WORKLOAD_COST[option];
-  return `About $${Math.round(speech + transcription)}`;
+  return speech + transcription;
+}
+
+/** "About $36": a monthly total rounded to whole dollars. */
+export function aboutTotal(option: WorkloadOption): string {
+  return `About $${Math.round(workloadTotal(option))}`;
+}
+
+/** The cheapest and dearest of these options for the worked example. */
+export function workloadExtremes(
+  options: readonly WorkloadOption[] = Object.keys(WORKLOAD_COST) as WorkloadOption[],
+): { cheapest: WorkloadOption; dearest: WorkloadOption } {
+  const sorted = [...options].sort((a, b) => workloadTotal(a) - workloadTotal(b));
+  return { cheapest: sorted[0] ?? options[0]!, dearest: sorted.at(-1) ?? options[0]! };
+}
+
+/** Hourly transcription prices per provider, every model and mode the voice pages quote. */
+export const TRANSCRIPTION_HOURLY: Record<string, readonly number[]> = {
+  OpenAI: Object.values(RATES.openaiTranscribeMinute).map((minute) => minute * 60),
+  ElevenLabs: [RATES.elevenlabsScribeHour, RATES.elevenlabsScribeRealtimeHour],
+  "Fish Audio": [RATES.fishTranscribeHour],
+  Deepgram: [RATES.deepgramBatchHour, RATES.deepgramStreamHour],
+  AssemblyAI: [RATES.assemblyaiHour.low, RATES.assemblyaiHour.high],
+  Groq: [RATES.groqWhisperHour],
+  Google: [RATES.googleSttHour],
+  Azure: [RATES.azureBatchHour, RATES.azureRealtimeHour],
+  Amazon: [RATES.transcribeBatchHour, RATES.transcribeStreamHour],
+};
+
+/** The lowest and highest hourly transcription price across {@link TRANSCRIPTION_HOURLY}, with who charges it. */
+export function transcriptionRange(): {
+  low: { name: string; price: number };
+  high: { name: string; price: number };
+} {
+  const all = Object.entries(TRANSCRIPTION_HOURLY).flatMap(([name, prices]) =>
+    prices.map((price) => ({ name, price })),
+  );
+  const sorted = all.sort((a, b) => a.price - b.price);
+  return { low: sorted[0]!, high: sorted.at(-1)! };
 }
 
 const cost = WORKLOAD_COST;
@@ -481,7 +541,7 @@ const WORKLOAD_ROWS = {
   cartesia: {
     topic: "[Cartesia](/voice-providers/cartesia/)",
     cells: [
-      `${usd(cost.cartesia.speech)} (${CARTESIA_WORKLOAD_PLAN.charAt(0).toUpperCase()}${CARTESIA_WORKLOAD_PLAN.slice(1)} plan)`,
+      `${usd(cost.cartesia.speech)} (${CARTESIA_WORKLOAD_PLAN.charAt(0).toUpperCase()}${CARTESIA_WORKLOAD_PLAN.slice(1)} plan fee)`,
       "$0, your device listens",
       usd(cost.cartesia.speech),
     ],
@@ -578,6 +638,6 @@ export function voiceWorkloadTable(
     caption,
     columns: ["Option", "Speech", "Transcription", "A month"],
     rows: rows.map((row) => WORKLOAD_ROWS[row]),
-    note: "Usage prices only, from each provider's pricing page, checked November 2026. Rakazo doesn't charge for voice: you connect your own key and the provider bills you.",
+    note: "Usage prices from each provider's pricing page, checked November 2026. Where speech is bought as a monthly plan, as with Cartesia, the cost shown is the fee for the smallest plan that covers it. Rakazo doesn't charge for voice: you connect your own key and the provider bills you.",
   };
 }
