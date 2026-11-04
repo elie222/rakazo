@@ -9,8 +9,8 @@ import { serve } from "@hono/node-server";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { computerTestSandbox } from "../computer-test-config.js";
 import { FLOWS } from "../flows/index.js";
+import { validateFlowLimits } from "../flows/limits.js";
 import type { FlowResult } from "../flows/runner.js";
-import { validateFlowLimits } from "../flows/runner.js";
 import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
 const { values } = parseArgs({

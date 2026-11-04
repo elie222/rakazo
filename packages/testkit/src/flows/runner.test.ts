@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validateFlowLimits } from "./limits.js";
 import {
   answeredToolApproval,
   askPendingCard,
@@ -7,7 +8,6 @@ import {
   mcpCardRequest,
   mcpPendingCard,
   spendCappedJudge,
-  validateFlowLimits,
   wakeIsDue,
 } from "./runner.js";
 
