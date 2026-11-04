@@ -1,5 +1,6 @@
 import type { DesktopUpdateState } from "@rakazo/contracts";
 import { t } from "./i18n.js";
+import { SignatureUnreachableError } from "./linux-update-signature.js";
 import { reportDesktopError } from "./monitoring.js";
 
 /** Long enough that a cold launch is never competing with the update feed for bandwidth. */
@@ -70,6 +71,8 @@ const SIGNATURE = ["code sign", "signature", "not signed", "notariz"];
 
 /** Error text can contain local paths or URLs, so renderer-visible messages stay generic. */
 export function classifyUpdaterFailure(error: unknown): UpdaterFailure {
+  // The Linux signature fetch keeps its download; an unreachable server is transient.
+  if (error instanceof SignatureUnreachableError) return { kind: "offline", message: null };
   const text = (error instanceof Error ? error.message : String(error)).trim().toLowerCase();
   if (NO_RELEASES.some((needle) => text.includes(needle))) {
     return {
