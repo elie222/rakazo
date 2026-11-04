@@ -139,10 +139,12 @@ export async function consumeRunEvents(
   };
   // A quiet model call or a long tool streams no events, so Stop would otherwise go unseen
   // until the next event or heartbeat. The shared throttle keeps this at one read a second.
+  let watching = true;
   const watch = setInterval(() => {
-    void runLeaseLost(ctx)
+    void runLeaseLost(ctx, () => watching)
       .then((lost) => {
-        if (lost) ctx.abortController.abort();
+        // A read still in flight when the turn ended must not cancel the work that follows it.
+        if (lost && watching) ctx.abortController.abort();
       })
       .catch(() => {});
   }, 1_000);
@@ -223,14 +225,18 @@ export async function consumeRunEvents(
     }
     return false;
   } finally {
+    watching = false;
     clearInterval(watch);
     // Run completion clears thinking too; never let this replace the turn's own outcome.
     await publishThinking(false).catch(() => {});
   }
 }
 
-/** At most once a second, check the run is still this attempt's and not cancelled or released. */
-async function runLeaseLost(ctx: RunContext) {
+/**
+ * At most once a second, check the run is still this attempt's and not cancelled or released.
+ * A read that answers after `active` turns false acts on nothing.
+ */
+async function runLeaseLost(ctx: RunContext, active = () => true) {
   const { deps, runId, workerId, fence } = ctx;
   const { lease } = ctx.state;
   const now = Date.now();
@@ -240,6 +246,7 @@ async function runLeaseLost(ctx: RunContext) {
     where: { id: runId },
     select: { status: true, leaseOwner: true, leaseFence: true, checkpoint: true },
   });
+  if (!active()) return false;
   if (!still || still.status === "cancelled" || still.leaseOwner !== workerId) {
     lease.valid = false;
     return true;
@@ -254,7 +261,7 @@ async function runLeaseLost(ctx: RunContext) {
   if (ctx.computer.heldForTakeover && releasedHold) {
     await requeueComputerRun(deps, runId, workerId, fence, releasedHold, false);
     lease.valid = false;
-    ctx.abortController.abort();
+    if (active()) ctx.abortController.abort();
     return true;
   }
   return false;
