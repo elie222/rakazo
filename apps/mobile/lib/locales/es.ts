@@ -1026,6 +1026,15 @@ export const ES_MESSAGES: Record<string, string> = {
   "Start plan": "Iniciar plan",
   "Switch to yearly": "Cambiar a anual",
   "Switch to yearly?": "¿Cambiar a anual?",
+  "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
+    "{vcpus} vCPU, {memoryGb} GB, {hours} horas de computadora al mes",
+  "Switch to {name}?": "¿Cambiar a {name}?",
+  "The unused difference is credited to your next invoice.":
+    "La diferencia no utilizada se acredita en tu próxima factura.",
+  "Your card is charged the prorated difference today.":
+    "Hoy se cobra en tu tarjeta la diferencia prorrateada.",
+  "Your plan becomes {price} when your trial ends.":
+    "Tu plan pasa a costar {price} cuando termine tu prueba.",
   "Your card is charged {price} today, less the unused part of this month.":
     "Hoy se cobrará {price} a tu tarjeta, menos la parte no usada de este mes.",
   "Your plan becomes {price} / year when your trial ends.":

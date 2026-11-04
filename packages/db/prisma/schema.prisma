@@ -272,6 +272,8 @@ model BillingAccount {
   byokPriceCents      Int?
   /// "month" or "year": how often byokPriceCents bills.
   byokInterval        String?
+  /// "standard", "pro" or "max": the own-key plan's tier; null reads as standard.
+  byokTier            String?
   subscriptionId      String?
   subscriptionItemId  String?
   priceId             String?

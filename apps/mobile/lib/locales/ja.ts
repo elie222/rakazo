@@ -1066,6 +1066,14 @@ export const JA_MESSAGES: Record<string, string> = {
   "Start plan": "プランを開始",
   "Switch to yearly": "年払いに切り替え",
   "Switch to yearly?": "年払いに切り替えますか？",
+  "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
+    "{vcpus} vCPU、{memoryGb} GB、月 {hours} 時間のコンピューター",
+  "Switch to {name}?": "{name} に切り替えますか？",
+  "The unused difference is credited to your next invoice.":
+    "未使用分の差額は次回の請求書に充当されます。",
+  "Your card is charged the prorated difference today.": "日割りの差額が本日カードに請求されます。",
+  "Your plan becomes {price} when your trial ends.":
+    "トライアル終了後、プランは {price} になります。",
   "Your card is charged {price} today, less the unused part of this month.":
     "本日カードに{price}が請求されます（今月の未使用分を差し引きます）。",
   "Your plan becomes {price} / year when your trial ends.":

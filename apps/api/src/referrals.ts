@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 import type { BillingProvider } from "@rakazo/adapter-kit";
 import type { BillingStatus } from "@rakazo/contracts";
-import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
+import { BYOK_TIERS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
@@ -28,7 +28,7 @@ export function createReferrals(deps: {
   webOrigin: string;
 }) {
   const { prisma, provider } = deps;
-  const rewardCents = BYOK_MONTHLY_PRICE_CENTS;
+  const rewardCents = BYOK_TIERS.standard.monthlyPriceCents;
   const enabled = rewardCents !== null && Boolean(provider.grantBalanceCredit);
 
   async function codeFor(organizationId: string): Promise<string> {

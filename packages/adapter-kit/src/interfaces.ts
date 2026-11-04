@@ -12,6 +12,7 @@ import type {
   BackgroundJob,
   BackgroundJobHandlers,
   BillingByokCheckoutRequest,
+  BillingByokPlan,
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
@@ -501,15 +502,16 @@ export interface BillingProvider {
   /** Ends the customer's running trial now and bills the first period; a no-op without one. */
   endTrial?(customerId: string): Promise<void>;
   /**
-   * Moves the customer's live monthly own-key subscription `subscriptionId` to `amountCents` a
-   * year, charging the difference now less the unused part of the month. A failed payment leaves
-   * the plan unchanged. Returns false without charging when that subscription is no longer an active
-   * or trialing monthly own-key plan, is set to cancel, or monthly credits have started.
+   * Moves the customer's own-key subscription `subscriptionId` from plan `from` to plan `to`,
+   * billing the prorated difference now: a change of interval restarts the period today, crediting
+   * its unused part. A failed payment leaves the plan unchanged. Returns false without charging
+   * when that subscription is no longer an active or trialing `from` plan, is set to cancel, or
+   * monthly credits have started.
    */
-  switchByokToYearly?(
+  changeByokPlan?(
     customerId: string,
     subscriptionId: string,
-    amountCents: number,
+    change: { from: BillingByokPlan; to: BillingByokPlan },
   ): Promise<boolean>;
   /** Ends every live own-key plan at its period end. */
   endByokPlans?(customerId: string): Promise<void>;

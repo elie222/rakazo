@@ -405,6 +405,10 @@ msgstr "{title}, opgeslagen als {savedAs}"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# tool} other {# tools}}"
 
+#: src/components/ModelCredits.tsx
+msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
+msgstr "{vcpus} vCPU, {memoryGb} GB, {hours} computeruren per maand"
+
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
 msgid "@{0}"
@@ -4876,6 +4880,10 @@ msgstr "Vastzetten"
 msgid "Pinned"
 msgstr "Vastgezet"
 
+#: src/components/ModelCredits.tsx
+msgid "Plan"
+msgstr "Abonnement"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "{name} afspelen"
@@ -6198,6 +6206,10 @@ msgid "Switch"
 msgstr "Overstappen"
 
 #: src/components/ModelCredits.tsx
+msgid "Switch to {tierTargetName}?"
+msgstr "Overstappen naar {tierTargetName}?"
+
+#: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "Overstappen op jaarlijks"
 
@@ -6329,6 +6341,10 @@ msgstr "De gekozen geheugenaanbieder is niet beschikbaar in deze build."
 #: src/components/pages/SharePopover.tsx
 msgid "The shared link stops working"
 msgstr "De gedeelde link werkt dan niet meer"
+
+#: src/components/ModelCredits.tsx
+msgid "The unused difference is credited to your next invoice."
+msgstr "Het ongebruikte verschil wordt verrekend met je volgende factuur."
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
@@ -7108,6 +7124,10 @@ msgstr "Jouw Anthropic"
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "Je kaart wordt vandaag belast met {annualPrice}, min het ongebruikte deel van deze maand."
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged the prorated difference today."
+msgstr "Je kaart wordt vandaag belast met het naar rato berekende verschil."
+
 #: src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 msgstr "De schijf van je computer is bijna vol. Maak ruimte vrij door build-uitvoer en caches te verwijderen die je niet meer nodig hebt."
@@ -7146,6 +7166,10 @@ msgstr "Jouw OpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "Na je proefperiode kost je plan {annualPrice} per jaar."
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {tierTargetLabel} when your trial ends."
+msgstr "Je abonnement wordt {tierTargetLabel} wanneer je proefperiode eindigt."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

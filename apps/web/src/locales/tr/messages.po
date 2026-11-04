@@ -405,6 +405,10 @@ msgstr "{title}, {savedAs} olarak kaydedilir"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# araç} other {# araç}}"
 
+#: src/components/ModelCredits.tsx
+msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
+msgstr "{vcpus} vCPU, {memoryGb} GB, ayda {hours} bilgisayar saati"
+
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
 msgid "@{0}"
@@ -4876,6 +4880,10 @@ msgstr "Sabitle"
 msgid "Pinned"
 msgstr "Sabitlenenler"
 
+#: src/components/ModelCredits.tsx
+msgid "Plan"
+msgstr "Plan"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "{name} dosyasını oynat"
@@ -6198,6 +6206,10 @@ msgid "Switch"
 msgstr "Geç"
 
 #: src/components/ModelCredits.tsx
+msgid "Switch to {tierTargetName}?"
+msgstr "{tierTargetName} planına geçilsin mi?"
+
+#: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "Yıllığa geç"
 
@@ -6329,6 +6341,10 @@ msgstr "Seçilen hafıza sağlayıcısı bu sürümde kullanılamıyor."
 #: src/components/pages/SharePopover.tsx
 msgid "The shared link stops working"
 msgstr "Paylaşılan bağlantı çalışmayı durdurur"
+
+#: src/components/ModelCredits.tsx
+msgid "The unused difference is credited to your next invoice."
+msgstr "Kullanılmayan fark bir sonraki faturanıza alacak olarak yansıtılır."
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
@@ -7108,6 +7124,10 @@ msgstr "Anthropic sağlayıcınız"
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "Bugün kartından {annualPrice} tahsil edilir, bu ayın kullanılmayan kısmı düşülür."
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged the prorated difference today."
+msgstr "Kartınızdan bugün orantılı fark tahsil edilir."
+
 #: src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 msgstr "Bilgisayarınızın diski neredeyse dolu. Artık ihtiyaç duymadığınız derleme çıktılarını ve önbellekleri silerek yer açın."
@@ -7146,6 +7166,10 @@ msgstr "OpenRouter sağlayıcınız"
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "Deneme süren bitince planın yıllık {annualPrice} olur."
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {tierTargetLabel} when your trial ends."
+msgstr "Deneme süreniz bittiğinde planınız {tierTargetLabel} olur."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

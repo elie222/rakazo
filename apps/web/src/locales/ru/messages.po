@@ -405,6 +405,10 @@ msgstr "{title}, сохранится как {savedAs}"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# инструмент} few {# инструмента} many {# инструментов} other {# инструмента}}"
 
+#: src/components/ModelCredits.tsx
+msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
+msgstr "{vcpus} vCPU, {memoryGb} ГБ, {hours} часов компьютера в месяц"
+
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
 msgid "@{0}"
@@ -4876,6 +4880,10 @@ msgstr "Закрепить"
 msgid "Pinned"
 msgstr "Закреплённые"
 
+#: src/components/ModelCredits.tsx
+msgid "Plan"
+msgstr "Тариф"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "Воспроизвести {name}"
@@ -6198,6 +6206,10 @@ msgid "Switch"
 msgstr "Перейти"
 
 #: src/components/ModelCredits.tsx
+msgid "Switch to {tierTargetName}?"
+msgstr "Перейти на {tierTargetName}?"
+
+#: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "Перейти на годовой план"
 
@@ -6329,6 +6341,10 @@ msgstr "Выбранный поставщик памяти недоступен 
 #: src/components/pages/SharePopover.tsx
 msgid "The shared link stops working"
 msgstr "Общая ссылка перестанет работать"
+
+#: src/components/ModelCredits.tsx
+msgid "The unused difference is credited to your next invoice."
+msgstr "Неиспользованная разница будет зачтена в следующий счёт."
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
@@ -7108,6 +7124,10 @@ msgstr "Ваш Anthropic"
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "Сегодня с карты спишется {annualPrice} за вычетом неиспользованной части месяца."
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged the prorated difference today."
+msgstr "Сегодня с вашей карты спишут пропорциональную разницу."
+
 #: src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 msgstr "Диск компьютера почти заполнен. Освободите место, удалив ненужные результаты сборки и кеши."
@@ -7146,6 +7166,10 @@ msgstr "Ваш OpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "После пробного периода план будет стоить {annualPrice} в год."
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {tierTargetLabel} when your trial ends."
+msgstr "После пробного периода тариф будет стоить {tierTargetLabel}."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

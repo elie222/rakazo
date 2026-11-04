@@ -28,7 +28,8 @@ export const ComputerModeSchema = z.enum(["team", "dedicated"]);
 export type ComputerMode = z.infer<typeof ComputerModeSchema>;
 
 /** How big a machine a cloud computer runs on. Providers without sizes ignore it. */
-export type ComputerSize = "standard" | "large" | "xlarge";
+export const ComputerSizeSchema = z.enum(["standard", "large", "xlarge"]);
+export type ComputerSize = z.infer<typeof ComputerSizeSchema>;
 
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
@@ -1970,8 +1971,78 @@ export const MeSchema = z.object({
 export type Me = z.infer<typeof MeSchema>;
 
 export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000, 50000] as const;
-/** Monthly price in cents of running bots on your own model connection; `null` makes it free. */
-export const BYOK_MONTHLY_PRICE_CENTS: number | null = 1500;
+
+/** The vCPUs and memory each computer size provides. */
+export const COMPUTER_SIZE_SPECS: Record<ComputerSize, { vcpus: number; memoryGb: number }> = {
+  standard: { vcpus: 4, memoryGb: 8 },
+  large: { vcpus: 8, memoryGb: 16 },
+  xlarge: { vcpus: 16, memoryGb: 32 },
+};
+
+/**
+ * What an hour of a billed computer counts against the allowance, $0.20, whatever its size: above
+ * a small cloud machine's raw price, so the allowance also covers storage and saves.
+ */
+export const SANDBOX_HOURLY_COST_MICROS = 200_000;
+/** What a trial may spend on computers, in cents; ending the trial early starts the full allowance. */
+export const TRIAL_SANDBOX_ALLOWANCE_CENTS = 200;
+/** The share of a monthly credit plan an organization may also spend on computers. */
+export const CREDITS_SANDBOX_ALLOWANCE_PERCENT = 20;
+
+/** Computer hours an allowance in cents buys. */
+export function sandboxAllowanceHours(allowanceCents: number): number {
+  return (allowanceCents * 10_000) / SANDBOX_HOURLY_COST_MICROS;
+}
+
+export const ByokTierSchema = z.enum(["standard", "pro", "max"]);
+export type ByokTier = z.infer<typeof ByokTierSchema>;
+
+export interface ByokTierTerms {
+  name: string;
+  /** Monthly price in cents; `null` on Standard makes the own-model plan free, and hides any other tier. */
+  monthlyPriceCents: number | null;
+  /** Yearly price in cents; `null` offers the tier monthly only. */
+  annualPriceCents: number | null;
+  /** What the organization may spend on computers each month, in cents. */
+  computerAllowanceCents: number;
+  computerSize: ComputerSize;
+}
+
+/**
+ * The own-model plan's tiers, in order. Standard is the plan new organizations start on; the
+ * others add bigger computers and more computer hours.
+ */
+export const BYOK_TIERS: Record<ByokTier, ByokTierTerms> = {
+  standard: {
+    name: "Standard",
+    monthlyPriceCents: 1500,
+    annualPriceCents: 14400,
+    computerAllowanceCents: 500,
+    computerSize: "standard",
+  },
+  pro: {
+    name: "Pro",
+    monthlyPriceCents: 4900,
+    annualPriceCents: 46800,
+    computerAllowanceCents: 2000,
+    computerSize: "large",
+  },
+  max: {
+    name: "Max",
+    monthlyPriceCents: 14900,
+    annualPriceCents: 142800,
+    computerAllowanceCents: 4000,
+    computerSize: "xlarge",
+  },
+};
+
+/** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */
+export function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): number | null {
+  if (BYOK_TIERS.standard.monthlyPriceCents === null) return null;
+  const terms = BYOK_TIERS[tier];
+  if (terms.monthlyPriceCents === null) return null;
+  return interval === "year" ? terms.annualPriceCents : terms.monthlyPriceCents;
+}
 /**
  * An invited friend's first trial, in weeks; the invite copy and the trial both read it. The copy
  * is written for a plural number of weeks, so check its wording in every language if this changes.
@@ -1979,8 +2050,6 @@ export const BYOK_MONTHLY_PRICE_CENTS: number | null = 1500;
 export const INVITED_TRIAL_WEEKS = 2;
 /** Length of a new organization's free trial of the own-model plan, in days. */
 export const TRIAL_DAYS = 7;
-/** Yearly price in cents of the same plan; `null` offers it monthly only. */
-export const BYOK_ANNUAL_PRICE_CENTS: number | null = 14400;
 export const ByokIntervalSchema = z.enum(["month", "year"]);
 export type ByokInterval = z.infer<typeof ByokIntervalSchema>;
 export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 3000;
@@ -2036,8 +2105,23 @@ export const BillingStatusSchema = z.object({
   byokPriceCents: z.number().int().positive().nullable().optional(),
   /** How often `byokPriceCents` bills. Absent from older servers, which bill monthly. */
   byokInterval: ByokIntervalSchema.optional(),
-  /** Yearly price of the own-key plan for new subscriptions, when offered. */
+  /** Yearly price of the own-key plan's tier for new subscriptions, when offered. */
   byokAnnualPriceCents: z.number().int().positive().nullable().optional(),
+  /** The own-key plan's tier: the subscribed one, else Standard. Absent from older servers. */
+  byokTier: ByokTierSchema.optional(),
+  /** The tiers on offer, in order; absent when the own-key plan is free. */
+  byokTiers: z
+    .array(
+      z.object({
+        tier: ByokTierSchema,
+        name: z.string(),
+        monthlyPriceCents: z.number().int().positive(),
+        annualPriceCents: z.number().int().positive().nullable(),
+        computerSize: ComputerSizeSchema,
+        computerHours: z.number().nonnegative(),
+      }),
+    )
+    .optional(),
   /** End of an unpaid own-key organization's free period. */
   byokFreeUntil: z.string().nullable().optional(),
   access: z.boolean(),
@@ -2102,6 +2186,23 @@ export function byokYearlySwitchSavings(status: BillingStatus): number | null {
     return null;
   const savings = byokYearlySavingsPercent(status.byokPriceCents, status.byokAnnualPriceCents);
   return savings > 0 ? savings : null;
+}
+
+/**
+ * Whether an owner can move the own-key plan to another tier: a paid-up plan with no monthly
+ * credits that is not cancelling, and another tier to move to.
+ */
+export function byokTierChangeOffered(status: BillingStatus): boolean {
+  return Boolean(
+    status.canManage &&
+      status.funding === "byok" &&
+      !status.byokFreeUntil &&
+      !status.monthlyAmountCents &&
+      !status.cancelAtPeriodEnd &&
+      (status.state === "active" || status.state === "trialing") &&
+      status.byokPriceCents &&
+      (status.byokTiers?.length ?? 0) > 1,
+  );
 }
 
 export const AppBootstrapSchema = z.object({

@@ -1,9 +1,4 @@
-import {
-  BYOK_ANNUAL_PRICE_CENTS,
-  BYOK_MONTHLY_PRICE_CENTS,
-  MODEL_CREDIT_AMOUNTS,
-  TRIAL_DAYS,
-} from "@rakazo/contracts";
+import { BYOK_TIERS, MODEL_CREDIT_AMOUNTS, TRIAL_DAYS } from "@rakazo/contracts";
 import { APP_URL, SELF_HOST_GUIDE_PATH } from "./site";
 
 /** Whole dollars when the amount is round ("$15"), otherwise cents ("$12.50"). */
@@ -15,6 +10,8 @@ function dollars(cents: number) {
     minimumFractionDigits: rounded % 100 === 0 ? 0 : 2,
   }).format(rounded / 100);
 }
+
+const STANDARD = BYOK_TIERS.standard;
 
 export type PricingPlan = {
   name: string;
@@ -39,11 +36,12 @@ export const PRICING_PLANS: PricingPlan[] = [
   },
   {
     name: "Your model",
-    price: BYOK_MONTHLY_PRICE_CENTS === null ? "Free" : `${dollars(BYOK_MONTHLY_PRICE_CENTS)}/mo`,
+    price:
+      STANDARD.monthlyPriceCents === null ? "Free" : `${dollars(STANDARD.monthlyPriceCents)}/mo`,
     note:
-      BYOK_ANNUAL_PRICE_CENTS === null
+      STANDARD.annualPriceCents === null
         ? undefined
-        : `${dollars(BYOK_ANNUAL_PRICE_CENTS / 12)}/mo billed yearly`,
+        : `${dollars(STANDARD.annualPriceCents / 12)}/mo billed yearly`,
     features: [
       "Hosted by us",
       "Claude, ChatGPT, or any API key",

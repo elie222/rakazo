@@ -467,6 +467,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["billing/portal"],
       ["billing/endTrial"],
       ["billing/switchToYearly"],
+      ["billing/changeTier"],
       ["billing/claimReferral"],
       ["accessGrants/list"],
       ["accessGrants/create"],
