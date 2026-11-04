@@ -585,7 +585,7 @@ export function ModelCreditsSettings({
             {freeUntil && tiers.length > 1 ? (
               <ByokTierSelect
                 tiers={tiers}
-                interval="month"
+                interval={interval}
                 value={checkoutTier}
                 disabled={pending}
                 onChange={(offer) => setCheckoutTier(offer.tier)}

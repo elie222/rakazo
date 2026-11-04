@@ -117,14 +117,23 @@ export default function BillingScreen() {
     const price = `$${cents / 100}`;
     return interval === "year" ? t("{price} / year", { price }) : t("{price} / month", { price });
   };
+  const tierComputer = (offer: TierOffer) =>
+    t("{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month", {
+      vcpus: COMPUTER_SIZE_SPECS[offer.computerSize].vcpus,
+      memoryGb: COMPUTER_SIZE_SPECS[offer.computerSize].memoryGb,
+      hours: offer.computerHours,
+    });
   const changeTier = (offer: TierOffer, cents: number) =>
     Alert.alert(
       t("Switch to {name}?", { name: offer.name }),
-      status.state === "trialing"
-        ? t("Your plan becomes {price} when your trial ends.", { price: tierPrice(cents) })
-        : cents > (ownKeyCents ?? 0)
-          ? t("Your card is charged the prorated difference today.")
-          : t("The unused difference is credited to your next invoice."),
+      // What the tier gives, then how the change bills.
+      `${tierComputer(offer)}\n\n${
+        status.state === "trialing"
+          ? t("Your plan becomes {price} when your trial ends.", { price: tierPrice(cents) })
+          : cents > (ownKeyCents ?? 0)
+            ? t("Your card is charged the prorated difference today.")
+            : t("The unused difference is credited to your next invoice.")
+      }`,
       [
         { text: t("Cancel"), style: "cancel" },
         {
@@ -139,11 +148,7 @@ export default function BillingScreen() {
   const tierRow = currentTier ? (
     <SettingsRow
       title={currentTier.name}
-      detail={t("{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month", {
-        vcpus: COMPUTER_SIZE_SPECS[currentTier.computerSize].vcpus,
-        memoryGb: COMPUTER_SIZE_SPECS[currentTier.computerSize].memoryGb,
-        hours: currentTier.computerHours,
-      })}
+      detail={tierComputer(currentTier)}
       chevron={tierChange ? "down" : undefined}
       disabled={pending}
     />
