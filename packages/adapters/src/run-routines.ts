@@ -6,6 +6,7 @@ import {
   runContinueJob,
   TransientModelError,
 } from "@rakazo/adapter-kit";
+import { ROUTINE_WATCH_DEFAULT_MINUTES } from "@rakazo/contracts";
 import {
   displayName,
   expandSkillReferencesInPrompt,
@@ -142,10 +143,16 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     // A deactivated owner's routine skips this occurrence without running. A recurring or
     // watching one keeps its schedule, so it runs again once the owner is back; a one-time
     // one is spent.
-    const watch = parseRoutineWatch(routine.watch);
-    const nextRunAt = watch
-      ? nextRoutineWatchAt(watch, new Date(Math.max(Date.now(), scheduledAt.getTime())))
-      : nextScheduledRunAt(routine, scheduledAt);
+    // A watch that no longer parses keeps checking at the default interval, so the normal
+    // path reports it once the owner is back instead of it stopping here unexplained.
+    const watch = routine.watch == null ? null : parseRoutineWatch(routine.watch);
+    const nextRunAt =
+      routine.watch == null
+        ? nextScheduledRunAt(routine, scheduledAt)
+        : nextRoutineWatchAt(
+            watch ?? { everyMinutes: ROUTINE_WATCH_DEFAULT_MINUTES },
+            new Date(Math.max(Date.now(), scheduledAt.getTime())),
+          );
     const skipped = await deps.prisma.routine.updateMany({
       where: { id: routine.id, active: true, nextRunAt: scheduledAt },
       data: { nextRunAt, ...(nextRunAt ? {} : { active: false }) },
