@@ -1225,13 +1225,14 @@ export class McpOAuthBroker {
     // A disconnect raised the stored generation after this sign-in began, so its tokens
     // cannot connect the server; reject the completion instead of reporting it, however
     // the exchange itself went.
-    const storedNow = await this.prisma.mcpServer.findFirst({
-      where: { id: pending.serverId, ...availableInSpace(input) },
-      select: { id: true, endpoint: true, secretId: true },
+    const generation = await this.prisma.$transaction(async (tx) => {
+      await lockMaterial(tx, pending.serverId);
+      const snapshot = await this.snapshot(tx, pending.serverId, input);
+      const material = snapshot.secret
+        ? await this.read(snapshot.secret.ciphertext, snapshot.secret.id)
+        : {};
+      return material.oauthGeneration ?? 0;
     });
-    const generation = storedNow
-      ? ((await this.loadMaterial(storedNow, input)).material.oauthGeneration ?? 0)
-      : pending.generation;
     if (generation !== pending.generation)
       throw new Error("MCP OAuth session is invalid or expired");
     if (!(await pending.provider.tokens())) throw new Error("MCP OAuth authorization failed");

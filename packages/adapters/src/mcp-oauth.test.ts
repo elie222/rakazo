@@ -263,6 +263,7 @@ describe("MCP OAuth", () => {
       secretId: null as string | null,
     };
     let lock = Promise.resolve();
+    let credentialLocked = false;
     const lockSettings: string[] = [];
     const tables = {
       mcpOAuthSession: {
@@ -293,8 +294,8 @@ describe("MCP OAuth", () => {
       },
       mcpServer: {
         findFirst: async () => ({ ...server }),
-        update: async ({ data }: { data: { secretId: string | null } }) => {
-          server.secretId = data.secretId;
+        update: async ({ data }: { data: { secretId?: string | null } }) => {
+          if (data.secretId !== undefined) server.secretId = data.secretId;
           return { ...server };
         },
       },
@@ -333,12 +334,14 @@ describe("MCP OAuth", () => {
               release = resolve;
             });
             await held;
+            credentialLocked = true;
             return 1;
           },
         };
         try {
           return await callback(tx);
         } finally {
+          if (release) credentialLocked = false;
           release?.();
         }
       },
@@ -401,6 +404,9 @@ describe("MCP OAuth", () => {
       server,
       context,
       lockSettings,
+      get credentialLocked() {
+        return credentialLocked;
+      },
       tables,
     };
   }
@@ -1021,6 +1027,88 @@ describe("MCP OAuth", () => {
     expect(await shared.stored()).toEqual(reconnected);
     expect(await broker.statusFor(shared.server, shared.context)).toBe("connected");
   });
+
+  it.each([0, 1])(
+    "reads the completion generation consistently with a concurrent credential save (session generation %s)",
+    async (generation) => {
+      const flow: OAuthMaterial = {
+        oauthClient: { client_id: "client-1" },
+        oauth: {
+          codeVerifier: "verifier",
+          redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+          discoveryState: {
+            authorizationServerUrl: "https://auth.example.test",
+            authorizationServerMetadata: {
+              issuer: "https://auth.example.test",
+              authorization_endpoint: "https://auth.example.test/authorize",
+              token_endpoint: "https://auth.example.test/token",
+              response_types_supported: ["code"],
+            },
+          },
+        },
+      };
+      const shared = sharedCredentials(flow, null);
+      const auth = issuingAuthServer();
+      const { broker } = await shared.startProcess(auth.fetch);
+      await broker.disconnect({ serverId: "server-1", ...shared.context });
+      // The old flow's session can land after disconnect; a fresh flow starts at generation 1.
+      const session = await shared.beginSession({ ...flow, oauthGeneration: generation });
+      await shared.replaceStored({
+        ...expiringMaterial(Date.now()),
+        oauthClient: flow.oauthClient,
+        oauthGeneration: 1,
+      });
+      const { provider: writer } = await shared.startProcess(auth.fetch);
+      let savedExchange = false;
+      const saveTokens = StoredMcpOAuthProvider.prototype.saveTokens;
+      vi.spyOn(StoredMcpOAuthProvider.prototype, "saveTokens").mockImplementation(async function (
+        this: StoredMcpOAuthProvider,
+        tokens,
+      ) {
+        await saveTokens.call(this, tokens);
+        if (tokens.access_token === "issued-access") savedExchange = true;
+      });
+      let attempted = false;
+      let saving: Promise<void> | undefined;
+      let replacedSecretId: string | null = null;
+      const findServer = shared.tables.mcpServer.findFirst;
+      vi.spyOn(shared.tables.mcpServer, "findFirst").mockImplementation(async () => {
+        const snapshot = await findServer();
+        if (savedExchange && !attempted) {
+          attempted = true;
+          replacedSecretId = snapshot.secretId;
+          saving = writer.saveTokens({ access_token: "concurrent-access", token_type: "Bearer" });
+          // Without the lock, replace and delete the referenced row before the secret read.
+          // With the lock, the competing save must wait until the consistent read finishes.
+          if (!shared.credentialLocked) await saving;
+        }
+        return snapshot;
+      });
+
+      try {
+        const completing = broker.complete({
+          sessionId: session.id,
+          code: "authorization-code",
+          state: session.id,
+          ...shared.context,
+        });
+        if (generation === 0) {
+          await expect(completing).rejects.toThrow("MCP OAuth session is invalid or expired");
+        } else {
+          await expect(completing).resolves.toBeUndefined();
+        }
+      } finally {
+        await saving;
+      }
+      expect(attempted).toBe(true);
+      expect(await shared.tables.secret.findFirst({ where: { id: replacedSecretId! } })).toBeNull();
+      expect(await shared.stored()).toMatchObject({
+        oauthGeneration: 1,
+        oauth: { tokens: { access_token: "concurrent-access" } },
+      });
+      expect(await broker.statusFor(shared.server, shared.context)).toBe("connected");
+    },
+  );
 
   it("does not bind the stored client through a cancelled flow's write", async () => {
     const shared = sharedCredentials({
@@ -2901,6 +2989,13 @@ describe("MCP OAuth", () => {
       mcpOAuthSession: sessions,
       $transaction: vi.fn().mockResolvedValue([]),
     };
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback({
+        ...prisma,
+        $executeRaw: vi.fn().mockResolvedValue(1),
+        $queryRaw: vi.fn().mockResolvedValue([]),
+      }),
+    );
     const secrets = {
       load: vi.fn((ciphertext: string) =>
         JSON.stringify(
