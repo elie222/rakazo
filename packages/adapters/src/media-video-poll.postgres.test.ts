@@ -30,12 +30,15 @@ class ScriptedVideoProvider extends FakeMediaGenerationProvider {
   remote: "running" | "completed" | "failed" | "error" = "running";
   submissions = 0;
   polls = 0;
+  /** Runs while a check is in flight, to race it. */
+  duringPoll?: () => Promise<void>;
   override async generateVideo(): Promise<MediaVideoJob> {
     this.submissions++;
     return { id: `remote-${this.submissions}`, status: "queued", progress: 0 };
   }
   override async pollVideo(id: string, context: AdapterContext): Promise<MediaVideoJob> {
     this.polls++;
+    await this.duringPoll?.();
     if (this.remote === "error") throw new MediaGenerationError("provider_failure");
     if (this.remote === "completed") return super.pollVideo(id, context);
     return { id, status: this.remote };
@@ -113,10 +116,12 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     const user = await owner();
     const media = new ScriptedVideoProvider();
     const enqueued: BackgroundJob[] = [];
+    const queue = { down: false };
     // Each "process" gets fresh dependencies; nothing but the database survives a restart.
     const process = () => {
       const jobs: JobPublisher = {
         enqueue: async (job) => {
+          if (queue.down) throw new Error("queue unavailable");
           enqueued.push(job);
         },
         cancel: async () => undefined,
@@ -138,7 +143,7 @@ describePostgres("background video delivery (PostgreSQL)", () => {
       userId: user.id,
       spaceId: user.id,
     };
-    const submit = async () => {
+    const submit = async (ended: "completed" | "cancelled" = "completed") => {
       const deps = process();
       const result = await runAsTenant(tenant, () =>
         generateMediaFromTool({
@@ -163,7 +168,7 @@ describePostgres("background video delivery (PostgreSQL)", () => {
       if (!result || !("jobId" in result) || !result.jobId) throw new Error("Submission failed");
       // The turn ends with the video still queued.
       await runAsSystem("test fixture", () =>
-        prisma.run.update({ where: { id: user.run.id }, data: { status: "completed" } }),
+        prisma.run.update({ where: { id: user.run.id }, data: { status: ended } }),
       );
       return result.jobId;
     };
@@ -178,7 +183,29 @@ describePostgres("background video delivery (PostgreSQL)", () => {
         where: { threadId: user.thread.id, trigger: "media" },
         include: { task: true },
       });
-    return { user, media, enqueued, submit, poll, reconcile, job, messages, wakes, tenant };
+    const age = (jobId: string, ms: number) =>
+      runAsSystem("test fixture", () =>
+        prisma.externalEffect.update({
+          where: { id: jobId },
+          data: { createdAt: new Date(Date.now() - ms) },
+        }),
+      );
+    const recovered = () => enqueued.map((job) => (job.payload as { jobId?: string }).jobId);
+    return {
+      user,
+      media,
+      enqueued,
+      queue,
+      age,
+      recovered,
+      submit,
+      poll,
+      reconcile,
+      job,
+      messages,
+      wakes,
+      tenant,
+    };
   }
 
   it("posts a video finished after a restart to the chat that asked, once", async () => {
@@ -189,9 +216,9 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     // Restart: the scheduled poll is lost, and recovery finds the job from the database alone.
     h.enqueued.length = 0;
     await h.reconcile();
-    expect(h.enqueued).toEqual([
+    expect(h.enqueued).toContainEqual(
       expect.objectContaining({ name: "media.poll", payload: { jobId }, keepExisting: true }),
-    ]);
+    );
     await h.poll(jobId);
     expect((await h.job(jobId)).status).toBe("media_pending");
     expect(h.enqueued.at(-1)).toMatchObject({ name: "media.poll", payload: { jobId } });
@@ -214,7 +241,7 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     // Recovery leaves a finished job alone.
     h.enqueued.length = 0;
     await h.reconcile();
-    expect(h.enqueued).toEqual([]);
+    expect(h.recovered()).not.toContain(jobId);
   });
 
   it("reports a failed video to the bot instead of leaving the chat empty", async () => {
@@ -246,20 +273,85 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     expect(h.media.submissions).toBe(1);
   });
 
-  it("marks a video failed once it outlives the deadline, without asking the provider", async () => {
+  it("checks once more at the deadline, then reports a video still unfinished as failed", async () => {
+    const h = await setup();
+    const late = await h.submit();
+    await h.age(late, MEDIA_POLL_DEADLINE_MS + 60_000);
+    await h.poll(late);
+    expect(h.media.polls).toBe(1);
+    expect((await h.job(late)).status).toBe("media_failed");
+    expect(await h.wakes()).toHaveLength(1);
+
+    // A video that finished just before the deadline is still delivered.
+    const h2 = await setup();
+    const finished = await h2.submit();
+    await h2.age(finished, MEDIA_POLL_DEADLINE_MS + 60_000);
+    h2.media.remote = "completed";
+    await h2.poll(finished);
+    expect((await h2.job(finished)).status).toBe("media_completed");
+    expect(await h2.messages()).toHaveLength(1);
+  });
+
+  it("still delivers when the turn that asked was stopped or closed", async () => {
+    const h = await setup();
+    const jobId = await h.submit("cancelled");
+    h.media.remote = "completed";
+    await h.poll(jobId);
+    expect((await h.job(jobId)).status).toBe("media_completed");
+    expect(await h.messages()).toHaveLength(1);
+    expect(await h.wakes()).toHaveLength(1);
+  });
+
+  it("keeps the follow-up turn when the queue is down as the video finishes", async () => {
     const h = await setup();
     const jobId = await h.submit();
-    await runAsSystem("test fixture", () =>
-      prisma.externalEffect.update({
-        where: { id: jobId },
-        data: { createdAt: new Date(Date.now() - MEDIA_POLL_DEADLINE_MS - 60_000) },
-      }),
-    );
-    const polls = h.media.polls;
+    h.media.remote = "completed";
+    h.queue.down = true;
     await h.poll(jobId);
-    expect(h.media.polls).toBe(polls);
+    // The turn committed with the delivery, so the run reconciler can start it later.
+    expect((await h.job(jobId)).status).toBe("media_completed");
+    expect(await h.wakes()).toEqual([expect.objectContaining({ status: "queued" })]);
+  });
+
+  it("never revives a video another check settled while this one was in flight", async () => {
+    const h = await setup();
+    const jobId = await h.submit();
+    h.media.remote = "error";
+    h.media.duringPoll = () =>
+      runAsSystem("test fixture", async () => {
+        await prisma.externalEffect.update({
+          where: { id: jobId },
+          data: { status: "media_failed" },
+        });
+      });
+    await h.poll(jobId);
     expect((await h.job(jobId)).status).toBe("media_failed");
-    expect(await h.wakes()).toHaveLength(1);
+  });
+
+  it("recovers every unfinished video, however many and however old", async () => {
+    const h = await setup();
+    const jobIds = [await h.submit(), await h.submit()];
+    await h.age(jobIds[0]!, 3 * MEDIA_POLL_DEADLINE_MS);
+    h.enqueued.length = 0;
+    await h.reconcile();
+    expect(h.recovered()).toEqual(expect.arrayContaining(jobIds));
+  });
+
+  it("closes a job whose bot was archived, even one left mid-check", async () => {
+    const h = await setup();
+    const jobId = await h.submit();
+    await runAsSystem("test fixture", async () => {
+      await prisma.externalEffect.update({
+        where: { id: jobId },
+        data: { status: "media_polling" },
+      });
+      await prisma.bot.update({ where: { id: h.user.bot.id }, data: { archivedAt: new Date() } });
+    });
+    h.media.remote = "completed";
+    await h.poll(jobId);
+    expect((await h.job(jobId)).status).toBe("media_failed");
+    expect(await h.messages()).toHaveLength(0);
+    expect(await h.wakes()).toHaveLength(0);
   });
 
   it("posts nothing into a chat cleared after the video was submitted", async () => {
@@ -279,6 +371,6 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     expect(h.media.polls).toBe(0);
     h.enqueued.length = 0;
     await h.reconcile();
-    expect(h.enqueued).toEqual([]);
+    expect(h.recovered()).not.toContain(jobId);
   });
 });

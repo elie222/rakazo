@@ -7,7 +7,7 @@ import type {
 import { MediaGenerationError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { messageBlockForArtifact } from "@rakazo/core";
-import type { ExternalEffect, PrismaClient } from "@rakazo/db";
+import type { ExternalEffect, Prisma, PrismaClient } from "@rakazo/db";
 import { z } from "zod";
 import { mediaPromptSchema, validateGeneratedMedia } from "./media-generation-provider.js";
 
@@ -35,6 +35,8 @@ export async function generateMediaFromTool(options: {
     job: { id: string; result: { provider: string; jobId?: string } },
   ) => Promise<{ artifactId: string; block: MessageBlock }>;
   publish: (block: MessageBlock, jobId: string, artifactId: string) => Promise<unknown>;
+  /** Commits with a video's provider failure, so whatever follows it cannot be lost. */
+  onSettled?: (tx: Prisma.TransactionClient, status: "failed") => Promise<void>;
 }) {
   const { provider, prisma, context, run, args } = options;
   const video = options.name === "generate_video";
@@ -176,30 +178,36 @@ export async function generateMediaFromTool(options: {
             output: await provider.generateImage(mediaPromptSchema.parse(args), context),
           };
     } catch (error) {
+      // Release only this check's claim; a finished or failed job stays settled.
       if (polling)
         await prisma.externalEffect.updateMany({
-          where: { id: reservation.id, status: { not: "media_completed" } },
+          where: { id: reservation.id, status: "media_polling" },
           data: { status: "media_pending" },
         });
       throw error;
     }
     if (video && "id" in output) {
-      await prisma.externalEffect.updateMany({
-        where: {
-          id: reservation.id,
-          status: { not: "media_completed" },
-          result: { equals: saved },
-        },
-        data: {
-          status:
-            output.status === "failed"
-              ? "media_failed"
-              : output.status === "completed"
-                ? "media_polling"
-                : "media_pending",
-          result: { provider: provider.id, jobId: output.id },
-        },
-      });
+      const settle = async (tx: Prisma.TransactionClient) => {
+        const updated = await tx.externalEffect.updateMany({
+          where: {
+            id: reservation.id,
+            status: polling ? "media_polling" : "media_submitting",
+            result: { equals: saved },
+          },
+          data: {
+            status:
+              output.status === "failed"
+                ? "media_failed"
+                : output.status === "completed"
+                  ? "media_polling"
+                  : "media_pending",
+            result: { provider: provider.id, jobId: output.id },
+          },
+        });
+        if (updated.count && output.status === "failed") await options.onSettled?.(tx, "failed");
+      };
+      if (output.status === "failed" && options.onSettled) await prisma.$transaction(settle);
+      else await settle(prisma);
     }
     if (output.status !== "completed")
       return {
