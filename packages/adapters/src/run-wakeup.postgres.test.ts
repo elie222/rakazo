@@ -128,9 +128,12 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       ...values: unknown[]
     ) => {
       const result = queryRaw(query as never, ...(values as never[]));
-      void Promise.resolve(result).then(() => {
+      const settle = () => {
         queueChecksSettled += 1;
-      });
+      };
+      // A failed check counts too, and this side branch must not leave an
+      // unhandled rejection: the host catches the error on its own branch.
+      void Promise.resolve(result).then(settle, settle);
       return result;
     }) as never);
     const runOneQueueCheck = async (host: RunWorkerHost) => {
