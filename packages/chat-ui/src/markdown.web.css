@@ -402,7 +402,7 @@ a.rk-chat-link:hover .rk-chat-link-label {
   display: inline-block;
   width: calc(1.0625em * 33 / 41);
   height: 1.0625em;
-  margin-right: 0.4375em;
+  margin-inline-end: 0.4375em;
   vertical-align: -0.125em;
 }
 

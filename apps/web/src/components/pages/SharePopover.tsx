@@ -163,7 +163,7 @@ export function SharePopover({
                     </span>
                   ) : null}
                 </span>
-                <RadioGroupItem value={option.value} className="mr-1.5" />
+                <RadioGroupItem value={option.value} className="me-1.5" />
               </label>
             ))}
           </RadioGroup>
