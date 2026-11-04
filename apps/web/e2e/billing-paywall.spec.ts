@@ -1,10 +1,11 @@
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import type { BillingStatus } from "@rakazo/contracts";
 import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
 
-const price = { amount: 1200, currency: "usd", interval: "month", intervalCount: 1 };
+const price = { amount: 1200, currency: "usd", interval: "month", intervalCount: 1 } as const;
 
-function billingStatus(overrides: Record<string, unknown>) {
+function billingStatus(overrides: Record<string, unknown>): BillingStatus {
   return {
     access: false,
     canManage: true,

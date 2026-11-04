@@ -93,6 +93,9 @@ function inboxBot(): Bot {
     teamChatRules: "",
     webhookConfigured: false,
     spawnKey: null,
+    runErrorId: null,
+    fleetManagement: true,
+    disabledBuiltinTools: [],
   };
 }
 
@@ -165,6 +168,9 @@ function RoutineShot() {
     messageProvider: null,
     active: true,
     runAtLocal: "",
+    modelKey: "",
+    thinkingLevel: "",
+    watch: null,
   });
   return (
     <main data-ready="true" className="mx-auto max-w-[760px] bg-background p-8 text-foreground">
@@ -195,6 +201,8 @@ function ApprovalShot() {
     <main data-ready="true" className="mx-auto max-w-[760px] bg-background p-8 text-foreground">
       <AskCard
         canAnswer
+        canDismiss={false}
+        onDismiss={async () => undefined}
         onAnswer={async () => undefined}
         block={{
           kind: "ask",
@@ -222,6 +230,7 @@ const subscriptionMe: Me = {
   name: "Ada",
   spaceId: "space-demo",
   isDeploymentOwner: true,
+  isAdmin: false,
   needsModel: false,
   defaultProvider: "anthropic",
   defaultModel: "claude-sonnet-5-5",
@@ -306,6 +315,8 @@ function SubscriptionShot() {
         memoryConfig={null}
         onMemoryConfigChange={() => undefined}
         onUsageOpen={() => undefined}
+        timezone="UTC"
+        onTimezoneChange={async () => undefined}
         onClose={() => undefined}
       />
     </main>
