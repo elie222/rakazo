@@ -171,6 +171,33 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
 }
 
 /**
+ * Inserts outbox rows for one group conversation with a non-overlapping
+ * position range: under the channel row lock, every writer of a conversation
+ * (mirrors, intros) takes timestamps starting past the newest committed row,
+ * so no writer's rows interleave with another's — not even on a clock tie or
+ * a delayed commit. Only rows are read and written here; sends stay in the
+ * drain.
+ */
+export async function insertGroupOutboundRows(
+  prisma: PrismaClient,
+  channel: { id: string; threadId: string },
+  rows: Array<Omit<Prisma.MessagingOutboundCreateManyInput, "createdAt">>,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM messaging_channels WHERE id = ${channel.id} FOR UPDATE`;
+    const latest = await tx.messagingOutbound.aggregate({
+      _max: { createdAt: true },
+      where: { threadId: channel.threadId },
+    });
+    const base = Math.max(Date.now(), (latest._max.createdAt?.getTime() ?? 0) + 1);
+    await tx.messagingOutbound.createMany({
+      data: rows.map((row, index) => ({ ...row, createdAt: new Date(base + index) })),
+      skipDuplicates: true,
+    });
+  });
+}
+
+/**
  * Channel runs post to the group with an attribution prefix, then fan the
  * post out internally to peer approved bots: context only by default, a
  * waking run on @-mention, bounded by the shared bot-message hop budget.
@@ -218,32 +245,20 @@ async function mirrorChannelRun(
 
   // One row per platform-sized part, like the DM path: the adapter truncates
   // an oversized body instead of failing, which would drop the reply's tail.
-  // The whole reply takes one explicit, non-overlapping range: the channel row
-  // lock serialises range allocation per conversation, and each range starts
-  // past the newest committed row, so a later mirror can never interleave its
-  // parts with an earlier one — not even on a clock tie or a delayed commit.
-  // This transaction only reads and writes rows; provider sends stay in the
-  // drain.
-  await deps.prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM messaging_channels WHERE id = ${channel.id} FOR UPDATE`;
-    const latest = await tx.messagingOutbound.aggregate({
-      _max: { createdAt: true },
-      where: { threadId: channel.threadId },
-    });
-    const base = Math.max(Date.now(), (latest._max.createdAt?.getTime() ?? 0) + 1);
-    const rows = messages
-      .flatMap(({ message, text }) =>
-        splitOutboundBody(identity.provider, `${fromLabel}: ${text}`).map((part, index) => ({
-          idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
-          kind: "group",
-          threadId: channel.threadId,
-          body: part,
-          sourceMessageId: message.id,
-        })),
-      )
-      .map((row, index) => ({ ...row, createdAt: new Date(base + index) }));
-    await tx.messagingOutbound.createMany({ data: rows, skipDuplicates: true });
-  });
+  // The whole reply takes one explicit, non-overlapping range.
+  await insertGroupOutboundRows(
+    deps.prisma,
+    channel,
+    messages.flatMap(({ message, text }) =>
+      splitOutboundBody(identity.provider, `${fromLabel}: ${text}`).map((part, index) => ({
+        idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
+        kind: "group",
+        threadId: channel.threadId,
+        body: part,
+        sourceMessageId: message.id,
+      })),
+    ),
+  );
 
   const hop = nextBotMessageHop(channelBlock.hop);
   const peers = await deps.prisma.messagingChannelMember.findMany({
@@ -472,6 +487,41 @@ function conversationOf(row: MessagingOutboundRow): Conversation | null {
 }
 
 /**
+ * Takes the per-conversation lock every group-row writer allocates under:
+ * the channel row for a group, the identity row for a direct message.
+ */
+async function lockConversation(tx: Prisma.TransactionClient, conversation: Conversation) {
+  if ("threadId" in conversation) {
+    await tx.$queryRaw`SELECT id FROM messaging_channels WHERE "threadId" = ${conversation.threadId} FOR UPDATE`;
+    return;
+  }
+  await tx.$queryRaw`SELECT id FROM messaging_identities WHERE id = ${conversation.identityId} FOR UPDATE`;
+}
+
+/**
+ * Claims the row for sending, or returns false when the conversation must
+ * wait. The blocker check and the claim commit together under the
+ * conversation's lock, so a row another writer commits in between (an intro
+ * landing mid-flight) cannot put two sends of one conversation on the wire.
+ * The lock is released before any provider call.
+ */
+async function claimForSend(
+  deps: MessagingDeliveryDeps,
+  conversation: Conversation,
+  row: MessagingOutboundRow,
+): Promise<boolean> {
+  return deps.prisma.$transaction(async (tx) => {
+    await lockConversation(tx, conversation);
+    if (await hasBlockingRow(tx, conversation, row, Date.now())) return false;
+    const claim = await tx.messagingOutbound.updateMany({
+      where: { id: row.id, status: "pending" },
+      data: { status: "sent", nextAttemptAt: null },
+    });
+    return claim.count === 1;
+  });
+}
+
+/**
  * Sends one conversation's rows in order, reading each next row after the
  * previous send so a reply queued meanwhile is not left behind. Stops at the
  * first row that has to wait, or that another drain already owns.
@@ -486,14 +536,17 @@ async function deliverLane(
   while (row) {
     const now = Date.now();
     if (row.nextAttemptAt && row.nextAttemptAt.getTime() > now) return;
-    if (conversation && (await hasBlockingRow(deps, conversation, row, now))) return;
-    // Claim before sending: concurrent drains and crash retries must never
-    // deliver the same message twice.
-    const claim = await deps.prisma.messagingOutbound.updateMany({
-      where: { id: row.id, status: "pending" },
-      data: { status: "sent", nextAttemptAt: null },
-    });
-    if (claim.count === 0) return;
+    if (conversation) {
+      // Claim before sending: concurrent drains and crash retries must never
+      // deliver the same message twice.
+      if (!(await claimForSend(deps, conversation, row))) return;
+    } else {
+      const claim = await deps.prisma.messagingOutbound.updateMany({
+        where: { id: row.id, status: "pending" },
+        data: { status: "sent", nextAttemptAt: null },
+      });
+      if (claim.count === 0) return;
+    }
     if (!(await deliverRow(deps, context, row))) return;
     row = conversation
       ? await deps.prisma.messagingOutbound.findFirst({
@@ -684,12 +737,12 @@ const MESSAGING_ROW_IN_FLIGHT_MS = 2 * 60_000;
  * regardless of order — bounded by the abandoned-claim deadline.
  */
 async function hasBlockingRow(
-  deps: MessagingDeliveryDeps,
+  client: Prisma.TransactionClient,
   conversation: Conversation,
   row: Pick<MessagingOutboundRow, "id" | "createdAt">,
   now: number,
 ): Promise<boolean> {
-  const blocking = await deps.prisma.messagingOutbound.findFirst({
+  const blocking = await client.messagingOutbound.findFirst({
     where: {
       ...conversation,
       OR: [

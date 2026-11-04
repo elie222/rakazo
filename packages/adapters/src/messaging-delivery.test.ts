@@ -679,9 +679,17 @@ describe("deliverMessagingOutbound", () => {
         },
       ],
     });
-    (deps.prisma as unknown as { $transaction: unknown }).$transaction = vi.fn(async () => {
-      throw new Error("Transaction API error: Transaction already closed");
-    });
+    let claimTransaction = true;
+    (deps.prisma as unknown as { $transaction: unknown }).$transaction = vi.fn(
+      async (fn: (tx: unknown) => Promise<unknown>) => {
+        // The claim's transaction succeeds; the invite delivery times out.
+        if (claimTransaction) {
+          claimTransaction = false;
+          return fn(deps.prisma);
+        }
+        throw new Error("Transaction API error: Transaction already closed");
+      },
+    );
     await deliverMessagingOutbound(deps, {}, context);
 
     expect(deps.sendToThread).not.toHaveBeenCalled();
@@ -1655,8 +1663,9 @@ describe("deliverMessagingOutbound attachments", () => {
     });
     deps.sendToThread.mockRejectedValueOnce(new Error("Telegram 500"));
     await deliverMessagingOutbound(deps, {}, context);
-    // The failure and its notice are saved together.
-    expect(deps.prisma.$transaction).toHaveBeenCalledTimes(1);
+    // One transaction claims the row for sending; the failure and its notice
+    // are then saved together in a second one.
+    expect(deps.prisma.$transaction).toHaveBeenCalledTimes(2);
 
     await deliverMessagingOutbound(deps, {}, context);
     expect(sentBodies(deps)).toEqual([
@@ -1909,6 +1918,71 @@ describe("drain lanes", () => {
       { threadId: "t-a", body: "z-2" },
     ]);
     expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
+  });
+
+  it("does not claim beside a row that committed between the check and the claim", async () => {
+    const deps = createDeps({ run: null, outboundRows: [groupRow("r-1", "t-a", 10)] });
+    let releaseIntroSend = () => {};
+    const introSend = new Promise<void>((resolve) => {
+      releaseIntroSend = resolve;
+    });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      await introSend;
+      return { handle: "h-intro" };
+    });
+
+    // Between the first drain's blocker check and its claim, an unlocked
+    // writer commits an earlier row and a second drain picks it up and goes
+    // in flight — the first drain must see it before claiming.
+    let drainB: Promise<void> | null = null;
+    let injected = false;
+    const inject = async () => {
+      if (injected) return;
+      injected = true;
+      deps.rows.push(groupRow("intro", "t-a", 0));
+      drainB = deliverMessagingOutbound(deps, {}, context);
+      await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(1));
+    };
+    const prisma = deps.prisma as unknown as {
+      $transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown>;
+      messagingOutbound: {
+        updateMany: {
+          getMockImplementation: () => (args: never) => unknown;
+          mockImplementationOnce: (impl: (args: never) => unknown) => unknown;
+        };
+      };
+    };
+    const realTransaction = prisma.$transaction.bind(prisma);
+    prisma.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
+      await inject();
+      return realTransaction(fn);
+    };
+    const realUpdateMany = prisma.messagingOutbound.updateMany.getMockImplementation()!;
+    prisma.messagingOutbound.updateMany.mockImplementationOnce(
+      async (args: Parameters<typeof realUpdateMany>[0]) => {
+        await inject();
+        return realUpdateMany(args);
+      },
+    );
+
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
+    expect(deps.rows.map((row) => [row.body, row.status])).toEqual([
+      ["r-1", "pending"],
+      ["intro", "sent"],
+    ]);
+
+    releaseIntroSend();
+    await drainB;
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(deps.rows.map((row) => [row.body, row.status])).toEqual([
+      ["r-1", "sent"],
+      ["intro", "sent"],
+    ]);
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "t-a", body: "intro" },
+      { threadId: "t-a", body: "r-1" },
+    ]);
   });
 
   it("leaves a conversation alone when another drain claimed its oldest row", async () => {
