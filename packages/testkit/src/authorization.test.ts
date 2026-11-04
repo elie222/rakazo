@@ -431,6 +431,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["usage/summary"],
       ["export/bot", { botId: "missing-bot" }],
       ["export/accountToken"],
+      ["notifications/subscribe"],
       ["notifications/subscribeCalls"],
       ["notifications/declineIncomingCall", { callId: "00000000-0000-4000-8000-000000000001" }],
       [
