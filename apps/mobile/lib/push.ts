@@ -24,14 +24,16 @@ export async function registerPushToken() {
     if (!projectId) return;
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     if (!token) return;
+    const generation = currentSessionGeneration();
+    const apiBase = currentApiBase();
+    const sessionToken = await loadSessionToken();
+    if (generation !== currentSessionGeneration() || apiBase !== currentApiBase()) return;
     // The server can push the moment this registration lands, before any Space load
     // resumes native notifications; sync the session first, so Android's signed-out
     // drop rule sees this account instead of the blank of a fresh sign-in.
-    await resumeLiveNotifications(
-      currentApiBase(),
-      await loadSessionToken(),
-      selectedSpaceId() ?? "",
-    ).catch(() => undefined);
+    await resumeLiveNotifications(apiBase, sessionToken, selectedSpaceId() ?? "").catch(
+      () => undefined,
+    );
     await rpc("notifications/registerPush", {
       token,
       ...(Platform.OS === "android" &&

@@ -46,9 +46,10 @@ vi.mock("expo-notifications", () => ({
 import { requireOptionalNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { rpc, selectInitialSpace } from "./api";
-import { resumeLiveNotifications } from "./live-notifications.js";
+import { rpc, selectInitialSpace, signOut } from "./api";
+import { resumeLiveNotifications, stopLiveNotifications } from "./live-notifications.js";
 import { registerPushToken } from "./push";
+import * as session from "./session";
 import { restoreSessionToken } from "./session";
 
 function deferred<T>() {
@@ -74,11 +75,11 @@ const fetch = vi.fn(async (url: string) => {
 let permission: ReturnType<typeof deferred<{ granted: boolean }>>;
 
 beforeEach(async () => {
+  vi.restoreAllMocks();
+  vi.clearAllMocks();
   native.reset();
   vi.mocked(requireOptionalNativeModule).mockReturnValue(null);
   vi.stubGlobal("fetch", fetch);
-  fetch.mockClear();
-  vi.mocked(Notifications.requestPermissionsAsync).mockClear();
   permission = deferred();
   // iOS answers both from the system's notification settings, which can take minutes
   // after a restart. Reading them waits on the native queue; the request does not.
@@ -147,23 +148,58 @@ describe("push registration on Android", () => {
 it("syncs the native session before the server can push", async () => {
   Platform.OS = "android";
   vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as never);
+  const resumed = deferred<void>();
+  vi.mocked(resumeLiveNotifications).mockReturnValueOnce(resumed.promise);
 
-  await registerPushToken();
+  const registration = registerPushToken();
+  try {
+    await vi.waitFor(() =>
+      expect(resumeLiveNotifications).toHaveBeenCalledExactlyOnceWith(
+        "http://127.0.0.1:3100",
+        "fake-session",
+        expect.any(String),
+      ),
+    );
+    await expect(settled(registration)).resolves.toBe("still waiting");
+    expect(fetch).not.toHaveBeenCalled();
+  } finally {
+    resumed.resolve();
+    await registration;
+  }
+  expect(fetch).toHaveBeenCalledWith(
+    expect.stringMatching(/notifications\/registerPush$/),
+    expect.anything(),
+  );
+});
 
-  // The server can push the moment the registration lands; Android's drop rule must
-  // already see this account's session by then, not the blank of a fresh sign-in.
-  expect(resumeLiveNotifications).toHaveBeenCalled();
-  const registerCall = fetch.mock.calls.findIndex(([url]) =>
-    String(url).endsWith("/rpc/notifications/registerPush"),
-  );
-  expect(registerCall).toBeGreaterThanOrEqual(0);
-  expect(vi.mocked(resumeLiveNotifications).mock.invocationCallOrder[0] as number).toBeLessThan(
-    fetch.mock.invocationCallOrder[registerCall] as number,
-  );
-  expect(vi.mocked(resumeLiveNotifications)).toHaveBeenCalledWith(
-    "http://127.0.0.1:3100",
-    "fake-session",
-    expect.any(String),
+it("does not restore a signed-out session while push registration loads its token", async () => {
+  Platform.OS = "android";
+  vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as never);
+  const loaded = deferred<void>();
+  const release = deferred<void>();
+  const loadToken = session.loadSessionToken;
+  vi.spyOn(session, "loadSessionToken").mockImplementationOnce(async () => {
+    const token = await loadToken();
+    loaded.resolve();
+    await release.promise;
+    return token;
+  });
+
+  const registration = registerPushToken();
+  try {
+    await loaded.promise;
+    await signOut();
+    expect(stopLiveNotifications).toHaveBeenCalledWith(true);
+    expect(native.store.has("rakazo.session_token")).toBe(false);
+  } finally {
+    release.resolve();
+    await registration;
+  }
+
+  expect(resumeLiveNotifications).not.toHaveBeenCalled();
+  expect(fetch).not.toHaveBeenCalledWith(
+    expect.stringMatching(/notifications\/registerPush$/),
+    expect.anything(),
   );
 });
 

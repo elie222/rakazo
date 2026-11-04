@@ -1165,6 +1165,34 @@ describe("mobile API authentication", () => {
     ]);
   });
 
+  it("preserves the session for retry when sign-out cannot snapshot it", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    await selectSpace("space-support");
+    vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(new Error("device locked"));
+    vi.mocked(SecureStore.deleteItemAsync).mockClear();
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(signOut()).rejects.toThrow("Could not clear the local session");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();
+    expect(store.get("rakazo.session_token")).toBe("session-token");
+    expect(store.get("rakazo.space_id")).toBe("space-support");
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    await expect(authHeaders()).resolves.toMatchObject({ authorization: "Bearer session-token" });
+
+    await signOut();
+
+    expect(fetchMock.mock.calls).toHaveLength(2);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init?.headers).toMatchObject({ authorization: "Bearer session-token" });
+    }
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(selectedSpaceId()).toBeNull();
+  });
+
   it("unregisters push delivery before invalidating the session", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
     const fetchMock = vi

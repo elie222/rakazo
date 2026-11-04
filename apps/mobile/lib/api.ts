@@ -1266,9 +1266,10 @@ export async function flushPendingSignOut(force = false): Promise<void> {
 export async function signOut() {
   const apiBase = currentApiBase();
   const tokenSnapshot = await snapshotSessionToken();
+  if (!tokenSnapshot.ok) throw new Error(t("Could not clear the local session"));
   const revocation: PendingSignOut = {
     apiBase,
-    token: tokenSnapshot.ok ? tokenSnapshot.value : "",
+    token: tokenSnapshot.value,
     headers: serverHeaders(apiBase),
     recordedAt: Date.now(),
   };
