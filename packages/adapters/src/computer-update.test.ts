@@ -44,7 +44,15 @@ function fixture(status = "queued") {
   const computerUpdate = {
     create: vi.fn(async () => row),
     findUniqueOrThrow: vi.fn(async () => row),
-    findMany: vi.fn(async () => [row]),
+    findMany: vi.fn(
+      async ({ where }: { where: { OR: { status: string; updatedAt?: { lt: Date } }[] } }) =>
+        where.OR.some(
+          (match) =>
+            match.status === row.status && (!match.updatedAt || row.updatedAt < match.updatedAt.lt),
+        )
+          ? [{ ...row }]
+          : [],
+    ),
     updateMany: vi.fn(async ({ where, data }) => {
       if (
         where.status &&
@@ -52,6 +60,8 @@ function fixture(status = "queued") {
           ? where.status !== row.status
           : !where.status.in.includes(row.status))
       )
+        return { count: 0 };
+      if (where.updatedAt && where.updatedAt.getTime() !== row.updatedAt.getTime())
         return { count: 0 };
       Object.assign(row, data);
       return { count: 1 };
@@ -151,6 +161,42 @@ describe("background computer maintenance", () => {
     await work;
     expect(row.status).toBe("failed");
     expect(computer.updateMany).toHaveBeenCalledOnce();
+  });
+  it("frees a computer whose interrupted update never settled", async () => {
+    const { row, deps, computer, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 61 * 60_000);
+    await reconcileComputerUpdates(deps);
+    expect(row.status).toBe("failed");
+    expect(computer.updateMany).toHaveBeenLastCalledWith({
+      where: { id: row.computerId, maintenanceId: row.id },
+      data: { maintenanceId: null },
+    });
+    expect(jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ replaceKey: `computer.sleep:${row.computerId}` }),
+    );
+  });
+  it("keeps a recently interrupted update reserved", async () => {
+    const { row, deps, computer, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 59 * 60_000);
+    await reconcileComputerUpdates(deps);
+    expect(row.status).toBe("interrupted");
+    expect(computer.updateMany).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+  it("keeps the outcome of a worker that settles before the release", async () => {
+    const { row, deps, computer, computerUpdate, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 61 * 60_000);
+    const select = computerUpdate.findMany.getMockImplementation();
+    computerUpdate.findMany.mockImplementationOnce(async (args) => {
+      const found = (await select?.(args)) ?? [];
+      Object.assign(row, { status: "completed", updatedAt: new Date() });
+      return found;
+    });
+    await reconcileComputerUpdates(deps);
+    expect(await computerUpdate.findMany.mock.results[0]?.value).toHaveLength(1);
+    expect(row.status).toBe("completed");
+    expect(computer.updateMany).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
   });
 
   it("rejects a busy computer before publishing an operation", async () => {
