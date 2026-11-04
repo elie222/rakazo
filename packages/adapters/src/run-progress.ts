@@ -159,11 +159,12 @@ export function tryFlushPendingTools(reply: ReplyState) {
  */
 export function progressHeldForSilence(ctx: RunContext) {
   const { reply } = ctx.state;
-  return (
-    ctx.groupReplyOptional &&
-    !reply.hasStreamedText &&
-    (couldBecomeNoResponse(reply.pendingProgress) || isPlaceholderText(reply.pendingProgress))
-  );
+  return !reply.hasStreamedText && mayBeSilentEnding(ctx, reply.pendingProgress);
+}
+
+/** Text a member a group message named nobody for may still turn into its silent ending. */
+export function mayBeSilentEnding(ctx: Pick<RunContext, "groupReplyOptional">, text: string) {
+  return ctx.groupReplyOptional && (couldBecomeNoResponse(text) || isPlaceholderText(text));
 }
 
 export async function flushProgress(ctx: RunContext) {

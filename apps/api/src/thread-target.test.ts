@@ -2422,7 +2422,6 @@ describe("sendThreadMessage", () => {
         botId: string;
         status: string;
         trigger: string;
-        groupReplyOptional?: boolean;
       }> = [],
       replyTo?: { role: string; botId: string | null },
     ) {
@@ -2575,34 +2574,6 @@ describe("sendThreadMessage", () => {
         const { created } = await sendToGroup("blue", undefined, [], replyTo);
         expect(created.map((run) => run.botId)).toEqual(["bot-a", "bot-b"]);
       }
-    });
-
-    it("that names nobody leaves a member busy with other work alone", async () => {
-      const busy = {
-        id: "run-busy",
-        botId: "bot-b",
-        status: "running",
-        trigger: "user",
-        groupReplyOptional: false,
-      };
-      const { created, tx } = await sendToGroup("morning all!", undefined, [busy]);
-      expect(created.map((run) => run.botId)).toEqual(["bot-a"]);
-      expect(tx.steeringMessage.create).not.toHaveBeenCalled();
-    });
-
-    it("that names nobody still reaches a member already deciding on an unnamed message", async () => {
-      const deciding = {
-        id: "run-deciding",
-        botId: "bot-b",
-        status: "running",
-        trigger: "user",
-        groupReplyOptional: true,
-      };
-      const { created, tx } = await sendToGroup("and the budget?", undefined, [deciding]);
-      expect(created.map((run) => run.botId)).toEqual(["bot-a"]);
-      expect(tx.steeringMessage.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ botId: "bot-b", runId: "run-deciding" }),
-      });
     });
 
     it("that replies to a busy member steers that member and wakes no one else", async () => {

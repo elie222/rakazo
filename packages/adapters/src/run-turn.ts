@@ -55,6 +55,7 @@ import {
   canPublishDurableNarration,
   flushPendingTools,
   flushProgress,
+  mayBeSilentEnding,
   nextProgressNonce,
   progressHeldForSilence,
   publishMidTurnNarration,
@@ -74,10 +75,8 @@ import { scheduleRoutineRetry } from "./run-routines.js";
 import { applyTool } from "./run-tools.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
-  couldBecomeNoResponse,
   isNoResponseReply,
   isPlaceholderReply,
-  isPlaceholderText,
   peerReplyWithoutSentinel,
   stripNoResponseReply,
   stripStrayNoResponse,
@@ -308,11 +307,6 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
       ...(event.activity ? { activity: true } : {}),
     },
   });
-}
-
-/** Text a member a group message named nobody for may still turn into its silent ending. */
-function mayBeSilentEnding(ctx: RunContext, text: string) {
-  return ctx.groupReplyOptional && (couldBecomeNoResponse(text) || isPlaceholderText(text));
 }
 
 /**

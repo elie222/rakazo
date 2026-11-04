@@ -1108,7 +1108,6 @@ export async function sendThreadMessage(
           modelPinned: true,
           thinkingLevel: true,
           updatedAt: true,
-          groupReplyOptional: true,
         },
       });
       // A plain message while members wait on the user answers the latest question only.
@@ -1172,18 +1171,8 @@ export async function sendThreadMessage(
           activeByBotId.set(run.botId, run);
         }
       }
-      // A member busy with work that must reply is left out of an unnamed message, as long as
-      // another member is free to take it, so chatter never lands in the middle of its task.
-      const busyElsewhere = (botId: string) => {
-        const active = activeByBotId.get(botId);
-        return active !== undefined && !(steersUserMessage(active) && active.groupReplyOptional);
-      };
-      const skipBusy =
-        namesNobody &&
-        targetBotIds.some((botId) => !busyElsewhere(botId) || answeredByBotId.has(botId));
       const runs: Array<{ id: string; taskId: string; botId: string; status: string }> = [];
       for (const botId of targetBotIds) {
-        if (skipBusy && !answeredByBotId.has(botId) && busyElsewhere(botId)) continue;
         const answered = answeredByBotId.get(botId);
         if (answered) {
           const steered = answered.filter((run) =>
