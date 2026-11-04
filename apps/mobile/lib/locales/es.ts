@@ -12,6 +12,7 @@ export const ES_MESSAGES: Record<string, string> = {
   City: "Ciudad",
   Contact: "Contacto",
   Contacts: "Contactos",
+  "Could not attach files": "No se pudieron adjuntar los archivos",
   "Could not remove the item": "No se pudo quitar el elemento",
   "Could not show the item": "No se pudo mostrar el elemento",
   Country: "País",

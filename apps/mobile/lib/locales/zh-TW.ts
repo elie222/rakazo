@@ -11,6 +11,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   City: "城市",
   Contact: "聯絡資訊",
   Contacts: "聯絡資訊",
+  "Could not attach files": "無法附加檔案",
   "Could not remove the item": "無法移除此項目",
   "Could not show the item": "無法顯示此項目",
   Country: "國家或地區",

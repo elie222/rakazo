@@ -21,6 +21,7 @@ import {
 } from "./pick-attachments";
 import { attachmentCountSkipReason } from "./pick-attachments-filter";
 import { useFileDrop } from "./use-file-drop";
+import { errorText } from "./user-error";
 
 export type PendingAttachment = PickedAttachment & { threadKey: string };
 
@@ -85,11 +86,18 @@ export function useThreadAttachments({
   ) {
     const targetKey = groupId ?? botId;
     if (!targetKey) return;
-    const result = await picker(
-      activePendingAttachments.length,
-      attachmentMaxBytes(uploadConfig),
-      attachmentMaxCount(uploadConfig),
-    );
+    let result: Awaited<ReturnType<typeof picker>>;
+    try {
+      result = await picker(
+        activePendingAttachments.length,
+        attachmentMaxBytes(uploadConfig),
+        attachmentMaxCount(uploadConfig),
+      );
+    } catch (error) {
+      // A picker that fails to open reports it instead of rejecting unhandled.
+      setAttachmentNotice(errorText(error, t("Could not attach files")));
+      return;
+    }
     if ((groupId ?? botId) !== targetKey) return;
     // Two drops can overlap, so the room left is settled against the draft as it
     // is now, not as it was when this read began.

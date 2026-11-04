@@ -11,6 +11,7 @@ export const NL_MESSAGES: Record<string, string> = {
   City: "Plaats",
   Contact: "Contact",
   Contacts: "Contacten",
+  "Could not attach files": "Kan de bestanden niet toevoegen",
   "Could not remove the item": "Kan het item niet verwijderen",
   "Could not show the item": "Kan het item niet tonen",
   Country: "Land",
