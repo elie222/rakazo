@@ -1121,7 +1121,7 @@ it.each([
   },
 );
 
-it("ignores dictation after switching draft keys on the same instance", async () => {
+it("restores dictation to the previous chat after switching draft keys", async () => {
   let finish!: (accepted: boolean) => void;
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
@@ -1145,11 +1145,73 @@ it("ignores dictation after switching draft keys on the same instance", async ()
     await act(async () => finish(false));
     expect(textarea.value).toBe("newer draft");
     expect(localStorage.getItem("rakazo.composerDraft.bot:other-bot")).toBe("newer draft");
-    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBeNull();
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("late dictation");
   } finally {
     listen.mockRestore();
   }
 });
+
+it("retries an unchanged dictation with the same nonce after a failed send", async () => {
+  const nonces: string[] = [];
+  const onSend = vi.fn(async (_text: string, _mentions: unknown[], clientNonce: string) => {
+    nonces.push(clientNonce);
+    return false;
+  });
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    const textarea = renderComposer(onSend, { phoneCallsEnabled: true });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("create the task"));
+    await act(async () => {});
+    expect(textarea.value).toBe("create the task");
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(2);
+    expect(nonces[1]).toBe(nonces[0]);
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it.each([false, true])(
+  "restores dictation to the saved draft when the chat closes before the send fails (throws=%s)",
+  async (throws) => {
+    let finish!: (accepted: boolean) => void;
+    let fail!: (error: Error) => void;
+    const onSend = vi.fn(
+      () =>
+        new Promise<boolean>((resolve, reject) => {
+          finish = resolve;
+          fail = reject;
+        }),
+    );
+    let onFinal!: (text: string) => void;
+    const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+      onFinal = options.onFinal;
+    });
+    try {
+      renderComposer(onSend, { phoneCallsEnabled: true });
+      const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+      act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+      act(() => onFinal("spoken words"));
+      act(() => root?.unmount());
+      container?.remove();
+      await act(async () => {
+        if (throws) fail(new Error("offline"));
+        else finish(false);
+      });
+      expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("spoken words");
+      const returned = renderComposer(vi.fn());
+      expect(returned.value).toBe("spoken words");
+    } finally {
+      listen.mockRestore();
+    }
+  },
+);
 
 it.each([false, true])(
   "keeps an existing binding when dictation fails (throws=%s)",

@@ -191,13 +191,31 @@ const ComposerBody = memo(function Composer({
     transcribe: dictationTranscribe,
     disabled: disabled || onCall || !phoneCallsEnabled,
     onText: (text) => {
-      // A refused send keeps the words: they land in the field to edit or retry.
-      void onSend(text, [], newClientId())
+      // A refused send keeps the words to edit or retry: in the field while this
+      // chat stays open, else in the saved draft, so leaving during the request
+      // cannot lose them. A single untouched dictation retries with its nonce.
+      const clientNonce = newClientId();
+      const key = draftKeyRef.current;
+      const fieldEmptyAtSend = compositionRef.current.text.length === 0;
+      const savedAtSend = readComposerDraft(key);
+      const restore = () => {
+        if (mountedRef.current && draftKeyRef.current === key) {
+          const fieldStillEmpty = compositionRef.current.text.length === 0;
+          appendDictation(text);
+          if (fieldEmptyAtSend && fieldStillEmpty) retryNonce.current = clientNonce;
+          return;
+        }
+        // The chat closed before the answer: keep the words in the saved draft
+        // unless it moved on after this send began.
+        if (readComposerDraft(key) === savedAtSend)
+          writeComposerDraft(key, savedAtSend ? `${savedAtSend} ${text}` : text);
+      };
+      void onSend(text, [], clientNonce)
         .then((accepted) => {
-          if (accepted === false) appendDictation(text);
+          if (accepted === false) restore();
           else recordMessageSent();
         })
-        .catch(() => appendDictation(text));
+        .catch(() => restore());
     },
   });
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
