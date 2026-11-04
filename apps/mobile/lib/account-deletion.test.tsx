@@ -29,7 +29,23 @@ vi.mock("react-native", () => {
     StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
     View: view,
     KeyboardAvoidingView: view,
-    ScrollView: view,
+    ScrollView: ({
+      children,
+      style,
+      contentContainerStyle,
+    }: Props & { contentContainerStyle?: unknown }) =>
+      createElement(
+        "div",
+        { style },
+        createElement(
+          "div",
+          {
+            "data-testid": "sheet-content",
+            style: Object.assign({}, ...[contentContainerStyle].flat()),
+          },
+          children,
+        ),
+      ),
     Text: ({ children }: Props) => createElement("span", null, children),
     Pressable: ({ children, accessibilityLabel, onPress, disabled }: Props) =>
       createElement(
@@ -104,7 +120,10 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./auth-routing", () => ({ replaceWithSignIn: vi.fn() }));
 vi.mock("./delete-account-prompt", () => ({ promptAccountDeletion: vi.fn(() => false) }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
+vi.mock("./i18n", () => ({
+  t: (text: string) => text,
+  useI18n: () => ({ t: (text: string) => text }),
+}));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 34 }) }));
 vi.mock("./returning-user", () => ({ forgetSignedIn: vi.fn() }));
 vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
@@ -168,8 +187,11 @@ describe("passwordless account deletion", () => {
     // The sheet can be swiped away while nothing is in flight; the swipe goes through close().
     expect(sheet.dataset.swipe).toBe("true");
     expect(sheet.dataset.transparent).toBe("false");
-    // The actions stay clear of the home indicator.
-    expect((sheet.firstElementChild as HTMLElement).style.paddingBottom).toBe("34px");
+    // The actions stay clear of the home indicator: the inset sits on the content, because the
+    // keyboard view replaces its own bottom padding.
+    const content = container.querySelector<HTMLElement>("[data-testid='sheet-content']")!;
+    expect(content.style.paddingBottom).toBe("52px");
+    expect((sheet.firstElementChild as HTMLElement).style.paddingBottom).toBe("");
     expect(button("Delete").dataset.nativeAction).toBe("destructive");
     expect(button("Delete").disabled).toBe(true);
     expect(button("Cancel").dataset.nativeAction).toBe("plain");
@@ -201,6 +223,23 @@ describe("passwordless account deletion", () => {
     expect(deleteAccount).toHaveBeenCalledExactlyOnceWith(undefined, undefined);
     expect(forgetSignedIn).toHaveBeenCalledOnce();
     expect(replaceWithSignIn).toHaveBeenCalledExactlyOnceWith("/sign-in");
+  });
+
+  it("cannot be swiped away while a deletion is in flight", async () => {
+    vi.mocked(continueWithSso).mockResolvedValue(true);
+    let fail!: (error: Error) => void;
+    vi.mocked(deleteAccount).mockReturnValue(
+      new Promise((_, reject) => {
+        fail = reject;
+      }) as never,
+    );
+    await open();
+    await click("Sign in again");
+    vi.mocked(fetchAccountSecurity).mockResolvedValue({ ...passwordless, freshOidcAuth: true });
+    await click("Delete");
+    expect(container.querySelector("section")!.dataset.swipe).toBe("false");
+    await act(async () => fail(new Error("offline")));
+    expect(container.querySelector("section")!.dataset.swipe).toBe("true");
   });
 
   it("keeps the emailed code flow available in the sheet", async () => {

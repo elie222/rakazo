@@ -140,12 +140,7 @@ export function useAccountDeletion({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        // Page sheets keep their actions clear of the home indicator.
-        style={
-          Platform.OS === "ios"
-            ? { ...styles.sheet, paddingBottom: insets.bottom }
-            : styles.dialogOverlay
-        }
+        style={Platform.OS === "ios" ? styles.sheet : styles.dialogOverlay}
       >
         {Platform.OS !== "ios" ? (
           <Pressable
@@ -156,7 +151,13 @@ export function useAccountDeletion({
         ) : null}
         <ScrollView
           bounces={false}
-          contentContainerStyle={styles.dialog}
+          // Page sheets keep their actions clear of the home indicator. The keyboard view owns
+          // its own bottom padding, so the inset goes on the content instead.
+          contentContainerStyle={
+            Platform.OS === "ios"
+              ? [styles.dialog, { paddingBottom: DIALOG_PADDING + insets.bottom }]
+              : styles.dialog
+          }
           keyboardShouldPersistTaps="handled"
           style={Platform.OS === "ios" ? styles.sheetScroll : styles.dialogScroll}
         >
@@ -242,6 +243,8 @@ export function useAccountDeletion({
   return { request, run, pending, error: open ? null : error, dialog };
 }
 
+const DIALOG_PADDING = 18;
+
 function createStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
@@ -267,7 +270,7 @@ function createStyles() {
       backgroundColor: native.page,
     },
     dialog: {
-      padding: 18,
+      padding: DIALOG_PADDING,
       gap: 12,
     },
     dialogTitle: {
