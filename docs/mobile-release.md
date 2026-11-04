@@ -60,6 +60,18 @@ It needs these repository secrets:
 Re-running it for a version that is already in review leaves that submission
 alone.
 
+## Google Play
+
+`release-mobile` also builds the production App Bundle and publishes it to Google
+Play's production track as a full rollout. Run `release-android-play` on its own
+to publish without iOS, or give it a finished EAS production build ID to publish
+that build instead of building a new one.
+
+It needs one more repository secret, `GOOGLE_PLAY_SERVICE_ACCOUNT_KEY`: the JSON
+key of a Google Cloud service account that Play Console has invited to the app
+with permission to release to production. Play accepts the first upload of a
+new app only from Play Console, so this works once the app has a release there.
+
 ## Android APK
 
 Android users should install [Rakazo from Google Play](https://play.google.com/store/apps/details?id=com.rakazo.app).
