@@ -19,6 +19,8 @@ export const COMPUTER_MODE_TOOLS = new Set([
   "open_path",
   "launch_app",
   "request_takeover",
+  "user_computer_observe",
+  "user_computer_act",
 ]);
 
 export function computerSelection(config: AgentRunModel): ComputerModeSelection {

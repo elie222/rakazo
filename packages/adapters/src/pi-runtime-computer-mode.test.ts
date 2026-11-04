@@ -397,6 +397,26 @@ it("cancellation in computer mode prevents further effects and model calls", asy
   expect(input.executeTool).toHaveBeenCalledTimes(1);
 });
 
+it("runs the user's own screen tools only in computer mode", async () => {
+  const input = request();
+  input.tools = builtinAgentTools.filter((t) => t.name === "user_computer_observe");
+  script([
+    ["use_tool", { name: "user_computer_observe", arguments: { app: "Notes" } }],
+    ["enter_computer_mode", { goal: "Look at Notes" }],
+    ["use_tool", { name: "user_computer_observe", arguments: { app: "Notes" } }],
+    ["leave_computer_mode", { summary: "Done" }],
+    [undefined],
+  ]);
+  await run(input);
+  expect(input.executeTool).toHaveBeenCalledTimes(1);
+  expect(fake.stream.mock.calls.map((c) => c[0].id)).toEqual([
+    "main",
+    "main",
+    "computer",
+    "computer",
+    "main",
+  ]);
+});
 it("switches main -> computer -> main before any GUI effect, preserving namespace and effort", async () => {
   const input = request();
   script([
