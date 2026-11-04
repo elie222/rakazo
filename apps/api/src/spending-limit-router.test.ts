@@ -16,6 +16,8 @@ const actor = {
 
 function spendingDeps({ card = false } = {}) {
   let limit: Record<string, unknown> | null = null;
+  // The fake runs a transaction on itself.
+  let self: unknown;
   const prisma = {
     spendingLimit: {
       findUnique: vi.fn(async () => limit),
@@ -35,7 +37,10 @@ function spendingDeps({ card = false } = {}) {
     user: { findUnique: vi.fn(async () => ({ timezone: "Europe/London" })) },
     vaultCredential: { findFirst: vi.fn(async () => (card ? { id: "card" } : null)) },
     paymentWallet: { findFirst: vi.fn(async () => null) },
+    $queryRaw: vi.fn(async () => []),
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(self)),
   };
+  self = prisma;
   const deps = {
     prisma: prisma as unknown as PrismaClient,
     env: {

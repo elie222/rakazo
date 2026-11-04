@@ -30,20 +30,20 @@ function pagePayment(run: Run, purchase: PurchaseApproval, operationKey: string)
 }
 
 /**
- * The call types a card or pay token the wallet issued for this purchase: the wallet purchase was
- * already counted, so its click is not counted again.
+ * The call pays only with a card or pay token the wallet issued for this purchase, which was counted
+ * when it was requested, so its click is not counted again. A call that also types a saved card may
+ * be paying with that card, so it counts.
  */
 export function paysWithWallet(args: Record<string, unknown>): boolean {
-  const actions = Array.isArray(args.actions) ? (args.actions as unknown[]) : [];
-  return actions.some((raw) => {
-    const step = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-    return (
-      step.kind === "fill_pay_token" ||
-      (step.kind === "fill_card" &&
-        typeof step.purchase === "string" &&
-        step.purchase.trim() !== "")
-    );
-  });
+  const steps = (Array.isArray(args.actions) ? (args.actions as unknown[]) : []).map(
+    (raw) => (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>,
+  );
+  const named = (value: unknown) => typeof value === "string" && value.trim() !== "";
+  const wallet = steps.some(
+    (step) => step.kind === "fill_pay_token" || (step.kind === "fill_card" && named(step.purchase)),
+  );
+  const saved = steps.some((step) => step.kind === "fill_card" && named(step.card));
+  return wallet && !saved;
 }
 
 /** Refused before the card is shown, so the user isn't asked for a payment that can't go through. */

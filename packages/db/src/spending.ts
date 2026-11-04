@@ -103,9 +103,7 @@ export async function recordPayment(
   now = new Date(),
 ): Promise<PaymentRefusal | null> {
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw(Prisma.sql`
-      SELECT pg_advisory_xact_lock(hashtextextended(${`spending:${input.userId}`}, 0))::text AS "lock"
-    `);
+    await lockSpending(tx, input.userId);
     const existing = await tx.payment.findUnique({
       where: { operationKey: input.operationKey },
       select: { releasedAt: true },
@@ -186,22 +184,34 @@ async function canPay(
  * starts counting again when it is set, or switched to from one that resets.
  */
 export async function saveSpendingLimit(
-  prisma: Pick<PrismaClient, "spendingLimit">,
+  prisma: Pick<PrismaClient, "$transaction">,
   userId: string,
   limit: SpendingLimit | null,
 ): Promise<void> {
-  if (!limit) {
-    await prisma.spendingLimit.deleteMany({ where: { userId } });
-    return;
-  }
-  const current = await prisma.spendingLimit.findUnique({
-    where: { userId },
-    select: { period: true },
+  // Under the payments' lock, so a payment checked against the old limit is recorded before the new
+  // one is saved, and every later payment sees the new one.
+  await prisma.$transaction(async (tx) => {
+    await lockSpending(tx, userId);
+    if (!limit) {
+      await tx.spendingLimit.deleteMany({ where: { userId } });
+      return;
+    }
+    const current = await tx.spendingLimit.findUnique({
+      where: { userId },
+      select: { period: true },
+    });
+    const restart = limit.period === "none" && current?.period !== "none";
+    await tx.spendingLimit.upsert({
+      where: { userId },
+      create: { userId, ...limit },
+      update: { ...limit, ...(restart ? { startsAt: new Date() } : {}) },
+    });
   });
-  const restart = limit.period === "none" && current?.period !== "none";
-  await prisma.spendingLimit.upsert({
-    where: { userId },
-    create: { userId, ...limit },
-    update: { ...limit, ...(restart ? { startsAt: new Date() } : {}) },
-  });
+}
+
+/** One user's payments and limit changes are decided one at a time. */
+async function lockSpending(tx: Pick<Prisma.TransactionClient, "$queryRaw">, userId: string) {
+  await tx.$queryRaw(Prisma.sql`
+    SELECT pg_advisory_xact_lock(hashtextextended(${`spending:${userId}`}, 0))::text AS "lock"
+  `);
 }

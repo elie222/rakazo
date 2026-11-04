@@ -3874,9 +3874,26 @@ describe("a click that completes a purchase on a website", () => {
       f.effects[0]!.status = "approved";
       f.setCalls([payCall(undefined, "call-2")]);
       await f.run();
-      expect(f.results.at(-1)).toEqual({ error: over });
+      expect(f.results.at(-1)).toMatchObject({ error: over, uncertain: false });
       expect(page.acts).toEqual([]);
       expect(f.spending.payments).toHaveLength(1);
+    });
+
+    it("presses nothing when the limit can't be checked", async () => {
+      const page = pageBrowser();
+      const f = fixture({ builtin: true, browser: page.provider, spendingLimit: limit });
+      f.setCalls([payCall()]);
+      await f.run();
+      f.effects[0]!.status = "approved";
+      f.prisma.payment.upsert = async () => {
+        throw new Error("connection lost");
+      };
+      f.setCalls([payCall(undefined, "call-2")]);
+      await f.run();
+      expect(f.results.at(-1)).toMatchObject({
+        error: "The user's spending limit couldn't be checked, so nothing was paid. Try again.",
+      });
+      expect(page.acts).toEqual([]);
     });
 
     it.each([

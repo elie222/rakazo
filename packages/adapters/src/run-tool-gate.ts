@@ -53,6 +53,7 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import { CATALOG_LOAD, CATALOG_SEARCH } from "./lazy-tool-catalog.js";
 import { findConnectedModelCredential } from "./model-selection.js";
 import { paidRequestEffect } from "./paid-request.js";
+import type { PurchaseApproval } from "./purchase-gate.js";
 import { PURCHASE_CHECKED_TOOLS, purchaseApprovalOf } from "./purchase-gate.js";
 import { autoReviewCheckerProvider } from "./run-auto-review.js";
 import type { RunContext, RunTrust } from "./run-context.js";
@@ -79,7 +80,7 @@ import { callMediaTool } from "./run-tools-files.js";
 import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer.js";
 import { connectorTrustKeys } from "./run-trust.js";
 import { watchFromTool } from "./schedule-tools.js";
-import { pagePaymentPrecheck, paysWithWallet, recordPagePayment } from "./spending-gate.js";
+import { pagePaymentPrecheck, paysWithWallet } from "./spending-gate.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
 
@@ -103,6 +104,11 @@ export interface ToolCall {
   readonly nextApprovedTool: string | undefined;
   /** A gated call that policy or the reviewer allowed without asking. */
   readonly bypassApproval: boolean;
+  /**
+   * The approved payment this call presses, counted against the user's spending limit just before
+   * the press: the handler records it then, so a call that stops earlier never uses the room.
+   */
+  readonly spend: PurchaseApproval | undefined;
   /** This call moved its effect to executing. request_secret can hand the claim back. */
   claimedEffect: boolean;
   /** Store the result on the effect; false when it could not be stored. */
@@ -367,15 +373,16 @@ export async function gateToolCall(
     };
   }
   // A pay click counts against the user's spending limit, unless it pays with a wallet purchase,
-  // which was counted when it was requested. One the limit refuses is refused before the card.
+  // which was counted when it was requested. One the limit refuses is refused before the card; the
+  // handler counts it for good just before the press.
   const spends = purchase && !paysWithWallet(args) ? purchase : undefined;
-  const spender = {
-    userId: run.userId,
-    spaceId: run.spaceId,
-    botId: ctx.bot.id,
-    threadId: ctx.thread.id,
-  };
   if (spends && nextApprovedTool !== name) {
+    const spender = {
+      userId: run.userId,
+      spaceId: run.spaceId,
+      botId: ctx.bot.id,
+      threadId: ctx.thread.id,
+    };
     const refused = await pagePaymentPrecheck(deps.prisma, spender, spends);
     if (refused) {
       await auditToolCall(ctx, name, "denied", { reason: "spending_limit" });
@@ -537,6 +544,7 @@ export async function gateToolCall(
     applied,
     nextApprovedTool,
     bypassApproval: gateDecision === "allow" && gated,
+    spend: spends,
   });
   const card = { reviewReason, summary: request.fleetSummary, batch: connectorTool?.batch };
 
@@ -607,15 +615,6 @@ export async function gateToolCall(
   } else if (call.bypassApproval && applied) {
     const early = await call.claimOrReturn("intended");
     if (early !== undefined) return { result: early };
-  }
-  // Counted as the approved click is about to be pressed: another payment may have used the room
-  // while the card waited.
-  if (spends) {
-    const refused = await recordPagePayment(deps.prisma, spender, spends, effectKey);
-    if (refused) {
-      await auditToolCall(ctx, name, "denied", { reason: "spending_limit" });
-      return { result: await call.finish({ error: refused }) };
-    }
   }
   // Past the gate: this destination is now one the run was given. A search result's exact
   // URL trusts only that URL, never the rest of its site.

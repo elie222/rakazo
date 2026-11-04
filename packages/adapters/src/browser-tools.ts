@@ -168,7 +168,12 @@ export async function browserActFromTool(
     uploadRoots?: string[];
     /** The purchase the user approved for this call; its clicks alone may complete it. */
     approvedPurchase?: PurchaseApproval;
-    /** Called when the approved purchase was clearly not pressed, so it is not counted as spent. */
+    /**
+     * Counts the approved purchase against the spending limit just before the page is asked; returns
+     * why it may not go ahead.
+     */
+    countPurchase?: () => Promise<string | undefined>;
+    /** Called when the counted purchase was clearly not pressed, so it no longer counts. */
     releasePurchase?: () => Promise<void>;
   } = {},
 ) {
@@ -302,8 +307,13 @@ export async function browserActFromTool(
         actions[index] = { ...step, approved: true, site, label, amount };
       }
     }
+    if (approved) {
+      const refused = await options.countPurchase?.();
+      if (refused) return { ...refusedInput(refused), completed: 0 };
+    }
     // Taken just before the page is asked, by one call only, so two fills never both type it.
     if (codeTyped && !(await codeTyped.claim())) {
+      if (approved) await options.releasePurchase?.();
       return {
         ...refusedInput("No code is waiting. Use request_secret with oneTimeCode."),
         completed: 0,
@@ -320,11 +330,7 @@ export async function browserActFromTool(
       result.uncertain === false &&
       result.completed <= Math.min(...approvedSteps)
     ) {
-      await options.releasePurchase?.().catch((error: unknown) =>
-        getLogger().warn("unpaid purchase could not be released", {
-          errorName: error instanceof Error ? error.name : typeof error,
-        }),
-      );
+      await options.releasePurchase?.();
     }
     // A code the page took is spent. One it clearly refused goes back, so a fill on the right page
     // can use it; any doubt about the outcome keeps it spent, never typed twice.
@@ -341,11 +347,8 @@ export async function browserActFromTool(
     );
   } catch (error) {
     context.signal.throwIfAborted();
-    if (error instanceof BrowserToolInputError) {
-      // Refused before the page was asked: nothing was pressed or paid.
-      if (options.approvedPurchase) await options.releasePurchase?.().catch(() => undefined);
+    if (error instanceof BrowserToolInputError)
       return { ...refusedInput(error.message), completed: 0 };
-    }
     return formatBrowserResult(
       {
         ok: false,

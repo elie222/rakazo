@@ -269,7 +269,10 @@ export async function createPurchase(
       ),
     );
   } catch (error) {
-    await releasePayment(deps.prisma, context.operationId);
+    // Only a wallet that turned the request down is known to hold nothing for it; after any other
+    // failure the purchase may exist under its idempotency key, so it keeps counting.
+    if (error instanceof PaymentWalletRequestRejected || error instanceof PaymentWalletDisconnected)
+      await releasePayment(deps.prisma, context.operationId);
     return providerError(error);
   }
   await releaseUnpaidPurchase(deps.prisma, context.operationId, snapshot.status);

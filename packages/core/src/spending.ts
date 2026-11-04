@@ -1,8 +1,9 @@
 import type { SpendingCurrency, SpendingPeriod } from "@rakazo/contracts";
 import { wallClock, zonedDateTime } from "./cron.js";
 
-// A symbol another currency shares is read as the one listed: every other dollar or pound is worth
-// less, so a page in one of them is over-counted against the limit, never under-counted.
+// A symbol another currency shares is read as the one listed. Nearly every other dollar or pound is
+// worth less, so a page in one is over-counted; the Cayman Islands dollar, worth a little more, is the
+// exception, and the page browser's amount drops the "CI" before a bare "$".
 const CURRENCY_MARKS: Array<[RegExp, SpendingCurrency]> = [
   [/\$|\bUSD\b/i, "usd"],
   [/€|\bEUR\b/i, "eur"],
@@ -11,13 +12,14 @@ const CURRENCY_MARKS: Array<[RegExp, SpendingCurrency]> = [
 ];
 // The page browser's own number pattern: thousands may be grouped with spaces, as in "1 234,56".
 const NUMBER = /\d(?:[\d.,]|[ \u00a0\u202f](?=\d{3}))*/g;
-const MAX_AMOUNT = 1_000_000_000_000;
+// The payments table stores amounts as a 32-bit integer.
+const MAX_AMOUNT = 2_147_483_647;
 
 /**
  * An amount a checkout page shows, such as "$1,234.56", "1 234,56 €" or "₪50", in minor units and
  * its currency. Null when it names no currency a limit can be set in, more than one, or no single
- * number. A separator followed by one or two digits is the decimal point; any other separator
- * groups thousands, so an ambiguous "$1.234" reads as 1234 dollars, the larger reading.
+ * number, or a number written in no usual way. An ambiguous "$1.234" reads as 1234 dollars, the
+ * larger reading.
  */
 export function parsePageAmount(
   text: string,
@@ -33,14 +35,20 @@ export function parsePageAmount(
   return amount === null ? null : { amount, currency: [...currencies][0]! };
 }
 
-// A separator followed by one or two digits is the decimal point; any other separator groups thousands.
+// Whole units grouped in threes by one separator ("1,234,567", "1 234"), then an optional decimal part of
+// one or two digits after the other separator ("1.234,56"); or plain digits with an optional decimal part.
+const GROUPED = /^(\d{1,3}(?:([.,\s])\d{3})(?:\2\d{3})*)(?:([.,])(\d{1,2}))?$/;
+const PLAIN = /^(\d+)(?:[.,](\d{1,2}))?$/;
+
 function minorUnits(number: string): number | null {
-  const digits = number.replace(/[\s\u00a0\u202f]/g, "").replace(/[.,]+$/, "");
-  const separator = Math.max(digits.lastIndexOf("."), digits.lastIndexOf(","));
-  const fraction = separator >= 0 ? digits.slice(separator + 1) : "";
-  const decimal = separator >= 0 && fraction.length >= 1 && fraction.length <= 2;
-  const whole = (decimal ? digits.slice(0, separator) : digits).replace(/[.,]/g, "");
-  const amount = Number(whole || "0") * 100 + (decimal ? Number(fraction.padEnd(2, "0")) : 0);
+  const text = number.replace(/[  ]/g, " ").trim().replace(/[.,]$/, "");
+  const grouped = GROUPED.exec(text);
+  const plain = grouped ? null : PLAIN.exec(text);
+  if (grouped && grouped[3] === grouped[2]) return null;
+  const whole = grouped ? grouped[1]!.replace(/[.,\s]/g, "") : plain?.[1];
+  const fraction = grouped ? grouped[4] : plain?.[2];
+  if (whole === undefined) return null;
+  const amount = Number(whole) * 100 + Number((fraction ?? "").padEnd(2, "0"));
   return Number.isSafeInteger(amount) && amount <= MAX_AMOUNT ? amount : null;
 }
 

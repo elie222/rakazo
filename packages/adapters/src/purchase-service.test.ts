@@ -191,6 +191,18 @@ describe("request_purchase with a spending limit", () => {
     expect(env.wallet.created).toHaveLength(0);
   });
 
+  it("keeps counting a purchase whose request failed without an answer", async () => {
+    const env = setup();
+    env.spending.limit = { ...limit };
+    env.wallet.createPurchase = async () => {
+      throw new Error("socket hang up");
+    };
+    await expect(env.call("request_purchase", request)).rejects.toThrow("socket hang up");
+    expect(env.spending.payments).toEqual([
+      expect.objectContaining({ operationKey: "op-1", releasedAt: null }),
+    ]);
+  });
+
   it("stops counting a purchase the wallet refused or the owner denied", async () => {
     const env = setup();
     env.spending.limit = { ...limit };

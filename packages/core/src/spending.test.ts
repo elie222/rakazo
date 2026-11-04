@@ -28,12 +28,22 @@ describe("parsePageAmount", () => {
     expect(parsePageAmount(text)).toEqual({ amount, currency });
   });
 
-  it.each(["", "Total", "¥1,200", "12.00", "$1 or €2", "$5 and $6", "₹500", "$"])(
-    "refuses %j",
-    (text) => {
-      expect(parsePageAmount(text)).toBeNull();
-    },
-  );
+  it.each([
+    "",
+    "Total",
+    "¥1,200",
+    "12.00",
+    "$1 or €2",
+    "$5 and $6",
+    "₹500",
+    "$",
+    "$1,2,3",
+    "$1.2345",
+    "$1,234,56",
+    "$30,000,000",
+  ])("refuses %j", (text) => {
+    expect(parsePageAmount(text)).toBeNull();
+  });
 });
 
 describe("spendingPeriodStart", () => {
@@ -98,7 +108,10 @@ describe("parseLimitInput", () => {
     expect(parseLimitInput(text)).toBe(amount);
   });
 
-  it.each(["", "0", "-5", "abc", "$20", "1e3", "1000001"])("refuses %j", (text) => {
-    expect(parseLimitInput(text)).toBeNull();
-  });
+  it.each(["", "0", "-5", "abc", "$20", "1e3", "1000001", "1,2,3", "1.2345"])(
+    "refuses %j",
+    (text) => {
+      expect(parseLimitInput(text)).toBeNull();
+    },
+  );
 });

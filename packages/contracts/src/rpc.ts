@@ -1439,7 +1439,6 @@ export const appContract = {
   runs: {
     list: oc.input(z.object({ filter: z.enum(["active", "recent"]) })).output(RunsListOutputSchema),
   },
-  /** The signed-in user's wallet; absent when the deployment offers none. */
   /** The account's spending limit for payments its bots make. */
   spendingLimit: {
     get: oc.output(SpendingStatusSchema),
@@ -1448,6 +1447,7 @@ export const appContract = {
       .input(z.object({ limit: SpendingLimitSchema.nullable() }).strict())
       .output(SpendingStatusSchema),
   },
+  /** The signed-in user's wallet; absent when the deployment offers none. */
   paymentWallet: {
     status: oc.output(PaymentWalletStatusSchema),
     /** Starts a sign-in the user finishes with the provider; `status` then reports it. */
