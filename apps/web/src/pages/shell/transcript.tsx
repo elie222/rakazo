@@ -236,6 +236,16 @@ export const Transcript = memo(function Transcript({
   } | null>(null);
   const selectingWithMouse = useRef(false);
 
+  // A streaming edit can replace the selected nodes, which collapses the range
+  // without firing selectionchange; the pill must not keep its stale placement.
+  useLayoutEffect(() => {
+    setQuoteDraft((prev) =>
+      prev && (prev.range.collapsed || !document.contains(prev.range.commonAncestorContainer))
+        ? null
+        : prev,
+    );
+  }, [messages]);
+
   const evaluateSelection = useCallback(() => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
