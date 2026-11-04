@@ -1225,14 +1225,20 @@ export class McpOAuthBroker {
     // A disconnect raised the stored generation after this sign-in began, so its tokens
     // cannot connect the server; reject the completion instead of reporting it, however
     // the exchange itself went.
-    const generation = await this.prisma.$transaction(async (tx) => {
-      await lockMaterial(tx, pending.serverId);
-      const snapshot = await this.snapshot(tx, pending.serverId, input);
-      const material = snapshot.secret
-        ? await this.read(snapshot.secret.ciphertext, snapshot.secret.id)
-        : {};
-      return material.oauthGeneration ?? 0;
-    });
+    // The secret read can be a remote call, so the lock gets refresh's limits, not the
+    // default transaction timeout.
+    const generation = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT set_config('lock_timeout', ${`${REFRESH_LOCK_WAIT_MS}ms`}, true)`;
+        await lockMaterial(tx, pending.serverId);
+        const snapshot = await this.snapshot(tx, pending.serverId, input);
+        const material = snapshot.secret
+          ? await this.read(snapshot.secret.ciphertext, snapshot.secret.id)
+          : {};
+        return material.oauthGeneration ?? 0;
+      },
+      { maxWait: REFRESH_LOCK_WAIT_MS, timeout: REFRESH_TRANSACTION_MS },
+    );
     if (generation !== pending.generation)
       throw new Error("MCP OAuth session is invalid or expired");
     if (!(await pending.provider.tokens())) throw new Error("MCP OAuth authorization failed");
