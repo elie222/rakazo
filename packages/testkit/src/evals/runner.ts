@@ -7,7 +7,7 @@ import {
   messageBot,
 } from "@rakazo/adapters";
 import type { MessageBlock, ModelConnectInput, RunStatus } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, isTerminal } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, attachmentComputerPath, isTerminal } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import { createThreadEvents } from "@rakazo/db";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
@@ -105,6 +105,7 @@ export async function runTrial(
   // A group case talks to the subject inside a group thread; every other case uses its direct chat.
   let group: { id: string; threadId: string; memberIds: Map<string, string> } | undefined;
   let seededThreadId: string | undefined;
+  const seededPaths: Record<string, string> = {};
   const runIds: string[] = [];
   const runSteps = new Map<string, number>();
   const setupRunIds = new Set<string>();
@@ -318,6 +319,7 @@ export async function runTrial(
             contentBase64: Buffer.from(m.file.content).toString("base64"),
           },
         );
+        seededPaths[artifact.name] = attachmentComputerPath(artifact.id, artifact.mimeType);
         files.set(m.seq, {
           kind: "file",
           artifactId: artifact.id,
@@ -870,6 +872,17 @@ export async function runTrial(
         files[path] = null;
       }
     }
+    const seededAttachments: NonNullable<Evidence["seededAttachments"]> = {};
+    for (const [name, path] of Object.entries(seededPaths)) {
+      const content = await rpc<{ content: string }>(handles.app, cookie, "computer/readFile", {
+        botId,
+        path,
+      }).then(
+        (file) => file.content,
+        () => null,
+      );
+      seededAttachments[name] = { path, content };
+    }
     const memories = await rpc<Array<{ content: string }>>(handles.app, cookie, "memory/list", {
       botId,
     });
@@ -892,6 +905,7 @@ export async function runTrial(
       routineRuns,
       peerExchanges,
       files,
+      ...(Object.keys(seededAttachments).length ? { seededAttachments } : {}),
       records: services.records,
       notes: services.notes,
       calls: services.calls,

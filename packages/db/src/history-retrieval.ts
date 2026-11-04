@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import type { HistoryReadInput, HistorySearchInput } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_COUNT, HistoryQueriesSchema } from "@rakazo/contracts";
+import {
+  ATTACHMENT_MAX_COUNT,
+  HISTORY_ATTACHMENTS_PER_RESPONSE,
+  HistoryQueriesSchema,
+} from "@rakazo/contracts";
 import { attachmentComputerPath, shortenedTextLength, textBoundary } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
@@ -70,6 +74,19 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
     ref.nextAttachmentOffset = (ref.attachmentOffset ?? 0) + files.length;
     if (!files.length) delete ref.attachments;
   };
+  // The run copies at most this many listed files at once, so list no more than that.
+  let listed = 0;
+  for (const ref of messages) {
+    const files = ref.attachments;
+    if (!files) continue;
+    const room = Math.max(0, HISTORY_ATTACHMENTS_PER_RESPONSE - listed);
+    if (files.length > room) {
+      files.length = room;
+      ref.nextAttachmentOffset = (ref.attachmentOffset ?? 0) + room;
+      if (!room) delete ref.attachments;
+    }
+    listed += files.length;
+  }
   while (Buffer.byteLength(JSON.stringify(response), "utf8") > MAX_RESPONSE_BYTES) {
     // A message with more files than one upload carries gives up files before any text shrinks.
     const fullest = crowded();

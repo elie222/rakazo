@@ -13,6 +13,7 @@ import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
   attachmentSizeLabel,
+  HISTORY_ATTACHMENTS_PER_RESPONSE,
 } from "@rakazo/contracts";
 import {
   attachmentComputerPath,
@@ -253,8 +254,8 @@ export async function materializeRecentThreadFiles(
   );
 }
 
-/** Earlier files waiting to be copied at once; older listings give way to newer ones. */
-export const EARLIER_FILES_PENDING = 20;
+/** Earlier files waiting to be copied at once: one full history response; older listings give way. */
+export const EARLIER_FILES_PENDING = HISTORY_ATTACHMENTS_PER_RESPONSE;
 
 /**
  * Files history tools listed since the last computer tool, newest kept. A file copied to the

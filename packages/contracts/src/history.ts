@@ -47,6 +47,11 @@ export const HistorySearchInputSchema = z
     (input) => (input.query !== undefined) !== (input.queries !== undefined),
     "Provide exactly one of query or queries",
   );
+/**
+ * Files one history response lists. The run queues that many for its computer, so every listed
+ * path is copied; the rest page through nextAttachmentOffset.
+ */
+export const HISTORY_ATTACHMENTS_PER_RESPONSE = 20;
 export const HistoryReadInputSchema = z.object({
   messageId: Id,
   threadId: Id.optional(),

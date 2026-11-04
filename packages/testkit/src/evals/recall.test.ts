@@ -9,10 +9,17 @@ import {
 } from "./recall.js";
 
 const scenario = (id: string) => RECALL_EVAL_CASES.find((c) => c.id === `recall-${id}`)!;
-function evidence(toolCalls: Evidence["toolCalls"], text = ""): Evidence {
+const LEASE_PATH = "attachments/abc123.md";
+const onComputer = { "lisbon-office-lease.md": { path: LEASE_PATH, content: "Notice period" } };
+function evidence(
+  toolCalls: Evidence["toolCalls"],
+  text = "",
+  seededAttachments: Evidence["seededAttachments"] = onComputer,
+): Evidence {
   return {
     text,
     files: {},
+    seededAttachments,
     records: [],
     notes: [],
     calls: [],
@@ -61,6 +68,26 @@ describe("recall outcome grading", () => {
     ]);
     // Work from an earlier step does not count for the question being graded.
     expect(failed("old-file-captioned", evidence([{ ...read, step: 0 }, search]))).toEqual([
+      "read-earlier-file",
+    ]);
+    expect(
+      failed(
+        "old-file-captioned",
+        evidence([search, { ...read, args: { path: `./${LEASE_PATH}` } }]),
+      ),
+    ).toEqual([]);
+    // Another file, another tool, or a lease that never reached the computer does not count.
+    expect(
+      failed(
+        "old-file-captioned",
+        evidence([search, { ...read, args: { path: "attachments/other.md" } }]),
+      ),
+    ).toEqual(["read-earlier-file"]);
+    expect(
+      failed("old-file-captioned", evidence([search, { ...read, name: "list_files" }])),
+    ).toEqual(["read-earlier-file"]);
+    const missing = { "lisbon-office-lease.md": { path: LEASE_PATH, content: null } };
+    expect(failed("old-file-captioned", evidence([search, read], "", missing))).toEqual([
       "read-earlier-file",
     ]);
   });

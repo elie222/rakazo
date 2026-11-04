@@ -369,6 +369,8 @@ postgres("history retrieval (PostgreSQL)", () => {
       });
       expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThanOrEqual(10_000);
       const [message] = read.messages as Page[];
+      // Never more files than the run copies at once, so every listed path is copied.
+      expect(message!.attachments?.length ?? 0).toBeLessThanOrEqual(20);
       seen.push(...(message!.attachments ?? []).map((file) => file.artifactId));
       attachmentOffset = message!.nextAttachmentOffset;
       if (attachmentOffset === undefined) break;
