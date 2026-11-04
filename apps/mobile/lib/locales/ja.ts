@@ -214,6 +214,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Couldn't refresh — showing the last loaded messages.":
     "更新できませんでした。最後に読み込んだメッセージを表示しています。",
   "Too many unsent messages": "未送信のメッセージが多すぎます",
+  "Unsent messages": "未送信のメッセージ",
   "Not sent": "未送信",
   "Not sent. Tap to retry": "未送信。タップして再試行",
   Photo: "写真",
@@ -732,6 +733,8 @@ export const JA_MESSAGES: Record<string, string> = {
   Restore: "復元",
   "Scheduled tasks": "スケジュール済みのタスク",
   "Sign out": "ログアウト",
+  "Sign out anyway": "それでもログアウト",
+  "Signing out deletes unsent messages.": "ログアウトすると未送信のメッセージが削除されます。",
   "Stream replies": "返信をストリーミング",
   "Load web images automatically": "Web画像を自動で読み込む",
   System: "システム",
@@ -1066,6 +1069,9 @@ export const JA_MESSAGES: Record<string, string> = {
   "Start plan": "プランを開始",
   "Switch to yearly": "年払いに切り替え",
   "Switch to yearly?": "年払いに切り替えますか？",
+  "Switch anyway": "それでも切り替える",
+  "Switching servers deletes unsent messages.":
+    "サーバーを切り替えると未送信のメッセージが削除されます。",
   "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
     "{vcpus} vCPU、{memoryGb} GB、月 {hours} 時間のコンピューター",
   "Switch to {name}?": "{name} に切り替えますか？",

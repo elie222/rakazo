@@ -47,6 +47,7 @@ import { translucentColor } from "../lib/color";
 import { dateLocaleForUi, useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { organizationSwitchActions, useOrganizations } from "../lib/organizations";
+import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
 import { errorText } from "../lib/user-error";
 
 type Amount = (typeof MODEL_CREDIT_AMOUNTS)[number];
@@ -158,6 +159,7 @@ export default function Paywall() {
   }
 
   async function leave() {
+    if (!(await confirmUnsentSendLoss("sign-out"))) return;
     try {
       await signOut();
       replaceWithSignIn();

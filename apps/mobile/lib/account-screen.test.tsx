@@ -5,12 +5,14 @@ import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
+import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
-import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "./api";
+import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode, signOut } from "./api";
 import { replaceWithSignIn } from "./auth-routing";
 import { promptAccountDeletion } from "./delete-account-prompt";
 import { registerSettingsSheet } from "./settings-sheet";
+import { hasUnsentSends } from "./thread-feedback";
 
 type Pressed = {
   children?: ReactNode;
@@ -41,6 +43,11 @@ const { element, account } = vi.hoisted(() => ({
 }));
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+// The unsent-message warning reads this without a screen subscription; tests flip it per case.
+vi.mock("./thread-feedback", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./thread-feedback")>()),
+  hasUnsentSends: vi.fn(() => false),
+}));
 vi.mock("expo-notifications", () => ({
   getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
 }));
@@ -207,7 +214,7 @@ vi.mock("./delete-account-prompt", () => ({ promptAccountDeletion: vi.fn() }));
 vi.mock("./i18n", () => {
   // Stable across renders, as the real hook's is.
   const i18n = { t: (text: string) => text, locale: "en" };
-  return { dateLocaleForUi: () => "en", useI18n: () => i18n };
+  return { t: i18n.t, dateLocaleForUi: () => "en", useI18n: () => i18n };
 });
 vi.mock("./live-notifications", () => ({
   canPostPromotedNotifications: vi.fn(async () => false),
@@ -548,4 +555,29 @@ it("hides Messaging when no chat app is connected to the server", async () => {
   const titles = Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
   expect(titles).toContain("Skills");
   expect(titles).not.toContain("Messaging");
+});
+
+it("warns before sign-out deletes unsent messages and keeps them on cancel", async () => {
+  vi.mocked(hasUnsentSends).mockReturnValue(true);
+  try {
+    const view = await renderAccount();
+    await view.press("Sign out");
+    expect(Alert.alert).toHaveBeenCalledOnce();
+    const buttons = vi.mocked(Alert.alert).mock.calls[0]![2]!;
+    expect(buttons[0]!.text).toBe("Cancel");
+    expect(buttons[1]!.text).toBe("Sign out anyway");
+    // Nothing is cleared while the alert is open or after Cancel.
+    expect(signOut).not.toHaveBeenCalled();
+    await act(async () => buttons[0]!.onPress?.());
+    expect(signOut).not.toHaveBeenCalled();
+    expect(replaceWithSignIn).not.toHaveBeenCalled();
+
+    await view.press("Sign out");
+    const confirm = vi.mocked(Alert.alert).mock.calls[1]![2]!;
+    await act(async () => confirm[1]!.onPress?.());
+    expect(signOut).toHaveBeenCalledOnce();
+    expect(replaceWithSignIn).toHaveBeenCalled();
+  } finally {
+    vi.mocked(hasUnsentSends).mockReturnValue(false);
+  }
 });

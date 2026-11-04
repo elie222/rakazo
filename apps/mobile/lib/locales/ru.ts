@@ -222,6 +222,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Couldn't refresh — showing the last loaded messages.":
     "Не удалось обновить — показаны последние загруженные сообщения.",
   "Too many unsent messages": "Слишком много неотправленных сообщений",
+  "Unsent messages": "Неотправленные сообщения",
   "Not sent": "Не отправлено",
   "Not sent. Tap to retry": "Не отправлено. Нажмите, чтобы повторить",
   Photo: "Фото",
@@ -754,6 +755,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Sign in": "Войти",
   "Sign in to Rakazo": "Войти в Rakazo",
   "Sign out": "Выйти",
+  "Sign out anyway": "Всё равно выйти",
+  "Signing out deletes unsent messages.": "Выход удалит неотправленные сообщения.",
   "Sign up": "Зарегистрироваться",
   "Sign up for Rakazo": "Зарегистрироваться в Rakazo",
   "Sign-in": "Вход",
@@ -1118,6 +1121,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Start plan": "Начать тариф",
   "Switch to yearly": "Перейти на годовой план",
   "Switch to yearly?": "Перейти на годовой план?",
+  "Switch anyway": "Всё равно сменить",
+  "Switching servers deletes unsent messages.": "Смена сервера удалит неотправленные сообщения.",
   "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
     "{vcpus} vCPU, {memoryGb} ГБ, {hours} часов компьютера в месяц",
   "Switch to {name}?": "Перейти на {name}?",

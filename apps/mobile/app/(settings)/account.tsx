@@ -94,6 +94,7 @@ import {
   useTrustedLinkSites,
 } from "../../lib/trusted-link-sites";
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
+import { confirmUnsentSendLoss } from "../../lib/unsent-send-warning";
 import { errorText } from "../../lib/user-error";
 
 export default function Account() {
@@ -321,6 +322,7 @@ export default function Account() {
   );
 
   async function handleSignOut() {
+    if (!(await confirmUnsentSendLoss("sign-out"))) return;
     setSigningOut(true);
     setSignOutError(null);
     try {

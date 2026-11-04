@@ -21,6 +21,7 @@ import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { serverHeaders } from "../lib/server-headers";
 import { useSideInsets } from "../lib/side-insets";
+import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
 import { errorText } from "../lib/user-error";
 
 export default function ServerScreen() {
@@ -56,6 +57,13 @@ export default function ServerScreen() {
 
   async function save() {
     if (saving.current) return;
+    // Only a different server clears the device; the same address saves without a switch.
+    if (
+      parsedDraft.ok &&
+      parsedDraft.url !== current &&
+      !(await confirmUnsentSendLoss("server-switch"))
+    )
+      return;
     saving.current = true;
     setPending(true);
     setError(null);
@@ -87,6 +95,7 @@ export default function ServerScreen() {
 
   async function restoreDefault() {
     if (saving.current) return;
+    if (usesCustomApiBase(current) && !(await confirmUnsentSendLoss("server-switch"))) return;
     saving.current = true;
     setPending(true);
     setError(null);

@@ -218,6 +218,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Couldn't refresh — showing the last loaded messages.":
     "No se pudo actualizar. Se muestran los últimos mensajes cargados.",
   "Too many unsent messages": "Demasiados mensajes sin enviar",
+  "Unsent messages": "Mensajes sin enviar",
   "Not sent": "No enviado",
   "Not sent. Tap to retry": "No enviado. Toca para reintentar",
   Photo: "Foto",
@@ -711,6 +712,8 @@ export const ES_MESSAGES: Record<string, string> = {
   Restore: "Restaurar",
   "Scheduled tasks": "Tareas programadas",
   "Sign out": "Cerrar sesión",
+  "Sign out anyway": "Cerrar sesión de todos modos",
+  "Signing out deletes unsent messages.": "Cerrar sesión elimina los mensajes sin enviar.",
   "Stream replies": "Transmitir respuestas",
   "Load web images automatically": "Cargar imágenes web automáticamente",
   System: "Sistema",
@@ -1026,6 +1029,9 @@ export const ES_MESSAGES: Record<string, string> = {
   "Start plan": "Iniciar plan",
   "Switch to yearly": "Cambiar a anual",
   "Switch to yearly?": "¿Cambiar a anual?",
+  "Switch anyway": "Cambiar de todos modos",
+  "Switching servers deletes unsent messages.":
+    "Cambiar de servidor elimina los mensajes sin enviar.",
   "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
     "{vcpus} vCPU, {memoryGb} GB, {hours} horas de computadora al mes",
   "Switch to {name}?": "¿Cambiar a {name}?",
