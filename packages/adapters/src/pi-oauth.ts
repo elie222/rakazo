@@ -920,7 +920,9 @@ export async function resolveStoredModelAuth(
             where: { id: secretId },
             select: { ciphertext: true },
           });
-          const stored = row ? await secretStore.load(row.ciphertext, secretId) : plaintext;
+          // A disconnect removed the sign-in meanwhile: never spend its old token.
+          if (!row) throw new Error("Connect that model provider again.");
+          const stored = await secretStore.load(row.ciphertext, secretId);
           const timeout = AbortSignal.timeout(REFRESH_REQUEST_TIMEOUT_MS);
           const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
           let saved = false;

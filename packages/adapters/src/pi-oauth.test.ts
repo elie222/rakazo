@@ -1102,6 +1102,32 @@ describe("refreshExpiredModelCredential", () => {
     }
   });
 
+  it("does not refresh a sign-in whose stored row was removed before the lock", async () => {
+    const plaintext = serializeModelSecret({
+      kind: "oauth",
+      credential: oauthCred({ access: "old", expires: 1 }),
+    });
+    const { prisma, secretStore } = secretRow(plaintext);
+    vi.mocked(prisma.secret.findUnique).mockResolvedValue(null);
+    const oauth = stubOAuth(async () =>
+      oauthCred({ access: "new", expires: Date.now() + 3_600_000 }),
+    );
+
+    await expect(
+      resolveStoredModelAuth(
+        prisma,
+        secretStore,
+        scope,
+        { id: "cred-1", secretId: "secret-1" },
+        plaintext,
+        CHATGPT_OAUTH_PROVIDER,
+        { oauth },
+      ),
+    ).rejects.toThrow("Connect that model provider again.");
+    expect(oauth.refresh).not.toHaveBeenCalled();
+    expect(secretStore.put).not.toHaveBeenCalled();
+  });
+
   it("decides whether a refresh is due from one clock reading", async () => {
     const start = 1_000_000;
     // The token turns due 5 ms after the first reading.
