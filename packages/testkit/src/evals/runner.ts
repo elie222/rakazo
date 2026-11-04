@@ -458,6 +458,8 @@ export async function runTrial(
     };
     let settingsBefore = EMPTY_SETTINGS;
     for (const [stepIndex, step] of scenario.steps.entries()) {
+      // Each step waits for its run to finish, so a wake's shifted clock ends with its step.
+      clockShiftMs = 0;
       if (Date.now() >= deadline) throw new EvalFailure("incomplete", "Trial time budget exceeded");
       if (stepIndex === scenario.steps.length - 1) settingsBefore = await settingsSnapshot();
       if ("newWorkspace" in step) {
