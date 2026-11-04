@@ -194,13 +194,9 @@ export function useComposerActions({
 
   useEffect(() => () => cancelFocusPrompt(), []);
 
+  // Switching chats keeps other chats' pending attachments with their previews;
+  // only the open chat's files are shown and sent (activePendingAttachments).
   useEffect(() => {
-    const threadKey = inGroup ? groupId : activeId;
-    setPendingAttachments((current) => {
-      const stale = current.filter((attachment) => attachment.threadKey !== threadKey);
-      revokePendingAttachmentPreviews(stale);
-      return attachmentsForThread(current, threadKey);
-    });
     clearReply();
     setAttachmentNotice(null);
     setSendError(null);
