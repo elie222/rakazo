@@ -1004,8 +1004,10 @@ function livePendingSignOuts(records: PendingSignOut[], now = Date.now()): Pendi
 let pendingSignOutAbsent = true;
 /** When the last answered-request retry started; launch retries ignore it. */
 let lastPendingSignOutFlushAt = 0;
-/** The one in-flight retry; triggers that arrive meanwhile join it instead of starting their own. */
+/** The one in-flight flush; triggers that arrive meanwhile join it instead of starting their own. */
 let flushingPendingSignOut: Promise<void> | undefined;
+/** The delivery a sign-out started in the background; a flush waits for it before its own pass. */
+let signOutDelivery: Promise<void> | undefined;
 /** Orders every read-modify-write of the record list; network calls never run inside it. */
 let pendingSignOutWrites: Promise<unknown> = Promise.resolve();
 /** Endpoint changes in flight; reconcile leaves a switch's records alone while any runs. */
@@ -1283,6 +1285,57 @@ async function deliverPendingSignOut(
   return retrying || signedOut === "retry" ? "retry" : "delivered";
 }
 
+/** Delivers a revocation and removes its record once both halves have a hard answer. */
+async function deliverSignOutRecord(record: PendingSignOut): Promise<void> {
+  if ((await deliverPendingSignOut(record)) !== "retry" && record.token) {
+    await removePendingSignOut(record);
+  }
+}
+
+/** One delivery pass; a newer delivery registered while it ran keeps the slot. */
+function startPendingSignOutPass(): Promise<void> {
+  const attempt = pendingSignOutPass();
+  flushingPendingSignOut = attempt;
+  void attempt
+    .catch(() => undefined)
+    .finally(() => {
+      if (flushingPendingSignOut === attempt) flushingPendingSignOut = undefined;
+    });
+  return attempt;
+}
+
+async function pendingSignOutPass(): Promise<void> {
+  try {
+    lastPendingSignOutFlushAt = Date.now();
+    // A sign-out's background delivery may still be running; a pass that starts now
+    // would deliver its record twice, so the pass first waits for that delivery.
+    await signOutDelivery;
+    await reconcileProvisionalSignOuts();
+    await prunePendingSignOuts();
+    // This read decides whether later non-forced flushes may skip the store, so it takes
+    // its turn in the write queue: an out-of-queue read can resume after a queued sign-out
+    // recorded a revocation and still report the store it saw first, silencing retries.
+    // Delivery stays outside the queue, like every network call.
+    const read = await queuePendingSignOutWrite(async () => {
+      const current = await readPendingSignOuts();
+      if (current.ok) pendingSignOutAbsent = current.records.length === 0;
+      return current;
+    });
+    if (!read.ok) return;
+    for (const record of read.records) {
+      // A provisional record belongs to a switch that has not committed; it is not delivered.
+      if (record.provisional) continue;
+      // Removal is by record, so a revocation recorded during this pass is not touched.
+      await deliverSignOutRecord(record);
+    }
+    // A sign-out may have registered its delivery while this pass read the store; a caller
+    // awaiting this pass must not observe it still running afterwards.
+    await signOutDelivery;
+  } catch {
+    // Records stay; the next connectivity window tries again.
+  }
+}
+
 /**
  * Retries revocations that could not be delivered, until each server answers both its requests.
  * `force` reads the store even when the last attempt found nothing, for launch. Every attempt
@@ -1293,33 +1346,7 @@ export async function flushPendingSignOut(force = false): Promise<void> {
   // Answered requests arrive in bursts; a permanently dead old server must not be hit
   // after each one for the record's whole life. Launch retries are never spaced out.
   if (!force && Date.now() - lastPendingSignOutFlushAt < PENDING_SIGN_OUT_FLUSH_SPACING_MS) return;
-  flushingPendingSignOut ??= (async () => {
-    try {
-      lastPendingSignOutFlushAt = Date.now();
-      await reconcileProvisionalSignOuts();
-      await prunePendingSignOuts();
-      // This read decides whether later non-forced flushes may skip the store, so it takes
-      // its turn in the write queue: an out-of-queue read can resume after a queued sign-out
-      // recorded a revocation and still report the store it saw first, silencing retries.
-      // Delivery stays outside the queue, like every network call.
-      const read = await queuePendingSignOutWrite(async () => {
-        const current = await readPendingSignOuts();
-        if (current.ok) pendingSignOutAbsent = current.records.length === 0;
-        return current;
-      });
-      if (!read.ok) return;
-      for (const record of read.records) {
-        // A provisional record belongs to a switch that has not committed; it is not delivered.
-        if (record.provisional) continue;
-        // Removal is by record, so a revocation recorded during this attempt is not touched.
-        if ((await deliverPendingSignOut(record)) !== "retry") await removePendingSignOut(record);
-      }
-    } catch {
-      // Records stay; the next connectivity window tries again.
-    } finally {
-      flushingPendingSignOut = undefined;
-    }
-  })();
+  flushingPendingSignOut ??= startPendingSignOutPass();
   return flushingPendingSignOut;
 }
 
@@ -1343,10 +1370,16 @@ export async function signOut() {
   const sessionCleared = await clearSessionToken();
   const spaceCleared = await clearSpace();
   if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
-  // Both halves authenticate with the record's own token, so delivery needs no live session.
-  if ((await deliverPendingSignOut(revocation)) !== "retry" && revocation.token) {
-    await removePendingSignOut(revocation);
-  }
+  // Delivery waits on the same silent server, so it cannot hold the visible sign-out either.
+  // It runs in the background; a flush first waits for it, so the two never deliver the same
+  // record twice. The persisted record covers an attempt that dies with the process, and both
+  // halves authenticate with the record's own token.
+  let completion: Promise<void>;
+  signOutDelivery = completion = deliverSignOutRecord(revocation)
+    .catch(() => undefined)
+    .finally(() => {
+      if (signOutDelivery === completion) signOutDelivery = undefined;
+    });
 }
 
 export async function deleteAccount(password?: string, token?: string) {

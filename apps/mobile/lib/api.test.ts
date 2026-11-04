@@ -1185,7 +1185,8 @@ describe("mobile API authentication", () => {
 
     await signOut();
 
-    expect(fetchMock.mock.calls).toHaveLength(2);
+    // Delivery runs after sign-out returns; both halves still carry the captured bearer.
+    await vi.waitFor(() => expect(fetchMock.mock.calls).toHaveLength(2));
     for (const [, init] of fetchMock.mock.calls) {
       expect(init?.headers).toMatchObject({ authorization: "Bearer session-token" });
     }
@@ -1203,10 +1204,12 @@ describe("mobile API authentication", () => {
 
     await signOut();
 
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
-      "http://127.0.0.1:3100/api/auth/sign-out",
-    ]);
+    await vi.waitFor(() =>
+      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+        "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+        "http://127.0.0.1:3100/api/auth/sign-out",
+      ]),
+    );
   });
 
   it("sends sign-out with a JSON body so the server ends the session", async () => {
@@ -1219,9 +1222,11 @@ describe("mobile API authentication", () => {
 
     await signOut();
 
-    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
-    expect(init.headers).toMatchObject({ "content-type": "application/json" });
-    expect(init.body).toBe("{}");
+    await vi.waitFor(() => {
+      const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+      expect(init.headers).toMatchObject({ "content-type": "application/json" });
+      expect(init.body).toBe("{}");
+    });
   });
 
   it("continues sign-out when push unregistration times out and keeps it pending", async () => {
@@ -1289,8 +1294,14 @@ describe("mobile API authentication", () => {
       { apiBase: "http://127.0.0.1:3100", token: "session-token" },
     ]);
 
-    await vi.advanceTimersByTimeAsync(16_000);
+    // The visible sign-out does not wait for the delivery: it resolves while the
+    // first request still hangs.
     await pending;
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+    ]);
+
+    await vi.advanceTimersByTimeAsync(16_000);
 
     // Both halves timed out; the record stays for the next connectivity window.
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
@@ -1311,6 +1322,8 @@ describe("mobile API authentication", () => {
     );
     await signOut();
     expect(pendingSignOutRecords(store).length).toBe(1);
+    // Sign-out returns before its delivery finishes; settle it on this offline stub.
+    await flushPendingSignOut(true);
 
     const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
     vi.stubGlobal("fetch", fetchMock);
@@ -1331,6 +1344,7 @@ describe("mobile API authentication", () => {
       vi.fn(async () => Promise.reject(new Error("offline"))),
     );
     await signOut();
+    await flushPendingSignOut(true);
 
     const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ json: [] }));
     vi.stubGlobal("fetch", fetchMock);
@@ -1356,6 +1370,7 @@ describe("mobile API authentication", () => {
       vi.fn(async () => Promise.reject(new Error("offline"))),
     );
     await signOut();
+    await flushPendingSignOut(true);
 
     // A proxy keeps refusing the old server's revocation, so its record stays.
     const deadServer = vi.fn<typeof globalThis.fetch>(
@@ -1387,11 +1402,13 @@ describe("mobile API authentication", () => {
       vi.fn(async () => Promise.reject(new Error("offline"))),
     );
     await signOut();
+    await flushPendingSignOut(true);
     await saveApiBase("https://second-server.example");
 
     // Signed in on the second server, then offline sign-out there as well.
     store.set("rakazo.session_token", "token-b");
     await signOut();
+    await flushPendingSignOut(true);
     expect(pendingSignOutRecords(store)).toEqual([
       { apiBase: "https://second-server.example", token: "token-b" },
       { apiBase: "http://127.0.0.1:3100", token: "token-a" },
@@ -1418,6 +1435,7 @@ describe("mobile API authentication", () => {
       vi.fn(async () => Promise.reject(new Error("offline"))),
     );
     await signOut();
+    await flushPendingSignOut(true);
 
     // The retry of the first record is waiting on the network when a server switch
     // records a second one on the same server; finishing the first must leave it alone.
@@ -1536,7 +1554,9 @@ describe("mobile API authentication", () => {
     vi.stubGlobal("fetch", fetchMock);
     await flushPendingSignOut();
 
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    // The sign-out's own background delivery may still finish its second half on this
+    // mock; the retried pass delivers the final pair once that delivery has settled.
+    expect(fetchMock.mock.calls.slice(-2).map(([url]) => url)).toEqual([
       "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
       "http://127.0.0.1:3100/api/auth/sign-out",
     ]);
@@ -1591,6 +1611,8 @@ describe("mobile API authentication", () => {
         );
 
         await signOut();
+        // The delivery answers both halves in the background; a forced flush waits for it.
+        await flushPendingSignOut(true);
 
         expect(pendingSignOutRecords(store)).toEqual([]);
       });
@@ -1651,10 +1673,13 @@ describe("mobile API authentication", () => {
 
       await signOut();
 
-      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-        "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
-        "http://127.0.0.1:3100/api/auth/sign-out",
-      ]);
+      // The delivery runs in the background after sign-out returns.
+      await vi.waitFor(() =>
+        expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+          "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+          "http://127.0.0.1:3100/api/auth/sign-out",
+        ]),
+      );
       expect(pendingSignOutRecords(store)).toHaveLength(status === 503 ? 1 : 0);
       if (status === 503) {
         const retry = vi.fn(async () => jsonResponse({}));
@@ -1740,6 +1765,7 @@ describe("mobile API authentication", () => {
       vi.fn(async () => Promise.reject(new Error("offline"))),
     );
     await signOut();
+    await flushPendingSignOut(true);
 
     // The unregistration lands, the sign-out does not. The authenticated call renews the
     // session server-side, so repeating it would keep the session alive forever.

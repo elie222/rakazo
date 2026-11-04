@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
+import * as SecureStore from "expo-secure-store";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
-import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "./api";
+import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode, signOut } from "./api";
 import { replaceWithSignIn } from "./auth-routing";
 import { promptAccountDeletion } from "./delete-account-prompt";
 import { registerSettingsSheet } from "./settings-sheet";
@@ -44,6 +45,13 @@ vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-notifications", () => ({
   getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
 }));
+// The real sign-out flow runs in one test; its store and caches need these.
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: vi.fn(),
+  setItemAsync: vi.fn(),
+  deleteItemAsync: vi.fn(),
+}));
+vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("react-native", () => ({
   ActivityIndicator: () => null,
   Alert: { alert: vi.fn() },
@@ -207,7 +215,12 @@ vi.mock("./delete-account-prompt", () => ({ promptAccountDeletion: vi.fn() }));
 vi.mock("./i18n", () => {
   // Stable across renders, as the real hook's is.
   const i18n = { t: (text: string) => text, locale: "en" };
-  return { dateLocaleForUi: () => "en", useI18n: () => i18n };
+  return {
+    dateLocaleForUi: () => "en",
+    getActiveUiLocale: () => "en",
+    t: (text: string) => text,
+    useI18n: () => i18n,
+  };
 });
 vi.mock("./live-notifications", () => ({
   canPostPromotedNotifications: vi.fn(async () => false),
@@ -216,7 +229,9 @@ vi.mock("./live-notifications", () => ({
   hasLiveUpdateSettings: () => false,
   openLiveNotificationSettings: vi.fn(),
   openPromotedNotificationSettings: vi.fn(),
+  resumeLiveNotifications: vi.fn(async () => undefined),
   setLiveNotificationSettings: vi.fn(),
+  stopLiveNotifications: vi.fn(async () => undefined),
 }));
 const { styles } = vi.hoisted(() => ({ styles: new Proxy({}, { get: () => ({}) }) }));
 vi.mock("./native", () => ({
@@ -289,6 +304,7 @@ afterEach(() => {
   container?.remove();
   root = undefined;
   container = undefined;
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -335,6 +351,48 @@ async function renderAccount() {
     alert: () => screen.querySelector('[role="alert"]')?.textContent ?? null,
   };
 }
+
+it("navigates to sign-in while a silent server still owes the sign-out delivery", async () => {
+  const actual = await vi.importActual<typeof import("./api")>("./api");
+  const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+  vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => store.get(key) ?? null);
+  vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+    store.set(key, value);
+  });
+  vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+    store.delete(key);
+  });
+  vi.mocked(signOut).mockImplementation(actual.signOut);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((_input: string) => new Promise<Response>(() => undefined)),
+  );
+
+  const view = await renderAccount();
+  try {
+    vi.useFakeTimers();
+    await view.press("Sign out");
+
+    // The screen leaves before either request timeout fires; the device is signed out.
+    expect(replaceWithSignIn).toHaveBeenCalled();
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]")).toHaveLength(1);
+
+    // The delivery still runs: both halves time out and the record waits for retry.
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      expect.anything(),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:3100/api/auth/sign-out",
+      expect.anything(),
+    );
+    expect(JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]")).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 it("asks for the current password, shows a failed delete, and signs out after a successful one", async () => {
   const view = await renderAccount();
