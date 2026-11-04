@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -8,10 +9,15 @@ import {
   createDb,
   ensureComputerRecord,
   installAuditEventStore,
+  MAX_OPEN_SPACE_INVITES,
+  organizationForMember,
+  organizationSeatCount,
   personalOrganizationIds,
   prepareAccountDeletion,
+  recordAuditEvent,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { handleRpcError } from "./app.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 
@@ -130,7 +136,12 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       },
       dataDir: "/tmp/rakazo-shared-spaces-test",
     } as unknown as RouterDeps;
-    handler = new RPCHandler(createRouter(deps));
+    // As the app does, so domain errors answer with their own status.
+    handler = new RPCHandler(createRouter(deps), {
+      clientInterceptors: [
+        onError((error, { path, signal }) => handleRpcError(error, path, signal)),
+      ],
+    });
   });
 
   afterAll(async () => {
@@ -170,7 +181,8 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
 
     const accepted = await call(invitee.actor, "spaces/invites/accept", { token });
     expect(accepted).toEqual({ status: 200, json: { spaceId: home } });
-    expect(syncSeats).toHaveBeenCalledWith(owner.organizationId);
+    // A guest adds no seat to the owner's subscription.
+    expect(syncSeats).not.toHaveBeenCalled();
     await expect(
       system.spaceMember.findUnique({
         where: { spaceId_userId: { spaceId: home, userId: invitee.id } },
@@ -182,7 +194,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
           organizationId_userId: { organizationId: owner.organizationId, userId: invitee.id },
         },
       }),
-    ).resolves.toMatchObject({ role: "member" });
+    ).resolves.toMatchObject({ role: "guest" });
     // Joining one Space never opens the owner's personal default Space.
     await expect(
       system.spaceMember.findUnique({
@@ -636,6 +648,18 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       canRename: false,
       canDelete: false,
     });
+    // From inside the shared Space, the member still sees their own Spaces around it, and the
+    // owner's organization stays out of their switcher.
+    const fromShared = await call(inSpace(invitee.actor, home), "spaces/list", {});
+    expect(
+      (fromShared.json.spaces as Array<{ id: string }>).map((space) => space.id).sort(),
+    ).toEqual([home, invitee.spaceId].sort());
+    const organizationList = await call(inSpace(invitee.actor, home), "organizations/list", {});
+    expect(organizationList.json).toMatchObject({
+      activeOrganizationId: invitee.organizationId,
+      organizations: [expect.objectContaining({ id: invitee.organizationId })],
+    });
+    expect(organizationList.json.organizations).toHaveLength(1);
     const ownerList = await call(owner.actor, "spaces/list", {});
     expect(
       (ownerList.json.spaces as Array<Record<string, unknown>>).find((space) => space.id === home),
@@ -706,5 +730,167 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(system.bot.findUniqueOrThrow({ where: { id: bot.id } })).resolves.toMatchObject({
       userId: owner.id,
     });
+  });
+  it("bills, seats and audits a guest under their own organization", async () => {
+    const owner = await person("owner");
+    const invitee = await person("invitee");
+    const home = await sharedSpace(owner, "Home");
+    await call(invitee.actor, "spaces/invites/accept", { token: await invite(owner, home) });
+
+    await expect(
+      organizationForMember(system, { spaceId: home, userId: invitee.id }),
+    ).resolves.toEqual({ organizationId: invitee.organizationId, isOwner: true });
+    await expect(
+      organizationForMember(system, { spaceId: home, userId: owner.id }),
+    ).resolves.toEqual({ organizationId: owner.organizationId, isOwner: true });
+    await expect(organizationSeatCount(system, owner.organizationId)).resolves.toBe(1);
+
+    await recordAuditEvent({ action: "auth.sign_in", actor: { type: "user", id: invitee.id } });
+    await expect(
+      system.auditEvent.count({
+        where: {
+          actorId: invitee.id,
+          action: "auth.sign_in",
+          organizationId: owner.organizationId,
+        },
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      system.auditEvent.count({
+        where: {
+          actorId: invitee.id,
+          action: "auth.sign_in",
+          organizationId: invitee.organizationId,
+        },
+      }),
+    ).resolves.toBe(1);
+  });
+
+  it("caps open invite links per space", async () => {
+    const owner = await person("owner");
+    const home = await sharedSpace(owner, "Home");
+    for (let index = 0; index < MAX_OPEN_SPACE_INVITES; index += 1) await invite(owner, home);
+    await expect(
+      call(owner.actor, "spaces/invites/create", { spaceId: home }),
+    ).resolves.toMatchObject({ status: 400 });
+  });
+
+  it("never hands one member's computer control to another", async () => {
+    const owner = await person("owner");
+    const invitee = await person("invitee");
+    const home = await sharedSpace(owner, "Home");
+    await call(invitee.actor, "spaces/invites/accept", { token: await invite(owner, home) });
+    const computer = await system.computer.create({
+      data: {
+        spaceId: home,
+        userId: owner.id,
+        scopeKey: `team:${home}:${owner.id}`,
+        homeKey: computerHomeKey({ mode: "team", spaceId: home, userId: owner.id }),
+        kind: "docker",
+        state: "running",
+        providerRef: "fake-ref",
+      },
+    });
+    const bot = await system.bot.create({
+      data: {
+        spaceId: home,
+        userId: owner.id,
+        name: "Shopper",
+        color: "test",
+        computerId: computer.id,
+      },
+    });
+    await system.computer.update({
+      where: { id: computer.id },
+      data: {
+        controlHolder: "user",
+        controlLeaseId: randomUUID(),
+        controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+        controlBotId: bot.id,
+        controlUserId: owner.id,
+      },
+    });
+    const asInvitee = inSpace(invitee.actor, home);
+
+    await expect(call(asInvitee, "computer/takeover", { botId: bot.id })).resolves.toMatchObject({
+      status: 409,
+    });
+    await expect(call(asInvitee, "computer/release", { botId: bot.id })).resolves.toMatchObject({
+      status: 409,
+    });
+    await expect(
+      system.computer.findUniqueOrThrow({ where: { id: computer.id } }),
+    ).resolves.toMatchObject({ controlHolder: "user", controlUserId: owner.id });
+  });
+
+  it("gives a shared space one team computer, whoever creates the bot", async () => {
+    const owner = await person("owner");
+    const invitee = await person("invitee");
+    const home = await sharedSpace(owner, "Home");
+    await call(invitee.actor, "spaces/invites/accept", { token: await invite(owner, home) });
+
+    const ownerBot = await call(inSpace(owner.actor, home), "bots/create", { name: "Planner" });
+    const inviteeBot = await call(inSpace(invitee.actor, home), "bots/create", { name: "Shopper" });
+    expect([ownerBot.status, inviteeBot.status]).toEqual([200, 200]);
+    const bots = await system.bot.findMany({
+      where: { id: { in: [ownerBot.json.id as string, inviteeBot.json.id as string] } },
+      select: { computer: { select: { id: true, userId: true, scope: true } } },
+    });
+    expect(new Set(bots.map((bot) => bot.computer?.id)).size).toBe(1);
+    expect(bots[0]?.computer).toMatchObject({ userId: owner.id, scope: "team" });
+  });
+
+  it("keeps what a leaving member made available elsewhere and hands their threads over", async () => {
+    const owner = await person("owner");
+    const invitee = await person("invitee");
+    const home = await sharedSpace(owner, "Home");
+    await call(invitee.actor, "spaces/invites/accept", { token: await invite(owner, home) });
+    const everywhere = await system.mcpServer.create({
+      data: {
+        spaceId: home,
+        userId: invitee.id,
+        slug: "notes",
+        name: "Notes",
+        transport: "http",
+        endpoint: "https://mcp.example.test",
+        allSpaces: true,
+      },
+    });
+    const onlyHere = await system.mcpServer.create({
+      data: {
+        spaceId: home,
+        userId: invitee.id,
+        slug: "home-only",
+        name: "Home only",
+        transport: "http",
+        endpoint: "https://mcp.example.test/home",
+      },
+    });
+    const bot = await system.bot.create({
+      data: { spaceId: home, userId: invitee.id, name: "Planner", color: "test" },
+    });
+    const thread = await system.thread.create({
+      data: { spaceId: home, userId: invitee.id, botId: bot.id },
+    });
+
+    await expect(
+      call(inSpace(invitee.actor, home), "spaces/members/leave", { spaceId: home }),
+    ).resolves.toMatchObject({ status: 200 });
+
+    await expect(
+      system.mcpServer.findUniqueOrThrow({ where: { id: everywhere.id } }),
+    ).resolves.toMatchObject({ spaceId: invitee.spaceId, userId: invitee.id });
+    await expect(system.mcpServer.findUnique({ where: { id: onlyHere.id } })).resolves.toBeNull();
+    await expect(
+      system.thread.findUniqueOrThrow({ where: { id: thread.id } }),
+    ).resolves.toMatchObject({ userId: owner.id });
+    // A guest who no longer belongs to any of its Spaces leaves the organization too.
+    await expect(
+      system.member.findUnique({
+        where: {
+          organizationId_userId: { organizationId: owner.organizationId, userId: invitee.id },
+        },
+      }),
+    ).resolves.toBeNull();
   });
 });
