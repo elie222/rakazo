@@ -37,14 +37,7 @@ const messagingRun = {
   sourceMessage: { blocks: [{ kind: "text", text: "hi" }] },
 };
 
-type OutboundRowFilter = {
-  status?: string;
-  createdAt?: { lt: Date };
-  identityId?: string | null;
-  threadId?: string;
-  OR?: Array<Record<string, unknown>>;
-  AND?: Array<{ OR: Array<Record<string, unknown>> }>;
-};
+type OutboundRowFilter = Record<string, unknown>;
 
 /** The drains' send order: createdAt, then id to break remaining ties. */
 function bySendOrder(a: Record<string, unknown>, b: Record<string, unknown>) {
@@ -52,23 +45,38 @@ function bySendOrder(a: Record<string, unknown>, b: Record<string, unknown>) {
   return byTime || String(a.id).localeCompare(String(b.id));
 }
 
-function matchesCondition(row: Record<string, unknown>, condition: Record<string, unknown>) {
-  if ("createdAt" in condition) {
-    // Earlier in send order: an older row, or one of equal age with a smaller id.
-    if (!(row.createdAt instanceof Date)) return false;
-    const bound = condition.createdAt as { lt?: Date };
-    if (bound.lt) return row.createdAt < bound.lt;
-    return (
-      row.createdAt.getTime() === new Date(condition.createdAt as Date).getTime() &&
-      String(row.id) < (condition.id as { lt: string }).lt
-    );
+function compareBound(cell: unknown, bound: unknown, after: boolean): boolean {
+  if (cell instanceof Date && bound instanceof Date) {
+    return after ? cell.getTime() > bound.getTime() : cell.getTime() < bound.getTime();
   }
-  if (condition.status === "pending") return row.status === "pending";
-  return (
-    row.status === "sent" &&
-    row.providerHandle == null &&
-    ((row.updatedAt as Date | undefined) ?? new Date()) > (condition.updatedAt as { gt: Date }).gt
-  );
+  if (typeof cell === "string" && typeof bound === "string") {
+    return after ? cell > bound : cell < bound;
+  }
+  return false;
+}
+
+/** The where shapes the drain queries use: field equality, lt/gt bounds, OR/AND. */
+function matchesWhere(row: Record<string, unknown>, where: OutboundRowFilter): boolean {
+  return Object.entries(where).every(([key, value]) => {
+    if (key === "OR")
+      return (value as OutboundRowFilter[]).some((condition) => matchesWhere(row, condition));
+    if (key === "AND")
+      return (value as OutboundRowFilter[]).every((condition) => matchesWhere(row, condition));
+    if (value instanceof Date)
+      return row[key] instanceof Date && (row[key] as Date).getTime() === value.getTime();
+    // The mocks do not emulate @updatedAt: an unset one counts as "just now".
+    if (key === "updatedAt" && row[key] === undefined)
+      return compareBound(new Date(), (value as { gt: unknown }).gt, true);
+    if (value !== null && typeof value === "object") {
+      const bound = value as { lt?: unknown; gt?: unknown };
+      if (bound.lt !== undefined) return compareBound(row[key], bound.lt, false);
+      if (bound.gt !== undefined) return compareBound(row[key], bound.gt, true);
+      return false;
+    }
+    // Prisma's null means IS NULL; a mock row without the field counts too.
+    if (value === null) return row[key] == null;
+    return row[key] === value;
+  });
 }
 
 /** A lane's next pending row, or an earlier row still pending or in flight. */
@@ -76,21 +84,7 @@ function findOutboundRow(rows: Array<Record<string, unknown>>, where: OutboundRo
   const ordered = rows.every((row) => row.createdAt instanceof Date)
     ? [...rows].sort(bySendOrder)
     : rows;
-  return (
-    ordered.find((row) => {
-      if (where.status && row.status !== where.status) return false;
-      if (where.identityId && row.identityId !== where.identityId) return false;
-      if (where.threadId !== undefined && row.threadId !== where.threadId) return false;
-      if (where.createdAt && !((row.createdAt as Date) < where.createdAt.lt)) return false;
-      if (where.OR && !where.OR.some((condition) => matchesCondition(row, condition))) return false;
-      if (
-        where.AND &&
-        !where.AND.every((group) => group.OR.some((condition) => matchesCondition(row, condition)))
-      )
-        return false;
-      return true;
-    }) ?? null
-  );
+  return ordered.find((row) => matchesWhere(row, where)) ?? null;
 }
 
 function createFakeSurface(sendError?: Error) {
@@ -740,6 +734,7 @@ function createChannelDeps(
     blockedBot?: string;
     messages?: unknown[];
     posterProvider?: string;
+    runs?: Array<{ id: string; messages: unknown[] }>;
   } = {},
 ) {
   const text = overrides.text ?? "found it";
@@ -808,12 +803,18 @@ function createChannelDeps(
   };
   const prisma = {
     run: {
-      findUnique: vi.fn(async () => channelRun),
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+        if (!overrides.runs) return channelRun;
+        const entry = overrides.runs.find((run) => run.id === where.id);
+        return entry ? { ...channelRun, id: entry.id } : null;
+      }),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     message: {
-      findMany: vi.fn(
-        async () => overrides.messages ?? [{ id: "m-1", blocks: [{ kind: "text", text }] }],
+      findMany: vi.fn(async ({ where }: { where?: { runId?: string } } = {}) =>
+        overrides.runs
+          ? (overrides.runs.find((run) => run.id === where?.runId)?.messages ?? [])
+          : (overrides.messages ?? [{ id: "m-1", blocks: [{ kind: "text", text }] }]),
       ),
       findUnique: vi.fn(async () => null),
     },
@@ -865,6 +866,19 @@ function createChannelDeps(
       findFirst: vi.fn(async ({ where }: { where: OutboundRowFilter }) =>
         findOutboundRow(rows, where),
       ),
+      aggregate: vi.fn(
+        async ({ where, _max }: { where?: OutboundRowFilter; _max?: { createdAt?: boolean } }) => {
+          const times = rows
+            .filter((row) => matchesWhere(row, where ?? {}))
+            .map((row) => (row.createdAt as Date | undefined)?.getTime())
+            .filter((time): time is number => time !== undefined);
+          return {
+            _max: {
+              createdAt: _max?.createdAt && times.length ? new Date(Math.max(...times)) : null,
+            },
+          };
+        },
+      ),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         for (const item of data)
           rows.push({ id: `out-${rows.length + 1}`, status: "pending", ...item });
@@ -908,7 +922,7 @@ function createChannelDeps(
     },
     thread: { findFirst: vi.fn(async () => ({ id: "thread-2" })) },
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-      fn({ ...txMock, $queryRaw: prisma.$queryRaw }),
+      fn({ ...txMock, messagingOutbound: prisma.messagingOutbound, $queryRaw: prisma.$queryRaw }),
     ),
   };
   return {
@@ -1033,6 +1047,43 @@ describe("deliverMessagingOutbound channel runs", () => {
     expect((deps.rows[1]!.createdAt as Date).getTime()).toBeGreaterThan(
       (deps.rows[0]!.createdAt as Date).getTime(),
     );
+  });
+
+  it("keeps a later group reply's whole range after an earlier reply's", async () => {
+    // The same millisecond for both mirrors: wall-clock ties must not let
+    // one reply's parts sort into the middle of the other's.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    try {
+      const reply = (marker: string) => `${marker}${marker.repeat(4_100)}`;
+      const deps = createChannelDeps({
+        posterProvider: "telegram",
+        runs: [
+          { id: "run-1", messages: [{ id: "m-1", blocks: [{ kind: "text", text: reply("1") }] }] },
+          { id: "run-2", messages: [{ id: "m-2", blocks: [{ kind: "text", text: reply("2") }] }] },
+        ],
+      });
+      await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+      await deliverMessagingOutbound(deps, { runId: "run-2" }, context);
+
+      const timesOf = (messageId: string) =>
+        deps.rows
+          .filter((row) => (row.idempotencyKey as string).startsWith(`msg:${messageId}`))
+          .map((row) => (row.createdAt as Date).getTime());
+      expect(Math.min(...timesOf("m-2"))).toBeGreaterThan(Math.max(...timesOf("m-1")));
+
+      const bodies = deps.sendToThread.mock.calls.map(
+        (call) => ((call as unknown[])[0] as { body: string }).body,
+      );
+      const lastA = Math.max(
+        ...bodies.flatMap((body, index) => (body.includes("1") ? [index] : [])),
+      );
+      const firstB = Math.min(
+        ...bodies.flatMap((body, index) => (body.includes("2") ? [index] : [])),
+      );
+      expect(firstB).toBeGreaterThan(lastA);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("preserves source transport on peer fan-out blocks", async () => {
