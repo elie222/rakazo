@@ -83,6 +83,7 @@ ${home.cta.copy}
 - [Alternatives](https://rakazo.com/alternatives/)
 - [Docs](https://rakazo.com/docs/)
 - [Integrations](https://rakazo.com/integrations/)
+- [Sandboxes for AI agents](https://rakazo.com/sandboxes/)
 - [Blog](https://rakazo.com/blog/)
 - [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
 - [Download](https://rakazo.com/download/): desktop, mobile, and web apps.

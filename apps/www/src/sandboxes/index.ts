@@ -86,7 +86,7 @@ export const SANDBOXES_HUB = {
     {
       question: "Can I switch providers later?",
       answer:
-        "Yes. Rakazo keeps its own copy of each bot's workspace, so a new computer on another provider starts from the same files. Software installed outside the workspace doesn't move.",
+        "Yes. Rakazo keeps its own saved copy of each bot's workspace, so a new computer on another provider starts from the last saved version. Let bots finish and their computers stop before you switch, so recent changes are saved first. Software installed outside the workspace doesn't move.",
     },
     {
       question: "Which sandbox is the safest?",

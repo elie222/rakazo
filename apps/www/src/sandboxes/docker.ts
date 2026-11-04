@@ -66,7 +66,7 @@ export const docker: Sandbox = {
       ],
       bullets: [
         "A container shares your server's kernel. It is not a virtual machine, so a kernel bug could let a process escape it. If that matters to you, use a hosted provider or Kubernetes with gVisor or Kata.",
-        "Restricted networking gives computers the public internet but blocks your LAN, the Docker host and cloud metadata addresses. It needs Linux Docker Engine with iptables. On Docker Desktop for Mac or Windows, rootless Docker or the nftables backend, computers fall back to open networking.",
+        "Restricted networking gives computers the public internet but blocks your LAN, the Docker host and cloud metadata addresses. It needs Linux Docker Engine with iptables and the host rules from `infra/compose/restrict-computer-egress.sh`. By default the stack checks for those rules and falls back to open networking without them, so a server without the rules lets bots reach your LAN. Set `SANDBOX_COMPUTER_EGRESS=restricted` to refuse to start computers instead. Docker Desktop for Mac or Windows, rootless Docker and nftables hosts can't use restricted networking. The [Docker computers guide](https://github.com/elie222/rakazo/blob/main/docs/self-host-docker-computers.md) has the details.",
         "There is no per-domain allowlist. A bot can reach any public website.",
         "Anyone who controls the supervisor controls Docker on that machine, which is why it stays on the internal network behind its own token.",
       ],
