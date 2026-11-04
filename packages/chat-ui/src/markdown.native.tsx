@@ -19,11 +19,12 @@ import {
   memo,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import type { StyleProp, TextStyle, ViewStyle } from "react-native";
+import type { GestureResponderEvent, StyleProp, TextStyle, ViewStyle } from "react-native";
 import {
   Alert,
   I18nManager,
@@ -710,6 +711,12 @@ const scrollFrame: ViewStyle = {
   flexDirection: "row",
 };
 
+// Match Pressable's default and pass it explicitly to the message surface too.
+export const MESSAGE_LONG_PRESS_DELAY = 500;
+export const MarkdownLongPressContext = createContext<
+  ((event: GestureResponderEvent) => void) | undefined
+>(undefined);
+
 /**
  * A block that scrolls sideways when it is wider than the bubble. Tables pass the width they lay
  * out to; code is measured.
@@ -725,7 +732,14 @@ function SidewaysScrollView({
   style?: StyleProp<ViewStyle>;
   children?: ReactNode;
 }) {
+  const onLongPress = useContext(MarkdownLongPressContext);
   const touchStart = useRef({ x: 0, y: 0 });
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const cancelLongPress = useCallback(() => {
+    clearTimeout(timer.current);
+    timer.current = undefined;
+  }, []);
+  useEffect(() => cancelLongPress, [cancelLongPress]);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [measuredWidth, setMeasuredWidth] = useState(0);
   const measured = contentWidth === undefined;
@@ -757,15 +771,29 @@ function SidewaysScrollView({
         contentContainerStyle={{ flexGrow: measured ? 1 : 0 }}
       >
         <View
-          onTouchStart={({ nativeEvent }) => {
-            touchStart.current = { x: nativeEvent.pageX, y: nativeEvent.pageY };
+          // Claim before the bubble blocks native scrolling; deeper link responders still win.
+          onStartShouldSetResponder={() => overflows}
+          onResponderGrant={(event) => {
+            cancelLongPress();
+            touchStart.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
+            if (onLongPress) {
+              event.persist();
+              timer.current = setTimeout(() => {
+                timer.current = undefined;
+                onLongPress(event);
+              }, MESSAGE_LONG_PRESS_DELAY);
+            }
           }}
-          // Keep still presses with the bubble; take horizontal drags before its pressable can.
-          onMoveShouldSetResponderCapture={({ nativeEvent }) => {
-            const dx = Math.abs(nativeEvent.pageX - touchStart.current.x);
-            const dy = Math.abs(nativeEvent.pageY - touchStart.current.y);
-            return overflows && dx > 5 && dx > dy;
+          onResponderMove={({ nativeEvent }) => {
+            if (
+              Math.abs(nativeEvent.pageX - touchStart.current.x) > 5 ||
+              Math.abs(nativeEvent.pageY - touchStart.current.y) > 5
+            )
+              cancelLongPress();
           }}
+          onResponderRelease={cancelLongPress}
+          onResponderTerminate={cancelLongPress}
+          onResponderTerminationRequest={() => true}
           style={
             measured
               ? { flexGrow: 1 }

@@ -25,15 +25,17 @@ const imageLoads = vi.hoisted(
     [] as Array<(event: { nativeEvent: { source: { width: number; height: number } } }) => void>,
 );
 
-type TouchEvent = { nativeEvent: { pageX: number; pageY: number } };
+type TouchEvent = { nativeEvent: { pageX: number; pageY: number }; persist(): void };
 
 const tableEvents = vi.hoisted(() => ({
   onLayout: undefined as
     | ((event: { nativeEvent: { layout: { width: number; height: number } } }) => void)
     | undefined,
   onStartShouldSetResponder: undefined as (() => boolean) | undefined,
-  onTouchStart: undefined as ((event: TouchEvent) => void) | undefined,
-  onMoveShouldSetResponderCapture: undefined as ((event: TouchEvent) => boolean) | undefined,
+  onResponderGrant: undefined as ((event: TouchEvent) => void) | undefined,
+  onResponderMove: undefined as ((event: TouchEvent) => void) | undefined,
+  onResponderRelease: undefined as (() => void) | undefined,
+  onResponderTerminate: undefined as (() => void) | undefined,
   onContentSizeChange: undefined as ((width: number, height: number) => void) | undefined,
 }));
 
@@ -81,12 +83,17 @@ vi.mock("react-native", async () => {
           rest.onStartShouldSetResponder as typeof tableEvents.onStartShouldSetResponder;
         delete rest.onStartShouldSetResponder;
       }
-      if (tag === "rn-view" && typeof rest.onMoveShouldSetResponderCapture === "function") {
-        tableEvents.onTouchStart = rest.onTouchStart as typeof tableEvents.onTouchStart;
-        tableEvents.onMoveShouldSetResponderCapture =
-          rest.onMoveShouldSetResponderCapture as typeof tableEvents.onMoveShouldSetResponderCapture;
-        delete rest.onTouchStart;
-        delete rest.onMoveShouldSetResponderCapture;
+      if (tag === "rn-view" && typeof rest.onResponderGrant === "function") {
+        for (const key of [
+          "onResponderGrant",
+          "onResponderMove",
+          "onResponderRelease",
+          "onResponderTerminate",
+        ] as const) {
+          tableEvents[key] = rest[key] as never;
+          delete rest[key];
+        }
+        delete rest.onResponderTerminationRequest;
       }
       if (tag === "rn-image" && typeof rest.onLoad === "function") {
         imageLoads.push(rest.onLoad as (typeof imageLoads)[number]);
@@ -222,6 +229,8 @@ import {
   LinkFaviconsContext,
   LinkifiedText,
   MarkdownLinkPromptProvider,
+  MarkdownLongPressContext,
+  MESSAGE_LONG_PRESS_DELAY,
   MermaidDiagramContext,
   markdownCodeBlocks,
   RemoteImagesContext,
@@ -387,8 +396,9 @@ describe("native markdown tables", () => {
       ["wide code", "```xml\nlong code line\n```", 200, true],
       ["fitting code", "```xml\nshort\n```", 1000, false],
     ])(
-      "keeps long presses and claims only horizontal drags on a %s",
+      "claims overflowing content at touch start on a %s",
       async (_case, markdown, width, overflows) => {
+        vi.useFakeTimers();
         vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
         const platform = Platform as { OS: string };
         const previousOS = platform.OS;
@@ -397,12 +407,17 @@ describe("native markdown tables", () => {
         document.body.appendChild(container);
         const root = createRoot(container);
         const openMenu = vi.fn();
-        const touch = (pageX: number, pageY: number) => ({ nativeEvent: { pageX, pageY } });
+        const touch = (pageX: number, pageY: number) => ({
+          nativeEvent: { pageX, pageY },
+          persist() {},
+        });
         try {
           await act(async () => {
             root.render(
               <Pressable onLongPress={openMenu}>
-                <ChatMarkdown>{markdown}</ChatMarkdown>
+                <MarkdownLongPressContext.Provider value={openMenu}>
+                  <ChatMarkdown>{markdown}</ChatMarkdown>
+                </MarkdownLongPressContext.Provider>
               </Pressable>,
             );
           });
@@ -411,16 +426,13 @@ describe("native markdown tables", () => {
             if (_case.includes("code")) tableEvents.onContentSizeChange?.(500, 40);
           });
 
-          // A stationary touch stays with the bubble's existing long-press responder.
-          expect(tableEvents.onStartShouldSetResponder?.()).not.toBe(true);
-          tableEvents.onTouchStart?.(touch(100, 100));
-          expect(tableEvents.onMoveShouldSetResponderCapture?.(touch(100, 100))).toBe(false);
-          const block = container.querySelector("rn-scroll-view rn-text");
-          expect(block).not.toBeNull();
-          await act(async () => {
-            block?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
-          });
-          expect(openMenu).toHaveBeenCalledTimes(1);
+          expect(tableEvents.onStartShouldSetResponder?.()).toBe(overflows);
+          if (overflows) expect(tableEvents.onResponderGrant?.(touch(100, 100))).toBeUndefined();
+          vi.advanceTimersByTime(MESSAGE_LONG_PRESS_DELAY - 1);
+          expect(openMenu).not.toHaveBeenCalled();
+          vi.advanceTimersByTime(1);
+          vi.advanceTimersByTime(MESSAGE_LONG_PRESS_DELAY);
+          expect(openMenu).toHaveBeenCalledTimes(overflows ? 1 : 0);
           if (_case === "wide table") {
             alert.mockClear();
             linking.openURL.mockClear();
@@ -435,34 +447,14 @@ describe("native markdown tables", () => {
               buttons[1].onPress();
             });
             expect(linking.openURL).toHaveBeenCalledWith("https://example.com/docs");
-            expect(openMenu).toHaveBeenCalledTimes(1);
+            expect(openMenu).toHaveBeenCalledTimes(overflows ? 1 : 0);
           }
 
-          // Even movement after a long hold can transfer to the scroll view.
-          for (const [x, y] of [
-            [106, 100],
-            [107, 106],
-            [180, 100],
-            [80, 95],
-          ] as const) {
-            expect(tableEvents.onMoveShouldSetResponderCapture?.(touch(x, y))).toBe(overflows);
-          }
-          for (const [x, y] of [
-            [101, 100],
-            [104, 103],
-            [100, 140],
-            [103, 104],
-            [104, 104],
-          ] as const) {
-            expect(tableEvents.onMoveShouldSetResponderCapture?.(touch(x, y))).toBe(false);
-          }
-          // Each new touch resets the origin, including taps on nested links.
-          tableEvents.onTouchStart?.(touch(200, 200));
-          expect(tableEvents.onMoveShouldSetResponderCapture?.(touch(200, 200))).toBe(false);
           expect(
             container.querySelector("rn-scroll-view")?.getAttribute("data-scroll-enabled"),
           ).toBe(String(overflows));
         } finally {
+          vi.useRealTimers();
           platform.OS = previousOS;
           await act(async () => {
             root.unmount();
@@ -472,6 +464,46 @@ describe("native markdown tables", () => {
       },
     );
   });
+
+  it.each(["move horizontally", "move vertically", "release", "terminate", "unmount"])(
+    "cancels a claimed long press on %s",
+    async (reason) => {
+      vi.useFakeTimers();
+      vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+      const root = createRoot(document.createElement("div"));
+      const openMenu = vi.fn();
+      try {
+        await act(async () => {
+          root.render(
+            <MarkdownLongPressContext.Provider value={openMenu}>
+              <ChatMarkdown>{SIX_COLUMN_TABLE}</ChatMarkdown>
+            </MarkdownLongPressContext.Provider>,
+          );
+        });
+        await act(async () => {
+          tableEvents.onLayout?.({ nativeEvent: { layout: { width: 200, height: 40 } } });
+        });
+        tableEvents.onResponderGrant?.({ nativeEvent: { pageX: 100, pageY: 100 }, persist() {} });
+        vi.advanceTimersByTime(MESSAGE_LONG_PRESS_DELAY - 1);
+        if (reason.startsWith("move"))
+          tableEvents.onResponderMove?.({
+            nativeEvent: {
+              pageX: reason === "move horizontally" ? 106 : 100,
+              pageY: reason === "move vertically" ? 106 : 100,
+            },
+            persist() {},
+          });
+        if (reason === "release") tableEvents.onResponderRelease?.();
+        if (reason === "terminate") tableEvents.onResponderTerminate?.();
+        if (reason === "unmount") await act(async () => root.unmount());
+        vi.advanceTimersByTime(MESSAGE_LONG_PRESS_DELAY);
+        expect(openMenu).not.toHaveBeenCalled();
+      } finally {
+        if (reason !== "unmount") await act(async () => root.unmount());
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it.each([
     ["fits", THREE_COLUMN_TABLE, 1000, "false"],
@@ -656,11 +688,7 @@ describe("native markdown code blocks", () => {
     expect(scrollView?.getAttribute("data-shows-horizontal-scroll-indicator")).toBe(
       String(scrolls),
     );
-    expect(tableEvents.onStartShouldSetResponder?.()).not.toBe(true);
-    tableEvents.onTouchStart?.({ nativeEvent: { pageX: 0, pageY: 0 } });
-    expect(
-      tableEvents.onMoveShouldSetResponderCapture?.({ nativeEvent: { pageX: 10, pageY: 0 } }),
-    ).toBe(scrolls);
+    expect(tableEvents.onStartShouldSetResponder?.()).toBe(scrolls);
     expect(scrollView?.textContent).toBe(markdown.includes(LONG_LINE) ? LONG_LINE : "ok");
 
     await act(async () => {

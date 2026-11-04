@@ -1,4 +1,9 @@
-import { ChatMarkdown, withBlockMentions } from "@rakazo/chat-ui/native";
+import {
+  ChatMarkdown,
+  MarkdownLongPressContext,
+  MESSAGE_LONG_PRESS_DELAY,
+  withBlockMentions,
+} from "@rakazo/chat-ui/native";
 import type { LoginFieldInput, MessageBlock } from "@rakazo/contracts";
 import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
@@ -85,7 +90,11 @@ export const MessageBubble = memo(function MessageBubble({
     () => (members?.length ? { targets: userMentionTargets(members), onOpenBot } : undefined),
     [members, onOpenBot],
   );
-  const body = <MessageBubbleWithMentions mentions={mentions} {...props} />;
+  const body = (
+    <MarkdownLongPressContext.Provider value={props.actionProps.onLongPress}>
+      <MessageBubbleWithMentions mentions={mentions} {...props} />
+    </MarkdownLongPressContext.Provider>
+  );
   return props.message.role === "user" && userMentions ? (
     <UserMentionsContext.Provider value={userMentions}>{body}</UserMentionsContext.Provider>
   ) : (
@@ -771,6 +780,7 @@ function MessageTextCard({
         if (bot) userMentions?.onOpenBot(bot.id, bot.name);
         else actionProps.onAccessibilityAction?.(event);
       }}
+      delayLongPress={MESSAGE_LONG_PRESS_DELAY}
       onLongPress={doubleTapSurface ? undefined : actionProps.onLongPress}
       style={{
         flexShrink: 1,

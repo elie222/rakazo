@@ -6,7 +6,7 @@ import { canMarkMessageUnread, isPeerReceiptBlocks, liveMessageComposing } from 
 import * as Clipboard from "expo-clipboard";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GestureResponderEvent, LayoutChangeEvent } from "react-native";
-import { Platform, View } from "react-native";
+import { View } from "react-native";
 import Animated, { useReducedMotion, ZoomIn } from "react-native-reanimated";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/api";
 import { blockText, copyableMobileMessageText, selectableMobileMessageText } from "../../lib/api";
@@ -340,7 +340,7 @@ export const MessageRow = memo(function MessageRow({
         if (id === "unread") markUnread();
       },
       actionProps: {
-        onLongPress: Platform.OS === "ios" ? undefined : openSheet,
+        onLongPress: openSheet,
         accessibilityActions: menuActions.map((action) => ({
           name: action.name,
           label: action.text,
