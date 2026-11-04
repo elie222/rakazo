@@ -77,6 +77,7 @@ import { RoutineList } from "./RoutineEditor";
 import { useSettingsNavItems } from "./settings-nav";
 import { ArchivedChats } from "./shell/archived-chats";
 import { ChatContextMenu } from "./shell/chat-context-menu";
+import { ChatFindBar } from "./shell/chat-find-bar";
 import { ChatHeader } from "./shell/chat-header";
 import { FALLBACK_BOT_COLOR } from "./shell/chat-shared";
 import type { CommandPaletteAction } from "./shell/command-palette";
@@ -319,6 +320,10 @@ function SpaceShell() {
   );
   const dialogs = useShellDialogs();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const findInputRef = useRef<HTMLInputElement>(null);
+  // Matches belong to the chat they were found in.
+  useEffect(() => setFindOpen(false), [botId, groupId]);
   useShellShortcuts({
     run: (shortcut) => {
       switch (shortcut.type) {
@@ -367,6 +372,11 @@ function SpaceShell() {
           return toggleChatPanel();
         case "focus-composer":
           return focusComposer();
+        case "find":
+          if (!active && !activeGroup) return false;
+          setFindOpen(true);
+          findInputRef.current?.select();
+          return true;
       }
       const botId =
         shortcut.type === "bot"
@@ -1068,6 +1078,17 @@ function SpaceShell() {
         <div className="relative flex min-h-0 flex-1 flex-col">
           {/* Only the pills take input; the gaps pass clicks and scrolling to the transcript. */}
           <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />
+          {findOpen ? (
+            <div className="absolute end-3 top-14 z-20">
+              <ChatFindBar
+                inputRef={findInputRef}
+                onClose={() => {
+                  setFindOpen(false);
+                  focusComposer();
+                }}
+              />
+            </div>
+          ) : null}
           <ChatHeader
             inGroup={inGroup}
             active={active}

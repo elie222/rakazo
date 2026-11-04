@@ -1458,6 +1458,7 @@ msgstr "クリア中…"
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/chat-find-bar.tsx
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "閉じる"
@@ -3211,6 +3212,11 @@ msgstr ""
 msgid "Find a page"
 msgstr "ページを検索"
 
+#: src/pages/shell/chat-find-bar.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Find in chat"
+msgstr "チャット内を検索"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Find models"
@@ -4358,6 +4364,10 @@ msgstr "新しいチケット"
 msgid "New variable"
 msgstr ""
 
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Next match"
+msgstr "次の一致"
+
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Next or previous bot"
 msgstr "次・前のボット"
@@ -4984,6 +4994,10 @@ msgstr "{0}をプレビュー"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "このファイル形式はプレビューできません。ダウンロードして表示してください。"
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Previous match"
+msgstr "前の一致"
 
 #: src/components/markdown-copy.tsx
 msgid "Previous page"

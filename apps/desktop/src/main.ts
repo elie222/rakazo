@@ -824,7 +824,8 @@ function installApplicationMenu() {
       { role: "delete", label: t("Delete") },
       { role: "selectAll", label: t("Select All") },
       { type: "separator" },
-      command(t("Search…"), "CmdOrCtrl+F", "search"),
+      command(t("Find…"), "CmdOrCtrl+F", "find"),
+      command(t("Search Bots…"), "CmdOrCtrl+Shift+F", "search"),
       ...(isMac ? macEdit : []),
     ],
   };

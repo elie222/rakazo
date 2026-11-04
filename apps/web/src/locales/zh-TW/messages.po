@@ -1459,6 +1459,7 @@ msgstr "正在清空…"
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/chat-find-bar.tsx
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "關閉"
@@ -3212,6 +3213,11 @@ msgstr ""
 msgid "Find a page"
 msgstr "尋找頁面"
 
+#: src/pages/shell/chat-find-bar.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Find in chat"
+msgstr "在聊天中尋找"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Find models"
@@ -4359,6 +4365,10 @@ msgstr "新增工作項目"
 msgid "New variable"
 msgstr ""
 
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Next match"
+msgstr "下一個相符項目"
+
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Next or previous bot"
 msgstr "下一個或上一個機器人"
@@ -4985,6 +4995,10 @@ msgstr "預覽 {0}"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "此檔案類型無法預覽，請下載後檢視。"
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Previous match"
+msgstr "上一個相符項目"
 
 #: src/components/markdown-copy.tsx
 msgid "Previous page"
