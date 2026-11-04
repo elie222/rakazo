@@ -371,7 +371,9 @@ describe("paused turn context", () => {
       await model.close();
     }
   });
-  it("rejects an ask_user detail that is not a string instead of dropping it", async () => {
+  it("keeps a draft at the exact schema limit unchanged", async () => {
+    const detail = `${"x".repeat(MAX_APPROVAL_DETAIL_LENGTH - 1)}Z`;
+    expect(detail.length).toBe(MAX_APPROVAL_DETAIL_LENGTH);
     const model = await startModelEmulator({
       steps: [
         {
@@ -382,25 +384,15 @@ describe("paused turn context", () => {
             name: "ask_user",
             arguments: {
               question: "Send this email?",
-              detail: { body: "the draft as a structured object" },
+              detail,
               options: ["Send it", "Show me first"],
             },
           },
         },
-        {
-          expect(request) {
-            // The schema rejects the call so the model can correct it; the card
-            // never appears, so the run must not pause.
-            const last = request.messages.at(-1);
-            expect(last?.role).toBe("tool");
-            expect(String(last?.content)).toContain("Validation failed");
-          },
-          response: { type: "text", text: "Done." },
-        },
       ],
     });
     const request: AgentRunRequest = {
-      runId: "fixture-ask-detail-shape",
+      runId: "fixture-ask-detail-exact",
       botId: "fixture-bot",
       threadId: "fixture-thread",
       instructions: "Complete fixtures.",
@@ -411,13 +403,119 @@ describe("paused turn context", () => {
     };
     try {
       const events = await collect(new PiAgentRuntime().run(request));
-      expect(events.some((event) => event.type === "ask")).toBe(false);
-      expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
+      const ask = events.find((event) => event.type === "ask");
+      expect((ask as { detail?: string } | undefined)?.detail).toBe(detail);
       model.assertComplete();
     } finally {
       await model.close();
     }
   });
+  it("does not split a surrogate pair when cutting a redacted draft", async () => {
+    // The short secret expands under redaction past the limit, so the cut lands
+    // inside the emoji's surrogate pair.
+    const secret = "q";
+    const detail = `${"x".repeat(MAX_APPROVAL_DETAIL_LENGTH - 2)}😀y${secret}`;
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tool",
+            id: "question",
+            name: "ask_user",
+            arguments: {
+              question: "Send this email?",
+              detail,
+              options: ["Send it", "Show me first"],
+            },
+          },
+        },
+      ],
+    });
+    const request: AgentRunRequest = {
+      runId: "fixture-ask-detail-surrogate",
+      botId: "fixture-bot",
+      threadId: "fixture-thread",
+      instructions: "Complete fixtures.",
+      prompt: "Confirm the draft.",
+      history: [],
+      model: model.model,
+      tools: builtinAgentTools.filter((tool) => tool.name === "ask_user"),
+      secrets: [secret],
+    };
+    try {
+      const events = await collect(new PiAgentRuntime().run(request));
+      const capped = String(
+        (events.find((event) => event.type === "ask") as { detail?: string } | undefined)?.detail,
+      );
+      expect(capped.length).toBeLessThanOrEqual(MAX_APPROVAL_DETAIL_LENGTH);
+      expect(capped).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+      model.assertComplete();
+    } finally {
+      await model.close();
+    }
+  });
+  it.each([
+    ["number", 971334409, "971334409"],
+    ["object", { token: "topsecret9" }, "topsecret9"],
+  ])(
+    "drops a non-string ask_user detail (%s) so nothing unredacted is kept",
+    async (_shape, rawDetail, secret) => {
+      const sessionRoot = await mkdtemp(path.join(tmpdir(), "rakazo-ask-shape-"));
+      let capture: (() => string) | undefined;
+      const model = await startModelEmulator({
+        steps: [
+          {
+            expect() {},
+            response: {
+              type: "tool",
+              id: "question",
+              name: "ask_user",
+              arguments: {
+                question: "Send this email?",
+                detail: rawDetail,
+                options: ["Send it", "Show me first"],
+              },
+            },
+          },
+        ],
+      });
+      const request: AgentRunRequest = {
+        runId: "fixture-ask-detail-shape",
+        botId: "fixture-bot",
+        threadId: "fixture-thread",
+        instructions: "Complete fixtures.",
+        prompt: "Confirm the draft.",
+        history: [],
+        model: model.model,
+        tools: builtinAgentTools.filter((tool) => tool.name === "ask_user"),
+        secrets: [secret],
+        onCheckpoint: async (snapshot) => {
+          capture = snapshot;
+        },
+      };
+      try {
+        const events = await collect(new PiAgentRuntime({ sessionRoot }).run(request));
+        // The card still asks, without a draft.
+        const ask = events.find((event) => event.type === "ask");
+        expect(ask).toMatchObject({ text: "Send this email?" });
+        expect((ask as { detail?: string } | undefined)?.detail).toBeUndefined();
+        // Neither the checkpoint nor the recorded session keeps the raw value.
+        expect(capture!()).not.toContain(secret);
+        const entries = await readdir(sessionRoot, { recursive: true });
+        const transcripts = await Promise.all(
+          entries
+            .filter((entry) => String(entry).endsWith(".jsonl"))
+            .map((entry) => readFile(path.join(sessionRoot, String(entry)), "utf8")),
+        );
+        expect(transcripts.join("\n")).not.toContain(secret);
+        model.assertComplete();
+      } finally {
+        await model.close();
+        await rm(sessionRoot, { recursive: true, force: true });
+      }
+    },
+  );
   it("resumes from the pending result when the newest stored message is the bot's own reply", async () => {
     let capture: (() => string) | undefined;
     const model = await startModelEmulator({

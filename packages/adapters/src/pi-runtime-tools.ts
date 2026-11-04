@@ -13,7 +13,7 @@ import type {
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
-import { MAX_APPROVAL_DETAIL_LENGTH, truncate } from "./approval-ask.js";
+import { MAX_APPROVAL_DETAIL_LENGTH } from "./approval-ask.js";
 import {
   isInternalTermination,
   isTerminatingReplyResult,
@@ -347,16 +347,15 @@ function toAgentTool(
       if (tool.name === "ask_user") {
         const options = Array.isArray(raw.options) ? raw.options.map(String) : raw.options;
         // The content the user is deciding about, shown on the card under the question;
-        // redacted and capped here so recorded arguments never hold the raw value. An
-        // empty string means no draft; any other non-string value passes through so the
-        // schema rejects the call, instead of a card silently losing its draft.
-        const detail =
-          typeof raw.detail === "string"
-            ? redactedAskUserDetail(raw.detail, host.request.secrets)
-            : raw.detail;
+        // redacted and capped here so recorded arguments never hold the raw value. A
+        // non-string value is dropped, not passed through: Pi coerces numbers and
+        // booleans to strings only after this point, past redaction, and a rejected
+        // object would echo its raw value in the validation error the model sees.
         return {
           question: String(raw.question ?? "What should I use?"),
-          ...(detail === undefined || detail === "" ? {} : { detail }),
+          ...(typeof raw.detail === "string" && raw.detail
+            ? { detail: redactedAskUserDetail(raw.detail, host.request.secrets) }
+            : {}),
           // Keep a missing/invalid options value as-is so schema minItems can reject it;
           // coercing to [] would look like a valid empty list upstream.
           options,
@@ -775,10 +774,16 @@ export function redactedAskUserDetail(
   detail: string,
   secrets: readonly string[] | undefined,
 ): string {
-  // Redaction can expand a near-limit draft past the schema's maxLength, and
-  // truncate appends an ellipsis on top; cap below the limit so the value still
-  // validates on dispatch and checkpoint restore.
-  return truncate(redactSecrets(detail, secrets ?? []), MAX_APPROVAL_DETAIL_LENGTH - 1);
+  const redacted = redactSecrets(detail, secrets ?? []);
+  // A draft within the schema's maxLength is kept as redacted, unchanged. Only a
+  // longer one (redaction can expand a short secret past the limit) is cut, one
+  // unit below the limit so the appended ellipsis stays within it, stepping back
+  // over a surrogate pair the cut would split.
+  if (redacted.length <= MAX_APPROVAL_DETAIL_LENGTH) return redacted;
+  let capped = redacted.slice(0, MAX_APPROVAL_DETAIL_LENGTH - 1);
+  const last = capped.charCodeAt(capped.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) capped = capped.slice(0, -1);
+  return `${capped}…`;
 }
 
 /** Redacts the ask card's detail in a streamed assistant message, in place, so the session
@@ -791,8 +796,14 @@ export function redactAskUserDetailInMessage(
   for (const part of message.content) {
     const call = part as { type?: string; name?: string; arguments?: Record<string, unknown> };
     if (call?.type !== "toolCall" || call.name !== "ask_user") continue;
-    if (typeof call.arguments?.detail === "string" && call.arguments.detail) {
-      call.arguments.detail = redactedAskUserDetail(call.arguments.detail, secrets);
+    if (typeof call.arguments?.detail === "string") {
+      if (call.arguments.detail) {
+        call.arguments.detail = redactedAskUserDetail(call.arguments.detail, secrets);
+      }
+    } else if (call.arguments && "detail" in call.arguments) {
+      // A non-string detail never reaches the card (the argument normalizer drops
+      // it); drop it here too, so no kept copy holds the raw value.
+      delete call.arguments.detail;
     }
   }
 }
