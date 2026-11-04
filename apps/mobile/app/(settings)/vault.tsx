@@ -331,8 +331,14 @@ export default function Vault() {
                 <LongPressMenu
                   key={item.name}
                   actions={[
-                    ...(readable ? [{ id: "edit", title: t("Edit") }] : []),
-                    { id: "remove", title: t("Remove"), attributes: { destructive: true } },
+                    ...(readable
+                      ? [{ id: "edit", title: t("Edit"), attributes: { disabled: pending } }]
+                      : []),
+                    {
+                      id: "remove",
+                      title: t("Remove"),
+                      attributes: { destructive: true, disabled: pending },
+                    },
                   ]}
                   colorScheme={colorScheme}
                   onPressAction={(event) => {
