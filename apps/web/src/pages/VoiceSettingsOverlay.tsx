@@ -504,7 +504,11 @@ export function VoiceSettingsOverlay({
                         type="password"
                         autoComplete="new-password"
                         value={sttApiKey}
-                        onChange={(event) => setSttApiKey(event.target.value)}
+                        onChange={(event) => {
+                          // The key belongs to this address, so a refresh must not swap it.
+                          edited.current.add("sttBaseUrl");
+                          setSttApiKey(event.target.value);
+                        }}
                         placeholder={t`Optional`}
                       />
                     </Field>

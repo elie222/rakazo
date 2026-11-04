@@ -616,7 +616,8 @@ export default function VoiceSettings() {
                     autoCorrect={false}
                     importantForAutofill="no"
                     value={sttApiKey}
-                    onChangeText={setSttApiKey}
+                    // The key belongs to this address, so a refresh must not swap it.
+                    onChangeText={edit("sttBaseUrl", setSttApiKey)}
                     placeholder={t("Optional")}
                     placeholderTextColor={native.tertiaryLabel}
                     secureTextEntry

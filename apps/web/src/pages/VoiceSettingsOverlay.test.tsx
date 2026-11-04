@@ -660,6 +660,73 @@ it("lets a background refresh update untouched fields but keeps edited ones", as
   }
 });
 
+it("keeps a typed transcription key with the address it was typed for", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const saved = {
+    ...fish,
+    provider: "openai-compatible",
+    voiceId: "",
+    endpoint: "http://127.0.0.1:8000/v1",
+    sttEndpoint: "http://127.0.0.1:9000/v1",
+  };
+  voice.catalog
+    .mockReset()
+    .mockResolvedValue([
+      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
+    ]);
+  voice.credentials.mockReset().mockResolvedValue([saved]);
+  voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
+  voice.voices.mockReset().mockResolvedValue([]);
+  const client = new QueryClient();
+  const container = document.createElement("div");
+  document.body.append(container);
+  const mount = async () => {
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        withQueries(
+          <VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />,
+          client,
+        ),
+      );
+    });
+    return root;
+  };
+  try {
+    const first = await mount();
+    await vi.waitFor(() =>
+      expect(labelledInput(container, "Transcription server URL").value).toBe(saved.sttEndpoint),
+    );
+    await act(async () => first.unmount());
+
+    // Another device moved transcription while this page was closed.
+    let releaseCredentials: () => void = () => undefined;
+    voice.credentials.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseCredentials = () =>
+            resolve([{ ...saved, sttEndpoint: "http://127.0.0.1:9100/v1" }]);
+        }),
+    );
+    const second = await mount();
+    const key = labelledInput(container, "Transcription API key");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(key, "stt-test-key");
+      key.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => releaseCredentials());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(labelledInput(container, "Transcription server URL").value).toBe(saved.sttEndpoint);
+    await act(async () => second.unmount());
+  } finally {
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("picks a Space's own voice from the account's connections without managing them", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   voice.catalog

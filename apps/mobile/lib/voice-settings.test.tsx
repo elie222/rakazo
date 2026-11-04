@@ -395,6 +395,51 @@ it("keeps a field typed into while the opening refresh is in flight", async () =
   );
 });
 
+it("keeps a typed transcription key with the address it was typed for", async () => {
+  state.load.mockResolvedValue(false);
+  activeProvider = "openai-compatible";
+  let sttEndpoint = "http://127.0.0.1:9000/v1";
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc: string, args?: { provider: string }) => {
+    if (proc === "voice/catalog") {
+      if (state.held) await state.held;
+      return [{ id: "openai-compatible", name: "Self-hosted", transcribe: true }];
+    }
+    if (proc === "voice/credentials") {
+      if (state.held) await state.held;
+      return [
+        {
+          id: "self-hosted",
+          provider: "openai-compatible",
+          voiceId: "voice",
+          endpoint: "http://127.0.0.1:8000/v1",
+          sttEndpoint,
+        },
+      ];
+    }
+    return original(proc, args);
+  });
+  await render();
+  const field = () =>
+    container.querySelector<HTMLInputElement>('input[aria-label="Transcription server URL"]')!;
+  expect(field().value).toBe("http://127.0.0.1:9000/v1");
+  // Another device moved transcription while this screen was closed.
+  sttEndpoint = "http://127.0.0.1:9100/v1";
+  const release = await revisit();
+  const key = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Transcription API key"]',
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      key,
+      "stt-test-key",
+    );
+    key.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await release();
+  expect(field().value).toBe("http://127.0.0.1:9000/v1");
+});
+
 it("keeps a saved speech model when an opening read started before the save lands after it", async () => {
   state.load.mockResolvedValue(false);
   await render();
