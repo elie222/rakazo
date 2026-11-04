@@ -11,6 +11,7 @@ function fold(text: string) {
 }
 
 const SPACE = /\s/;
+const SEPARATORS = new Set(["BR", "IMG", "svg", "VIDEO"]);
 
 /** One code unit of a message's lowercased text and the source character it came from. */
 type Unit = { node: Text; start: number; end: number } | null;
@@ -39,8 +40,8 @@ function messageText(message: Element) {
   let block: Element | null = null;
   for (let current = walker.nextNode(); current; current = walker.nextNode()) {
     if (current.nodeType === Node.ELEMENT_NODE) {
-      // A line break shows as one, so the words either side of it never form a match.
-      if ((current as Element).tagName === "BR") {
+      // A line break or an image separates the words either side of it.
+      if (SEPARATORS.has((current as Element).tagName)) {
         text += "\n";
         units.push(null);
       }

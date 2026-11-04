@@ -375,7 +375,12 @@ function SpaceShell() {
           return focusComposer();
         case "find":
           if (!active && !activeGroup) return false;
-          // The open drawer makes the chat inert, so the bar could not take focus behind it.
+          // On a narrow window the drawer makes the chat inert and a side panel covers it, so
+          // either would hide the bar. A panel holding a form keeps its input instead.
+          if (isMobileSidebar && panel) {
+            if (!chatPanelOpen) return false;
+            setPanel(null);
+          }
           setMobileSidebarOpen(false);
           setFindOpen(true);
           // A bar already open may have lost focus; a new one focuses itself as it mounts.

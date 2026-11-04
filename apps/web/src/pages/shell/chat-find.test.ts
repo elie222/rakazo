@@ -66,6 +66,11 @@ describe("findTextRanges", () => {
     expect(found(root, "messages")).toEqual(["messages"]);
   });
 
+  it("never joins words across an inline image", () => {
+    const root = transcript('<p>left<img alt="" src="x.png">right</p>');
+    expect(found(root, "leftright")).toEqual([]);
+  });
+
   it("never joins the text either side of a button", () => {
     const root = transcript("<p>before <button>Page</button> after</p>");
     expect(found(root, "before after")).toEqual([]);
