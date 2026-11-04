@@ -74,10 +74,8 @@ tags:
 - extendedWaitUntil:
     visible: "Message Researcher"
     timeout: 15000
+# The unsent draft survives a restart.
 - tapOn: "Message Researcher"
-- inputText: "Keyboard lifecycle check"
-- pressKey: Enter
-- inputText: "Second line"
 - assertVisible: 'Keyboard lifecycle check\nSecond line'
 - assertVisible: "Send"
 - takeScreenshot: "keyboard-restarted"
@@ -104,6 +102,7 @@ tags:
     visible: "Message Researcher"
     timeout: 15000
 - tapOn: "Message Researcher"
+- eraseText: 100
 - inputText: "Keyboard lifecycle check"
 - pressKey: Enter
 - inputText: "Second line"
