@@ -191,6 +191,17 @@ export function botEyeTone(bodyHex: string): "page" | "dark" | "light" {
   return "page";
 }
 
+/** The eye ink {@link botEyeTone} picks, on a page with these two colors. */
+export function botEyeInk(bodyColor: string, page: { background: string; foreground: string }) {
+  const tone = botEyeTone(bodyColor);
+  if (tone === "page") return page.background;
+  const [darker, lighter] =
+    contrastRatio(page.background, "#FFFFFF") > contrastRatio(page.foreground, "#FFFFFF")
+      ? [page.background, page.foreground]
+      : [page.foreground, page.background];
+  return tone === "dark" ? darker : lighter;
+}
+
 /** WCAG contrast ratio between two hex colors. */
 export function contrastRatio(a: string, b: string): number {
   const [high, low] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);

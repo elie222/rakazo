@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import {
+  changeUserTimezone,
   effectiveModelRole,
   hasHostedModelCredits,
   isAutoReviewCheckerConfigured,
@@ -7,7 +8,7 @@ import {
   PushSessionEndedError,
   settleCallRequest,
 } from "@rakazo/adapters";
-import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
+import type { ActionApprovalRule, Actor, ChatAlert, Me, SettingsScope } from "@rakazo/contracts";
 import {
   approvalModeFromPreference,
   approvalPreferenceFromMode,
@@ -16,6 +17,7 @@ import {
 import { urlSite } from "@rakazo/core/egress";
 import {
   auditLogOrganization,
+  commitBotUpdate,
   findAutoReviewPreference,
   findDefaultVoiceCredential,
   findModelCredential,
@@ -28,11 +30,13 @@ import {
   Prisma,
   removeApprovalRule,
   runAsSystem,
+  runAsTenant,
   saveApprovalRule,
   saveAutoReviewPreference,
   selectVoicePreference,
   voicePreferenceTarget,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../access-grants.js";
 import { requireAdmin } from "../admins.js";
 import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
@@ -113,7 +117,7 @@ export function accountRoutes(ctx: RouterContext) {
         return billing.status(context.actor);
       }),
       checkout: authed.billing.checkout.handler(async ({ context, input }) =>
-        requireBilling(deps).checkout(context.actor, input?.client, input?.interval),
+        requireBilling(deps).checkout(context.actor, input?.client, input?.interval, input?.tier),
       ),
       portal: authed.billing.portal.handler(async ({ context, input }) =>
         requireBilling(deps).portal(context.actor, input?.client),
@@ -126,6 +130,11 @@ export function accountRoutes(ctx: RouterContext) {
       switchToYearly: authed.billing.switchToYearly.handler(async ({ context }) => {
         const billing = requireBilling(deps);
         await billing.switchToYearly(context.actor);
+        return billing.status(context.actor);
+      }),
+      changeTier: authed.billing.changeTier.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        await billing.changeTier(context.actor, input.tier);
         return billing.status(context.actor);
       }),
       claimReferral: authed.billing.claimReferral.handler(async ({ context, input }) => {
@@ -149,14 +158,65 @@ export function accountRoutes(ctx: RouterContext) {
     },
     preferences: {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
-        await deps.prisma.user.update({
-          where: { id: context.actor.userId },
-          // An avatar style from an older app is accepted and ignored: there is only one.
-          data: {
-            ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
+        const userId = context.actor.userId;
+        const botAvatarSet = input.botAvatarSet;
+        if (input.timezone !== undefined) {
+          // The routines that took the account zone keep their local schedule in the new
+          // one, and the other fields commit in the same save. The move's row lock still
+          // waits for any bot creation holding the user row, so no new bot is missed below.
+          await changeUserTimezone(deps, userId, input.timezone, {
             ...(input.locale === undefined ? {} : { locale: input.locale }),
-          },
-        });
+            ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+          });
+        } else {
+          await deps.prisma.user.update({
+            where: { id: userId },
+            // An avatar style from an older app is accepted and ignored: there is only one.
+            data: {
+              ...(input.locale === undefined ? {} : { locale: input.locale }),
+              ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+            },
+          });
+        }
+        if (botAvatarSet !== undefined) {
+          // Every bot of this user not pinned to another set follows the new default, in every
+          // space they own bots in, announced like any edit so other devices redraw it.
+          const bots = await runAsSystem("restyle the user's own bots in all their spaces", () =>
+            deps.prisma.bot.findMany({
+              where: { userId, avatarSetPinned: false, avatarSet: { not: botAvatarSet } },
+              select: { id: true, spaceId: true, thread: { select: { id: true } } },
+            }),
+          );
+          for (const bot of bots) {
+            const threadId = bot.thread?.id;
+            if (!threadId) continue;
+            // A newer save changed the default again: its own pass owns the remaining bots.
+            const current = await deps.prisma.user.findUniqueOrThrow({
+              where: { id: userId },
+              select: { botAvatarSet: true },
+            });
+            if (current.botAvatarSet !== botAvatarSet) break;
+            // The default is saved; a bot that fails here keeps its style until the next save.
+            await runAsTenant({ spaceId: bot.spaceId, userId }, () =>
+              commitBotUpdate({
+                prisma: deps.prisma,
+                notify: (thread, seq) => deps.events.notify(thread, seq),
+                spaceId: bot.spaceId,
+                threadId,
+                botId: bot.id,
+                emitBotUpdated: true,
+                // Pinned since it was listed: leave the owner's choice alone.
+                expectedSettings: { avatarSetPinned: false },
+                data: { avatarSet: botAvatarSet },
+              }),
+            ).catch((error) => {
+              if (
+                !(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025")
+              )
+                getLogger().error("bot style restyle", error);
+            });
+          }
+        }
         return meDto(deps, context.actor);
       }),
       adoptTimezone: authed.preferences.adoptTimezone.handler(
@@ -269,6 +329,44 @@ export function accountRoutes(ctx: RouterContext) {
       }),
     },
     notifications: {
+      subscribe: authed.notifications.subscribe.handler(async function* ({ context }) {
+        if (!deps.events.followChatAlerts) throw new ORPCError("NOT_FOUND");
+        const { spaceId, userId } = context.actor;
+        const controller = new AbortController();
+        const signal = context.signal
+          ? AbortSignal.any([context.signal, controller.signal])
+          : controller.signal;
+        const alerts = deps.events.followChatAlerts(userId, spaceId, signal);
+        let pending: Promise<IteratorResult<ChatAlert>> | undefined;
+        let authorizedAt = Date.now();
+        try {
+          while (!context.signal?.aborted) {
+            pending ??= alerts.next();
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const next = await Promise.race([
+              pending,
+              new Promise<"heartbeat">((resolve) => {
+                timer = setTimeout(() => resolve("heartbeat"), HEARTBEAT_MS);
+              }),
+            ]).finally(() => clearTimeout(timer));
+            if (context.stillAuthorized && Date.now() - authorizedAt >= SESSION_RECHECK_MS) {
+              if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");
+              authorizedAt = Date.now();
+            }
+            if (next === "heartbeat") {
+              yield { type: "heartbeat" as const };
+              continue;
+            }
+            pending = undefined;
+            if (next.done) return;
+            if (next.value.spaceId !== spaceId) continue;
+            yield { type: "alert" as const, alert: next.value };
+          }
+        } finally {
+          controller.abort();
+          await alerts.return(undefined);
+        }
+      }),
       subscribeCalls: authed.notifications.subscribeCalls.handler(async function* ({ context }) {
         if (!deps.env?.phoneCallsEnabled || !deps.events.followIncomingCalls)
           throw new ORPCError("NOT_FOUND");

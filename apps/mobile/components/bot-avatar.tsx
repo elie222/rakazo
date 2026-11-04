@@ -1,5 +1,5 @@
 import type { BotAvatarSet } from "@rakazo/contracts";
-import type { AvatarMotionMode, LogoAvatarActivity } from "@rakazo/core";
+import type { AvatarEyes, AvatarMotionMode, LogoAvatarActivity } from "@rakazo/core";
 import {
   AVATAR_LID_CLOSE,
   AVATAR_MOTION_UNITS,
@@ -15,7 +15,11 @@ import {
   avatarThinkingDot,
   avatarWorkingDot,
   botAvatarActivity,
+  botEyeInk,
   isRunWorking,
+  ORGANIC_AVATAR_EYES,
+  ORGANIC_AVATAR_VIEWBOX,
+  organicAvatarEyeTilt,
   organicAvatarPath,
   SHIPPED_BOT_AVATAR_EYES,
   SHIPPED_BOT_AVATAR_VIEWBOX,
@@ -31,7 +35,7 @@ import Animated, {
 import Svg, { G, Path, Rect } from "react-native-svg";
 import type { AvatarLife } from "../lib/avatar-life";
 import { useAvatarOnScreen, useLife, usePoke, useSettling } from "../lib/avatar-life";
-import { botEyeInk, mobileBotAvatarPresentation } from "../lib/bot-avatar";
+import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import { useI18n } from "../lib/i18n";
 import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
 import { useMobileTokens } from "../lib/native";
@@ -48,8 +52,10 @@ function morphGrow(morph: number): number {
 }
 /** The face shrinks until it is the size of the middle typing dot. */
 const MORPH_SHRINK = 1 - (2 * AVATAR_TYPING_DOTS.radius) / AVATAR_MOTION_UNITS;
-/** The shipped shapes' view box is this many units wide. */
-const SHAPE_UNITS = Number(SHIPPED_BOT_AVATAR_VIEWBOX.split(" ")[2]);
+/** How many units wide a view box is. */
+function viewBoxUnits(viewBox: string): number {
+  return Number(viewBox.split(" ")[2]);
+}
 
 /** The avatar's flat frame right now, a tap poke included; a worklet. */
 function liveFrame(life: AvatarLife) {
@@ -380,6 +386,22 @@ function Dot({
 
 type BodyStyle = ReturnType<typeof useAnimatedStyle>;
 
+/** Bar eyes' live props: motion offsets scaled to the view box, closing about their centre. */
+function useBarEyes(eyes: AvatarEyes, viewBox: string, life: AvatarLife) {
+  const scale = viewBoxUnits(viewBox) / AVATAR_MOTION_UNITS;
+  const eyeProps = (cx: number) => () => {
+    "worklet";
+    const state = eyeState(life);
+    const height = state.hidden ? 0 : eyes.height * state.lid;
+    return {
+      x: cx - eyes.width / 2 + state.x * scale,
+      y: eyes.cy - height / 2 + state.y * scale,
+      height,
+    };
+  };
+  return [useAnimatedProps(eyeProps(eyes.leftCx)), useAnimatedProps(eyeProps(eyes.rightCx))];
+}
+
 function ShippedShapeAvatar({
   color,
   eyeColor,
@@ -396,16 +418,7 @@ function ShippedShapeAvatar({
   bodyStyle: BodyStyle;
 }) {
   const eyes = SHIPPED_BOT_AVATAR_EYES;
-  // Offsets are in motion units, scaled to the shape's view box; eyes close about their centre.
-  const eyeProps = (x: number) => () => {
-    "worklet";
-    const state = eyeState(life);
-    const scale = SHAPE_UNITS / AVATAR_MOTION_UNITS;
-    const height = state.hidden ? 0 : eyes.height * state.lid;
-    return { x: x + state.x * scale, y: eyes.centerY - height / 2 + state.y * scale, height };
-  };
-  const leftEye = useAnimatedProps(eyeProps(eyes.leftX));
-  const rightEye = useAnimatedProps(eyeProps(eyes.rightX));
+  const [leftEye, rightEye] = useBarEyes(eyes, SHIPPED_BOT_AVATAR_VIEWBOX, life);
   return (
     <Animated.View style={[{ width: size, height: size }, bodyStyle]}>
       <Svg width={size} height={size} viewBox={SHIPPED_BOT_AVATAR_VIEWBOX}>
@@ -435,23 +448,22 @@ function OrganicAvatar({
   bodyStyle: BodyStyle;
 }) {
   const seed = avatarIdentitySeed(identity || color || "#8B5CF6");
-  // Offsets are in motion units, scaled to this 120-unit box; eyes close about their centre.
-  const eyeProps = (x: number) => () => {
-    "worklet";
-    const state = eyeState(life);
-    const scale = 120 / AVATAR_MOTION_UNITS;
-    const height = state.hidden ? 0 : 24 * state.lid;
-    return { x: x + state.x * scale, y: -height / 2 + state.y * scale, height };
-  };
-  const leftEyeProps = useAnimatedProps(eyeProps(-14));
-  const rightEyeProps = useAnimatedProps(eyeProps(7));
+  const eyes = ORGANIC_AVATAR_EYES;
+  const [leftEye, rightEye] = useBarEyes(eyes, ORGANIC_AVATAR_VIEWBOX, life);
   return (
     <Animated.View style={[{ width: size, height: size }, bodyStyle]}>
-      <Svg width={size} height={size} viewBox="-60 -60 120 120">
+      <Svg width={size} height={size} viewBox={ORGANIC_AVATAR_VIEWBOX}>
         <Path d={organicAvatarPath(seed)} fill={color} />
-        <G transform={`rotate(${(seed % 9) - 4})`}>
-          <AnimatedRect animatedProps={leftEyeProps} width={7} rx={3.5} fill={eyeColor} />
-          <AnimatedRect animatedProps={rightEyeProps} width={7} rx={3.5} fill={eyeColor} />
+        <G transform={`rotate(${organicAvatarEyeTilt(seed)})`}>
+          {[leftEye, rightEye].map((props, index) => (
+            <AnimatedRect
+              key={index}
+              animatedProps={props}
+              width={eyes.width}
+              rx={eyes.width / 2}
+              fill={eyeColor}
+            />
+          ))}
         </G>
       </Svg>
     </Animated.View>

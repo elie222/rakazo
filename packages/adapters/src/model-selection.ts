@@ -10,6 +10,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { chooseModelCredential, findModelCredential, findModelCredentialById } from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { modelCredentialDto } from "./model-connect.js";
+import { compatibleModelSeesImages, modelAcceptsImageInput } from "./model-vision.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {
   catalogModelAvailableForAuth,
@@ -334,6 +335,35 @@ export type LoadedModelSecret =
   | { status: "missing" }
   | { status: "unreadable"; ciphertext: string }
   | { status: "loaded"; ciphertext: string; plaintext: string };
+
+/** Whether a model on a member's connection accepts image input, as that connection declares it. */
+export async function connectedModelSeesImages(
+  deps: { prisma: Pick<PrismaClient, "secret">; secretStore: Pick<SecretStore, "load"> },
+  userId: string,
+  provider: string,
+  modelId: string,
+  credential: ModelCredential,
+  catalogImages?: boolean,
+): Promise<boolean> {
+  if (canonicalPiProviderId(provider) !== OPENAI_COMPATIBLE_PROVIDER_ID)
+    return modelAcceptsImageInput(provider, modelId, catalogImages);
+  if (!credential) return false;
+  const stored = await loadStoredModelSecret(
+    deps.prisma,
+    deps.secretStore,
+    userId,
+    credential.secretId,
+  );
+  if (stored.status !== "loaded") return false;
+  try {
+    const secret = parseModelSecret(stored.plaintext);
+    return (
+      secret.kind === "openai_compatible" && compatibleModelSeesImages(credential, secret, modelId)
+    );
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Read a user's account-wide model secret. A missing row or an undecryptable ciphertext is

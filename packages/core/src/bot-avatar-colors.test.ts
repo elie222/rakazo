@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BOT_COLOR_LIST,
+  botEyeInk,
   botEyeTone,
   chatUserBubbleColors,
   contrastRatio,
@@ -55,4 +56,12 @@ describe("chatUserBubbleColors", () => {
     expect(chatUserBubbleColors("data:image/png;base64,AAAA", "bot-1")).toBeUndefined();
     expect(chatUserBubbleColors("#FFFFFF", "bot-1")).toBeUndefined();
   });
+});
+
+it("cuts bot eyes in the page color unless the body is nearly white", () => {
+  const dark = { background: "#121212", foreground: "#F5F5F5" };
+  const light = { background: "#FFFFFF", foreground: "#1C1C1C" };
+  expect(botEyeInk("#FF5EB1", dark)).toBe("#121212");
+  expect(botEyeInk("#FF5EB1", light)).toBe("#FFFFFF");
+  expect(botEyeInk("#FFFFFF", light)).toBe("#1C1C1C");
 });

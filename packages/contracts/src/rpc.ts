@@ -33,6 +33,7 @@ import {
   TicketSchema,
   UpdateTicketInput,
 } from "./board.js";
+import { BotAvatarSetSchema } from "./bot-avatar.js";
 import {
   BotSecretMetadata,
   BotSecretPutInput,
@@ -68,7 +69,9 @@ import {
   BotSectionName,
   BotSectionSchema,
   ByokIntervalSchema,
+  ByokTierSchema,
   CapabilityInstallSchema,
+  ChatAlertSchema,
   CONNECTION_LABEL_MAX_LENGTH,
   ComputerModeSchema,
   ComputerProviderSettingsSchema,
@@ -323,7 +326,12 @@ export const appContract = {
     checkout: oc
       .input(
         z
-          .object({ client: BillingClientSchema, interval: ByokIntervalSchema.optional() })
+          .object({
+            client: BillingClientSchema,
+            interval: ByokIntervalSchema.optional(),
+            /** The own-key plan's tier; Standard when omitted. */
+            tier: ByokTierSchema.optional(),
+          })
           .optional(),
       )
       .output(z.object({ url: z.string().url() })),
@@ -334,6 +342,8 @@ export const appContract = {
     endTrial: oc.output(BillingStatusSchema),
     /** Owners only: moves a monthly own-key plan to yearly, charging the difference now. */
     switchToYearly: oc.output(BillingStatusSchema),
+    /** Owners only: moves the own-key plan to another tier at the same interval, billing the difference now. */
+    changeTier: oc.input(z.object({ tier: ByokTierSchema })).output(BillingStatusSchema),
     /** Records who invited this organization; ignored once it has subscribed. */
     claimReferral: oc
       .input(z.object({ code: z.string().min(1).max(64) }))
@@ -351,6 +361,8 @@ export const appContract = {
         z
           .object({
             avatarStyle: AvatarStyleSchema.optional(),
+            /** Restyles every bot not pinned to another set, and is what new bots get. */
+            botAvatarSet: BotAvatarSetSchema.optional(),
             timezone: TimeZoneSchema.nullable().optional(),
             /** The language the app runs in, so emails can be written in it. */
             locale: AppLocaleSchema.optional(),
@@ -358,6 +370,7 @@ export const appContract = {
           .refine(
             (input) =>
               input.avatarStyle !== undefined ||
+              input.botAvatarSet !== undefined ||
               input.timezone !== undefined ||
               input.locale !== undefined,
             { message: "Nothing to update" },
@@ -1358,6 +1371,15 @@ export const appContract = {
     accountToken: oc.output(z.object({ token: z.string() })),
   },
   notifications: {
+    /** Run alerts for the signed-in user's chats in this space, live while connected. */
+    subscribe: oc.output(
+      eventIterator(
+        z.object({
+          type: z.enum(["alert", "heartbeat"]),
+          alert: ChatAlertSchema.optional(),
+        }),
+      ),
+    ),
     subscribeCalls: oc.output(
       eventIterator(
         z.object({

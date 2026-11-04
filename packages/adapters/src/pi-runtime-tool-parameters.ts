@@ -106,6 +106,7 @@ function builtinParameters(tool: ConnectorTool) {
       name: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String()),
+      instructions_offset: Type.Optional(Type.Integer({ minimum: 0 })),
       color: Type.Optional(Type.String()),
       artifact_id: Type.Optional(Type.String()),
       use_attached_image: Type.Optional(Type.Boolean()),
@@ -378,6 +379,9 @@ export function prepareFleetArguments(
   if (argumentGiven(raw.dailyCheckIns)) out.dailyCheckIns = raw.dailyCheckIns;
   const notify = raw.notifyOnFinish ?? raw.notify_on_finish;
   if (argumentGiven(notify)) out.notifyOnFinish = notify;
+  // The read pager's offset is a number; the handler validates it.
+  if (toolName === "update_bot" && argumentGiven(raw.instructions_offset))
+    out.instructions_offset = raw.instructions_offset;
   return out;
 }
 

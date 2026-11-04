@@ -25,6 +25,7 @@ import org.json.JSONObject
 internal object SenderPush {
   private const val MAX_AVATAR_CHARS = 1400
   private const val MAX_AVATAR_PIXELS = 96
+  private const val SILENT_GROUP = "rakazo.silent"
 
   /** Its own ID per thread, as Expo's had, so the poller's fallback post never replaces it. */
   fun notificationId(threadId: String) = "push:$threadId".hashCode()
@@ -68,7 +69,14 @@ internal object SenderPush {
       .setAutoCancel(true)
       .setCategory(Notification.CATEGORY_MESSAGE)
       .apply { if (data.has("notificationBadge")) setNumber(data.optInt("notificationBadge")) }
-      .apply { if (foreground && Build.VERSION.SDK_INT >= 31) setSilent(true) }
+      // Notification.Builder has no setSilent; this is what NotificationCompat's setSilent does:
+      // a child of a group that alerts only for its summary posts without sound or heads-up.
+      .apply {
+        if (foreground && Build.VERSION.SDK_INT >= 31) {
+          setGroup(SILENT_GROUP)
+          setGroupAlertBehavior(Notification.GROUP_ALERT_SUMMARY)
+        }
+      }
       .addExtras(Bundle().apply {
         putString("rakazo.botId", botId)
         putString("rakazo.threadId", threadId)

@@ -278,8 +278,16 @@ export class LinuxDesktop {
         }`,
       );
     }
-    if (result.code !== 0 || Buffer.byteLength(result.stdout) > PAGE_BROWSER_MAX_OUTPUT)
+    if (Buffer.byteLength(result.stdout) > PAGE_BROWSER_MAX_OUTPUT)
       throw new Error("Page browser unavailable or interrupted");
+    // Exit 2 is the page browser refusing the command before touching the page (an older
+    // computer image does not know it). Pass its reply on, so a caller can tell "cannot
+    // check" from a check that failed.
+    if (result.code === 2) {
+      const refused = refusedCommand(result.stdout);
+      if (refused) return refused;
+    }
+    if (result.code !== 0) throw new Error("Page browser unavailable or interrupted");
     return JSON.parse(result.stdout) as PageBrowserResult;
   }
 
@@ -518,3 +526,15 @@ export const VERIFY_LINUX_DESKTOP = [
   'wait "$xvfb" 2>/dev/null || true',
   'if [ "$ready" -ne 1 ]; then echo "Xvfb did not start" >&2; exit 1; fi',
 ].join("\n");
+
+/** The page browser's own reply when it refused a command, or nothing when the output is not one. */
+function refusedCommand(stdout: string): PageBrowserResult | undefined {
+  try {
+    const reply = JSON.parse(stdout) as { ok?: unknown; error?: unknown };
+    return reply && reply.ok === false && typeof reply.error === "string"
+      ? (reply as PageBrowserResult)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}

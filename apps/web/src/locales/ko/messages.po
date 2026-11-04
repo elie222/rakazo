@@ -405,6 +405,10 @@ msgstr "{title}, {savedAs}(으)로 저장"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, other {도구 #개}}"
 
+#: src/components/ModelCredits.tsx
+msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
+msgstr "{vcpus} vCPU, {memoryGb} GB, 월 {hours}시간 컴퓨터"
+
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
 msgid "@{0}"
@@ -1119,6 +1123,10 @@ msgstr "Bot 화면"
 msgid "Bot screen preview"
 msgstr "Bot 화면 미리보기"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Bot style"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
 msgstr "봇의 모델"
@@ -1609,6 +1617,10 @@ msgstr "컴퓨터가 절전 상태입니다. 열어 깨우세요."
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "컴퓨터가 중지됨"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "컴퓨터 사용 모델"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2417,6 +2429,10 @@ msgstr "이 페이지를 불러올 수 없습니다. 다시 시도하세요."
 
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
+msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update bot style"
 msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
@@ -4674,6 +4690,7 @@ msgstr "조직"
 msgid "Organization API key"
 msgstr "조직 API 키"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Original"
 msgstr ""
@@ -4880,6 +4897,10 @@ msgstr "고정"
 msgid "Pinned"
 msgstr "고정됨"
 
+#: src/components/ModelCredits.tsx
+msgid "Plan"
+msgstr "요금제"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "{name} 재생"
@@ -4985,6 +5006,7 @@ msgstr "풀 리퀘스트"
 msgid "Queued"
 msgstr "대기 중"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
 msgstr "Rakazo"
@@ -5505,6 +5527,10 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "{botName}와(과) 동일"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Same as main model"
+msgstr "기본 모델과 동일"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -6197,6 +6223,10 @@ msgid "Switch"
 msgstr "전환"
 
 #: src/components/ModelCredits.tsx
+msgid "Switch to {tierTargetName}?"
+msgstr "{tierTargetName}(으)로 변경할까요?"
+
+#: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "연간 결제로 전환"
 
@@ -6328,6 +6358,10 @@ msgstr "선택한 기억 서비스는 현재 빌드에서 사용할 수 없습�
 #: src/components/pages/SharePopover.tsx
 msgid "The shared link stops working"
 msgstr "공유 링크가 더 이상 작동하지 않음"
+
+#: src/components/ModelCredits.tsx
+msgid "The unused difference is credited to your next invoice."
+msgstr "사용하지 않은 차액은 다음 청구서에 적립됩니다."
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
@@ -7112,6 +7146,10 @@ msgstr "사용 중인 Anthropic"
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "오늘 카드에서 {annualPrice}이 결제되며, 이번 달 사용하지 않은 금액은 차감됩니다."
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged the prorated difference today."
+msgstr "오늘 일할 계산된 차액이 카드로 청구됩니다."
+
 #: src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 msgstr "컴퓨터 디스크가 거의 가득 찼습니다. 더 이상 필요 없는 빌드 출력과 캐시를 삭제해 공간을 확보하세요."
@@ -7150,6 +7188,10 @@ msgstr "사용 중인 OpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "체험 기간이 끝나면 요금제가 연 {annualPrice}로 바뀝니다."
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {tierTargetLabel} when your trial ends."
+msgstr "체험이 끝나면 요금제가 {tierTargetLabel}(으)로 바뀝니다."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

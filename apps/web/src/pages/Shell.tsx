@@ -6,6 +6,7 @@ import type {
   ThreadMessage,
   VoiceStatus,
 } from "@rakazo/contracts";
+import { DEFAULT_NEW_BOT_AVATAR_SET } from "@rakazo/contracts";
 import {
   answerableAskMessageIds,
   channelMessageSender,
@@ -16,6 +17,7 @@ import {
   isActive,
   isRunWorking,
   memberName,
+  newClientId,
 } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
@@ -377,8 +379,19 @@ function SpaceShell() {
     redirectKeepingOverlay,
     openSpaceChat: openSpaceChatRef,
   });
-  const { notifyBrowserForEvent, flushPendingBrowserNotifications } =
-    useBrowserNotifications(botsRef);
+  const { notifyBrowserForEvent, flushPendingBrowserNotifications } = useBrowserNotifications(
+    bots,
+    botsRef,
+    {
+      rpc,
+      activeBotId,
+      activeGroupId,
+      openChat: (alert) => {
+        setMobileSidebarOpen(false);
+        navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
+      },
+    },
+  );
   const { speakingMessageId, speakMessage } = useReadAloud({
     active,
     snapshot,
@@ -1090,6 +1103,7 @@ function SpaceShell() {
               onSpeak={speakMessage}
               onOpenComputer={computerControls.onOpenComputer}
               onOpenImportSetup={openImportSetup}
+              rpc={rpc}
             />
           )}
         </div>
@@ -1218,7 +1232,7 @@ function SpaceShell() {
                 void rpc.threads
                   .send({
                     botId,
-                    clientNonce: crypto.randomUUID(),
+                    clientNonce: newClientId(),
                     text: t`Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.`,
                   })
                   .then(async () => {
@@ -1272,6 +1286,7 @@ function SpaceShell() {
           openSpaceSettings={openSpaceSettings}
           closeMobileSidebar={() => setMobileSidebarOpen(false)}
           createBot={createBot}
+          botAvatarSet={bootstrapMe?.botAvatarSet ?? DEFAULT_NEW_BOT_AVATAR_SET}
           clearOpenThread={() => {
             thread.resetHistory();
             thread.updateSnapshot((current) =>

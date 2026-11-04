@@ -469,6 +469,8 @@ const OWN_FIELDS = new Set([
   "name",
   "description",
   "instructions",
+  "instructions_offset",
+  "instructionsOffset",
   "color",
   "artifact_id",
   "use_attached_image",

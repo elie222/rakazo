@@ -5,6 +5,7 @@ import { runThreadSubscription } from "@rakazo/core";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { queryClient } from "../../lib/query";
 import { useThreadSync } from "./use-thread-sync";
 
 vi.mock("@rakazo/core", async (original) => ({
@@ -13,7 +14,7 @@ vi.mock("@rakazo/core", async (original) => ({
 }));
 vi.mock("../../lib/query", () => ({
   queryClient: {
-    getQueryData: () => undefined,
+    getQueryData: vi.fn(() => undefined),
     setQueryData: vi.fn(),
     invalidateQueries: vi.fn(async () => {}),
   },
@@ -28,6 +29,66 @@ function deferred<T>() {
     resolve = done;
   });
   return { promise, resolve };
+}
+
+function syncInput({
+  inGroup,
+  get,
+  refreshBots = vi.fn(async () => {}),
+  commitSnapshot,
+  bot = { status: "idle", threadStatus: "idle" },
+}: {
+  inGroup: boolean;
+  get: () => Promise<ThreadSnapshot>;
+  refreshBots?: () => Promise<void>;
+  commitSnapshot: (next: ThreadSnapshot | null) => void;
+  bot?: { status: string; threadStatus?: string };
+}) {
+  return {
+    rpc: { threads: { get } },
+    queries: {
+      threads: { get: { queryKey: vi.fn(() => ["thread"]) } },
+      routines: { list: { queryOptions: vi.fn() }, history: { key: vi.fn(() => ["history"]) } },
+      skills: { list: { queryOptions: vi.fn() } },
+    },
+    thread: {
+      snapshot: null,
+      snapshotRef: ref(null),
+      commitSnapshot,
+      updateSnapshot: vi.fn(),
+      setRoutines: vi.fn(),
+      setRoutinesBotId: vi.fn(),
+      setTaughtSkills: vi.fn(),
+      setTaughtSkillsBotId: vi.fn(),
+      bootstrappedThread: ref(null),
+      expandedHistoryThread: ref(null),
+      historyEpoch: ref(0),
+      messageScroll: ref(null),
+      pinnedAroundRef: ref(null),
+      resetHistory: vi.fn(),
+    },
+    computerState: {
+      computerRef: ref(null),
+      commitComputer: vi.fn(),
+      cacheComputerFor: vi.fn(),
+      showCachedComputer: vi.fn(),
+      computerOpenRef: ref(false),
+      computerBotIdRef: ref(null),
+      refreshComputerScreen: vi.fn(async () => {}),
+    },
+    active: inGroup ? undefined : { id: "bot-1", name: "Bot", ...bot },
+    activeGroup: inGroup ? { id: "group-1", name: "Group" } : undefined,
+    inGroup,
+    groupId: inGroup ? "group-1" : undefined,
+    activeBotId: ref(inGroup ? undefined : "bot-1"),
+    activeGroupId: ref(inGroup ? "group-1" : undefined),
+    botsRef: ref([]),
+    searchParamsRef: ref(new URLSearchParams()),
+    refreshBots,
+    notifyBrowserForEvent: vi.fn(),
+    markBotReadIfVisible: vi.fn(),
+    markGroupReadOnReply: vi.fn(),
+  } as unknown as Parameters<typeof useThreadSync>[0];
 }
 
 afterEach(() => {
@@ -50,51 +111,7 @@ it.each([false, true])(
     const roster = deferred<void>();
     const refreshBots = vi.fn(() => roster.promise);
     const commitSnapshot = vi.fn();
-    const input = {
-      rpc: { threads: { get } },
-      queries: {
-        threads: { get: { queryKey: vi.fn(() => ["thread"]) } },
-        routines: { list: { queryOptions: vi.fn() }, history: { key: vi.fn(() => ["history"]) } },
-        skills: { list: { queryOptions: vi.fn() } },
-      },
-      thread: {
-        snapshot: null,
-        snapshotRef: ref(null),
-        commitSnapshot,
-        updateSnapshot: vi.fn(),
-        setRoutines: vi.fn(),
-        setRoutinesBotId: vi.fn(),
-        setTaughtSkills: vi.fn(),
-        setTaughtSkillsBotId: vi.fn(),
-        bootstrappedThread: ref(null),
-        expandedHistoryThread: ref(null),
-        historyEpoch: ref(0),
-        messageScroll: ref(null),
-        pinnedAroundRef: ref(null),
-        resetHistory: vi.fn(),
-      },
-      computerState: {
-        computerRef: ref(null),
-        commitComputer: vi.fn(),
-        cacheComputerFor: vi.fn(),
-        showCachedComputer: vi.fn(),
-        computerOpenRef: ref(false),
-        computerBotIdRef: ref(null),
-        refreshComputerScreen: vi.fn(async () => {}),
-      },
-      active: inGroup ? undefined : { id: "bot-1", name: "Bot" },
-      activeGroup: inGroup ? { id: "group-1", name: "Group" } : undefined,
-      inGroup,
-      groupId: inGroup ? "group-1" : undefined,
-      activeBotId: ref(inGroup ? undefined : "bot-1"),
-      activeGroupId: ref(inGroup ? "group-1" : undefined),
-      botsRef: ref([]),
-      searchParamsRef: ref(new URLSearchParams()),
-      refreshBots,
-      notifyBrowserForEvent: vi.fn(),
-      markBotReadIfVisible: vi.fn(),
-      markGroupReadOnReply: vi.fn(),
-    } as unknown as Parameters<typeof useThreadSync>[0];
+    const input = syncInput({ inGroup, get, refreshBots, commitSnapshot });
     function Probe() {
       useThreadSync(input);
       return null;
@@ -124,3 +141,56 @@ it.each([false, true])(
     expect(subscription.signal.aborted).toBe(true);
   },
 );
+
+it.each([
+  ["running", { status: "running" }, true],
+  ["idle", null, true],
+  ["running", null, false],
+  ["idle", { status: "running" }, false],
+])(
+  "paints a %s bot's cached chat only when its run state still matches",
+  async (botStatus, run, painted) => {
+    await expectCachedPaint({ status: botStatus, threadStatus: botStatus }, { run }, painted);
+  },
+);
+
+it("checks every active run in a cached chat, not just the primary one", async () => {
+  await expectCachedPaint(
+    { status: "idle", threadStatus: "idle" },
+    { run: { status: "failed" }, activeRuns: [{ status: "running" }] },
+    false,
+  );
+});
+
+it("ignores the bot's work in other chats when judging its own cached chat", async () => {
+  await expectCachedPaint({ status: "running", threadStatus: "idle" }, { run: null }, true);
+});
+
+it("paints the cached chat when the server reports no status for it", async () => {
+  await expectCachedPaint({ status: "running" }, { run: null }, true);
+});
+
+async function expectCachedPaint(
+  bot: { status: string; threadStatus?: string },
+  runs: Record<string, unknown>,
+  painted: boolean,
+) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const cached = { botId: "bot-1", messages: [], ...runs } as unknown as ThreadSnapshot;
+  vi.mocked(queryClient.getQueryData).mockReturnValueOnce(cached);
+  const commitSnapshot = vi.fn();
+  const input = syncInput({
+    inGroup: false,
+    get: () => new Promise<ThreadSnapshot>(() => {}),
+    commitSnapshot,
+    bot,
+  });
+  function Probe() {
+    useThreadSync(input);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Probe)));
+  expect(commitSnapshot.mock.calls.some(([next]) => next === cached)).toBe(painted);
+  act(() => root.unmount());
+}

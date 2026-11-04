@@ -5,7 +5,11 @@ import type { InferRouterInitialContext } from "@orpc/server";
 import { createRouterClient } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
-import { ConnectorAuthUnavailableError, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import {
+  ConnectorAuthUnavailableError,
+  routineWakeupJob,
+  SecretStoreUnavailableError,
+} from "@rakazo/adapter-kit";
 import type { McpOAuthSummary } from "@rakazo/adapters";
 import * as adapters from "@rakazo/adapters";
 import {
@@ -86,17 +90,61 @@ describe("account preferences", () => {
         return { count: 1 };
       },
     );
+    const botFindMany = vi.fn().mockResolvedValue([]);
+    const routines: Record<string, unknown>[] = [];
+    const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
+      Object.entries(where).every(([key, value]) =>
+        value && typeof value === "object" && "in" in value
+          ? (value.in as unknown[]).includes(row[key])
+          : row[key] === value,
+      );
     const prisma = {
       user: {
         update,
         updateMany,
+        findUnique: vi.fn(async () => ({ timezone: user.timezone })),
         findUniqueOrThrow: vi.fn().mockResolvedValue(user),
       },
+      bot: { findMany: botFindMany },
+      routine: {
+        findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+          routines.filter((row) => matches(row, where)),
+        ),
+        updateMany: vi.fn(
+          async ({
+            where,
+            data,
+          }: {
+            where: Record<string, unknown>;
+            data: Record<string, unknown>;
+          }) => {
+            let count = 0;
+            for (const [index, row] of routines.entries()) {
+              if (!matches(row, where)) continue;
+              routines[index] = { ...row, ...data };
+              count += 1;
+            }
+            return { count };
+          },
+        ),
+      },
+      $transaction: vi.fn(async (run: (client: unknown) => Promise<unknown>) => run(prisma)),
+      $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join("?");
+        if (sql.includes("FOR SHARE")) return [{ timezone: user.timezone }];
+        if (sql.includes('"routines"')) {
+          return routines
+            .filter((row) => matches(row, { userId: values[0], timezone: values[1] }))
+            .map((row) => ({ id: row.id }));
+        }
+        return [];
+      }),
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
+      jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -112,7 +160,15 @@ describe("account preferences", () => {
       email: "user@rakazo.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    return { update, updateMany, deps, actor, handler: new RPCHandler(createRouter(deps)) };
+    return {
+      update,
+      updateMany,
+      botFindMany,
+      routines,
+      deps,
+      actor,
+      handler: new RPCHandler(createRouter(deps)),
+    };
   }
 
   it("records only validated screens under the authenticated actor", async () => {
@@ -326,6 +382,31 @@ describe("account preferences", () => {
     });
   });
 
+  it("saves the bot style and restyles only bots not pinned to another set", async () => {
+    const { update, botFindMany, actor, handler } = preferencesDeps("organic");
+
+    const response = await handle(
+      handler,
+      new Request("http://127.0.0.1/rpc/preferences/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botAvatarSet: "rakazo" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { botAvatarSet: "rakazo" },
+    });
+    expect(botFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "user-1", avatarSetPinned: false, avatarSet: { not: "rakazo" } },
+      }),
+    );
+  });
+
   it("rejects avatar styles outside robot|organic", async () => {
     const { update, actor, handler } = preferencesDeps("robot");
 
@@ -369,6 +450,64 @@ describe("account preferences", () => {
       where: { id: "user-1" },
       data: { timezone: "Pacific/Auckland" },
     });
+  });
+
+  it("saves the timezone and the language preference in one write", async () => {
+    const setup = preferencesDeps("organic", "Africa/Cairo");
+
+    const response = await updatePreferences(setup, {
+      timezone: "Europe/London",
+      locale: "pt-BR",
+    });
+
+    expect(response.status).toBe(200);
+    expect(setup.update).toHaveBeenCalledTimes(1);
+    expect(setup.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { timezone: "Europe/London", locale: "pt-BR" },
+    });
+  });
+
+  it("moves routines that took the account zone to the new one", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-04T12:00:00.000Z") });
+    try {
+      const setup = preferencesDeps("organic", "Africa/Cairo");
+      setup.routines.push(
+        {
+          id: "routine-1",
+          userId: "user-1",
+          crons: ["0 9 * * 1"],
+          timezone: "Africa/Cairo",
+          active: true,
+          watch: null,
+          nextRunAt: new Date("2026-11-09T07:00:00.000Z"),
+        },
+        {
+          id: "routine-2",
+          userId: "user-1",
+          crons: ["0 9 * * 1"],
+          timezone: "Asia/Tokyo",
+          active: true,
+          watch: null,
+          nextRunAt: new Date("2026-11-09T00:00:00.000Z"),
+        },
+      );
+
+      const response = await updatePreferences(setup, { timezone: "Europe/London" });
+
+      expect(response.status).toBe(200);
+      // The routine that took the account zone keeps Monday 09:00 in London; the pinned one stays.
+      expect(setup.routines[0]).toMatchObject({
+        timezone: "Europe/London",
+        nextRunAt: new Date("2026-11-09T09:00:00.000Z"),
+      });
+      expect(setup.routines[1]).toMatchObject({ timezone: "Asia/Tokyo" });
+      expect(setup.deps.jobs.enqueue).toHaveBeenCalledWith(
+        routineWakeupJob("routine-1", new Date("2026-11-09T09:00:00.000Z")),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("saves the app language emails are written in", async () => {
@@ -3525,7 +3664,7 @@ describe("connections.complete", () => {
       return { status: response.status, body: await response.json() };
     }
     const securityEvents = () => sink.events.filter((event) => event.message === "security.event");
-    return { complete, revoke, connector, securityEvents, row, sink };
+    return { complete, revoke, connector, connection, securityEvents, row, sink };
   }
 
   it.each([
@@ -3561,6 +3700,34 @@ describe("connections.complete", () => {
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
     expect(row.providerRef).toBe("account-1");
     expect(securityEvents()).toEqual([]);
+  });
+
+  it("stores the account id on a poll after the catalog connected the row", async () => {
+    const { complete, connector, securityEvents, row } = pollFixture("connected");
+    Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-1") });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("account-1");
+    expect(connector.complete).not.toHaveBeenCalled();
+    expect(securityEvents()).toEqual([]);
+  });
+
+  it("keeps the app-only ref while a sibling authorization for the same app is unresolved", async () => {
+    const { complete, connector, connection, row } = pollFixture("connected");
+    connection.findMany.mockResolvedValue([{ providerRef: "gmail", status: "pending" }] as never);
+    Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-2") });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("gmail");
+  });
+
+  it("stores the account id beside an abandoned sibling attempt", async () => {
+    const { complete, connector, connection, row } = pollFixture("connected");
+    connection.findMany.mockResolvedValue([{ providerRef: null, status: "error" }] as never);
+    Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-1") });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("account-1");
   });
 
   it("stores the connected account a request id resolves to", async () => {
@@ -9007,6 +9174,89 @@ describe("groups.remove", () => {
       "release screen",
       "expire lease",
     ]);
+  });
+
+  it("still removes the deleted group's files and page link secrets when expiring its leases fails", async () => {
+    const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      message: { findMany: vi.fn(async () => []) },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
+      chatGroup: {
+        findUnique: vi.fn().mockResolvedValue({
+          artifacts: [{ storageKey: "artifacts/group-1/report.pdf" }],
+          members: [{ botId: "bot-1" }],
+          thread: { id: "thread-1" },
+        }),
+        delete: vi.fn(async () => undefined),
+      },
+      run: {
+        findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
+        updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+          where.id.in.map((id) => ({ id })),
+        ),
+      },
+      attempt: { updateMany: vi.fn() },
+      task: { updateMany: vi.fn() },
+      page: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      secret: {
+        findMany: vi.fn(async () => [{ id: "secret-1", ciphertext: "vault-ref-1" }]),
+        deleteMany: vi.fn(),
+      },
+      computerExecutionLease: { findMany: vi.fn(async () => []) },
+      computer: { findMany: vi.fn(async () => []) },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      // The group is already gone when this fails, so a retry could no longer find these.
+      computerExecutionLease: {
+        updateMany: vi.fn().mockRejectedValue(new Error("database unavailable")),
+      },
+      computer: { updateMany: vi.fn() },
+    } as unknown as PrismaClient;
+    const removeArtifact = vi.fn(async () => undefined);
+    const deleteSecret = vi.fn(async () => undefined);
+    const deps = {
+      prisma,
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+      sandbox: { releaseScreen: vi.fn(), execute: vi.fn(() => []) },
+      jobs: { cancel: vi.fn().mockResolvedValue(undefined) },
+      artifacts: { remove: removeArtifact },
+      secrets: { delete: deleteSecret },
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@example.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+
+    const response = await handle(
+      new RPCHandler(createRouter(deps)),
+      new Request("http://127.0.0.1/rpc/groups/remove", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { groupId: "group-1" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response?.status).toBe(500);
+    expect(tx.chatGroup.delete).toHaveBeenCalled();
+    expect(removeArtifact).toHaveBeenCalledWith(
+      "artifacts/group-1/report.pdf",
+      expect.objectContaining({ botId: "bot-1" }),
+    );
+    expect(deleteSecret).toHaveBeenCalledWith(
+      "vault-ref-1",
+      expect.objectContaining({ recordId: "secret-1" }),
+    );
   });
 });
 

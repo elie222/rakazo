@@ -13,6 +13,10 @@ export type ModelChoiceResult =
   | { ok: false; error: string };
 
 const CANDIDATE_LIMIT = 5;
+/** Errors echo the query back to the model; a huge one must not inflate the tool result. */
+const ECHOED_QUERY_LIMIT = 200;
+export const echoedQuery = (query: string) =>
+  query.length > ECHOED_QUERY_LIMIT ? `${query.slice(0, ECHOED_QUERY_LIMIT)}…` : query;
 
 /** The catalog models this user's connections, or hosted credits, can run. */
 export async function connectedModelChoices(
@@ -118,7 +122,7 @@ export async function resolveModelChoice(
   if (ranked.length)
     return {
       ok: false,
-      error: `"${input.model}" matches several models. Ask the user which one, or pass its id as model: ${ranked
+      error: `"${echoedQuery(input.model)}" matches several models. Ask the user which one, or pass its id as model: ${ranked
         .slice(0, CANDIDATE_LIMIT)
         .map((choice) => `${choiceKey(choice)} (${choice.label})`)
         .join(", ")}.`,
@@ -138,7 +142,7 @@ export async function resolveModelChoice(
   return {
     ok: false,
     error: providers.length
-      ? `No connected model matches "${input.model}". The user needs to connect ${providers.join(" or ")} in Settings first.`
-      : `No model matches "${input.model}".`,
+      ? `No connected model matches "${echoedQuery(input.model)}". The user needs to connect ${providers.join(" or ")} in Settings first.`
+      : `No model matches "${echoedQuery(input.model)}".`,
   };
 }

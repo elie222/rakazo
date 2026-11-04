@@ -102,6 +102,7 @@ export default function Account() {
   const router = useRouter();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
+  const botStyleRequest = useRef(0);
   const account = accountDisplay(me ?? {}, t("Your account"));
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -577,6 +578,41 @@ export default function Account() {
             value={appearance}
           />
         </View>
+
+        {me?.botAvatarSet ? (
+          <View accessibilityLabel={t("Bot style")} style={styles.section}>
+            <SettingsLabel>{t("Bot style")}</SettingsLabel>
+            <NativeSegmentedControl
+              accessibilityLabel={t("Bot style")}
+              onChange={(botAvatarSet) => {
+                const previous = me.botAvatarSet;
+                // Only the latest tap's reply may land, so a slower earlier save can't undo it.
+                const request = ++botStyleRequest.current;
+                setMe((current) => (current ? { ...current, botAvatarSet } : current));
+                rpc("preferences/update", { botAvatarSet })
+                  .then((next) => {
+                    // Take only the style, so an older snapshot can't undo another edit.
+                    if (request !== botStyleRequest.current) return;
+                    setMe((current) =>
+                      current ? { ...current, botAvatarSet: next.botAvatarSet } : next,
+                    );
+                  })
+                  .catch(() => {
+                    if (request !== botStyleRequest.current) return;
+                    setMe((current) =>
+                      current ? { ...current, botAvatarSet: previous } : current,
+                    );
+                    Alert.alert(t("Couldn't update bot style"));
+                  });
+              }}
+              options={[
+                { value: "organic", label: t("Original") },
+                { value: "rakazo", label: t("Rakazo") },
+              ]}
+              value={me.botAvatarSet}
+            />
+          </View>
+        ) : null}
 
         <SettingsGroup>
           <SettingsRow

@@ -1492,7 +1492,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "update_bot",
     description:
-      "Read or change your own settings. Call with no fields to read them and the models and thinking levels you can pick. Pass fields to change them, only when the user asks; setting your name, description and first instructions when you have none is fine. Never claim a change without calling this.",
+      "Read or change your own settings. Call with no fields to read them and the models and thinking levels you can pick. Long instructions come in pages; follow instructionsNextOffset before replacing them. If a read comes back with contextTruncated, it was shortened: say so, do not rewrite. Pass fields to change them, only when the user asks; setting your name, description and first instructions when you have none is fine. Never claim a change without calling this.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1529,7 +1529,12 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           maxLength: BOT_INSTRUCTIONS_MAX_LENGTH,
           description:
-            "Your private operating instructions, replaced as a whole: include what should stay.",
+            "Your private operating instructions, replaced as a whole: include what should stay. Read every page before replacing them.",
+        },
+        instructions_offset: {
+          type: "integer",
+          minimum: 0,
+          description: "Character offset to read long instructions from.",
         },
         model: {
           type: "string",

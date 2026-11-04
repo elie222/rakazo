@@ -1,12 +1,16 @@
 import type { BotAvatarSet } from "@rakazo/contracts";
-import type { BotColorDef, LogoAvatarActivity } from "@rakazo/core";
+import type { AvatarEyes, BotColorDef, LogoAvatarActivity } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
+  avatarEyeRects,
   avatarIdentitySeed,
   BOT_AVATAR_COLORS,
   BOT_COLOR_LIST,
   botEyeTone,
   DEFAULT_BOT_AVATAR_COLOR,
+  ORGANIC_AVATAR_EYES,
+  ORGANIC_AVATAR_VIEWBOX,
+  organicAvatarEyeTilt,
   organicAvatarPath,
   resolvePersonaColorDef,
   SHIPPED_BOT_AVATAR_EYES,
@@ -228,7 +232,7 @@ export const BotAvatar = memo(function BotAvatar({
         <g>
           <path d={shippedBotAvatarShapePath(parsed.shapeIndex)} fill={colorDef.hex} />
           <g className={cn("bot-character-eyes", eyeFill(colorDef.hex))}>
-            <ShapeEyes />
+            <BarEyes eyes={SHIPPED_BOT_AVATAR_EYES} />
           </g>
         </g>
       </svg>
@@ -277,7 +281,7 @@ function OrganicAvatar({
   return (
     <svg
       ref={ref}
-      viewBox="-60 -60 120 120"
+      viewBox={ORGANIC_AVATAR_VIEWBOX}
       aria-hidden="true"
       className={cn("rakazo-organic-avatar overflow-visible select-none", className)}
       data-working={isWorking}
@@ -317,14 +321,13 @@ function OrganicAvatar({
           ) : null}
         </path>
       ))}
-      <g transform={`rotate(${(seed % 9) - 4})`}>
+      <g transform={`rotate(${organicAvatarEyeTilt(seed)})`}>
         {(["idle", "working"] as const).map((mode) => (
           <g
             key={mode}
             className={`rakazo-organic-avatar-eyes rakazo-organic-avatar-eyes-${mode} ${eyeFill(color)}`}
           >
-            <rect x="-14" y="-12" width="7" height="24" rx="3.5" />
-            <rect x="7" y="-12" width="7" height="24" rx="3.5" />
+            <BarEyes eyes={ORGANIC_AVATAR_EYES} />
           </g>
         ))}
       </g>
@@ -332,15 +335,8 @@ function OrganicAvatar({
   );
 }
 
-function ShapeEyes() {
-  const { width, height, leftX, rightX, centerY } = SHIPPED_BOT_AVATAR_EYES;
-  const y = centerY - height / 2;
-  return (
-    <>
-      <rect x={leftX} y={y} width={width} height={height} rx={width / 2} />
-      <rect x={rightX} y={y} width={width} height={height} rx={width / 2} />
-    </>
-  );
+function BarEyes({ eyes }: { eyes: AvatarEyes }) {
+  return avatarEyeRects(eyes).map((rect) => <rect key={rect.x} {...rect} />);
 }
 
 /** Eyes are cut-outs in the page color unless the body is nearly white or black. */
@@ -404,7 +400,7 @@ export function BotShapePreview({
         <svg viewBox={VIEWBOX} className="size-8 overflow-visible" aria-hidden="true">
           <path d={shippedBotAvatarShapePath(shapeIndex)} fill={colorDef.hex} />
           <g className={eyeFill(colorDef.hex)}>
-            <ShapeEyes />
+            <BarEyes eyes={SHIPPED_BOT_AVATAR_EYES} />
           </g>
         </svg>
       )}

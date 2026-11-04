@@ -23,7 +23,10 @@ export async function commitBotUpdate(
     expectedInstructions?: string;
     /** Write only while these settings hold; otherwise Prisma throws P2025. */
     expectedSettings?: Partial<
-      Pick<Bot, "modelProvider" | "modelId" | "thinkingLevel" | "autoSpeak" | "voiceId">
+      Pick<
+        Bot,
+        "modelProvider" | "modelId" | "thinkingLevel" | "autoSpeak" | "voiceId" | "avatarSetPinned"
+      >
     >;
     instructionRestore?: { versionId: string; undo?: boolean };
     reason?: string;

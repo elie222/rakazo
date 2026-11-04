@@ -94,6 +94,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Add a model in Settings to use this.":
     "Füge in den Einstellungen ein Modell hinzu, um dies zu nutzen.",
   "Approval model": "Freigabemodell",
+  "Computer-use model": "Modell für Computernutzung",
+  "Same as main model": "Wie das Hauptmodell",
   "Main model": "Hauptmodell",
   "Add fallback": "Backup-Modell hinzufügen",
   "Manage {provider}": "{provider} verwalten",
@@ -717,6 +719,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "This device": "Dieses Gerät",
   "Agent messages": "Agent-Nachrichten",
   Appearance: "Erscheinungsbild",
+  "Bot style": "Bot-Stil",
+  "Couldn't update bot style": "Bot-Stil konnte nicht aktualisiert werden",
   Archived: "Archiviert",
   Cancel: "Abbrechen",
   "Could not change language": "Sprache konnte nicht geändert werden",
@@ -1083,6 +1087,15 @@ export const DE_MESSAGES: Record<string, string> = {
   "Start plan": "Plan starten",
   "Switch to yearly": "Zu jährlich wechseln",
   "Switch to yearly?": "Zu jährlich wechseln?",
+  "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
+    "{vcpus} vCPU, {memoryGb} GB, {hours} Computerstunden pro Monat",
+  "Switch to {name}?": "Zu {name} wechseln?",
+  "The unused difference is credited to your next invoice.":
+    "Die ungenutzte Differenz wird deiner nächsten Rechnung gutgeschrieben.",
+  "Your card is charged the prorated difference today.":
+    "Deine Karte wird heute mit der anteiligen Differenz belastet.",
+  "Your plan becomes {price} when your trial ends.":
+    "Nach dem Testzeitraum kostet dein Plan {price}.",
   "Your card is charged {price} today, less the unused part of this month.":
     "Deine Karte wird heute mit {price} belastet, abzüglich des ungenutzten Teils dieses Monats.",
   "Your plan becomes {price} / year when your trial ends.":

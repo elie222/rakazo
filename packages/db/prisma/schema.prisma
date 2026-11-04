@@ -32,6 +32,8 @@ model User {
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
   avatarStyle                 String                       @default("organic")
+  /// The icon set this user's bots wear unless one is pinned to another: "organic" or "rakazo".
+  botAvatarSet                String                       @default("organic")
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
@@ -272,6 +274,8 @@ model BillingAccount {
   byokPriceCents      Int?
   /// "month" or "year": how often byokPriceCents bills.
   byokInterval        String?
+  /// "standard", "pro" or "max": the own-key plan's tier; null reads as standard.
+  byokTier            String?
   subscriptionId      String?
   subscriptionItemId  String?
   priceId             String?
@@ -734,6 +738,8 @@ model Bot {
   instructionHistory Json @default("[]")
   color             String
   avatarSet         String            @default("organic")
+  /// True once the owner picks this bot a set other than their default; the default no longer moves it.
+  avatarSetPinned   Boolean           @default(false)
   notifyOnFinish    Boolean           @default(true)
   pinned            Boolean           @default(false)
   position          Int               @default(0)

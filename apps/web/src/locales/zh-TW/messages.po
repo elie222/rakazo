@@ -406,6 +406,10 @@ msgstr "{title}，儲存為 {savedAs}"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# 個工具} other {# 個工具}}"
 
+#: src/components/ModelCredits.tsx
+msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
+msgstr "{vcpus} vCPU、{memoryGb} GB、每月 {hours} 小時電腦時數"
+
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
 msgid "@{0}"
@@ -1120,6 +1124,10 @@ msgstr "機器人螢幕"
 msgid "Bot screen preview"
 msgstr "機器人螢幕預覽"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Bot style"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
 msgstr "機器人的模型"
@@ -1610,6 +1618,10 @@ msgstr "電腦正在休眠，開啟即可喚醒。"
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "電腦已停止"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "電腦操作模型"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2418,6 +2430,10 @@ msgstr "無法載入此頁面。請再試一次。"
 
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
+msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update bot style"
 msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
@@ -4675,6 +4691,7 @@ msgstr "組織"
 msgid "Organization API key"
 msgstr "組織 API 金鑰"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Original"
 msgstr ""
@@ -4881,6 +4898,10 @@ msgstr "置頂"
 msgid "Pinned"
 msgstr "置頂"
 
+#: src/components/ModelCredits.tsx
+msgid "Plan"
+msgstr "方案"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "播放 {name}"
@@ -4986,6 +5007,7 @@ msgstr "Pull request"
 msgid "Queued"
 msgstr "排隊中"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
 msgstr "Rakazo"
@@ -5506,6 +5528,10 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
 msgstr "與 {botName} 相同"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Same as main model"
+msgstr "與主模型相同"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -6198,6 +6224,10 @@ msgid "Switch"
 msgstr "切換"
 
 #: src/components/ModelCredits.tsx
+msgid "Switch to {tierTargetName}?"
+msgstr "切換到 {tierTargetName}？"
+
+#: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
 msgstr "切換為按年"
 
@@ -6329,6 +6359,10 @@ msgstr "所選記憶供應商在此版本中不可用。"
 #: src/components/pages/SharePopover.tsx
 msgid "The shared link stops working"
 msgstr "共用連結將失效"
+
+#: src/components/ModelCredits.tsx
+msgid "The unused difference is credited to your next invoice."
+msgstr "未使用的差額將抵扣到你的下一張帳單。"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
@@ -7113,6 +7147,10 @@ msgstr "你的 Anthropic"
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "今天將從你的卡中扣款 {annualPrice}，並抵扣本月未使用的部分。"
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged the prorated difference today."
+msgstr "今天將從你的卡片扣除按比例計算的差額。"
+
 #: src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 msgstr "電腦的磁碟快滿了。請刪除不再需要的建置輸出和快取，以釋放空間。"
@@ -7151,6 +7189,10 @@ msgstr "你的 OpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "試用結束後，你的方案將變為每年 {annualPrice}。"
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {tierTargetLabel} when your trial ends."
+msgstr "試用結束後，你的方案將變為 {tierTargetLabel}。"
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

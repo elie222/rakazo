@@ -1,4 +1,3 @@
-import { DEFAULT_NEW_BOT_AVATAR_SET } from "@rakazo/contracts";
 import type { Href } from "expo-router";
 import { rpc } from "./api";
 import { allowFocusPrompt, scheduleFocusPrompt } from "./focus-prompt";
@@ -24,7 +23,6 @@ export async function createInboxBot({
   const bot = await rpc("bots/create", {
     name: "New Bot",
     notifyOnFinish: true,
-    avatarSet: DEFAULT_NEW_BOT_AVATAR_SET,
     computerMode: "team",
   });
   void refreshBots().catch(() => undefined);
