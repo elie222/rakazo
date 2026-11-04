@@ -1,5 +1,12 @@
 import type { IntegrationPlatform } from "./types";
-import { INTEGRATIONS_DOC, homepage } from "./shared";
+import {
+  COMPOSIO_PRICING,
+  INTEGRATIONS_DOC,
+  PIPEDREAM_PRICING,
+  PRICES_CHECKED,
+  ZAPIER_PRICING,
+  homepage,
+} from "./shared";
 
 export const pipedream: IntegrationPlatform = {
   slug: "pipedream",
@@ -7,12 +14,12 @@ export const pipedream: IntegrationPlatform = {
   gives: "Hosted app tools over Pipedream's MCP server",
   logins: "Pipedream stores them",
   bestFor: "Teams already on Pipedream Connect",
-  title: "Pipedream Connect for AI agents: app tools for Rakazo bots",
+  title: "Pipedream Connect pricing, MCP server and alternatives for AI agents (2026)",
   description:
-    "What Pipedream Connect is, and how Rakazo bots use it to work in thousands of apps through its MCP server. Approvals, limits, setup, and how it compares with Composio.",
-  h1: "Pipedream Connect for AI agents: app tools with hosted logins",
+    "What Pipedream Connect and Pipedream MCP are, what Connect costs per user and credit in 2026, what a team of bots spends, how it compares with Composio, and how Rakazo bots use it.",
+  h1: "Pipedream Connect for AI agents: pricing, MCP and alternatives",
   intro: [
-    "[Pipedream Connect](https://pipedream.com/connect) is the part of Pipedream that lets AI agents act in other apps on behalf of each user. Pipedream runs the sign-in for each app, stores the tokens, and serves the app's actions as tools from a remote MCP server. Pipedream is owned by Workday.",
+    "[Pipedream Connect](https://pipedream.com/connect) is the part of Pipedream that lets AI agents act in other apps on behalf of each user. Pipedream runs the sign-in for each app, stores the tokens, and serves the app's actions as tools from a remote MCP server. Development is free; production starts at $99 a month billed yearly. Pipedream is owned by Workday.",
     "[Rakazo](/) is an open source app for AI teammates that do real work. You talk to each bot in chat, and bots use tools in your apps as well as their own computer. When you host Rakazo yourself, a Pipedream Connect project can supply the apps people connect. Pipedream supplies the tools and logins. Rakazo picks which connected account each bot acts as and asks you before anything that changes data.",
   ],
   scene: {
@@ -31,10 +38,141 @@ export const pipedream: IntegrationPlatform = {
     {
       heading: "What is Pipedream Connect?",
       paragraphs: [
-        "[Pipedream](https://pipedream.com) started as a workflow automation tool. Workday bought it in a deal announced in November 2025, and Pipedream now focuses on Connect: managed sign-in, prebuilt actions for thousands of APIs, an API proxy, and a remote MCP server that serves those actions to any MCP client.",
-        "Pipedream's Workflows product is in maintenance mode and shuts down on March 31, 2027. Pipedream says Connect, its MCP servers and the API proxy are not affected. The code for Pipedream's integrations is public on GitHub under its own source-available license, which bars competing commercial use, so it is not open source.",
+        "[Pipedream](https://pipedream.com) started as a workflow automation tool. Workday bought it in a deal announced in November 2025, and Pipedream now focuses on Connect: managed sign-in for more than 3,000 APIs, more than 10,000 prebuilt actions and triggers, an API proxy for calls no action covers, and a remote MCP server that serves those actions to any MCP client.",
+        "Pipedream's Workflows product is in maintenance mode and shuts down on March 31, 2027. Pipedream says Connect, its MCP servers and the API proxy are not affected. The code for Pipedream's integrations is public on GitHub under its own source-available license, which bars competing commercial use, so it is not open source, and the service can't be self-hosted. Pipedream says every plan is covered by SOC 2 Type 2 and GDPR, with HIPAA on its Business plan.",
       ],
       image: true,
+    },
+    {
+      heading: "What is Pipedream MCP?",
+      paragraphs: [
+        "Pipedream MCP is Pipedream's remote [MCP server](/integration-platforms/mcp/). Any MCP client, such as Claude, Cursor or an agent you build, can connect to it and get the actions for an app as tools. Pipedream identifies each end user with an external user ID, runs the sign-in for that user, and calls the app's API as them. It is included in every Connect plan, and each tool call is billed like any other action.",
+        "Rakazo uses Pipedream through that server. It opens one MCP connection per connected account, so a person with two Gmail accounts gets two labeled sets of Gmail tools, and a bot can't mix them up.",
+      ],
+    },
+    {
+      heading: "Pipedream Connect pricing",
+      paragraphs: [
+        "Connect is billed on two meters: **external users**, the people your app connects accounts for, and **credits**. A credit buys 30 seconds of compute at the default 256 MB of memory, and running an action, an MCP tool call, a proxy request or a trigger event each uses at least one. Listing apps and accounts and other management calls are free. Most app actions finish well inside 30 seconds, so in practice one call is one credit; a slow call costs more.",
+      ],
+      table: {
+        caption: "Pipedream Connect plans as of November 2026",
+        columns: ["Plan", "Free", "Startup", "Business"],
+        rows: [
+          { topic: "Price", cells: ["$0", "$99/mo billed yearly, or $150 monthly", "Custom, yearly contract"] },
+          {
+            topic: "Production use",
+            cells: ["No: development only", "Yes", "Yes"],
+          },
+          {
+            topic: "External users",
+            cells: ["10 test users in development", "100 included, then $2 per user a month", "Volume pricing"],
+          },
+          {
+            topic: "Credits",
+            cells: ["Development only", "10,000 a month, then $0.012 each", "Volume pricing"],
+          },
+          {
+            topic: "Apps and tools",
+            cells: ["3,000+ apps, 10,000+ tools, MCP, proxy", "Same", "Same"],
+          },
+          { topic: "Your own OAuth clients", cells: ["Yes", "Yes", "Yes"] },
+          {
+            topic: "Compliance",
+            cells: ["SOC 2 Type 2, GDPR", "SOC 2 Type 2, GDPR", "Adds HIPAA, SSO, SCIM, static egress IPs"],
+          },
+          { topic: "Support", cells: ["Community", "Email", "SLA and a shared Slack channel"] },
+        ],
+        note: `Prices from [Pipedream's pricing page](${PIPEDREAM_PRICING}) and [Connect environments docs](https://pipedream.com/docs/connect/environments), checked ${PRICES_CHECKED}. A user counts once however many apps they connect.`,
+      },
+      bullets: [
+        "The development environment is for your own testing. It allows 10 external users, and connecting an app only works in a browser signed in to pipedream.com, so it can't serve a team.",
+        "Credits scale with memory: an action given 1 GB uses four credits per 30 seconds.",
+        "Unlike Composio, there is no free production tier. The smallest real deployment is $99 a month on a yearly plan.",
+      ],
+    },
+    {
+      heading: "What Rakazo bots cost on Pipedream",
+      paragraphs: [
+        "Rakazo gives Pipedream one external user per person per space, so someone in two spaces counts as two users. The examples assume one space and calls that finish within 30 seconds. A small team is 5 people whose bots run about 40 app actions each per workday, about 4,400 calls a month. A larger one is 20 people at about 100 actions each, about 44,000 calls.",
+      ],
+      table: {
+        caption: "Monthly Pipedream Connect bill for a team of Rakazo bots",
+        columns: ["Workload", "Startup, billed yearly", "Startup, billed monthly"],
+        rows: [
+          {
+            topic: "5 people, 4,400 calls",
+            cells: ["$99, inside the 10,000 credits", "$150"],
+          },
+          {
+            topic: "20 people, 44,000 calls",
+            cells: ["About $507: $99 plus 34,000 credits at $0.012", "About $558"],
+          },
+          {
+            topic: "150 people, the same 44,000 calls",
+            cells: ["About $607: the above plus 50 users at $2", "About $658"],
+          },
+        ],
+        note: `Worked from [Pipedream's pricing page](${PIPEDREAM_PRICING}), checked ${PRICES_CHECKED}. Model usage and the bots' computers are billed separately, by your model provider or by Rakazo.`,
+      },
+    },
+    {
+      heading: "Pipedream vs Composio",
+      paragraphs: [
+        "They do the same job in Rakazo: a hosted catalog with managed sign-in. The difference is mostly price shape and catalog size. [Composio](/integration-platforms/composio/) is free for real use at small volume and cheap per call; Pipedream has about twice as many apps, a fixed monthly floor, and a per-user charge that grows with your team.",
+      ],
+      table: {
+        caption: "Pipedream Connect and Composio side by side",
+        columns: ["Compared", "Pipedream Connect", "Composio"],
+        rows: [
+          { topic: "Apps", cells: ["3,000+ APIs, 10,000+ tools", "1,500+ toolkits"] },
+          {
+            topic: "Free tier",
+            cells: ["Development only, 10 test users", "100,000 calls a month, 20,000 on managed apps"],
+          },
+          { topic: "Paid from", cells: ["$99/mo billed yearly", "$29/mo, as usage credit"] },
+          {
+            topic: "Billed by",
+            cells: ["External user and 30 s of compute", "Tool call, priced by app tier"],
+          },
+          {
+            topic: "44,000 calls, 20 people",
+            cells: ["About $507/mo", "About $48 to $240/mo on managed apps, $29 on your own"],
+          },
+          {
+            topic: "Managed OAuth",
+            cells: ["Yes, or your own OAuth client", "Yes, or your own auth config"],
+          },
+          {
+            topic: "Source and self-hosting",
+            cells: ["Source-available, no self-hosting", "MIT SDKs; self-hosting on Enterprise"],
+          },
+          {
+            topic: "Compliance",
+            cells: ["SOC 2 Type 2 on every plan, HIPAA on Business", "SOC 2 Type II, ISO 27001; BAA as an add-on"],
+          },
+          { topic: "Owner", cells: ["Workday", "Independent"] },
+          {
+            topic: "Setup in Rakazo",
+            cells: ["Project ID, OAuth client ID and secret", "One API key"],
+          },
+          {
+            topic: "How bots get tools",
+            cells: ["Pipedream's MCP server, one connection per account", "Search Composio's actions and run them in batches"],
+          },
+        ],
+        note: `Prices from [Pipedream](${PIPEDREAM_PRICING}) and [Composio](${COMPOSIO_PRICING}), checked ${PRICES_CHECKED}.`,
+      },
+    },
+    {
+      heading: "Pipedream alternatives",
+      bullets: [
+        "**[Composio](/integration-platforms/composio/)** is the closest, built into Rakazo, and much cheaper for a small team.",
+        `**Zapier MCP** reaches more than 9,000 apps and spends two Zapier tasks per call; the free plan's 100 tasks cover about 50 calls and paid plans start at $19.99 a month billed yearly ([pricing](${ZAPIER_PRICING})). It isn't built into Rakazo, but you can add it as a remote [MCP server](/integration-platforms/mcp/). It acts as the Zapier account that set it up.`,
+        "**Arcade** charges $25 a month plus $0.01 a call and focuses on authorization for each user. **Nango** publishes its source and suits teams adding integrations to their own product. Neither is built into Rakazo.",
+        "**For Pipedream Workflows users**: Connect is not an automation builder. If you need scheduled workflows rather than tools for agents, look at n8n, Make or Windmill, or give a Rakazo bot a [routine](/docs/routines/).",
+        "**No middleman**: an app's own [MCP server](/integration-platforms/mcp/) or an [API connector](/integration-platforms/api-connectors/) adds no fee on top of the app.",
+      ],
     },
     {
       heading: "What your bots can do with Pipedream",
@@ -53,8 +191,8 @@ export const pipedream: IntegrationPlatform = {
     {
       heading: "When to choose Pipedream",
       paragraphs: [
-        "Choose Pipedream when you self-host Rakazo and already use Pipedream Connect, or want its catalog of apps and prebuilt actions. Its tools reach Rakazo through Pipedream's own MCP server, one connection per account.",
-        "[Composio](/integration-platforms/composio/) is the other managed option and the simpler one to set up: a single API key. You can run both, and the Apps list shows apps from each. For an app that publishes its own [MCP server](/integration-platforms/mcp/), or one you can reach with an [API connector](/integration-platforms/api-connectors/), you don't need a hosted middleman at all. The [comparison](/integration-platforms/) puts them side by side.",
+        "Choose Pipedream when you self-host Rakazo and already use Pipedream Connect, need an app only Pipedream covers, or want SOC 2 coverage without an enterprise contract. Its tools reach Rakazo through Pipedream's own MCP server, one connection per account.",
+        "[Composio](/integration-platforms/composio/) is the other managed option and the simpler one to set up: a single API key. You can run both, and the Apps list shows apps from each. On [Rakazo Cloud](/pricing/) you don't need a Pipedream account: connecting apps is part of every plan. For an app that publishes its own [MCP server](/integration-platforms/mcp/), or one you can reach with an [API connector](/integration-platforms/api-connectors/), you don't need a hosted middleman at all. The [comparison](/integration-platforms/) puts them side by side.",
       ],
     },
     {
@@ -87,9 +225,19 @@ export const pipedream: IntegrationPlatform = {
   ),
   faq: [
     {
-      question: "Is Pipedream open source?",
+      question: "How much does Pipedream Connect cost?",
       answer:
-        "No. Pipedream's integration code is public on [GitHub](https://github.com/PipedreamHQ/pipedream) under the Pipedream Source Available License, which forbids competing commercial use. The hosted service is closed. Rakazo uses it through your project's credentials.",
+        "As of November 2026, development is free. Production needs the Startup plan: $99 a month billed yearly or $150 monthly, with 100 external users and 10,000 credits, then $2 per extra user and $0.012 per extra credit. A credit is 30 seconds of compute. Business is custom. See [Pipedream's pricing page](https://pipedream.com/pricing).",
+    },
+    {
+      question: "Is Pipedream free?",
+      answer:
+        "Only for development: up to 10 test users, each connecting from a browser signed in to pipedream.com. Serving real users needs a paid plan.",
+    },
+    {
+      question: "What is Pipedream MCP?",
+      answer:
+        "Pipedream's remote MCP server. It serves the actions for each app a user has connected as MCP tools, with Pipedream handling sign-in. It is included in every Connect plan, and each tool call uses credits. Rakazo connects to it once per connected account.",
     },
     {
       question: "Is Pipedream shutting down?",
@@ -97,9 +245,19 @@ export const pipedream: IntegrationPlatform = {
         "Pipedream Workflows and String shut down on March 31, 2027. Pipedream says Connect, its MCP servers and the API proxy are unaffected and still developed, and those are what Rakazo uses.",
     },
     {
+      question: "Is Pipedream open source?",
+      answer:
+        "No. Pipedream's integration code is public on [GitHub](https://github.com/PipedreamHQ/pipedream) under the Pipedream Source Available License, which forbids competing commercial use. The hosted service is closed. Rakazo uses it through your project's credentials.",
+    },
+    {
       question: "Pipedream vs Composio for AI agents?",
       answer:
-        "Both host app logins and give agents thousands of actions. In Rakazo, [Composio](/integration-platforms/composio/) takes one API key and bots search its actions. Pipedream takes a project and OAuth client, and serves each connected account's tools over its MCP server. You can turn on both.",
+        "Both host app logins and give agents thousands of actions. Pipedream has more apps and bills per user and per 30 seconds of compute, from $99 a month. [Composio](/integration-platforms/composio/) bills per call and is free up to 100,000 calls. In Rakazo, Composio takes one API key and bots search its actions; Pipedream takes a project and OAuth client and serves each account's tools over its MCP server. You can turn on both.",
+    },
+    {
+      question: "What is a good Pipedream alternative?",
+      answer:
+        "[Composio](/integration-platforms/composio/) for agents, which Rakazo also supports. Zapier MCP for the largest catalog, which works in Rakazo as a remote MCP server. For workflow automation rather than agent tools, n8n, Make or Windmill.",
     },
     {
       question: "Who owns Pipedream?",
@@ -114,6 +272,7 @@ export const pipedream: IntegrationPlatform = {
   ],
   sources: [
     { label: "Pipedream Connect", href: "https://pipedream.com/connect" },
+    { label: "Pipedream pricing", href: PIPEDREAM_PRICING },
     {
       label: "Pipedream, Connect environments",
       href: "https://pipedream.com/docs/connect/environments",
@@ -124,6 +283,10 @@ export const pipedream: IntegrationPlatform = {
       label: "Workday, fourth quarter fiscal 2026 results",
       href: "https://www.sec.gov/Archives/edgar/data/1327811/000132781126000010/wday-01312026x991.htm",
     },
+    { label: "Composio pricing", href: COMPOSIO_PRICING },
+    { label: "Zapier pricing", href: ZAPIER_PRICING },
+    { label: "Zapier MCP", href: "https://zapier.com/mcp" },
+    { label: "Arcade pricing", href: "https://www.arcade.dev/pricing" },
     INTEGRATIONS_DOC,
   ],
 };

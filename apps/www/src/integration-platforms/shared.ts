@@ -28,3 +28,9 @@ export const INTEGRATIONS_DOC: SourceLink = {
   label: "Rakazo, tools and integrations",
   href: `${GITHUB_URL}/blob/main/docs/self-host-integrations.md`,
 };
+
+/** When the prices quoted in these articles were last checked. */
+export const PRICES_CHECKED = "November 2026";
+export const COMPOSIO_PRICING = "https://composio.dev/pricing";
+export const PIPEDREAM_PRICING = "https://pipedream.com/pricing";
+export const ZAPIER_PRICING = "https://zapier.com/pricing";
