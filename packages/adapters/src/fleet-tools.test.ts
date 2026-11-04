@@ -1605,6 +1605,57 @@ describe("createChildRoutine", () => {
     expect(prisma.routine.create).not.toHaveBeenCalled();
   });
 
+  it("does not replay an account-derived request onto an unrelated pinned routine", async () => {
+    // Same bot, thread, prompt and cron, but pinned to another zone: the replay of an
+    // account-derived request must look at the account's current zone, not match any
+    // zone, or it would silently return the pinned routine's id and schedule.
+    const { prisma } = fakeFleet({ ...fleet, timezone: "Europe/London" });
+    const created: Array<Record<string, unknown>> = [
+      {
+        id: "routine-pinned",
+        spaceId: "space-1",
+        userId: "user-1",
+        botId: "bot-writer",
+        threadId: "thread-bot-writer",
+        name: "Daily",
+        prompt: "Check in",
+        crons: ["0 9 * * *"],
+        timezone: "America/New_York",
+        active: true,
+        nextRunAt: new Date("2026-10-18T13:00:00Z"),
+      },
+    ];
+    prisma.$transaction.mockImplementation(async (work: (client: unknown) => Promise<unknown>) =>
+      work(prisma),
+    );
+    (prisma as { $queryRaw?: unknown }).$queryRaw = vi.fn(async (strings: TemplateStringsArray) =>
+      strings.join("?").includes("FOR SHARE") ? [{ timezone: "Europe/London" }] : [],
+    );
+    const sameAs = (row: Record<string, unknown>, where: Record<string, unknown>) =>
+      Object.entries(where).every(([key, value]) =>
+        value && typeof value === "object" && "equals" in value
+          ? JSON.stringify(row[key]) === JSON.stringify(value.equals)
+          : row[key] === value,
+      );
+    (prisma.routine as { findFirst: unknown }).findFirst = vi.fn(
+      async ({ where }: { where: Record<string, unknown> }) =>
+        created.find((row) => sameAs(row, where)) ?? null,
+    );
+    prisma.routine.create.mockImplementation(
+      async ({ data }: { data: Record<string, unknown> }) => {
+        const row = { id: `routine-${created.length + 1}`, active: true, ...data };
+        created.push(row);
+        return row;
+      },
+    );
+
+    const approved = { ...canonical, timezone: "Africa/Cairo", timezoneFromAccount: true };
+    const result = await createChildRoutine(writeDeps(prisma), run, approved);
+    expect(result).toMatchObject({ ok: true, routineId: "routine-2" });
+    expect(created[1]).toMatchObject({ timezone: "Europe/London" });
+    expect(created[0]).toMatchObject({ id: "routine-pinned", timezone: "America/New_York" });
+  });
+
   it("replays to the same routine after the account zone changed", async () => {
     // Approved while the account sat in one zone, created in a later one: the replay
     // lookup must not match on the approval's zone, or it would create a duplicate.
