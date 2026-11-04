@@ -335,3 +335,19 @@ it("treats deleting a note already deleted elsewhere as done", async () => {
   await act(async () => lastAlert().press("Delete"));
   expect(mocks.back).toHaveBeenCalledTimes(1);
 });
+
+it("does not offer to discard an edit while its save is in flight", async () => {
+  let finishSave!: (doc: typeof note) => void;
+  mocks.rpc.mockImplementation((proc: string) => {
+    if (proc === "memory/list") return Promise.resolve([note]);
+    return new Promise((resolve) => (finishSave = resolve));
+  });
+  await render();
+  await type("Saving this\n");
+  await headerSave();
+  act(() => mocks.preventRemove.onRemove?.({ data: { action: { type: "GO_BACK" } } }));
+  expect(mocks.alert).not.toHaveBeenCalled();
+  expect(mocks.dispatch).not.toHaveBeenCalled();
+  await act(async () => finishSave({ ...note, content: "Saving this\n", revision: 4 }));
+  expect(mocks.back).toHaveBeenCalledTimes(1);
+});

@@ -24,6 +24,7 @@ export function BotContextCards({ botId }: { botId: string }) {
   useFocusEffect(
     useCallback(() => {
       let current = true;
+      setError(null);
       void rpc("scratchpad/list", { botId })
         .then((items) => {
           if (current) setWork(items);

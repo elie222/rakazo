@@ -52,7 +52,7 @@ export default function MemoryScreen() {
   async function refresh() {
     setRefreshing(true);
     await load();
-    if (live.current) setRefreshing(false);
+    setRefreshing(false);
   }
 
   return (

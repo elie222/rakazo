@@ -125,4 +125,16 @@ describe("bot context cards", () => {
       params: { id: "memory-a", botId: "bot-a" },
     });
   });
+
+  it("clears an earlier load error once the lists load", async () => {
+    rpc.mockImplementation(async (method: string, { botId }: { botId: string }) => {
+      if (botId === "bot-a" && method === "scratchpad/list") throw new Error("Request failed");
+      return method === "scratchpad/list" ? work : memory;
+    });
+    await render();
+    expect(container.textContent).toContain("Request failed");
+    await render("bot-b");
+    expect(container.textContent).not.toContain("Request failed");
+    expect(container.textContent).toContain("Review draft");
+  });
 });

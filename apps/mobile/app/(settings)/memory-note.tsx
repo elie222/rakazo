@@ -76,6 +76,8 @@ export default function MemoryNoteScreen() {
   // A note deleted elsewhere keeps its draft on screen, read-only, with nothing left to save.
   const writable = state === "ready" && !busy && !closing;
   usePreventRemove(dirty && state === "ready" && !closing, ({ data }) => {
+    // A save in flight decides the outcome; discarding now could not stop it.
+    if (busy) return;
     Alert.alert(t("Discard changes?"), undefined, [
       { text: t("Cancel"), style: "cancel" },
       {
