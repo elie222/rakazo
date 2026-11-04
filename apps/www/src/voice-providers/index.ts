@@ -235,7 +235,7 @@ export const VOICE_PROVIDERS_HUB = {
     {
       question: "Which text to speech API is free?",
       answer:
-        `macOS voices and open models such as Kokoro are free to run yourself. Among hosted APIs, Google gives ${millions(RATES.googleFreeChars)} Chirp 3 HD characters a month, Azure ${millions(RATES.azureFreeChars)}, ElevenLabs ${count(RATES.elevenlabsPlans.free.credits)} credits for non-commercial use, Cartesia ${count(RATES.cartesiaFreeCredits)} credits, and Fish Audio's free app plan about ${RATES.fishPlans.free.minutes} minutes of speech.`,
+        `macOS voices and open models such as Kokoro are free to run yourself. Among hosted APIs, Google gives ${millions(RATES.googleFreeChars)} Chirp 3 HD characters a month, Azure ${millions(RATES.azureFreeChars)}, ElevenLabs ${count(RATES.elevenlabsPlans.free.credits)} credits for non-commercial use, and Cartesia ${count(RATES.cartesiaFreeCredits)} credits. Fish Audio's free plan covers its app only; its API is pay as you go.`,
     },
     {
       question: "What is the most accurate speech to text API?",
