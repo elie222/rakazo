@@ -42,13 +42,39 @@ type OutboundRowFilter = {
   createdAt?: { lt: Date };
   identityId?: string | null;
   threadId?: string;
-  OR?: Array<{ status: string; updatedAt?: { gt: Date } }>;
+  OR?: Array<Record<string, unknown>>;
+  AND?: Array<{ OR: Array<Record<string, unknown>> }>;
 };
+
+/** The drains' send order: createdAt, then id to break remaining ties. */
+function bySendOrder(a: Record<string, unknown>, b: Record<string, unknown>) {
+  const byTime = (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime();
+  return byTime || String(a.id).localeCompare(String(b.id));
+}
+
+function matchesCondition(row: Record<string, unknown>, condition: Record<string, unknown>) {
+  if ("createdAt" in condition) {
+    // Earlier in send order: an older row, or one of equal age with a smaller id.
+    if (!(row.createdAt instanceof Date)) return false;
+    const bound = condition.createdAt as { lt?: Date };
+    if (bound.lt) return row.createdAt < bound.lt;
+    return (
+      row.createdAt.getTime() === new Date(condition.createdAt as Date).getTime() &&
+      String(row.id) < (condition.id as { lt: string }).lt
+    );
+  }
+  if (condition.status === "pending") return row.status === "pending";
+  return (
+    row.status === "sent" &&
+    row.providerHandle == null &&
+    ((row.updatedAt as Date | undefined) ?? new Date()) > (condition.updatedAt as { gt: Date }).gt
+  );
+}
 
 /** A lane's next pending row, or an earlier row still pending or in flight. */
 function findOutboundRow(rows: Array<Record<string, unknown>>, where: OutboundRowFilter) {
   const ordered = rows.every((row) => row.createdAt instanceof Date)
-    ? [...rows].sort((a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime())
+    ? [...rows].sort(bySendOrder)
     : rows;
   return (
     ordered.find((row) => {
@@ -56,14 +82,13 @@ function findOutboundRow(rows: Array<Record<string, unknown>>, where: OutboundRo
       if (where.identityId && row.identityId !== where.identityId) return false;
       if (where.threadId !== undefined && row.threadId !== where.threadId) return false;
       if (where.createdAt && !((row.createdAt as Date) < where.createdAt.lt)) return false;
-      if (!where.OR) return true;
-      return where.OR.some((condition) =>
-        condition.status === "pending"
-          ? row.status === "pending"
-          : row.status === "sent" &&
-            row.providerHandle == null &&
-            ((row.updatedAt as Date | undefined) ?? new Date()) > condition.updatedAt!.gt,
-      );
+      if (where.OR && !where.OR.some((condition) => matchesCondition(row, condition))) return false;
+      if (
+        where.AND &&
+        !where.AND.every((group) => group.OR.some((condition) => matchesCondition(row, condition)))
+      )
+        return false;
+      return true;
     }) ?? null
   );
 }
@@ -180,9 +205,9 @@ function createDeps(overrides: {
           const nextMs = next instanceof Date ? next.getTime() : new Date(String(next)).getTime();
           return nextMs <= now;
         });
-        // The drain reads in send order (orderBy createdAt).
+        // The drain reads in send order (createdAt, then id).
         const ordered = found.every((row) => row.createdAt instanceof Date)
-          ? found.sort((a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime())
+          ? found.sort(bySendOrder)
           : found;
         return ordered;
       }),
@@ -714,6 +739,7 @@ function createChannelDeps(
     peerBotName?: string | null;
     blockedBot?: string;
     messages?: unknown[];
+    posterProvider?: string;
   } = {},
 ) {
   const text = overrides.text ?? "found it";
@@ -738,7 +764,7 @@ function createChannelDeps(
   };
   const posterIdentity = {
     id: "mi-1",
-    provider: "sendblue",
+    provider: overrides.posterProvider ?? "sendblue",
     address: "+15551111111",
     dmThreadId: "sendblue:dm-1",
     userId: "user-1",
@@ -822,7 +848,7 @@ function createChannelDeps(
     messagingOutbound: {
       findMany: vi.fn(async ({ where }: { where?: { status?: string; OR?: unknown[] } } = {}) => {
         const now = Date.now();
-        return rows.filter((row) => {
+        const found = rows.filter((row) => {
           if (where?.status && row.status !== where.status) return false;
           if (!where?.OR) return row.status === "pending";
           const next = row.nextAttemptAt;
@@ -830,6 +856,11 @@ function createChannelDeps(
           const nextMs = next instanceof Date ? next.getTime() : new Date(String(next)).getTime();
           return nextMs <= now;
         });
+        // The drain reads in send order (createdAt, then id).
+        const ordered = found.every((row) => row.createdAt instanceof Date)
+          ? found.sort(bySendOrder)
+          : found;
+        return ordered;
       }),
       findFirst: vi.fn(async ({ where }: { where: OutboundRowFilter }) =>
         findOutboundRow(rows, where),
@@ -966,6 +997,42 @@ describe("deliverMessagingOutbound channel runs", () => {
     ]);
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
     expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("splits a long group reply into platform-sized parts that keep the tail", async () => {
+    const text = `${"x".repeat(4_200)} TAIL-MARK`;
+    const deps = createChannelDeps({
+      posterProvider: "telegram",
+      messages: [{ id: "m-1", blocks: [{ kind: "text", text }] }],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-1:2"]);
+    expect(deps.rows.every((row) => (row.body as string).length <= 4_096)).toBe(true);
+    expect((deps.rows[0]!.body as string).startsWith("Alice's agent: ")).toBe(true);
+    expect(deps.rows.map((row) => row.body).join("")).toContain("TAIL-MARK");
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual(
+      deps.rows.map((row) => ({ threadId: "sendblue:grp-1", body: row.body })),
+    );
+  });
+
+  it("gives group rows a strictly ordered createdAt across messages", async () => {
+    const deps = createChannelDeps({
+      messages: [
+        { id: "m-1", blocks: [{ kind: "text", text: "checking" }] },
+        { id: "m-2", blocks: [{ kind: "text", text: "here is the answer" }] },
+      ],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.rows.map((row) => [row.idempotencyKey, row.body])).toEqual([
+      ["msg:m-1", "Alice's agent: checking"],
+      ["msg:m-2", "Alice's agent: here is the answer"],
+    ]);
+    expect((deps.rows[1]!.createdAt as Date).getTime()).toBeGreaterThan(
+      (deps.rows[0]!.createdAt as Date).getTime(),
+    );
   });
 
   it("preserves source transport on peer fan-out blocks", async () => {
@@ -1756,6 +1823,41 @@ describe("drain lanes", () => {
       { threadId: "t-a", body: "a-1" },
       { threadId: "t-a", body: "a-2" },
     ]);
+  });
+
+  it("waits behind an equal-createdAt row that another drain is sending", async () => {
+    const createdAt = new Date(1_000);
+    const deps = createDeps({
+      run: null,
+      outboundRows: [
+        { ...groupRow("z-2", "t-a", 0), createdAt },
+        { ...groupRow("a-1", "t-a", 0), createdAt },
+      ],
+    });
+    let releaseFirst = () => {};
+    const firstSend = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      await firstSend;
+      return { handle: "h-1" };
+    });
+
+    const firstDrain = deliverMessagingOutbound(deps, {}, context);
+    // The head is a-1: the tie-break on id orders rows of equal createdAt.
+    await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(1));
+
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
+    expect(deps.rows.map((row) => row.status)).toEqual(["pending", "sent"]);
+
+    releaseFirst();
+    await firstDrain;
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "t-a", body: "a-1" },
+      { threadId: "t-a", body: "z-2" },
+    ]);
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
   });
 
   it("leaves a conversation alone when another drain claimed its oldest row", async () => {
