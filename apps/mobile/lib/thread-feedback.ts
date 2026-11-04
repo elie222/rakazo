@@ -141,6 +141,8 @@ let sessionCount = 0;
 let restored = false;
 let diskReadable = true;
 const memoryOnly = new WeakSet<SendAttempt>();
+/** Memory-only sends whose files were already written; the next save lists them again. */
+const writtenFiles = new WeakSet<SendAttempt>();
 let running: Promise<void> | undefined;
 /** A retry that arrived while a drain was in progress, run once that drain stops. */
 let pendingForce: boolean | null = null;
@@ -187,8 +189,23 @@ function finishPendingClear() {
 function save(attempts: SendAttempt[]) {
   return tryDisk(() => {
     if (!finishPendingClear() || !diskReadable) return false;
-    attempts = attempts.filter((attempt) => !memoryOnly.has(attempt));
+    // A write error left these in memory only. Ones whose files were written join this index
+    // directly; the others admit again. What still cannot reach disk waits for a later save.
+    const recovered: SendAttempt[] = [];
+    for (const attempt of attempts) {
+      if (!memoryOnly.has(attempt)) continue;
+      if (writtenFiles.has(attempt) || config!.disk.admit(attempt)) recovered.push(attempt);
+    }
+    attempts = attempts.filter(
+      (attempt) => !memoryOnly.has(attempt) || recovered.includes(attempt),
+    );
     config!.disk.save(attempts);
+    // Only now does the index on disk list them; until it does, memory stays their only copy.
+    for (const attempt of recovered) {
+      memoryOnly.delete(attempt);
+      writtenFiles.delete(attempt);
+      removed.delete(attempt);
+    }
     for (const attempt of removed) {
       removed.delete(attempt);
       if (!attempts.some((a) => a.clientNonce === attempt.clientNonce))
@@ -447,6 +464,7 @@ export function useThreadFeedback(
         // A failed move may have committed; forget files only after a later index omits them.
         removed.add(attempt);
         memoryOnly.add(attempt);
+        if (admitted === true) writtenFiles.add(attempt);
         attempt.payload.attachments = payload.attachments.map((a) => ({ ...a }));
       }
       return attempt;

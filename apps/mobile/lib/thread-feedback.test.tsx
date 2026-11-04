@@ -227,8 +227,37 @@ describe("scoped mobile outbox", () => {
       expect(disk.forget).toHaveBeenCalledWith(attempt);
     },
   );
-  it("retries attachments from memory when admission throws", async () => {
+  it("lists a send in the next index when a write error only hit the save", async () => {
+    reachable = false;
+    disk.save.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const attempt = feedback.sendAttempt(payload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("queued");
+    expect(request).not.toHaveBeenCalled();
+    // The files were written; the next save lists the message without admitting it again.
+    expect(disk.admit).toHaveBeenCalledTimes(1);
+    expect(disk.save).toHaveBeenLastCalledWith([attempt]);
+  });
+  it("admits a send again once the disk answers an admission failure", async () => {
+    reachable = false;
     disk.admit.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const attempt = feedback.sendAttempt(payload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("queued");
+    expect(request).not.toHaveBeenCalled();
+    expect(disk.admit).toHaveBeenCalledTimes(2);
+    expect(disk.save).toHaveBeenLastCalledWith([attempt]);
+  });
+  it("retries attachments from memory while admission keeps failing", async () => {
+    disk.admit.mockImplementation(() => {
       throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
     });
     request.mockRejectedValueOnce(new Error("Send interrupted"));
@@ -243,6 +272,7 @@ describe("scoped mobile outbox", () => {
     });
     expect(disk.hydrate).not.toHaveBeenCalled();
     expect(disk.save).toHaveBeenLastCalledWith([]);
+    disk.admit.mockImplementation(() => true);
   });
   it("deletes a delivered message's files only after the index without it is saved", async () => {
     const failed = feedback.sendAttempt(payload("First"));
