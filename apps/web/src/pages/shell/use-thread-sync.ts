@@ -83,6 +83,7 @@ export function useThreadSync({
   notifyBrowserForEvent,
   markBotReadIfVisible,
   markGroupReadOnReply,
+  onBotDeleted,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   queries: SpaceQueries;
@@ -101,6 +102,8 @@ export function useThreadSync({
   notifyBrowserForEvent: ReturnType<typeof useBrowserNotifications>["notifyBrowserForEvent"];
   markBotReadIfVisible: (botId: string) => void;
   markGroupReadOnReply: (groupId: string) => void;
+  /** A server-confirmed bot deletion; roster churn and archiving do not reach it. */
+  onBotDeleted: (botId: string) => void;
 }) {
   const {
     snapshot,
@@ -370,6 +373,13 @@ export function useThreadSync({
           false,
         );
         if (event.type === "thread.cleared") resetHistory();
+        if (event.type === "bot.deleted") {
+          // A deletion the server confirmed, unlike a roster refresh or an
+          // archive, retires the chat's pending attachments.
+          const deletedBotId =
+            typeof event.payload.botId === "string" ? event.payload.botId : event.botId;
+          onBotDeleted(deletedBotId);
+        }
         if (event.type === "bot.archived") {
           void refreshBots(true).catch(() => undefined);
         } else if (

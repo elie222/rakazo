@@ -399,6 +399,9 @@ function SpaceShell() {
     activeBotId,
   });
   const read = useChatRead({ rpc, active, groupId, activeGroup, setBots, setGroups });
+  // Set once the composer hook below runs; a remote bot.deleted discards that
+  // chat's pending attachments. A ref keeps the sync input stable.
+  const discardDeletedChatRef = useRef<(threadKey: string) => void>(() => {});
   const {
     refreshThread,
     refreshGroupThread,
@@ -426,6 +429,7 @@ function SpaceShell() {
     notifyBrowserForEvent,
     markBotReadIfVisible: read.markBotReadIfVisible,
     markGroupReadOnReply: read.markGroupReadOnReply,
+    onBotDeleted: (botId) => discardDeletedChatRef.current(botId),
   });
   const {
     editorProps: routineEditorProps,
@@ -625,16 +629,9 @@ function SpaceShell() {
     refreshGroupThread: (id) => refreshGroupThreadRef.current(id),
   });
   const { computerBot, openComputer } = computerControls;
-  // Pending attachments belong to chats on the roster; a chat deleted here
-  // (sidebar, group settings) or on another device can never send them.
-  const rosterChatIds = useMemo(
-    () => new Set([...bots.map((bot) => bot.id), ...groups.map((group) => group.id)]),
-    [bots, groups],
-  );
   const composer = useComposerActions({
     rpc,
     pageSession: pages.session,
-    rosterChatIds,
     activeId: active?.id,
     inGroup,
     groupId,
@@ -654,6 +651,7 @@ function SpaceShell() {
     clearReadBoundary: read.clearReadBoundary,
     flushPendingBrowserNotifications,
   });
+  discardDeletedChatRef.current = composer.discardThreadAttachments;
   const { sending, sendError, stopRun } = composer;
   function openChatSettings(kind: "bot" | "group", id: string) {
     const destKey =
@@ -1207,6 +1205,7 @@ function SpaceShell() {
         refreshBots={refreshBots}
         refreshThread={refreshThread}
         refreshGroupThread={refreshGroupThread}
+        discardChatAttachments={composer.discardThreadAttachments}
         computer={computer}
         computerOpen={computerOpen}
         booting={booting}
