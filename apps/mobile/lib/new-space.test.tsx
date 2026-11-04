@@ -19,7 +19,11 @@ const state = vi.hoisted(() => ({
 
 vi.mock("./api", () => ({ rpc: state.rpc, selectSpace: state.selectSpace }));
 vi.mock("./haptics", () => ({ hapticSuccess: state.hapticSuccess }));
-vi.mock("./search-inbox", () => ({ searchInboxSession: () => ({ ...state.session }) }));
+vi.mock("./search-inbox", () => ({
+  searchInboxSession: () => ({ ...state.session }),
+  isSearchInboxSessionCurrent: (askedIn: typeof state.session) =>
+    askedIn.generation === state.session.generation && askedIn.apiBase === state.session.apiBase,
+}));
 vi.mock("./organizations", () => ({ refreshOrganizations: state.refreshOrganizations }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));

@@ -15,6 +15,7 @@ function setup(refresh: () => Promise<void>, overrides: Partial<ThreadAnswerCont
     groupId: undefined,
     readOnly: false,
     isCurrentTarget: () => true,
+    isFocused: () => true,
     ...spies,
     ...overrides,
   };
@@ -113,6 +114,26 @@ describe("mobile ask answers", () => {
     expect(h.refresh).not.toHaveBeenCalled();
     expect(hapticSuccess).not.toHaveBeenCalled();
   });
+
+  it.each([false, true])(
+    "uses navigation focus at answer completion (%s) while keeping the target refresh",
+    async (focusedAtCompletion) => {
+      let focused = !focusedAtCompletion;
+      let accept!: () => void;
+      const request = new Promise<void>((resolve) => {
+        accept = resolve;
+      });
+      const h = setup(async () => undefined, { isFocused: () => focused });
+      h.rpc.mockReturnValueOnce(request);
+      const saving = h.answerMessage(message, "yes");
+      expect(hapticSuccess).not.toHaveBeenCalled();
+      focused = focusedAtCompletion;
+      accept();
+      await saving;
+      expect(hapticSuccess).toHaveBeenCalledTimes(focusedAtCompletion ? 1 : 0);
+      expect(h.refresh).toHaveBeenCalledOnce();
+    },
+  );
 
   it("skips the refresh after the viewer has moved to another thread", async () => {
     const h = setup(async () => undefined, { isCurrentTarget: () => false });

@@ -269,6 +269,13 @@ export function setCallProviderTranscribe(enabled: boolean, forCallId?: string):
   if (enabled && !opening && state.phase === "listening" && !micOpen && !state.muted) void listen();
 }
 
+/** The app's Hang up action; shared or system-driven cleanup stays silent. */
+export function hangUp(): void {
+  if (!state) return;
+  hapticImpact();
+  endCall();
+}
+
 export function endCall(): void {
   // The bot's own end_call already closed the call server-side; only a caller hang-up
   // has to say so. Fire and forget: the card is going away either way.
@@ -279,7 +286,6 @@ export function endCall(): void {
     callSends.closeAfterSends(closingCallId, () => closeServerCall(botId, closingCallId));
   }
   if (state) {
-    hapticImpact();
     deps.waitSound("release");
     // A reply can still be playing when the caller hangs up: cut it with the call.
     deps.stopSpeaking();

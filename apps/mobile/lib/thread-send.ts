@@ -300,14 +300,23 @@ export function useThreadSend({
       remember?: false,
     ) =>
       answerThreadMessage(
-        { botId, groupId, readOnly, rpc, isCurrentTarget, refresh, markRead: markCaughtUp },
+        {
+          botId,
+          groupId,
+          readOnly,
+          rpc,
+          isCurrentTarget,
+          isFocused: () => navigation.isFocused(),
+          refresh,
+          markRead: markCaughtUp,
+        },
         message,
         answer,
         fields,
         dismiss,
         remember,
       ),
-    [botId, groupId, readOnly],
+    [botId, groupId, readOnly, navigation],
   );
 
   async function react(message: MobileMessage, reaction: MessageReaction) {

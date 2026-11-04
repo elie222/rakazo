@@ -2,7 +2,7 @@ import type { Href } from "expo-router";
 import { rpc } from "./api";
 import { allowFocusPrompt, scheduleFocusPrompt } from "./focus-prompt";
 import { hapticSuccess } from "./haptics";
-import { addToSearchInbox, searchInboxSession } from "./search-inbox";
+import { addToSearchInbox, isSearchInboxSessionCurrent, searchInboxSession } from "./search-inbox";
 
 /**
  * Creates a bot from the inbox's Create menu, adds it to the search roster, and opens its chat.
@@ -26,9 +26,7 @@ export async function createInboxBot({
     notifyOnFinish: true,
     computerMode: "team",
   });
-  const current = searchInboxSession();
-  if (current.generation === askedIn.generation && current.apiBase === askedIn.apiBase)
-    hapticSuccess();
+  if (isSearchInboxSessionCurrent(askedIn)) hapticSuccess();
   void refreshBots().catch(() => undefined);
   allowFocusPrompt(bot.id);
   addToSearchInbox({ kind: "bot", bot }, askedIn);

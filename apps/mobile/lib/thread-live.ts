@@ -15,6 +15,12 @@ import type { ThreadJumpAnchor } from "./thread-jump";
 import type { PinnedThreadWindow } from "./thread-window";
 import { errorText } from "./user-error";
 
+type FeedbackBoundary = {
+  cursor: number | null;
+  pending: Map<string, number>;
+  ready: Promise<number | null>;
+};
+
 /**
  * Streams the chat's live events while the app is in the foreground. Returning to the same chat
  * resumes from the last applied event, so pinned and expanded windows catch up without a gap;
@@ -66,33 +72,56 @@ export function useThreadLiveSubscription({
 }): RefObject<boolean> {
   const liveSubscribed = useRef(false);
   const liveCursor = useRef<number | null>(null);
+  const liveProjectionFloor = useRef(-1);
   const liveSubscriptionGeneration = useRef(0);
   const completedRuns = useRef(new Set<string>());
-  const feedbackCursor = useRef<number | null>(null);
+  const feedbackBoundary = useRef<FeedbackBoundary | null>(null);
   const visible = useRef(false);
   visible.current = foreground && focused;
 
   useEffect(() => {
     liveCursor.current = null;
+    liveProjectionFloor.current = -1;
     completedRuns.current.clear();
   }, [botId, groupId, sessionEpoch]);
 
   useEffect(() => {
-    feedbackCursor.current = null;
+    feedbackBoundary.current = null;
     if ((!botId && !groupId) || !foreground || !focused || readOnly || !getHapticsEnabled()) return;
     const abort = new AbortController();
     const generation = currentSessionGeneration();
-    // Establish a server-side boundary without changing a pinned or expanded history window.
-    void rpc("threads/head", groupId ? { groupId } : { botId: botId! }, { signal: abort.signal })
-      .then((head) => {
-        if (!abort.signal.aborted && generation === currentSessionGeneration()) {
-          feedbackCursor.current = head.cursor;
-        }
+    const boundary: FeedbackBoundary = {
+      cursor: null,
+      pending: new Map(),
+      // Establish a server-side boundary without changing a pinned or expanded history window.
+      ready: rpc("threads/head", groupId ? { groupId } : { botId: botId! }, {
+        signal: abort.signal,
       })
-      .catch(() => undefined);
+        .then((head) => head.cursor)
+        .catch(() => null),
+    };
+    feedbackBoundary.current = boundary;
+    void boundary.ready.then((cursor) => {
+      if (
+        abort.signal.aborted ||
+        generation !== currentSessionGeneration() ||
+        feedbackBoundary.current !== boundary
+      )
+        return;
+      if (cursor === null) {
+        feedbackBoundary.current = null;
+      } else {
+        boundary.cursor = cursor;
+        for (const seq of boundary.pending.values()) {
+          if (visible.current && seq > cursor) hapticSuccess();
+        }
+      }
+      boundary.pending.clear();
+    });
     return () => {
       abort.abort();
-      feedbackCursor.current = null;
+      boundary.pending.clear();
+      if (feedbackBoundary.current === boundary) feedbackBoundary.current = null;
     };
   }, [botId, groupId, foreground, focused, readOnly, sessionEpoch]);
 
@@ -118,22 +147,37 @@ export function useThreadLiveSubscription({
     showSavedThread(abort.signal);
     void (async () => {
       // Pending search jumps load the around-page separately; avoid replacing it with latest.
-      const next =
-        liveCursor.current !== null
-          ? null
-          : messageId
-            ? await rpc("threads/get", groupId ? { groupId } : { botId: botId! }).catch(
-                (err: unknown) => {
-                  setError(errorText(err));
-                  return null;
-                },
-              )
-            : await refresh().catch((err: unknown) => {
+      const resuming = liveCursor.current !== null;
+      const next = resuming
+        ? null
+        : messageId
+          ? await rpc("threads/get", groupId ? { groupId } : { botId: botId! }).catch(
+              (err: unknown) => {
                 setError(errorText(err));
                 return null;
-              });
+              },
+            )
+          : await refresh().catch((err: unknown) => {
+              setError(errorText(err));
+              return null;
+            });
       if (abort.signal.aborted || readOnly) return;
       let cursor = liveCursor.current ?? next?.cursor ?? -1;
+      if (!resuming) liveProjectionFloor.current = next?.cursor ?? -1;
+      const projectionFloor = liveProjectionFloor.current;
+      if (!resuming) {
+        // A newer initial snapshot may already contain a reply completed after the head was
+        // captured. Replay that interval for feedback without projecting it over the snapshot.
+        for (;;) {
+          const boundary = feedbackBoundary.current;
+          if (!boundary) break;
+          const floor = await boundary.ready;
+          if (abort.signal.aborted || sessionGeneration !== currentSessionGeneration()) return;
+          if (feedbackBoundary.current !== boundary) continue;
+          if (floor !== null) cursor = Math.min(cursor, floor);
+          break;
+        }
+      }
       liveCursor.current = cursor;
       let retryMs = 250;
       while (!abort.signal.aborted && sessionGeneration === currentSessionGeneration()) {
@@ -148,6 +192,24 @@ export function useThreadLiveSubscription({
               const newEvent = (event.seq ?? -1) > cursor;
               cursor = Math.max(cursor, event.seq ?? -1);
               retryMs = 250;
+              liveCursor.current = cursor;
+              if (
+                event.type === "run.completed" &&
+                event.runId &&
+                !completedRuns.current.has(event.runId)
+              ) {
+                completedRuns.current.add(event.runId);
+                const boundary = feedbackBoundary.current;
+                if (newEvent && visible.current && boundary) {
+                  if (boundary.cursor === null) {
+                    // Focus can change while this stream stays open and its head is in flight.
+                    boundary.pending.set(event.runId, event.seq ?? -1);
+                  } else if ((event.seq ?? -1) > boundary.cursor) {
+                    hapticSuccess();
+                  }
+                }
+              }
+              if ((event.seq ?? -1) <= projectionFloor) return;
               if (event.type === "thread.cleared") {
                 expandedHistoryThread.current = null;
                 pinnedAroundRef.current = null;
@@ -158,7 +220,6 @@ export function useThreadLiveSubscription({
               const previous = snapRef.current;
               const reduced = applyMobileThreadEvent(previous, event);
               if (reduced !== previous) commitSnap(reduced);
-              liveCursor.current = cursor;
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
               }
@@ -168,22 +229,6 @@ export function useThreadLiveSubscription({
               }
               if (isRunTerminalEvent(event)) {
                 void refreshMentionBots();
-              }
-              if (
-                event.type === "run.completed" &&
-                event.runId &&
-                !completedRuns.current.has(event.runId)
-              ) {
-                completedRuns.current.add(event.runId);
-                // Resumed streams also replay completions from before this chat was visible.
-                if (
-                  newEvent &&
-                  visible.current &&
-                  feedbackCursor.current !== null &&
-                  (event.seq ?? -1) > feedbackCursor.current
-                ) {
-                  hapticSuccess();
-                }
               }
               if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
                 // Reconcile run ownership for ask cards first seen through live events.

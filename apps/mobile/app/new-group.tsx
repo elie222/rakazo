@@ -20,7 +20,11 @@ import { hapticSuccess } from "../lib/haptics";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
-import { addToSearchInbox, searchInboxSession } from "../lib/search-inbox";
+import {
+  addToSearchInbox,
+  isSearchInboxSessionCurrent,
+  searchInboxSession,
+} from "../lib/search-inbox";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
@@ -72,9 +76,7 @@ export default function NewGroup() {
         name: name.trim() || defaultGroupName(picked.map((bot) => bot.name)),
         botIds: selected,
       });
-      const current = searchInboxSession();
-      if (current.generation === askedIn.generation && current.apiBase === askedIn.apiBase)
-        hapticSuccess();
+      if (isSearchInboxSessionCurrent(askedIn)) hapticSuccess();
       addToSearchInbox({ kind: "group", group }, askedIn);
       router.replace({
         pathname: "/group-thread",

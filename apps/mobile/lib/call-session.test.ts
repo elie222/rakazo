@@ -1,4 +1,9 @@
-import { AiConsentBlocked, callIdFromClientNonce, INTERIM_BARGE_IN_MS } from "@rakazo/core";
+import {
+  AiConsentBlocked,
+  CALL_FAREWELL_TIMEOUT_MS,
+  callIdFromClientNonce,
+  INTERIM_BARGE_IN_MS,
+} from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hapticImpact, hapticSuccess } from "./haptics";
 
@@ -9,6 +14,7 @@ import {
   ExpectedTurnFailure,
   endCall,
   getSnapshot,
+  hangUp,
   setCallProviderTranscribe,
   startCall,
   subscribe,
@@ -183,18 +189,18 @@ function fakes(opts: { onDevice?: boolean } = {}) {
 afterEach(() => endCall());
 
 describe("mobile call session", () => {
-  it("confirms connection and hang-up once, without buzzing for an absent or aborted call", async () => {
+  it("confirms connection and explicit hang-up once, without buzzing for an absent or aborted call", async () => {
     vi.mocked(hapticImpact).mockClear();
     vi.mocked(hapticSuccess).mockClear();
-    endCall();
+    hangUp();
     expect(hapticImpact).not.toHaveBeenCalled();
     const fake = fakes();
     startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
     await flush();
     expect(hapticSuccess).toHaveBeenCalledTimes(1);
     expect(hapticImpact).not.toHaveBeenCalled();
-    endCall();
-    endCall();
+    hangUp();
+    hangUp();
     expect(hapticImpact).toHaveBeenCalledTimes(1);
     const opening = deferred<void>();
     startCall({ botId: "bot-2", botName: "Bob" }, { ...fake.deps, cue: () => opening.promise });
@@ -202,6 +208,53 @@ describe("mobile call session", () => {
     opening.resolve();
     await flush();
     expect(hapticSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps shared teardown and call replacement silent", async () => {
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    vi.mocked(hapticImpact).mockClear();
+    vi.mocked(hapticSuccess).mockClear();
+    startCall({ botId: "bot-2", botName: "Max" }, fake.deps);
+    await flush();
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(hapticSuccess).toHaveBeenCalledOnce();
+    vi.mocked(hapticSuccess).mockClear();
+    endCall();
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
+  });
+
+  it("keeps remote termination silent", async () => {
+    const fake = fakes();
+    const id = startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    vi.mocked(hapticImpact).mockClear();
+    vi.mocked(hapticSuccess).mockClear();
+    fake.endedCall(id);
+    expect(getSnapshot()).toBeNull();
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
+  });
+
+  it("keeps a remote farewell timeout silent", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = fakes();
+      const id = startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await vi.advanceTimersByTimeAsync(0);
+      vi.mocked(hapticImpact).mockClear();
+      vi.mocked(hapticSuccess).mockClear();
+      fake.endedCall(id, "Talk soon.");
+      await vi.advanceTimersByTimeAsync(CALL_FAREWELL_TIMEOUT_MS);
+      expect(getSnapshot()).toBeNull();
+      expect(hapticImpact).not.toHaveBeenCalled();
+      expect(hapticSuccess).not.toHaveBeenCalled();
+    } finally {
+      endCall();
+      vi.useRealTimers();
+    }
   });
 
   it("retains an answered incoming call's id through speech, messages and hang-up", async () => {
@@ -339,6 +392,7 @@ describe("mobile call session", () => {
     const switchBot = vi.fn((text: string) =>
       text === "switch to Max" ? { name: "Max", ring } : undefined,
     );
+    vi.mocked(hapticImpact).mockClear();
     startCall({ botId: "bot-1", botName: "Ada", switchBot }, fake.deps);
     await flush();
     fake.say("switch to Max");
@@ -353,6 +407,7 @@ describe("mobile call session", () => {
     await flush();
     expect(ring).toHaveBeenCalledOnce();
     expect(getSnapshot()).toBeNull();
+    expect(hapticImpact).not.toHaveBeenCalled();
   });
 
   it("ignores replies throughout the hand-over cue and speech", async () => {
@@ -1645,6 +1700,8 @@ describe("mobile call on a session change", () => {
     startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
     await flush();
     expect(fake.signals).toHaveLength(1);
+    vi.mocked(hapticImpact).mockClear();
+    vi.mocked(hapticSuccess).mockClear();
 
     const changing = change();
     // Before the new session is stored, so nothing of the call can reach it.
@@ -1654,6 +1711,8 @@ describe("mobile call on a session change", () => {
     expect(fake.stopSpeaking).toHaveBeenCalled();
     expect(fake.waits).toContain("release");
     await changing;
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
   });
 
   it("does not start a call whose setup began before the session changed", async () => {
@@ -1696,12 +1755,16 @@ describe("mobile call on a session change", () => {
     const { send: _send, ...deps } = fake.deps;
     startCall({ botId: "bot-1", botName: "Ada" }, deps);
     await flush();
+    vi.mocked(hapticImpact).mockClear();
+    vi.mocked(hapticSuccess).mockClear();
     fake.say("hello");
     await flush();
 
     // A rejected session must not leave the microphone listening for the next turn.
     expect(getSnapshot()).toBeNull();
     expect(fake.signals.at(-1)?.aborted).toBe(true);
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
   });
 
   it("keeps a hang-up queued behind a send in flight on the call's own session", async () => {

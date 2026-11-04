@@ -154,6 +154,10 @@ vi.mock("./search-inbox", () => ({
   setSearchInbox: ui.setSearchInbox,
   addToSearchInbox: ui.addToSearchInbox,
   searchInboxSession: ui.searchInboxSession,
+  isSearchInboxSessionCurrent: (askedIn: { generation: number; apiBase: string }) => {
+    const current = ui.searchInboxSession();
+    return askedIn.generation === current.generation && askedIn.apiBase === current.apiBase;
+  },
 }));
 vi.mock("./focus-prompt", () => ({ allowFocusPrompt: vi.fn(), scheduleFocusPrompt: vi.fn() }));
 vi.mock("../components/bot-avatar", () => ({

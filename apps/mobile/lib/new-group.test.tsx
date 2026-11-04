@@ -40,6 +40,8 @@ vi.mock("./haptics", () => ({ hapticSuccess }));
 vi.mock("./search-inbox", () => ({
   addToSearchInbox,
   searchInboxSession: () => ({ ...session }),
+  isSearchInboxSessionCurrent: (askedIn: typeof session) =>
+    askedIn.generation === session.generation && askedIn.apiBase === session.apiBase,
 }));
 vi.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 56 }));
 vi.mock("expo-router", () => ({

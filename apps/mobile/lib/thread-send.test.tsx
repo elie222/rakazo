@@ -5,13 +5,18 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { hapticImpact, hapticSuccess } from "./haptics";
 
-const navigation = vi.hoisted(() => ({ focused: true }));
+const navigation = vi.hoisted(() => ({
+  focused: true,
+  isFocused() {
+    return this.focused;
+  },
+}));
 
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
 vi.mock("./haptics", () => ({ hapticImpact: vi.fn(), hapticSuccess: vi.fn() }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: vi.fn() }),
-  useNavigation: () => ({ isFocused: () => navigation.focused }),
+  useNavigation: () => navigation,
 }));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example",
@@ -168,6 +173,31 @@ it("taps only valid sends and confirms delivery only for the visible chat", asyn
     navigation.focused = true;
     await act(async () => view.root.unmount());
     subscription.mockRestore();
+  }
+});
+
+it("does not confirm a card answer accepted after navigation leaves the mounted chat", async () => {
+  const { rpc } = await import("./api");
+  let accept!: () => void;
+  vi.mocked(rpc).mockReturnValueOnce(
+    new Promise<void>((resolve) => {
+      accept = resolve;
+    }) as never,
+  );
+  const view = await chat([]);
+  vi.mocked(hapticSuccess).mockClear();
+  try {
+    const saving = view.sender().answer({ id: "ask-1", runId: "run-1" } as never, "yes");
+    navigation.focused = false;
+    accept();
+    await saving;
+    expect(hapticSuccess).not.toHaveBeenCalled();
+    navigation.focused = true;
+    await view.sender().answer({ id: "ask-2", runId: "run-1" } as never, "yes");
+    expect(hapticSuccess).toHaveBeenCalledOnce();
+  } finally {
+    navigation.focused = true;
+    await act(async () => view.root.unmount());
   }
 });
 

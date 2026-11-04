@@ -8,13 +8,23 @@ export type ThreadAnswerContext = {
   readOnly: boolean;
   rpc: (proc: "threads/answer", body: RpcInput<"threads/answer">) => Promise<unknown>;
   isCurrentTarget: (botId: string | undefined, groupId: string | undefined) => boolean;
+  isFocused: () => boolean;
   refresh: () => Promise<unknown>;
   markRead: () => void;
 };
 
 /** Sends an ask answer or dismissal; resolves once the server accepts it. */
 export async function answerThreadMessage(
-  { botId, groupId, readOnly, rpc, isCurrentTarget, refresh, markRead }: ThreadAnswerContext,
+  {
+    botId,
+    groupId,
+    readOnly,
+    rpc,
+    isCurrentTarget,
+    isFocused,
+    refresh,
+    markRead,
+  }: ThreadAnswerContext,
   message: Pick<MobileMessage, "id" | "runId">,
   answer: string,
   fields?: readonly LoginFieldInput[],
@@ -34,7 +44,7 @@ export async function answerThreadMessage(
   });
   // The answer is saved once the server accepts it; a failed refresh only delays the card.
   if (isCurrentTarget(botId, groupId)) {
-    hapticSuccess();
+    if (isFocused()) hapticSuccess();
     await refresh().catch(() => undefined);
   }
 }

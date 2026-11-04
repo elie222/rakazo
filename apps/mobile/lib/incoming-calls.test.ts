@@ -56,6 +56,7 @@ vi.mock("./api", () => ({
 }));
 vi.mock("./call-session", () => ({
   endCall: vi.fn(),
+  hangUp: vi.fn(),
   getSnapshot: () => fake.call,
   startCall: fake.startCall,
   subscribe: () => () => {},
@@ -68,7 +69,7 @@ vi.mock("./session", () => ({
   registerSessionDiskCache: vi.fn(),
 }));
 
-import { endCall } from "./call-session";
+import { endCall, hangUp } from "./call-session";
 import {
   getIncomingCall,
   respondToMobileCall,
@@ -169,6 +170,18 @@ describe("mobile incoming calls", () => {
     expect(endCall).toHaveBeenCalled();
     expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-1", true);
   });
+  it("keeps ambiguous native end events on the silent teardown path", async () => {
+    await respondToMobileCall(await ring(), "answer");
+    fake.call = { botId: bot.id };
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      actions: [{ action: "end", callId: "call-1", botId: bot.id, expiresAt: block().expiresAt }],
+    });
+    fake.onAppState?.("active");
+    await vi.waitFor(() => expect(endCall).toHaveBeenCalledOnce());
+    expect(hangUp).not.toHaveBeenCalled();
+  });
+
   it("declines through the same backend path as web", async () => {
     await respondToMobileCall(await ring(), "decline");
     expect(fake.rpc).toHaveBeenCalledWith(

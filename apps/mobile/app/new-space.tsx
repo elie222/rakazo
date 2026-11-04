@@ -8,7 +8,7 @@ import { hapticSuccess } from "../lib/haptics";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { refreshOrganizations } from "../lib/organizations";
-import { searchInboxSession } from "../lib/search-inbox";
+import { isSearchInboxSessionCurrent, searchInboxSession } from "../lib/search-inbox";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
@@ -29,9 +29,7 @@ export default function NewSpace() {
     const askedIn = searchInboxSession();
     try {
       const space = await rpc("spaces/create", { name: trimmed });
-      const current = searchInboxSession();
-      if (current.generation === askedIn.generation && current.apiBase === askedIn.apiBase)
-        hapticSuccess();
+      if (isSearchInboxSessionCurrent(askedIn)) hapticSuccess();
       void refreshOrganizations();
       if (!(await selectSpace(space.id))) {
         Alert.alert(t("Space created"), t("It could not be opened. Try again from the sidebar."));

@@ -326,6 +326,7 @@ it("closes the current sheet and keeps the card saved when refresh fails", async
         readOnly: false,
         rpc,
         isCurrentTarget: () => true,
+        isFocused: () => true,
         refresh,
         markRead: vi.fn(),
       },
