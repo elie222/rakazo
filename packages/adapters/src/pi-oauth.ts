@@ -33,7 +33,8 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { retireModelCredential, runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
-import { withRefreshLock } from "./refresh-lock.js";
+import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "./refresh-lock.js";
+import { holdSecretNotifications } from "./secret-store-factory.js";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
 export const COPILOT_OAUTH_PROVIDER = "github-copilot";
@@ -83,8 +84,11 @@ const SIGN_IN_START_WAIT_MS = 30_000;
 const PASTED_CODE_TTL_SECONDS = 15 * 60;
 /** Bound on a detached credential refresh so it cannot pin the shared lock. */
 const REFRESH_KICK_TIMEOUT_MS = 30_000;
-/** Bounds the provider request a refresh makes while holding the credential lock. */
-const REFRESH_REQUEST_TIMEOUT_MS = 15_000;
+/**
+ * pi-ai ends a running run's refresh at 15 s itself (auth/resolve.js, not exported), on a
+ * timer that starts after ours: this backstop must not fire first and drop a rotated token.
+ */
+const RUNTIME_REFRESH_BACKSTOP_MS = REFRESH_REQUEST_TIMEOUT_MS + 5_000;
 const CORRUPT_MODEL_SECRET_MESSAGE =
   "Stored model credential is corrupt. Connect the provider again.";
 
@@ -903,36 +907,39 @@ export async function resolveStoredModelAuth(
     | { args: Parameters<NonNullable<ResolveModelOpts["retire"]>>; maxTokens?: number }
     | undefined;
   try {
-    const outcome = await withRefreshLock(
-      prisma,
-      (tx) => lockModelCredential(tx, secretId),
-      async (tx) => {
-        const row = await tx.secret.findUnique({
-          where: { id: secretId },
-          select: { ciphertext: true },
-        });
-        const stored = row ? await secretStore.load(row.ciphertext, secretId) : plaintext;
-        const timeout = AbortSignal.timeout(REFRESH_REQUEST_TIMEOUT_MS);
-        const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
-        let saved = false;
-        // A failure after the save still commits it: the provider spent the old token.
-        return resolveModelAuth(stored, provider, {
-          ...opts,
-          signal,
-          persist: async (next) => {
-            await persistStoredModelSecret(tx, secretStore, scope, secretId)(next);
-            saved = true;
-          },
-          // Recorded only: retiring needs the lock's connection released first.
-          retire: async (...args) => {
-            failure = { args, maxTokens: parseModelSecret(stored).maxTokens };
-            return false;
-          },
-        }).then(
-          (resolved) => ({ resolved }),
-          (error) => (saved ? { error } : Promise.reject(error)),
-        );
-      },
+    // The token write announces itself once the lock's connection is back.
+    const outcome = await holdSecretNotifications(() =>
+      withRefreshLock(
+        prisma,
+        (tx) => lockModelCredential(tx, secretId),
+        async (tx) => {
+          const row = await tx.secret.findUnique({
+            where: { id: secretId },
+            select: { ciphertext: true },
+          });
+          const stored = row ? await secretStore.load(row.ciphertext, secretId) : plaintext;
+          const timeout = AbortSignal.timeout(REFRESH_REQUEST_TIMEOUT_MS);
+          const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
+          let saved = false;
+          // A failure after the save still commits it: the provider spent the old token.
+          return resolveModelAuth(stored, provider, {
+            ...opts,
+            signal,
+            persist: async (next) => {
+              await persistStoredModelSecret(tx, secretStore, scope, secretId)(next);
+              saved = true;
+            },
+            // Recorded only: retiring needs the lock's connection released first.
+            retire: async (...args) => {
+              failure = { args, maxTokens: parseModelSecret(stored).maxTokens };
+              return false;
+            },
+          }).then(
+            (resolved) => ({ resolved }),
+            (error) => (saved ? { error } : Promise.reject(error)),
+          );
+        },
+      ),
     );
     if ("error" in outcome) throw outcome.error;
     return outcome.resolved;
@@ -990,8 +997,11 @@ export function refreshStoredModelCredential(
         toAuth
           ? {
               oauth: {
-                refresh: async (stored, signal) => {
-                  const next = await refresh(stored, signal);
+                refresh: async (stored) => {
+                  const next = await refresh(
+                    stored,
+                    AbortSignal.timeout(RUNTIME_REFRESH_BACKSTOP_MS),
+                  );
                   return next ? { ...next } : stored;
                 },
                 toAuth: (next) => toAuth(next),

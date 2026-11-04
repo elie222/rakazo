@@ -4,6 +4,7 @@ import { isModelCredentialRejected } from "@rakazo/adapter-kit";
 import { containsSecret, redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PiRuntimeCredentialStore } from "./pi-credentials.js";
 import type { PiOAuthBegin } from "./pi-oauth.js";
 import {
   CHATGPT_OAUTH_PROVIDER,
@@ -1044,29 +1045,60 @@ describe("refreshExpiredModelCredential", () => {
     toAuth: vi.fn(async (credential: OAuthCredential) => ({ apiKey: credential.access })),
   });
 
-  it("caps a running run's refresh with the locked refresh's 15-second signal", async () => {
-    const expired = oauthCred({ access: "old", expires: 1 });
-    const { prisma, secretStore } = secretRow(
-      serializeModelSecret({ kind: "oauth", credential: expired }),
-    );
-    const timeout = vi.spyOn(AbortSignal, "timeout");
-    const refresh = vi.fn(async () =>
-      oauthCred({ access: "new", expires: Date.now() + 3_600_000 }),
-    );
-    const oauth = stubOAuth(async () => expired);
+  it("ends a stalled running-run refresh at its backstop and keeps one that answers within pi's 15 s", async () => {
+    vi.useFakeTimers();
+    // Timer-driven AbortSignal.timeout, so fake time reaches it.
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new Error("timed out")), ms);
+      return controller.signal;
+    });
+    try {
+      const expired = oauthCred({ access: "old", expires: 1 });
+      const { prisma, secretStore } = secretRow(
+        serializeModelSecret({ kind: "oauth", credential: expired }),
+      );
+      const runner = new PiRuntimeCredentialStore(
+        CHATGPT_OAUTH_PROVIDER,
+        expired,
+        undefined,
+        undefined,
+        refreshStoredModelCredential(
+          prisma,
+          secretStore,
+          scope,
+          { id: "cred-1", secretId: "secret-1" },
+          CHATGPT_OAUTH_PROVIDER,
+          { oauth: stubOAuth(async () => expired) },
+        ),
+      );
+      // A stalled runtime refresh outlives pi's 15 s, then the backstop ends it with no write.
+      let settled = false;
+      const stalled = runner.modify(CHATGPT_OAUTH_PROVIDER, () => new Promise(() => {}));
+      stalled.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      await vi.advanceTimersByTimeAsync(15_001);
+      expect(settled).toBe(false);
+      const ended = expect(stalled).rejects.toThrow("timed out");
+      await vi.advanceTimersByTimeAsync(5_000);
+      await ended;
+      expect(secretStore.put).not.toHaveBeenCalled();
 
-    await refreshStoredModelCredential(
-      prisma,
-      secretStore,
-      scope,
-      { id: "cred-1", secretId: "secret-1" },
-      CHATGPT_OAUTH_PROVIDER,
-      { oauth },
-    )(expired, refresh);
+      // The lock is free again. pi-ai's own 15 s starts after ours, so it can answer as ours reaches 15 s.
+      const refreshed = runner.modify(CHATGPT_OAUTH_PROVIDER, async () => {
+        await new Promise((resolve) => setTimeout(resolve, 15_000));
+        return oauthCred({ access: "new", expires: Date.now() + 3_600_000 });
+      });
+      await vi.advanceTimersByTimeAsync(15_001);
 
-    expect(timeout).toHaveBeenCalledWith(15_000);
-    expect(refresh).toHaveBeenCalledWith(expect.anything(), timeout.mock.results[0]?.value);
-    timeout.mockRestore();
+      await expect(refreshed).resolves.toMatchObject({ access: "new" });
+      expect(secretStore.put).toHaveBeenCalledTimes(1);
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it("refreshes and persists an expired OAuth credential", async () => {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { OAuthCredential } from "@earendil-works/pi-ai";
 import { asSystem, createDb, runAsTenant } from "@rakazo/db";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { PostgresRealtimeFanout } from "./realtime.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -34,8 +35,10 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
     vi.resetModules();
     return {
       prisma: db.prisma,
+      pool: db.pool,
       oauth: await import("./pi-oauth.js"),
       credentials: await import("./pi-credentials.js"),
+      secretStores: await import("./secret-store-factory.js"),
     };
   }
 
@@ -202,5 +205,53 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
     ).toMatchObject({
       credential: { refresh: "rt-1" },
     });
+  });
+
+  it("announces a refreshed token after the lock's connection is released", async () => {
+    const owner = await instance();
+    const { scope, credential, plaintext, stored, connection } = await seed(owner);
+    // The app's store announces each write on the same one-connection pool.
+    const notified: string[] = [];
+    const store = new owner.secretStores.ComposedSecretStore(
+      new EncryptedSecretStore("test-only-encryption-key"),
+      undefined,
+      new PostgresRealtimeFanout({
+        connectionString: databaseUrl!,
+        publisher: {
+          query: async (sql: string, values: unknown[]) => {
+            const result = await owner.pool.query(sql, values);
+            notified.push(JSON.parse(JSON.parse(String(values[1])).payload).ref);
+            return result;
+          },
+        },
+      }),
+    );
+    const oauth = {
+      refresh: vi.fn(async () => ({
+        ...credential,
+        access: "acc-1",
+        refresh: "rt-1",
+        expires: Date.now() + 3_600_000,
+      })),
+      toAuth: vi.fn(async (held: OAuthCredential) => ({ apiKey: held.access })),
+    };
+
+    const started = Date.now();
+    const resolved = await runAsTenant(scope, () =>
+      owner.oauth.resolveStoredModelAuth(
+        owner.prisma,
+        store,
+        scope,
+        { id: connection.id, secretId: stored.id },
+        plaintext,
+        "openai-codex",
+        { oauth },
+      ),
+    );
+
+    expect(resolved.apiKey).toBe("acc-1");
+    // Announcing inside the lock would wait out the 10 s pool checkout.
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(notified).toHaveLength(1);
   });
 });

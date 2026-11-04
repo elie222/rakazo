@@ -2,6 +2,11 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 
 const REFRESH_LOCK_WAIT_MS = 10_000;
 const REFRESH_TRANSACTION_MS = 60_000;
+/**
+ * Bounds the provider request a refresh makes while holding the refresh lock; the
+ * rest of the transaction goes to the write, since a rotated token never committed is lost.
+ */
+export const REFRESH_REQUEST_TIMEOUT_MS = 15_000;
 
 /**
  * Runs `fn` in a transaction that first takes `lock`, a transaction-scoped advisory

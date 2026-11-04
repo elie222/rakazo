@@ -33,7 +33,7 @@ import { getLogger } from "@rakazo/logging";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import { secureFetch, validateUrl, withEndpointOriginFallback } from "./mcp-transport.js";
-import { withRefreshLock } from "./refresh-lock.js";
+import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "./refresh-lock.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
 import { deleteSecretBestEffort, holdSecretNotifications } from "./secret-store-factory.js";
@@ -849,13 +849,6 @@ type MaterialSnapshot = {
   server: { endpoint: string | null; secretId: string | null };
   secret: { id: string; ciphertext: string } | null;
 };
-
-/**
- * A refresh holds the credential lock across one token request and the write.
- * Whatever is left after the lock wait and the request goes to the secret
- * write: a rotated token that never commits is lost.
- */
-const REFRESH_REQUEST_TIMEOUT_MS = 15_000;
 
 function lockMaterial(tx: Prisma.TransactionClient, serverId: string): Promise<number> {
   return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${serverId}))`;
