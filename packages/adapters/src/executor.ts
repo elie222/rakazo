@@ -79,10 +79,10 @@ import {
   screenLeaseIdForRun,
 } from "./computer-lifecycle.js";
 import {
+  computerCheckpointResolver,
   isLostPinnedModel,
   PINNED_COMPUTER_MODEL_LOST_RUN_ERROR,
   resolveComputerRunModel,
-  computerCheckpointResolver,
 } from "./computer-model-settings.js";
 import { teamBotWorkspaceDirectory } from "./computer-support.js";
 import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
