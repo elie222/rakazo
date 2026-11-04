@@ -61,6 +61,8 @@ export function useCopyText(): [
 
   useEffect(
     () => () => {
+      // A copy that settles after unmount must not start a new feedback timer.
+      attemptRef.current++;
       if (timerRef.current) window.clearTimeout(timerRef.current);
     },
     [],
