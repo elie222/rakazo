@@ -1204,11 +1204,15 @@ async function reconcileProvisionalSignOuts(): Promise<void> {
  * alive. The unregistration's 401 can also mean missing membership, so only the sign-out's
  * success or 401 proves the session is gone; both halves must have a hard answer to complete.
  */
-async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered" | "retry"> {
+async function deliverPendingSignOut(
+  record: PendingSignOut,
+): Promise<"delivered" | "retry" | "expired"> {
   const send = async (path: string, body: string) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
     try {
+      // Pruning can fail, and the preceding request can cross the hard deadline.
+      if (Date.now() - record.recordedAt >= PENDING_SIGN_OUT_HARD_MAX_AGE_MS) return "expired";
       const response = await withAbort(
         fetch(`${record.apiBase}${path}`, {
           method: "POST",
@@ -1253,6 +1257,7 @@ async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered
   let retrying = false;
   if (!record.unregistered) {
     const unregistered = await send("/rpc/notifications/unregisterPush", '{"json":{}}');
+    if (unregistered === "expired") return "expired";
     // Servers that still refresh this RPC's session can renew it even without a membership.
     if (unregistered !== "retry")
       await markPendingSignOutProgress(record, { renewedAt: Date.now(), unregistered: true });
@@ -1261,6 +1266,7 @@ async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered
   // The sign-out is attempted even when the unregistration could not get through, like the
   // sign-out they both belong to.
   const signedOut = await send("/api/auth/sign-out", "{}");
+  if (signedOut === "expired") return "expired";
   return retrying || signedOut === "retry" ? "retry" : "delivered";
 }
 

@@ -1766,6 +1766,70 @@ describe("mobile API authentication", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("does not deliver an expired revocation when the prune write fails", async () => {
+    const store = new Map<string, string>([
+      [
+        "rakazo.pending_sign_out",
+        JSON.stringify([
+          {
+            apiBase: "https://old.example",
+            token: "expired-token",
+            headers: {},
+            recordedAt: Date.now() - 61 * 24 * 60 * 60 * 1000,
+            renewedAt: Date.now(),
+          },
+        ]),
+      ],
+    ]);
+    mockSecureStore(store);
+    vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("device locked"));
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await flushPendingSignOut(true);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it.each([200, 503])(
+    "retires a revocation whose deadline passes during unregistration status %s",
+    async (status) => {
+      const deadline = Date.now() + 5_000;
+      let now = deadline - 5_000;
+      vi.spyOn(Date, "now").mockImplementation(() => now);
+      const store = new Map<string, string>([
+        [
+          "rakazo.pending_sign_out",
+          JSON.stringify([
+            {
+              apiBase: "https://old.example",
+              token: "expiring-token",
+              headers: {},
+              recordedAt: deadline - 60 * 24 * 60 * 60 * 1000,
+              renewedAt: now,
+            },
+          ]),
+        ],
+      ]);
+      mockSecureStore(store);
+      const fetchMock = vi.fn(async (input: string) => {
+        now = deadline;
+        return new Response("{}", {
+          status: input.endsWith("/rpc/notifications/unregisterPush") ? status : 503,
+        });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      await flushPendingSignOut(true);
+
+      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+        "https://old.example/rpc/notifications/unregisterPush",
+      ]);
+      expect(pendingSignOutRecords(store)).toEqual([]);
+    },
+  );
+
   it("keeps a revocation whose unregistration renewed the session", async () => {
     const dayMs = 24 * 60 * 60 * 1000;
     const store = new Map<string, string>([
