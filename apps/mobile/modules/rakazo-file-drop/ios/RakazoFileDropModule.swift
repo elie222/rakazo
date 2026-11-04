@@ -131,23 +131,36 @@ public class RakazoFileDropModule: Module {
   /// An image that cannot be loaded or saved comes back without a uri, so the chat reports it.
   private func copy(_ provider: NSItemProvider, into directory: URL, maxBytes: Int) -> [String: Any] {
     let failed: [String: Any] = ["name": "image", "mimeType": "image/jpeg", "size": 0.0]
-    let registered = provider.registeredTypeIdentifiers.compactMap { UTType($0) }
-    var type = registered.first { Self.keptTypes.contains($0) }
-    var data = type.flatMap { load(provider, $0) }
-    // Other formats, like HEIC, load as registered and are converted to JPEG.
-    if data == nil, let other = registered.first(where: { $0.conforms(to: .image) }) {
-      type = .jpeg
-      data = load(provider, other).flatMap { source in
-        source.count > maxBytes ? source : UIImage(data: source)?.jpegData(compressionQuality: 0.9)
+    let images = provider.registeredTypeIdentifiers.compactMap { UTType($0) }
+      .filter { $0.conforms(to: .image) }
+    var type: UTType?
+    var data: Data?
+    // The first kept format that loads, in the clipboard's order of preference.
+    for candidate in images where Self.keptTypes.contains(candidate) {
+      if let loaded = load(provider, candidate) {
+        (type, data) = (candidate, loaded)
+        break
       }
     }
-    guard let data, let type, let ext = type.preferredFilenameExtension else { return failed }
-    let name = "image.\(ext)"
-    let mimeType = type.preferredMIMEType ?? "image/jpeg"
     // Too large even to resize: the chat reports it as over the limit without a copy.
-    if data.count > maxBytes {
-      return ["name": name, "mimeType": mimeType, "size": Double(data.count)]
+    if let data, let type, data.count > maxBytes {
+      return ["name": name(type), "mimeType": mimeType(type), "size": Double(data.count)]
     }
+    // Other formats, like HEIC, are converted to JPEG. Only the source is capped: its
+    // pixels bound the JPEG, which the chat then resizes.
+    if data == nil {
+      for candidate in images where !Self.keptTypes.contains(candidate) {
+        guard let source = load(provider, candidate) else { continue }
+        if source.count > maxBytes {
+          return ["name": name(.jpeg), "mimeType": mimeType(.jpeg), "size": Double(source.count)]
+        }
+        if let converted = UIImage(data: source)?.jpegData(compressionQuality: 0.9) {
+          (type, data) = (.jpeg, converted)
+          break
+        }
+      }
+    }
+    guard let data, let type else { return failed }
     let destination = directory.appendingPathComponent(UUID().uuidString)
     do {
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -157,8 +170,8 @@ public class RakazoFileDropModule: Module {
     }
     var file: [String: Any] = [
       "uri": destination.absoluteString,
-      "name": name,
-      "mimeType": mimeType,
+      "name": name(type),
+      "mimeType": mimeType(type),
       "size": Double(data.count),
     ]
     // Lets the chat shrink a large photo the same way it does one picked from the library.
@@ -167,6 +180,14 @@ public class RakazoFileDropModule: Module {
       file["height"] = Double(image.size.height * image.scale)
     }
     return file
+  }
+
+  private func name(_ type: UTType) -> String {
+    "image.\(type.preferredFilenameExtension ?? "jpg")"
+  }
+
+  private func mimeType(_ type: UTType) -> String {
+    type.preferredMIMEType ?? "image/jpeg"
   }
 
   private func load(_ provider: NSItemProvider, _ type: UTType) -> Data? {
