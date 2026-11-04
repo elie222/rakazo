@@ -74,6 +74,7 @@ export const AppLocaleSchema = z.enum([
   "he",
   "nl",
   "ja",
+  "pl",
 ]);
 export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
 

@@ -1,7 +1,7 @@
 {
   "name": "@rakazo/desktop",
   "productName": "Rakazo",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "author": {
     "name": "Rakazo"
   },
@@ -83,6 +83,10 @@
         {
           "from": "assets/es.lproj",
           "to": "es.lproj"
+        },
+        {
+          "from": "assets/pl.lproj",
+          "to": "pl.lproj"
         }
       ],
       "target": [

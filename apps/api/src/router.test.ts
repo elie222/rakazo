@@ -1640,6 +1640,7 @@ describe("MCP pre-registered OAuth client", () => {
         }),
       },
       mcpServerSpace: { findMany: vi.fn(async () => []) },
+      mcpOAuthSession: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       secret: {
         create: vi.fn(async ({ data }: { data: { id: string; ciphertext: string } }) => {
           secretRows.set(data.id, data);
@@ -1756,6 +1757,26 @@ describe("MCP pre-registered OAuth client", () => {
     });
     expect(secrets.put).not.toHaveBeenCalled();
     expect(prisma.mcpServer.create).not.toHaveBeenCalled();
+  });
+
+  it("does not report a stored credential for a lone OAuth generation marker", async () => {
+    const { client, server } = harness(true);
+
+    const created = await client.mcp.servers.create({
+      transport: "streamable_http",
+      slug: "gmail",
+      name: "Gmail",
+      endpoint: "http://localhost:3100/mcp",
+    });
+    expect(created.hasSecret).toBe(false);
+
+    await client.mcp.oauth.disconnect({ serverId: created.id });
+    // The disconnect of a never-connected server still leaves the generation marker row.
+    expect(server()?.secretId).not.toBeNull();
+
+    const checked = await client.mcp.servers.test({ id: created.id });
+    expect(checked.hasSecret).toBe(false);
+    expect(checked.oauthStatus).toBe("none");
   });
 
   describe("stdio server with host-managed OAuth", () => {
@@ -2364,7 +2385,9 @@ describe("MCP server health", () => {
       $queryRaw: vi.fn(async () => []),
       $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
     } as unknown as PrismaClient;
-    const summaryFor = vi.fn(async () => options.oauth ?? { status: "none", clientId: null });
+    const summaryFor = vi.fn(
+      async () => options.oauth ?? { status: "none", clientId: null, credential: true },
+    );
     const deps = {
       prisma,
       secrets: { put: vi.fn(), load: vi.fn() },
@@ -2561,7 +2584,7 @@ describe("MCP server health", () => {
 
     it("says why it did not probe when the server still needs its OAuth account", async () => {
       const { client, probe } = harness({
-        oauth: { status: "none", clientId: "client-1.apps.example.test" },
+        oauth: { status: "none", clientId: "client-1.apps.example.test", credential: true },
       });
 
       const tested = await client.mcp.servers.test({ id: "server-1" });
@@ -2581,7 +2604,7 @@ describe("MCP server health", () => {
       async (material, shouldProbe) => {
         const h = harness({
           row: baseRow({ secretId: "secret-1" }),
-          oauth: { status: "none", clientId: "fake-client" },
+          oauth: { status: "none", clientId: "fake-client", credential: true },
         });
         vi.mocked(h.deps.prisma.secret.findFirst).mockResolvedValue({
           id: "secret-1",
@@ -2650,7 +2673,7 @@ describe("MCP server health", () => {
     it("does not probe a server whose OAuth account is not connected", async () => {
       const { client, probe, row } = harness({
         row: null,
-        oauth: { status: "none", clientId: "client-1.apps.example.test" },
+        oauth: { status: "none", clientId: "client-1.apps.example.test", credential: true },
       });
 
       const created = await client.mcp.servers.create(stdioInput);

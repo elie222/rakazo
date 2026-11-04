@@ -33,7 +33,6 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "generate_image",
   "generate_video",
-  "delete_bot",
   "archive_bot",
   "secret_request",
   "forget_secret",

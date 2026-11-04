@@ -109,6 +109,19 @@ it.each([undefined, 1, 8])(
   },
 );
 
+it("removes only the picked attachment when name, size and date match another", () => {
+  // Two picks of equal metadata used to derive the same id, so removing one dropped both.
+  const fileA = new File(["a"], "a.txt", { type: "text/plain", lastModified: 100 });
+  const fileB = new File(["b"], "a.txt", { type: "text/plain", lastModified: 100 });
+  act(() => void latest.onAttachmentPick([fileA]));
+  act(() => void latest.onAttachmentPick([fileB]));
+  const first = latest.activePendingAttachments[0]!;
+  const second = latest.activePendingAttachments[1]!;
+  expect(first.id).not.toBe(second.id);
+  act(() => latest.removeAttachment(first));
+  expect(latest.activePendingAttachments).toEqual([second]);
+});
+
 it("keeps an attachment added while a send is in flight", async () => {
   const fileA = new File(["a"], "a.txt", { type: "text/plain" });
   const fileB = new File(["b"], "b.txt", { type: "text/plain" });
