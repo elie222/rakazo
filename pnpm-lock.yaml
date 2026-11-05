@@ -24,6 +24,9 @@ patchedDependencies:
   dockerode@5.0.1:
     hash: 4e3w6bgm3rh6hjush2fsvzwl7m
     path: patches/dockerode@5.0.1.patch
+  fflate@0.8.3:
+    hash: sturb7ybjrbdmjcw2tooi75tzu
+    path: patches/fflate@0.8.3.patch
 
 importers:
 
@@ -91,7 +94,7 @@ importers:
         version: link:../../packages/page-kit
       fflate:
         specifier: 0.8.3
-        version: 0.8.3
+        version: 0.8.3(patch_hash=sturb7ybjrbdmjcw2tooi75tzu)
       hono:
         specifier: 4.13.16
         version: 4.13.16
@@ -974,7 +977,7 @@ importers:
         version: 17.4.2
       fflate:
         specifier: 0.8.3
-        version: 0.8.3
+        version: 0.8.3(patch_hash=sturb7ybjrbdmjcw2tooi75tzu)
       hast-util-to-text:
         specifier: 4.0.3
         version: 4.0.3
@@ -1150,7 +1153,7 @@ importers:
         version: 12.2.1
       fflate:
         specifier: 0.8.3
-        version: 0.8.3
+        version: 0.8.3(patch_hash=sturb7ybjrbdmjcw2tooi75tzu)
       pngjs:
         specifier: 7.0.0
         version: 7.0.0
@@ -19561,7 +19564,7 @@ snapshots:
 
   fflate@0.4.9: {}
 
-  fflate@0.8.3: {}
+  fflate@0.8.3(patch_hash=sturb7ybjrbdmjcw2tooi75tzu): {}
 
   filelist@1.0.6:
     dependencies:
