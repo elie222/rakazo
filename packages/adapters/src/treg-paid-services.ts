@@ -161,10 +161,18 @@ function answerData(data: unknown): unknown {
   const record = asRecord(data);
   if (!record || !("output" in record) || !("_treg" in record)) return data;
   const { _treg: routing, raw: _raw, ...rest } = record;
-  const notes = Object.entries(asRecord(routing) ?? {}).filter(
-    ([key]) => !/micro|cost|price|usd/i.test(key),
+  return { ...rest, routing: neutralJson(withoutCharges(routing ?? {})) };
+}
+
+function withoutCharges(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutCharges);
+  const record = asRecord(value);
+  if (!record) return value;
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter(([key]) => !/micro|cost|price|usd|charge/i.test(key))
+      .map(([key, item]) => [key, withoutCharges(item)]),
   );
-  return { ...rest, routing: neutralJson(Object.fromEntries(notes)) };
 }
 
 function customerTag(customer: string): string {

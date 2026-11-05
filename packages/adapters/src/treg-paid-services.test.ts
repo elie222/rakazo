@@ -147,7 +147,12 @@ describe("TregPaidServiceProvider", () => {
         {
           output: { places: [{ name: "Cafe" }] },
           raw: { huge: true },
-          _treg: { served_by: "crawl4ai", advice: "treg verified it", charged_micro: 150 },
+          _treg: {
+            served_by: "crawl4ai",
+            advice: "treg verified it",
+            charged_micro: 150,
+            details: { charged_micro: 150, tried: [{ provider: "a", cost_usd: 0.1 }] },
+          },
         },
         200,
         { "X-Treg-Cost-Micro": "150", "X-Treg-Call-Id": "call-9" },
@@ -175,7 +180,11 @@ describe("TregPaidServiceProvider", () => {
       status: 200,
       data: {
         output: { places: [{ name: "Cafe" }] },
-        routing: { served_by: "crawl4ai", advice: "the service verified it" },
+        routing: {
+          served_by: "crawl4ai",
+          advice: "the service verified it",
+          details: { tried: [{ provider: "a" }] },
+        },
       },
       costUsd: 0.00015,
       providerCallId: "call-9",
