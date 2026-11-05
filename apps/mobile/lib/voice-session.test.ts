@@ -1,7 +1,12 @@
 import * as SecureStore from "expo-secure-store";
 import * as Speech from "expo-speech";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { adoptDeletedSpaceFallback, saveApiBase, selectSpace } from "./api";
+import {
+  adoptDeletedSpaceFallback,
+  saveApiBase,
+  selectSpace,
+  subscribeConfirmedSpaceSwitch,
+} from "./api";
 import { DEVICE_VOICE_KEY } from "./device-voice";
 import { clearSessionToken, restoreSessionToken, saveSessionToken } from "./session";
 import { getVoicePlaybackState, speakQueue } from "./voice";
@@ -233,6 +238,60 @@ describe("read-aloud across session changes", () => {
     const adopted = await adoptDeletedSpaceFallback("space-b");
 
     expect(adopted).toBe(true);
+    expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
+    utterances[0]?.options?.onStopped?.();
+    await expect(queued).resolves.toBe(true);
+    expect(utterances.map((spoken) => spoken.text)).toEqual(["First reply."]);
+  });
+
+  it("notifies once when a failed adoption persists on retry", async () => {
+    await savedApiBase("https://a.example.test");
+    await saveSessionToken("token-a");
+    await selectSpace("space-a");
+    secureStore.set(DEVICE_VOICE_KEY, "1");
+    const utterances: Array<{ text: string; options: Parameters<typeof Speech.speak>[1] }> = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      utterances.push({ text, options });
+    });
+    let notifications = 0;
+    const unsubscribe = subscribeConfirmedSpaceSwitch(() => {
+      notifications += 1;
+    });
+
+    const queued = speakQueue([
+      { text: "First reply.", botId: "bot-a", messageId: "m1" },
+      { text: "Second reply.", botId: "bot-a", messageId: "m2" },
+    ]);
+    await vi.waitFor(() => expect(utterances).toHaveLength(1));
+    expect(getVoicePlaybackState()).toMatchObject({ status: "playing", botId: "bot-a" });
+
+    // The Space write, the clear's write fallback and the recovery record fail once.
+    vi.mocked(SecureStore.setItemAsync)
+      .mockImplementationOnce(async () => {
+        throw new Error("disk full");
+      })
+      .mockImplementationOnce(async () => {
+        throw new Error("disk full");
+      })
+      .mockImplementationOnce(async () => {
+        throw new Error("disk full");
+      });
+    vi.mocked(SecureStore.deleteItemAsync)
+      .mockImplementationOnce(async () => undefined)
+      .mockImplementationOnce(async () => {
+        throw new Error("disk full");
+      });
+    const failed = await adoptDeletedSpaceFallback("space-b");
+
+    expect(failed).toBe(false);
+    expect(notifications).toBe(0);
+    expect(getVoicePlaybackState()).toMatchObject({ status: "playing", botId: "bot-a" });
+
+    const retried = await adoptDeletedSpaceFallback("space-b");
+    unsubscribe();
+
+    expect(retried).toBe(true);
+    expect(notifications).toBe(1);
     expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
     utterances[0]?.options?.onStopped?.();
     await expect(queued).resolves.toBe(true);

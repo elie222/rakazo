@@ -282,8 +282,15 @@ export function selectedSpaceId(): string | null {
  * storage could not replace it. Neutralize any same-endpoint rollback before
  * writing the replacement selection so a cleanup failure cannot leave the new
  * id beside a stale record that recoverSpaceRollback would prefer on restart. */
+/** The Space the user was actually on before a fallback adoption that has not
+ * landed yet; a retry that persists must still count as leaving it. */
+let pendingFallbackSwitchFrom: string | null = null;
+
 export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   const previousSpaceId = cachedSpaceId;
+  if (pendingFallbackSwitchFrom === null && previousSpaceId !== id) {
+    pendingFallbackSwitchFrom = previousSpaceId;
+  }
   cachedSpaceId = id;
   bumpSpaceSelectionGeneration();
   // Neutralize any same-endpoint rollback before writing SPACE_KEY. Writing the
@@ -292,12 +299,15 @@ export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   const rollbackNeutralized =
     (await clearStoredValue(SPACE_ROLLBACK_KEY)) || (await saveSpaceRollback(id));
   // Playback belongs to the conversation being left; the fallback too is a
-  // confirmed switch once it durably adopts another Space.
+  // confirmed switch once it durably adopts another Space. A failed attempt
+  // already claimed the replacement in memory, so the Space remembered before
+  // the first attempt, not the claim, decides whether one was left behind.
   if (rollbackNeutralized && (await writeStoredValue(SPACE_KEY, id))) {
     // SPACE_KEY is authoritative; drop a rollback we may have written only to
     // overwrite a stale record (best-effort).
     await clearStoredValue(SPACE_ROLLBACK_KEY);
-    if (previousSpaceId !== id) noteConfirmedSpaceSwitch();
+    if ((pendingFallbackSwitchFrom ?? previousSpaceId) !== id) noteConfirmedSpaceSwitch();
+    pendingFallbackSwitchFrom = null;
     await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
       () => undefined,
     );
@@ -314,7 +324,10 @@ export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   // rollback remains to override it after restart.
   const durable =
     recoverySaved || (staleSelectionCleared && (await clearStoredValue(SPACE_ROLLBACK_KEY)));
-  if (durable && previousSpaceId !== id) noteConfirmedSpaceSwitch();
+  if (durable && (pendingFallbackSwitchFrom ?? previousSpaceId) !== id) {
+    noteConfirmedSpaceSwitch();
+  }
+  if (durable) pendingFallbackSwitchFrom = null;
   return durable;
 }
 
