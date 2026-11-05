@@ -198,11 +198,7 @@ export default function SpendingLimitSettings() {
                   .filter(Boolean)
                   .join(" · ")}
                 title={payment.site}
-                value={formatMinorAmount(
-                  payment.amount,
-                  payment.currency,
-                  dateLocaleForUi(locale),
-                )}
+                value={formatMinorAmount(payment.amount, payment.currency, dateLocaleForUi(locale))}
               />
             ))}
           </SettingsGroup>
