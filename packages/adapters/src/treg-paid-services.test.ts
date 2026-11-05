@@ -296,6 +296,19 @@ describe("TregPaidServiceProvider", () => {
     });
   });
 
+  it("never passes an account error's message to the bot", async () => {
+    const { services } = provider(() =>
+      json(
+        { error: "insufficient_balance", message: "Balance $0.12, top up at a billing link" },
+        400,
+      ),
+    );
+    expect(await services.call(mapsService, {}, callOptions, context)).toEqual({
+      outcome: "refused",
+      reason: "unavailable",
+    });
+  });
+
   it("bills a refusal that carries a charge", async () => {
     const answers = [
       json({ error: "invalid_identity" }, 422, { "X-Treg-Error": "1", "X-Treg-Cost-Micro": "400" }),
