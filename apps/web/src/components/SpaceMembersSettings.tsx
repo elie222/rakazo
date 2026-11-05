@@ -142,10 +142,32 @@ export function SpaceMembersSettings({
   const memberName =
     confirm?.kind === "remove" ? accountDisplay(confirm.member, confirm.member.email).label : "";
   const action = !members ? null : canManage ? (
-    <Button variant="ghost" size="sm" disabled={inviting} onClick={() => void invite()}>
-      <UserPlus />
-      <Trans>Invite</Trans>
-    </Button>
+    <div className="flex items-center gap-1">
+      <Button variant="ghost" size="sm" disabled={inviting} onClick={() => void invite()}>
+        <UserPlus />
+        <Trans>Invite</Trans>
+      </Button>
+      {/* Rare, so it waits in a menu and only while some link is still unused. */}
+      {members.openInvites ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label={t`More`}
+            render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground" />}
+          >
+            <MoreHorizontal />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-auto min-w-44">
+            <DropdownMenuItem
+              // A link still being created would outlive the cancel.
+              disabled={inviting}
+              onClick={() => void cancelInvites()}
+            >
+              <Trans>Cancel open invites</Trans>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+    </div>
   ) : (
     <Button
       variant="ghost"
@@ -204,18 +226,6 @@ export function SpaceMembersSettings({
             </InputGroupButton>
           </InputGroupAddon>
         </InputGroup>
-      ) : null}
-      {canManage && members?.openInvites ? (
-        <Button
-          variant="text"
-          size="sm"
-          className="h-auto px-1 text-[13px]"
-          // A link still being created would outlive the cancel.
-          disabled={inviting}
-          onClick={() => void cancelInvites()}
-        >
-          <Trans>Cancel open invites</Trans>
-        </Button>
       ) : null}
       {confirm ? (
         <AlertDialog
