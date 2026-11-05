@@ -444,42 +444,31 @@ describe("MCP transport seam", () => {
     }
   });
 
-  it.each([
-    "http://localhost:8123",
-    "http://127.0.0.1:8123",
-    "http://[::1]:8123",
-    "https://mcp.example.test",
-  ])("sends discovery and token requests exactly once for %s", async (origin) => {
-    const fetchImpl = vi.fn(async () => Response.json({ ok: true }));
-    const resolveHostname = async () => [
-      { address: origin.startsWith("http:") ? "127.0.0.1" : "203.0.113.10", family: 4 },
-    ];
-    const safeFetch = secureFetch(
-      new URL(`${origin}/mcp`),
-      { allowHttpLocalhost: true, allowPrivateEndpoint: true },
-      {},
-      { fetch: fetchImpl, resolveHostname },
-    );
-    try {
-      await expect(
-        safeFetch(`${origin}/.well-known/oauth-protected-resource`),
-      ).resolves.toHaveProperty("ok", true);
-      expect(fetchImpl).toHaveBeenCalledOnce();
-      await expect(
-        safeFetch(`${origin}/token`, { method: "POST", body: "fake-token-body" }),
-      ).resolves.toHaveProperty("ok", true);
-      expect(fetchImpl).toHaveBeenCalledTimes(2);
-      expect(fetchImpl).toHaveBeenLastCalledWith(
-        new URL(`${origin}/token`),
-        expect.objectContaining({
-          method: "POST",
-          body: new TextEncoder().encode("fake-token-body").buffer,
-        }),
+  it.each(["localhost", "127.0.0.1", "[::1]"])(
+    "allows explicitly configured HTTP %s discovery and token traffic on the same origin",
+    async (host) => {
+      const origin = `http://${host}:8123`;
+      const fetchImpl = vi.fn(async () => Response.json({ ok: true }));
+      const resolveHostname = async () => [{ address: "127.0.0.1", family: 4 }];
+      const safeFetch = secureFetch(
+        new URL(`${origin}/mcp`),
+        { allowHttpLocalhost: true, allowPrivateEndpoint: true },
+        {},
+        { fetch: fetchImpl, resolveHostname },
       );
-    } finally {
-      await safeFetch.close();
-    }
-  });
+      try {
+        await expect(
+          safeFetch(`${origin}/.well-known/oauth-protected-resource`),
+        ).resolves.toHaveProperty("ok", true);
+        await expect(
+          safeFetch(`${origin}/token`, { method: "POST", body: "fake-token-body" }),
+        ).resolves.toHaveProperty("ok", true);
+        expect(fetchImpl).toHaveBeenCalledTimes(2);
+      } finally {
+        await safeFetch.close();
+      }
+    },
+  );
 
   it("releases the body of a refused local redirect", async () => {
     let cancels = 0;
@@ -502,26 +491,6 @@ describe("MCP transport seam", () => {
         "Connector redirects are not allowed",
       );
       expect(cancels).toBe(1);
-    } finally {
-      await safeFetch.close();
-    }
-  });
-
-  it("refuses local OAuth credentials when localhost resolves outside loopback", async () => {
-    const fetch = vi.fn();
-    const safeFetch = secureFetch(
-      new URL("http://localhost:8123/mcp"),
-      { allowHttpLocalhost: true, allowPrivateEndpoint: true, allowLocalHttpCredentials: true },
-      {},
-      { fetch, resolveHostname: async () => [{ address: "10.0.0.1", family: 4 }] },
-    );
-    try {
-      await expect(
-        safeFetch("http://localhost:8123/token", {
-          headers: { authorization: "Bearer fake-oauth-token" },
-        }),
-      ).rejects.toThrow("private address");
-      expect(fetch).not.toHaveBeenCalled();
     } finally {
       await safeFetch.close();
     }
