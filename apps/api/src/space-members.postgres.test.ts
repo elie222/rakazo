@@ -5,6 +5,7 @@ import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
+  claimSpacesLeavingWithAccount,
   computerHomeKey,
   createDb,
   ensureComputerRecord,
@@ -1046,5 +1047,57 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
         },
       }),
     ).resolves.not.toBeNull();
+  });
+  it("hands a deleted account's space in a lasting organization over, or deletes it with only guests", async () => {
+    const lead = await person("lead");
+    const teammate = await person("teammate");
+    const leaver = await person("leaver");
+    const guest = await person("guest");
+    const createdAt = new Date();
+    // The leader's organization stays when the leaver goes: both are full members of it.
+    for (const member of [teammate, leaver]) {
+      await system.member.create({
+        data: {
+          id: `m-${member.id}-team`,
+          organizationId: lead.organizationId,
+          userId: member.id,
+          role: "member",
+          createdAt,
+        },
+      });
+    }
+    const join = async (spaceId: string, userId: string, role: string) =>
+      system.spaceMember.upsert({
+        where: { spaceId_userId: { spaceId, userId } },
+        create: {
+          id: randomUUID(),
+          spaceId,
+          organizationId: lead.organizationId,
+          userId,
+          role,
+          createdAt,
+        },
+        update: { role },
+      });
+    const shared = await sharedSpace(lead, "Shared");
+    await join(shared, leaver.id, "owner");
+    await system.spaceMember.deleteMany({ where: { spaceId: shared, userId: lead.id } });
+    await join(shared, teammate.id, "member");
+    const guestsOnly = await sharedSpace(lead, "Guests only");
+    await join(guestsOnly, leaver.id, "owner");
+    await system.spaceMember.deleteMany({ where: { spaceId: guestsOnly, userId: lead.id } });
+    await call(guest.actor, "spaces/invites/accept", {
+      token: await invite({ ...leaver, actor: inSpace(leaver.actor, guestsOnly) }, guestsOnly),
+    });
+
+    await prepareAccountDeletion(prisma, leaver.id);
+    await expect(
+      system.spaceMember.findUnique({
+        where: { spaceId_userId: { spaceId: shared, userId: teammate.id } },
+      }),
+    ).resolves.toMatchObject({ role: "owner" });
+    const { spaceIds } = await claimSpacesLeavingWithAccount(prisma, leaver.id);
+    expect(spaceIds).toContain(guestsOnly);
+    expect(spaceIds).not.toContain(shared);
   });
 });

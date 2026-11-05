@@ -352,10 +352,28 @@ export async function prepareAccountDeletion(
   });
   const departures: Array<SpaceDeparture & { spaceId: string }> = [];
   for (const membership of memberships) {
-    // A Space they own, or one in an organization that goes with the account, has nobody to
-    // hand it to. An organization with another owner stays, so its Spaces get their content.
-    if (isOwnerRole(membership.role) || owned.has(membership.space.organizationId)) continue;
+    // A Space in an organization that goes with the account goes with it.
+    if (owned.has(membership.space.organizationId)) continue;
     const { spaceId } = membership;
+    if (isOwnerRole(membership.role)) {
+      // Another owner keeps the Space, and the account's own things in it go with the account.
+      const coOwner = await prisma.spaceMember.findFirst({
+        where: { spaceId, userId: { not: userId }, role: { contains: "owner" } },
+        select: { id: true },
+      });
+      if (coOwner) continue;
+      // Otherwise the longest-standing full member takes it over; with only guests left it goes
+      // with the account (claimSpacesLeavingWithAccount).
+      const successor = await prisma.spaceMember.findFirst({
+        where: { spaceId, userId: { not: userId }, member: { role: { not: GUEST_ROLE } } },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true },
+      });
+      if (!successor) continue;
+      await runAsSystem("hand a departing owner's Space to a teammate", () =>
+        prisma.spaceMember.update({ where: { id: successor.id }, data: { role: "owner" } }),
+      );
+    }
     departures.push({ spaceId, ...(await departSpace(prisma, { spaceId, userId })) });
   }
   return departures;

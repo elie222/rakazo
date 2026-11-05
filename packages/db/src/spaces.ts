@@ -226,7 +226,11 @@ export async function fallbackSpaceForMember(
   exceptSpaceId?: string,
 ): Promise<string | null> {
   const memberships = await db.spaceMember.findMany({
-    where: { userId, ...(exceptSpaceId ? { spaceId: { not: exceptSpaceId } } : {}) },
+    where: {
+      userId,
+      space: { deletingAt: null },
+      ...(exceptSpaceId ? { spaceId: { not: exceptSpaceId } } : {}),
+    },
     select: { spaceId: true, role: true, space: { select: { isDefault: true } } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
@@ -617,6 +621,8 @@ export async function claimSpacesLeavingWithAccount(
       OR: [
         { organizationId: { in: organizationIds } },
         { memberships: { some: { userId }, every: { userId } } },
+        // A Space they own elsewhere that only guests share (others were handed it first).
+        { memberships: { some: { userId, role: "owner" } } },
         { deletionClaimId: claimId },
       ],
     },
