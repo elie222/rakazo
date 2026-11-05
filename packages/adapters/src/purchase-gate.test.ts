@@ -351,5 +351,15 @@ describe("purchase detection for the page tools", () => {
       "Amount on the button: $5",
       CHECKED,
     ]);
+    // A button that names less than the checkout's total shows both.
+    expect(purchaseCardSummary({ ...shop, amountSource: "button", total: "$12" }).lines).toEqual([
+      'Button: "Pay $5"',
+      "Amount on the button: $5",
+      "Total on the page: $12",
+      CHECKED,
+    ]);
+    expect(purchaseApprovalOf({ ...shop, steps: [0], total: "$12" })).toMatchObject({
+      total: "$12",
+    });
   });
 });

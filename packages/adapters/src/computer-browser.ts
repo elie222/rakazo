@@ -268,7 +268,13 @@ export class ComputerBrowserProvider implements BrowserProvider {
       return { purchase: null };
     }
     const found = live.purchase as
-      | { steps?: unknown; label?: unknown; amount?: unknown; amountFrom?: unknown }
+      | {
+          steps?: unknown;
+          label?: unknown;
+          amount?: unknown;
+          amountFrom?: unknown;
+          total?: unknown;
+        }
       | null
       | undefined;
     if (!found) return { purchase: null };
@@ -282,6 +288,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
         label: typeof found.label === "string" ? found.label : "",
         amount: typeof found.amount === "string" ? found.amount : "",
         amountSource: found.amountFrom === "button" ? "button" : "page",
+        ...(typeof found.total === "string" && found.total ? { total: found.total } : {}),
       },
     };
   }
