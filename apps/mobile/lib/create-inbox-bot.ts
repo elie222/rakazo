@@ -30,11 +30,17 @@ export async function createInboxBot({
   const isFirstBot = existing !== null && existing.length === 0;
   const needsModel =
     isFirstBot && (await rpc("me", undefined, options).catch(() => null))?.needsModel;
+  const modelSpaceId =
+    needsModel &&
+    spaceId &&
+    (await rpc("spaceSettings/overrides", undefined, options)).includes("models")
+      ? spaceId
+      : undefined;
   // Create was asked for here; after any account, server or Space switch, even back, it does nothing.
   const moved = spaceSelectionSeq() !== spaceSelection || selectedSpaceId() !== selectedSpace;
   if (!isSearchInboxSession(askedIn) || moved) return;
   if (needsModel) {
-    askToAddModel();
+    askToAddModel(modelSpaceId);
     return;
   }
   const bot = await rpc(

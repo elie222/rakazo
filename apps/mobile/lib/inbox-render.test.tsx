@@ -762,6 +762,33 @@ it("opens a heading-created bot in its space after the selection changes during 
   });
 });
 
+it.each([true, false])(
+  "opens the chosen space's effective model settings (override: %s)",
+  async (override) => {
+    ui.alert.mockReset();
+    ui.push.mockReset();
+    ui.rpc.mockReset().mockImplementation(async (method: string) => {
+      if (method === "me") return { needsModel: true };
+      if (method === "spaceSettings/overrides") return override ? ["models"] : [];
+      return [];
+    });
+    const openChat = vi.fn();
+    await createInboxBot({ refreshBots: async () => undefined, openChat, spaceId: "space-work" });
+    expect(ui.rpc).toHaveBeenCalledWith("spaceSettings/overrides", undefined, {
+      requestContext: { headers: { "x-rakazo-space-id": "space-work" } },
+    });
+    const buttons = ui.alert.mock.lastCall?.[2] as { text: string; onPress?: () => void }[];
+    buttons.find((button) => button.text === "Add model")?.onPress?.();
+    expect(ui.push).toHaveBeenCalledWith(
+      override
+        ? { pathname: "/(settings)/models", params: { spaceId: "space-work" } }
+        : "/(settings)/models",
+    );
+    expect(ui.rpc.mock.calls.map(([method]) => method)).not.toContain("bots/create");
+    expect(openChat).not.toHaveBeenCalled();
+  },
+);
+
 it("asks for a model instead of making the first bot when the account has none", async () => {
   let me: Promise<unknown> = Promise.resolve({ needsModel: true });
   let bots: unknown[] = [];
