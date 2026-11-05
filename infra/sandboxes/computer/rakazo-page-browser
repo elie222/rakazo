@@ -1974,7 +1974,9 @@ PURCHASE_HELPERS = r"""
       const part = tidy(node.data);
       if (part && parent && !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(parent.tagName) && seen(parent)
           && !parent.closest(CONTROLS)) {
-        text += (!text ? "" : /\d$/.test(text) && /^\d/.test(part) ? APART : " ") + part;
+        // A price split over tags ("$", "3", ".", "00") is one amount; two numbers side by side are not.
+        const within = (/\d$/.test(text) && /^[.,]/.test(part)) || (/[$€£₪¥.,]$/.test(text) && /^\d/.test(part));
+        text += (!text || within ? "" : /\d$/.test(text) && /^\d/.test(part) ? APART : " ") + part;
         parts += 1;
       }
     }

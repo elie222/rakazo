@@ -32,6 +32,7 @@ const INVISIBLE = /[\u{E0000}-\u{E007F}​-‏⁠-⁤‪-‮⁦-⁩﻿]/gu;
 const pageText = (text: string, max: number) =>
   Array.from(text.replace(INVISIBLE, "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
 
+const CARD_LABEL = /^(?:button|amount on the button|total on the page)\b/i;
 // The page reads at most this many order lines; a longer order may have more.
 const MAX_ITEMS = 30;
 // The card lists this many order lines; a longer order shows one fewer and how many more there are.
@@ -44,7 +45,13 @@ function withItems(
 ): Pick<PurchaseApproval, "items"> {
   const items = (Array.isArray(value) ? value.slice(0, MAX_ITEMS) : []).flatMap((item) => {
     const { name, amount } = (item ?? {}) as Record<string, unknown>;
-    if (typeof name !== "string" || typeof amount !== "string") return [];
+    // A line the page names like one of the card's own reads as the card's, not the page's: left out.
+    if (
+      typeof name !== "string" ||
+      typeof amount !== "string" ||
+      CARD_LABEL.test(pageText(name, 80))
+    )
+      return [];
     // Control characters are page noise, not words: they read as spaces.
     const plain = (text: string) => text.replace(/\p{Cc}/gu, " ");
     const line = { name: shown(plain(name), 80), amount: shown(plain(amount), 40) };

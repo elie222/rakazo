@@ -618,17 +618,19 @@ describe("a key on the screen", () => {
     expect(noTotal.intent("Pay $3")).not.toHaveProperty("items");
   });
 
-  it("keeps a credit's minus sign, a quantity cell apart from its price, and an item named for a total", () => {
+  it("reads each line's own amount: a credit, a quantity cell, a price split over tags, an item named for a total", () => {
     const { intent } = page(`<table>
         <tr><td>Bananas</td><td>2</td><td>150,00 €</td></tr>
         <tr><td>Discount</td><td>-€5,00</td></tr>
         <tr><td>Totally Oats</td><td>2,00 €</td></tr>
+        <tr><td>Plums</td><td>$<span>3</span><span>.</span><span>00</span></td></tr>
       </table>
       <p>Total: 147,00 €</p><button>Place order</button>`);
     expect(intent("Place order")?.items).toEqual([
       { name: "Bananas 2", amount: "150,00 €" },
       { name: "Discount", amount: "-€5,00" },
       { name: "Totally Oats", amount: "2,00 €" },
+      { name: "Plums", amount: "$3.00" },
     ]);
   });
 
