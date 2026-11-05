@@ -121,6 +121,8 @@ export const TableCard = memo(function TableCard({
   }, [schemaKey]);
   useEffect(
     () => () => {
+      // A copy still in flight must not start feedback timers after the table is gone.
+      copyAttempt.current++;
       window.clearTimeout(copiedTimer.current);
       window.clearTimeout(announceTimer.current);
     },

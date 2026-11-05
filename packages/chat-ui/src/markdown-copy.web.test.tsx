@@ -74,3 +74,29 @@ it("Copy rows offers the text from the click when the table changes before the f
   const field = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea');
   expect(field?.value).toBe("Item\napple");
 });
+
+it("Copy rows starts no feedback timers when the copy settles after the table is gone", async () => {
+  let succeed: () => void = () => undefined;
+  Object.defineProperty(navigator, "clipboard", {
+    value: {
+      writeText: () =>
+        new Promise<void>((resolve) => {
+          succeed = resolve;
+        }),
+    },
+    configurable: true,
+  });
+  await act(async () => root.render(<ChatMarkdown>{"| Item |\n| --- |\n| apple |"}</ChatMarkdown>));
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Copy rows"]')?.click(),
+  );
+  // The chat is left while the clipboard request is still pending.
+  act(() => root.unmount());
+  root = createRoot(container);
+  const setTimeout = vi.spyOn(window, "setTimeout");
+
+  await act(async () => succeed());
+
+  expect(setTimeout).not.toHaveBeenCalled();
+  setTimeout.mockRestore();
+});
