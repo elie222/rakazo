@@ -202,6 +202,26 @@ describe("mobile incoming calls", () => {
     await vi.waitFor(() => expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-b")));
     expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-b", true);
   });
+  it("answers a same-organization native call from the roster without waiting on the stream", async () => {
+    stop = startIncomingCalls();
+    await tick();
+    // No stream event: the active-organization roster must be enough, with no five-second wait.
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      actions: [
+        { action: "answer", callId: "call-roster", botId: bot.id, expiresAt: block().expiresAt },
+      ],
+    });
+    fake.onAppState?.("active");
+    await vi.waitFor(() =>
+      expect(fake.rpc).toHaveBeenCalledWith(
+        "threads/answerCall",
+        { botId: bot.id, callId: "call-roster" },
+        expect.anything(),
+      ),
+    );
+    expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-roster", true);
+  });
   it("answers a notification call from another organization once the stream reports it", async () => {
     fake.lastResponse = {
       actionIdentifier: "answer",

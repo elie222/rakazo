@@ -123,6 +123,8 @@ async function follow(controller: AbortController) {
   while (!controller.signal.aborted && generation === currentSessionGeneration()) {
     try {
       await subscribeIncomingCallEvents((incoming) => {
+        // Ignore events from an aborted feed so a late callback cannot resolve a newer wait.
+        if (controller.signal.aborted || feed !== controller) return;
         snapshotArrived?.();
         for (const previous of calls) {
           if (!incoming.some((call) => call.incomingCall.callId === previous.incomingCall.callId))
@@ -155,10 +157,11 @@ async function loadRoster() {
 
 /**
  * Resolves the caller for a native or notification answer. The account stream knows callers
- * across every organization; the roster covers only the active one. A cold start can answer
- * before the stream's first snapshot, so wait briefly for it before giving up on the stream.
- * Returns undefined when the lookup's feed or session is gone: the answer belongs to neither,
- * so its caller abandons it without answering or completing the native action.
+ * across every organization; the roster covers only the active one. Return a roster hit without
+ * waiting on the stream so same-organization answers are not delayed on a cold start. Wait briefly
+ * for the stream's first snapshot only when the roster does not know the caller. Returns undefined
+ * when the lookup's feed or session is gone: the answer belongs to neither, so its caller abandons
+ * it without answering or completing the native action.
  */
 async function callerFor(
   botId: string,
@@ -171,6 +174,11 @@ async function callerFor(
     calls.find((entry) => entry.id === botId && entry.incomingCall.callId === callId) ?? null;
   const streamed = fromStream();
   if (streamed) return streamed;
+  // Active-organization callers do not need the stream; answer them before any snapshot wait.
+  if (!roster.has(botId)) await loadRoster();
+  if (stale()) return undefined;
+  const known = roster.get(botId);
+  if (known) return known;
   if (streamSnapshot) {
     let stopWaiting: (() => void) | undefined;
     let giveUp: ReturnType<typeof setTimeout> | undefined;
@@ -194,9 +202,7 @@ async function callerFor(
     const late = fromStream();
     if (late) return late;
   }
-  if (!roster.has(botId)) await loadRoster();
-  if (stale()) return undefined;
-  return roster.get(botId) ?? null;
+  return null;
 }
 
 export async function respondToMobileCall(call: IncomingBotCall, action: "answer" | "decline") {
