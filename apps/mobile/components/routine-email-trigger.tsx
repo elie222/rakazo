@@ -23,15 +23,19 @@ export type BotEmail = {
 export function useBotEmail(botId: string): BotEmail {
   const [address, setAddress] = useState<BotEmailAddress>(null);
   const [ownerDomain, setOwnerDomain] = useState("");
+  // Read apart, so a failed profile read never hides the trigger, only the "Anyone at" choice.
   useEffect(() => {
     let current = true;
-    void Promise.all([rpc("bots/emailAddress", { botId }), rpc("me")])
-      .then(([email, me]) => {
-        if (!current) return;
-        setAddress(email);
-        setOwnerDomain(me.email.slice(me.email.lastIndexOf("@") + 1));
+    void rpc("bots/emailAddress", { botId })
+      .then((email) => {
+        if (current) setAddress(email);
       })
-      // Without an answer the editor simply offers no email trigger.
+      // Without an answer the editor offers no email trigger; reopening it reads again.
+      .catch(() => undefined);
+    void rpc("me")
+      .then((me) => {
+        if (current) setOwnerDomain(me.email.slice(me.email.lastIndexOf("@") + 1));
+      })
       .catch(() => undefined);
     return () => {
       current = false;
