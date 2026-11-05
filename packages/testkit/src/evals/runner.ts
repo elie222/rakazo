@@ -243,6 +243,7 @@ export async function runTrial(
           description: scenario.peer.description,
           instructions: scenario.peer.instructions,
           notifyOnFinish: false,
+          ...(scenario.peer.ownComputer ? { computerMode: "dedicated" } : {}),
         });
         await discardBotIntroRun(trial, cookie, created.id);
         await rpc(app, cookie, "bots/update", {
@@ -286,6 +287,26 @@ export async function runTrial(
       if (scenario.approvalTool) await rpc(app, cookie, "autoReview/set", { mode: "ask" });
     };
     await setupActor();
+    if (scenario.computerFiles?.length) {
+      // Written through the same upload path as a person's file drop, under each owner's control.
+      for (const owner of [botId, peer?.id]) {
+        const files = scenario.computerFiles.filter(
+          (file) => (file.owner === "peer" ? peer?.id : botId) === owner,
+        );
+        if (!owner || !files.length) continue;
+        await rpc(app, cookie, "computer/boot", { botId: owner });
+        await rpc(app, cookie, "computer/takeover", { botId: owner });
+        for (const file of files)
+          await rpc(app, cookie, "computer/uploadFile", {
+            botId: owner,
+            path: file.path,
+            contentBase64: Buffer.from(file.content).toString("base64"),
+          });
+        await rpc(app, cookie, "computer/release", { botId: owner });
+      }
+      if (scenario.computerFiles.some((file) => file.owner === "peer") && !peer)
+        throw new EvalFailure("harness", "Peer computer files need the case's peer bot");
+    }
     if (scenario.routine) {
       await rpc(app, cookie, "routines/create", {
         botId,
@@ -530,7 +551,13 @@ export async function runTrial(
           }));
       } else if ("fromPeer" in step) {
         if (!peer) throw new EvalFailure("harness", "A fromPeer step needs the case's peer bot");
-        await deliverPeerMessage(prisma, handles.jobs, peer, botId, step.fromPeer);
+        await deliverPeerMessage(
+          prisma,
+          handles.jobs,
+          peer,
+          botId,
+          step.fromPeer.replaceAll("{peerHome}", `bots/${peer.id}`),
+        );
         runId = await poll(
           async () =>
             (

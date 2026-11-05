@@ -88,8 +88,14 @@ export type EvalCase = {
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;
   routine?: { prompt: string };
-  /** A second bot of the same user that fromPeer steps speak as. */
-  peer?: { name: string; description: string; instructions: string };
+  /**
+   * A second bot of the same user that fromPeer steps speak as. It shares the subject's computer
+   * unless `ownComputer` gives it one of its own. In a fromPeer step, `{peerHome}` is replaced by
+   * the peer's folder on the shared computer.
+   */
+  peer?: { name: string; description: string; instructions: string; ownComputer?: true };
+  /** Files written onto a computer before the first step: the subject's home, or the peer's. */
+  computerFiles?: Array<{ path: string; content: string | Uint8Array; owner?: "peer" }>;
   /**
    * Run the case in a group thread with these other member bots, named as history authors. With
    * `roles`, every member (the subject as "Assistant" too) gets that description, any
