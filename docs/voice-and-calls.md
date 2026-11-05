@@ -28,6 +28,7 @@ don't have to keep holding.
 - To hear one reply, choose **Speak this reply** on the message.
 - To hear every reply from a bot, open its settings, expand **Advanced**, and turn on
   **Read replies aloud**. The **Voice** next to it overrides your default voice for that bot.
+  Long replies are read as a short summary; the full reply stays in the chat.
 
 ## Call a bot
 
