@@ -542,15 +542,14 @@ async function clearCredentialsForEndpointChange(
 
 /**
  * Settles a rolled-back switch's revocation record. The rollback restores only the session in use,
- * so a record for a stored token it does not bring back stays and becomes deliverable.
+ * so a record for a stored token it does not bring back stays provisional: the next retry delivers
+ * it, unless a sign-in made that token the active session again.
  */
 async function settleRolledBackSignOut(
   record: PendingSignOut | undefined,
   restoredToken: string | undefined,
 ): Promise<void> {
-  if (!record) return;
-  if (record.token === restoredToken) await removePendingSignOut(record);
-  else await promotePendingSignOut(record);
+  if (record && record.token === restoredToken) await removePendingSignOut(record);
 }
 
 async function restoreCredentials(previousToken: string, previousSpace: string) {

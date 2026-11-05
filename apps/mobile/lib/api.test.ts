@@ -3332,6 +3332,82 @@ describe("mobile API authentication", () => {
     },
   );
 
+  it.each([
+    ["save", "nothing"],
+    ["save", "a sign-in during the rollback"],
+    ["save", "a sign-in after the rollback"],
+    ["reset", "nothing"],
+    ["reset", "a sign-in during the rollback"],
+    ["reset", "a sign-in after the rollback"],
+  ])(
+    "a %s rolled back after clearing an unsent stored session revokes it unless %s reactivates it",
+    async (change, reactivation) => {
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      if (change === "reset") await saveApiBase("https://old-server.example");
+      const previous = currentApiBase();
+      await restoreSessionToken("token-a");
+      await selectSpace("space-old");
+      let rollingBack = false;
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        if (key === "rakazo.session_token" && value === "token-b") throw new Error("device locked");
+        if (change === "save" && key === "rakazo.api_base") {
+          rollingBack = true;
+          throw new Error("device locked");
+        }
+        // The rollback restores the Space; a sign-in that returns token-a lands meanwhile.
+        if (
+          key === "rakazo.space_id" &&
+          rollingBack &&
+          reactivation === "a sign-in during the rollback"
+        ) {
+          rollingBack = false;
+          await saveSessionToken("token-a");
+        }
+        store.set(key, value);
+      });
+      vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+        if (change === "reset" && key === "rakazo.api_base") {
+          rollingBack = true;
+          throw new Error("device locked");
+        }
+        store.delete(key);
+      });
+      configureSessionEndHangUp(() => saveSessionToken("token-b"));
+      let result: Awaited<ReturnType<typeof saveApiBase>>;
+      try {
+        result = await (change === "save"
+          ? saveApiBase("https://second-server.example")
+          : resetApiBase());
+      } finally {
+        configureSessionEndHangUp(undefined);
+        mockSecureStore(store);
+      }
+      if (reactivation === "a sign-in after the rollback") await saveSessionToken("token-a");
+      const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+      vi.stubGlobal("fetch", fetchMock);
+      await flushPendingSignOut(true);
+
+      expect(result).toMatchObject({ ok: false });
+      const signOuts = fetchMock.mock.calls.filter(([url]) =>
+        String(url).endsWith("/api/auth/sign-out"),
+      );
+      if (reactivation === "nothing") {
+        expect(signOuts.map(([url]) => url)).toEqual([`${previous}/api/auth/sign-out`]);
+        const [, init] = signOuts[0] as [string, RequestInit];
+        expect(init.headers).toMatchObject({
+          authorization: "Bearer token-a",
+        });
+      } else {
+        // The session in use again is not revoked.
+        expect(signOuts).toEqual([]);
+        expect(store.get("rakazo.session_token")).toBe("token-a");
+      }
+      expect(pendingSignOutRecords(store)).toEqual([]);
+      await resetApiBase();
+    },
+  );
+
   it.each(["save", "reset"])(
     "a %s stopped by a session change stores a Space selected during its restoring write",
     async (change) => {
