@@ -2,7 +2,6 @@ import type { PushTokenStore } from "@rakazo/adapters";
 import type { DirectoryAccountChange } from "@rakazo/auth";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { cancelDeactivatedAccountRuns, recordSecurityEvent, runAsSystem } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import type { DeviceStore } from "./user-devices.js";
 import { revokeUserDevices } from "./user-devices.js";
 
@@ -102,12 +101,7 @@ export async function endDeactivatedAccess(deps: AccountStatusDeps, userId: stri
     // Screen links issued before now stop working; people still allowed get new ones.
     () =>
       prisma.bot.updateMany({ where: { userId }, data: { screenGeneration: { increment: 1 } } }),
-    async () => {
-      for (const { threadId, seq } of await cancelDeactivatedAccountRuns(prisma, userId))
-        await deps.events.notify(threadId, seq).catch((error) => {
-          getLogger().error("deactivated account run cancellation notification", error);
-        });
-    },
+    () => cancelDeactivatedAccountRuns(prisma, deps.events, userId),
   ];
   const failures: unknown[] = [];
   for (const step of steps)

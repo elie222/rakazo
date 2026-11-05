@@ -6,7 +6,12 @@ import { revokeUserDevices } from "./user-devices.js";
 
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof Db>()),
-  cancelDeactivatedAccountRuns: vi.fn(async () => [{ threadId: "thread-1", seq: 4 }]),
+  cancelDeactivatedAccountRuns: vi.fn(
+    async (_prisma: unknown, events: { notify(threadId: string, seq: number): Promise<void> }) => {
+      await events.notify("thread-1", 4);
+      return 1;
+    },
+  ),
 }));
 
 describe("ending a deactivated account's access", () => {

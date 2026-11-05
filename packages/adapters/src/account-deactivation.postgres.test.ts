@@ -6,6 +6,7 @@ import {
   asSystem,
   cancelDeactivatedAccountRuns,
   createDb,
+  createRepos,
   provisionMessagingIdentity,
   runAsSystem,
 } from "@rakazo/db";
@@ -84,12 +85,13 @@ describePostgres("a deactivated account's work (PostgreSQL)", () => {
     const done = await run(alice, "completed");
     const others = await run(bob, "queued");
 
-    expect(await cancelDeactivatedAccountRuns(system, alice.userId)).toEqual([]);
+    const announce = vi.fn(async (_threadId: string, _seq: number) => undefined);
+    expect(await cancelDeactivatedAccountRuns(system, { notify: announce }, alice.userId)).toBe(0);
     expect(await status(queued.id)).toBe("queued");
 
     await deactivate(alice);
-    const events = await cancelDeactivatedAccountRuns(system, alice.userId);
-    expect(events).toEqual([{ threadId: alice.threadId, seq: expect.any(Number) }]);
+    expect(await cancelDeactivatedAccountRuns(system, { notify: announce }, alice.userId)).toBe(1);
+    expect(announce).toHaveBeenCalledExactlyOnceWith(alice.threadId, expect.any(Number));
     expect(await status(queued.id)).toBe("cancelled");
     expect(await status(waiting.id)).toBe("cancelled");
     expect(await status(done.id)).toBe("completed");
@@ -102,6 +104,34 @@ describePostgres("a deactivated account's work (PostgreSQL)", () => {
     expect(await system.task.findUniqueOrThrow({ where: { id: queued.taskId } })).toMatchObject({
       status: "cancelled",
     });
+  });
+
+  it("announces each chat whose runs were stopped, even when a later chat fails", async () => {
+    const dana = await person();
+    const helper = await createRepos(system).createBot(
+      { userId: dana.userId, spaceId: dana.spaceId, email: "", isDeploymentOwner: false },
+      { name: "Helper", description: "", instructions: "", notifyOnFinish: false },
+    );
+    const second = await system.thread.findFirstOrThrow({ where: { botId: helper.id } });
+    await run(dana, "queued");
+    await run({ ...dana, botId: helper.id, threadId: second.id }, "queued");
+    await deactivate(dana);
+    let transactions = 0;
+    const failingSecond = new Proxy(system, {
+      get(target, key, receiver) {
+        if (key !== "$transaction") return Reflect.get(target, key, receiver);
+        return (...args: Parameters<PrismaClient["$transaction"]>) => {
+          if (++transactions === 2) return Promise.reject(new Error("connection lost"));
+          return target.$transaction(...args);
+        };
+      },
+    });
+    const announce = vi.fn(async (_threadId: string, _seq: number) => undefined);
+
+    await expect(
+      cancelDeactivatedAccountRuns(failingSecond, { notify: announce }, dana.userId),
+    ).rejects.toThrow("connection lost");
+    expect(announce).toHaveBeenCalledOnce();
   });
 
   it("cancels a deactivated account's run when a worker picks it up, before it starts", async () => {
