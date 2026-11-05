@@ -1646,8 +1646,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr "电脑已经可用。重新加载，或打开一个 Bot 继续。"
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "电脑未开启。请设置 SANDBOX_PROVIDER=docker 并提供 SANDBOX_SUPERVISOR_TOKEN，或将 SANDBOX_PROVIDER 设为 e2b、novita、daytona 或 boat 并提供对应 API 密钥。更改 .env 后请重建环境。"
+msgid "Computers are off on this server."
+msgstr "此服务器未开启电脑。"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1830,7 +1830,6 @@ msgstr "通过 {0} 继续"
 msgid "Conversations"
 msgstr "对话"
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1848,10 +1847,6 @@ msgstr "已复制"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "复制"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr "复制 .env 示例"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2852,10 +2847,6 @@ msgstr "已关闭，可随时在 MCP 设置中重新连接。"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
 msgstr "Docker"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr "Docker 已配置，但电脑没有响应。请确认 sandbox supervisor 正在运行；更改 .env 后请重建环境。"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
@@ -5864,6 +5855,7 @@ msgstr "设置：用量"
 msgid "Setup complete"
 msgstr "设置完成"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "设置帮助"

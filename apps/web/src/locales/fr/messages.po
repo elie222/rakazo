@@ -1331,7 +1331,7 @@ msgstr "Discussions"
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Check again"
-msgstr ""
+msgstr "Vérifier à nouveau"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Check every"
@@ -1373,7 +1373,7 @@ msgstr "Vérifiez votre e-mail"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
-msgstr ""
+msgstr "Vérification de la configuration des ordinateurs…"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Checking connection…"
@@ -1643,11 +1643,11 @@ msgstr "Ordinateurs"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Computers are available. Reload or open a bot to continue."
-msgstr ""
+msgstr "Les ordinateurs sont disponibles. Rechargez ou ouvrez un bot pour continuer."
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "Les ordinateurs sont désactivés. Définissez SANDBOX_PROVIDER=docker avec SANDBOX_SUPERVISOR_TOKEN, ou définissez SANDBOX_PROVIDER sur e2b, novita, daytona ou boat avec sa clé API. Recréez la pile après avoir modifié .env."
+msgid "Computers are off on this server."
+msgstr "Les ordinateurs sont désactivés sur ce serveur."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1830,7 +1830,6 @@ msgstr "Continuer avec {0}"
 msgid "Conversations"
 msgstr ""
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1848,10 +1847,6 @@ msgstr "Copié"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Copier"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr ""
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2416,7 +2411,7 @@ msgstr "Impossible de mettre à jour la portée de mémoire par défaut"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
-msgstr ""
+msgstr "Impossible de vérifier la configuration des ordinateurs ({failureMessage}). Rétablissez la connexion, puis vérifiez à nouveau."
 
 #: src/components/pages/SharePopover.tsx
 msgid "Couldn't copy. Select the link and copy it."
@@ -2852,10 +2847,6 @@ msgstr "Fermé. Reconnectez-vous à tout moment depuis les paramètres MCP."
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
 msgstr "Docker"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr ""
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
@@ -4672,7 +4663,7 @@ msgstr "Ouvrir la discussion avec {0}"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Open computer settings"
-msgstr ""
+msgstr "Ouvrir les paramètres des ordinateurs"
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Open external link?"
@@ -5864,6 +5855,7 @@ msgstr "Paramètres : Utilisation"
 msgid "Setup complete"
 msgstr "Configuration terminée"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "Aide à la configuration"

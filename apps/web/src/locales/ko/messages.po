@@ -1331,7 +1331,7 @@ msgstr "채팅"
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Check again"
-msgstr ""
+msgstr "다시 확인"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Check every"
@@ -1373,7 +1373,7 @@ msgstr "이메일을 확인하세요"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
-msgstr ""
+msgstr "컴퓨터 설정 확인 중…"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Checking connection…"
@@ -1643,11 +1643,11 @@ msgstr "컴퓨터"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Computers are available. Reload or open a bot to continue."
-msgstr ""
+msgstr "컴퓨터를 사용할 수 있습니다. 계속하려면 새로고침하거나 봇을 여세요."
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "컴퓨터가 꺼져 있습니다. SANDBOX_PROVIDER=docker와 SANDBOX_SUPERVISOR_TOKEN을 설정하거나, SANDBOX_PROVIDER를 e2b, novita, daytona, boat 중 하나로 두고 해당 API 키를 넣으세요. .env 변경 후 스택을 다시 만드세요."
+msgid "Computers are off on this server."
+msgstr "이 서버에서는 컴퓨터가 꺼져 있습니다."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1830,7 +1830,6 @@ msgstr "{0}(으)로 계속"
 msgid "Conversations"
 msgstr ""
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1848,10 +1847,6 @@ msgstr "복사됨"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "복사"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr ""
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2416,7 +2411,7 @@ msgstr "기본 기억 범위를 변경하지 못했습니다."
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
-msgstr ""
+msgstr "컴퓨터 설정을 확인할 수 없습니다 ({failureMessage}). 연결을 고친 후 다시 확인하세요."
 
 #: src/components/pages/SharePopover.tsx
 msgid "Couldn't copy. Select the link and copy it."
@@ -2852,10 +2847,6 @@ msgstr "지금은 연결하지 않았습니다. MCP 설정에서 언제든 다�
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
 msgstr "Docker"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr ""
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
@@ -4672,7 +4663,7 @@ msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Open computer settings"
-msgstr ""
+msgstr "컴퓨터 설정 열기"
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Open external link?"
@@ -5864,6 +5855,7 @@ msgstr "설정: 사용량"
 msgid "Setup complete"
 msgstr "설정 완료"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "설정 도움말"

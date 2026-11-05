@@ -1646,8 +1646,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr "コンピューターが利用可能になりました。再読み込みするか、ボットを開いて続行してください。"
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "コンピューターは無効です。SANDBOX_PROVIDER=docker と SANDBOX_SUPERVISOR_TOKEN を設定するか、SANDBOX_PROVIDER を e2b、novita、daytona、または boat に設定してそのAPIキーを指定してください。.env を変更した後はスタックを再作成してください。"
+msgid "Computers are off on this server."
+msgstr "このサーバーではコンピューターは無効です。"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1830,7 +1830,6 @@ msgstr "{0}で続行"
 msgid "Conversations"
 msgstr ""
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1848,10 +1847,6 @@ msgstr "コピーしました"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "コピー"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr ".env の例をコピー"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2852,10 +2847,6 @@ msgstr "閉じました。MCP設定からいつでも再接続できます。"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
 msgstr "Docker"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr "Dockerは設定されていますが、コンピューターが応答していません。サンドボックススーパーバイザーが実行中であることを確認し、.envを変更した後はスタックを再作成してください。"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
@@ -5864,6 +5855,7 @@ msgstr "設定: 使用量"
 msgid "Setup complete"
 msgstr "セットアップ完了"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "設定ヘルプ"

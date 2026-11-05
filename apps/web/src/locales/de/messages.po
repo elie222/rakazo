@@ -1331,7 +1331,7 @@ msgstr "Chats"
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Check again"
-msgstr ""
+msgstr "Erneut prüfen"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Check every"
@@ -1373,7 +1373,7 @@ msgstr "Prüfe deine E-Mails"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
-msgstr ""
+msgstr "Computer-Einrichtung wird geprüft…"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Checking connection…"
@@ -1383,7 +1383,7 @@ msgstr "Verbindung wird geprüft…"
 #: src/components/DesktopUpdates.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Checking…"
-msgstr ""
+msgstr "Wird geprüft…"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
@@ -1643,11 +1643,11 @@ msgstr "Computer"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Computers are available. Reload or open a bot to continue."
-msgstr ""
+msgstr "Computer sind verfügbar. Lade neu oder öffne einen Bot, um fortzufahren."
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "Computer sind aus. Setze SANDBOX_PROVIDER=docker mit SANDBOX_SUPERVISOR_TOKEN, oder setze SANDBOX_PROVIDER auf e2b, novita, daytona oder boat mit dem passenden API-Key. Stack nach der Änderung von .env neu erstellen."
+msgid "Computers are off on this server."
+msgstr "Computer sind auf diesem Server aus."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1830,7 +1830,6 @@ msgstr "Mit {0} fortfahren"
 msgid "Conversations"
 msgstr ""
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1848,10 +1847,6 @@ msgstr "Kopiert"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Kopieren"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr ""
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2416,7 +2411,7 @@ msgstr "Standardbereich für Erinnerungen konnte nicht aktualisiert werden"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
-msgstr ""
+msgstr "Computer-Einrichtung konnte nicht geprüft werden ({failureMessage}). Behebe die Verbindung und prüfe dann erneut."
 
 #: src/components/pages/SharePopover.tsx
 msgid "Couldn't copy. Select the link and copy it."
@@ -2852,10 +2847,6 @@ msgstr "Verworfen. Du kannst die Verbindung jederzeit in den MCP-Einstellungen w
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
 msgstr "Docker"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr ""
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
@@ -4672,7 +4663,7 @@ msgstr "Chat mit {0} öffnen"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Open computer settings"
-msgstr ""
+msgstr "Computer-Einstellungen öffnen"
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Open external link?"
@@ -5864,6 +5855,7 @@ msgstr "Einstellungen: Nutzung"
 msgid "Setup complete"
 msgstr "Einrichtung abgeschlossen"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "Einrichtungshilfe"
