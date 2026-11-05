@@ -1,9 +1,9 @@
-import { Axiom } from "@axiomhq/js";
 import { guardedFlush, guardedWrite, reportSinkError } from "./sink-guard.js";
 import type { LogEvent, LogSink } from "./types.js";
 
-// Loaded only when AXIOM_TOKEN and AXIOM_DATASET are set (axiom.ts), so installs without
-// the vendor never load its SDK.
+// The vendor SDK loads only when a sink is built, so unconfigured installs never import it;
+// a dynamic import of this module alone would not keep it lazy, because the server bundle
+// inlines this file.
 
 export interface AxiomIngestClient {
   ingest(dataset: string, events: object[]): void;
@@ -18,7 +18,8 @@ export interface AxiomSinkOptions {
   client?: AxiomIngestClient;
 }
 
-export function createAxiomSink(options: AxiomSinkOptions): LogSink {
+export async function createAxiomSink(options: AxiomSinkOptions): Promise<LogSink> {
+  const { Axiom } = await import("@axiomhq/js");
   const client =
     options.client ??
     new Axiom({

@@ -34,7 +34,7 @@ function sampleEvent(): LogEvent {
 describe("axiom sink", () => {
   it("ingests through the injected client and flushes", async () => {
     const client = new FakeAxiom();
-    const sink = createAxiomSink({ dataset: "rakazo-logs", client });
+    const sink = await createAxiomSink({ dataset: "rakazo-logs", client });
     const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
     logger.info("hello", { "request.id": "r1" });
     await logger.flush();
@@ -51,7 +51,7 @@ describe("axiom sink", () => {
   it("does not throw when ingest or flush fails", async () => {
     const client = new FakeAxiom();
     client.failIngest = true;
-    const sink = createAxiomSink({ dataset: "rakazo-logs", client });
+    const sink = await createAxiomSink({ dataset: "rakazo-logs", client });
     expect(() => sink.write(sampleEvent())).not.toThrow();
     client.failFlush = true;
     await expect(sink.flush?.()).resolves.toBeUndefined();

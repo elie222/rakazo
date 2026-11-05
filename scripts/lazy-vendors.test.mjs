@@ -1,6 +1,7 @@
 // Optional vendor SDKs must load through dynamic import() only when configured (AGENTS.md).
 // Bundles each server entry point the way production does and fails if a listed SDK is
-// reachable from it through static imports alone.
+// statically imported by the emitted bundle: bundling inlines workspace code, so a dynamic
+// import() of a local module does not make that module's own static imports lazy.
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
@@ -28,9 +29,12 @@ const PENDING = [
   "@boatdev/sdk",
   "@boxd-sh/sdk",
   "chat-adapter-sendblue",
+  // The wallet factory imports its module dynamically, but the bundle inlines that module,
+  // so the SDK is a static import of every emitted server bundle.
+  "@stripe/link-sdk",
 ];
 
-// Static vendor imports per entry point: Map<entry, Map<vendor, import chain>>.
+// Vendor SDKs statically imported by each emitted bundle: Map<entry, Set<vendor>>.
 const staticVendors = new Map();
 for (const entry of ENTRIES) {
   const options = serverBuildOptions(path.join(root, entry), path.join(root, "dist/check.js"));
@@ -42,22 +46,12 @@ for (const entry of ENTRIES) {
     metafile: true,
     logLevel: "silent",
   });
-  // Walk static edges from the entry and record how each vendor import was reached.
-  const via = new Map([[entry, [entry]]]);
-  const queue = [entry];
-  const found = new Map();
-  while (queue.length) {
-    const file = queue.shift();
-    for (const edge of metafile.inputs[file]?.imports ?? []) {
-      if (edge.kind === "dynamic-import") continue;
-      if (edge.external) {
-        const name = packageName(edge.path);
-        if (OPTIONAL_VENDORS.test(name) && !found.has(name))
-          found.set(name, [...via.get(file), name].join(" -> "));
-      } else if (!via.has(edge.path)) {
-        via.set(edge.path, [...via.get(file), edge.path]);
-        queue.push(edge.path);
-      }
+  const found = new Set();
+  for (const output of Object.values(metafile.outputs)) {
+    for (const edge of output.imports ?? []) {
+      if (edge.kind !== "import-statement") continue;
+      const name = packageName(edge.path);
+      if (OPTIONAL_VENDORS.test(name)) found.add(name);
     }
   }
   staticVendors.set(entry, found);
@@ -65,9 +59,8 @@ for (const entry of ENTRIES) {
 
 for (const [entry, found] of staticVendors) {
   test(`${entry} loads optional vendor SDKs only through dynamic import()`, () => {
-    const unexpected = [...found].filter(([name]) => !PENDING.includes(name));
     assert.deepEqual(
-      unexpected.map(([, chain]) => chain),
+      [...found].filter((name) => !PENDING.includes(name)),
       [],
     );
   });
@@ -78,7 +71,7 @@ test("every pending vendor SDK is still statically imported somewhere", () => {
   // debt is tracked across all entries, not per entry.
   const anywhere = new Set();
   for (const found of staticVendors.values()) {
-    for (const name of found.keys()) anywhere.add(name);
+    for (const name of found) anywhere.add(name);
   }
   assert.deepEqual(
     PENDING.filter((name) => !anywhere.has(name)),
@@ -87,8 +80,12 @@ test("every pending vendor SDK is still statically imported somewhere", () => {
   );
 });
 
-/** The build rewrites bare specifiers to paths inside node_modules; recover the package name. */
+/**
+ * The build rewrites bare specifiers to paths inside node_modules; recover the package name.
+ * Anything else (node builtins, a bare specifier the rewrite missed) is returned as is.
+ */
 function packageName(external) {
+  if (!external.includes("node_modules/")) return external;
   const [scope, name] = external.split("node_modules/").at(-1).split("/");
   return scope.startsWith("@") ? `${scope}/${name}` : scope;
 }

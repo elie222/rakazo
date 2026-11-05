@@ -1,6 +1,8 @@
 import type { AxiomIngestClient } from "./axiom-sink.js";
+import { createAxiomSink } from "./axiom-sink.js";
 import { createServiceLogger } from "./env.js";
 import { installLogger } from "./logger.js";
+import { createSentrySinkFromEnv } from "./sentry.js";
 import type { Logger, LogSink } from "./types.js";
 
 const EDGE_HOST = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i;
@@ -17,10 +19,9 @@ export async function createAxiomSinkFromEnv(
   if (token && dataset) {
     const resolved = resolveAxiomEdge(edge, edgeUrl);
     if (resolved.warning) return { warning: resolved.warning };
-    // The sink module carries the vendor SDK; an install without Axiom never loads it.
-    const { createAxiomSink } = await import("./axiom-sink.js");
+    // The sink factory loads the vendor SDK; an install without Axiom never does.
     return {
-      sink: createAxiomSink({
+      sink: await createAxiomSink({
         token,
         dataset,
         edge: resolved.edge,
@@ -41,12 +42,10 @@ export async function createRootLogger(
   service: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<Logger> {
-  // Both sinks load their SDK only when configured, so a default install loads neither.
+  // Each sink factory loads its SDK only when configured, so a default install loads neither.
   const optional = await Promise.all([
     createAxiomSinkFromEnv(env),
-    env.SENTRY_DSN?.trim()
-      ? import("./sentry.js").then((sentry) => sentry.createSentrySinkFromEnv(service, env))
-      : Promise.resolve<{ sink?: LogSink; warning?: string }>({}),
+    createSentrySinkFromEnv(service, env),
   ]);
   const logger = createServiceLogger({
     service,
