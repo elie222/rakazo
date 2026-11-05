@@ -3816,6 +3816,56 @@ describe("mobile API authentication", () => {
     expect(pendingSignOutRecords(store)).toEqual([]);
   });
 
+  it("a hung session save defers only the current server's switch records", async () => {
+    const record = (apiBase: string, token: string) => ({
+      apiBase,
+      token,
+      headers: {},
+      recordedAt: Date.now(),
+      provisional: true,
+    });
+    const store = new Map<string, string>([
+      [
+        "rakazo.pending_sign_out",
+        JSON.stringify([
+          record("https://old-server.example", "token-a"),
+          record(currentApiBase(), "token-c"),
+        ]),
+      ],
+    ]);
+    mockSecureStore(store);
+    let releaseSave!: () => void;
+    const saveHeld = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token") await saveHeld;
+      store.set(key, value);
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const signOuts = () =>
+      fetchMock.mock.calls
+        .filter(([url]) => String(url).endsWith("/api/auth/sign-out"))
+        .map(([url, init]) => [url, new Headers(init?.headers).get("authorization")]);
+    const saving = saveSessionToken("token-b");
+    await flushPendingSignOut(true);
+
+    // The other server's session cannot be the one being saved here, so it is revoked now.
+    expect(signOuts()).toEqual([
+      ["https://old-server.example/api/auth/sign-out", "Bearer token-a"],
+    ]);
+    expect(pendingSignOutRecords(store).map((entry) => entry.token)).toEqual(["token-c"]);
+
+    releaseSave();
+    await saving;
+    await flushPendingSignOut(true);
+    expect(signOuts()).toEqual([
+      ["https://old-server.example/api/auth/sign-out", "Bearer token-a"],
+      [`${currentApiBase()}/api/auth/sign-out`, "Bearer token-c"],
+    ]);
+  });
+
   it("a server switch stops when a session is saved while it clears the old one", async () => {
     const store = new Map<string, string>();
     mockSecureStore(store);

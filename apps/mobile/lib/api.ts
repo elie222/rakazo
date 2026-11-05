@@ -1307,15 +1307,17 @@ async function reconcileProvisionalSignOuts(): Promise<void> {
   await queuePendingSignOutWrite(async () => {
     const read = await readPendingSignOuts();
     if (!read.ok || !read.records.some((record) => record.provisional)) return;
-    // A running save reads as no session, so its token would count as inactive; a later pass
-    // resolves the records instead of waiting for the save.
-    if (endpointChanges > 0 || sessionSaveInProgress()) return;
+    if (endpointChanges > 0) return;
     const generation = currentSessionGeneration();
+    const saving = sessionSaveInProgress();
     const snapshot = await snapshotSessionToken();
     if (!snapshot.ok) return;
     // Re-read after the snapshot's wait too: nothing between this check and the write awaits,
     // so a switch that starts now queues its own record behind this step.
-    if (endpointChanges > 0 || generation !== currentSessionGeneration()) return;
+    if (endpointChanges > 0) return;
+    // A running save reads as no session, so its token would count as inactive. A later pass
+    // resolves this server's records instead of waiting for the save; other servers' go on.
+    const unsettled = saving || generation !== currentSessionGeneration();
     const activeToken = snapshot.value;
     let resolvedAny = false;
     const resolved: PendingSignOut[] = [];
@@ -1324,7 +1326,12 @@ async function reconcileProvisionalSignOuts(): Promise<void> {
         resolved.push(record);
         continue;
       }
-      const stillActive = record.apiBase === currentApiBase() && record.token === activeToken;
+      const onCurrentServer = record.apiBase === currentApiBase();
+      if (onCurrentServer && unsettled) {
+        resolved.push(record);
+        continue;
+      }
+      const stillActive = onCurrentServer && record.token === activeToken;
       // A session kept only in memory is gone after a restart; a later reconcile promotes its record.
       if (stillActive && sessionOnlyInMemory()) {
         resolved.push(record);
