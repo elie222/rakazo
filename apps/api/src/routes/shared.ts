@@ -71,6 +71,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
       Boolean(deps.env.desktopHostChoiceEnabled) && sandboxProvider === "docker",
     // The deployment's provider: an account's own choice covers only its Team Computers.
     sandboxProvider,
+    computerSettingsEnabled: Boolean(deps.env.computerSettingsEnabled),
     mcpStdioEnabled:
       admin &&
       mcpStdioAvailable({

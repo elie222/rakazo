@@ -182,6 +182,10 @@ msgstr ""
 msgid "{count} months"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "{count} weitere"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr ""
@@ -1215,6 +1219,10 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "Integriert"
+
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "Schaltfläche „{button}“ · von der Seite gelesen, nicht geprüft"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -2694,6 +2702,7 @@ msgstr "Tage"
 msgid "Decline"
 msgstr "Ablehnen"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2811,11 +2820,6 @@ msgstr "Abgelehnt"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "Ablehnen"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4746,6 +4750,10 @@ msgstr "am {day}. um {time}"
 msgid "on the 1st at {0}"
 msgstr "am 1. um {0}"
 
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "Auf der Schaltfläche"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "Einmalig"
@@ -5213,6 +5221,10 @@ msgstr "Reagieren"
 msgid "Reactions"
 msgstr "Reaktionen"
 
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "Von der Seite gelesen, nicht geprüft"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "Antworten vorlesen"
@@ -5245,6 +5257,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "Kürzlich"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "Letzte Zahlungen"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -6054,6 +6070,7 @@ msgstr "Gemeinsame Erinnerungen"
 msgid "Show"
 msgstr "Anzeigen"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""
@@ -6847,6 +6864,10 @@ msgstr "Toolname"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "Gesamt"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"

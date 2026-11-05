@@ -182,6 +182,10 @@ msgstr "{count} ימים"
 msgid "{count} months"
 msgstr "{count} חודשים"
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "עוד {count}"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr "{count} שבועות"
@@ -1215,6 +1219,10 @@ msgstr "עיון בשרתי MCP"
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "מובנה"
+
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "הכפתור “{button}” · נקרא מהדף, לא נבדק"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -2694,6 +2702,7 @@ msgstr "ימים"
 msgid "Decline"
 msgstr "דחייה"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2811,11 +2820,6 @@ msgstr "נדחה"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "דחייה"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4746,6 +4750,10 @@ msgstr "ביום {day} בשעה {time}"
 msgid "on the 1st at {0}"
 msgstr "ב-1 לחודש בשעה {0}"
 
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "על הכפתור"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "חד-פעמי"
@@ -5213,6 +5221,10 @@ msgstr "הוספת אמוג׳י"
 msgid "Reactions"
 msgstr "אמוג׳י"
 
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "נקרא מהדף, לא נבדק"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "הקראת תשובות בקול"
@@ -5245,6 +5257,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "אחרונים"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "תשלומים אחרונים"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -6054,6 +6070,7 @@ msgstr "זיכרון משותף"
 msgid "Show"
 msgstr "הצגה"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""
@@ -6847,6 +6864,10 @@ msgstr "שם הכלי"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "כלים"
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "סה״כ"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"

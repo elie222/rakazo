@@ -46,14 +46,14 @@ export function PageLoading() {
       className="pointer-events-none absolute inset-0 flex justify-center bg-card px-6 pt-12"
     >
       <div className="flex w-full max-w-[720px] flex-col gap-4 motion-safe:animate-pulse">
-        <div className="h-8 w-2/5 rounded-[8px] bg-foreground/[0.06]" />
+        <div className="h-8 w-2/5 rounded-sm bg-foreground/[0.06]" />
         <div className="h-4 w-3/5 rounded-[6px] bg-foreground/[0.05]" />
         <div className="mt-4 grid grid-cols-3 gap-3">
-          <div className="h-20 rounded-[12px] bg-foreground/[0.05]" />
-          <div className="h-20 rounded-[12px] bg-foreground/[0.05]" />
-          <div className="h-20 rounded-[12px] bg-foreground/[0.05]" />
+          <div className="h-20 rounded-lg bg-foreground/[0.05]" />
+          <div className="h-20 rounded-lg bg-foreground/[0.05]" />
+          <div className="h-20 rounded-lg bg-foreground/[0.05]" />
         </div>
-        <div className="h-48 rounded-[12px] bg-foreground/[0.04]" />
+        <div className="h-48 rounded-lg bg-foreground/[0.04]" />
       </div>
     </div>
   );

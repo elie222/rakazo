@@ -1260,6 +1260,14 @@ export interface BrowserPurchase {
   amountSource?: "button" | "page";
   /** The total the page shows beside a button that names its own amount; older computers omit it. */
   total?: string;
+  /** The order lines the page lists above its total, as page text; none when it lists none or is older. */
+  items?: BrowserPurchaseItem[];
+}
+
+/** An order line as the checkout page shows it, such as an item with its quantity, or delivery. */
+export interface BrowserPurchaseItem {
+  name: string;
+  amount: string;
 }
 
 export interface BrowserPurchaseCheckRequest {

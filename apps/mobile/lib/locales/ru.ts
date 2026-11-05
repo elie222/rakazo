@@ -1436,6 +1436,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Discard changes?": "Отменить изменения?",
   Discard: "Не сохранять",
   "Could not delete note": "Не удалось удалить заметку",
+  "Recent payments": "Последние платежи",
   "Spending limit": "Лимит расходов",
   Amount: "Сумма",
   Currency: "Валюта",
@@ -1451,6 +1452,11 @@ export const RU_MESSAGES: Record<string, string> = {
   "{amount} spent this week": "Потрачено на этой неделе: {amount}",
   "{amount} spent this month": "Потрачено в этом месяце: {amount}",
   "{amount} spent": "Потрачено: {amount}",
+  "Button “{button}” · read from the page, not checked":
+    "Кнопка «{button}» · прочитано со страницы, не проверено",
+  "On the button": "На кнопке",
+  "Read from the page, not checked": "Прочитано со страницы, не проверено",
+  Total: "Итого",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

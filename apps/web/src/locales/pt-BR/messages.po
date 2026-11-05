@@ -182,6 +182,10 @@ msgstr ""
 msgid "{count} months"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "mais {count}"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr ""
@@ -1215,6 +1219,10 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "Integrado"
+
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "Botão “{button}” · lido da página, não verificado"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -2694,6 +2702,7 @@ msgstr "dias"
 msgid "Decline"
 msgstr ""
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2811,11 +2820,6 @@ msgstr "Negado"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "Negar"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4746,6 +4750,10 @@ msgstr "no dia {day} às {time}"
 msgid "on the 1st at {0}"
 msgstr "no dia 1º às {0}"
 
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "No botão"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "Uma vez"
@@ -5213,6 +5221,10 @@ msgstr "Reagir"
 msgid "Reactions"
 msgstr "Reações"
 
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "Lido da página, não verificado"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "Leia as respostas em voz alta"
@@ -5245,6 +5257,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "Recente"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "Pagamentos recentes"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -6054,6 +6070,7 @@ msgstr "Memória compartilhada"
 msgid "Show"
 msgstr "Mostrar"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""
@@ -6847,6 +6864,10 @@ msgstr "Nome da ferramenta"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "Total"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"

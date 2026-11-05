@@ -41,8 +41,8 @@ import {
 } from "./network-address.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
-const MAX_MCP_TOOLS = 250;
-const MAX_MCP_PAGES = 20;
+const DEFAULT_MAX_MCP_TOOLS = 250;
+const DEFAULT_MAX_MCP_PAGES = 20;
 const MCP_TIMEOUT_MS = 30_000;
 const MAX_RESULT_BYTES = 1_000_000;
 
@@ -111,15 +111,22 @@ export async function listRemoteMcpTools(options: RemoteMcpOptions): Promise<Con
   return withScopedMcpClient(options, list);
 }
 
+function positiveIntegerOrDefault(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 /** Follow `tools/list` cursors, bounded by the shared page and tool caps. Tools only a
  * server's own app may call are left out: the model never sees them. */
 export async function listMcpTools(client: Client, options: RequestOptions): Promise<Tool[]> {
+  const maxTools = positiveIntegerOrDefault(process.env.MCP_MAX_TOOLS, DEFAULT_MAX_MCP_TOOLS);
+  const maxPages = positiveIntegerOrDefault(process.env.MCP_MAX_PAGES, DEFAULT_MAX_MCP_PAGES);
   const tools: Tool[] = [];
   let cursor: string | undefined;
-  for (let page = 0; page < MAX_MCP_PAGES && tools.length < MAX_MCP_TOOLS; page += 1) {
+  for (let page = 0; page < maxPages && tools.length < maxTools; page += 1) {
     const result = await client.listTools(cursor ? { cursor } : undefined, options);
     const visible = result.tools.filter(mcpToolVisibleToModel);
-    tools.push(...visible.slice(0, MAX_MCP_TOOLS - tools.length));
+    tools.push(...visible.slice(0, maxTools - tools.length));
     cursor = result.nextCursor;
     if (!cursor) break;
   }

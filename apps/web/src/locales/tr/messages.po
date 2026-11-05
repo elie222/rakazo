@@ -182,6 +182,10 @@ msgstr "{count} gün"
 msgid "{count} months"
 msgstr "{count} ay"
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "{count} tane daha"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr "{count} hafta"
@@ -1215,6 +1219,10 @@ msgstr "MCP sunucularına göz at"
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "Yerleşik"
+
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "“{button}” düğmesi · sayfadan okundu, kontrol edilmedi"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -2694,6 +2702,7 @@ msgstr "gün"
 msgid "Decline"
 msgstr "Reddet"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2811,11 +2820,6 @@ msgstr "Reddedildi"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "Reddet"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr "Dağıtım varsayılanı ({0})"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4746,6 +4750,10 @@ msgstr "{day} günü saat {time}"
 msgid "on the 1st at {0}"
 msgstr "ayın 1'inde saat {0}"
 
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "Düğmede"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "Tek seferlik"
@@ -5213,6 +5221,10 @@ msgstr "Tepki ver"
 msgid "Reactions"
 msgstr "Tepkiler"
 
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "Sayfadan okundu, kontrol edilmedi"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "Yanıtları sesli oku"
@@ -5245,6 +5257,10 @@ msgstr "Alındı"
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "Son"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "Son ödemeler"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -6054,6 +6070,7 @@ msgstr "Ortak hafıza"
 msgid "Show"
 msgstr "Göster"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr "Tümünü göster"
@@ -6847,6 +6864,10 @@ msgstr "Araç adı"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "Araçlar"
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "Toplam"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
