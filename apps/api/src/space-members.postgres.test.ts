@@ -818,6 +818,10 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(call(asInvitee, "computer/release", { botId: bot.id })).resolves.toMatchObject({
       status: 409,
     });
+    // Teaching cannot take the owner's screen either.
+    await expect(
+      call(asInvitee, "skills/start", { botId: bot.id, goal: "Book a table" }),
+    ).resolves.toMatchObject({ status: 409 });
     // Watching is shared; typing into the owner's session is not.
     await expect(
       call(asInvitee, "computer/input", { botId: bot.id, kind: "key", payload: { key: "a" } }),

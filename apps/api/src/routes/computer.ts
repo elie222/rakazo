@@ -224,6 +224,7 @@ export function computerRoutes(ctx: RouterContext) {
               state: "stopped",
               controlHolder: "none",
               controlLeaseId: null,
+              controlUserId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
               controlRunId: null,
@@ -460,6 +461,7 @@ export function computerRoutes(ctx: RouterContext) {
             data: {
               controlHolder: "none",
               controlLeaseId: null,
+              controlUserId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
               controlRunId: null,
@@ -980,6 +982,8 @@ export async function releaseComputerControl(
   const controlBotId = bot.computer.controlBotId;
   const controlLeaseId = bot.computer.controlLeaseId;
   if (bot.computer.controlHolder !== "user" || !controlBotId || controlBotId !== bot.id) return;
+  // Read with the lease released below, so control someone took meanwhile is never ended.
+  if (bot.computer.controlUserId && bot.computer.controlUserId !== actor.userId) return;
   if (expectedRunId !== undefined && bot.computer.controlRunId !== expectedRunId) return;
   if (!hasActiveComputerControl(bot.computer) || !controlLeaseId) {
     // Stale controlHolder=user. Prefer expiry (revokes provider control). If a lease id

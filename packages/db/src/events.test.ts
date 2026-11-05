@@ -747,6 +747,7 @@ describe("finalizeComputerControlRelease", () => {
       data: {
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
@@ -1423,6 +1424,7 @@ describe("pauseRunForTakeover", () => {
           controlHolder: "none",
           controlBotId: null,
           controlLeaseId: null,
+          controlUserId: null,
           controlLeaseExpiresAt: null,
         }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -1478,6 +1480,7 @@ describe("pauseRunForTakeover", () => {
         state: "running",
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: "run-1",

@@ -18,6 +18,7 @@ import {
   expireTaughtSkillTeaching,
   extendActiveComputerControl,
   getActiveTeachingSession,
+  hasActiveComputerControl,
   mapTaughtSkill,
   observeStopSnapshot,
   parsePlaybook,
@@ -191,6 +192,7 @@ async function grantTakeover(
       controlLeaseId: leaseId,
       controlLeaseExpiresAt: expiresAt,
       controlBotId: bot.id,
+      controlUserId: actor.userId,
       state: "running",
     },
   });
@@ -333,6 +335,23 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       });
       if (alreadyRecording) {
         throw new ORPCError("CONFLICT", { message: "A teaching session is already active" });
+      }
+      // In a shared Space, teaching never takes another person's screen or stops their work.
+      const computer = bot.computer;
+      if (
+        computer?.controlHolder === "user" &&
+        hasActiveComputerControl(computer) &&
+        computer.controlUserId &&
+        computer.controlUserId !== actor.userId
+      ) {
+        throw new ORPCError("CONFLICT", { message: "Someone else is using this computer" });
+      }
+      const othersWork = await deps.prisma.run.findFirst({
+        where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] }, userId: { not: actor.userId } },
+        select: { id: true },
+      });
+      if (othersWork) {
+        throw new ORPCError("CONFLICT", { message: "The bot is working for someone else" });
       }
       await cancelActiveRuns(deps, actor, botId);
       bot = await ensureGraphicalComputer(deps, actor, bot);

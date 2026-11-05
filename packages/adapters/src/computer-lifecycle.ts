@@ -533,6 +533,7 @@ export async function provisionComputer(
               ...(!activeControl
                 ? {
                     controlLeaseId: null,
+                    controlUserId: null,
                     controlLeaseExpiresAt: null,
                     controlBotId: null,
                     controlRunId: null,
@@ -1117,6 +1118,7 @@ export async function replaceComputer(
         ? {
             controlHolder: "none" as const,
             controlLeaseId: null,
+            controlUserId: null,
             controlLeaseExpiresAt: null,
             controlBotId: null,
             controlRunId: null,
@@ -1263,6 +1265,7 @@ export async function replaceComputer(
         providerRef: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,

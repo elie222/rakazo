@@ -1524,6 +1524,7 @@ export async function pauseRunForTakeover(
               state: "running",
               controlHolder: "none",
               controlLeaseId: null,
+              controlUserId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
               controlRunId: input.runId,
@@ -1606,6 +1607,7 @@ export async function finalizeComputerControlRelease(
       data: {
         controlHolder: input.holder,
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
