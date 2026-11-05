@@ -5,9 +5,10 @@ import path from "node:path";
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" });
 const root = git("rev-parse", "--show-toplevel").replace(/\r?\n$/, "");
 // Git lists the primary checkout first, regardless of which branch it has checked out.
-const main = git("worktree", "list", "--porcelain", "-z")
-  .split("\0", 1)[0]
-  .slice("worktree ".length);
+const primary = git("worktree", "list", "--porcelain", "-z").split("\0\0", 1)[0].split("\0");
+// A bare repository has no original checkout whose settings can be inherited.
+if (primary.includes("bare")) process.exit(0);
+const main = primary[0].slice("worktree ".length);
 const source = path.join(main, ".env");
 const destination = path.join(root, ".env");
 

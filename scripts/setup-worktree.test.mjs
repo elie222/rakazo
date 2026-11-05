@@ -49,6 +49,16 @@ test("worktree settings stay private and local", () => {
     rmSync(path.join(worktree, ".env"));
     assert.throws(() => setup(worktree));
     assert.equal(existsSync(path.join(worktree, ".env")), false);
+
+    const bare = path.join(dir, "bare.git");
+    const bareWorktree = path.join(dir, "bare-worktree");
+    git("clone", "--bare", main, bare);
+    writeFileSync(path.join(bare, ".env"), settings);
+    execFileSync("git", ["--git-dir", bare, "worktree", "add", "--detach", bareWorktree], {
+      stdio: "pipe",
+    });
+    setup(bareWorktree);
+    assert.equal(existsSync(path.join(bareWorktree, ".env")), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
