@@ -11,6 +11,7 @@ const fakeAgentState = vi.hoisted(() => ({
     | "silent-continuation"
     | "subagent-limit"
     | "two-subagents"
+    | "background-subagent"
     | "parent-limit"
     | "parent-parallel"
     | "ask-pause"
@@ -381,6 +382,13 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       }
 
       const delegation = this.tools.find((tool) => tool.name === "run_subagent");
+      if (delegation && fakeAgentState.mode === "background-subagent") {
+        const args = { name: "scout", task: "compare the venues", background: true };
+        this.emit({ type: "tool_execution_start", toolName: delegation.name, args });
+        // Pi prepares the model's arguments before it runs the tool.
+        await delegation.execute("delegate-bg", delegation.prepareArguments?.(args) ?? args);
+        return;
+      }
       if (delegation && fakeAgentState.mode === "two-subagents") {
         await Promise.all(
           ["a", "b"].map((name) => {
@@ -2234,6 +2242,48 @@ describe("Pi connector tool dispatch", () => {
           "I stopped after reaching the limit of 80 tool calls in this turn. Send another message to continue.",
       }),
     );
+  });
+
+  it("hands a background helper to the executor instead of running it inside the turn", async () => {
+    fakeAgentState.mode = "background-subagent";
+    const executeTool = vi.fn(async () => ({ ok: true, name: "scout" }));
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "background-helper",
+        prompt: "look into the venues in the background",
+        instructions: "",
+        history: [],
+        tools: [
+          {
+            name: "run_subagent",
+            description: "Delegate work",
+            inputSchema: { type: "object", properties: {} },
+          },
+        ],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "bg",
+        traceId: "bg",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    ))
+      events.push(event);
+    const calls = executeTool.mock.calls as unknown as unknown[][];
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.slice(0, 2)).toEqual([
+      "run_subagent",
+      expect.objectContaining({ name: "scout", task: "compare the venues", background: true }),
+    ]);
+    // No helper ran inside this turn.
+    expect(events.filter((event) => (event as { type?: string }).type === "subagent")).toEqual([]);
   });
 
   it("caps a parent and two concurrent subagents at one total, then gives a later run a fresh budget", async () => {

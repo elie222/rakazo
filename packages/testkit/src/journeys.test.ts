@@ -23,6 +23,7 @@ import {
   ACTIVE_RUN_STATUSES,
   ONCE_ROUTINE_CRON,
   resolveScreenProxySecret,
+  settleRunSubagents,
   stuckWorkStatusMessages,
 } from "@rakazo/core";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
@@ -2424,6 +2425,89 @@ describeJourneys("required product journeys", () => {
         where: { botId: bot.id, trigger: "helper", status: { in: [...ACTIVE_RUN_STATUSES] } },
       }),
     ).toBe(0);
+  });
+
+  it("13h: a bot starts a helper in the background, answers meanwhile, and passes its result on", async () => {
+    const { cookie, bot, chat } = await newChief("Background Chat");
+    await sendAndWait(app, cookie, bot.id, "keep working on the venue list in the background");
+    const helper = await waitForHelper(bot.id, "running");
+    expect(helper.threadId).not.toBe(chat.id);
+    // The turn that started it has ended, and live clients settle that turn's cards when it
+    // ends; the helper's card is not one of them.
+    const started = await prisma.run.findFirstOrThrow({
+      where: { threadId: chat.id, trigger: "user", status: "completed" },
+      select: { id: true, completedAt: true },
+    });
+    const { sourceMessageId } = await prisma.run.findUniqueOrThrow({ where: { id: helper.id } });
+    const card = await prisma.message.findUniqueOrThrow({ where: { id: sourceMessageId! } });
+    expect(card.createdAt.getTime()).toBeLessThanOrEqual(started.completedAt!.getTime());
+    const snap = await rpc<{ messages: Array<{ runId?: string; blocks: unknown[] }> }>(
+      app,
+      cookie,
+      "threads/get",
+      { botId: bot.id },
+    );
+    expect(settleRunSubagents(snap.messages, started.id)).toBe(snap.messages);
+    expect((await helperCards(cookie, bot.id))[0]).toMatchObject({
+      status: "running",
+      task: "keep working on the venue list",
+    });
+    const answered = await sendAndWait(app, cookie, bot.id, "what is on my calendar today?");
+    expect(answered.run.status).toBe("completed");
+    // The card's Stop ends the helper alone.
+    await rpc(app, cookie, "threads/stopHelper", { botId: bot.id, messageId: card.id });
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: helper.id } })).status).toBe(
+      "cancelled",
+    );
+    expect((await helperCards(cookie, bot.id))[0]).toMatchObject({ result: "stopped" });
+
+    await sendAndWait(app, cookie, bot.id, "summarize the venue notes in the background");
+    let wake = null as { id: string; status: string } | null;
+    await waitForDatabase(async () => {
+      wake = await prisma.run.findFirst({
+        where: { threadId: chat.id, trigger: "helper_result" },
+        select: { id: true, status: true },
+      });
+      return wake?.status === "completed";
+    });
+    const relayed = (
+      await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id })
+    ).messages.filter((message) => message.runId === wake?.id);
+    expect(JSON.stringify(relayed)).toContain("helper result");
+  });
+
+  it("13i: a group chat cannot start a background helper", async () => {
+    const cookie = await signup(app, `background-group-j-${stamp}@rakazo.test`, "Background Group");
+    const [bot, peer] = await Promise.all(
+      ["Chief", "Peer"].map((name) =>
+        rpc<Bot>(app, cookie, "bots/create", {
+          name,
+          title: "",
+          description: "",
+          instructions: "",
+          notifyOnFinish: false,
+        }),
+      ),
+    );
+    const group = await rpc<{ id: string }>(app, cookie, "groups/create", {
+      name: "Venue room",
+      botIds: [bot!.id, peer!.id],
+    });
+    await sendGroupAndWait(
+      app,
+      cookie,
+      group.id,
+      "@Chief summarize the venue notes in the background",
+      bot!.id,
+    );
+    expect(
+      await prisma.run.count({ where: { botId: { in: [bot!.id, peer!.id] }, trigger: "helper" } }),
+    ).toBe(0);
+    const refused = await prisma.event.findFirst({
+      where: { botId: bot!.id, type: "agent.tool.completed" },
+      select: { payload: true },
+    });
+    expect(refused?.payload).toMatchObject({ name: "run_subagent", outcome: "error" });
   });
 
   it("14: this-mac is refused unless the sandbox is docker", async () => {

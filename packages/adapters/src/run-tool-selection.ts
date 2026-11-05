@@ -62,7 +62,7 @@ const CREATED_RUN_TOOL_NAMES = new Set(["ask_user", "update_bot"]);
  * no computer (the bot's own turns keep it), no questions to the user, and no changes to
  * memory, skills or routines, which the bot makes itself when the result comes back.
  */
-const BACKGROUND_HELPER_TOOL_NAMES: ReadonlySet<string> = new Set([
+export const BACKGROUND_HELPER_TOOL_NAMES: ReadonlySet<string> = new Set([
   "web_search",
   "web_fetch",
   "recall_memory",

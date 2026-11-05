@@ -12,6 +12,7 @@ import {
   appendEventInTransaction,
   assertRunCanWriteHistory,
   createThreadMessageInTransaction,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -140,7 +141,7 @@ export async function startBackgroundHelper(
       select: { id: true },
     });
     return { eventSeq: event.seq, helperRunId: helperRun.id };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (committed === "full") {
     return {
       error: `${MAX_PARALLEL_SUBAGENTS} background helpers are already working. Wait for a result before starting another.`,
@@ -274,7 +275,7 @@ export async function returnHelperOutcome(
       select: { id: true },
     });
     return { threadId: card.threadId, eventSeq: event.seq, wakeRunId: wake.id };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!committed) return;
   await deps.events.notify(committed.threadId, committed.eventSeq).catch((error) => {
     getLogger().error("background helper card notification", error);

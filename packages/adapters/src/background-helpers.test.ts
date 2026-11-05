@@ -3,7 +3,7 @@ import { settleRunSubagents } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { startBackgroundHelper } from "./background-helpers.js";
+import { returnHelperOutcome, startBackgroundHelper } from "./background-helpers.js";
 import type { RunContext } from "./run-context.js";
 
 vi.mock("@rakazo/db", async (original) => ({
@@ -67,6 +67,10 @@ describe("starting a background helper", () => {
     });
     expect(h.createRun.mock.calls[0]?.[0]).not.toHaveProperty("data.modelPinned");
     expect(h.enqueue).toHaveBeenCalledExactlyOnceWith(runContinueJob("helper-run"));
+    // It takes the chat's lock, which a snapshot read can hold for a while.
+    expect(h.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
   });
 
   it("keeps its card running when the turn that started it ends", async () => {
@@ -110,5 +114,26 @@ describe("starting a background helper", () => {
       startBackgroundHelper(half.ctx, { ...START, modelProvider: "openai" }),
     ).resolves.toEqual({ error: "model_provider and model_id must both be set" });
     expect(half.prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("returning a helper's outcome", () => {
+  it("waits for the chat's lock with the thread-lock budget", async () => {
+    const tx = {
+      $queryRaw: vi.fn(async () => []),
+      run: { updateMany: vi.fn(async () => ({ count: 0 })) },
+    };
+    const prisma = {
+      message: { findUnique: vi.fn(async () => ({ threadId: "chat" })) },
+      $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
+    };
+    const run = { id: "helper-run", spaceId: "space", botId: "bot", userId: "user" };
+    await returnHelperOutcome(
+      { prisma, events: { notify: vi.fn() } } as never,
+      { ...run, sourceMessageId: "card" },
+      { status: "completed", text: "done" },
+    );
+    expect(tx.$queryRaw).toHaveBeenCalledOnce();
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
   });
 });

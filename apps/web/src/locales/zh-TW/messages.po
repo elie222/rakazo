@@ -6251,6 +6251,7 @@ msgstr "狀態"
 msgid "Steps"
 msgstr "步驟"
 
+#: src/components/SubagentCard.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
@@ -6269,6 +6270,10 @@ msgstr "停止朗讀"
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Stop teaching"
 msgstr "停止示範"
+
+#: src/components/SubagentCard.tsx
+msgid "Stopped"
+msgstr "已停止"
 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts

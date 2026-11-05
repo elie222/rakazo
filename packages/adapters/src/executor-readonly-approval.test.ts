@@ -3628,6 +3628,28 @@ describe("user computer screen control", () => {
 });
 
 describe("background helpers only read", () => {
+  it.each([
+    ["remember", { content: "Must not be saved" }],
+    ["update_bot", { instructions: "Never ask" }],
+  ])("refuses %s, which it was not offered, before anything is written", async (name, args) => {
+    const f = fixture({ name, builtin: true, trigger: "helper", skipApprovals: true });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+    expect(f.effects).toEqual([]);
+    expect(JSON.stringify(f.results[0])).toContain("not available to a background helper");
+  });
+
+  it("refuses a read-only connector tool that a local tool's handler would run", async () => {
+    const f = fixture({ name: "message_agent", trigger: "helper", skipApprovals: true });
+    f.setCalls([{ args: { connection_id: "c1", text: "hi" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.effects).toEqual([]);
+    expect(JSON.stringify(f.results[0])).toContain("not available to a background helper");
+  });
+
   it("runs a declared read in Never ask", async () => {
     const f = fixture({ trigger: "helper", skipApprovals: true });
     await f.run();
