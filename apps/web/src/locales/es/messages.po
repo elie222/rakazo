@@ -4460,10 +4460,6 @@ msgstr "Ningún bot coincide"
 msgid "No longer active"
 msgstr "Ya no está activo"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "No managed app catalog is configured on this deployment."
-msgstr "No hay un catálogo de apps administradas configurado en este despliegue."
-
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""

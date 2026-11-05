@@ -4460,10 +4460,6 @@ msgstr "一致するボットはありません"
 msgid "No longer active"
 msgstr "現在は無効"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "No managed app catalog is configured on this deployment."
-msgstr "このデプロイでは管理対象のアプリカタログが設定されていません。"
-
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""
