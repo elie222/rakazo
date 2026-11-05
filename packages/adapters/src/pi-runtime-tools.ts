@@ -118,6 +118,15 @@ function useToolAgentTool(
   };
 }
 
+/** Each tool's definition under the name the model calls it, as toAgentTools exposes it. */
+export function agentToolDefinitions(toolDefs: readonly ConnectorTool[]) {
+  const { listed, deferred } = partitionTools(toolDefs);
+  return new Map([
+    ...deferred.map((tool) => [tool.name, tool] as const),
+    ...namedAgentTools(listed).map(({ tool, name }) => [name, tool] as const),
+  ]);
+}
+
 /** Shared canonical mapping for checkpoint validation and runtime exposure. */
 export function namedAgentTools(toolDefs: readonly ConnectorTool[]) {
   // Registration order is incidental. Canonicalize before allocating collision suffixes
@@ -189,8 +198,8 @@ export function connectorStepNames(tool: ConnectorTool | undefined, args: unknow
 /** The model writes these names, so show only a few that look like tool names. */
 function batchStepActions(tool: ConnectorTool | undefined, args: unknown): string[] {
   if (!tool?.batch) return [];
-  const { actions } = batchActions(tool.batch, args);
-  if (actions.length > MAX_STEP_ACTIONS) return [];
+  const { actions, complete } = batchActions(tool.batch, args);
+  if (!complete || actions.length > MAX_STEP_ACTIONS) return [];
   if (!actions.every((action) => STEP_ACTION_NAME.test(action))) return [];
   return actions.map(humanizeToolName);
 }
