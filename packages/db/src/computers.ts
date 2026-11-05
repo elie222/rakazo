@@ -8,6 +8,56 @@ import { withTransactionRetry } from "./transaction-retry.js";
 
 export type { ComputerMode } from "@rakazo/contracts";
 
+/**
+ * Whether this person may act on a computer's user control. Members of a Space share its
+ * computers, never a lease: the holder is who took control, or for a lease from before holders
+ * were recorded, the person the computer is kept for.
+ */
+export function holdsUserControl(
+  computer: { controlUserId?: string | null; userId?: string | null },
+  userId: string,
+): boolean {
+  const holder = computer.controlUserId || computer.userId;
+  return !holder || holder === userId;
+}
+
+export function hasActiveComputerControl(
+  computer:
+    | {
+        controlHolder: string;
+        controlLeaseId: string | null;
+        controlLeaseExpiresAt: Date | null;
+      }
+    | null
+    | undefined,
+  now = new Date(),
+): boolean {
+  return Boolean(
+    computer?.controlHolder === "user" &&
+      computer.controlLeaseId &&
+      computer.controlLeaseExpiresAt &&
+      computer.controlLeaseExpiresAt.getTime() > now.getTime(),
+  );
+}
+
+/** True when someone other than this person holds a live user lease on the computer. */
+export function anotherPersonHoldsControl(
+  computer: Parameters<typeof hasActiveComputerControl>[0] & {
+    controlUserId?: string | null;
+    userId?: string | null;
+  },
+  userId: string,
+): boolean {
+  return Boolean(
+    computer && hasActiveComputerControl(computer) && !holdsUserControl(computer, userId),
+  );
+}
+
+/** The query form of {@link holdsUserControl}: a computer whose user control this person holds. */
+export function userControlHeldBy(userId: string): Prisma.ComputerWhereInput {
+  return { OR: [{ controlUserId: userId }, { controlUserId: null, userId }] };
+}
+
 export function parseComputerMode(scope: string): ComputerMode {
   if (scope === "team" || scope === "dedicated") return scope;
   throw new Error(`Unknown computer scope: ${scope}`);

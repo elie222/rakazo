@@ -17,10 +17,9 @@ interface RoutineBackoffDeps {
 /**
  * The routine a run belongs to, and who started it. A run started by someone other than the
  * routine's owner, such as a member's test, used their accounts, so it says nothing about the
- * owner's: it neither backs the schedule off nor clears it. Omitted after a handover, which
- * clears it for the new owner.
+ * owner's: it neither backs the schedule off nor clears it.
  */
-export type RoutineRunRef = { routineId: string; userId?: string };
+export type RoutineRunRef = { routineId: string; userId: string };
 
 type RoutineSchedule = {
   active: boolean;
@@ -110,7 +109,7 @@ export async function clearRoutineBackoff(
       where: {
         id: run.routineId,
         accountFailures: { gt: 0 },
-        ...(run.userId ? { userId: run.userId } : {}),
+        userId: run.userId,
       },
     })
     .catch((error: unknown) => {
@@ -156,7 +155,7 @@ async function updateSchedule(
           userId: true,
         },
       });
-      if (routine && run.userId && routine.userId !== run.userId) return null;
+      if (routine && routine.userId !== run.userId) return null;
       const data = routine ? change(routine) : null;
       if (!data) return null;
       await tx.routine.update({ where: { id: routineId }, data });

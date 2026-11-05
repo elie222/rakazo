@@ -3342,7 +3342,23 @@ description: Prepare standup notes
     };
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
-      spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
+      // One read answers both "still a member" and "whose plan pays".
+      spaceMember: {
+        findUnique: vi.fn(async () => ({
+          id: "member-1",
+          member: {
+            role: "owner",
+            organization: {
+              modelCredits: {
+                mode: "byok",
+                balanceMicros: 0n,
+                byokFreeUntil: new Date(Date.now() - 1000),
+              },
+              billing: null,
+            },
+          },
+        })),
+      },
       run: {
         findUnique: vi.fn(async () => run),
         findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),

@@ -1186,6 +1186,8 @@ export async function sendThreadMessage(
         clientNonce: input.clientNonce,
       });
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
+      const rank = (candidate: (typeof activeRuns)[number]) =>
+        steersMessageFrom(candidate, actor) ? 2 : steersUserMessage(candidate) ? 1 : 0;
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
       for (const run of activeRuns) {
         if (run.status === "waiting_input") {
@@ -1216,8 +1218,6 @@ export async function sendThreadMessage(
         }
         if (!STEERABLE_RUN_STATUSES.has(run.status) || messageBypassesTakeoverWait(run)) continue;
         const current = activeByBotId.get(run.botId);
-        const rank = (candidate: typeof run) =>
-          steersMessageFrom(candidate, actor) ? 2 : steersUserMessage(candidate) ? 1 : 0;
         if (!current || rank(run) > rank(current)) activeByBotId.set(run.botId, run);
       }
       const runs: Array<{
@@ -1228,7 +1228,6 @@ export async function sendThreadMessage(
         userId: string;
         trigger?: string | null;
       }> = [];
-      const othersRunIds = new Set<string>();
       for (const botId of targetBotIds) {
         const answered = answeredByBotId.get(botId);
         if (answered) {
@@ -1263,7 +1262,6 @@ export async function sendThreadMessage(
             },
           });
           runs.push(active);
-          if (active.userId !== actor.userId) othersRunIds.add(active.id);
           continue;
         }
         const task = await tx.task.create({
@@ -1294,7 +1292,7 @@ export async function sendThreadMessage(
       }
       const firstRun = runs[0];
       // The message belongs to a run of the sender's, never to one another member started.
-      const ownRun = runs.find((run) => !othersRunIds.has(run.id));
+      const ownRun = runs.find((run) => run.userId === actor.userId);
       // The event names the bot of the run it carries, so clients pair them correctly.
       const eventBotId = ownRun?.botId ?? firstRun?.botId ?? targetBotIds[0];
       if (!eventBotId) throw new IsolationError("Group send did not resolve a target");

@@ -3,7 +3,7 @@ import { GUEST_ROLE, isOwnerRole } from "./billing.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
-import { computerScopeKey } from "./computers.js";
+import { computerScopeKey, userControlHeldBy } from "./computers.js";
 import { appendEventInTransaction, createPendingSteeringRun } from "./events.js";
 import type { RunTeardownTarget } from "./groups.js";
 import { snapshotRunTeardownTargets } from "./groups.js";
@@ -73,7 +73,6 @@ type SpaceRef = { spaceId: string; userId: string };
  * screens, then expires their leases, as after archiving a group.
  */
 export type SpaceDeparture = {
-  organizationId: string;
   cancelledRunIds: string[];
   /** Runs queued for other members' follow-ups that waited behind a cancelled run. */
   continuationRunIds: string[];
@@ -436,20 +435,20 @@ async function departSpace(
             select: { id: true, organizationId: true, role: true },
           });
           if (!departing) throw new SpaceMemberNotFoundError();
-          const owners = await tx.spaceMember.findMany({
+          const others = await tx.spaceMember.findMany({
             where: { spaceId, userId: { not: userId } },
             select: { userId: true, role: true },
             orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           });
           // A removal checks the remover again under the lock: ownership may have moved since.
           if (removedBy !== undefined) {
-            const remover = owners.find((member) => member.userId === removedBy);
+            const remover = others.find((member) => member.userId === removedBy);
             if (!remover || !isOwnerRole(remover.role)) throw new SpaceOwnerRequiredError();
             if (isOwnerRole(departing.role)) throw new CannotRemoveSpaceOwnerError();
           }
           // Someone made owner since they asked to leave stays: the Space is theirs now.
           if (leaving && isOwnerRole(departing.role)) throw new SpaceOwnerCannotLeaveError();
-          const ownerId = owners.find((member) => isOwnerRole(member.role))?.userId;
+          const ownerId = others.find((member) => isOwnerRole(member.role))?.userId;
           if (!ownerId) throw new CannotRemoveSpaceOwnerError();
 
           const runs = await tx.run.findMany({
@@ -509,7 +508,7 @@ async function departSpace(
             where: {
               spaceId,
               controlHolder: "user",
-              OR: [{ controlUserId: userId }, { controlUserId: null, userId }],
+              ...userControlHeldBy(userId),
             },
             select: { id: true, controlLeaseId: true },
           });
@@ -595,7 +594,6 @@ async function departSpace(
             },
           });
           return {
-            organizationId: departing.organizationId,
             cancelledRunIds,
             continuationRunIds,
             computers: targets,

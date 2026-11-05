@@ -444,7 +444,9 @@ export function threadsRoutes(ctx: RouterContext) {
             select: { id: true, userId: true },
           });
           let run: { id: string } | null = null;
-          let joinedRunId: string | null = null;
+          // Another person's message waits for a run of its own, which acts with their
+          // accounts, rather than joining the one under way.
+          const ownRunId = active?.userId === context.actor.userId ? active.id : null;
           if (!active) {
             const task = await tx.task.create({
               data: {
@@ -471,23 +473,19 @@ export function threadsRoutes(ctx: RouterContext) {
             });
             await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
           } else {
-            // Another person's message waits for a run of its own, which acts with their
-            // accounts, rather than joining the one under way.
-            const ownRunId = active.userId === context.actor.userId ? active.id : null;
             await tx.steeringMessage.create({
               data: { messageId: message.id, botId, userId: context.actor.userId, runId: ownRunId },
             });
             if (ownRunId) {
               await tx.message.update({ where: { id: message.id }, data: { runId: ownRunId } });
             }
-            joinedRunId = ownRunId;
           }
           const event = await appendEventInTransaction(tx, {
             spaceId: context.actor.spaceId,
             threadId: target.threadId,
             botId,
             type: "thread.message.created",
-            runId: run?.id ?? joinedRunId ?? undefined,
+            runId: run?.id ?? ownRunId ?? undefined,
             payload: { messageId: message.id, role: "user", blocks, author },
           });
           await touchGroupUpdatedAt(tx, target.groupId);

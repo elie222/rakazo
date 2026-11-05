@@ -5,6 +5,7 @@ import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
 import type { ComputerExecutionLease } from "@rakazo/adapters";
 import {
   acquireComputerExecutionLease,
+  anotherPersonHoldsControl,
   applyTeachingDesktopInput,
   COMPUTER_SCREEN_UNAVAILABLE,
   ComputerBusyError,
@@ -901,18 +902,15 @@ async function computerStatus(
   if (await expireStaleComputerControl(deps, bot.computer)) {
     bot = await repos.getBot(actor, botId);
   }
-  const busyBotName = await resolveBusyBotName(deps.prisma, {
-    computerId: bot.computer?.id,
-    botId,
-    botName: bot.name,
-  });
-  return toComputerStatus(
-    botId,
-    bot.computer,
-    busyBotName,
-    await spaceIsShared(deps.prisma, actor.spaceId),
-    actor.userId,
-  );
+  const [busyBotName, shared] = await Promise.all([
+    resolveBusyBotName(deps.prisma, {
+      computerId: bot.computer?.id,
+      botId,
+      botName: bot.name,
+    }),
+    spaceIsShared(deps.prisma, actor.spaceId),
+  ]);
+  return toComputerStatus(botId, bot.computer, busyBotName, shared, actor.userId);
 }
 
 /** Whether this person holds this bot's user control, so they may drive its screen. */
@@ -934,18 +932,10 @@ function holdsComputerControl(
 
 /** Members share a Space's computers, but only the person holding control can keep or end it. */
 function assertNotAnotherPersonsControl(
-  computer: Parameters<typeof hasActiveComputerControl>[0] & {
-    controlHolder: string;
-    controlUserId: string | null;
-    userId?: string;
-  },
+  computer: Parameters<typeof anotherPersonHoldsControl>[0],
   actor: Actor,
 ): void {
-  if (
-    computer.controlHolder === "user" &&
-    hasActiveComputerControl(computer) &&
-    !holdsUserControl(computer, actor.userId)
-  ) {
+  if (anotherPersonHoldsControl(computer, actor.userId)) {
     throw new ORPCError("CONFLICT", { message: "Someone else is using this computer" });
   }
 }

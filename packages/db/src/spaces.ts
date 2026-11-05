@@ -150,21 +150,11 @@ export async function createSpaceForMember(
   await withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
-        const currentMembership = await tx.spaceMember.findUnique({
-          where: {
-            spaceId_userId: {
-              spaceId: input.currentSpaceId,
-              userId: input.userId,
-            },
-          },
-          select: { organizationId: true, member: { select: { role: true } } },
-        });
-        if (!currentMembership) throw new IsolationError();
         // From a Space someone shared, a new Space goes in the person's own organization.
-        const organizationId =
-          currentMembership.member.role === GUEST_ROLE
-            ? await ownedOrganizationId(tx, input.userId)
-            : currentMembership.organizationId;
+        const organizationId = await homeOrganizationId(tx, {
+          userId: input.userId,
+          spaceId: input.currentSpaceId,
+        });
         await lockOrganizationSpaces(tx, organizationId);
         const deleting = await tx.space.count({
           where: {
@@ -507,7 +497,7 @@ export async function deleteClaimedSpaceForMember(
         // was cut short; a retry finishes it.
         if (remainingBots > 0 || provisioned > 0) throw new SpaceDeletionInProgressError();
         const pageShareSecrets = await deletePageShareSecrets(tx, { spaceId: input.spaceId });
-        await rehomeGuestItems(tx, input.spaceId);
+        await rehomeMemberItems(tx, input.spaceId);
         await releasePendingSpacePayments(tx, input.spaceId);
         const { organizationId } = await tx.space.delete({
           where: { id: input.spaceId },
@@ -622,13 +612,13 @@ export async function rehomeSharedItems(
   }
 }
 
-/** Before a Space goes, what its guests made available elsewhere moves out of it (see above). */
-async function rehomeGuestItems(tx: Prisma.TransactionClient, spaceId: string): Promise<void> {
-  const guests = await tx.spaceMember.findMany({
+/** Before a Space goes, what its members made available elsewhere moves out of it (see above). */
+async function rehomeMemberItems(tx: Prisma.TransactionClient, spaceId: string): Promise<void> {
+  const members = await tx.spaceMember.findMany({
     where: { spaceId, role: { not: "owner" } },
     select: { userId: true },
   });
-  for (const { userId } of guests) await rehomeSharedItems(tx, { spaceId, userId });
+  for (const { userId } of members) await rehomeSharedItems(tx, { spaceId, userId });
 }
 
 /**
@@ -715,15 +705,15 @@ export type SpaceDeletionTakeover = {
   deletingAt: Date | null;
 };
 
-/**
- * Claims a Space for a whole-account or whole-organization deletion, keeping a claim it already
- * holds. Not claimed when the Space is gone or, with `soleMemberId`, someone else belongs to it.
- */
 /** Guests joined through an invite and leave with the Space, so they never keep it alive. */
 function otherNonGuests(spaceId: string, userId: string): Prisma.SpaceMemberWhereInput {
   return { spaceId, userId: { not: userId }, member: { role: { not: GUEST_ROLE } } };
 }
 
+/**
+ * Claims a Space for a whole-account or whole-organization deletion, keeping a claim it already
+ * holds. Not claimed when the Space is gone or, with `soleMemberId`, someone else belongs to it.
+ */
 export async function claimSpaceForDeletion(
   tx: Prisma.TransactionClient,
   spaceId: string,
@@ -786,7 +776,7 @@ export async function deleteClaimedSpace(
         }
         // Teardown was cut short; deleting again finishes it.
         if (remainingBots > 0 || remainingComputers > 0) throw new SpaceDeletionInProgressError();
-        await rehomeGuestItems(tx, spaceId);
+        await rehomeMemberItems(tx, spaceId);
         // The page links' tokens go with the Space; the caller removes them from the store.
         const pageShareSecrets = await tx.secret.findMany({
           where: { pageShare: { is: { spaceId } } },

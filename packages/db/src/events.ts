@@ -45,7 +45,11 @@ import { saveApprovalRule, storedBatchActions } from "./approval-settings.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import { createChatAlerts } from "./chat-alerts.js";
 import type { Prisma, PrismaClient } from "./client.js";
-import { expireComputerExecutionLeases } from "./computers.js";
+import {
+  expireComputerExecutionLeases,
+  hasActiveComputerControl,
+  holdsUserControl,
+} from "./computers.js";
 import { contentEncryptionOf } from "./content-encryption.js";
 import {
   CrossSpaceCommunicationBlockedError,
@@ -881,7 +885,9 @@ async function commitAnswerRunInput(
       task: { select: { prompt: true } },
     },
   });
-  if (!run) return null;
+  // An answer resumes the run with its user's credentials and rules, so in a shared space only
+  // that user answers its cards; anyone else's message starts a run of their own.
+  if (!run || run.userId !== input.answeredByUserId) return null;
   const message = await tx.message.findFirst({
     where: {
       id: input.messageId,
@@ -901,9 +907,8 @@ async function commitAnswerRunInput(
   const choiceAsk = !approvalAsk && !secretAsk && Boolean(pendingAsk.actions?.length);
   const selectedChoice = choiceAsk ? resolveAskChoice(input.answer, pendingAsk.actions) : undefined;
   const dismissed = Boolean(input.dismiss);
-  // Only the run's user can turn down a secret request; every other card needs an answer.
-  if (dismissed && (!secretAsk || run.userId !== input.answeredByUserId || input.answer))
-    return null;
+  // A secret request can be turned down; every other card needs an answer.
+  if (dismissed && (!secretAsk || input.answer)) return null;
   const secretRequest = {
     runId: input.runId,
     spaceId: input.spaceId,
@@ -916,15 +921,6 @@ async function commitAnswerRunInput(
   )
     return null;
   if (secretAsk && !dismissed && !runSecretWriter) return null;
-  if (
-    secretAsk &&
-    (pendingAsk.credential || pendingAsk.oneTimeCode) &&
-    run.userId !== input.answeredByUserId
-  )
-    return null;
-  // An answer resumes the run with its user's credentials and rules, so in a shared space only
-  // that user answers its cards; anyone else's message starts a run of their own.
-  if (run.userId !== input.answeredByUserId) return null;
   // A code is answered as the page will take it; anything that is not a code is not stored.
   const code =
     secretAsk && !dismissed && pendingAsk.oneTimeCode
@@ -1501,12 +1497,7 @@ export async function pauseRunForTakeover(
         userId: true,
       },
     });
-    const activeUserLease = Boolean(
-      computer?.controlHolder === "user" &&
-        computer.controlLeaseId &&
-        computer.controlLeaseExpiresAt &&
-        computer.controlLeaseExpiresAt.getTime() > now.getTime(),
-    );
+    const activeUserLease = hasActiveComputerControl(computer, now);
     // Keep an active same-bot user lease so Skip / I'm done appear immediately.
     // Preserve another bot's active lease — computer/takeover owns revocation. Do not attach
     // this run to that lease: release validates controlBotId and could clear the binding without
@@ -1514,9 +1505,11 @@ export async function pauseRunForTakeover(
     // Otherwise clear stale control, but bind controlRunId so takeoverRequested is true.
     // In a shared Space the lease must also be this run's person's: another member's stays
     // theirs, like another bot's, and never answers this run.
-    const leaseHolder = computer?.controlUserId || computer?.userId;
     const retainControl = Boolean(
-      activeUserLease && computer?.controlBotId === input.botId && leaseHolder === run?.userId,
+      activeUserLease &&
+        computer?.controlBotId === input.botId &&
+        run &&
+        holdsUserControl(computer, run.userId),
     );
     const preserveForeignLease = Boolean(
       activeUserLease && computer?.controlBotId && !retainControl,

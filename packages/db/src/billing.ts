@@ -210,10 +210,17 @@ export async function memberHasModelAccess(
   prisma: PrismaClient,
   scope: { spaceId: string; userId: string },
 ) {
-  const payer = await organizationForMember(prisma, scope);
-  if (!payer) return false;
+  // A member's org is the Space's, read with the membership in one query.
+  const membership = await prisma.spaceMember.findUnique({
+    where: { spaceId_userId: scope },
+    select: { member: { select: { role: true, organization: { select: MODEL_ACCESS_SELECT } } } },
+  });
+  if (!membership) return false;
+  if (membership.member.role !== GUEST_ROLE) {
+    return organizationModelAccess(membership.member.organization);
+  }
   const organization = await prisma.organization.findUnique({
-    where: { id: payer.organizationId },
+    where: { id: await ownedOrganizationId(prisma, scope.userId) },
     select: MODEL_ACCESS_SELECT,
   });
   return organization ? organizationModelAccess(organization) : false;
@@ -422,6 +429,11 @@ export async function organizationSeatCount(
   return Math.max(1, members);
 }
 
+/** An organization that is not being deleted: its default Space is not being torn down. */
+export const LIVE_ORGANIZATION: Prisma.OrganizationWhereInput = {
+  spaces: { some: { isDefault: true, deletingAt: null } },
+};
+
 /** The org role of someone who belongs to an organization only through Spaces they were invited to. */
 export const GUEST_ROLE = "guest";
 
@@ -433,7 +445,7 @@ export async function ownedOrganizationId(
   const memberships = await db.member.findMany({
     where: {
       userId,
-      organization: { spaces: { some: { isDefault: true, deletingAt: null } } },
+      organization: LIVE_ORGANIZATION,
     },
     select: { organizationId: true, role: true },
     orderBy: { createdAt: "asc" },

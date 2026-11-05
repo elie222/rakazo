@@ -114,12 +114,7 @@ export function historyWindowSize(options: {
 }
 
 export function formatRecalledMemory(
-  results: Array<{
-    memory: string;
-    id?: string;
-    provenance?: string;
-    entity?: string;
-  }>,
+  results: Array<{ memory: string; id?: string; provenance?: string; entity?: string }>,
 ): string {
   if (results.length === 0) return "";
   const items = results

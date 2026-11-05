@@ -10,6 +10,7 @@ import {
 import type { ComputerExecutionLease, TaughtSkillRow, TeachComputerInput } from "@rakazo/adapters";
 import {
   acquireComputerExecutionLease,
+  anotherPersonHoldsControl,
   appendRecordingEvent,
   ComputerBusyError,
   captureTeachingSnapshot,
@@ -18,8 +19,6 @@ import {
   expireTaughtSkillTeaching,
   extendActiveComputerControl,
   getActiveTeachingSession,
-  hasActiveComputerControl,
-  holdsUserControl,
   mapTaughtSkill,
   observeStopSnapshot,
   parsePlaybook,
@@ -31,6 +30,7 @@ import {
   scheduleComputerControlExpiry,
   screenLeaseIdForRun,
   teachingControlLeaseExpiresAt,
+  userControlHeldBy,
 } from "@rakazo/adapters";
 import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
 import type { SkillPlaybook, TeachRecordingEvent } from "@rakazo/core";
@@ -170,12 +170,24 @@ async function ensureGraphicalComputer(
   return bot;
 }
 
-/** Someone else's run on this bot, or on any bot sharing its computer, keeps the screen. */
-async function refuseOthersWork(
+/**
+ * In a shared Space, teaching never takes another person's screen or stops their work: someone
+ * else's live lease, or their run on this bot or any bot sharing its computer, keeps it. Checked
+ * before teaching cancels anything, and again before it takes the screen, since the computer is
+ * read anew in between.
+ */
+async function assertComputerFreeFor(
   deps: TaughtSkillsDeps,
   actor: Actor,
-  bot: { id: string; computerId: string | null },
+  bot: {
+    id: string;
+    computerId: string | null;
+    computer: Parameters<typeof anotherPersonHoldsControl>[0] | null;
+  },
 ): Promise<void> {
+  if (bot.computer && anotherPersonHoldsControl(bot.computer, actor.userId)) {
+    throw new ORPCError("CONFLICT", { message: "Someone else is using this computer" });
+  }
   const othersWork = await deps.prisma.run.findFirst({
     where: {
       status: { in: [...ACTIVE_RUN_STATUSES] },
@@ -196,16 +208,7 @@ async function grantTakeover(
   until: Date,
 ): Promise<{ bot: typeof bot; leaseId: string }> {
   if (!bot.computer) throw new IsolationError();
-  // The computer was read again after start's check, so someone may have taken it since.
-  if (
-    bot.computer.controlHolder === "user" &&
-    hasActiveComputerControl(bot.computer) &&
-    !holdsUserControl(bot.computer, actor.userId)
-  ) {
-    throw new ORPCError("CONFLICT", { message: "Someone else is using this computer" });
-  }
-  // The computer may be new since start's check, so look again for work that shares it.
-  await refuseOthersWork(deps, actor, bot);
+  await assertComputerFreeFor(deps, actor, bot);
   if (await extendActiveComputerControl(deps.prisma, deps.jobs, bot.computer, bot.id, until)) {
     const leaseId = bot.computer.controlLeaseId;
     if (!leaseId) throw new IsolationError();
@@ -223,7 +226,7 @@ async function grantTakeover(
         { controlLeaseExpiresAt: { lte: new Date() } },
         {
           controlBotId: bot.id,
-          OR: [{ controlUserId: actor.userId }, { controlUserId: null, userId: actor.userId }],
+          ...userControlHeldBy(actor.userId),
         },
       ],
     },
@@ -347,23 +350,20 @@ export async function stopTeachingSession(
   return skillFor(actor, finalized);
 }
 
-/**
+/*
  * A skill is shared with the space, but its raw recording (keystrokes, clipboard text) stays with
- * the person who taught it; everyone else gets the playbook.
+ * the person who taught it: everyone else gets the playbook, and a member who takes the skill
+ * over by editing it gets it without the recording, which nothing reads once it is drafted.
  */
-/**
- * A skill another member takes over keeps its playbook but not its teacher's raw recording,
- * which nothing reads once the playbook is drafted.
- */
+const isTeacher = (skill: TaughtSkillRow, actor: Actor) => skill.userId === actor.userId;
+
 function handedOver(skill: TaughtSkillRow, actor: Actor) {
-  return skill.userId === actor.userId ? {} : { recording: emptyRecording() as never };
+  return isTeacher(skill, actor) ? {} : { recording: emptyRecording() as never };
 }
 
 function skillFor(actor: Actor, row: TaughtSkillRow): TaughtSkill {
   const skill = mapTaughtSkill(row);
-  return row.userId === actor.userId
-    ? skill
-    : { ...skill, recording: { events: [], snapshots: [] } };
+  return isTeacher(row, actor) ? skill : { ...skill, recording: emptyRecording() };
 }
 
 export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
@@ -396,16 +396,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       if (alreadyRecording) {
         throw new ORPCError("CONFLICT", { message: "A teaching session is already active" });
       }
-      // In a shared Space, teaching never takes another person's screen or stops their work.
-      const computer = bot.computer;
-      if (
-        computer?.controlHolder === "user" &&
-        hasActiveComputerControl(computer) &&
-        !holdsUserControl(computer, actor.userId)
-      ) {
-        throw new ORPCError("CONFLICT", { message: "Someone else is using this computer" });
-      }
-      await refuseOthersWork(deps, actor, bot);
+      await assertComputerFreeFor(deps, actor, bot);
       await cancelActiveRuns(deps, actor, botId);
       bot = await ensureGraphicalComputer(deps, actor, bot);
       const startedAt = new Date();

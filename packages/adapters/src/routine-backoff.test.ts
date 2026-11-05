@@ -29,6 +29,7 @@ function fakeRoutine(overrides: Partial<Row> = {}) {
     watch: null,
     nextRunAt: new Date("2026-03-02T09:01:00.000Z"),
     accountFailures: 0,
+    userId: "owner",
     ...overrides,
   };
   const routine = {
@@ -107,7 +108,7 @@ describe("backOffRoutineAfterAccountError", () => {
   it("moves a frequent routine's next run past the gap, on its cadence", async () => {
     const { row, deps, enqueue, lock } = fakeRoutine({ accountFailures: 2 });
 
-    await backOffRoutineAfterAccountError(deps, { routineId: "routine-1" }, NOW);
+    await backOffRoutineAfterAccountError(deps, { routineId: "routine-1", userId: "owner" }, NOW);
 
     expect(lock).toHaveBeenCalledOnce();
     expect(row.accountFailures).toBe(3);
@@ -123,7 +124,7 @@ describe("backOffRoutineAfterAccountError", () => {
     const tomorrow = new Date("2026-03-03T09:00:00.000Z");
     const { row, deps, enqueue } = fakeRoutine({ crons: ["0 9 * * *"], nextRunAt: tomorrow });
 
-    await backOffRoutineAfterAccountError(deps, { routineId: "routine-1" }, NOW);
+    await backOffRoutineAfterAccountError(deps, { routineId: "routine-1", userId: "owner" }, NOW);
 
     expect(row.accountFailures).toBe(1);
     expect(row.nextRunAt).toEqual(tomorrow);
@@ -133,7 +134,7 @@ describe("backOffRoutineAfterAccountError", () => {
   it("delays a change trigger's next check by the gap", async () => {
     const { row, deps } = fakeRoutine({ crons: [], watch: { kind: "files" } });
 
-    await backOffRoutineAfterAccountError(deps, { routineId: "routine-1" }, NOW);
+    await backOffRoutineAfterAccountError(deps, { routineId: "routine-1", userId: "owner" }, NOW);
 
     expect(row.nextRunAt).toEqual(new Date(NOW.getTime() + 5 * MINUTE));
   });
@@ -142,7 +143,12 @@ describe("backOffRoutineAfterAccountError", () => {
     const { row, deps, enqueue } = fakeRoutine();
     const reset = new Date("2026-03-03T00:00:00.000Z");
 
-    await backOffRoutineAfterAccountError(deps, { routineId: "routine-1" }, NOW, reset);
+    await backOffRoutineAfterAccountError(
+      deps,
+      { routineId: "routine-1", userId: "owner" },
+      NOW,
+      reset,
+    );
 
     expect(row.accountFailures).toBe(1);
     // The routine's first minute after the reset.
@@ -155,7 +161,7 @@ describe("backOffRoutineAfterAccountError", () => {
     const monthly = fakeRoutine({ crons: [], watch: { kind: "files" } });
     await backOffRoutineAfterAccountError(
       monthly.deps,
-      { routineId: "routine-1" },
+      { routineId: "routine-1", userId: "owner" },
       NOW,
       new Date("2026-04-01T00:00:00.000Z"),
     );
@@ -165,7 +171,7 @@ describe("backOffRoutineAfterAccountError", () => {
   it("does not schedule a paused routine", async () => {
     const { row, deps, enqueue } = fakeRoutine({ active: false });
 
-    await backOffRoutineAfterAccountError(deps, { routineId: "routine-1" }, NOW);
+    await backOffRoutineAfterAccountError(deps, { routineId: "routine-1", userId: "owner" }, NOW);
 
     expect(row.nextRunAt).toEqual(new Date("2026-03-02T09:01:00.000Z"));
     expect(enqueue).not.toHaveBeenCalled();
@@ -193,7 +199,7 @@ describe("clearRoutineBackoff", () => {
       nextRunAt: new Date("2026-03-02T15:00:00.000Z"),
     });
 
-    await clearRoutineBackoff(deps, { routineId: "routine-1" }, NOW);
+    await clearRoutineBackoff(deps, { routineId: "routine-1", userId: "owner" }, NOW);
 
     expect(row.accountFailures).toBe(0);
     expect(row.nextRunAt).toEqual(new Date("2026-03-02T09:01:00.000Z"));
@@ -207,7 +213,7 @@ describe("clearRoutineBackoff", () => {
       nextRunAt: new Date("2026-03-02T10:03:00.000Z"),
     });
 
-    await clearRoutineBackoff(deps, { routineId: "routine-1" }, NOW);
+    await clearRoutineBackoff(deps, { routineId: "routine-1", userId: "owner" }, NOW);
 
     expect(row.nextRunAt).toEqual(new Date("2026-03-02T09:07:00.000Z"));
   });
@@ -215,7 +221,7 @@ describe("clearRoutineBackoff", () => {
   it("does nothing for a routine that was not backed off", async () => {
     const { deps, enqueue } = fakeRoutine();
 
-    await clearRoutineBackoff(deps, { routineId: "routine-1" }, NOW);
+    await clearRoutineBackoff(deps, { routineId: "routine-1", userId: "owner" }, NOW);
 
     expect(deps.prisma.$transaction).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
@@ -228,7 +234,7 @@ describe("clearRoutineBackoff when the database is unavailable", () => {
     vi.mocked(deps.prisma.routine.count).mockRejectedValueOnce(new Error("connection lost"));
 
     await expect(
-      clearRoutineBackoff(deps, { routineId: "routine-1" }, NOW),
+      clearRoutineBackoff(deps, { routineId: "routine-1", userId: "owner" }, NOW),
     ).resolves.toBeUndefined();
   });
 });

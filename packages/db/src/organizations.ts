@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Actor, OrganizationList } from "@rakazo/contracts";
-import { GUEST_ROLE } from "./billing.js";
+import { GUEST_ROLE, LIVE_ORGANIZATION as LIVE } from "./billing.js";
 import { createOrganizationWithDefaultSpace } from "./bootstrap-user.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
@@ -39,11 +39,6 @@ export class SharedOrganizationError extends Error {
 }
 
 const OWNER = { contains: "owner" };
-
-/** Organizations whose default Space is being deleted are on their way out. */
-const LIVE: Prisma.OrganizationWhereInput = {
-  spaces: { some: { isDefault: true, deletingAt: null } },
-};
 
 /** Serializes one user's organization creates and deletes, so the cap and last-org rule hold. */
 async function lockUserOrganizations(tx: Prisma.TransactionClient, userId: string) {

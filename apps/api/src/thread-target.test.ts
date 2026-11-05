@@ -2184,6 +2184,7 @@ describe("sendThreadMessage", () => {
               taskId: "task-new",
               botId: "bot-a",
               status: "queued",
+              userId: "user-1",
             }),
             updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           },

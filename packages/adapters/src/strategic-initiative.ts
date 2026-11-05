@@ -158,6 +158,12 @@ export async function reconcileStrategicInitiatives(deps: {
     if (bots.length === 0) break;
     cursor = bots[bots.length - 1]!.id;
     for (const bot of bots) {
+      // The free checks first, so a bot with nothing to plan costs no queries.
+      if (!bot.thread) continue;
+      const scratchpadItems = bot.scratchpadItems
+        .filter((item) => !bot.routines.some((routine) => item.notes.includes(routine.id)))
+        .slice(0, MAX_ITEMS_IN_PROMPT);
+      if (scratchpadItems.length === 0) continue;
       const membership = await deps.prisma.spaceMember.findUnique({
         where: { spaceId_userId: { spaceId: bot.spaceId, userId: bot.userId } },
         select: { id: true },
@@ -165,11 +171,6 @@ export async function reconcileStrategicInitiatives(deps: {
       if (!membership) continue;
       // The bot's person pays: a guest's run is decided by their own plan, not the space's.
       if (deps.billingEnabled && !(await memberHasModelAccess(deps.prisma, bot))) continue;
-      if (!bot.thread) continue;
-      const scratchpadItems = bot.scratchpadItems
-        .filter((item) => !bot.routines.some((routine) => item.notes.includes(routine.id)))
-        .slice(0, MAX_ITEMS_IN_PROMPT);
-      if (scratchpadItems.length === 0) continue;
       const runId = await queueStrategicInitiativeRun(deps, { ...bot, scratchpadItems }, deps.now);
       if (!runId) continue;
       queued += 1;

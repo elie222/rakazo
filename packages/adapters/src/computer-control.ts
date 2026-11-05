@@ -1,7 +1,16 @@
 import type { AdapterContext, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import { computerControlExpireJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { recordComputerRunEnd } from "@rakazo/db";
+import { hasActiveComputerControl, recordComputerRunEnd } from "@rakazo/db";
+
+// Who holds a computer's user control is decided in one place, next to the computer rows.
+export {
+  anotherPersonHoldsControl,
+  hasActiveComputerControl,
+  holdsUserControl,
+  userControlHeldBy,
+} from "@rakazo/db";
+
 import { getLogger } from "@rakazo/logging";
 import { toComputerRef } from "./computer-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
@@ -11,38 +20,6 @@ export const DEFAULT_TAKEOVER_LEASE_MS = 15 * 60 * 1000;
 export function takeoverLeaseMs(): number {
   const raw = Number(process.env.COMPUTER_TAKEOVER_TTL_MS ?? DEFAULT_TAKEOVER_LEASE_MS);
   return Number.isFinite(raw) && raw >= 1_000 ? raw : DEFAULT_TAKEOVER_LEASE_MS;
-}
-
-/**
- * Whether this person may act on a computer's user control. Members of a Space share its
- * computers, never a lease: the holder is who took control, or for a lease from before holders
- * were recorded, the person the computer is kept for.
- */
-export function holdsUserControl(
-  computer: { controlUserId?: string | null; userId?: string | null },
-  userId: string,
-): boolean {
-  const holder = computer.controlUserId || computer.userId;
-  return !holder || holder === userId;
-}
-
-export function hasActiveComputerControl(
-  computer:
-    | {
-        controlHolder: string;
-        controlLeaseId: string | null;
-        controlLeaseExpiresAt: Date | null;
-      }
-    | null
-    | undefined,
-  now = new Date(),
-): boolean {
-  return Boolean(
-    computer?.controlHolder === "user" &&
-      computer.controlLeaseId &&
-      computer.controlLeaseExpiresAt &&
-      computer.controlLeaseExpiresAt.getTime() > now.getTime(),
-  );
 }
 
 /** User takeover of this bot with no run bound to it. Maintenance may claim it. */
