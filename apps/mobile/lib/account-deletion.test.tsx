@@ -254,4 +254,36 @@ describe("passwordless account deletion", () => {
     await click("Delete");
     expect(deleteAccount).toHaveBeenCalledExactlyOnceWith(undefined, "123456");
   });
+
+  it("explains when the fresh sign-in proof expired before Delete", async () => {
+    vi.mocked(continueWithSso).mockResolvedValue(true);
+    await open();
+    await click("Sign in again");
+    expect(button("Delete").disabled).toBe(false);
+    // The re-fetch answers with an expired proof: the sheet was open longer than it lasts.
+    vi.mocked(fetchAccountSecurity).mockResolvedValue({ ...passwordless, freshOidcAuth: false });
+    await click("Delete");
+    expect(deleteAccount).not.toHaveBeenCalled();
+    expect(
+      [...container.querySelectorAll("span")].some((node) => node.textContent === "Sign in again"),
+    ).toBe(true);
+    expect(button("Delete").disabled).toBe(true);
+  });
+
+  it("clears the code field when the account gains a password mid-dialog", async () => {
+    await open();
+    await click("Send deletion code");
+    const input = container.querySelector("input")!;
+    act(() => {
+      input.value = "123456";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(button("Delete").disabled).toBe(false);
+    vi.mocked(fetchAccountSecurity).mockResolvedValue({ ...passwordless, hasPassword: true });
+    await click("Delete");
+    expect(deleteAccount).not.toHaveBeenCalled();
+    // The field switched to the password mode; the code must not sit in it as a password.
+    expect(input.value).toBe("");
+    expect(button("Delete").disabled).toBe(true);
+  });
 });

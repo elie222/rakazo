@@ -13,6 +13,15 @@ import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-tes
 
 const TAR_END = Buffer.alloc(1024);
 
+/** Native `AbortSignal.timeout` ignores fake timers. */
+function fakeRequestDeadline() {
+  return vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new Error("request deadline")), ms);
+    return controller.signal;
+  });
+}
+
 const context: AdapterContext = {
   operationId: "operation",
   traceId: "trace",
@@ -227,6 +236,7 @@ describe("KubernetesSandboxProvider", () => {
     await provider.destroy(computer, context);
     expect(deleteNamespacedPod).toHaveBeenCalledWith(
       expect.objectContaining({ name: computer.providerRef, namespace: "sandboxes" }),
+      expect.anything(),
     );
   });
 
@@ -569,7 +579,10 @@ describe("KubernetesSandboxProvider", () => {
         { botId: "bot-a", homePath: "/unused", providerKind: "kubernetes", providerRef: "pod" },
         context,
       );
-      expect(del).toHaveBeenCalledWith(expect.objectContaining({ gracePeriodSeconds: 0 }));
+      expect(del).toHaveBeenCalledWith(
+        expect.objectContaining({ gracePeriodSeconds: 0 }),
+        expect.anything(),
+      );
       expect(create).toHaveBeenCalledOnce();
     },
   );
@@ -969,6 +982,7 @@ describe("KubernetesSandboxProvider", () => {
       await expect(provider[method](computer, context)).resolves.toBeUndefined();
       expect(del).toHaveBeenCalledWith(
         expect.objectContaining({ gracePeriodSeconds: 0, name: "pod" }),
+        expect.anything(),
       );
     },
   );
@@ -1147,11 +1161,7 @@ describe("KubernetesSandboxProvider", () => {
   );
   it.each(["caller", "deadline"])("bounds stalled desktop environment reads (%s)", async (mode) => {
     vi.useFakeTimers();
-    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
-      const controller = new AbortController();
-      setTimeout(() => controller.abort(new Error("request deadline")), ms);
-      return controller.signal;
-    });
+    const timeout = fakeRequestDeadline();
     try {
       const controller = new AbortController();
       const read = vi.fn<KubernetesSandboxSdk["core"]["readNamespacedPod"]>(
@@ -1160,6 +1170,7 @@ describe("KubernetesSandboxProvider", () => {
       const provider = providerFor({ readNamespacedPod: read });
       const result = provider.releaseScreen(computer, { ...context, signal: controller.signal });
       const assertion = expect(result).rejects.toThrow();
+      await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
       if (mode === "caller") controller.abort(new Error("caller cancelled"));
       else await vi.advanceTimersByTimeAsync(10_000);
       await assertion;
@@ -1167,6 +1178,78 @@ describe("KubernetesSandboxProvider", () => {
       const setSignal = vi.fn();
       await options?.middleware?.[0]?.pre({ setSignal } as never).toPromise();
       expect(setSignal).toHaveBeenCalledWith(expect.objectContaining({ aborted: true }));
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("bounds stalled pod deletion without letting cancellation skip it", async () => {
+    vi.useFakeTimers();
+    const timeout = fakeRequestDeadline();
+    try {
+      const cancelled = AbortSignal.abort(new Error("run cancelled"));
+      const terminalPod = { ...readyPod, status: { phase: "Failed" } };
+      const operations = [
+        (provider: KubernetesSandboxProvider) =>
+          provider.stop(computer, { ...context, signal: cancelled }),
+        (provider: KubernetesSandboxProvider) =>
+          provider.destroy(computer, { ...context, signal: cancelled }),
+        (provider: KubernetesSandboxProvider) =>
+          provider.provision({ botId: "bot-a", homePath: "/unused", providerRef: "pod" }, context),
+      ];
+      for (const operation of operations) {
+        const del = vi.fn<KubernetesSandboxSdk["core"]["deleteNamespacedPod"]>(
+          () => new Promise<V1Pod>(() => {}),
+        );
+        const provider = providerFor({
+          readNamespacedPod: vi.fn().mockResolvedValue(terminalPod),
+          deleteNamespacedPod: del,
+        });
+        let outcome: unknown = "pending";
+        operation(provider).catch((error) => {
+          outcome = error;
+        });
+        await vi.waitFor(() => expect(del).toHaveBeenCalledOnce());
+        expect(outcome).toBe("pending");
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(outcome).toEqual(new Error("request deadline"));
+        const setSignal = vi.fn();
+        await del.mock.calls[0]?.[1]?.middleware?.[0]?.pre({ setSignal } as never).toPromise();
+        expect(setSignal).toHaveBeenCalledWith(expect.objectContaining({ aborted: true }));
+      }
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns the original start error after cleanup outlasts a cancelled caller", async () => {
+    vi.useFakeTimers();
+    const timeout = fakeRequestDeadline();
+    try {
+      const controller = new AbortController();
+      const read = vi
+        .fn()
+        .mockRejectedValueOnce(Object.assign(new Error("missing"), { code: 404 }))
+        .mockReturnValue(new Promise<V1Pod>(() => {}));
+      const del = vi.fn(() => new Promise<V1Pod>(() => {}));
+      const provider = providerFor({ readNamespacedPod: read, deleteNamespacedPod: del });
+      let outcome: unknown = "pending";
+      provider
+        .provision(
+          { botId: "bot-a", homePath: "/unused" },
+          { ...context, signal: controller.signal },
+        )
+        .catch((error) => {
+          outcome = error;
+        });
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+      controller.abort(new Error("caller cancelled"));
+      await vi.waitFor(() => expect(del).toHaveBeenCalledOnce());
+      expect(outcome).toBe("pending");
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(outcome).toEqual(new Error("caller cancelled"));
     } finally {
       timeout.mockRestore();
       vi.useRealTimers();

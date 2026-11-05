@@ -847,6 +847,57 @@ const ZH_TW_ROSTER: RosterBot[] = [
   },
 ];
 
+const PL_ROSTER: RosterBot[] = [
+  {
+    name: "Sales Outbound",
+    color: "#F5A03C",
+    slug: "rakazo/sales-outbound",
+    desc: "Sprawdza potencjalnych klientów i przygotowuje kolejne wiadomości.",
+  },
+  {
+    name: "Inbox Manager",
+    color: "#6A6BF5",
+    slug: "rakazo/inbox-manager",
+    desc: "Porządkuje pocztę i przygotowuje odpowiedzi.",
+  },
+  {
+    name: "Talent Scout",
+    color: "#3B82F6",
+    slug: "rakazo/talent-scout",
+    desc: "Przegląda zgłoszenia i wybiera kandydatów.",
+  },
+  {
+    name: "Expense Manager",
+    color: "#F2622A",
+    slug: "rakazo/expense-manager",
+    desc: "Dopasowuje rachunki do płatności.",
+  },
+  {
+    name: "Coding Agent",
+    color: "#5B6EE1",
+    slug: "rakazo/coding-agent",
+    desc: "Wprowadza zmiany w kodzie na Twoim komputerze.",
+  },
+  {
+    name: "Account Manager",
+    color: "#9B5CF6",
+    slug: "rakazo/account-manager",
+    desc: "Przygotowuje odpowiedzi i pilnuje odnowień umów.",
+  },
+  {
+    name: "Paid Media",
+    color: "#3EC5A8",
+    slug: "rakazo/paid-media",
+    desc: "Sprawdza wydatki na reklamy i raportuje zmiany.",
+  },
+  {
+    name: "Chief of Staff",
+    color: "#8B93A8",
+    slug: "rakazo/chief-of-staff",
+    desc: "Przygotowuje podsumowania i koordynuje pracę botów.",
+  },
+];
+
 const TESTIMONIALS: HomeCopy["testimonials"]["items"] = [
   {
     quote:
@@ -880,6 +931,174 @@ const TESTIMONIALS: HomeCopy["testimonials"]["items"] = [
 ];
 
 const HOME_COPY: Record<Locale, HomeCopy> = {
+  pl: {
+    title: "Rakazo | Otwarta alternatywa dla Grok Bot",
+    description:
+      "Rakazo to otwarta alternatywa dla Grok Bot. Boty AI z własną pamięcią wykonują zadania na Twoim komputerze, z wybranym przez Ciebie modelem.",
+    ogImageAlt: "Rakazo. Twój zespół AI na Twoim komputerze, z Twoimi kluczami i modelem.",
+    availableLanguage: "Polish",
+    skipToContent: "Przejdź do treści",
+    nav: {
+      home: "Strona główna Rakazo",
+      primary: "Nawigacja główna",
+      menu: "Menu",
+      docs: "Dokumentacja",
+      integrations: "Integracje",
+      pricing: "Cennik",
+      blog: "Blog",
+      github: "GitHub",
+      getStarted: "Zacznij",
+      openInNewTab: "Otwórz w nowej karcie",
+      copyWordmark: "Kopiuj logotyp jako SVG",
+      brandKit: "Materiały marki",
+    },
+    hero: {
+      eyebrow: "Otwarty kod źródłowy",
+      heading: "Otwarta alternatywa dla Grok Bot pod Twoją kontrolą",
+      lead: "Zleć botom zadanie. Śledź ich pracę z dowolnego urządzenia.",
+      getStarted: "Zacznij",
+      download: {
+        mac: "Pobierz na macOS",
+        windows: "Pobierz na Windows",
+        linux: "Pobierz na Linux",
+        ios: "Pobierz na iOS",
+        android: "Pobierz na Androida",
+      },
+      viewOnGithub: "Zobacz na GitHubie",
+      setupWithAgent: "Skonfiguruj ze swoim agentem",
+      copiedForAgent: "Skopiowano dla agenta",
+      copyFailed: "Nie udało się skopiować. Spróbuj ponownie.",
+    },
+    selfHost: {
+      heading: "Na własnym serwerze",
+      copy: "Uruchom Rakazo na swoim komputerze i wybierz modele dla swoich botów.",
+      worksWith: "Współpracuje z",
+      mock: {
+        weekdays: "W dni robocze o 9:00",
+        approval: "Wymaga zatwierdzenia",
+        approve: "Zatwierdź",
+        deny: "Odrzuć",
+      },
+      features: [
+        { title: "Twój model", body: "Wybierz inny model dla każdego bota." },
+        { title: "Praca według harmonogramu", body: "Działa także wtedy, gdy Twój komputer jest wyłączony." },
+        { title: "Ty ustalasz granice", body: "Zdecyduj, które działania wymagają Twojej zgody." },
+      ],
+    },
+    platforms: {
+      heading: "Gdziekolwiek jesteś",
+      web: "Przeglądarka",
+      desktop: "Komputer",
+      mobile: "Telefon",
+    },
+    roster: {
+      eyebrow: "Twój zespół botów",
+      heading: "Przydziel każdemu botowi zadanie",
+      copy: "Zacznij od szablonu i dostosuj go do siebie.",
+      bots: PL_ROSTER,
+    },
+    channels: {
+      heading: "Pisz do nich z dowolnego miejsca",
+      copy: "Wspomnij bota na Slacku lub napisz do niego z telefonu.",
+      mock: {
+        ask: "do kogo trzeba się dziś odezwać?",
+        reply: "Trzech potencjalnych klientów nie odpowiedziało w tym tygodniu. Szkice są w wątku.",
+      },
+    },
+    features: {
+      heading: "Rozmowa i działanie",
+      items: {
+        call: { title: "Dzwoni do Ciebie", body: "Gdy potrzebuje Twojej decyzji, bot dzwoni przez aplikację. Możecie omówić sprawę." },
+        apps: { title: "Pracuje w Twoich aplikacjach", body: "Połącz Gmail, GitHub, Notion i dowolny serwer MCP." },
+        memory: { title: "Pamięta", body: "Boty zapamiętują to, czego się uczą, i dzielą się wiedzą z zespołem." },
+        triggers: { title: "Sam zaczyna pracę", body: "Uruchamia go harmonogram, webhook, zdarzenie na GitHubie lub obserwowana zmiana." },
+        team: { title: "Przekazuje zadania", body: "Boty zlecają sobie pracę i współpracują w grupach." },
+        teach: { title: "Uczy się, obserwując", body: "Pokaż raz zadanie na komputerze bota. Zapisze kroki jako umiejętność." },
+      },
+      mock: {
+        calling: "Dzwonienie…",
+        memory: "Pamięć",
+        memoryNotes: ["Preferuje krótkie odpowiedzi", "Acme odnawia umowę w marcu"],
+        triggers: ["W dni robocze o 9:00", "Nowe zgłoszenie na GitHubie", "Webhook"],
+        recording: "Nagrywanie",
+        skillSaved: "Zapisano jako umiejętność",
+      },
+    },
+    testimonials: {
+      heading: "Opinie użytkowników",
+      pause: "Wstrzymaj",
+      play: "Odtwórz",
+      items: TESTIMONIALS,
+    },
+    faq: {
+      heading: "Pytania i odpowiedzi",
+      items: [
+        {
+          question: "Czy mogę używać subskrypcji Claude Pro/Max lub ChatGPT Plus/Pro?",
+          answer:
+            "Tak. Zaloguj się przez tę subskrypcję albo użyj klucza API, OpenRoutera lub lokalnego serwera zgodnego z OpenAI, np. Ollama lub LM Studio. Rakazo nie pokrywa kosztów modelu.",
+        },
+        {
+          question: "Czy potrzebuję klucza API, jeśli już płacę za Claude lub ChatGPT?",
+          answer:
+            "Nie. Zaloguj się przez Claude Pro/Max lub ChatGPT Plus/Pro, a model będzie rozliczany w ramach tej subskrypcji. Możesz też użyć klucza API do Anthropic, OpenAI, OpenRoutera lub Grok. W obu przypadkach koszty modelu pokrywasz samodzielnie.",
+        },
+        {
+          question: "Czy mogę uruchomić model lokalnie?",
+          answer:
+            "Tak. Połącz bota z lokalnym serwerem zgodnym z OpenAI, np. Ollama lub LM Studio. Każdy bot może korzystać z innego modelu.",
+        },
+        {
+          question: "Co obejmuje plan w chmurze?",
+          answer:
+            "Komputer w chmurze i miesięczny limit godzin pracy, który rośnie wraz z planem. Jednocześnie może działać do 5 komputerów. Nie ma opłat za przekroczenie limitu.",
+        },
+      ],
+    },
+    openSource: {
+      heading: "Otwarty kod źródłowy",
+      copy: "Licencja Apache-2.0. Uruchom Rakazo i dostosuj kod do swoich potrzeb.",
+      starOnGithub: "Dodaj gwiazdkę na GitHubie",
+      readTheDocs: "Przeczytaj dokumentację",
+      cloudTitle: "Chmura",
+      cloudBadge: "Beta",
+    },
+    cta: {
+      heading: "Poznaj swojego pierwszego bota",
+      copy: "Powierz mu kolejne zadanie.",
+      openSourceValue: "Otwarty kod",
+      selfHostValue: "Własny serwer",
+      stats: [
+        { value: "stars", label: "Gwiazdki na GitHubie" },
+        { value: "license", label: "Licencja" },
+        { value: "openSource", label: "Wszystkie funkcje za darmo" },
+        { value: "selfHost", label: "Twój komputer" },
+      ],
+    },
+    footer: {
+      navLabel: "Stopka",
+      languagesLabel: "Język",
+      links: {
+        docs: "Dokumentacja",
+        product: "Produkt",
+        changelog: "Historia zmian",
+        submitPlugin: "Zgłoś wtyczkę",
+        alternatives: "Alternatywy",
+        sandboxes: "Piaskownice",
+        integrationPlatforms: "Platformy integracyjne",
+        voiceProviders: "Dostawcy głosu",
+        all: "Wszystkie",
+        about: "O nas",
+        brand: "Marka",
+        support: "Pomoc",
+        privacy: "Prywatność",
+        terms: "Regulamin",
+        company: "Firma",
+        blog: "Blog",
+        download: "Pobierz",
+      },
+    },
+  },
   en: {
     title: "Rakazo | Open source Grok Bot alternative",
     description: SITE_DESCRIPTION,

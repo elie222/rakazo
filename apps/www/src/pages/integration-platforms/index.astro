@@ -1,4 +1,5 @@
 ---
+import ArticleSections from "../../components/ArticleSections.astro";
 import ArticleText from "../../components/ArticleText.astro";
 import Button from "../../components/Button.astro";
 import ProviderCard from "../../components/ProviderCard.astro";
@@ -58,6 +59,8 @@ import { GITHUB_URL } from "../../site";
       </tbody>
     </table>
   </div>
+
+  <ArticleSections sections={INTEGRATION_PLATFORMS_HUB.sections} />
 
   <h2>Every option</h2>
   <ul class="sandbox-cards">

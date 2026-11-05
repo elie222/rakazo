@@ -1613,6 +1613,7 @@ describe("MCP pre-registered OAuth client", () => {
         }),
       },
       mcpServerSpace: { findMany: vi.fn(async () => []) },
+      mcpOAuthSession: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       secret: {
         create: vi.fn(async ({ data }: { data: { id: string; ciphertext: string } }) => {
           secretRows.set(data.id, data);
@@ -1729,6 +1730,26 @@ describe("MCP pre-registered OAuth client", () => {
     });
     expect(secrets.put).not.toHaveBeenCalled();
     expect(prisma.mcpServer.create).not.toHaveBeenCalled();
+  });
+
+  it("does not report a stored credential for a lone OAuth generation marker", async () => {
+    const { client, server } = harness(true);
+
+    const created = await client.mcp.servers.create({
+      transport: "streamable_http",
+      slug: "gmail",
+      name: "Gmail",
+      endpoint: "http://localhost:3100/mcp",
+    });
+    expect(created.hasSecret).toBe(false);
+
+    await client.mcp.oauth.disconnect({ serverId: created.id });
+    // The disconnect of a never-connected server still leaves the generation marker row.
+    expect(server()?.secretId).not.toBeNull();
+
+    const checked = await client.mcp.servers.test({ id: created.id });
+    expect(checked.hasSecret).toBe(false);
+    expect(checked.oauthStatus).toBe("none");
   });
 
   describe("stdio server with host-managed OAuth", () => {
@@ -2337,7 +2358,9 @@ describe("MCP server health", () => {
       $queryRaw: vi.fn(async () => []),
       $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
     } as unknown as PrismaClient;
-    const summaryFor = vi.fn(async () => options.oauth ?? { status: "none", clientId: null });
+    const summaryFor = vi.fn(
+      async () => options.oauth ?? { status: "none", clientId: null, credential: true },
+    );
     const deps = {
       prisma,
       secrets: { put: vi.fn(), load: vi.fn() },
@@ -2534,7 +2557,7 @@ describe("MCP server health", () => {
 
     it("says why it did not probe when the server still needs its OAuth account", async () => {
       const { client, probe } = harness({
-        oauth: { status: "none", clientId: "client-1.apps.example.test" },
+        oauth: { status: "none", clientId: "client-1.apps.example.test", credential: true },
       });
 
       const tested = await client.mcp.servers.test({ id: "server-1" });
@@ -2554,7 +2577,7 @@ describe("MCP server health", () => {
       async (material, shouldProbe) => {
         const h = harness({
           row: baseRow({ secretId: "secret-1" }),
-          oauth: { status: "none", clientId: "fake-client" },
+          oauth: { status: "none", clientId: "fake-client", credential: true },
         });
         vi.mocked(h.deps.prisma.secret.findFirst).mockResolvedValue({
           id: "secret-1",
@@ -2623,7 +2646,7 @@ describe("MCP server health", () => {
     it("does not probe a server whose OAuth account is not connected", async () => {
       const { client, probe, row } = harness({
         row: null,
-        oauth: { status: "none", clientId: "client-1.apps.example.test" },
+        oauth: { status: "none", clientId: "client-1.apps.example.test", credential: true },
       });
 
       const created = await client.mcp.servers.create(stdioInput);
@@ -2763,6 +2786,42 @@ describe("MCP server health", () => {
       ]);
       const [listed] = await client.mcp.servers.list();
       expect(listed?.health).toMatchObject({ status: "error", code: MCP_OAUTH_CLIENT_REQUIRED });
+    });
+
+    it.each([
+      "http://localhost:5173/mcp/oauth/callback",
+      "http://127.0.0.1:5180/mcp/oauth/callback",
+      "https://127.0.0.1:5173/mcp/oauth/callback",
+      "http://127.0.0.1:5173/other-callback",
+    ])("rejects an unregistered callback before starting OAuth: %s", async (redirectUri) => {
+      const h = harness({
+        row: baseRow({
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.test/mcp",
+        }),
+      });
+      const begin = vi.fn();
+      Object.assign(h.deps, {
+        mcpOAuth: { ...(h.deps.mcpOAuth as object), begin },
+      });
+      const client = createRouterClient(createRouter(h.deps), {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "owner-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        } as never,
+      });
+
+      await expect(
+        client.mcp.oauth.begin({ serverId: "server-1", redirectUri }),
+      ).rejects.toMatchObject({
+        code: "MCP_OAUTH_REDIRECT_MISMATCH",
+        status: 400,
+      });
+      expect(begin).not.toHaveBeenCalled();
     });
 
     it("uses the registered web callback when a native client omits the redirect", async () => {
@@ -5776,6 +5835,10 @@ describe("bot intro run", () => {
     expect(enqueue).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ payload: { runId: "record-2" } }),
     );
+    // The intro locks the thread row, which snapshot reads hold for up to 15s.
+    expect(deps.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
   });
 
   it("leaves a placeholder account name out of the intro", async () => {
