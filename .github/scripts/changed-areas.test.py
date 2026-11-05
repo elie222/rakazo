@@ -84,6 +84,14 @@ class ChangedAreasTests(unittest.TestCase):
             ("apps/mobile/package.json", expect(*EVERY_BROWSER_AREA, "all_packages")),
             ("tsconfig.base.json", expect(*EVERY_BROWSER_AREA, "all_packages")),
             ("scripts/build-server.mjs", expect(*EVERY_BROWSER_AREA, "all_packages")),
+            (
+                "scripts/setup-worktree.mjs",
+                expect(*EVERY_BROWSER_AREA, "native", "all_packages"),
+            ),
+            (
+                "scripts/setup-worktree.test.mjs",
+                expect(*EVERY_BROWSER_AREA, "native", "all_packages"),
+            ),
             (".agents/skills/pr-watch/pr-digest", expect("all_packages")),
             ("packages/core/README.md", expect(*EVERY_BROWSER_AREA)),
             ("packages/core/src/run-error.ts", expect(*EVERY_BROWSER_AREA)),
