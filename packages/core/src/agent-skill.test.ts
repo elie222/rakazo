@@ -99,7 +99,9 @@ describe("parseSkillMd", () => {
   });
 
   it("keeps existing handling of unquoted scalar array items", () => {
-    const parsed = parseSkillMd("---\nname: Example\ndescription: Test\ntags: [plain, true, 2.5]\n---\n");
+    const parsed = parseSkillMd(
+      "---\nname: Example\ndescription: Test\ntags: [plain, true, 2.5]\n---\n",
+    );
     expect("error" in parsed).toBe(false);
     if (!("error" in parsed)) expect(parsed.frontmatter.tags).toEqual(["plain", true, 2.5]);
   });

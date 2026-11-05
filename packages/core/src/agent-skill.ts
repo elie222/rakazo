@@ -492,16 +492,16 @@ function parseSimpleYamlObject(text: string): Record<string, unknown> {
 function splitYamlInlineArray(raw: string): string[] {
   const parts: string[] = [];
   let start = 0;
-  let quote: "\"" | "'" | null = null;
+  let quote: '"' | "'" | null = null;
   for (let i = 0; i < raw.length; i += 1) {
     const char = raw[i];
-    if (quote === "\"" && char === "\\") {
+    if (quote === '"' && char === "\\") {
       i += 1;
     } else if (quote === "'" && char === "'" && raw[i + 1] === "'") {
       i += 1;
     } else if (quote && char === quote) {
       quote = null;
-    } else if (!quote && (char === "\"" || char === "'") && raw.slice(start, i).trim() === "") {
+    } else if (!quote && (char === '"' || char === "'") && raw.slice(start, i).trim() === "") {
       quote = char;
     } else if (!quote && char === ",") {
       parts.push(raw.slice(start, i));
