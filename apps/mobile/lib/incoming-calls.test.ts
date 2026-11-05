@@ -216,6 +216,31 @@ describe("mobile incoming calls", () => {
     fake.onEvent?.([{ ...orgBot, incomingCall: { ...block(), callId: "call-1" } }]);
     await vi.waitFor(() => expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-1")));
   });
+  it("abandons a cold-start notification answer when its session stops before the stream reports", async () => {
+    fake.lastResponse = {
+      actionIdentifier: "answer",
+      notification: {
+        request: { content: { data: { ...block(), kind: "incoming_call", botId: orgBot.id } } },
+      },
+    };
+    stop = startIncomingCalls();
+    await tick();
+    // The answer is parked waiting for the account stream's first snapshot.
+    stop?.();
+    stop = undefined;
+    // The app restarts under a new session and its stream reports the same ringing call.
+    fake.generation++;
+    stop = startIncomingCalls();
+    await tick();
+    fake.onEvent?.([{ ...orgBot, incomingCall: { ...block(), callId: "call-1" } }]);
+    await vi.waitFor(() => expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-1")));
+    const answers = () => fake.rpc.mock.calls.filter((call) => call[0] === "threads/answerCall");
+    expect(answers()).toHaveLength(1);
+    // The stopped session's wait must not wake after its window and re-answer or fail the action.
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(answers()).toHaveLength(1);
+    expect(fake.native.finishAnswer).not.toHaveBeenCalledWith("call-1", false);
+  });
   it("declines through the same backend path as web", async () => {
     await respondToMobileCall(await ring(), "decline");
     expect(fake.rpc).toHaveBeenCalledWith(

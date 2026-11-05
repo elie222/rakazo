@@ -61,6 +61,8 @@ let nativeEnded = new Set<string>();
 /** Resolves when the account stream has delivered its first snapshot, which covers every organization. */
 let streamSnapshot: Promise<void> | undefined;
 let snapshotArrived: (() => void) | undefined;
+/** Cold-start waits for that snapshot, cancelled by stopIncomingCalls so none outlives its feed. */
+const snapshotWaiters = new Set<() => void>();
 /** How long a native or notification answer waits for that snapshot on a cold start. */
 const SNAPSHOT_WAIT_MS = 5_000;
 
@@ -155,27 +157,45 @@ async function loadRoster() {
  * Resolves the caller for a native or notification answer. The account stream knows callers
  * across every organization; the roster covers only the active one. A cold start can answer
  * before the stream's first snapshot, so wait briefly for it before giving up on the stream.
+ * Returns undefined when the lookup's feed or session is gone: the answer belongs to neither,
+ * so its caller abandons it without answering or completing the native action.
  */
 async function callerFor(
   botId: string,
   callId: string,
-): Promise<Pick<SpaceBot, "id" | "spaceId" | "name" | "color" | "avatarSet"> | null> {
+): Promise<Pick<SpaceBot, "id" | "spaceId" | "name" | "color" | "avatarSet"> | null | undefined> {
+  const generation = currentSessionGeneration();
+  const startedFeed = feed;
+  const stale = () => feed !== startedFeed || !running || generation !== currentSessionGeneration();
   const fromStream = () =>
     calls.find((entry) => entry.id === botId && entry.incomingCall.callId === callId) ?? null;
   const streamed = fromStream();
   if (streamed) return streamed;
   if (streamSnapshot) {
+    let stopWaiting: (() => void) | undefined;
     let giveUp: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      streamSnapshot,
-      new Promise<void>((resolve) => {
-        giveUp = setTimeout(resolve, SNAPSHOT_WAIT_MS);
-      }),
-    ]).finally(() => clearTimeout(giveUp));
+    const stopped = new Promise<void>((resolve) => {
+      stopWaiting = () => resolve();
+      snapshotWaiters.add(stopWaiting);
+    });
+    try {
+      await Promise.race([
+        streamSnapshot,
+        stopped,
+        new Promise<void>((resolve) => {
+          giveUp = setTimeout(resolve, SNAPSHOT_WAIT_MS);
+        }),
+      ]);
+    } finally {
+      clearTimeout(giveUp);
+      if (stopWaiting) snapshotWaiters.delete(stopWaiting);
+    }
+    if (stale()) return undefined;
     const late = fromStream();
     if (late) return late;
   }
   if (!roster.has(botId)) await loadRoster();
+  if (stale()) return undefined;
   return roster.get(botId) ?? null;
 }
 
@@ -271,6 +291,8 @@ async function drainNative() {
       continue;
     }
     const bot = await callerFor(action.botId, action.callId);
+    // A stale lookup answers nothing and completes no native action: a newer feed owns it.
+    if (bot === undefined) continue;
     if (!bot) {
       await native?.finishAnswer(action.callId, false);
       continue;
@@ -300,6 +322,8 @@ async function notificationResponse(response: Notifications.NotificationResponse
   notificationActions.add(key);
   try {
     const bot = await callerFor(data.botId, data.callId);
+    // A stale lookup answers nothing and completes no native action: a newer feed owns it.
+    if (bot === undefined) return;
     if (!bot) throw new Error("Unknown caller");
     await respondToMobileCall(
       {
@@ -320,6 +344,9 @@ export function stopIncomingCalls() {
   feed = undefined;
   streamSnapshot = undefined;
   snapshotArrived = undefined;
+  // Cancel cold-start waits now; a continuation from this feed must not resume later.
+  for (const stopWaiting of snapshotWaiters) stopWaiting();
+  snapshotWaiters.clear();
   roster.clear();
   notificationActions.clear();
   calls = [];
