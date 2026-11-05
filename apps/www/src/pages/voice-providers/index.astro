@@ -1,4 +1,5 @@
 ---
+import ArticleSections from "../../components/ArticleSections.astro";
 import ArticleText from "../../components/ArticleText.astro";
 import Button from "../../components/Button.astro";
 import ProviderCard from "../../components/ProviderCard.astro";
@@ -64,6 +65,8 @@ import { GITHUB_URL } from "../../site";
     {VOICE_PROVIDERS.map((provider) => <ProviderCard link={voiceProviderLink(provider)} />)}
   </ul>
 
+  <ArticleSections sections={VOICE_PROVIDERS_HUB.sections} />
+
   <h2>How to choose</h2>
   {
     VOICE_PROVIDERS_HUB.choose.map((item) => (
@@ -87,4 +90,17 @@ import { GITHUB_URL } from "../../site";
       </section>
     ))
   }
+
+  <h2>Sources</h2>
+  <ul class="source-list">
+    {
+      VOICE_PROVIDERS_HUB.sources.map((source) => (
+        <li>
+          <a href={source.href} target="_blank" rel="noreferrer">
+            {source.label}
+          </a>
+        </li>
+      ))
+    }
+  </ul>
 </SiteFrame>

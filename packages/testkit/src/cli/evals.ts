@@ -22,6 +22,7 @@ import {
   GROUP_JUDGE_CALIBRATION,
   GROUP_JUDGE_VERSION,
 } from "../evals/group.js";
+import { GROUP_ROUTING_EVAL_CASES, GROUP_ROUTING_FIXTURE_VERSION } from "../evals/group-routing.js";
 import { HISTORY_FIXTURE_VERSION } from "../evals/history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
 import { observeSyntheticHistory } from "../evals/history-observer.js";
@@ -41,6 +42,12 @@ import {
   MEMORY_JUDGE_CALIBRATION,
   MEMORY_JUDGE_VERSION,
 } from "../evals/memory.js";
+import {
+  RECALL_EVAL_CASES,
+  RECALL_FIXTURE_VERSION,
+  RECALL_JUDGE_CALIBRATION,
+  RECALL_JUDGE_VERSION,
+} from "../evals/recall.js";
 import { emptyTrial, redact, summarize, validateControls } from "../evals/report.js";
 import {
   SILENCE_EVAL_CASES,
@@ -119,6 +126,11 @@ async function main() {
       fixtureVersion: MEMORY_FIXTURE_VERSION,
       judge: { version: MEMORY_JUDGE_VERSION, calibration: MEMORY_JUDGE_CALIBRATION },
     },
+    recall: {
+      cases: RECALL_EVAL_CASES,
+      fixtureVersion: RECALL_FIXTURE_VERSION,
+      judge: { version: RECALL_JUDGE_VERSION, calibration: RECALL_JUDGE_CALIBRATION },
+    },
     deliberation: {
       cases: DELIBERATION_EVAL_CASES,
       fixtureVersion: DELIBERATION_FIXTURE_VERSION,
@@ -129,11 +141,15 @@ async function main() {
       fixtureVersion: GROUP_FIXTURE_VERSION,
       judge: { version: GROUP_JUDGE_VERSION, calibration: GROUP_JUDGE_CALIBRATION },
     },
+    "group-routing": {
+      cases: GROUP_ROUTING_EVAL_CASES,
+      fixtureVersion: GROUP_ROUTING_FIXTURE_VERSION,
+    },
     "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, group, silence, initiative, deliberation, memory, tool-choice, or approval",
+      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, or approval",
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;
@@ -598,15 +614,9 @@ async function main() {
                 });
               },
               modelCallObserver: {
-                beforeCall: ({
-                  inputTokensEstimate,
-                  maxOutputTokens,
-                  provider,
-                  modelId,
-                  cacheWriteRetention,
-                }) => {
-                  if (provider !== connection.provider || modelId !== connection.modelId)
-                    throw new Error("Eval model has no configured pricing");
+                // Other models the product calls, such as the Auto Review checker, run too: their
+                // reservation uses the eval model's rates, and the provider-reported charge settles it.
+                beforeCall: ({ inputTokensEstimate, maxOutputTokens, cacheWriteRetention }) => {
                   if (!acceptingCalls) throw new Error("Eval trial stopped scheduling inference");
                   return liveBudget.reserve(
                     inputTokensEstimate,

@@ -36,6 +36,11 @@ vi.mock("expo-audio", () => ({
   AudioModule: { getRecordingPermissionsAsync: async () => ({ granted: true }) },
 }));
 vi.mock("expo-keep-awake", () => ({ useKeepAwake }));
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: vi.fn(async () => null),
+  setItemAsync: vi.fn(async () => undefined),
+  deleteItemAsync: vi.fn(async () => undefined),
+}));
 vi.mock("expo-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("react-native-reanimated", () => ({ useReducedMotion: () => true }));
 vi.mock("react-native-safe-area-context", () => ({
@@ -78,6 +83,7 @@ vi.mock("./api", () => ({
   applyMobileThreadEvent: vi.fn(),
   blockText: vi.fn(),
   captureApiRequestContext: vi.fn(),
+  configureSessionEndHangUp: vi.fn(),
   subscribeThread: vi.fn(),
 }));
 vi.mock("./session", () => ({

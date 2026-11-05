@@ -16,7 +16,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
-import { cancelComputerRunWork, probeBackgroundWork } from "./computer-idle.js";
+import { cancelComputerRunWork, probeBackgroundWork, providerKeepsHome } from "./computer-idle.js";
 import {
   computerProviderDescriptor,
   computerProviderRegistry,
@@ -508,6 +508,10 @@ export class ConfiguredSandbox implements SandboxProvider {
     }
     // An unresolved or invalidated remote connection must not disable idle shutdown.
     return true;
+  }
+
+  async keepsHome(computer: ComputerRef) {
+    return providerKeepsHome(await this.route(computer), computer);
   }
 
   async keepAlive(computer: ComputerRef) {

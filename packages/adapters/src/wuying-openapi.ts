@@ -19,6 +19,14 @@ export interface WuyingControlPlane {
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
+// Resolves the constructor from SDK builds that publish CommonJS with a default export,
+// under both Node and bundler module resolution.
+function cjsDefault<T>(module: T): T extends { default: infer C } ? C : T {
+  return ((module as { default?: unknown }).default ?? module) as T extends { default: infer C }
+    ? C
+    : T;
+}
+
 // Loaded only when a configured Wuying provider first uses its control plane.
 async function loadClients(config: WuyingOpenApiConfig) {
   const [ecd, appstream, openapi, dara] = await Promise.all([
@@ -27,10 +35,8 @@ async function loadClients(config: WuyingOpenApiConfig) {
     import("@alicloud/openapi-core"),
     import("@darabonba/typescript"),
   ]);
-  // These official SDK releases publish CommonJS with a default export.
-  const EcdClient = (ecd.default.default ?? ecd.default) as typeof ecd.default.default;
-  const AppstreamClient = (appstream.default.default ??
-    appstream.default) as typeof appstream.default.default;
+  const EcdClient = cjsDefault(ecd.default);
+  const AppstreamClient = cjsDefault(appstream.default);
   const desktop = new EcdClient(
     new openapi.$OpenApiUtil.Config({
       ...config,

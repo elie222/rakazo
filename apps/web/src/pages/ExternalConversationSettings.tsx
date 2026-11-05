@@ -30,7 +30,7 @@ import {
   Textarea,
 } from "@rakazo/ui-web";
 import { RotateCcw } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { SuccessPop } from "../components/ai/primitives";
 import { errorText } from "../lib/user-error";
 
@@ -55,6 +55,15 @@ export function ExternalConversationSettings({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The draft this render would save; an edit made while a save is in flight
+  // changes it, and that newer draft is still unsaved when the save lands.
+  const draftJson = JSON.stringify({
+    teamChatAmbientEnabled: ambientValue(mode),
+    teamChatRules: rules,
+    automatedSenderPolicies: policies,
+  });
+  const latestDraftJson = useRef(draftJson);
+  latestDraftJson.current = draftJson;
   const senders = useMemo(
     () => roomAutomatedSenders(policies, conversation.automatedSenders),
     [conversation.automatedSenders, policies],
@@ -229,12 +238,17 @@ export function ExternalConversationSettings({
             setSaving(true);
             setSaved(false);
             setError(null);
+            const savedJson = draftJson;
             void onSave({
               teamChatAmbientEnabled: ambientValue(mode),
               teamChatRules: rules,
               automatedSenderPolicies: policies,
             })
-              .then(() => setSaved(true))
+              .then(() => {
+                // Only the draft the save carried is confirmed; one edited
+                // meanwhile stays unsaved, without a false "Saved" marker.
+                if (latestDraftJson.current === savedJson) setSaved(true);
+              })
               .catch((cause) => setError(errorText(cause, t`Could not save`)))
               .finally(() => setSaving(false));
           }}

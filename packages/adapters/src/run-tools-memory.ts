@@ -59,6 +59,18 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
         "Redacted history exceeds the response budget. Retry with limit 1 or a narrower linked run.",
     });
   }
+  // Files the bot can now see are copied before its next computer tool.
+  ctx.computer.copyEarlierFiles(
+    response.messages.flatMap((message) =>
+      (message.attachments ?? []).map((file) => ({
+        kind: "file" as const,
+        artifactId: file.artifactId,
+        name: file.name,
+        mimeType: file.mimeType,
+        size: file.size,
+      })),
+    ),
+  );
   return call.finish(redacted);
 }
 

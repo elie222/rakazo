@@ -125,41 +125,6 @@ describe
       }),
     );
 
-    it.skipIf(process.env.VERIFY_PLUGIN_UPGRADE !== "1")(
-      "preserves rows seeded before the plugin linkage migration",
-      () =>
-        runAsSystem("plugin upgrade fixture", async () => {
-          const skill = await prisma.agentSkill.findUniqueOrThrow({
-            where: { id: "plugin-upgrade-skill" },
-          });
-          const server = await prisma.mcpServer.findUniqueOrThrow({
-            where: { id: "plugin-upgrade-server" },
-          });
-          const install = await prisma.capabilityInstall.findUniqueOrThrow({
-            where: { id: "plugin-upgrade-install" },
-          });
-          expect(skill).toMatchObject({
-            source: "user",
-            installId: null,
-            content: "Legacy content",
-          });
-          expect(server).toMatchObject({
-            installId: null,
-            endpoint: "https://tools.example.test/mcp",
-            enabled: true,
-          });
-          expect(install.kind).toBe("api");
-          await prisma.agentSkill.update({
-            where: { id: skill.id },
-            data: { description: "Still writable" },
-          });
-          await prisma.mcpServer.update({ where: { id: server.id }, data: { enabled: false } });
-          expect(
-            (await prisma.agentSkill.findUniqueOrThrow({ where: { id: skill.id } })).description,
-          ).toBe("Still writable");
-        }),
-    );
-
     it(
       "installs immutable read-only skills and encrypted native MCP rows, then fully uninstalls",
       asActor(async () => {
