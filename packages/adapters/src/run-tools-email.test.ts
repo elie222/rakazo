@@ -602,6 +602,16 @@ describe("send_email", () => {
     ]);
   });
 
+  it("keeps a reply's subject within the limit", async () => {
+    const { call, send } = sendRun({
+      original: { subject: "s".repeat(500), messageId: "<t@shop.test>", references: [] },
+    });
+
+    await call({ to: ["a@shop.test"], text: "Hi", inReplyTo: "in-1" });
+
+    expect(String(send.mock.calls[0]?.[0].subject)).toHaveLength(500);
+  });
+
   it("keeps a secret that spans lines out of the subject", async () => {
     const { call, send } = sendRun();
 

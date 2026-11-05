@@ -243,6 +243,7 @@ async function claimEmailAddress(ctx: RunContext, call: ToolCall) {
 export const SEND_EMAIL_DAILY_LIMIT = 50;
 const SEND_RECIPIENTS_MAX = 10;
 const SEND_TEXT_MAX_CHARS = 20_000;
+const SUBJECT_MAX_CHARS = 500;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_REFERENCES = 20;
 
@@ -255,7 +256,7 @@ const SendEmailSchema = z
   .object({
     to: Recipients.refine((list) => list.length > 0, "Name at least one recipient."),
     cc: Recipients.optional(),
-    subject: z.string().trim().max(500).optional(),
+    subject: z.string().trim().max(SUBJECT_MAX_CHARS).optional(),
     text: z.string().trim().min(1).max(SEND_TEXT_MAX_CHARS),
     inReplyTo: z.string().trim().min(1).max(100).optional(),
   })
@@ -305,7 +306,9 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
           : `Re: ${original.subject}`
         : ""),
     ctx.secrets,
-  ).replace(/[\r\n]+/g, " ");
+  )
+    .replace(/[\r\n]+/g, " ")
+    .slice(0, SUBJECT_MAX_CHARS);
   if (!subject) return call.finish({ error: "Give the email a subject." });
   // Secrets this run has used never leave in an email, whatever the bot was asked to write.
   const text = redactSecrets(input.text, ctx.secrets);
