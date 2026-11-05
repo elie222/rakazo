@@ -1,7 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 import * as Speech from "expo-speech";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { saveApiBase, selectSpace } from "./api";
+import { adoptDeletedSpaceFallback, saveApiBase, selectSpace } from "./api";
 import { DEVICE_VOICE_KEY } from "./device-voice";
 import { clearSessionToken, restoreSessionToken, saveSessionToken } from "./session";
 import { getVoicePlaybackState, speakQueue } from "./voice";
@@ -211,6 +211,32 @@ describe("read-aloud across session changes", () => {
     utterances[1]?.options?.onDone?.();
     await expect(queued).resolves.toBe(true);
     expect(utterances.map((spoken) => spoken.text)).toEqual(["First reply.", "Second reply."]);
+  });
+
+  it("stops the queue when a deleted organization's fallback adopts another Space", async () => {
+    await savedApiBase("https://a.example.test");
+    await saveSessionToken("token-a");
+    await selectSpace("space-a");
+    secureStore.set(DEVICE_VOICE_KEY, "1");
+    const utterances: Array<{ text: string; options: Parameters<typeof Speech.speak>[1] }> = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      utterances.push({ text, options });
+    });
+
+    const queued = speakQueue([
+      { text: "First reply.", botId: "bot-a", messageId: "m1" },
+      { text: "Second reply.", botId: "bot-a", messageId: "m2" },
+    ]);
+    await vi.waitFor(() => expect(utterances).toHaveLength(1));
+    expect(getVoicePlaybackState()).toMatchObject({ status: "playing", botId: "bot-a" });
+
+    const adopted = await adoptDeletedSpaceFallback("space-b");
+
+    expect(adopted).toBe(true);
+    expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
+    utterances[0]?.options?.onStopped?.();
+    await expect(queued).resolves.toBe(true);
+    expect(utterances.map((spoken) => spoken.text)).toEqual(["First reply."]);
   });
 
   it("stops the on-device queue when another account signs in", async () => {

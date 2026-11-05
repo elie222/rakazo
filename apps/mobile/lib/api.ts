@@ -283,6 +283,7 @@ export function selectedSpaceId(): string | null {
  * writing the replacement selection so a cleanup failure cannot leave the new
  * id beside a stale record that recoverSpaceRollback would prefer on restart. */
 export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
+  const previousSpaceId = cachedSpaceId;
   cachedSpaceId = id;
   bumpSpaceSelectionGeneration();
   // Neutralize any same-endpoint rollback before writing SPACE_KEY. Writing the
@@ -290,10 +291,13 @@ export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   // would prefer on restart if later cleanup fails.
   const rollbackNeutralized =
     (await clearStoredValue(SPACE_ROLLBACK_KEY)) || (await saveSpaceRollback(id));
+  // Playback belongs to the conversation being left; the fallback too is a
+  // confirmed switch once it durably adopts another Space.
   if (rollbackNeutralized && (await writeStoredValue(SPACE_KEY, id))) {
     // SPACE_KEY is authoritative; drop a rollback we may have written only to
     // overwrite a stale record (best-effort).
     await clearStoredValue(SPACE_ROLLBACK_KEY);
+    if (previousSpaceId !== id) noteConfirmedSpaceSwitch();
     await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
       () => undefined,
     );
@@ -308,7 +312,10 @@ export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   );
   // Only treat a cleared selection as durable success when no same-endpoint
   // rollback remains to override it after restart.
-  return recoverySaved || (staleSelectionCleared && (await clearStoredValue(SPACE_ROLLBACK_KEY)));
+  const durable =
+    recoverySaved || (staleSelectionCleared && (await clearStoredValue(SPACE_ROLLBACK_KEY)));
+  if (durable && previousSpaceId !== id) noteConfirmedSpaceSwitch();
+  return durable;
 }
 
 export async function selectInitialSpace(id: string) {
