@@ -256,30 +256,47 @@ describe("scoped mobile outbox", () => {
     expect(disk.admit).toHaveBeenCalledTimes(2);
     expect(disk.save).toHaveBeenLastCalledWith([attempt]);
   });
+  /**
+   * Folders on a fake disk: admission writes one and clears the bytes, as the disk does. An
+   * admission for which `fails` returns true throws a storage error instead.
+   */
+  function diskFolders(fails?: (attempt: SendAttempt) => boolean) {
+    const folders = new Map<string, string[]>();
+    disk.admit.mockImplementation((attempt: SendAttempt) => {
+      if (fails?.(attempt)) throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+      if (folders.has(attempt.clientNonce)) return false;
+      folders.set(
+        attempt.clientNonce,
+        attempt.payload.attachments.map((attachment) => attachment.contentBase64),
+      );
+      for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
+      return true;
+    });
+    disk.forget.mockImplementation((attempt: SendAttempt) => folders.delete(attempt.clientNonce));
+    disk.hydrate.mockImplementation(async (attempt: SendAttempt) => {
+      const files = folders.get(attempt.clientNonce);
+      if (!files) throw new Error("ATTACHMENT_UNAVAILABLE");
+      attempt.payload.attachments.forEach((attachment, index) => {
+        attachment.contentBase64 ||= files[index] ?? "";
+      });
+    });
+    return folders;
+  }
+  function resetDisk() {
+    disk.admit.mockImplementation(() => true);
+    disk.forget.mockImplementation(() => undefined);
+    disk.hydrate.mockImplementation(async () => undefined);
+  }
   it.each(["admission", "index save"])(
     "drops a queued send's bytes from memory once its %s recovers, and sends it from disk",
     async (failing) => {
       reachable = false;
-      const written = new Map<string, string[]>();
-      // Admission writes the files and clears the in-memory bytes, as the disk implementation does.
-      disk.admit.mockImplementation((attempt: SendAttempt) => {
-        written.set(
-          attempt.clientNonce,
-          attempt.payload.attachments.map((attachment) => attachment.contentBase64),
-        );
-        for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
-        return true;
-      });
+      const written = diskFolders();
       const fail = () => {
         throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
       };
       if (failing === "admission") disk.admit.mockImplementationOnce(fail);
       else disk.save.mockImplementationOnce(fail);
-      disk.hydrate.mockImplementation(async (attempt: SendAttempt) => {
-        attempt.payload.attachments.forEach((attachment, index) => {
-          attachment.contentBase64 ||= written.get(attempt.clientNonce)?.[index] ?? "";
-        });
-      });
       const attempt = feedback.sendAttempt(payload());
       expect(attempt.payload.attachments[0]?.contentBase64).toBe("fake");
       await act(async () => {
@@ -302,21 +319,13 @@ describe("scoped mobile outbox", () => {
         "space-a",
       );
       expect(attempt.acceptedSeq).toBe(42);
-      disk.admit.mockImplementation(() => true);
-      disk.hydrate.mockImplementation(async () => undefined);
+      resetDisk();
     },
   );
   it("keeps a send's bytes when a recovery admission's index save fails", async () => {
-    const folders = new Set<string>();
+    diskFolders();
     disk.admit.mockImplementationOnce(() => {
       throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
-    });
-    // Admission writes the files and clears the in-memory bytes, as the disk implementation does.
-    disk.admit.mockImplementation((attempt: SendAttempt) => {
-      if (folders.has(attempt.clientNonce)) return false;
-      folders.add(attempt.clientNonce);
-      for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
-      return true;
     });
     disk.save.mockImplementationOnce(() => {
       throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
@@ -336,20 +345,16 @@ describe("scoped mobile outbox", () => {
     expect(attempt.acceptedSeq).toBe(42);
     expect(disk.forget).not.toHaveBeenCalledWith(attempt);
     expect(disk.save).toHaveBeenLastCalledWith([]);
+    resetDisk();
   });
   it("keeps a delivering send's bytes through a recovery admission", async () => {
-    const folders = new Set<string>();
     const admissions = new Map<string, number>();
     // The sending attempt's own admission and the saves while it queues and turns pending
     // all fail; the disk answers afterwards and clears the in-memory bytes, as it does.
-    disk.admit.mockImplementation((attempt: SendAttempt) => {
+    diskFolders((attempt) => {
       const seen = (admissions.get(attempt.clientNonce) ?? 0) + 1;
       admissions.set(attempt.clientNonce, seen);
-      if (seen <= 3) throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
-      if (folders.has(attempt.clientNonce)) return false;
-      folders.add(attempt.clientNonce);
-      for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
-      return true;
+      return seen <= 3;
     });
     disk.save.mockImplementationOnce(() => {
       throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
@@ -403,24 +408,13 @@ describe("scoped mobile outbox", () => {
       .filter(([proc]) => proc === "artifacts/create")
       .map(([, body]) => (body as { contentBase64: string }).contentBase64);
     expect(uploads).toEqual(["first-bytes", "second-bytes"]);
+    resetDisk();
   });
   it("persists a pending send once the disk answers during its delivery", async () => {
-    const folders = new Set<string>();
-    const written = new Map<string, string[]>();
     let admissions = 0;
     // The sending attempt's own admission and the saves while it queues and turns pending
     // fail; the disk answers afterwards, clearing the in-memory bytes, as it does.
-    disk.admit.mockImplementation((attempt: SendAttempt) => {
-      if (++admissions <= 3) throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
-      if (folders.has(attempt.clientNonce)) return false;
-      folders.add(attempt.clientNonce);
-      written.set(
-        attempt.clientNonce,
-        attempt.payload.attachments.map((attachment) => attachment.contentBase64),
-      );
-      for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
-      return true;
-    });
+    const written = diskFolders(() => ++admissions <= 3);
     let releaseUpload!: (value: { id: string }) => void;
     const held = new Promise<{ id: string }>((resolve) => {
       releaseUpload = resolve;
@@ -452,6 +446,7 @@ describe("scoped mobile outbox", () => {
       await sending;
     });
     expect(attempt.acceptedSeq).toBe(42);
+    resetDisk();
   });
   it("retries attachments from memory while admission keeps failing", async () => {
     disk.admit.mockImplementation(() => {
@@ -516,33 +511,6 @@ describe("scoped mobile outbox", () => {
     });
     expect(disk.forget).not.toHaveBeenCalled();
   });
-  /** Folders on a fake disk: admission writes one and clears the bytes, as the disk does. */
-  function diskFolders() {
-    const folders = new Map<string, string[]>();
-    disk.admit.mockImplementation((attempt: SendAttempt) => {
-      if (folders.has(attempt.clientNonce)) return false;
-      folders.set(
-        attempt.clientNonce,
-        attempt.payload.attachments.map((attachment) => attachment.contentBase64),
-      );
-      for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
-      return true;
-    });
-    disk.forget.mockImplementation((attempt: SendAttempt) => folders.delete(attempt.clientNonce));
-    disk.hydrate.mockImplementation(async (attempt: SendAttempt) => {
-      const files = folders.get(attempt.clientNonce);
-      if (!files) throw new Error("ATTACHMENT_UNAVAILABLE");
-      attempt.payload.attachments.forEach((attachment, index) => {
-        attachment.contentBase64 ||= files[index] ?? "";
-      });
-    });
-    return folders;
-  }
-  function resetDisk() {
-    disk.admit.mockImplementation(() => true);
-    disk.forget.mockImplementation(() => undefined);
-    disk.hydrate.mockImplementation(async () => undefined);
-  }
   it("saves other sends and deletes removed files while one recovery admission fails", async () => {
     reachable = false;
     let stuck: string | undefined;

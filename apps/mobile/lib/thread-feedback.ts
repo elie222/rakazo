@@ -149,6 +149,10 @@ const memoryOnly = new WeakSet<SendAttempt>();
 const writtenFiles = new WeakSet<SendAttempt>();
 /** Memory-only sends that may have files no index lists: a failed admission or deletion left them. */
 const unlistedFiles = new WeakSet<SendAttempt>();
+/** True when the next index save lists the send: it was never memory-only, or its files are written. */
+function isListed(attempt: SendAttempt) {
+  return !memoryOnly.has(attempt) || writtenFiles.has(attempt);
+}
 let running: Promise<void> | undefined;
 /** A retry that arrived while a drain was in progress, run once that drain stops. */
 let pendingForce: boolean | null = null;
@@ -212,10 +216,7 @@ function admitAgain(attempt: SendAttempt, attempts: SendAttempt[]) {
   if (!unlistedFiles.has(attempt)) return false;
   // The folder belongs to another send with this nonce whose files are listed or written.
   const owned = [...attempts, ...unsentSends].some(
-    (other) =>
-      other !== attempt &&
-      other.clientNonce === attempt.clientNonce &&
-      (!memoryOnly.has(other) || writtenFiles.has(other)),
+    (other) => other !== attempt && other.clientNonce === attempt.clientNonce && isListed(other),
   );
   if (owned) return false;
   config!.disk.forget(attempt);
@@ -231,16 +232,14 @@ function save(attempts: SendAttempt[]) {
     // recorded at once, so a later save lists it rather than re-admitting over its own
     // files. What still cannot reach disk waits for a later save without blocking the others.
     for (const attempt of attempts) {
-      if (!memoryOnly.has(attempt) || writtenFiles.has(attempt)) continue;
+      if (isListed(attempt)) continue;
       const admitted = tryDisk(() => admitAgain(attempt, attempts), undefined);
       if (admitted) {
         writtenFiles.add(attempt);
         unlistedFiles.delete(attempt);
       } else if (admitted === undefined) unlistedFiles.add(attempt);
     }
-    const listed = attempts.filter(
-      (attempt) => !memoryOnly.has(attempt) || writtenFiles.has(attempt),
-    );
+    const listed = attempts.filter(isListed);
     config!.disk.save(listed);
     // Only now does the index on disk list them; until it does, memory stays their only copy.
     // A running delivery keeps the bytes it captured until it finishes; the rest read from disk.
