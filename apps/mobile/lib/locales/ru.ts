@@ -1171,6 +1171,7 @@ export const RU_MESSAGES: Record<string, string> = {
   None: "Нет",
   "Free trial": "Бесплатный пробный период",
   "Rakazo credits": "Кредиты Rakazo",
+  Credits: "Кредиты",
   "Free until": "Бесплатно до",
   Ends: "Заканчивается",
   Renews: "Продление",

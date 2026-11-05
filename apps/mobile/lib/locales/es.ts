@@ -1078,6 +1078,7 @@ export const ES_MESSAGES: Record<string, string> = {
   None: "Ninguno",
   "Free trial": "Prueba gratuita",
   "Rakazo credits": "Créditos de Rakazo",
+  Credits: "Créditos",
   "Free until": "Gratis hasta",
   Ends: "Termina",
   Renews: "Se renueva",

@@ -1144,6 +1144,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   None: "无",
   "Free trial": "免费试用",
   "Rakazo credits": "Rakazo 额度",
+  Credits: "额度",
   "Free until": "免费至",
   Ends: "结束于",
   Renews: "续费日期",

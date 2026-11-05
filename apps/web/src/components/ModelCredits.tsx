@@ -375,7 +375,7 @@ export function CreditChoice({
         <Card>
           <CardHeader>
             <h2 className="text-lg font-medium">
-              <Trans>Rakazo credits</Trans>
+              <Trans>Credits</Trans>
             </h2>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-4">
@@ -396,7 +396,7 @@ export function CreditChoice({
             <Button
               className="w-full"
               disabled={pending || !status.canManage || !status.creditPurchasesEnabled}
-              aria-label={t`Subscribe to Rakazo credits`}
+              aria-label={t`Subscribe to credits`}
               onClick={() => void choose(false)}
             >
               <Trans>Subscribe</Trans>

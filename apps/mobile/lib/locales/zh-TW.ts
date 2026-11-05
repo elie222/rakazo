@@ -1112,6 +1112,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   None: "無",
   "Free trial": "免費試用",
   "Rakazo credits": "Rakazo 額度",
+  Credits: "額度",
   "Free until": "免費至",
   Ends: "結束於",
   Renews: "續訂日期",

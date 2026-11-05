@@ -1118,6 +1118,7 @@ export const JA_MESSAGES: Record<string, string> = {
   None: "なし",
   "Free trial": "無料トライアル",
   "Rakazo credits": "Rakazoクレジット",
+  Credits: "クレジット",
   "Free until": "無料期間の終了日",
   Ends: "終了日",
   Renews: "更新日",
