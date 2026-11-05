@@ -210,9 +210,19 @@ function detachedForAdmission(attempt: SendAttempt): SendAttempt {
   };
 }
 
+/** Admits a detached copy; the live attachments take its file previews but keep their bytes. */
+function admitCopy(attempt: SendAttempt) {
+  const copy = detachedForAdmission(attempt);
+  if (!config!.disk.admit(copy)) return false;
+  copy.payload.attachments.forEach((admitted, index) => {
+    attempt.payload.attachments[index]!.previewUri = admitted.previewUri;
+  });
+  return true;
+}
+
 /** Admits a memory-only send again, first deleting files no index lists if they block it. */
 function admitAgain(attempt: SendAttempt, attempts: SendAttempt[]) {
-  if (config!.disk.admit(detachedForAdmission(attempt))) return true;
+  if (admitCopy(attempt)) return true;
   if (!unlistedFiles.has(attempt)) return false;
   // The folder belongs to another send with this nonce whose files are listed or written.
   const owned = [...attempts, ...unsentSends].some(
@@ -220,7 +230,7 @@ function admitAgain(attempt: SendAttempt, attempts: SendAttempt[]) {
   );
   if (owned) return false;
   config!.disk.forget(attempt);
-  return config!.disk.admit(detachedForAdmission(attempt));
+  return admitCopy(attempt);
 }
 
 /** Saves the index, then deletes files only once it no longer lists them. */
@@ -514,7 +524,12 @@ export function useThreadFeedback(
         memoryOnly.add(attempt);
         if (admitted === true) writtenFiles.add(attempt);
         else unlistedFiles.add(attempt);
-        attempt.payload.attachments = payload.attachments.map((a) => ({ ...a }));
+        // Bytes come back from the composer; written files keep their previews.
+        attempt.payload.attachments = payload.attachments.map((a, index) =>
+          admitted
+            ? { ...a, previewUri: attempt.payload.attachments[index]!.previewUri }
+            : { ...a },
+        );
       }
       return attempt;
     },

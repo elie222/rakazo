@@ -257,8 +257,9 @@ describe("scoped mobile outbox", () => {
     expect(disk.save).toHaveBeenLastCalledWith([attempt]);
   });
   /**
-   * Folders on a fake disk: admission writes one and clears the bytes, as the disk does. An
-   * admission for which `fails` returns true throws a storage error instead.
+   * Folders on a fake disk: admission writes one, points image previews at its files and clears
+   * the bytes, as the disk does. An admission for which `fails` returns true throws a storage
+   * error instead.
    */
   function diskFolders(fails?: (attempt: SendAttempt) => boolean) {
     const folders = new Map<string, string[]>();
@@ -269,7 +270,12 @@ describe("scoped mobile outbox", () => {
         attempt.clientNonce,
         attempt.payload.attachments.map((attachment) => attachment.contentBase64),
       );
-      for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
+      attempt.payload.attachments.forEach((attachment, index) => {
+        attachment.previewUri = attachment.mimeType.startsWith("image/")
+          ? `outbox/${attempt.clientNonce}/${index}`
+          : undefined;
+        attachment.contentBase64 = "";
+      });
       return true;
     });
     disk.forget.mockImplementation((attempt: SendAttempt) => folders.delete(attempt.clientNonce));
@@ -322,6 +328,47 @@ describe("scoped mobile outbox", () => {
       resetDisk();
     },
   );
+  /** An image whose picker file may disappear while the app stays open. */
+  function pickedImage(text: string): SendPayload {
+    return {
+      ...payload(text),
+      attachments: [
+        {
+          id: "attachment-1",
+          name: "photo.png",
+          mimeType: "image/png",
+          contentBase64: "fake",
+          previewUri: "picker/photo.png",
+        },
+      ],
+    };
+  }
+  it("shows a recovered image from its outbox file once its admission recovers", async () => {
+    reachable = false;
+    diskFolders();
+    disk.admit.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const attempt = feedback.sendAttempt(pickedImage("Hello"));
+    expect(attempt.payload.attachments[0]?.previewUri).toBe("picker/photo.png");
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.payload.attachments[0]?.previewUri).toBe(`outbox/${attempt.clientNonce}/0`);
+    resetDisk();
+  });
+  it("shows an image from its outbox file when only the index save failed", () => {
+    diskFolders();
+    disk.save.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const attempt = feedback.sendAttempt(pickedImage("Hello"));
+    expect(attempt.payload.attachments[0]).toMatchObject({
+      contentBase64: "fake",
+      previewUri: `outbox/${attempt.clientNonce}/0`,
+    });
+    resetDisk();
+  });
   it("keeps a send's bytes when a recovery admission's index save fails", async () => {
     diskFolders();
     disk.admit.mockImplementationOnce(() => {
