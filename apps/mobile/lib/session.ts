@@ -243,27 +243,32 @@ async function clearStoredSessionToken(generation: number): Promise<boolean> {
   });
 }
 
-/** Restores the current-server session in memory even when persistence is unavailable. */
-export async function restoreSessionToken(token: string) {
+/**
+ * Restores the current-server session in memory even when persistence is unavailable. False when
+ * saving the token failed and only memory holds it.
+ */
+export async function restoreSessionToken(token: string): Promise<boolean> {
   const generation = ++sessionGeneration;
   publishSessionGeneration(false);
   const clearingScope = invalidateSessionCaches();
   if (!token) {
     await clearingScope;
-    if (generation !== sessionGeneration) return;
+    if (generation !== sessionGeneration) return true;
     sessionInvalidated = false;
     sessionFallback = undefined;
     if (generation === sessionGeneration) publishSessionGeneration();
-    return;
+    return true;
   }
   try {
     await saveSessionToken(token);
+    return true;
   } catch {
     if (sessionGeneration === generation + 1) {
       sessionInvalidated = false;
       sessionFallback = token;
       publishSessionGeneration();
     }
+    return false;
   }
 }
 

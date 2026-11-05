@@ -3672,6 +3672,50 @@ describe("mobile API authentication", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("a sign-out stops without clearing a session saved while it wrote its record", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      // A sign-in saves its token while the sign-out writes the revocation record.
+      if (key === "rakazo.pending_sign_out") await saveSessionToken("token-b");
+      store.set(key, value);
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof globalThis.fetch>(async () => jsonResponse({})),
+    );
+
+    await expect(signOut()).rejects.toThrow("Could not clear the local session");
+    mockSecureStore(store);
+    expect(store.get("rakazo.session_token")).toBe("token-b");
+    // The record for the session the user signed out of stays for delivery.
+    expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
+  });
+
+  it("a rolled-back switch keeps the revocation of a session it could only restore in memory", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.api_base") throw new Error("device locked");
+      if (key === "rakazo.session_token") throw new Error("device locked");
+      store.set(key, value);
+    });
+    let result: Awaited<ReturnType<typeof saveApiBase>>;
+    try {
+      result = await saveApiBase("https://second-server.example");
+    } finally {
+      mockSecureStore(store);
+    }
+
+    // A restart would not find token-a, so its revocation record stays for the next retry.
+    expect(result).toMatchObject({ ok: false });
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(await authHeaders(null)).toMatchObject({ authorization: "Bearer token-a" });
+    expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
+  });
+
   it("a sign-out after a failed session save revokes the stored token it clears", async () => {
     const store = new Map<string, string>();
     mockSecureStore(store);

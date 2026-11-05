@@ -536,14 +536,13 @@ async function clearCredentialsForEndpointChange(
     };
   }
 
-  await restoreCredentials(previousToken.value, previousSpace.value);
-  return failed(previousToken.value);
+  return failed(await restoreCredentials(previousToken.value, previousSpace.value));
 }
 
 /**
  * Settles a rolled-back switch's revocation record. The rollback restores only the session in use,
- * so a record for a stored token it does not bring back stays provisional: the next retry delivers
- * it, unless a sign-in made that token the active session again.
+ * and only a restore that stored it removes the record. Any other record stays provisional: the
+ * next retry delivers it, unless that token is the active session again.
  */
 async function settleRolledBackSignOut(
   record: PendingSignOut | undefined,
@@ -552,8 +551,14 @@ async function settleRolledBackSignOut(
   if (record && record.token === restoredToken) await removePendingSignOut(record);
 }
 
-async function restoreCredentials(previousToken: string, previousSpace: string) {
-  if (previousToken) await restoreSessionToken(previousToken);
+/** Returns the restored token, or "" when it is kept only in memory and a restart would lose it. */
+async function restoreCredentials(previousToken: string, previousSpace: string): Promise<string> {
+  let persisted = !previousToken || (await restoreSessionToken(previousToken));
+  if (!persisted) {
+    // A clear that failed too may have left the token stored, where a restart still finds it.
+    const stored = await snapshotStoredSessionToken();
+    persisted = stored.ok && stored.value === previousToken;
+  }
   if (previousSpace) {
     cachedSpaceId = previousSpace;
     bumpSpaceSelectionGeneration();
@@ -569,6 +574,7 @@ async function restoreCredentials(previousToken: string, previousSpace: string) 
       () => undefined,
     );
   }
+  return persisted ? previousToken : "";
 }
 
 async function saveSpaceRollback(spaceId: string): Promise<boolean> {
@@ -650,18 +656,18 @@ async function saveApiBaseLocked(
     pendingPreviousSignOut = result.pendingSignOut;
   }
   if (!(await saveServerHeaders(parsed.url, headers))) {
-    if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
-    await settleRolledBackSignOut(pendingPreviousSignOut, cleared?.previousToken);
+    const restoredToken =
+      cleared && (await restoreCredentials(cleared.previousToken, cleared.previousSpace));
+    await settleRolledBackSignOut(pendingPreviousSignOut, restoredToken);
     return { ok: false, error: t("Could not save the server URL") };
   }
   try {
     await SecureStore.setItemAsync(ENDPOINT_KEY, parsed.url);
   } catch {
     await saveServerHeaders(previous, previousHeaders);
-    if (cleared) {
-      await restoreCredentials(cleared.previousToken, cleared.previousSpace);
-    }
-    await settleRolledBackSignOut(pendingPreviousSignOut, cleared?.previousToken);
+    const restoredToken =
+      cleared && (await restoreCredentials(cleared.previousToken, cleared.previousSpace));
+    await settleRolledBackSignOut(pendingPreviousSignOut, restoredToken);
     return { ok: false, error: t("Could not save the server URL") };
   }
   setCachedApiBase(parsed.url);
@@ -710,8 +716,8 @@ async function resetApiBaseLocked(
     await SecureStore.deleteItemAsync(ENDPOINT_KEY);
   } catch {
     if (cleared) {
-      await restoreCredentials(cleared.previousToken, cleared.previousSpace);
-      await settleRolledBackSignOut(pendingPreviousSignOut, cleared.previousToken);
+      const restoredToken = await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+      await settleRolledBackSignOut(pendingPreviousSignOut, restoredToken);
       return { ok: false, error: t("Could not clear the custom server URL") };
     }
   }
@@ -719,18 +725,18 @@ async function resetApiBaseLocked(
     // Without the old server URL stored again, the next launch opens the default server: the old
     // session is not restored, and its record stays for the next retry to revoke it.
     const endpointRestored = await writeStoredValue(ENDPOINT_KEY, previous);
+    let restoredToken: string | undefined;
     if (endpointRestored) {
-      if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+      if (cleared) {
+        restoredToken = await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+      }
     } else {
       // This launch follows the default server too, so a later sign-in's token comes from the
       // server a restart opens and is never sent to another one.
       setCachedApiBase(url);
       if (cleared) await clearStoredValue(ORGANIZATION_SPACES_KEY);
     }
-    await settleRolledBackSignOut(
-      pendingPreviousSignOut,
-      endpointRestored ? cleared?.previousToken : undefined,
-    );
+    await settleRolledBackSignOut(pendingPreviousSignOut, restoredToken);
     return { ok: false, error: t("Could not clear the custom server URL") };
   }
   setCachedApiBase(url);
@@ -1484,6 +1490,7 @@ export async function signOut() {
   // A save still running reads as no session, and the clear would delete its token once it lands
   // with no record to revoke it: as in a server switch, the sign-out stops and the user retries.
   if (sessionSaveInProgress()) throw new Error(t("Could not clear the local session"));
+  const generation = currentSessionGeneration();
   const tokenSnapshot = await snapshotSessionToken();
   if (!tokenSnapshot.ok) throw new Error(t("Could not clear the local session"));
   // A failed save or wipe can leave a token stored that reads as no session; the clear deletes it
@@ -1528,6 +1535,11 @@ export async function signOut() {
     if (revocation.token) {
       // A failed write cannot block the local sign-out; the session still expires server-side.
       persisted = await savePendingSignOut(revocation);
+    }
+    // A sign-in that saved its token since the read has no record; as in a server switch, the
+    // sign-out stops without clearing it. The record stays for the session the user signed out of.
+    if (generation !== currentSessionGeneration() || sessionSaveInProgress()) {
+      throw new Error(t("Could not clear the local session"));
     }
     // The local session clears first: a server that accepts the connection but never answers
     // must not keep this device signed in for the delivery's two request timeouts.
