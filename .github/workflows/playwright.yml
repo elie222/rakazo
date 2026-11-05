@@ -67,12 +67,16 @@ jobs:
         if: inputs.changed_areas
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
       # Boots beside pnpm install so the harness does not wait on Testcontainers after install.
+      - name: Postgres cache week
+        if: steps.areas.outputs.e2e != 'false'
+        id: postgres-cache-week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
       - name: Restore Postgres image cache
         if: steps.areas.outputs.e2e != 'false'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/docker-postgres-cache
-          key: docker-postgres-18-alpine-v1
+          key: docker-postgres-18-alpine-v2-${{ steps.postgres-cache-week.outputs.week }}
       - name: Load or pull Postgres image
         if: steps.areas.outputs.e2e != 'false'
         run: bash .github/scripts/restore-postgres-image.sh
@@ -154,12 +158,16 @@ jobs:
       - id: areas
         if: inputs.changed_areas
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
+      - name: Postgres cache week
+        if: steps.areas.outputs.e2e != 'false'
+        id: postgres-cache-week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
       - name: Restore Postgres image cache
         if: steps.areas.outputs.e2e != 'false'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/docker-postgres-cache
-          key: docker-postgres-18-alpine-v1
+          key: docker-postgres-18-alpine-v2-${{ steps.postgres-cache-week.outputs.week }}
       - name: Load or pull Postgres image
         if: steps.areas.outputs.e2e != 'false'
         run: bash .github/scripts/restore-postgres-image.sh

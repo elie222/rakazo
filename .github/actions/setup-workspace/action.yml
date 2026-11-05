@@ -17,14 +17,6 @@ inputs:
     description: Optional pnpm --filter argument (for example @rakazo/desktop...).
     required: false
     default: ""
-  install:
-    description: Run pnpm install after restoring caches.
-    required: false
-    default: "true"
-  node-version:
-    description: Node.js version for actions/setup-node.
-    required: false
-    default: "22"
 runs:
   using: composite
   steps:
@@ -32,7 +24,7 @@ runs:
 
     - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
-        node-version: ${{ inputs.node-version }}
+        node-version: 22
         cache: pnpm
 
     - name: Cache Electron binary
@@ -40,8 +32,6 @@ runs:
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: ${{ runner.temp }}/electron-cache
-        # Exact key only: a partial restore-keys hit can leave an empty cache dir
-        # that still looks like a hit and skips a fresh download.
         key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
     - name: Cache Playwright browsers
@@ -64,7 +54,6 @@ runs:
           turbo-${{ inputs.turbo }}-
 
     - name: Install dependencies
-      if: inputs.install == 'true'
       shell: bash
       env:
         SETUP_ELECTRON: ${{ inputs.electron }}
@@ -79,17 +68,13 @@ runs:
           mkdir -p "$electron_config_cache"
         else
           export ELECTRON_SKIP_BINARY_DOWNLOAD=1
-          # Prefer the restored content-addressable store when Electron is unused.
           export npm_config_prefer_offline=true
         fi
         filter_args=()
         if [[ -n "${SETUP_FILTER}" ]]; then
-          filter_args=(--filter "${SETUP_FILTER}")
+          filter_args=(--filter "${SETUP_FILTER}" --filter rakazo)
         fi
         pnpm install --frozen-lockfile "${filter_args[@]}"
-        # pnpm often links electron without running its install script, so the
-        # binary only downloads on first `electron` invoke. Do that here with
-        # retries, and warm electron_config_cache, before tests hit GitHub releases.
         if [[ "${SETUP_ELECTRON}" == "true" ]]; then
           install_js="$(pnpm --filter @rakazo/desktop exec node -p "require('path').join(require('path').dirname(require.resolve('electron/package.json')), 'install.js')")"
           if [[ -z "$install_js" ]]; then

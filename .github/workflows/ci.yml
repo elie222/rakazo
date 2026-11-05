@@ -46,50 +46,9 @@ jobs:
       - id: areas
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
 
-  # Builds the workspace once per revision that needs a production build, publishes the
-  # turbo local cache as an artifact, and saves it to the actions cache for later runs.
-  # Production builds downloads that artifact so it does not compile the same packages again.
-  # Kept off the unit/E2E/native critical path: those jobs never needed `pnpm build`.
-  workspace-build:
-    name: Workspace build cache
-    needs: changes
-    if: needs.changes.outputs.web == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-workspace
-        with:
-          turbo: build
-      - run: pnpm db:generate
-        env:
-          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
-      - run: pnpm build
-        env:
-          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
-          BETTER_AUTH_SECRET: ci-build-auth-secret-at-least-32-characters
-          ENCRYPTION_KEY: ci-build-encryption-key-at-least-32-characters
-      - name: Save turbo build cache
-        if: success()
-        continue-on-error: true
-        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: .turbo/cache
-          key: turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
-      - name: Upload turbo build cache
-        if: success()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: turbo-build-${{ github.sha }}
-          path: .turbo/cache
-          retention-days: 1
-          if-no-files-found: ignore
-
   build:
     name: Production builds
-    needs: [changes, workspace-build]
+    needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -101,17 +60,22 @@ jobs:
         with:
           electron: "true"
           turbo: build
-      - name: Restore turbo build cache from workspace-build
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: turbo-build-${{ github.sha }}
-          path: .turbo/cache
+      - run: pnpm db:generate
+        env:
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - run: pnpm build
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
           BETTER_AUTH_SECRET: ci-build-auth-secret-at-least-32-characters
           ENCRYPTION_KEY: ci-build-encryption-key-at-least-32-characters
           electron_config_cache: ${{ runner.temp }}/electron-cache
+      - name: Save turbo build cache
+        if: success()
+        continue-on-error: true
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .turbo/cache
+          key: turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
       - name: Electron smoke
         env:
           electron_config_cache: ${{ runner.temp }}/electron-cache
@@ -144,7 +108,7 @@ jobs:
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/setup-workspace
         with:
-          turbo: check
+          turbo: ${{ github.event_name == 'pull_request' && 'check' || 'none' }}
       - name: Lint
         if: github.event_name == 'pull_request'
         run: pnpm lint
@@ -215,11 +179,12 @@ jobs:
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - name: Install age for the encrypted backup round trip
-        # A static binary skips apt-get update on the shared runner image.
         run: |
-          curl -fsSL "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz" \
-            | tar -xz -C "$RUNNER_TEMP"
-          sudo install -m 755 "$RUNNER_TEMP/age/age" /usr/local/bin/age
+          curl -fsSL -o "$RUNNER_TEMP/age.tar.gz" \
+            "https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz"
+          echo "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  $RUNNER_TEMP/age.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/age.tar.gz" -C "$RUNNER_TEMP" age/age age/age-keygen
+          sudo install -m 755 "$RUNNER_TEMP/age/age" "$RUNNER_TEMP/age/age-keygen" /usr/local/bin/
       - name: Unit tests
         if: steps.areas.outputs.all_packages != 'false'
         run: pnpm run test --shard=${{ matrix.shard }}/6
@@ -318,13 +283,16 @@ jobs:
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
+      - name: Postgres cache week
+        if: steps.areas.outputs.server != 'false'
+        id: postgres-cache-week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
       - name: Restore Postgres image cache
         if: steps.areas.outputs.server != 'false'
-        id: postgres-image
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/docker-postgres-cache
-          key: docker-postgres-18-alpine-v1
+          key: docker-postgres-18-alpine-v2-${{ steps.postgres-cache-week.outputs.week }}
       - name: Load or pull Postgres image
         if: steps.areas.outputs.server != 'false'
         run: bash .github/scripts/restore-postgres-image.sh
