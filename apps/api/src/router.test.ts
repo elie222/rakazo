@@ -7821,18 +7821,23 @@ describe("routines.remove", () => {
       env: { sandboxProvider: "fake" },
       jobs: { cancel },
     } as unknown as RouterDeps);
-    const as = (userId: string) =>
+    const as = (userId: string, spaceId = "space-1") =>
       createRouterClient(router, {
-        context: { actor: { spaceId: "space-1", userId } } as never,
+        context: { actor: { spaceId, userId } } as never,
       });
     return { as, remove, cancel };
   }
 
-  it("does not let another Space member delete a routine", async () => {
+  it("lets another Space member delete a routine, but nobody outside the Space", async () => {
     const { as, remove, cancel } = fixture();
-    await expect(as("user-b").routines.remove({ routineId: "routine-1" })).rejects.toThrow();
+    await expect(
+      as("user-c", "space-2").routines.remove({ routineId: "routine-1" }),
+    ).rejects.toThrow();
     expect(remove).not.toHaveBeenCalled();
-    expect(cancel).not.toHaveBeenCalled();
+    await expect(as("user-b").routines.remove({ routineId: "routine-1" })).resolves.toEqual({
+      ok: true,
+    });
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it("deletes the owner's routine", async () => {

@@ -358,6 +358,7 @@ describe("current image send admission", () => {
         taskId: "task-active",
         status: "running",
         trigger: "user",
+        userId: "user-1",
         modelProvider: "openrouter",
         modelId: "deepseek/deepseek-v4-pro",
         modelPinned: false,

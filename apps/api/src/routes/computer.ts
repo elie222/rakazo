@@ -504,7 +504,7 @@ export function computerRoutes(ctx: RouterContext) {
       input: authed.computer.input.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         const computer = bot.computer;
-        if (!computer || !hasActiveComputerControl(computer) || computer.controlBotId !== bot.id) {
+        if (!computer || !holdsComputerControl(computer, bot.id, context.actor)) {
           await expireStaleComputerControl(deps, computer);
           throw new ORPCError("FORBIDDEN");
         }
@@ -668,7 +668,7 @@ export function computerRoutes(ctx: RouterContext) {
         if (computer.state !== "running" || !computer.providerRef) {
           throw new ORPCError("CONFLICT", { message: "Start the computer first." });
         }
-        if (!hasActiveComputerControl(computer) || computer.controlBotId !== bot.id) {
+        if (!holdsComputerControl(computer, bot.id, context.actor)) {
           throw new ORPCError("FORBIDDEN", { message: "Take control first." });
         }
         const maxBytes = attachmentMaxBytes(deps.env);
@@ -732,11 +732,7 @@ export function computerRoutes(ctx: RouterContext) {
           return { url: null };
         }
         // Same rule as the interactive screen: only the user holding this bot's control lease.
-        if (
-          !hasActiveComputerControl(computer) ||
-          computer.controlBotId !== bot.id ||
-          !computer.controlLeaseId
-        ) {
+        if (!holdsComputerControl(computer, bot.id, context.actor) || !computer.controlLeaseId) {
           throw new ORPCError("FORBIDDEN", { message: "Take control first." });
         }
         const session = await deps.sandbox
@@ -786,16 +782,15 @@ export function computerRoutes(ctx: RouterContext) {
           return { url: null };
         }
         const computer = bot.computer;
+        // Everyone in the Space can watch; only the person holding control can drive it.
+        const holder = holdsComputerControl(computer, bot.id, context.actor);
         const session = await deps.sandbox
           .connectScreen(
             toComputerRef(computer),
             {
               view: "stream",
-              interactive: hasActiveComputerControl(computer) && computer.controlBotId === bot.id,
-              controlToken:
-                computer.controlBotId === bot.id
-                  ? (computer.controlLeaseId ?? undefined)
-                  : undefined,
+              interactive: holder,
+              controlToken: holder ? (computer.controlLeaseId ?? undefined) : undefined,
             },
             await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "screen"),
           )
@@ -807,10 +802,7 @@ export function computerRoutes(ctx: RouterContext) {
           });
         if (!session?.url) return { url: null };
         scheduleComputerSleep(deps.jobs, bot.computer.id);
-        const viewUrl = withViewOnly(
-          session.url,
-          !(hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id),
-        );
+        const viewUrl = withViewOnly(session.url, !holder);
         return {
           url: addScreenProxyCapability(
             viewUrl,
@@ -913,7 +905,23 @@ async function computerStatus(
   );
 }
 
-/** Hand the user's screen control for this bot back, continuing any run waiting on it. */
+/** Whether this person holds this bot's user control, so they may drive its screen. */
+function holdsComputerControl(
+  computer: Parameters<typeof hasActiveComputerControl>[0] & {
+    controlBotId: string | null;
+    controlUserId: string | null;
+  },
+  botId: string,
+  actor: Actor,
+): boolean {
+  return (
+    hasActiveComputerControl(computer) &&
+    computer.controlBotId === botId &&
+    // Control taken before holders were recorded has none.
+    (!computer.controlUserId || computer.controlUserId === actor.userId)
+  );
+}
+
 /** Members share a Space's computers, but only the person holding control can keep or end it. */
 function assertNotAnotherPersonsControl(
   computer: Parameters<typeof hasActiveComputerControl>[0] & {
@@ -925,13 +933,14 @@ function assertNotAnotherPersonsControl(
   if (
     computer.controlHolder === "user" &&
     hasActiveComputerControl(computer) &&
-    computer.controlUserId !== null &&
+    computer.controlUserId &&
     computer.controlUserId !== actor.userId
   ) {
     throw new ORPCError("CONFLICT", { message: "Someone else is using this computer" });
   }
 }
 
+/** Hand the user's screen control for this bot back, continuing any run waiting on it. */
 export async function releaseComputerControl(
   deps: RouterDeps,
   actor: Actor,

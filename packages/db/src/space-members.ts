@@ -149,19 +149,23 @@ export async function createSpaceInvite(
   input: SpaceRef,
 ): Promise<{ token: string; expiresAt: Date }> {
   await requireSpaceOwner(prisma, input);
-  const open = await prisma.spaceInvite.count({
-    where: { spaceId: input.spaceId, acceptedAt: null, expiresAt: { gt: new Date() } },
-  });
-  if (open >= MAX_OPEN_SPACE_INVITES) throw new SpaceInviteLimitError();
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SPACE_INVITE_TTL_MS);
-  await prisma.spaceInvite.create({
-    data: {
-      spaceId: input.spaceId,
-      tokenHash: hashInviteToken(token),
-      createdByUserId: input.userId,
-      expiresAt,
-    },
+  await prisma.$transaction(async (tx) => {
+    // Serializes concurrent links for one Space, so the cap holds.
+    await lockSpaceDeletion(tx, input.spaceId);
+    const open = await tx.spaceInvite.count({
+      where: { spaceId: input.spaceId, acceptedAt: null, expiresAt: { gt: new Date() } },
+    });
+    if (open >= MAX_OPEN_SPACE_INVITES) throw new SpaceInviteLimitError();
+    await tx.spaceInvite.create({
+      data: {
+        spaceId: input.spaceId,
+        tokenHash: hashInviteToken(token),
+        createdByUserId: input.userId,
+        expiresAt,
+      },
+    });
   });
   return { token, expiresAt };
 }

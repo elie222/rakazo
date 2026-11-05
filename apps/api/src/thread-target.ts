@@ -752,10 +752,11 @@ async function assertImageRecipients(
     });
     if (eligible) answered.push(run);
   }
+  // Another person's run never takes this message: it starts or steers the sender's own run,
+  // so only their runs can decide which model the image must suit.
+  const own = runs.filter((run) => run.userId === actor.userId);
   const current =
-    runs.find((run) => steersMessageFrom(run, actor)) ??
-    runs.find(steersUserMessage) ??
-    runs.find((run) => STEERABLE_RUN_STATUSES.has(run.status));
+    own.find(steersUserMessage) ?? own.find((run) => STEERABLE_RUN_STATUSES.has(run.status));
   for (const run of answered.length ? answered : [current]) {
     await assertThreadImageInput(
       tx as unknown as PrismaClient,

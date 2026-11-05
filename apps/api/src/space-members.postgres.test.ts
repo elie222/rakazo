@@ -818,6 +818,10 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(call(asInvitee, "computer/release", { botId: bot.id })).resolves.toMatchObject({
       status: 409,
     });
+    // Watching is shared; typing into the owner's session is not.
+    await expect(
+      call(asInvitee, "computer/input", { botId: bot.id, kind: "key", payload: { key: "a" } }),
+    ).resolves.toMatchObject({ status: 403 });
     await expect(
       system.computer.findUniqueOrThrow({ where: { id: computer.id } }),
     ).resolves.toMatchObject({ controlHolder: "user", controlUserId: owner.id });
