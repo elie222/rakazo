@@ -1054,6 +1054,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                     callObserver: pinnedComputerModels.main.callObserver,
                     oauth: pinnedComputerModels.main.oauth?.credential,
                     persistOAuth: pinnedComputerModels.main.oauth?.persist,
+                    refreshOAuth: pinnedComputerModels.main.oauth?.refresh,
                     retireOAuth: pinnedComputerModels.main.oauth?.retire,
                     redact: [],
                   }
