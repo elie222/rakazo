@@ -21,7 +21,6 @@ export const PAID_SERVICE_MARKUP = 1.2;
 /** Usage and credit rows of these calls share this provider value; the model is the service id. */
 export const PAID_SERVICE_USAGE_PROVIDER = "services";
 export const MAX_PAID_SERVICE_CALL_USD = 2;
-const MIN_DEFAULT_CEILING_USD = 0.05;
 const RESULT_MAX_CHARS = 50_000;
 const BODY_MAX_CHARS = 20_000;
 const QUERY_MAX_CHARS = 4_000;
@@ -34,7 +33,7 @@ const callArgs = z.object({
     .record(z.string().max(100), z.union([z.string().max(2_000), z.number(), z.boolean()]))
     .optional(),
   body: z.unknown().optional(),
-  max_cost_usd: z.number().min(0.001).max(MAX_PAID_SERVICE_CALL_USD).optional(),
+  max_cost_usd: z.number().min(0.001).max(MAX_PAID_SERVICE_CALL_USD),
 });
 
 type Scope = { userId: string; spaceId: string; runId: string; botId: string };
@@ -115,7 +114,7 @@ export async function serviceCallFromTool(
   const parsed = callArgs.safeParse(args);
   if (!parsed.success)
     return {
-      error: `Pass service, then query and/or body as its params list them; max_cost_usd is at most ${MAX_PAID_SERVICE_CALL_USD}.`,
+      error: `Pass service, max_cost_usd (at most ${MAX_PAID_SERVICE_CALL_USD}), then query and/or body as its params list them.`,
     };
   const { service: serviceId, query, body, max_cost_usd } = parsed.data;
   if (body !== undefined && (JSON.stringify(body)?.length ?? 0) > BODY_MAX_CHARS)
@@ -138,14 +137,7 @@ export async function serviceCallFromTool(
   if (!service) return { error: "Unknown service. Use service_search to find one." };
 
   const markup = factor(deps.billing);
-  const shownPrice = service.priceUsd === null ? null : service.priceUsd * markup;
-  const maxUsd = roundUsd(
-    max_cost_usd ??
-      Math.min(
-        MAX_PAID_SERVICE_CALL_USD,
-        Math.max(MIN_DEFAULT_CEILING_USD, (shownPrice ?? MIN_DEFAULT_CEILING_USD) * 3),
-      ),
-  );
+  const maxUsd = roundUsd(max_cost_usd);
   const key = createHash("sha256").update(effectKey).digest("hex");
   const callId = `service:${key}`;
   const membership = deps.billing ? await organizationForMember(deps.prisma, scope) : null;

@@ -322,7 +322,7 @@ export class TregPaidServiceProvider implements PaidServiceProvider {
     }
     return {
       outcome: "answered",
-      ok: response.ok,
+      ok: response.ok && !truncated,
       status: response.status,
       data: truncated ? { error: "The answer was too large to read." } : answerData(body),
       costUsd: (headerCost ?? 0) / 1_000_000,

@@ -75,7 +75,7 @@ describe("service_call", () => {
       await serviceCallFromTool(
         { prisma, provider: new FakePaidServiceProvider(), billing: true },
         scope,
-        { service: "people.email", query },
+        { service: "people.email", query, max_cost_usd: 0.05 },
         "run-1:service_call:big",
         context,
       ),
@@ -88,7 +88,11 @@ describe("service_call", () => {
     const result = await serviceCallFromTool(
       { prisma, provider, billing: true },
       scope,
-      { service: "people.email", query: { full_name: "Ada Example", domain: "example.test" } },
+      {
+        service: "people.email",
+        query: { full_name: "Ada Example", domain: "example.test" },
+        max_cost_usd: 0.05,
+      },
       "run-1:service_call:abc",
       context,
     );
@@ -183,7 +187,7 @@ describe("service_call", () => {
     const result = await serviceCallFromTool(
       { prisma, provider, billing: true },
       scope,
-      { service: "people.email" },
+      { service: "people.email", max_cost_usd: 0.05 },
       "key",
       context,
     );
@@ -202,7 +206,7 @@ describe("service_call", () => {
     const result = await serviceCallFromTool(
       { prisma, provider, billing: true },
       scope,
-      { service: "people.email" },
+      { service: "people.email", max_cost_usd: 0.05 },
       "key",
       context,
     );
@@ -222,7 +226,7 @@ describe("service_call", () => {
     const result = await serviceCallFromTool(
       { prisma, provider, billing: true },
       scope,
-      { service: "people.email" },
+      { service: "people.email", max_cost_usd: 0.05 },
       "key",
       context,
     );
@@ -236,7 +240,7 @@ describe("service_call", () => {
     const result = await serviceCallFromTool(
       { prisma, provider, billing: false },
       scope,
-      { service: "people.email" },
+      { service: "people.email", max_cost_usd: 0.05 },
       "key",
       context,
     );
@@ -255,7 +259,13 @@ describe("service_call", () => {
     const provider = new FakePaidServiceProvider();
     const deps = { prisma, provider, billing: true };
     expect(
-      await serviceCallFromTool(deps, scope, { service: "nope" }, "key", context),
+      await serviceCallFromTool(
+        deps,
+        scope,
+        { service: "nope", max_cost_usd: 0.05 },
+        "key",
+        context,
+      ),
     ).toMatchObject({ error: expect.stringContaining("Unknown service") });
     expect(
       await serviceCallFromTool(

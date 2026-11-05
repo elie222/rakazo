@@ -844,10 +844,11 @@ export const builtinAgentTools: ConnectorTool[] = [
         body: { type: "object", description: "Params listed under body." },
         max_cost_usd: {
           type: "number",
-          description: "Most this call may cost (default three times its price, at most 2).",
+          description:
+            "Most this call may cost in USD, at most 2. Shown to the person approving it.",
         },
       },
-      required: ["service"],
+      required: ["service", "max_cost_usd"],
     },
     readOnly: false,
   },
