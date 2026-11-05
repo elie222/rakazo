@@ -1,5 +1,6 @@
 ---
 import { PRICING_COMPARISON } from "../pricing";
+import Button from "./Button.astro";
 import PricingHint from "./PricingHint.astro";
 ---
 
@@ -52,6 +53,26 @@ import PricingHint from "./PricingHint.astro";
           ))
         }
       </tbody>
+      <tfoot>
+        <tr>
+          <td></td>
+          {
+            PRICING_COMPARISON.columns.map((column, index) => (
+              <td>
+                <Button
+                  href={column.action.href}
+                  variant={index === 0 || index === PRICING_COMPARISON.columns.length - 1 ? "secondary" : "primary"}
+                  size="sm"
+                  data-attr={`pricing-compare-${column.name.toLowerCase().replaceAll(" ", "-")}`}
+                  aria-label={"ariaLabel" in column.action ? column.action.ariaLabel : undefined}
+                >
+                  {column.action.label}
+                </Button>
+              </td>
+            ))
+          }
+        </tr>
+      </tfoot>
     </table>
   </div>
 </section>

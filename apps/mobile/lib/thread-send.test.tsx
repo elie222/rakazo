@@ -3,11 +3,22 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { rpc } from "./api";
+import { hapticImpact, hapticSuccess } from "./haptics";
+import * as feedbackModule from "./thread-feedback";
+
+const navigation = vi.hoisted(() => ({
+  focused: true,
+  isFocused() {
+    return this.focused;
+  },
+}));
 
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
+vi.mock("./haptics", () => ({ hapticImpact: vi.fn(), hapticSuccess: vi.fn() }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: vi.fn() }),
-  useNavigation: () => ({ isFocused: () => true }),
+  useNavigation: () => navigation,
 }));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example",
@@ -26,7 +37,7 @@ vi.mock("./session", () => ({
 vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));
 
 const { useThreadSend } = await import("./thread-send");
-const { deliverSend } = await import("./thread-feedback");
+const { deliverSend } = feedbackModule;
 const { offerPageReply } = await import("./pages");
 
 type Sender = ReturnType<typeof useThreadSend>;
@@ -125,6 +136,70 @@ async function chat(messages: object[]) {
       }),
   };
 }
+
+it("taps only valid sends and confirms delivery only for the visible chat", async () => {
+  let delivered!: Parameters<typeof feedbackModule.subscribeDelivered>[0];
+  const subscription = vi
+    .spyOn(feedbackModule, "subscribeDelivered")
+    .mockImplementation((listener) => {
+      delivered = listener;
+      return () => {};
+    });
+  const view = await chat([]);
+  vi.mocked(hapticImpact).mockClear();
+  vi.mocked(hapticSuccess).mockClear();
+  try {
+    await act(async () => view.sender().send());
+    expect(hapticImpact).not.toHaveBeenCalled();
+    view.sender().composerRef.current?.addReply("Hello");
+    await act(async () => view.sender().send());
+    expect(hapticImpact).toHaveBeenCalledTimes(1);
+    expect(hapticSuccess).not.toHaveBeenCalled();
+    const attempt = {
+      payload: {
+        originThreadKey: "bot-1",
+        initialBotTarget: "bot-1",
+        botTarget: "bot-1",
+        plan: {},
+      },
+    } as Parameters<typeof delivered>[0];
+    delivered(attempt);
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    navigation.focused = false;
+    delivered(attempt);
+    navigation.focused = true;
+    delivered({ ...attempt, payload: { ...attempt.payload, originThreadKey: "bot-2" } });
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+  } finally {
+    navigation.focused = true;
+    await act(async () => view.root.unmount());
+    subscription.mockRestore();
+  }
+});
+
+it("does not confirm a card answer accepted after navigation leaves the mounted chat", async () => {
+  let accept!: () => void;
+  vi.mocked(rpc).mockReturnValueOnce(
+    new Promise<void>((resolve) => {
+      accept = resolve;
+    }) as never,
+  );
+  const view = await chat([]);
+  vi.mocked(hapticSuccess).mockClear();
+  try {
+    const saving = view.sender().answer({ id: "ask-1", runId: "run-1" } as never, "yes");
+    navigation.focused = false;
+    accept();
+    await saving;
+    expect(hapticSuccess).not.toHaveBeenCalled();
+    navigation.focused = true;
+    await view.sender().answer({ id: "ask-2", runId: "run-1" } as never, "yes");
+    expect(hapticSuccess).toHaveBeenCalledOnce();
+  } finally {
+    navigation.focused = true;
+    await act(async () => view.root.unmount());
+  }
+});
 
 it("sends a page's reply about that page: its card here, else a link, over an earlier pick", async () => {
   // Two pages in the chat; the older one's reply answers its own card, not the newest page.

@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 
+vi.mock("./haptics", () => ({ hapticImpact: vi.fn(), hapticSuccess: vi.fn() }));
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 // Dictation reads the platform; the rest of react-native stays unloaded.
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));

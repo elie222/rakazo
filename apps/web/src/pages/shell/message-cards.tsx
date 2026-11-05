@@ -207,10 +207,10 @@ export function AppConnectCard({
           <img
             src={block.logo}
             alt=""
-            className="h-10 w-10 rounded-[10px] bg-favicon-plate object-contain p-1"
+            className="h-10 w-10 rounded-md bg-favicon-plate object-contain p-1"
           />
         ) : (
-          <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-muted text-[15px] text-foreground">
+          <span className="grid h-10 w-10 place-items-center rounded-md bg-muted text-[15px] text-foreground">
             {block.name.slice(0, 1).toUpperCase()}
           </span>
         )}
@@ -471,7 +471,7 @@ export function ChartBlockView({
   const expandedViewport = chartViewport(viewport.width, viewport.height);
   return (
     <>
-      <div className="group relative w-[552px] max-w-full rounded-[20px] bg-muted p-4">
+      <div className="group relative w-[552px] max-w-full rounded-2xl bg-muted p-4">
         <ChartCanvas spec={spec} data={data} width={520} />
         <Button
           variant="outline"
@@ -550,12 +550,12 @@ export function ArtifactImage({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="max-w-[240px] overflow-hidden rounded-[20px]"
+          className="max-w-[240px] overflow-hidden rounded-2xl"
         >
           <img src={src} alt={name} className="max-h-48 w-full object-cover" />
         </button>
       ) : (
-        <div className="rounded-[20px] bg-muted px-4 py-3 text-[14px] text-muted-foreground">
+        <div className="rounded-2xl bg-muted px-4 py-3 text-[14px] text-muted-foreground">
           {name}
         </div>
       )}

@@ -36,6 +36,7 @@ import { withUserBubble } from "../../lib/user-bubble";
 import { errorText } from "../../lib/user-error";
 import { AppConnectCard } from "../AppConnectCard";
 import { AskActions } from "../AskActions";
+import { AskReceiptView } from "../ask-receipt";
 import { AudioAttachment } from "../audio-attachment";
 import { MessageMentions } from "../bot-mention";
 import { ChoiceCard } from "../ChoiceCard";
@@ -414,7 +415,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                     : plainAskTitle(askBlock.text)}
                 </Text>
               ) : null}
-              {askBlock.detail ? (
+              {askBlock.receipt ? (
+                <AskReceiptView receipt={askBlock.receipt} />
+              ) : askBlock.detail ? (
                 <Text
                   {...(askBlock.text ? {} : actionProps)}
                   style={{

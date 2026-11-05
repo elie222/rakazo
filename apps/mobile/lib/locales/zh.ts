@@ -1,4 +1,5 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  Haptics: "触感反馈",
   "Add rule": "添加规则",
   "Tool name": "工具名称",
   Address: "地址",
@@ -963,6 +964,9 @@ export const ZH_MESSAGES: Record<string, string> = {
 
   Artifact: "制品",
   Artifacts: "制品",
+  "Filter by who made it": "按创建者筛选",
+  "All files": "全部文件",
+  "Made by bots": "由 Bot 创建",
   "All bots": "所有 Bot",
   "Search artifacts…": "搜索制品…",
   "No artifacts yet": "暂无制品",
@@ -1389,6 +1393,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Discard changes?": "要放弃更改吗？",
   Discard: "放弃",
   "Could not delete note": "无法删除笔记",
+  "Recent payments": "最近付款",
   "Spending limit": "支出上限",
   Amount: "金额",
   Currency: "币种",
@@ -1404,6 +1409,10 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{amount} spent this week": "本周已花费 {amount}",
   "{amount} spent this month": "本月已花费 {amount}",
   "{amount} spent": "已花费 {amount}",
+  "Button “{button}” · read from the page, not checked": "按钮“{button}”· 读取自页面，未核实",
+  "On the button": "按钮上的金额",
+  "Read from the page, not checked": "读取自页面，未核实",
+  Total: "合计",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

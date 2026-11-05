@@ -3,6 +3,8 @@
 Choose the deployment's default model, connect local or OpenAI-compatible servers, and configure
 approvals, media generation and voice.
 
+English | [简体中文](./zh-CN/self-host-models.md)
+
 ## Deployment model
 
 The deployment model is used by anyone who has not connected a model of their own. `PI_DEFAULT_PROVIDER`
@@ -34,11 +36,13 @@ the API and worker, for models that have no stored credential.
 
 ## Approvals
 
-Approvals have three modes in **Settings → Approvals**: Never ask runs every action, Auto lets an
+Approvals have three modes in **Settings → Approvals**: Never ask skips ordinary approval prompts, Auto lets an
 approval model pass actions that fit the request, and Ask asks before any change. A space starts
 in Auto, which asks like Ask until an approval model is available. Each
 person can allow or block single tools and sites in every mode, and a space can customize its
 approvals apart from the account.
+All modes still enforce block rules and safety checks. Purchases always require a person's approval;
+unattended runs that cannot request approval refuse them.
 
 In **Settings → Models → Approval model**, each user can select a model
 from an existing connection and add ordered backups, independently of their main model. Personal
@@ -128,8 +132,9 @@ managed endpoints, the deployment-wide fallback remains
 
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).
-Existing connections default to disabled. Reconnect former Qwen-list or deployment-local models
-via **Settings → Models** and turn it on; the old environment list is no longer read.
+Existing connections default to disabled. Deployment-local models opt in through
+`RAKAZO_LOCAL_REASONING_MODELS`; reconnect through **Settings → Models** only to move to a personal
+connection.
 
 Enabled connections default to medium thinking. Web and desktop expose **Thinking** in a bot's
 advanced settings; mobile inherits the same backend policy. Rakazo sends standard

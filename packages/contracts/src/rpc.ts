@@ -70,6 +70,7 @@ import {
   BotSectionSchema,
   ByokIntervalSchema,
   ByokTierSchema,
+  CATALOG_SEARCH_QUERY_MAX_LENGTH,
   CapabilityInstallSchema,
   ChatAlertSchema,
   CONNECTION_LABEL_MAX_LENGTH,
@@ -171,6 +172,7 @@ import {
 import {
   PaymentWalletStatusSchema,
   SpendingLimitSchema,
+  SpendingPaymentSchema,
   SpendingStatusSchema,
 } from "./payments.js";
 import { MessageReactionSchema } from "./reactions.js";
@@ -1027,7 +1029,7 @@ export const appContract = {
     catalogSearch: oc
       .input(
         z.object({
-          query: z.string().trim().max(253).default(""),
+          query: z.string().trim().max(CATALOG_SEARCH_QUERY_MAX_LENGTH).default(""),
           usePublicCatalog: z.boolean().default(false),
         }),
       )
@@ -1291,6 +1293,8 @@ export const appContract = {
       .input(
         z.object({
           botId: Id.optional(),
+          /** Only files bots attached, leaving out uploads. */
+          madeByBots: z.boolean().optional(),
           cursor: z.string().optional(),
           limit: z.number().int().min(1).max(60).optional(),
         }),
@@ -1446,6 +1450,8 @@ export const appContract = {
     set: oc
       .input(z.object({ limit: SpendingLimitSchema.nullable() }).strict())
       .output(SpendingStatusSchema),
+    /** The latest payments that count, newest first. */
+    payments: oc.output(z.array(SpendingPaymentSchema)),
   },
   /** The signed-in user's wallet; absent when the deployment offers none. */
   paymentWallet: {

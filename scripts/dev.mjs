@@ -11,6 +11,10 @@
 // Setting WEB_PORT or API_PORT, in the shell or `.env`, turns off port selection. A relative
 // DATA_DIR resolves in the main checkout, so checkouts sharing the database share its files.
 // Branch databases, and their copied files, are dropped once the branch is deleted or merged.
+//
+// RAKAZO_DEV_TAILNET=1 also serves the web app over HTTPS to your other Tailscale devices, at
+// https://<this machine>.<tailnet>.ts.net:<web port>. Everything still listens on loopback; the
+// Tailscale daemon forwards to it, so only devices signed in to your tailnet can reach it.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -44,6 +48,7 @@ const MANAGED = {
   runtime: "rakazo_dev",
   database: "rakazo",
 };
+const TAILSCALE_APP_CLI = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
 const SERVICES = ["@rakazo/api", "@rakazo/worker", "@rakazo/web", "@rakazo/sandbox-supervisor"];
 
 const fileEnv = existsSync(path.join(root, ".env"))
@@ -351,6 +356,38 @@ async function pruneBranchDatabases(shared, sharedDataDir, onMain, keep) {
   }
 }
 
+function tailscaleCli() {
+  for (const cli of ["tailscale", TAILSCALE_APP_CLI]) {
+    try {
+      run(cli, ["version"]);
+      return cli;
+    } catch {}
+  }
+  throw new Error("RAKAZO_DEV_TAILNET is set, but the tailscale CLI was not found.");
+}
+
+/** Serve the loopback web port to the tailnet over HTTPS on the same port number. */
+function shareOnTailnet(webPort) {
+  const cli = tailscaleCli();
+  const host = JSON.parse(run(cli, ["status", "--json"])).Self?.DNSName?.replace(/\.$/, "");
+  if (!host) throw new Error("Tailscale is not connected. Sign in to Tailscale and try again.");
+  // Inherit stdio: the first run may print a link to turn on HTTPS for the tailnet and wait.
+  execFileSync(cli, ["serve", "--bg", `--https=${webPort}`, `http://127.0.0.1:${webPort}`], {
+    stdio: "inherit",
+  });
+  return {
+    host,
+    origin: `https://${host}:${webPort}`,
+    stop() {
+      try {
+        run(cli, ["serve", `--https=${webPort}`, "off"]);
+      } catch {
+        log(`Could not stop sharing port ${webPort}; run: tailscale serve --https=${webPort} off`);
+      }
+    },
+  };
+}
+
 function generateClientIfStale(env) {
   const client = path.join(dbPackage, "src/generated/prisma/client.ts");
   const schema = path.join(dbPackage, "prisma/schema.prisma");
@@ -403,7 +440,26 @@ try {
   await migrationLock.end();
 }
 
-if (ports) log(`Open http://127.0.0.1:${ports.web}`);
+let tailnet = null;
+if (/^(1|true)$/i.test(setting("RAKAZO_DEV_TAILNET") ?? "")) {
+  // The emulator's inbox has no sign-in check; it is safe only while nothing but this machine
+  // can reach the web server.
+  if (setting("EMAIL_EMULATOR") === "true") {
+    throw new Error("RAKAZO_DEV_TAILNET cannot be used with EMAIL_EMULATOR=true.");
+  }
+  tailnet = shareOnTailnet(Number(env.WEB_PORT ?? setting("WEB_PORT") ?? 5173));
+  // Every way this process ends, including a failed launch, turns sharing off.
+  process.on("exit", () => tailnet.stop());
+  // Sign-in cookies and links follow this origin, so use the tailnet URL on this machine too.
+  env.WEB_ORIGIN = tailnet.origin;
+  env.BETTER_AUTH_URL = tailnet.origin;
+  env.RAKAZO_ALLOWED_HOSTS = [setting("RAKAZO_ALLOWED_HOSTS"), tailnet.host]
+    .filter(Boolean)
+    .join(",");
+}
+
+if (tailnet) log(`Open ${tailnet.origin} from any device on your tailnet`);
+else if (ports) log(`Open http://127.0.0.1:${ports.web}`);
 const turbo = spawnPnpm(
   ["exec", "turbo", "dev", "--env-mode=loose", ...SERVICES.map((name) => `--filter=${name}`)],
   { cwd: root, env, stdio: "inherit" },
