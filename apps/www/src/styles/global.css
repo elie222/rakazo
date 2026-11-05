@@ -2725,9 +2725,13 @@ button.product-demo__dock-icon {
   text-align: center;
 }
 
-.pricing-compare__table tbody tr:last-child th,
-.pricing-compare__table tbody tr:last-child td {
+.pricing-compare__table tfoot td {
+  padding-block: 20px;
   border-bottom: 0;
+}
+
+.pricing-compare__table tfoot .button {
+  white-space: nowrap;
 }
 
 .pricing-compare__table th:first-child {
