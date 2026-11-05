@@ -10,7 +10,6 @@ import {
   runAsSystem,
   runAsTenant,
 } from "@rakazo/db";
-import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ThreadTarget } from "./thread-target.js";
 import { sendThreadMessage } from "./thread-target.js";
@@ -30,7 +29,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let system: PrismaClient;
-  let pool: Pool;
+  let pool: ReturnType<typeof createDb>["pool"];
   let close: () => Promise<void>;
   let actor: Actor;
   let userId: string;
@@ -138,7 +137,7 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
             error.message
               .split("\n")
               .find((line) => /expired|timeout/i.test(line))
-              ?.trim() ?? error.message.split("\n")[0];
+              ?.trim() ?? error.message.split("\n")[0] ?? error.message;
           return `settled: ${reason.slice(0, 160)}`;
         },
       ),
@@ -153,9 +152,11 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
       const clientNonce = randomUUID();
       const { lockTaken, open, done } = holdThreadShare();
       const xactId = await lockTaken;
-      const probe = await connectProbe();
+      let probe: Probe | undefined;
       let work: Promise<unknown> = Promise.resolve();
       try {
+        // Inside the try, so a failed checkout still opens the gate and drains the reader.
+        probe = await connectProbe();
         const sendWork = runAsTenant({ spaceId, userId }, () =>
           sendThreadMessage(
             {
@@ -195,7 +196,7 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
         open();
         await done.catch(() => undefined);
         await work.catch(() => undefined);
-        probe.release();
+        probe?.release();
       }
     },
     THREAD_LOCK_HOLD_MS * 4,
@@ -232,9 +233,11 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
 
       const { lockTaken, open, done } = holdThreadShare();
       const xactId = await lockTaken;
-      const probe = await connectProbe();
+      let probe: Probe | undefined;
       let work: Promise<unknown> = Promise.resolve();
       try {
+        // Inside the try, so a failed checkout still opens the gate and drains the reader.
+        probe = await connectProbe();
         const claimWork = runAsTenant({ spaceId, userId }, () =>
           claimSteering(prisma, {
             threadId,
@@ -264,7 +267,7 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
         open();
         await done.catch(() => undefined);
         await work.catch(() => undefined);
-        probe.release();
+        probe?.release();
       }
     },
     THREAD_LOCK_HOLD_MS * 4,
