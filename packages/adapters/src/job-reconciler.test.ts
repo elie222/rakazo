@@ -100,10 +100,46 @@ describe("createJobReconciler", () => {
     const stopping = reconciler.stop().then(() => {
       stopped = true;
     });
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(stopped).toBe(false);
     storage.resolve();
     await stopping;
+  });
+
+  it("waits for housekeeping a pass starts after stop was called", async () => {
+    const { jobs } = publisher();
+    const acquired = deferred();
+    const storage = deferred();
+    const leadership: ReconciliationLeadership = {
+      tryAcquire: vi.fn(async () => {
+        await acquired.promise;
+        return true;
+      }),
+      release: vi.fn(async () => undefined),
+    };
+    const reconcileHomeStorage = vi.fn(() => storage.promise);
+    const reconciler = createJobReconciler({
+      prisma: fakePrisma(),
+      jobs,
+      leadership,
+      reconcileHomeStorage,
+    });
+
+    const pass = reconciler.reconcileOnce();
+    let stopped = false;
+    const stopping = reconciler.stop().then(() => {
+      stopped = true;
+    });
+    acquired.resolve();
+    await pass;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reconcileHomeStorage).toHaveBeenCalledOnce();
+    expect(stopped).toBe(false);
+    expect(leadership.release).not.toHaveBeenCalled();
+    storage.resolve();
+    await stopping;
+    expect(leadership.release).toHaveBeenCalledOnce();
   });
 
   it("restores a due pending messaging outbox drain", async () => {

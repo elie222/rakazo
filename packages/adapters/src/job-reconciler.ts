@@ -495,7 +495,9 @@ export function createJobReconciler(
       stopping = true;
       if (timer) clearInterval(timer);
       timer = undefined;
-      await Promise.all([reconciling?.catch(() => undefined), ...housekeepingRunning.values()]);
+      await reconciling?.catch(() => undefined);
+      // Read only after the pass settles: one waiting on leadership starts housekeeping late.
+      await Promise.all(housekeepingRunning.values());
       await deps.leadership?.release();
     },
   };
