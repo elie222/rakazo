@@ -477,9 +477,7 @@ function parseSimpleYamlObject(text: string): Record<string, unknown> {
       continue;
     }
     if (raw.startsWith("[") && raw.endsWith("]")) {
-      result[key] = raw
-        .slice(1, -1)
-        .split(",")
+      result[key] = splitYamlInlineArray(raw.slice(1, -1))
         .map((part) => parseYamlScalar(part.trim()))
         .filter((part) => part !== "");
       i += 1;
@@ -489,6 +487,31 @@ function parseSimpleYamlObject(text: string): Record<string, unknown> {
     i += 1;
   }
   return result;
+}
+
+function splitYamlInlineArray(raw: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < raw.length; i += 1) {
+    const char = raw[i];
+    if (quote === '"' && char === "\\") {
+      i += 1;
+    } else if (quote === "'" && char === "'" && raw[i + 1] === "'") {
+      i += 1;
+    } else if (quote && char === quote) {
+      quote = null;
+    } else if (!quote && (char === '"' || char === "'") && raw.slice(start, i).trim() === "") {
+      quote = char;
+    } else if (!quote && char === ",") {
+      parts.push(raw.slice(start, i));
+      start = i + 1;
+    }
+  }
+  // Keep the prior behavior for malformed, unclosed quoted entries.
+  if (quote) return raw.split(",");
+  parts.push(raw.slice(start));
+  return parts;
 }
 
 function parseYamlScalar(raw: string): string | number | boolean {

@@ -364,6 +364,38 @@ msgstr "残り{remaining}"
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {#席} other {#席}}"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a day"
+msgstr "1日あたり{shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a month"
+msgstr "1か月あたり{shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a week"
+msgstr "1週間あたり{shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} in total"
+msgstr "合計{shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent"
+msgstr "支出: {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this month"
+msgstr "今月の支出: {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this week"
+msgstr "今週の支出: {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent today"
+msgstr "今日の支出: {shown}"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
 msgstr "{size} B"
@@ -760,6 +792,10 @@ msgstr "常に許可済み"
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
 msgstr "{site} を常に開く"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Amount"
+msgstr "金額"
 
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
@@ -1212,6 +1248,7 @@ msgstr "画像を読み取れません"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2307,6 +2344,10 @@ msgstr "ルールを保存できませんでした"
 msgid "Could not save skill"
 msgstr "スキルを保存できませんでした"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Could not save spending limit"
+msgstr "支出上限を保存できませんでした"
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "Could not save that choice"
 msgstr "その選択を保存できませんでした"
@@ -2547,6 +2588,10 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Cron式"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Currency"
+msgstr "通貨"
+
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
@@ -2571,6 +2616,10 @@ msgstr "{label}をカスタマイズ"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
 msgstr "ボットのアバターをカスタマイズ"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Daily"
+msgstr "毎日"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
@@ -2921,6 +2970,7 @@ msgid "Each name can be used once."
 msgstr "各名前は一度だけ使用できます。"
 
 #: src/components/AskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -4154,6 +4204,7 @@ msgid "month"
 msgstr "月"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "毎月"
@@ -4459,6 +4510,10 @@ msgstr "リモートMCPサーバーが見つかりません"
 msgid "No reply"
 msgstr "返信なし"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "No reset"
+msgstr "リセットなし"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx
@@ -4494,6 +4549,7 @@ msgstr "チケットはまだありません"
 msgid "No trigger"
 msgstr "トリガーなし"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr ""
@@ -5242,6 +5298,7 @@ msgstr "再読み込み"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -5412,6 +5469,10 @@ msgstr "パスワードをリセット"
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "パスワードをリセット"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Resets"
+msgstr "リセット"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5585,6 +5646,7 @@ msgstr "土曜日"
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5825,6 +5887,10 @@ msgstr "サーバー名"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Server URL"
 msgstr "サーバーURL"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Set"
+msgstr "設定"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
@@ -6106,6 +6172,10 @@ msgstr "話しています"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
 msgstr "音声モデル"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Spending limit"
+msgstr "支出上限"
 
 #: src/components/AccountAccess.tsx
 msgid "SSO"
@@ -6446,6 +6516,10 @@ msgstr "思考"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Thinking: {0}"
 msgstr "思考: {0}"
+
+#: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "このアカウントは無効化されています"
 
 #: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
@@ -7052,6 +7126,10 @@ msgstr "平日"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "週末"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Weekly"
+msgstr "毎週"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

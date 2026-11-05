@@ -364,6 +364,38 @@ msgstr "{remaining} kaldı"
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {# koltuk} other {# koltuk}}"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a day"
+msgstr "Günde {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a month"
+msgstr "Ayda {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a week"
+msgstr "Haftada {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} in total"
+msgstr "Toplam {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent"
+msgstr "{shown} harcandı"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this month"
+msgstr "Bu ay {shown} harcandı"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this week"
+msgstr "Bu hafta {shown} harcandı"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent today"
+msgstr "Bugün {shown} harcandı"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
 msgstr "{size} B"
@@ -760,6 +792,10 @@ msgstr "Her zaman izinli"
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
 msgstr "{site} sitesini her zaman aç"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Amount"
+msgstr "Tutar"
 
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
@@ -1212,6 +1248,7 @@ msgstr "Görselleri okuyamaz"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2307,6 +2344,10 @@ msgstr "Kural kaydedilemedi"
 msgid "Could not save skill"
 msgstr "Beceri kaydedilemedi"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Could not save spending limit"
+msgstr "Harcama limiti kaydedilemedi"
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "Could not save that choice"
 msgstr "Bu seçim kaydedilemedi"
@@ -2547,6 +2588,10 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Cron ifadesi"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Currency"
+msgstr "Para birimi"
+
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
@@ -2571,6 +2616,10 @@ msgstr "{label}: özelleştir"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
 msgstr "Bot avatarını özelleştir"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Daily"
+msgstr "Günlük"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
@@ -2921,6 +2970,7 @@ msgid "Each name can be used once."
 msgstr "Her ad yalnızca bir kez kullanılabilir."
 
 #: src/components/AskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -4154,6 +4204,7 @@ msgid "month"
 msgstr "ay"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Aylık"
@@ -4459,6 +4510,10 @@ msgstr "Uzak MCP sunucusu bulunamadı"
 msgid "No reply"
 msgstr "Yanıt yok"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "No reset"
+msgstr "Sıfırlama yok"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx
@@ -4494,6 +4549,7 @@ msgstr "Henüz talep yok"
 msgid "No trigger"
 msgstr "Tetikleyici yok"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr "Yok"
@@ -5242,6 +5298,7 @@ msgstr "Yeniden yükle"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -5412,6 +5469,10 @@ msgstr "Parolayı sıfırla"
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "Parolanızı sıfırlayın"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Resets"
+msgstr "Sıfırlama"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5585,6 +5646,7 @@ msgstr "Cumartesi"
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5825,6 +5887,10 @@ msgstr "Sunucu adı"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Server URL"
 msgstr "Sunucu URL'si"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Set"
+msgstr "Ayarla"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
@@ -6106,6 +6172,10 @@ msgstr "Konuşuyor"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
 msgstr "Konuşma modeli"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Spending limit"
+msgstr "Harcama limiti"
 
 #: src/components/AccountAccess.tsx
 msgid "SSO"
@@ -6446,6 +6516,10 @@ msgstr "Düşünüyor"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Thinking: {0}"
 msgstr "Düşünme: {0}"
+
+#: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "Bu hesap devre dışı bırakıldı"
 
 #: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
@@ -7052,6 +7126,10 @@ msgstr "Hafta içi"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "Hafta sonları"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Weekly"
+msgstr "Haftalık"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

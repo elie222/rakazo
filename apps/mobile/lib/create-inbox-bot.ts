@@ -1,10 +1,12 @@
 import type { Href } from "expo-router";
-import { rpc } from "./api";
+import { rpc, selectedSpaceId, spaceSelectionSeq } from "./api";
 import { allowFocusPrompt, scheduleFocusPrompt } from "./focus-prompt";
-import { addToSearchInbox, searchInboxSession } from "./search-inbox";
+import { askToAddModel } from "./model-settings";
+import { addToSearchInbox, isSearchInboxSession, searchInboxSession } from "./search-inbox";
 
 /**
  * Creates a bot from the inbox's Create menu, adds it to the search roster, and opens its chat.
+ * The first bot waits for a model, as in web onboarding, so it can greet the user.
  * Throws when the bot could not be created.
  */
 export async function createInboxBot({
@@ -16,10 +18,20 @@ export async function createInboxBot({
 }) {
   // Taken before the requests, so a bot that lands after a session switch is dropped.
   const askedIn = searchInboxSession();
+  const spaceId = selectedSpaceId();
+  const spaceSelection = spaceSelectionSeq();
   // Authoritative roster so a slow home fetch does not treat later bots as first.
   // A failed list is unknown — use the delayed path rather than assuming first.
   const existing = await rpc("bots/list").catch(() => null);
   const isFirstBot = existing !== null && existing.length === 0;
+  const needsModel = isFirstBot && (await rpc("me").catch(() => null))?.needsModel;
+  // Create was asked for here; after any account, server or Space switch, even back, it does nothing.
+  const moved = spaceSelectionSeq() !== spaceSelection || selectedSpaceId() !== spaceId;
+  if (!isSearchInboxSession(askedIn) || moved) return;
+  if (needsModel) {
+    askToAddModel();
+    return;
+  }
   const bot = await rpc("bots/create", {
     name: "New Bot",
     notifyOnFinish: true,

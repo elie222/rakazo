@@ -1060,6 +1060,9 @@ describe("routine detail", () => {
     await render(createElement(BotProfile));
     act(() => root.unmount());
     root = createRoot(container);
+    // The detail opens after that read; on a fast machine both can fall in one millisecond.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 1);
 
     let load!: (rows: unknown) => void;
     profileRpc(() => new Promise((resolve) => (load = resolve)));

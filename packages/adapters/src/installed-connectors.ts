@@ -42,6 +42,7 @@ import {
   resolveCatalogCall,
   SELECTED_SCHEMA_MAX_BYTES,
 } from "./lazy-tool-catalog.js";
+import { readMcpApp } from "./mcp-app.js";
 import { localSchemaReference } from "./openai-tool-parameters.js";
 import type { RemoteTransportDependencies, RemoteUrlPolicy } from "./remote-mcp.js";
 import {
@@ -50,6 +51,7 @@ import {
   createSafeRemoteFetch,
   listRemoteMcpTools,
   RemoteMcpSessionCache,
+  readRemoteMcpResource,
 } from "./remote-mcp.js";
 
 const ModelHeaderName = HeaderName.refine(
@@ -226,6 +228,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
             resourceId: install.id,
             toolName: tool.name,
             catalogGroup,
+            appResourceUri: tool.appResourceUri,
           },
         }));
       }
@@ -307,14 +310,15 @@ export class InstalledConnectorProvider implements ConnectorProvider {
       const remote = await this.remoteFor(context);
       if (install.kind === "mcp") {
         const config = McpConfigSchema.parse(install.config);
+        const session = {
+          ...remote,
+          endpoint: install.source,
+          headers: connectorHeaders(config, credential),
+          signal: context.signal,
+          ...this.mcpSessionOptions(context, install),
+        };
         const result = await callRemoteMcpTool(
-          {
-            ...remote,
-            endpoint: install.source,
-            headers: connectorHeaders(config, credential),
-            signal: context.signal,
-            ...this.mcpSessionOptions(context, install),
-          },
+          session,
           call.route?.toolName ?? call.tool,
           call.args,
         );
@@ -322,6 +326,14 @@ export class InstalledConnectorProvider implements ConnectorProvider {
           type: "result",
           data: redactConnectorPayload(result, credential ? [credential] : []),
         };
+        const app = await readMcpApp(
+          install.name,
+          call.withApp ? call.route?.appResourceUri : undefined,
+          result,
+          (uri) => readRemoteMcpResource(session, uri),
+          credential ? [credential] : [],
+        );
+        if (app) yield { type: "app", app };
         return;
       }
       if (install.kind === "graphql") {
@@ -550,11 +562,13 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
         (pathValue as Record<string, unknown>).parameters,
         operation.parameters,
       )) {
-        properties[parameter.name] = asRecord(
-          inlineOpenApiSchema(refs, parameter.schema, "string"),
-        ) ?? {
+        const schema = asRecord(inlineOpenApiSchema(refs, parameter.schema, "string")) ?? {
           type: "string",
         };
+        properties[parameter.name] =
+          typeof parameter.description === "string"
+            ? { ...schema, description: parameter.description }
+            : schema;
         if (parameter.in === "query") queryParameters.push(parameter.name);
         if (parameter.in === "header") {
           if (isSensitiveHeader(parameter.name) || isTransportHeader(parameter.name)) {

@@ -364,6 +364,38 @@ msgstr "{remaining} left"
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {# seat} other {# seats}}"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a day"
+msgstr "{shown} a day"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a month"
+msgstr "{shown} a month"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a week"
+msgstr "{shown} a week"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} in total"
+msgstr "{shown} in total"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent"
+msgstr "{shown} spent"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this month"
+msgstr "{shown} spent this month"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this week"
+msgstr "{shown} spent this week"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent today"
+msgstr "{shown} spent today"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
 msgstr "{size} B"
@@ -760,6 +792,10 @@ msgstr "Always allowed"
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
 msgstr "Always open {site}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Amount"
+msgstr "Amount"
 
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
@@ -1212,6 +1248,7 @@ msgstr "Can't read images"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2307,6 +2344,10 @@ msgstr "Could not save rule"
 msgid "Could not save skill"
 msgstr "Could not save skill"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Could not save spending limit"
+msgstr "Could not save spending limit"
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "Could not save that choice"
 msgstr "Could not save that choice"
@@ -2547,6 +2588,10 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Cron expression"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Currency"
+msgstr "Currency"
+
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
@@ -2571,6 +2616,10 @@ msgstr "Customize {label}"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
 msgstr "Customize bot avatar"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Daily"
+msgstr "Daily"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
@@ -2921,6 +2970,7 @@ msgid "Each name can be used once."
 msgstr "Each name can be used once."
 
 #: src/components/AskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -4154,6 +4204,7 @@ msgid "month"
 msgstr "month"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Monthly"
@@ -4459,6 +4510,10 @@ msgstr "No remote MCP servers found"
 msgid "No reply"
 msgstr "No reply"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "No reset"
+msgstr "No reset"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx
@@ -4494,6 +4549,7 @@ msgstr "No tickets yet"
 msgid "No trigger"
 msgstr "No trigger"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr "None"
@@ -5242,6 +5298,7 @@ msgstr "Reload"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -5412,6 +5469,10 @@ msgstr "Reset password"
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "Reset your password"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Resets"
+msgstr "Resets"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5585,6 +5646,7 @@ msgstr "Saturday"
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5825,6 +5887,10 @@ msgstr "Server name"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Server URL"
 msgstr "Server URL"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Set"
+msgstr "Set"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
@@ -6106,6 +6172,10 @@ msgstr "Speaking"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
 msgstr "Speech model"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Spending limit"
+msgstr "Spending limit"
 
 #: src/components/AccountAccess.tsx
 msgid "SSO"
@@ -6446,6 +6516,10 @@ msgstr "Thinking"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Thinking: {0}"
 msgstr "Thinking: {0}"
+
+#: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "This account is deactivated"
 
 #: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
@@ -7052,6 +7126,10 @@ msgstr "Weekdays"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "Weekends"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Weekly"
+msgstr "Weekly"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"
