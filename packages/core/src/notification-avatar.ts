@@ -4,9 +4,8 @@ import type { AvatarEyes } from "./avatar-shape.js";
 import {
   avatarEyeRects,
   avatarIdentitySeed,
-  ORGANIC_AVATAR_EYES,
   ORGANIC_AVATAR_VIEWBOX,
-  organicAvatarEyeTilt,
+  organicAvatarEyes,
   organicAvatarPath,
 } from "./avatar-shape.js";
 import { botEyeInk, resolvePersonaColorDef } from "./bot-avatar-colors.js";
@@ -55,7 +54,7 @@ export function notificationAvatarSource(bot: {
   } else {
     const seed = avatarIdentitySeed(bot.id);
     viewBox = ORGANIC_AVATAR_VIEWBOX;
-    body = `<path d="${organicAvatarPath(seed)}" fill="${color}"/><g transform="rotate(${organicAvatarEyeTilt(seed)})">${barEyes(ORGANIC_AVATAR_EYES, botEyeInk(color, lightTokens))}</g>`;
+    body = `<path d="${organicAvatarPath(seed)}" fill="${color}"/>${barEyes(organicAvatarEyes(seed), botEyeInk(color, lightTokens))}`;
   }
   return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="${viewBox}">${body}</svg>`)}`;
 }

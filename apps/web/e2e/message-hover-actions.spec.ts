@@ -156,7 +156,15 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
 
   const botRail = await revealHoverRail(botRow);
   const botToolbar = botRow.getByTestId("message-hover-actions");
-  await expect(botRow.locator("time")).toHaveCount(0);
+  // Hovering shows no time; the send time only appears while the thread is swiped.
+  await expect(botToolbar.locator("time")).toHaveCount(0);
+  await expect(botRow.locator(".message-swipe-time")).toHaveCSS("opacity", "0");
+  // Swiping the thread for send times moves the hover actions aside, so the two never overlap.
+  for (let step = 0; step < 4; step++) await page.mouse.wheel(30, 0);
+  await expect(page.locator("[data-times-open]")).toHaveCount(1);
+  await expect(botRail).toHaveCSS("opacity", "0");
+  await expect(page.locator("[data-times-open]")).toHaveCount(0);
+  await botRow.hover();
 
   await expect(botToolbar.getByRole("button", { name: "Reply" })).toBeVisible();
   await expect(botToolbar.getByRole("button", { name: "More" })).toBeVisible();

@@ -1,11 +1,13 @@
 import type { HTMLAttributes, PointerEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
+  BOTS_SIDEBAR_DEFAULT_WIDTH,
+  BOTS_SIDEBAR_MAX_WIDTH,
   BOTS_SIDEBAR_MIN_WIDTH,
   BOTS_SIDEBAR_MINI_WIDTH,
   BOTS_SIDEBAR_SNAP_WIDTH,
+  botsSidebarWidthStorageKey,
   clampBotsSidebarWidth,
-  maximumBotsSidebarWidth,
   readBotsSidebarWidth,
   writeBotsSidebarWidth,
 } from "../../lib/bots-sidebar-pref";
@@ -26,7 +28,6 @@ export function useSidebarResize({
   onPreviewCollapsedChange: (collapsed: boolean) => void;
 }) {
   const [preferredWidth, setPreferredWidth] = useState(() => readBotsSidebarWidth(userId));
-  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const drag = useRef<{
     pointerId: number;
@@ -37,14 +38,18 @@ export function useSidebarResize({
     initialCollapsed: boolean;
     mini: boolean;
   } | null>(null);
-  const maxWidth = maximumBotsSidebarWidth(viewportWidth);
-  const expandedWidth = clampBotsSidebarWidth(preferredWidth, viewportWidth);
+  const maxWidth = BOTS_SIDEBAR_MAX_WIDTH;
+  // The width the user asks for; the column layout fits it to the window.
   const width =
-    dragWidth !== null
-      ? Math.min(maxWidth, dragWidth)
-      : collapsed
-        ? BOTS_SIDEBAR_MINI_WIDTH
-        : expandedWidth;
+    dragWidth !== null ? dragWidth : collapsed ? BOTS_SIDEBAR_MINI_WIDTH : preferredWidth;
+  // A single click on the edge toggles the rail; a double click resets the width instead.
+  const pendingToggle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (pendingToggle.current) clearTimeout(pendingToggle.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     setPreferredWidth(readBotsSidebarWidth(userId));
@@ -52,20 +57,12 @@ export function useSidebarResize({
     setDragWidth(null);
   }, [userId]);
 
-  useEffect(() => {
-    function resize() {
-      setViewportWidth(window.innerWidth);
-    }
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, []);
-
   function commit(next: number) {
     if (next < BOTS_SIDEBAR_SNAP_WIDTH) {
       onCollapsedChange(true);
       return;
     }
-    const expanded = clampBotsSidebarWidth(next, window.innerWidth);
+    const expanded = clampBotsSidebarWidth(next);
     setPreferredWidth(expanded);
     writeBotsSidebarWidth(userId, expanded);
     onCollapsedChange(false);
@@ -90,7 +87,7 @@ export function useSidebarResize({
       current.mini = mini;
       onPreviewCollapsedChange(mini);
     }
-    return mini ? BOTS_SIDEBAR_MINI_WIDTH : clampBotsSidebarWidth(rawWidth, window.innerWidth);
+    return mini ? BOTS_SIDEBAR_MINI_WIDTH : clampBotsSidebarWidth(rawWidth);
   }
 
   function cancelPreview() {
@@ -128,9 +125,14 @@ export function useSidebarResize({
     },
     onPointerUp(event) {
       if (drag.current?.pointerId !== event.pointerId) return;
-      if (!drag.current.moved && Math.abs(event.clientX - drag.current.startX) < 4)
-        onCollapsedChange(!drag.current.initialCollapsed);
-      else commit(previewAt(event.clientX));
+      if (!drag.current.moved && Math.abs(event.clientX - drag.current.startX) < 4) {
+        const toggled = !drag.current.initialCollapsed;
+        if (pendingToggle.current) clearTimeout(pendingToggle.current);
+        pendingToggle.current = setTimeout(() => {
+          pendingToggle.current = null;
+          onCollapsedChange(toggled);
+        }, 220);
+      } else commit(previewAt(event.clientX));
       release(event);
     },
     onPointerCancel(event) {
@@ -141,6 +143,19 @@ export function useSidebarResize({
     onLostPointerCapture(event) {
       if (drag.current?.pointerId !== event.pointerId) return;
       cancelPreview();
+    },
+    onDoubleClick(event) {
+      event.preventDefault();
+      if (pendingToggle.current) clearTimeout(pendingToggle.current);
+      pendingToggle.current = null;
+      setPreferredWidth(BOTS_SIDEBAR_DEFAULT_WIDTH);
+      const key = botsSidebarWidthStorageKey(userId);
+      try {
+        if (key) window.localStorage.removeItem(key);
+      } catch {
+        // Storage may be unavailable; the reset still applies for this session.
+      }
+      onCollapsedChange(false);
     },
     onKeyDown(event) {
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {

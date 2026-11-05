@@ -16,10 +16,10 @@ import {
   avatarWorkingDot,
   botAvatarActivity,
   botEyeInk,
+  botFollowsTheme,
   isRunWorking,
-  ORGANIC_AVATAR_EYES,
   ORGANIC_AVATAR_VIEWBOX,
-  organicAvatarEyeTilt,
+  organicAvatarEyes,
   organicAvatarPath,
   SHIPPED_BOT_AVATAR_EYES,
   SHIPPED_BOT_AVATAR_VIEWBOX,
@@ -276,8 +276,11 @@ function LegacyBotAvatar({
   // itself that sign, so it carries none.
   const isWorking = isRunWorking(status) && !composing && motion !== "running";
   const parsed = mobileBotAvatarPresentation(color);
-  const fillColor = parsed.kind === "shape" || parsed.kind === "color" ? parsed.color : color;
-  const eyeColor = botEyeInk(fillColor, tokens);
+  const pickedColor = parsed.kind === "shape" || parsed.kind === "color" ? parsed.color : color;
+  // A white bot follows the theme, as on the web: white on dark, near-black on light.
+  const followsTheme = parsed.kind !== "image" && botFollowsTheme(pickedColor);
+  const fillColor = followsTheme ? tokens.foreground : pickedColor;
+  const eyeColor = followsTheme ? tokens.background : botEyeInk(fillColor, tokens);
   const onScreen = useAvatarOnScreen();
   const reducedMotion = useReducedMotion();
   const settling = useSettling(state);
@@ -309,7 +312,7 @@ function LegacyBotAvatar({
       </View>
     ) : parsed.kind === "shape" ? (
       <ShippedShapeAvatar
-        color={parsed.color}
+        color={fillColor}
         eyeColor={eyeColor}
         shapePath={parsed.shapePath}
         size={size}
@@ -448,23 +451,21 @@ function OrganicAvatar({
   bodyStyle: BodyStyle;
 }) {
   const seed = avatarIdentitySeed(identity || color || "#8B5CF6");
-  const eyes = ORGANIC_AVATAR_EYES;
+  const eyes = organicAvatarEyes(seed);
   const [leftEye, rightEye] = useBarEyes(eyes, ORGANIC_AVATAR_VIEWBOX, life);
   return (
     <Animated.View style={[{ width: size, height: size }, bodyStyle]}>
       <Svg width={size} height={size} viewBox={ORGANIC_AVATAR_VIEWBOX}>
         <Path d={organicAvatarPath(seed)} fill={color} />
-        <G transform={`rotate(${organicAvatarEyeTilt(seed)})`}>
-          {[leftEye, rightEye].map((props, index) => (
-            <AnimatedRect
-              key={index}
-              animatedProps={props}
-              width={eyes.width}
-              rx={eyes.width / 2}
-              fill={eyeColor}
-            />
-          ))}
-        </G>
+        {[leftEye, rightEye].map((props, index) => (
+          <AnimatedRect
+            key={index}
+            animatedProps={props}
+            width={eyes.width}
+            rx={eyes.width / 2}
+            fill={eyeColor}
+          />
+        ))}
       </Svg>
     </Animated.View>
   );

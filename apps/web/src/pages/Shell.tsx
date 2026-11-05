@@ -25,6 +25,7 @@ import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
 import { Keyboard, Lock, Monitor, Moon, Plug, Plus, ScrollText, Sun, Users } from "lucide-react";
+import type { CSSProperties } from "react";
 import {
   Suspense,
   useCallback,
@@ -59,6 +60,7 @@ import { computersAreUnavailable } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
 import { hasOpenDialog } from "../lib/has-open-dialog";
 import { PagesProvider, usePagesForChat } from "../lib/pages";
+import { PanelFoldContext, usePanelFoldState } from "../lib/panel-fold";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
@@ -252,7 +254,12 @@ function SpaceShell() {
   const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
   const isMobileSidebar = useIsMobile();
   const pages = usePagesForChat();
-  const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
+  // The window can put the sidebar on the rail without changing the user's preference.
+  const [sidebarAutoRail, setSidebarAutoRail] = useState(false);
+  const miniSidebar = (botsSidebarCollapsed || sidebarAutoRail) && !isMobileSidebar;
+  // On the desktop app the rail stacks its buttons under the window controls; the thread's top
+  // row and the panel's close button line up with the search button there.
+  const railChrome = miniSidebar && Boolean(desktopBridge());
   const [botMenu, setBotMenu] = useState<{ kind: "bot" | "group"; id: string } | null>(null);
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
   const currentSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId ?? null;
@@ -270,6 +277,7 @@ function SpaceShell() {
   openSettingsRef.current = openSettings;
   useEffect(() => desktopBridge()?.settings?.onOpen(() => openSettingsRef.current("general")), []);
 
+  const panelFold = usePanelFoldState();
   const inGroup = Boolean(groupId);
   const chatPanelOpen = inGroup
     ? panel === "group-settings"
@@ -411,7 +419,9 @@ function SpaceShell() {
     return Boolean(composer);
   }
   function toggleChatPanel() {
-    if (chatPanelOpen) setPanel(null);
+    // A panel folded away by a narrow window opens over the thread instead of closing.
+    if (chatPanelOpen && panelFold.folded) panelFold.requestUnfold();
+    else if (chatPanelOpen) setPanel(null);
     else if (inGroup) setPanel("group-settings");
     else if (active) {
       setPanel(lastBotTab.current);
@@ -983,6 +993,7 @@ function SpaceShell() {
       collapsed={botsSidebarCollapsed}
       onCollapsedChange={setBotsSidebarCollapsedPref}
       onPreviewCollapsedChange={setBotsSidebarCollapsed}
+      onAutoRailChange={setSidebarAutoRail}
       computerOpen={computerOpen}
       data-testid="shell-root"
       data-ready={shellReady}
@@ -1082,12 +1093,24 @@ function SpaceShell() {
           <div
             data-testid="mobile-sidebar-swipe-edge"
             aria-hidden="true"
-            className="absolute bottom-20 start-0 top-16 z-20 w-8 touch-none md:hidden"
+            className="absolute bottom-20 start-0 top-16 z-20 w-8 touch-none desk:hidden"
           />
         ) : null}
         <CallReturnBar />
         {/* The header floats so the transcript scrolls under its buttons. */}
-        <div ref={chatColumnRef} className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={chatColumnRef}
+          className="relative flex min-h-0 flex-1 flex-col"
+          // The bot's colour paints the user's bubbles and the send button.
+          style={
+            userBubble
+              ? ({
+                  "--chat-user": userBubble.background,
+                  "--chat-user-foreground": userBubble.foreground,
+                } as CSSProperties)
+              : undefined
+          }
+        >
           {/* Only the pills take input; the gaps pass clicks and scrolling to the transcript. */}
           <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />
           {findOpen ? (
@@ -1110,7 +1133,8 @@ function SpaceShell() {
             phoneCallsEnabled={Boolean(bootstrapMe?.phoneCallsEnabled)}
             voiceReady={Boolean(voiceStatus?.ready)}
             inCall={Boolean(active) && call?.botId === active?.id}
-            panelOpen={chatPanelOpen}
+            panelOpen={chatPanelOpen && !panelFold.folded}
+            railChrome={railChrome}
             onOpenNavigation={() => setMobileSidebarOpen(true)}
             onTogglePanel={toggleChatPanel}
             onCall={(bot) => {
@@ -1146,7 +1170,6 @@ function SpaceShell() {
               dismissableAskIds={dismissableAskIds}
               running={transcriptRunning}
               workingBots={workingBots}
-              userBubble={userBubble}
               onCallBack={
                 bootstrapMe?.phoneCallsEnabled && !inGroup && active
                   ? () => callBot(active)
@@ -1255,6 +1278,7 @@ function SpaceShell() {
       />
 
       <ShellSidePanel
+        railChrome={railChrome}
         rpc={rpc}
         panel={panel}
         setPanel={setPanel}
@@ -1444,7 +1468,9 @@ function SpaceShell() {
 
   // Empty chrome until the first bot list lands would flash "Select a bot" before the chat.
   return initialBotsLoaded || initialLoadFailed ? (
-    <PagesProvider value={pages}>{shell}</PagesProvider>
+    <PagesProvider value={pages}>
+      <PanelFoldContext value={panelFold}>{shell}</PanelFoldContext>
+    </PagesProvider>
   ) : (
     <PageLoading />
   );

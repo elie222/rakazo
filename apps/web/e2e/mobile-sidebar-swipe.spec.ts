@@ -79,6 +79,14 @@ test("swiping inward from the mobile edge opens the bots sidebar", async ({ page
   await expect(closeNavigation).toBeVisible();
   await expect(edge).toHaveCount(0);
   await expect(page.getByTestId("bots-sidebar")).toContainText("Chief");
+  // The dimmed backdrop starts exactly where the drawer ends: no clear strip between them.
+  await expect
+    .poll(async () => {
+      const drawer = await page.getByTestId("bots-sidebar").boundingBox();
+      const backdrop = await closeNavigation.boundingBox();
+      return drawer && backdrop ? Math.round(backdrop.x - (drawer.x + drawer.width)) : null;
+    })
+    .toBe(0);
   await captureScreenshot(page, testInfo, "mobile-sidebar-edge-swipe-open");
 
   // Right-to-left layouts swipe in from the other edge.

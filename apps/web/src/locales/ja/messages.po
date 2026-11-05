@@ -4079,10 +4079,6 @@ msgstr "最小"
 msgid "Minimize"
 msgstr "最小化"
 
-#: src/pages/shell/sidebar-header.tsx
-msgid "Minimize bots"
-msgstr "ボットを最小化"
-
 #: src/components/call/CallCard.tsx
 msgid "Minimize call"
 msgstr "通話を最小化"
@@ -5907,10 +5903,6 @@ msgstr "表示"
 msgid "Show all"
 msgstr "すべて表示"
 
-#: src/pages/shell/sidebar-header.tsx
-msgid "Show bots"
-msgstr "ボットを表示"
-
 #: src/pages/Artifacts.tsx
 msgid "Show list"
 msgstr "一覧を表示"
@@ -6758,6 +6750,10 @@ msgstr "録画せずに入力"
 #: src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "回答を入力"
+
+#: src/pages/shell/transcript.tsx
+msgid "Typing…"
+msgstr "{'pt-BR': 'Digitando…', 'fr': 'Écrit…', 'es': 'Escribiendo…', 'ru': 'Печатает…', 'de': 'Schreibt…', 'hi': 'टाइप कर रहा है…', 'nl': 'Typt…', 'ko': '입력 중…', 'pl': 'Pisze…', 'ja': '入力中…', 'he': 'מקליד…', 'zh-CN': '正在输入…', 'zh-TW': '正在輸入…', 'tr': 'Yazıyor…'}"
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/Shell.tsx

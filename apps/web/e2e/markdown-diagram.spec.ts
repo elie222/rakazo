@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { webDarkTokens, webLightTokens } from "@rakazo/ui-tokens";
 import { captureScreenshot } from "./helpers";
 
 const fixture = "/e2e/fixtures/markdown-diagram.html";
@@ -64,16 +65,16 @@ test("a mermaid fence is drawn as a themed, copyable diagram in place of its cod
     .toBe(flowSource);
   await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
 
-  expect(await diagramMarkup(page)).toContain("fill:#F5F5F5");
+  expect(await diagramMarkup(page)).toContain(`fill:${webDarkTokens.foreground}`);
   await page.goto(`${fixture}?theme=light`);
   await expectDrawn(page);
-  expect(await diagramMarkup(page)).toContain("fill:#1C1C1C");
+  expect(await diagramMarkup(page)).toContain(`fill:${webLightTokens.foreground}`);
   await captureScreenshot(page, testInfo, "markdown-diagram-light");
 
   await page.evaluate(() => {
     document.documentElement.dataset.theme = "dark";
   });
-  await expect.poll(() => diagramMarkup(page)).toContain("fill:#F5F5F5");
+  await expect.poll(() => diagramMarkup(page)).toContain(`fill:${webDarkTokens.foreground}`);
 });
 
 test("a wide diagram scrolls on a phone instead of shrinking its text away", async ({

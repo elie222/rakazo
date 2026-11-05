@@ -28,7 +28,7 @@ test("renders the real logo in every requested pose in both themes", async ({ pa
       );
     expect(smallAnimations).toEqual([]);
     await expect(page.locator(".rakazo-bot-avatar-picture img")).toBeVisible();
-    await expect(page.locator(".bot-character-eyes")).toBeVisible();
+    await expect(page.locator(".bot-avatar-container .avatar-eye").first()).toBeVisible();
     await captureScreenshot(page, testInfo, `logo-avatar-study-${theme}`);
   }
   expect(errors).toEqual([]);

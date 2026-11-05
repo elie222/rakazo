@@ -10,7 +10,9 @@ const states = [
   { name: "complete", live: false, reply: "Tuesday afternoon is free." },
 ];
 
-test("chat shows mid-turn progress without Working…", async ({ page }, testInfo) => {
+test("chat shows mid-turn progress, then Typing… while the reply is written", async ({
+  page,
+}, testInfo) => {
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     for (const state of states) {
@@ -24,7 +26,9 @@ test("chat shows mid-turn progress without Working…", async ({ page }, testInf
       ).toHaveCount(1);
       await expect(page.locator(".rk-chat-markdown-streaming")).toHaveCount(state.live ? 1 : 0);
       await expect(page.getByTestId("tool-activity")).toHaveCount(0);
-      await expect(page.getByRole("status")).toHaveCount(0);
+      // One status row: "Typing…" while the reply streams in, nothing once it is done.
+      await expect(page.getByRole("status")).toHaveCount(state.live ? 1 : 0);
+      if (state.live) await expect(page.getByRole("status")).toHaveText("Typing…");
       await expect(page.getByText("Working…")).toHaveCount(0);
       await expect(page.getByText("Done")).toHaveCount(0);
       await expect(page.locator("body")).toHaveJSProperty("scrollWidth", viewport.width);

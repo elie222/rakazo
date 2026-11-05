@@ -101,6 +101,11 @@ export function SidebarRoster({
           item.kind === "bot" ? [item.chat.id] : [],
         );
         const hasSpaceActions = group.canOpenSpaceSettings;
+        // Pinned chats sit on top as a grid of large faces with their names below.
+        const tiles =
+          !mini &&
+          botsSidebarDensity !== "compact" &&
+          (group.key === "pinned" || group.key.endsWith(":pinned"));
         const headerDropTarget: RosterDropTarget | null =
           group.spaceId === bootstrapMe?.spaceId &&
           !group.emptySpaceId &&
@@ -157,7 +162,7 @@ export function SidebarRoster({
                       render={
                         group.emptySpaceId ? <button type="button" /> : <CollapsibleTrigger />
                       }
-                      className={`flex min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${hasSpaceActions ? "col-start-1 row-start-1 w-full" : "flex-1"}`}
+                      className={`flex min-w-0 items-center justify-between gap-2 rounded-[10px] px-2 py-1 text-[13px] leading-[18px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${hasSpaceActions ? "col-start-1 row-start-1 w-full" : "flex-1"}`}
                       onClick={() => {
                         if (group.emptySpaceId) {
                           openSpaceChat(group.emptySpaceId, "/onboarding");
@@ -259,8 +264,10 @@ export function SidebarRoster({
                 ) : null}
               </div>
             ) : null}
-            <CollapsibleContent className="flex flex-col gap-0.5">
-              {group.bots.map((item) => {
+            <CollapsibleContent
+              className={tiles ? "grid grid-cols-3 gap-0.5" : "flex flex-col gap-0.5"}
+            >
+              {group.bots.map((item, itemIndex) => {
                 const selected =
                   (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
                   (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id);
@@ -305,7 +312,7 @@ export function SidebarRoster({
                       avatarSet={item.chat.avatarSet}
                       color={item.chat.color}
                       identity={item.chat.id}
-                      size={mini ? 40 : compact ? 28 : 38}
+                      size={mini ? 44 : tiles ? 48 : compact ? 28 : 36}
                       status={item.chat.status}
                     />
                   ) : (
@@ -315,7 +322,7 @@ export function SidebarRoster({
                           ? (activeSnapshot.members ?? item.chat.members)
                           : item.chat.members
                       }
-                      size={mini ? 40 : compact ? 28 : 38}
+                      size={mini ? 44 : tiles ? 48 : compact ? 28 : 36}
                     />
                   );
                 const chatTrigger = (
@@ -391,19 +398,21 @@ export function SidebarRoster({
                     onContextMenu={(event) => event.currentTarget.focus()}
                     className={`flex items-center ${
                       mini
-                        ? "mx-auto size-12 justify-center rounded-xl"
-                        : compact
-                          ? "w-full min-h-11 gap-2 rounded-xl px-2.5 py-1.5"
-                          : "w-full gap-3 rounded-xl px-2.5 py-[10px]"
+                        ? "mx-auto size-14 justify-center rounded-[14px]"
+                        : tiles
+                          ? "w-full min-w-0 flex-col justify-center gap-1 rounded-[10px] px-0.5 pt-2 pb-1.5"
+                          : compact
+                            ? "w-full min-h-11 gap-2 rounded-[10px] px-2 py-1.5"
+                            : "w-full min-h-[58px] gap-2.5 rounded-[12px] p-2"
                     } text-start ${
                       item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
                     } ${
                       selected || rosterDropKey === rowDropKey
                         ? "bg-sidebar-accent"
                         : "group-hover/row:bg-accent"
-                    }`}
+                    } transition-[background-color,scale] duration-150 ease-ui active:scale-97 motion-reduce:active:scale-100 [&_svg.rakazo-avatar-face]:transition-transform group-hover/row:[&_svg.rakazo-avatar-face]:scale-106`}
                   >
-                    {mini ? (
+                    {mini || tiles ? (
                       <span className="relative shrink-0">
                         {avatar}
                         {rowError ? (
@@ -439,14 +448,22 @@ export function SidebarRoster({
                     ) : (
                       avatar
                     )}
-                    {!mini ? (
+                    {tiles ? (
+                      <span
+                        dir="auto"
+                        data-roster-bot-name={item.kind === "bot" ? "" : undefined}
+                        className="max-w-full truncate text-label text-foreground"
+                      >
+                        {item.chat.name}
+                      </span>
+                    ) : !mini ? (
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-1.5">
                           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
                             <span
                               dir="auto"
                               data-roster-bot-name={item.kind === "bot" ? "" : undefined}
-                              className={`max-w-full shrink-0 truncate text-body2 text-foreground ${
+                              className={`max-w-full shrink-0 truncate text-sm text-foreground ${
                                 item.chat.unread ? "font-semibold" : "font-medium"
                               }`}
                             >
@@ -462,7 +479,7 @@ export function SidebarRoster({
                             {!compact ? (
                               <span
                                 data-roster-time
-                                className="text-label text-faint-foreground tabular-nums"
+                                className="self-start text-label text-faint-foreground tabular-nums"
                               >
                                 {formatRosterTime(item.chat.updatedAt)}
                               </span>
@@ -503,7 +520,7 @@ export function SidebarRoster({
                           <div
                             dir="auto"
                             data-roster-preview={!workStatusLabel ? "true" : undefined}
-                            className={`mt-1 truncate text-label ${
+                            className={`truncate text-[13px] leading-[17px] tracking-[-0.1px] ${
                               workStatusLabel
                                 ? "font-semibold text-status-working"
                                 : item.chat.unread
@@ -521,8 +538,10 @@ export function SidebarRoster({
                 return (
                   <div
                     key={`${item.kind}:${item.chat.id}`}
-                    className="group/row relative"
+                    // Rows slide in one after another when the list first appears.
+                    className="group/row relative motion-safe:animate-row-enter"
                     style={{
+                      animationDelay: `${Math.min(itemIndex * 35, 420)}ms`,
                       opacity: item.kind === "bot" && draggedBotId === item.chat.id ? 0.55 : 1,
                     }}
                   >

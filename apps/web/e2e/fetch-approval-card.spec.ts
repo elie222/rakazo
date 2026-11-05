@@ -30,7 +30,7 @@ test("asks before fetching a site the message did not name", async ({ page }, te
         centered: Math.abs(railBox.y + railBox.height / 2 - cardBox.y - cardBox.height / 2) < 2,
       };
     })
-    .toEqual({ gap: 4, centered: true });
+    .toEqual({ gap: 6, centered: true });
   await captureScreenshot(page, testInfo, "fetch-approval-card");
   await rail.getByRole("button", { name: "React", exact: true }).click();
   await expect(page.getByRole("button", { name: "👍", exact: true })).toBeVisible();

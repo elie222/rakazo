@@ -20,6 +20,7 @@ export function ChatHeader({
   onOpenNavigation,
   onTogglePanel,
   onCall,
+  railChrome = false,
 }: {
   inGroup: boolean;
   active: Bot | undefined;
@@ -33,19 +34,23 @@ export function ChatHeader({
   onOpenNavigation: () => void;
   onTogglePanel: () => void;
   onCall: (bot: Bot) => void;
+  /** The desktop rail is showing: line up with its search button, below the window controls. */
+  railChrome?: boolean;
 }) {
   const { t } = useLingui();
   const referral = useBilling().status?.referral;
   const [inviteOpen, setInviteOpen] = useState(false);
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 py-[13px] md:px-[22px] [&_button]:pointer-events-auto">
+    <div
+      className={`pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 pb-2.5 desk:px-3.5 [&_button]:pointer-events-auto ${railChrome ? "pt-[35px]" : "pt-3"}`}
+    >
       <div className="flex items-center">
         <Button
           variant="floating"
           size="icon-lg"
           aria-label={t`Open navigation`}
           onClick={onOpenNavigation}
-          className="app-no-drag md:hidden"
+          className="app-no-drag desk:hidden"
         >
           <Menu strokeWidth={1.7} className="size-[19px]" />
         </Button>
@@ -55,21 +60,29 @@ export function ChatHeader({
         data-testid="bot-settings-trigger"
         aria-expanded={panelOpen}
         onClick={onTogglePanel}
-        className="app-no-drag h-auto min-w-0 gap-2 py-1 ps-1 pe-3.5"
+        className="app-no-drag h-auto min-w-0 gap-[7px] py-[5px] ps-1.5 pe-3.5 hover:scale-100 active:scale-97"
       >
         {inGroup ? (
-          <GroupAvatar members={activeSnapshot?.members ?? activeGroup?.members ?? []} size={26} />
+          <GroupAvatar
+            members={activeSnapshot?.members ?? activeGroup?.members ?? []}
+            size={20}
+            still
+          />
         ) : active ? (
           <BotAvatar
             avatarSet={active.avatarSet}
             color={active.color}
             identity={active.id}
-            size={26}
+            size={20}
             status={active.status}
+            still
           />
         ) : null}
         <span className="min-w-0">
-          <span className="block truncate text-[15px] font-medium text-foreground" dir="auto">
+          <span
+            className="block truncate text-[13px] leading-[18px] font-medium tracking-[-0.08px] text-foreground"
+            dir="auto"
+          >
             {inGroup
               ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
               : (active?.name ?? t`Select a bot`)}

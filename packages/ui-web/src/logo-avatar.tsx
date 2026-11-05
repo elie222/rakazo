@@ -9,7 +9,8 @@ import {
 } from "@rakazo/core";
 import { botEyeColor, tokens } from "@rakazo/ui-tokens";
 import type { CSSProperties } from "react";
-import { memo, useId, useMemo } from "react";
+import { memo, useEffect, useId, useMemo } from "react";
+import { watchAvatarLook } from "./avatar-look.js";
 import { useAvatarMotionVisibility } from "./hooks/use-avatar-motion-visibility.js";
 import { useLogoAvatarLayers } from "./hooks/use-logo-avatar-layers.js";
 import { cn } from "./lib/utils.js";
@@ -58,6 +59,8 @@ export const LogoAvatar = memo(function LogoAvatar({
     canMove,
   );
   const eyeInk = logoAvatarEyeInk(traits.color, tokens);
+  // Rakazo faces keep their own motion; like the other faces, their eyes follow the pointer.
+  useEffect(() => (canMove ? watchAvatarLook() : undefined), [canMove]);
   return (
     <svg
       ref={ref}
@@ -73,6 +76,7 @@ export const LogoAvatar = memo(function LogoAvatar({
       data-compact={size <= 38}
       data-paused={!visible}
       data-color={traits.color}
+      data-look={canMove ? 1 : undefined}
       role={label ? "img" : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
@@ -98,7 +102,6 @@ export const LogoAvatar = memo(function LogoAvatar({
         </linearGradient>
       </defs>
       <g clipPath={`url(#logo-plate-${id})`}>
-        <rect className="logo-avatar-plate" width="100" height="100" rx="23" />
         {layers.map((layer) => (
           <g
             key={layer.key}
@@ -125,35 +128,37 @@ export const LogoAvatar = memo(function LogoAvatar({
                   color={traits.color}
                   originalOrange={traits.originalOrange}
                 />
-                <g className="logo-avatar-gaze">
-                  <g className="logo-avatar-scan">
-                    {[eyes.leftCx, eyes.rightCx].map((x, index) => (
-                      <g
-                        className={`logo-avatar-eye-lid logo-avatar-eye-${index}`}
-                        key={x}
-                        style={{ transformOrigin: `${x}px ${eyes.cy}px` }}
-                      >
+                <g className="avatar-look">
+                  <g className="logo-avatar-gaze">
+                    <g className="logo-avatar-scan">
+                      {[eyes.leftCx, eyes.rightCx].map((x, index) => (
                         <g
-                          className="logo-avatar-eye"
+                          className={`logo-avatar-eye-lid logo-avatar-eye-${index}`}
+                          key={x}
                           style={{ transformOrigin: `${x}px ${eyes.cy}px` }}
                         >
-                          <ellipse
-                            cx={x}
-                            cy={eyes.cy}
-                            rx={eyes.width / 2}
-                            ry={eyes.height / 2}
-                            fill={`url(#logo-eye-${id})`}
-                          />
-                          <ellipse
-                            className="logo-avatar-glint"
-                            cx={x - 1.2}
-                            cy={eyes.cy - 3.6}
-                            rx="1.4"
-                            ry="2.2"
-                          />
+                          <g
+                            className="logo-avatar-eye"
+                            style={{ transformOrigin: `${x}px ${eyes.cy}px` }}
+                          >
+                            <ellipse
+                              cx={x}
+                              cy={eyes.cy}
+                              rx={eyes.width / 2}
+                              ry={eyes.height / 2}
+                              fill={`url(#logo-eye-${id})`}
+                            />
+                            <ellipse
+                              className="logo-avatar-glint"
+                              cx={x - 1.2}
+                              cy={eyes.cy - 3.6}
+                              rx="1.4"
+                              ry="2.2"
+                            />
+                          </g>
                         </g>
-                      </g>
-                    ))}
+                      ))}
+                    </g>
                   </g>
                 </g>
               </g>
@@ -162,7 +167,6 @@ export const LogoAvatar = memo(function LogoAvatar({
           </g>
         ))}
       </g>
-      <rect className="logo-avatar-outline" x="0.5" y="0.5" width="99" height="99" rx="22.5" />
     </svg>
   );
 });

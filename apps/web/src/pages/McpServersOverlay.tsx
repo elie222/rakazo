@@ -930,7 +930,7 @@ export function McpServersOverlay({
     >
       <DialogContent
         showCloseButton={false}
-        className="flex max-h-[calc(100%-2rem)] w-[600px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-[600px]"
+        className="flex max-h-[calc(100%-2rem)] w-[600px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-[calc(100%-2rem)]"
       >
         <DialogHeader className="flex-row items-center justify-between gap-3 border-b border-border px-6 py-5">
           <DialogTitle className="text-heading2 text-foreground">

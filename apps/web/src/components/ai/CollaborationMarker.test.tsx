@@ -35,6 +35,17 @@ describe("collaboration transcript markers", () => {
 
     expect(html).toContain('role="status"');
     expect(html).toContain('data-working="true"');
-    expect(html).toContain("rakazo-organic-avatar-body-working");
+    expect(html).toContain("rakazo-organic-avatar");
+  });
+
+  it("shows soft dots while no working bot is known, and sweeps a light over the label", () => {
+    const html = renderToString(<ActiveBotGlyph bots={[]} label="Working…" />);
+    expect(html).toContain('data-testid="typing-dots"');
+    expect(html).toContain("text-shimmer");
+    expect(html).toContain("animate-status-label");
+    // A text colour on the label would paint over the sweep and hide it.
+    expect(html).not.toMatch(
+      /text-muted-foreground[^"]*text-shimmer|text-shimmer[^"]*text-muted-foreground/,
+    );
   });
 });

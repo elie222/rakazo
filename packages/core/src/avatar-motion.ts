@@ -1,8 +1,6 @@
 /**
- * Shared working-avatar choreography used by mobile (Reanimated) and mirrored
- * by web CSS in `@rakazo/ui-web` (`styles.css` organic working keyframes).
- *
- * Duration families and transform midpoints must stay aligned across surfaces.
+ * Working-avatar choreography for mobile (Reanimated). Web plays its own CSS working loop
+ * (`@rakazo/ui-web` styles.css, `avatar-jolly`); both draw the same bodies and faces.
  */
 
 export interface WorkingAvatarFrame {

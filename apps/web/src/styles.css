@@ -121,3 +121,53 @@ body,
   background-color: var(--primary);
   color: var(--primary-foreground);
 }
+
+/* Transcript rhythm: 8px between messages from the same side, 16px when the speaker changes. */
+[data-message-role="user"] + [data-message-role="bot"],
+[data-message-role="bot"] + [data-message-role="user"] {
+  margin-top: 0.5rem;
+}
+
+/* Send times wait beside each message, hidden until the thread is swiped (use-swipe-times). */
+.message-swipe-time {
+  display: none;
+  position: absolute;
+  inset-inline-start: 100%;
+  top: 50%;
+  margin-inline-start: 0.875rem;
+  translate: 0 -50%;
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0;
+}
+[data-times-open] .message-swipe-time {
+  display: block;
+}
+/* A bot's messages stay put; their time shows at the far edge, in the space kept for actions. */
+[data-message-role="bot"] > .message-swipe-time {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  margin-inline-start: 0;
+}
+
+/* While the send times are swiped open, the hover actions step aside so they never overlap. */
+[data-times-open] .message-hover-rail {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* While the window itself is being resized, the columns track its edge with no easing. */
+[data-window-resizing]
+:is(
+  [data-slot="sidebar-gap"],
+  [data-slot="sidebar-container"],
+  [data-testid="side-panel"],
+  [data-testid="bots-sidebar-edge"]
+) {
+  transition: none;
+}

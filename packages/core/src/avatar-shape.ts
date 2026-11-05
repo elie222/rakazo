@@ -1,7 +1,3 @@
-type AvatarPoint = readonly [number, number];
-
-let organicAvatarTemplates: readonly (readonly AvatarPoint[])[] | undefined;
-
 export function avatarIdentitySeed(identity: string): number {
   let hash = 0;
   for (let index = 0; index < identity.length; index++) {
@@ -31,25 +27,10 @@ export function avatarEyeRects(eyes: AvatarEyes) {
   }));
 }
 
-export const ORGANIC_AVATAR_VIEWBOX = "-60 -60 120 120";
-
-export const ORGANIC_AVATAR_EYES: AvatarEyes = {
-  width: 7,
-  height: 24,
-  leftCx: -10.5,
-  rightCx: 10.5,
-  cy: 0,
-};
-
-/** Degrees the organic face leans, so bots sharing a body still differ. */
-export function organicAvatarEyeTilt(seed: number): number {
-  return (seed % 9) - 4;
-}
-
 /** Organic bodies come in this many families; the seed picks one. */
 export const ORGANIC_AVATAR_FAMILY_COUNT = 10;
 
-/** The body with two upper lobes, a central notch and a pointed bottom. */
+/** The scallop. Bots that already have it keep it; new bots are not handed it. */
 export const ORGANIC_AVATAR_HEART_FAMILY = 6;
 
 /** The organic body family every client draws for this identity (a bot's id). */
@@ -57,7 +38,7 @@ export function organicAvatarFamily(identity: string): number {
   return avatarIdentitySeed(identity) % ORGANIC_AVATAR_FAMILY_COUNT;
 }
 
-/** Families 2 and 8 are both round blobs, so they count as one look when telling bots apart. */
+/** Families 2 and 8 (the squircle and the pill) read alike at row size, so they count as one look. */
 export function organicAvatarLook(family: number): number {
   return family === 8 ? 2 : family;
 }
@@ -79,177 +60,135 @@ export function organicAvatarSampleIdentity(family: number): string {
   }
 }
 
-export function organicAvatarPath(seed: number, phaseOffset = 0): string {
-  const phase = ((seed % 360) * Math.PI) / 180 + phaseOffset;
-  const family = seed % ORGANIC_AVATAR_FAMILY_COUNT;
-  if (!organicAvatarTemplates) {
-    organicAvatarTemplates = [
-      [
-        [-43, 22],
-        [-51, 16],
-        [-53, 6],
-        [-49, -4],
-        [-40, -12],
-        [-30, -13],
-        [-27, -24],
-        [-18, -34],
-        [-6, -36],
-        [4, -32],
-        [12, -42],
-        [25, -45],
-        [37, -38],
-        [43, -27],
-        [42, -17],
-        [51, -11],
-        [56, 0],
-        [54, 12],
-        [46, 20],
-        [30, 24],
-        [0, 25],
-        [-29, 25],
-      ],
-      [
-        [0, -52],
-        [12, -35],
-        [28, -17],
-        [39, 2],
-        [42, 21],
-        [34, 38],
-        [19, 49],
-        [0, 52],
-        [-19, 49],
-        [-34, 38],
-        [-42, 21],
-        [-39, 2],
-        [-28, -17],
-        [-12, -35],
-      ],
-      [
-        [-42, -23],
-        [-27, -40],
-        [-7, -46],
-        [14, -40],
-        [33, -27],
-        [46, -8],
-        [46, 14],
-        [35, 34],
-        [14, 46],
-        [-8, 46],
-        [-29, 38],
-        [-43, 21],
-        [-48, 0],
-      ],
-      Array.from({ length: 40 }, (_, index) => {
-        const angle = (index / 40) * Math.PI * 2;
-        const radius = 44 + Math.cos(angle * 5) * 5;
-        return [Math.cos(angle) * radius, Math.sin(angle) * radius];
-      }),
-      Array.from({ length: 36 }, (_, index) => {
-        const angle = (index / 36) * Math.PI * 2;
-        const radius = 43 + Math.cos(angle * 6) * 7;
-        return [Math.cos(angle) * radius, Math.sin(angle) * radius];
-      }),
-      Array.from({ length: 32 }, (_, index) => {
-        const angle = (index / 32) * Math.PI * 2;
-        const x = Math.cos(angle);
-        const y = Math.sin(angle);
-        return [
-          Math.sign(x) * Math.sqrt(Math.abs(x)) * 46,
-          Math.sign(y) * Math.sqrt(Math.abs(y)) * 43,
-        ];
-      }),
-      [
-        [0, 48],
-        [-14, 36],
-        [-32, 20],
-        [-45, 0],
-        [-43, -20],
-        [-29, -36],
-        [-10, -39],
-        [0, -27],
-        [10, -39],
-        [29, -36],
-        [43, -20],
-        [45, 0],
-        [32, 20],
-        [14, 36],
-      ],
-      [
-        [-48, 35],
-        [-38, 22],
-        [-34, -8],
-        [-27, -31],
-        [-12, -44],
-        [0, -48],
-        [12, -44],
-        [27, -31],
-        [34, -8],
-        [38, 22],
-        [48, 35],
-        [26, 42],
-        [0, 44],
-        [-26, 42],
-      ],
-      [
-        [-45, -19],
-        [-28, -38],
-        [-4, -46],
-        [22, -41],
-        [42, -25],
-        [49, -2],
-        [42, 23],
-        [22, 42],
-        [-4, 47],
-        [-29, 38],
-        [-46, 18],
-        [-50, 0],
-      ],
-      [
-        [-50, 0],
-        [-45, -20],
-        [-30, -38],
-        [0, -48],
-        [30, -38],
-        [45, -20],
-        [50, 0],
-        [35, 10],
-        [18, 12],
-        [16, 38],
-        [0, 46],
-        [-16, 38],
-        [-18, 12],
-        [-35, 10],
-      ],
-    ] as const;
-  }
-  const templates = organicAvatarTemplates;
-  const xScale = 1 + Math.sin(phase) * 0.035;
-  const yScale = 1 + Math.cos(phase) * 0.025;
-  const shear = Math.sin(phase * 1.7) * 0.025;
-  let points = (templates[family] ?? templates[5]!).map(([x, y]) => ({
-    x: x * xScale + y * shear,
-    y: y * yScale,
-  }));
-  const smoothingPasses = family >= 3 && family <= 5 ? 1 : 2;
-  for (let pass = 0; pass < smoothingPasses; pass++) {
-    points = points.flatMap((point, index) => {
-      const next = points[(index + 1) % points.length]!;
-      return [
-        { x: point.x * 0.75 + next.x * 0.25, y: point.y * 0.75 + next.y * 0.25 },
-        { x: point.x * 0.25 + next.x * 0.75, y: point.y * 0.25 + next.y * 0.75 },
-      ];
-    });
-  }
-  const pointCount = points.length;
+/** Organic avatars are drawn in a 100-unit box, the face looking straight out. */
+export const ORGANIC_AVATAR_VIEWBOX = "0 0 100 100";
+
+const circle = (cx: number, cy: number, r: number) => ellipse(cx, cy, r, r);
+const ellipse = (cx: number, cy: number, rx: number, ry: number) =>
+  `M${cx - rx} ${cy}a${rx} ${ry} 0 1 0 ${2 * rx} 0a${rx} ${ry} 0 1 0 ${-2 * rx} 0Z`;
+const roundedRect = (x: number, y: number, w: number, h: number, r: number) =>
+  `M${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${y + h - r}A${r} ${r} 0 0 1 ${x + w - r} ${y + h}H${x + r}A${r} ${r} 0 0 1 ${x} ${y + h - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z`;
+
+/** A polygon (clockwise on screen) grown by `r` on every side, its corners rounded to `r`. */
+function softPolygon(points: readonly (readonly [number, number])[], r: number): string {
   const round = (value: number) => Math.round(value * 100) / 100;
-  const first = points[0]!;
-  let path = `M${round(first.x)} ${round(first.y)}`;
-  for (let index = 0; index < pointCount; index++) {
-    const before = points[(index - 1 + pointCount) % pointCount]!;
-    const current = points[index]!;
-    const next = points[(index + 1) % pointCount]!;
-    const after = points[(index + 2) % pointCount]!;
-    path += `C${round(current.x + (next.x - before.x) / 6)} ${round(current.y + (next.y - before.y) / 6)} ${round(next.x - (after.x - current.x) / 6)} ${round(next.y - (after.y - current.y) / 6)} ${round(next.x)} ${round(next.y)}`;
-  }
-  return `${path}Z`;
+  const edges = points.map((point, index) => {
+    const next = points[(index + 1) % points.length] ?? point;
+    const length = Math.hypot(next[0] - point[0], next[1] - point[1]);
+    const nx = ((next[1] - point[1]) / length) * r;
+    const ny = (-(next[0] - point[0]) / length) * r;
+    return [
+      [round(point[0] + nx), round(point[1] + ny)],
+      [round(next[0] + nx), round(next[1] + ny)],
+    ] as const;
+  });
+  const start = edges[0]?.[0] ?? [0, 0];
+  return `M${start[0]} ${start[1]}${edges
+    .map(([, end], index) => {
+      const after = edges[(index + 1) % edges.length]?.[0] ?? start;
+      return `L${end[0]} ${end[1]}A${r} ${r} 0 0 1 ${after[0]} ${after[1]}`;
+    })
+    .join("")}Z`;
+}
+
+/** One body per family; the face sits this many units lower on bodies whose mass sits low. */
+const ORGANIC_BODIES: readonly { path: string; faceDrop: number }[] = [
+  { path: circle(50, 50, 46), faceDrop: 0 },
+  {
+    path: [
+      circle(46, 55, 30),
+      circle(35, 31, 17),
+      circle(64, 30, 20),
+      circle(78, 55, 18),
+      circle(26, 69, 17),
+      circle(56, 76, 17),
+    ].join(""),
+    faceDrop: 0,
+  },
+  { path: roundedRect(10, 10, 80, 80, 30), faceDrop: 0 },
+  {
+    path: [ellipse(50, 50, 46, 23), ellipse(50, 50, 23, 46), circle(50, 50, 29)].join(""),
+    faceDrop: 0,
+  },
+  {
+    path: softPolygon(
+      [
+        [50, 8],
+        [86, 29],
+        [86, 71],
+        [50, 92],
+        [14, 71],
+        [14, 29],
+      ],
+      6,
+    ),
+    faceDrop: 0,
+  },
+  {
+    path: "M10 50A40 40 0 0 1 50 10A40 40 0 0 1 90 50L90 76Q90 90 76 90L50 90A40 40 0 0 1 10 50Z",
+    faceDrop: 2,
+  },
+  {
+    path: [
+      ...Array.from({ length: 10 }, (_, index) => {
+        const angle = (index * Math.PI) / 5;
+        return circle(
+          Math.round((50 + 33 * Math.cos(angle)) * 10) / 10,
+          Math.round((50 + 33 * Math.sin(angle)) * 10) / 10,
+          15,
+        );
+      }),
+      circle(50, 50, 36),
+    ].join(""),
+    faceDrop: 0,
+  },
+  { path: "M10 50A40 40 0 0 1 50 10L84 10Q90 10 90 16L90 50A40 40 0 0 1 10 50Z", faceDrop: 4 },
+  { path: roundedRect(6, 24, 88, 52, 26), faceDrop: 0 },
+  {
+    path: softPolygon(
+      [
+        [50, 16],
+        [86, 80],
+        [14, 80],
+      ],
+      7,
+    ),
+    faceDrop: 8,
+  },
+];
+
+const organicBody = (seed: number) =>
+  ORGANIC_BODIES[seed % ORGANIC_AVATAR_FAMILY_COUNT] ??
+  (ORGANIC_BODIES[0] as (typeof ORGANIC_BODIES)[0]);
+
+/** The body every client draws for this seed (`avatarIdentitySeed` of a bot's id). */
+export function organicAvatarPath(seed: number): string {
+  return organicBody(seed).path;
+}
+
+/** Two upright bar eyes, centred, lowered a little on bottom-heavy bodies. */
+export function organicAvatarEyes(seed: number): AvatarEyes {
+  return {
+    width: 11,
+    height: 22,
+    leftCx: 36.5,
+    rightCx: 63.5,
+    cy: 49 + organicBody(seed).faceDrop,
+  };
+}
+
+/** The blush under each eye and the small smile a face shows when it is happy (a hop, or work). */
+export function avatarCheer(eyes: AvatarEyes) {
+  const unit = eyes.height / 22;
+  const centre = (eyes.leftCx + eyes.rightCx) / 2;
+  const top = eyes.cy + 17 * unit;
+  return {
+    cheeks: [centre - 23 * unit, centre + 23 * unit].map((cx) => ({
+      cx,
+      cy: eyes.cy + 15 * unit,
+      rx: 6.5 * unit,
+      ry: 4.2 * unit,
+    })),
+    smile: `M${centre - 7 * unit} ${top}Q${centre} ${eyes.cy + 24 * unit} ${centre + 7 * unit} ${top}`,
+  };
 }

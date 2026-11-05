@@ -1,4 +1,5 @@
 import { parseBotAvatarValue } from "@rakazo/contracts";
+import { botEyeColor } from "@rakazo/ui-tokens";
 
 export interface BotColorDef {
   id: string;
@@ -181,9 +182,9 @@ function oklchToHex(lightness: number, chroma: number, hue: number): string {
 }
 
 /**
- * Which ink a bot's eyes take. They are cut-outs in the page color (dark in dark mode, light in
- * light mode), unless the body is pale or dark enough that the cut-out would fade in one theme;
- * then they stay the ink that contrasts with the body. Amber, emerald and cyan are pale enough.
+ * Which ink a bot's eyes take. On a coloured body they are the dark bot-eye ink in both themes;
+ * a pale body takes the darker page ink and a near-black body the lighter one, so the eyes stay
+ * visible as the body follows the theme. Amber, emerald and cyan are pale enough.
  */
 export function botEyeTone(bodyHex: string): "page" | "dark" | "light" {
   if (contrastRatio(bodyHex, "#FFFFFF") < 2.4) return "dark";
@@ -191,10 +192,15 @@ export function botEyeTone(bodyHex: string): "page" | "dark" | "light" {
   return "page";
 }
 
+/** A white bot follows the theme (white on dark, ink on light) so it never fades into the page. */
+export function botFollowsTheme(bodyHex: string): boolean {
+  return contrastRatio(bodyHex, "#FFFFFF") < 1.15;
+}
+
 /** The eye ink {@link botEyeTone} picks, on a page with these two colors. */
 export function botEyeInk(bodyColor: string, page: { background: string; foreground: string }) {
   const tone = botEyeTone(bodyColor);
-  if (tone === "page") return page.background;
+  if (tone === "page") return botEyeColor;
   const [darker, lighter] =
     contrastRatio(page.background, "#FFFFFF") > contrastRatio(page.foreground, "#FFFFFF")
       ? [page.background, page.foreground]

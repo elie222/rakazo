@@ -45,15 +45,15 @@ export function MessageHoverActions({
   }
 
   const iconButtonClass =
-    "grid h-11 w-11 place-items-center text-muted-foreground transition-colors hover:text-foreground [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7";
+    "grid h-11 w-11 place-items-center rounded-full text-muted-foreground transition-[background-color,color,scale] duration-150 hover:bg-accent hover:text-foreground active:scale-90 [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7";
 
   return (
     <MessageHoverMetadata pinned={moreOpen || reactionsOpen} side={side}>
-      <div data-testid="message-hover-actions" className="flex items-center gap-0.5">
+      <div data-testid="message-hover-actions" className="flex items-center gap-[5px]">
         {canReactToThreadMessage(message) ? (
           <Popover open={reactionsOpen} onOpenChange={setReactionsOpen}>
             <PopoverTrigger aria-label={t`React`} className={iconButtonClass}>
-              <Smile size={15} strokeWidth={1.7} />
+              <Smile size={17} strokeWidth={1.7} />
             </PopoverTrigger>
             <PopoverContent
               align={side === "end" ? "start" : "end"}
@@ -83,11 +83,11 @@ export function MessageHoverActions({
           onClick={() => onReply(message)}
           className={iconButtonClass}
         >
-          <Reply size={15} strokeWidth={1.7} />
+          <Reply size={17} strokeWidth={1.7} />
         </button>
         <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
           <DropdownMenuTrigger aria-label={t`More`} className={iconButtonClass}>
-            <MoreHorizontal size={15} strokeWidth={1.7} />
+            <MoreHorizontal size={17} strokeWidth={1.7} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align={side === "end" ? "start" : "end"} className="w-auto">
             <DropdownMenuItem

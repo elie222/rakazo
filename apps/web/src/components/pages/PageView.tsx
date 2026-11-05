@@ -5,6 +5,7 @@ import { Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web"
 import { Pencil, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { desktopBridge, windowChromeKind } from "../../lib/desktop";
 import { DownloadPdfButton } from "./DownloadPdfButton";
 import { PageFrame } from "./PageFrame";
 import { PageLoading, PageNotice } from "./PageNotice";
@@ -70,6 +71,9 @@ export function PageView({
     return () => window.clearTimeout(timer);
   }, [waiting, attempt]);
   const onDrawn = useCallback(() => setDrawn(true), []);
+  // The macOS window controls sit in the top-left corner over a full-window page, so its top
+  // row starts below them, as the main window's rows do.
+  const macChrome = !compact && windowChromeKind(desktopBridge()) === "darwin";
   const control = `grid place-items-center rounded-full p-0 border border-foreground/[0.06] text-foreground outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring ${compact ? "size-11" : "size-[35px]"}`;
   return (
     <Dialog
@@ -111,12 +115,12 @@ export function PageView({
           <DialogClose
             ref={closeButton}
             aria-label={t`Close page`}
-            className={`absolute z-10 grid place-items-center print:hidden ${compact ? "top-[6px] left-[6px] size-11" : "top-[6px] left-[11px] size-9"} rounded-full border border-foreground/[0.06] text-foreground/90 outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring`}
+            className={`absolute z-10 grid place-items-center print:hidden ${compact ? "top-[6px] left-[6px] size-11" : `${macChrome ? "top-[42px]" : "top-[6px]"} left-[11px] size-9`} rounded-full border border-foreground/[0.06] text-foreground/90 outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring`}
           >
             <X className={compact ? "size-6" : "size-[18px]"} strokeWidth={compact ? 2.2 : 1.7} />
           </DialogClose>
           <div
-            className={`pointer-events-none absolute inset-x-0 z-10 flex justify-center print:hidden ${compact ? "top-[6px] px-[106px]" : "top-[2px] px-[140px]"}`}
+            className={`pointer-events-none absolute inset-x-0 z-10 flex justify-center print:hidden ${compact ? "top-[6px] px-[106px]" : `${macChrome ? "top-[38px]" : "top-[2px]"} px-[140px]`}`}
           >
             <div className="flex min-w-0 flex-col items-center gap-1">
               {title ? (
@@ -133,7 +137,7 @@ export function PageView({
           </div>
           {/* Touch controls sit 6px in from the sheet's 28px corners: 22px round plus 6 is 28. */}
           <div
-            className={`absolute z-10 flex items-center gap-1.5 print:hidden ${compact ? "top-[6px] right-[6px]" : "top-[6.5px] right-3"}`}
+            className={`absolute z-10 flex items-center gap-1.5 print:hidden ${compact ? "top-[6px] right-[6px]" : `${macChrome ? "top-[42.5px]" : "top-[6.5px]"} right-3`}`}
           >
             {drawn && !stalled && notice === null ? (
               <DownloadPdfButton
@@ -147,7 +151,7 @@ export function PageView({
           {/* After the controls, so Tab reaches Close, Download PDF and Share before the page's stops. */}
           <section
             aria-label={title || undefined}
-            className={`absolute inset-x-0 bottom-0 print:static ${compact ? "top-[50px]" : "top-[34px]"}`}
+            className={`absolute inset-x-0 bottom-0 print:static ${compact ? "top-[50px]" : macChrome ? "top-[70px]" : "top-[34px]"}`}
           >
             {notice ?? (
               <>

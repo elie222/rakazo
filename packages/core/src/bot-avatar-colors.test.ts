@@ -1,15 +1,20 @@
+import { botEyeColor } from "@rakazo/ui-tokens";
 import { describe, expect, it } from "vitest";
 import {
   BOT_COLOR_LIST,
   botEyeInk,
   botEyeTone,
+  botFollowsTheme,
   chatUserBubbleColors,
   contrastRatio,
 } from "./bot-avatar-colors.js";
 
 describe("botEyeTone", () => {
-  it("cuts eyes in the page color unless the body is nearly white or black", () => {
+  it("inks eyes dark on a coloured body, and contrasts near-white or near-black bodies", () => {
     expect(botEyeTone("#FF5EB1")).toBe("page");
+    expect(botEyeInk("#FF5EB1", { background: "#FCFCFC", foreground: "#0A0A0A" })).toBe(
+      botEyeColor,
+    );
     // White cut-outs would fade on a pale amber body in light mode.
     expect(botEyeTone("#FFAF38")).toBe("dark");
     expect(botEyeTone("#FFFFFF")).toBe("dark");
@@ -58,10 +63,17 @@ describe("chatUserBubbleColors", () => {
   });
 });
 
-it("cuts bot eyes in the page color unless the body is nearly white", () => {
+it("inks bot eyes dark on colour in both themes, and in the page ink on a white body", () => {
   const dark = { background: "#121212", foreground: "#F5F5F5" };
   const light = { background: "#FFFFFF", foreground: "#1C1C1C" };
-  expect(botEyeInk("#FF5EB1", dark)).toBe("#121212");
-  expect(botEyeInk("#FF5EB1", light)).toBe("#FFFFFF");
+  expect(botEyeInk("#FF5EB1", dark)).toBe(botEyeColor);
+  expect(botEyeInk("#FF5EB1", light)).toBe(botEyeColor);
   expect(botEyeInk("#FFFFFF", light)).toBe("#1C1C1C");
+});
+
+it("lets only a near-white bot follow the theme", () => {
+  expect(botFollowsTheme("#FFFFFF")).toBe(true);
+  expect(botFollowsTheme("#F4F4F2")).toBe(true);
+  expect(botFollowsTheme("#EB9A38")).toBe(false);
+  expect(botFollowsTheme("#101014")).toBe(false);
 });

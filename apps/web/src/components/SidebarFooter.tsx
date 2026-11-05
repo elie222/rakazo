@@ -112,13 +112,13 @@ export function SidebarFooter({
   return (
     <div
       data-testid="sidebar-footer"
-      className={`flex shrink-0 items-center gap-2 bg-transparent ${mini ? "flex-col px-1 py-2" : "px-2.5 py-3"}`}
+      className={`flex shrink-0 items-center gap-2 bg-transparent ${mini ? "flex-col px-1 pt-1.5 pb-3.5" : "ps-4 pe-2.5 pt-1.5 pb-3"}`}
     >
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger
           data-testid="user-menu-trigger"
           aria-label={t`Account menu for ${name}`}
-          className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-border bg-sidebar-accent text-sm font-medium text-foreground outline-none hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
+          className="grid size-[30px] shrink-0 place-items-center overflow-hidden rounded-full bg-sidebar-accent text-[11px] font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
         >
           {image && failedImage !== image ? (
             <img
@@ -276,10 +276,10 @@ export function SidebarFooter({
       </Popover>
       {!mini ? (
         <Button
-          variant="outline"
+          variant="ghost"
           ref={pillRef}
           onClick={onIntegrations}
-          className="h-9 min-w-0 flex-1 justify-between bg-sidebar-accent hover:border-foreground/30 hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
+          className="h-[30px] min-w-0 flex-1 justify-center gap-2 bg-sidebar-accent text-[13px] font-normal hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
         >
           <span ref={labelRef} className="min-w-0 truncate">
             <Trans>Connect apps</Trans>

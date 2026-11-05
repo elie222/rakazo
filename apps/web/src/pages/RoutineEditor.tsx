@@ -252,8 +252,8 @@ export function RoutineList({
     <div>
       <div className="mb-2 flex justify-end">
         <Button
-          variant="secondary"
-          size="icon-sm"
+          variant="floating"
+          size="icon"
           data-testid="routine-create-button"
           aria-label={t`Create Routine`}
           title={t`Create Routine`}
@@ -289,7 +289,7 @@ function RoutineListRow({
   const { i18n } = useLingui();
   const scheduleLabels = cronLabels(i18n.locale);
   return (
-    <div className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 hover:bg-accent">
+    <div className="mb-1.5 flex w-full items-center gap-2 rounded-[10px] bg-muted px-3 py-2 transition-colors hover:bg-accent">
       <button
         type="button"
         onClick={onOpen}

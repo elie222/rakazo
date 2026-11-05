@@ -23,7 +23,7 @@ import {
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { Button, cn, Spinner } from "@rakazo/ui-web";
 import { ArrowDown } from "lucide-react";
-import type { CSSProperties, RefObject } from "react";
+import type { RefObject } from "react";
 import {
   Fragment,
   memo,
@@ -51,13 +51,14 @@ import { TimeSeparator, UnreadDivider } from "./chat-context";
 import type { ImportSetupTarget } from "./import-setup-card";
 import { MessageView } from "./message-view";
 import { QuoteSelectionButton } from "./quote-selection-button";
+import { useSwipeTimes } from "./use-swipe-times";
 
-/** Bubbles stop at a readable line length instead of stretching with wide windows. */
-export function bubbleFrameWidth(role: ThreadMessage["role"]) {
-  return role === "user"
-    ? "max-w-[min(84%,calc(100%_-_8rem),39rem)] [@media(hover:none)]:max-w-[min(84%,39rem)]"
-    : "max-w-[min(88%,calc(100%_-_8rem),39rem)] [@media(hover:none)]:max-w-[min(88%,39rem)]";
-}
+/**
+ * Bubbles stop at a readable line length and always leave 104px beside them for the message
+ * actions (react, reply, more), at every window size.
+ */
+export const BUBBLE_FRAME_WIDTH =
+  "max-w-[min(calc(100%_-_6.5rem),39rem)] [@media(hover:none)]:max-w-[min(92%,39rem)]";
 
 export const Transcript = memo(function Transcript({
   scrollRef,
@@ -74,7 +75,6 @@ export const Transcript = memo(function Transcript({
   dismissableAskIds,
   running,
   workingBots,
-  userBubble,
   onCallBack,
   onLoadOlder,
   onOpenBot,
@@ -114,8 +114,6 @@ export const Transcript = memo(function Transcript({
   dismissableAskIds: Set<string>;
   running: boolean;
   workingBots: GroupAvatarMember[];
-  /** Your bubbles take the bot's color in its own chat. */
-  userBubble?: { background: string; foreground: string };
   /** Calls the bot back from a missed call in the transcript. */
   onCallBack?: () => void;
   onLoadOlder: () => void | Promise<void>;
@@ -150,6 +148,32 @@ export const Transcript = memo(function Transcript({
 }) {
   const { t } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
+  // Messages that arrive after the chat opened slide in; the history it opened with does not.
+  const [openedAtSeq] = useState(() =>
+    transcript.messages.reduce((max, message) => Math.max(max, message.seq), -1),
+  );
+  // Each message decides once whether it slides in. A finished reply replaces its live
+  // streaming copy under a new id, so it takes that copy's place without a second entrance.
+  const entrances = useRef(new Map<string, boolean>());
+  const liveShown = useRef(false);
+  const entersLive = (message: ThreadMessage) => {
+    let enters = entrances.current.get(message.id);
+    if (enters === undefined) {
+      enters =
+        message.seq > openedAtSeq &&
+        !(message.role === "bot" && !message.id.startsWith("progress:") && liveShown.current);
+      entrances.current.set(message.id, enters);
+    }
+    return enters;
+  };
+  useEffect(() => {
+    liveShown.current = transcript.messages.some((message) => message.id.startsWith("progress:"));
+  });
+  useSwipeTimes(scrollRef);
+  const sendTime = useMemo(
+    () => new Intl.DateTimeFormat(i18n.locale || "en", { hour: "numeric", minute: "2-digit" }),
+    [],
+  );
   const following = useRef(true);
   const jumpScrolling = useRef(false);
   const autoScrolling = useRef(false);
@@ -232,7 +256,12 @@ export const Transcript = memo(function Transcript({
   );
   const separatorIds = timeSeparatorIds(shownMessages);
   const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor);
-  const workingLabel = liveActivityLine(messages) ?? t`Working…`;
+  const activityLine = liveActivityLine(messages);
+  // One status row walks the run's phases: working, then each tool line, then typing the reply.
+  const composing = messages.some(
+    (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
+  );
+  const workingLabel = composing ? t`Typing…` : (activityLine ?? t`Working…`);
   const [quoteDraft, setQuoteDraft] = useState<{
     message: ThreadMessage;
     text: string;
@@ -506,15 +535,7 @@ export const Transcript = memo(function Transcript({
             following.current = false;
           }
         }}
-        className={`rk-scroll isolate flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto scroll-pt-16 scroll-pb-7 pt-20 pb-12 md:pt-[84px] md:pb-13 ${TRANSCRIPT_CONTENT_PADDING}`}
-        style={
-          userBubble
-            ? ({
-                "--chat-user": userBubble.background,
-                "--chat-user-foreground": userBubble.foreground,
-              } as CSSProperties)
-            : undefined
-        }
+        className={`rk-scroll isolate flex min-h-0 flex-1 touch-pan-y touch-pinch-zoom flex-col gap-2 overflow-x-hidden overflow-y-auto data-swiping:cursor-grabbing data-swiping:select-none scroll-pt-16 scroll-pb-7 pt-[60px] pb-12 ${TRANSCRIPT_CONTENT_PADDING}`}
       >
         {olderCursor != null ? (
           <Button
@@ -568,8 +589,21 @@ export const Transcript = memo(function Transcript({
               ) : null}
               <div
                 data-message-id={message.id}
-                className={peerReceipt ? "relative py-0.5" : "group/message relative hover:z-[1]"}
+                data-message-role={peerReceipt ? undefined : message.role}
+                className={cn(
+                  peerReceipt ? "relative py-0.5" : "group/message relative hover:z-[1]",
+                  entersLive(message) && "motion-safe:animate-enter",
+                )}
               >
+                {peerReceipt ? null : (
+                  <time
+                    aria-hidden="true"
+                    dateTime={message.createdAt}
+                    className="message-swipe-time"
+                  >
+                    {sendTime.format(new Date(message.createdAt))}
+                  </time>
+                )}
                 <div
                   className={
                     peerReceipt
@@ -586,7 +620,7 @@ export const Transcript = memo(function Transcript({
                               (block) => block.kind === "ask" || block.kind === "mcp_approval",
                             )
                           ? "relative w-full min-w-0 max-w-xl"
-                          : `relative ${message.blocks.some((block) => block.kind === "app_connect" || block.kind === "page") || pageView.pages.has(message.id) ? "w-full" : "w-fit"} min-w-0 ${bubbleFrameWidth(message.role)}`
+                          : `relative ${message.blocks.some((block) => block.kind === "app_connect" || block.kind === "page") || pageView.pages.has(message.id) ? "w-full" : "w-fit"} min-w-0 ${BUBBLE_FRAME_WIDTH}`
                     }
                   >
                     <MessageView
@@ -656,12 +690,7 @@ export const Transcript = memo(function Transcript({
             </Fragment>
           );
         })}
-        {running &&
-        !messages.some(
-          (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
-        ) ? (
-          <ActiveBotGlyph bots={workingBots} label={workingLabel} />
-        ) : null}
+        {running ? <ActiveBotGlyph bots={workingBots} label={workingLabel} /> : null}
       </div>
       {quoteDraft ? (
         <QuoteSelectionButton

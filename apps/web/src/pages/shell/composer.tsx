@@ -628,7 +628,7 @@ const ComposerBody = memo(function Composer({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative z-30 m-0 min-w-0 border-0 ${docked ? "p-0" : "px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6"} [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"} ${
+      className={`relative z-30 m-0 min-w-0 border-0 ${docked ? "p-0" : "px-3 pb-3 pt-0 desk:px-[max(1.25rem,calc((100%_-_60rem)/2))]"} [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"} ${
         draggingFiles ? "rounded-[14px] ring-2 ring-inset ring-ring" : ""
       }`}
     >
@@ -708,7 +708,7 @@ const ComposerBody = memo(function Composer({
           role="listbox"
           aria-label={t`Mentions`}
           data-testid="mention-picker"
-          className="mb-2 overflow-hidden rounded-[14px] border border-border bg-muted animate-in fade-in-0 slide-in-from-bottom-1 duration-150 motion-reduce:animate-none"
+          className="mb-2 overflow-hidden rounded-xl bg-popover shadow-float animate-in fade-in-0 slide-in-from-bottom-1 duration-150 motion-reduce:animate-none"
         >
           {mentionOptions.map((mention, index) => {
             const optionId = `${mentionListboxId}-option-${index}`;
@@ -748,7 +748,7 @@ const ComposerBody = memo(function Composer({
       {showSlashPicker ? (
         <div
           data-testid="slash-picker"
-          className="mb-2 overflow-hidden rounded-[14px] border border-border bg-muted"
+          className="mb-2 overflow-hidden rounded-xl bg-popover shadow-float"
         >
           {slashSkillOptions.map((skill) => (
             <button
@@ -790,15 +790,9 @@ const ComposerBody = memo(function Composer({
         ref={composerBarRef}
         data-testid="composer-bar"
         data-expanded={expanded}
-        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-colors focus-within:border-input ${
-          docked ? "bg-card" : "bg-background dark:bg-card"
-        } ${
-          expanded
-            ? "gap-x-2 gap-y-2 pb-[9px] pt-3"
-            : docked
-              ? "gap-x-3 py-[5px] ps-2 pe-2"
-              : "gap-x-3.5 py-[9px]"
-        }`}
+        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[23px] border border-transparent p-2 shadow-composer transition-[box-shadow,border-color] focus-within:border-input ${
+          docked ? "bg-card" : "bg-background"
+        } ${expanded ? "gap-x-2 gap-y-2 pt-3" : "min-h-[45px] gap-x-2"}`}
       >
         <input
           ref={fileInputRef}
@@ -815,7 +809,7 @@ const ComposerBody = memo(function Composer({
           aria-label={t`Attach file`}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className={`col-start-1 size-8 shrink-0 rounded-full border border-border bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${
+          className={`col-start-1 size-[29px] shrink-0 rounded-full bg-accent text-muted-foreground transition-colors hover:text-foreground ${
             expanded ? "row-start-2" : ""
           }`}
         >
@@ -986,7 +980,7 @@ const ComposerBody = memo(function Composer({
                 aria-label={t`Send`}
                 disabled={sending || !canSend || disabled}
                 onClick={() => void send()}
-                className="size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
+                className="size-[29px] shrink-0 rounded-full bg-chat-user text-chat-user-foreground transition-[scale,opacity] hover:bg-chat-user/90 active:scale-95 disabled:opacity-40"
               >
                 <ArrowUp size={16} strokeWidth={2.2} />
               </Button>
@@ -996,7 +990,7 @@ const ComposerBody = memo(function Composer({
                 aria-label={t`Stop`}
                 disabled={sending}
                 onClick={() => void onStop()}
-                className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+                className="size-[29px] rounded-full border-transparent bg-accent text-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
               >
                 <Square size={11} strokeWidth={0} fill="currentColor" />
               </Button>
@@ -1011,7 +1005,7 @@ const ComposerBody = memo(function Composer({
                 aria-label={t`Send`}
                 disabled={sending || !canSend || disabled}
                 onClick={() => void send()}
-                className="size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
+                className="size-[29px] shrink-0 rounded-full bg-chat-user text-chat-user-foreground transition-[scale,opacity] hover:bg-chat-user/90 active:scale-95 disabled:opacity-40"
               >
                 <ArrowUp size={16} strokeWidth={2.2} />
               </Button>

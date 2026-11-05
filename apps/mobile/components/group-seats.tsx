@@ -2,9 +2,8 @@ import {
   avatarEyeRects,
   avatarIdentitySeed,
   botEyeInk,
-  ORGANIC_AVATAR_EYES,
   ORGANIC_AVATAR_VIEWBOX,
-  organicAvatarEyeTilt,
+  organicAvatarEyes,
   organicAvatarPath,
   SHIPPED_BOT_AVATAR_EYES,
   SHIPPED_BOT_AVATAR_VIEWBOX,
@@ -213,8 +212,8 @@ function seatArt(
     face: (
       <>
         <Path d={outline} fill={color} />
-        <G transform={`rotate(${organicAvatarEyeTilt(seed)})`} fill={botEyeInk(color, page)}>
-          {avatarEyeRects(ORGANIC_AVATAR_EYES).map((rect) => (
+        <G fill={botEyeInk(color, page)}>
+          {avatarEyeRects(organicAvatarEyes(seed)).map((rect) => (
             <Rect key={rect.x} {...rect} />
           ))}
         </G>

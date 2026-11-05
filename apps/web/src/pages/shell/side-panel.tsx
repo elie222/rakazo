@@ -52,6 +52,7 @@ export function ShellSidePanel({
   setAgentSkills,
   onClearBot,
   discardChatAttachments,
+  railChrome = false,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   panel: Panel;
@@ -81,6 +82,8 @@ export function ShellSidePanel({
   onClearBot: (bot: Bot) => void;
   /** Drops a deleted chat's pending attachments with their previews. */
   discardChatAttachments: (threadKey: string) => void;
+  /** Lines the close button up with the desktop rail's search button. */
+  railChrome?: boolean;
 }) {
   const { t } = useLingui();
   const open = Boolean(panel && (active || activeGroup || panel === "import-agent"));
@@ -100,20 +103,22 @@ export function ShellSidePanel({
   }
 
   return (
-    <ResizableSidePanel open={open} panel={panel ?? "closed"}>
+    <ResizableSidePanel open={open} panel={panel ?? "closed"} onRequestClose={() => setPanel(null)}>
       {open ? (
-        <div className="rk-scroll h-full w-full overflow-y-auto px-5 py-[17px]">
+        <div
+          className={`rk-scroll h-full w-full overflow-y-auto px-[18px] pb-4 ${railChrome ? "pt-[38px]" : "pt-[15px]"}`}
+        >
           {panel !== "routine" &&
           panel !== "create-group" &&
           panel !== "group-settings" &&
           panel !== "import-agent" ? (
-            <div className="mb-4 flex items-center justify-between">
+            <div className="-me-1 -mt-0.5 mb-1 flex h-[34px] items-center justify-between">
               {!active && panel !== "settings" ? (
                 <span className="text-[13.5px] text-muted-foreground">
                   <Trans>Group</Trans>
                 </span>
               ) : null}
-              <div className="ml-auto flex gap-1">
+              <div className="ml-auto flex gap-2">
                 {active &&
                 panel === "computer" &&
                 !computerOpen &&
@@ -127,8 +132,9 @@ export function ShellSidePanel({
                   />
                 ) : null}
                 <Button
-                  variant="ghost"
-                  size="icon-sm"
+                  variant="floating"
+                  size="icon"
+                  className="size-[34px]"
                   aria-label={t`Close panel`}
                   onClick={() => setPanel(null)}
                 >

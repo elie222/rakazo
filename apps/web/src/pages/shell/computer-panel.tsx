@@ -1,9 +1,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Bot, ComputerStatus } from "@rakazo/contracts";
-import { BotAvatar, Button } from "@rakazo/ui-web";
+import { BotSleepFace, Button } from "@rakazo/ui-web";
 import { HardDrive, Maximize2, X } from "lucide-react";
 import type { ReactNode } from "react";
+import { Shimmer } from "../../components/ai/primitives";
 import { ComputersUnavailableHint } from "../../components/ComputersUnavailableHint";
 import { screenIframeSandbox } from "../../lib/computer-screen";
 import { computerLabel, computerPlaceholder, DesktopKindEmptyState } from "./computer-view";
@@ -46,7 +47,7 @@ export function ComputerPanel({
       {warn && (
         <div
           data-testid="computer-disk-warning"
-          className="mt-2 flex items-center gap-2 rounded-[14px] border border-warning/40 py-1.5 ps-3 pe-1.5 text-sm"
+          className="mt-2 flex items-center gap-2 rounded-xl bg-warning/15 py-1.5 ps-3 pe-1.5 text-sm"
         >
           <HardDrive aria-hidden size={15} strokeWidth={1.9} className="shrink-0 text-warning" />
           <span className="min-w-0 flex-1">
@@ -101,24 +102,15 @@ function ComputerPreview({
       <div
         data-testid="computer-preview"
         data-state="idle"
-        className="flex flex-col items-center gap-3 rounded-[14px] bg-muted/50 px-6 py-7"
+        className="flex aspect-[1.55] flex-col items-center justify-center gap-2 rounded-xl bg-muted px-6"
       >
-        <div className="relative">
-          <BotAvatar
-            avatarSet={bot.avatarSet}
-            color={bot.color}
-            identity={bot.id}
-            size={44}
-            className="opacity-50 grayscale"
-          />
-          <span
-            aria-hidden
-            className="absolute -end-3 -top-2 text-[11px] font-medium leading-none text-muted-foreground/70"
-          >
-            z<sup>z</sup>
-          </span>
-        </div>
-        <span className="text-sm text-muted-foreground">
+        <BotSleepFace
+          state="asleep"
+          avatarSet={bot.avatarSet}
+          color={bot.color}
+          identity={bot.id}
+        />
+        <span className="text-sm text-foreground">
           <Trans>Asleep</Trans>
         </span>
         <Button variant="secondary" size="sm" data-testid="computer-preview-open" onClick={onOpen}>
@@ -128,6 +120,13 @@ function ComputerPreview({
     );
   }
   const canOpen = !computerScreenError && !showingRecoveryHint;
+  // While the computer boots, the bot wakes up in its place: eyes open, look around, stretch.
+  const waking =
+    !computerOpen &&
+    !computerScreenError &&
+    !showComputerRecoveryHint &&
+    computer?.kind !== "desktop" &&
+    (booting || Boolean(computerBooting) || computer?.state === "booting");
   // The Open pill replaces the status text on hover; fade it so they never overlap.
   const hideOnHover = canOpen
     ? "transition-opacity group-hover:opacity-0 group-has-[:focus-visible]:opacity-0"
@@ -136,8 +135,8 @@ function ComputerPreview({
     <div>
       <div
         data-testid="computer-preview"
-        className={`group relative rounded-[14px] bg-background ${
-          showingRecoveryHint ? "" : "aspect-[16/10] overflow-hidden"
+        className={`group relative rounded-xl bg-muted ${
+          showingRecoveryHint ? "" : "aspect-[1.55] overflow-hidden"
         }`}
       >
         {computerOpen ? (
@@ -150,6 +149,24 @@ function ComputerPreview({
           <DesktopKindEmptyState
             className={`grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80 ${hideOnHover}`}
           />
+        ) : waking ? (
+          <div
+            data-state="waking"
+            className={`flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-sm ${hideOnHover}`}
+          >
+            <BotSleepFace
+              state="waking"
+              avatarSet={bot.avatarSet}
+              color={bot.color}
+              identity={bot.id}
+            />
+            <Shimmer>
+              {computerPlaceholder(computer?.state, true, computerLabel(computer?.mode, bot.name))}
+            </Shimmer>
+            <span aria-hidden className="block h-[3px] w-24 overflow-hidden rounded-full bg-accent">
+              <span className="block h-full w-2/5 rounded-full bg-muted-foreground motion-safe:animate-progress-sweep" />
+            </span>
+          </div>
         ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
           <iframe
             key={screenFrameKey}
@@ -157,7 +174,7 @@ function ComputerPreview({
             ref={screenFrameRef}
             src={embeddedScreenUrl}
             sandbox={screenIframeSandbox(embeddedScreenUrl)}
-            className="h-full w-full border-0 bg-black"
+            className="h-full w-full border-0 bg-black motion-safe:animate-power-on"
             allow="clipboard-read; clipboard-write"
             style={{ pointerEvents: "none" }}
           />

@@ -5,14 +5,6 @@
   overflow: hidden;
   vertical-align: middle;
 }
-.logo-avatar-plate {
-  fill: var(--sidebar);
-}
-.logo-avatar-outline {
-  fill: none;
-  stroke: var(--border);
-  stroke-width: 1;
-}
 .logo-avatar-body {
   transform-origin: 50px 84px;
 }

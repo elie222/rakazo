@@ -641,21 +641,18 @@ describe("Composer", () => {
   });
 
   it.each([false, true])(
-    "draws an idle Send button with the primary disabled tokens (running: %s)",
+    "draws an idle Send button in the bot's colour, faded (running: %s)",
     (running) => {
       renderComposer(vi.fn(), { running });
       const send = container?.querySelector<HTMLButtonElement>('button[aria-label="Send"]');
       expect(send?.disabled).toBe(true);
       expect(send?.className.split(" ")).toEqual(
         expect.arrayContaining([
-          "bg-primary",
-          "hover:bg-primary-hover",
-          "disabled:bg-primary-disabled",
-          "disabled:text-foreground/30",
-          "disabled:opacity-100",
+          "bg-chat-user",
+          "text-chat-user-foreground",
+          "disabled:opacity-40",
         ]),
       );
-      expect(send?.className).not.toContain("disabled:opacity-50");
     },
   );
 

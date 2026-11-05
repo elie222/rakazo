@@ -521,13 +521,16 @@ export function BotSettings({
 
   return (
     <div data-testid="bot-settings">
-      <div data-testid="bot-profile-header" className="flex flex-col items-center pb-5 text-center">
-        <div className="flex justify-center pb-4">
+      <div
+        data-testid="bot-profile-header"
+        className="flex flex-col items-center pb-2.5 text-center"
+      >
+        <div className="flex justify-center pt-2.5 pb-3">
           <AvatarStudioPopover
             value={color}
             identity={bot.id}
             status={bot.status}
-            size={76}
+            size={100}
             avatarSet={avatarSet}
             onChange={(newColor, nextAvatarSet) => {
               setColor(newColor);
@@ -544,7 +547,7 @@ export function BotSettings({
           editLabel={t`Edit name`}
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
-          className="text-xl font-semibold"
+          className="mt-3 mb-2.5 text-lg leading-6 font-medium tracking-[-0.1px]"
           onCommit={(value) => {
             if (!value.trim()) return;
             setName(value.trim());
@@ -553,7 +556,7 @@ export function BotSettings({
         />
       </div>
       <Tabs value={tab} onValueChange={(next) => onTabChange?.(next as BotPanelTab)}>
-        <TabsList className="w-full">
+        <TabsList variant="pill" className="mx-auto mb-3.5 max-w-full">
           <TabsTrigger value="computer">
             <Trans>Computer</Trans>
           </TabsTrigger>

@@ -300,7 +300,6 @@ export function LogoAvatar({
         </ClipPath>
       </Defs>
       <G clipPath={`url(#plate-${id})`}>
-        <Rect width={100} height={100} rx={23} fill={tokens.sidebar} />
         <AnimatedG animatedProps={body}>
           <G transform={`translate(0 ${LOGO_AVATAR_BODY_Y})`}>
             <Path d={LOGO_BODY_PATH} fill={`url(#fill-${id})`} />
@@ -389,7 +388,6 @@ export function LogoAvatar({
           ) : null}
         </AnimatedG>
       </G>
-      <Rect width={100} height={100} rx={23} fill="none" stroke={tokens.border} strokeWidth={1} />
     </Svg>
   );
   return pokeable ? (

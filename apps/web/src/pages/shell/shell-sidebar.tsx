@@ -10,7 +10,7 @@ import {
   Sidebar,
 } from "@rakazo/ui-web";
 import { Search, SlidersHorizontal } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useState } from "react";
 import { InviteDialog } from "../../components/InviteDialog";
 import { PasskeyOffer } from "../../components/PasskeyOffer";
@@ -26,6 +26,7 @@ import { ActivityList } from "../ActivityList";
 import { SpaceSearchResults } from "../SpaceSearch";
 import type { SettingsSection } from "../shell-overlay";
 import { SidebarHeader } from "./sidebar-header";
+import { useBotsSidebarWidth } from "./sidebar-layout";
 import type { SidebarSearch } from "./use-sidebar-search";
 
 /** Focuses the search box once it renders, its text selected so typing replaces it. */
@@ -120,6 +121,7 @@ export function ShellSidebar({
     activityFiltersId,
     activityFilterCount,
   } = search;
+  const sidebarWidth = useBotsSidebarWidth();
   return (
     <>
       <button
@@ -129,7 +131,7 @@ export function ShellSidebar({
         inert={mobileOpen ? undefined : true}
         tabIndex={mobileOpen ? undefined : -1}
         onClick={() => setMobileOpen(false)}
-        className={`absolute inset-y-0 end-0 start-[min(calc(100%-48px),316px)] z-30 bg-overlay transition-opacity duration-150 ease-out motion-reduce:transition-none md:hidden ${
+        className={`absolute inset-y-0 end-0 start-[min(calc(100%-48px),316px)] z-30 bg-overlay transition-opacity duration-150 ease-out motion-reduce:transition-none desk:hidden ${
           mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
@@ -142,6 +144,14 @@ export function ShellSidebar({
         aria-hidden={isMobile && !mobileOpen ? true : undefined}
         data-bots-sidebar-density={density}
         data-collapsed={collapsed ? "true" : "false"}
+        style={
+          isMobile
+            ? undefined
+            : ({
+                "--sidebar-width": `${sidebarWidth}px`,
+                "--sidebar-width-icon": `${sidebarWidth}px`,
+              } as CSSProperties)
+        }
         className={
           isMobile
             ? `absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-transform duration-200 ease-out motion-reduce:transition-none ${mobileOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"}`
@@ -169,7 +179,6 @@ export function ShellSidebar({
             setSearchOpen(true);
             focusSidebarSearch();
           }}
-          setBotsSidebarCollapsedPref={setCollapsedPref}
           bots={bots}
           setMobileSidebarOpen={setMobileOpen}
           setPanel={setPanel}
@@ -185,7 +194,7 @@ export function ShellSidebar({
         ) ? null : (
           <InputGroup
             data-testid="sidebar-search"
-            className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input border border-border text-muted-foreground focus-within:border-ring"
+            className="ms-4 me-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input border border-border text-muted-foreground focus-within:border-ring"
           >
             <InputGroupAddon>
               <Search size={16} strokeWidth={1.8} aria-hidden="true" />
@@ -235,7 +244,9 @@ export function ShellSidebar({
             ) : null}
           </InputGroup>
         )}
-        <div className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
+        <div
+          className={`rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pb-2 ${mini ? "px-3" : "ps-4 pe-2.5"}`}
+        >
           {showSpaceSearch && !mini ? (
             <SpaceSearchResults
               hits={searchHits}

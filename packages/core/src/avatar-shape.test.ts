@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  avatarCheer,
   avatarIdentitySeed,
   ORGANIC_AVATAR_FAMILY_COUNT,
   ORGANIC_AVATAR_HEART_FAMILY,
   ORGANIC_AVATAR_LOOKS,
+  organicAvatarEyes,
   organicAvatarFamily,
   organicAvatarPath,
   organicAvatarSampleIdentity,
@@ -17,27 +19,37 @@ describe("organic avatar geometry", () => {
   });
 
   it("emits only path geometry from a numeric seed", () => {
-    const path = organicAvatarPath(42);
-    expect(path).toMatch(/^M[-0-9. ]+(?:C[-0-9. ]+)+Z$/);
-    expect(path).not.toMatch(/<|>|javascript:|url\(/i);
+    for (let seed = 0; seed < ORGANIC_AVATAR_FAMILY_COUNT; seed++) {
+      expect(organicAvatarPath(seed)).toMatch(/^M[-0-9. MLHVAQZa-z]+Z$/);
+      expect(organicAvatarPath(seed)).not.toMatch(/<|>|javascript:|url\(/i);
+    }
   });
 
-  it("produces ten distinct smooth shape families", () => {
-    const families = Array.from({ length: 10 }, (_, seed) =>
-      organicAvatarPath(seed, -((seed % 360) * Math.PI) / 180),
+  it("draws one distinct body per family", () => {
+    const bodies = Array.from({ length: ORGANIC_AVATAR_FAMILY_COUNT }, (_, seed) =>
+      organicAvatarPath(seed),
     );
-    expect(new Set(families)).toHaveLength(10);
-    expect(families.every((path) => (path.match(/C/g) ?? []).length >= 12)).toBe(true);
+    expect(new Set(bodies)).toHaveLength(ORGANIC_AVATAR_FAMILY_COUNT);
   });
 
   it("names the family an identity is drawn with", () => {
-    // Without its per-identity phase, a body is its family's template.
-    const unphased = (seed: number) => organicAvatarPath(seed, -((seed % 360) * Math.PI) / 180);
     for (const identity of ["research", "health", "cmh2x9k0a0000abcd1234efgh", "Chief"]) {
       const family = organicAvatarFamily(identity);
       expect(family).toBeGreaterThanOrEqual(0);
       expect(family).toBeLessThan(ORGANIC_AVATAR_FAMILY_COUNT);
-      expect(unphased(avatarIdentitySeed(identity))).toBe(unphased(family));
+      expect(organicAvatarPath(avatarIdentitySeed(identity))).toBe(organicAvatarPath(family));
+    }
+  });
+
+  it("keeps the face inside the body and lowers it on bottom-heavy bodies", () => {
+    for (let seed = 0; seed < ORGANIC_AVATAR_FAMILY_COUNT; seed++) {
+      const eyes = organicAvatarEyes(seed);
+      const { cheeks, smile } = avatarCheer(eyes);
+      expect(eyes.cy - eyes.height / 2).toBeGreaterThan(30);
+      expect(eyes.cy + eyes.height / 2).toBeLessThan(80);
+      expect(cheeks.map((cheek) => cheek.cx)).toEqual([27, 73]);
+      expect(cheeks[0]!.cy - eyes.cy).toBe(15);
+      expect(smile).toBe(`M43 ${eyes.cy + 17}Q50 ${eyes.cy + 24} 57 ${eyes.cy + 17}`);
     }
   });
 });

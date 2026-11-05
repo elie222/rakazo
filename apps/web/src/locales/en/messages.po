@@ -4079,10 +4079,6 @@ msgstr "Minimal"
 msgid "Minimize"
 msgstr "Minimize"
 
-#: src/pages/shell/sidebar-header.tsx
-msgid "Minimize bots"
-msgstr "Minimize bots"
-
 #: src/components/call/CallCard.tsx
 msgid "Minimize call"
 msgstr "Minimize call"
@@ -5907,10 +5903,6 @@ msgstr "Show"
 msgid "Show all"
 msgstr "Show all"
 
-#: src/pages/shell/sidebar-header.tsx
-msgid "Show bots"
-msgstr "Show bots"
-
 #: src/pages/Artifacts.tsx
 msgid "Show list"
 msgstr "Show list"
@@ -6758,6 +6750,10 @@ msgstr "Type without recording"
 #: src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "Type your answer"
+
+#: src/pages/shell/transcript.tsx
+msgid "Typing…"
+msgstr "Typing…"
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/Shell.tsx

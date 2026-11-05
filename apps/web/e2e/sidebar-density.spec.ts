@@ -55,18 +55,18 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
   // Times are tertiary text; a hovered row takes the light hover fill, lighter than selection.
   await expect(previewRow.locator("[data-roster-time]")).toHaveCSS(
     "color",
-    "rgba(28, 28, 28, 0.56)",
+    "rgba(107, 111, 117, 0.75)",
   );
   await previewRow.hover();
-  await expect(previewRow).toHaveCSS("background-color", "rgba(28, 28, 28, 0.06)");
-  await expect(selectedRow).toHaveCSS("background-color", "rgba(28, 28, 28, 0.08)");
+  await expect(previewRow).toHaveCSS("background-color", "rgba(37, 37, 37, 0.07)");
+  await expect(selectedRow).toHaveCSS("background-color", "rgba(37, 37, 37, 0.09)");
   // Once read, the preview is secondary text.
   await rpc(page, "threads/markRead", { botId: previewBot.id });
   await page.reload();
   await expect(previewRow).not.toHaveAttribute("data-roster-unread", "true");
   await expect(previewRow.locator("[data-roster-preview]")).toHaveCSS(
     "color",
-    "rgba(28, 28, 28, 0.68)",
+    "rgb(107, 111, 117)",
   );
   await rpc(page, "threads/markUnread", { botId: previewBot.id });
   await page.reload();
@@ -124,7 +124,7 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
     );
     await expect(previewRow.locator('[data-roster-status="running"]')).toHaveCSS(
       "font-weight",
-      "600",
+      "500",
     );
     await expect(previewRow).not.toContainText("keep working until I stop you");
     await captureScreenshot(page, testInfo, "sidebar-density-compact-working");

@@ -1,3 +1,10 @@
+import {
+  CHAT_MIN_WIDTH,
+  DRAG_COLLAPSE_WIDTH,
+  RAIL_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+} from "./column-layout";
+
 const STORAGE_PREFIX = "rakazo:bots-sidebar-collapsed:";
 
 export function botsSidebarCollapsedStorageKey(userId: string | null | undefined): string | null {
@@ -29,12 +36,12 @@ export function writeBotsSidebarCollapsed(
   }
 }
 
-export const BOTS_SIDEBAR_MINI_WIDTH = 72;
-export const BOTS_SIDEBAR_DEFAULT_WIDTH = 316;
-export const BOTS_SIDEBAR_MIN_WIDTH = 240;
+export const BOTS_SIDEBAR_MINI_WIDTH = RAIL_WIDTH;
+export const BOTS_SIDEBAR_DEFAULT_WIDTH = 280;
+export const BOTS_SIDEBAR_MIN_WIDTH = SIDEBAR_MIN_WIDTH;
 export const BOTS_SIDEBAR_MAX_WIDTH = 480;
-export const BOTS_SIDEBAR_SNAP_WIDTH = 160;
-const MIN_CHAT_WIDTH = 320;
+export const BOTS_SIDEBAR_SNAP_WIDTH = DRAG_COLLAPSE_WIDTH;
+export { CHAT_MIN_WIDTH };
 
 export function botsSidebarWidthStorageKey(userId: string | null | undefined): string | null {
   return userId ? `rakazo:bots-sidebar-width:${userId}` : null;
@@ -43,7 +50,7 @@ export function botsSidebarWidthStorageKey(userId: string | null | undefined): s
 export function maximumBotsSidebarWidth(viewportWidth: number): number {
   return Math.max(
     BOTS_SIDEBAR_MIN_WIDTH,
-    Math.min(BOTS_SIDEBAR_MAX_WIDTH, viewportWidth - MIN_CHAT_WIDTH),
+    Math.min(BOTS_SIDEBAR_MAX_WIDTH, viewportWidth - CHAT_MIN_WIDTH),
   );
 }
 

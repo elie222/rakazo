@@ -76,3 +76,18 @@ it("closes on Escape unless the key landed in a popup", async () => {
   expect(onOpenChange).not.toHaveBeenCalled();
   await view.unmount();
 });
+
+it("starts its top row below the macOS window controls in the desktop app", async () => {
+  vi.stubGlobal("rakazoDesktop", { platform: "darwin" });
+  const view = mount({ document: "<p>v1</p>" });
+  await view.render({ document: "<p>v1</p>" });
+  const close = document.body.querySelector<HTMLElement>('[aria-label="Close page"]')!;
+  expect(close.className).toContain("top-[42px]");
+  await view.unmount();
+  vi.unstubAllGlobals();
+  const browser = mount({ document: "<p>v1</p>" });
+  await browser.render({ document: "<p>v1</p>" });
+  const closes = document.body.querySelectorAll<HTMLElement>('[aria-label="Close page"]');
+  expect(closes[closes.length - 1]!.className).toContain("top-[6px]");
+  await browser.unmount();
+});

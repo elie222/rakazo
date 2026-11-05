@@ -4,11 +4,83 @@
 
 @source "./**/*.{ts,tsx}";
 
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+/*
+ * Onest (SIL OFL 1.1, fonts/onest/OFL.txt), served with the app: Latin, Cyrillic and Vietnamese
+ * subsets, each fetched only when a page uses its characters. Other scripts fall through to Noto
+ * when installed, then the system font, chosen per language so Han text gets the right forms.
+ */
+@font-face {
+  font-family: "Onest";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/onest/onest-cyrillic-ext-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "Onest";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/onest/onest-cyrillic-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Onest";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/onest/onest-vietnamese-wght-normal.woff2") format("woff2-variations");
+  unicode-range:
+    U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: "Onest";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/onest/onest-latin-ext-wght-normal.woff2") format("woff2-variations");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Onest";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/onest/onest-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
-/* Web type: the system font; chat messages read at 15/22, other UI at Tailwind sizes. Mobile sets its own type natively. */
+/* Shown while Onest loads: a local sans scaled to Onest's width and line metrics, so text does
+   not reflow or shift when the web font swaps in. Latin, Cyrillic and Vietnamese only, the
+   ranges Onest itself covers. */
+@font-face {
+  font-family: "Onest Fallback";
+  src: local("Arial"), local("ArialMT"), local("Helvetica"), local("Liberation Sans");
+  size-adjust: 106%;
+  ascent-override: 91.5%;
+  descent-override: 28.8%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-024F, U+0300-036F, U+0400-04FF, U+1E00-1EFF, U+2000-206F, U+20AC, U+2122;
+}
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+/* Desktop layout: any wide window, and narrower windows driven by a mouse or trackpad (a desktop
+   app or browser down to the 480px rail + thread minimum). Phones keep the drawer layout.
+   Keep in sync with DESKTOP_LAYOUT_QUERY in hooks/use-mobile.ts. */
+@custom-variant desk {
+  @media (min-width: 768px), (min-width: 480px) and (hover: hover) and (pointer: fine) {
+    @slot;
+  }
+}
+
+/* Web type: Onest; chat messages read at 14/20 with a slight negative track, other UI at Tailwind sizes. Mobile sets its own type natively. */
 @theme {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans:
+    "Onest", "Onest Fallback", "Noto Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    system-ui, sans-serif;
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
     monospace;
@@ -19,8 +91,9 @@
   --text-label--line-height: 16px;
   --text-body2: 13px;
   --text-body2--line-height: 18px;
-  --text-body1: 15px;
-  --text-body1--line-height: 22px;
+  --text-body1: 14px;
+  --text-body1--line-height: 20px;
+  --text-body1--letter-spacing: -0.15px;
   --text-heading3: 17px;
   --text-heading3--line-height: 24px;
   --text-heading3--letter-spacing: -0.008em;
@@ -30,6 +103,112 @@
   --text-heading1: 26px;
   --text-heading1--line-height: 32px;
   --text-heading1--letter-spacing: -0.015em;
+
+  /* Motion: things arrive with a small overshoot, settle softly, and UI state changes stay quick. */
+  --ease-enter: cubic-bezier(0.2, 0.9, 0.3, 1.15);
+  --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.3, 1.6, 0.5, 1);
+  --ease-ui: cubic-bezier(0.4, 0, 0.2, 1);
+  --animate-enter: enter-up 0.28s var(--ease-enter) both;
+  --animate-row-enter: row-enter 0.45s var(--ease-settle) both;
+  --animate-label-enter: label-enter 0.35s var(--ease-settle) both;
+  /* A status line slides in, then keeps a light sweeping across it while the work goes on. */
+  --animate-status-label:
+    label-enter 0.35s var(--ease-settle) both, text-shimmer 2.4s linear infinite;
+  --animate-power-on: power-on 0.9s var(--ease-settle) both;
+  --animate-typing-dot: typing-dot 1.3s ease-in-out infinite;
+
+  @keyframes typing-dot {
+    0%,
+    55%,
+    100% {
+      opacity: 0.25;
+    }
+    25% {
+      opacity: 0.7;
+    }
+  }
+  --animate-progress-sweep: progress-sweep 1.6s var(--ease-ui) infinite;
+
+  /* A screen switching on: a bright blur that settles into the picture. */
+  @keyframes power-on {
+    0% {
+      opacity: 0;
+      filter: brightness(3) blur(10px);
+    }
+    30% {
+      opacity: 1;
+      filter: brightness(1.9) blur(4px);
+    }
+    100% {
+      opacity: 1;
+      filter: none;
+    }
+  }
+  /* For waits of unknown length: a short bar sweeps across instead of claiming a percentage. */
+  @keyframes progress-sweep {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(250%);
+    }
+  }
+
+  @keyframes enter-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.97);
+    }
+  }
+  @keyframes row-enter {
+    from {
+      opacity: 0;
+      transform: translateX(-10px);
+    }
+  }
+  @keyframes label-enter {
+    from {
+      opacity: 0;
+      transform: translateY(5px);
+    }
+  }
+}
+
+/* Scripts Onest does not cover: a matching Noto face when installed, then the system font. */
+:lang(he) {
+  --font-sans: "Onest", "Onest Fallback", "Noto Sans Hebrew", "Arial Hebrew", system-ui, sans-serif;
+}
+:lang(hi) {
+  --font-sans:
+    "Onest", "Onest Fallback", "Noto Sans Devanagari", "Kohinoor Devanagari", system-ui, sans-serif;
+}
+:lang(ko) {
+  --font-sans:
+    "Onest", "Onest Fallback", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui,
+    sans-serif;
+}
+:lang(ja) {
+  --font-sans:
+    "Onest", "Onest Fallback", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui,
+    sans-serif;
+}
+:lang(zh-CN),
+:lang(zh-Hans) {
+  --font-sans:
+    "Onest", "Onest Fallback", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui,
+    sans-serif;
+}
+:lang(zh-TW),
+:lang(zh-Hant) {
+  --font-sans:
+    "Onest", "Onest Fallback", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui,
+    sans-serif;
+}
+
+/* Titles and emphasis stay at medium: the UI never goes heavier than 500. */
+@theme {
+  --font-weight-semibold: 500;
 }
 
 /* The system font reads light at 400 on macOS; regular text uses 420 there. Medium and semibold stay. */
@@ -78,6 +257,16 @@
   --color-overlay: var(--overlay);
   --color-scrollbar: var(--scrollbar);
   --color-scrollbar-hover: var(--scrollbar-hover);
+  --color-glass-fill: var(--glass-fill);
+  --color-glass-stroke: var(--glass-stroke);
+  /* Frosted round buttons and floating labels: hairline ring, soft lift, bright top edge. */
+  --shadow-glass:
+    0 0 0 0.5px var(--glass-stroke), 0 2px 10px var(--glass-shadow),
+    inset 0 1px 0 var(--glass-highlight);
+  /* Cards that float over the chat: a soft drop plus a hairline. */
+  --shadow-float: 0 3px 12px var(--glass-shadow), 0 0 0 0.5px var(--border);
+  /* The message box: a hairline and the faintest lift, no hard border. */
+  --shadow-composer: 0 0 0 0.5px var(--border), 0 1px 8px var(--glass-shadow);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -130,346 +319,381 @@
   }
 }
 
-@keyframes rakazo-avatar-spin {
-  0% {
-    transform: rotate(0deg);
+/*
+ * Bot faces (organic and Avatar Studio shapes). Flat bodies with two upright eyes.
+ * - working: two bouncy hops, a jump with a full spin, then a small orbit; the eyes glance
+ *   around, squash with each landing and squint happily on the spin, with blush and a smile.
+ * - hop: one playful hop-hop-spin when the bot's colour or shape changes.
+ * - look-at (avatar-look.ts) turns the hovered face toward the pointer by inline transforms.
+ * `--u` is the face's view box in 100-unit steps, so glances travel the same on every box.
+ */
+.rakazo-avatar-face {
+  overflow: visible;
+  flex: none;
+}
+[data-look] :where(.avatar-look, .avatar-eye, .avatar-cheer) {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.rakazo-avatar-face .avatar-cheer {
+  opacity: 0;
+}
+/* Without a reduced-motion preference only: otherwise every face is a still picture. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-look][data-hop="true"] {
+    animation: avatar-hop 1.05s cubic-bezier(0.3, 1.25, 0.5, 1) both;
+  }
+  .rakazo-avatar-face[data-hop="true"] .avatar-eye {
+    animation: avatar-eyes-hop 1.05s ease-in-out both;
+  }
+  .rakazo-avatar-face[data-hop="true"] .avatar-cheer {
+    animation: avatar-cheer-hop 1.05s ease-out both;
+  }
+  .rakazo-avatar-face[data-working="true"] {
+    animation: avatar-jolly 2.4s var(--ease-ui) infinite;
+  }
+  .rakazo-avatar-face[data-working="true"] .avatar-gaze {
+    animation: avatar-gaze 4.8s ease-in-out infinite;
+  }
+  .rakazo-avatar-face[data-working="true"] .avatar-eye {
+    animation: avatar-eyes-work 2.4s ease-in-out infinite;
+  }
+  .rakazo-avatar-face[data-working="true"] .avatar-cheer {
+    animation: avatar-cheer-work 2.4s ease-out infinite;
+  }
+  /* A photo has no face to animate: while its bot works it just bounces. */
+  .rakazo-bot-avatar[data-working="true"] {
+    animation: avatar-bounce 1.6s var(--ease-ui) infinite;
+  }
+}
+/* Offscreen and hidden faces hold still, as do working faces past the motion budget. */
+.rakazo-bot-avatar[data-paused="true"],
+.rakazo-avatar-face[data-paused="true"],
+.rakazo-avatar-face[data-paused="true"] :is(.avatar-eye, .avatar-gaze, .avatar-cheer) {
+  animation-play-state: paused;
+}
+
+@keyframes avatar-hop {
+  10% {
+    transform: scale(1.16, 0.8);
+  }
+  26% {
+    transform: translateY(-30%) rotate(-14deg) scale(0.93, 1.12);
+  }
+  40% {
+    transform: scale(1.14, 0.84);
+  }
+  52% {
+    transform: translateY(-22%) rotate(14deg) scale(0.95, 1.08);
+  }
+  64% {
+    transform: scale(1.12, 0.88);
+  }
+  78% {
+    transform: translateY(-16%) rotate(200deg) scale(0.97, 1.04);
+  }
+  92% {
+    transform: rotate(360deg) scale(1.06, 0.94);
   }
   100% {
     transform: rotate(360deg);
   }
 }
-
-.rakazo-bot-avatar-ring {
-  animation: rakazo-avatar-spin 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-  opacity: 0;
-  transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.rakazo-bot-avatar {
-  transition: box-shadow 180ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.rakazo-bot-avatar[data-working="true"] .rakazo-bot-avatar-ring {
-  opacity: 1;
-}
-
-/* Hidden idle rings would otherwise keep the compositor drawing every frame. */
-.rakazo-bot-avatar[data-working="false"] .rakazo-bot-avatar-ring {
-  animation-play-state: paused;
-}
-
-@keyframes rakazo-avatar-breathe {
-  0%,
-  100% {
-    transform: scale(1);
-    filter: brightness(1);
-  }
-  50% {
-    transform: scale(1.07);
-    filter: brightness(1.12);
-  }
-}
-
-.rakazo-bot-avatar-picture {
-  box-shadow: 0 2px 5px rgb(0 0 0 / 0.5);
-}
-
-.rakazo-bot-avatar-ring-working {
-  filter: drop-shadow(0 0 4px var(--status-working));
-}
-
-.rakazo-bot-avatar[data-working="true"] .rakazo-bot-avatar-picture {
-  animation: rakazo-avatar-breathe 1.6s ease-in-out infinite;
-  box-shadow:
-    0 0 0 2px var(--status-working),
-    0 0 10px color-mix(in srgb, var(--status-working) 60%, transparent);
-}
-
-.rakazo-organic-avatar-body {
-  transform-origin: center;
-  transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.rakazo-organic-avatar-body-working {
-  opacity: 0;
-}
-
-.rakazo-organic-avatar[data-working="true"] .rakazo-organic-avatar-body-idle {
-  opacity: 0;
-}
-
-.rakazo-organic-avatar[data-working="true"] .rakazo-organic-avatar-body-working {
-  opacity: 1;
-}
-
-.rakazo-organic-avatar-eyes {
-  transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.rakazo-organic-avatar-eyes-working {
-  opacity: 0;
-}
-
-.rakazo-organic-avatar[data-working="true"] .rakazo-organic-avatar-eyes-idle {
-  opacity: 0;
-}
-
-.rakazo-organic-avatar[data-working="true"] .rakazo-organic-avatar-eyes-working {
-  opacity: 1;
-}
-
-.rakazo-organic-avatar[data-eye-pattern="0"] .rakazo-organic-avatar-eyes-working {
-  animation: rakazo-organic-eyes-loop-0 6.6s ease-in-out infinite;
-}
-
-.rakazo-organic-avatar[data-eye-pattern="1"] .rakazo-organic-avatar-eyes-working {
-  animation: rakazo-organic-eyes-loop-1 7.2s ease-in-out -1.4s infinite;
-}
-
-.rakazo-organic-avatar[data-eye-pattern="2"] .rakazo-organic-avatar-eyes-working {
-  animation: rakazo-organic-eyes-loop-2 6.1s ease-in-out -3.2s infinite;
-}
-
-.rakazo-organic-avatar[data-eye-pattern="3"] .rakazo-organic-avatar-eyes-working {
-  animation: rakazo-organic-eyes-loop-3 7.8s ease-in-out -2.1s infinite;
-}
-
-/* Durations mirror @rakazo/core WORKING_AVATAR_DURATIONS_MS (avatar-motion). */
-.rakazo-organic-avatar[data-shape-family="0"] .rakazo-organic-avatar-body-working {
-  animation: rakazo-organic-float 1.8s ease-in-out infinite;
-}
-
-.rakazo-organic-avatar[data-shape-family="1"] .rakazo-organic-avatar-body-working {
-  animation: rakazo-organic-stretch 1.35s ease-in-out infinite;
-}
-
-.rakazo-organic-avatar[data-shape-family="2"] .rakazo-organic-avatar-body-working,
-.rakazo-organic-avatar[data-shape-family="8"] .rakazo-organic-avatar-body-working {
-  animation: rakazo-organic-sway 1.6s ease-in-out infinite;
-}
-
-.rakazo-organic-avatar[data-shape-family="3"] .rakazo-organic-avatar-body-working,
-.rakazo-organic-avatar[data-shape-family="4"] .rakazo-organic-avatar-body-working {
-  animation: rakazo-organic-turn 2.4s ease-in-out infinite;
-}
-
-.rakazo-organic-avatar[data-shape-family="5"] .rakazo-organic-avatar-body-working,
-.rakazo-organic-avatar[data-shape-family="9"] .rakazo-organic-avatar-body-working {
-  animation: rakazo-organic-squash 1.35s ease-in-out infinite;
-}
-
-.rakazo-organic-avatar[data-shape-family="6"] .rakazo-organic-avatar-body-working {
-  animation: rakazo-organic-pulse 1.1s ease-in-out infinite;
-}
-
-.rakazo-organic-avatar[data-shape-family="7"] .rakazo-organic-avatar-body-working {
-  transform-origin: center 20%;
-  animation: rakazo-organic-ring 1.35s ease-in-out infinite;
-}
-
-/* Idle, offscreen and hidden avatars hold still: SVG motion repaints on the main thread. */
-.rakazo-organic-avatar[data-paused="true"] .rakazo-organic-avatar-body,
-.rakazo-organic-avatar[data-paused="true"] .rakazo-organic-avatar-eyes,
-.rakazo-organic-avatar[data-working="false"] .rakazo-organic-avatar-body-working,
-.rakazo-organic-avatar[data-working="false"] .rakazo-organic-avatar-eyes-working {
-  animation-play-state: paused;
-}
-
-@keyframes rakazo-organic-float {
-  0%,
-  100% {
-    transform: translateY(2px) scaleX(1.02);
-  }
-  50% {
-    transform: translateY(-3px) scaleX(0.98);
-  }
-}
-
-@keyframes rakazo-organic-stretch {
-  0%,
-  100% {
-    transform: translateY(2px) scale(1.04, 0.96);
-  }
-  50% {
-    transform: translateY(-3px) scale(0.96, 1.05);
-  }
-}
-
-@keyframes rakazo-organic-sway {
-  0%,
-  100% {
-    transform: rotate(-3deg) translateX(-1px);
-  }
-  50% {
-    transform: rotate(3deg) translateX(1px);
-  }
-}
-
-@keyframes rakazo-organic-turn {
-  0%,
-  100% {
-    transform: rotate(-4deg) scale(0.98);
-  }
-  50% {
-    transform: rotate(4deg) scale(1.04);
-  }
-}
-
-@keyframes rakazo-organic-squash {
-  0%,
-  100% {
-    transform: scale(1.04, 0.96);
-  }
-  50% {
-    transform: scale(0.96, 1.04);
-  }
-}
-
-@keyframes rakazo-organic-pulse {
-  0%,
-  100% {
-    transform: scale(0.96);
-  }
-  45% {
-    transform: scale(1.06);
-  }
-}
-
-@keyframes rakazo-organic-ring {
-  0%,
-  100% {
-    transform: rotate(-4deg);
-  }
-  35% {
-    transform: rotate(5deg);
-  }
-  65% {
-    transform: rotate(-3deg);
-  }
-}
-
-@keyframes rakazo-organic-eyes-loop-0 {
-  0%,
-  100% {
-    transform: translate(-9%, 1%) scaleY(0.94);
+@keyframes avatar-jolly {
+  8% {
+    transform: scale(1.14, 0.82);
   }
   18% {
-    transform: translate(9%, -2%) scaleY(1.04);
-  }
-  34% {
-    transform: translate(0, -8%) scale(1.08);
-  }
-  48% {
-    transform: scale(1.12, 0.82);
-  }
-  51% {
-    transform: scale(1.05, 0.08);
-  }
-  54% {
-    transform: scale(1.12, 0.9);
-  }
-  72% {
-    transform: translate(-5%, 7%) scaleY(0.9);
-  }
-  86% {
-    transform: translate(7%, 3%);
-  }
-}
-
-@keyframes rakazo-organic-eyes-loop-1 {
-  0%,
-  100% {
-    transform: translate(0, -8%) scale(1.06);
-  }
-  16% {
-    transform: translate(8%, 2%);
-  }
-  31% {
-    transform: translate(0, 8%) scaleY(0.9);
-  }
-  46% {
-    transform: translate(-8%, 2%);
-  }
-  61% {
-    transform: scale(0.88, 1.1);
-  }
-  76% {
-    transform: translateY(-7%) scaleY(1.08);
-  }
-  88% {
-    transform: translateY(6%) scale(1.08, 0.86);
-  }
-}
-
-@keyframes rakazo-organic-eyes-loop-2 {
-  0%,
-  100% {
-    transform: scale(0.9, 1.08);
-  }
-  20% {
-    transform: scale(1.14, 0.84);
-  }
-  24% {
-    transform: scale(1.08, 0.08);
+    transform: translateY(-22%) rotate(-12deg) scale(0.95, 1.1);
   }
   28% {
-    transform: scale(1.02);
+    transform: scale(1.12, 0.86);
   }
-  45% {
-    transform: translate(-9%, -3%) scaleY(0.94);
+  38% {
+    transform: translateY(-18%) rotate(12deg) scale(0.96, 1.07);
+  }
+  46% {
+    transform: scale(1.1, 0.9);
+  }
+  56% {
+    transform: translateY(-26%) rotate(180deg) scale(0.95, 1.1);
   }
   62% {
-    transform: translate(9%, 2%) scaleY(1.05);
+    transform: translate(0, 0) rotate(360deg) scale(1.1, 0.9);
   }
-  80% {
-    transform: translate(0, -8%) scale(1.06);
+  68% {
+    transform: translate(14%, 0) rotate(60deg);
   }
-}
-
-@keyframes rakazo-organic-eyes-loop-3 {
-  0%,
-  100% {
-    transform: translateY(7%) scaleY(0.9);
+  76% {
+    transform: translate(7%, -12%) rotate(150deg);
   }
-  14% {
-    transform: translateY(-9%) scaleY(1.08);
-  }
-  30% {
-    transform: translate(8%, -2%);
-  }
-  47% {
-    transform: translate(-8%, 3%) scaleY(0.94);
-  }
-  63% {
-    transform: scale(1.12, 0.82);
-  }
-  78% {
-    transform: translate(0, -7%) scale(0.9, 1.08);
+  84% {
+    transform: translate(-7%, -12%) rotate(240deg);
   }
   91% {
-    transform: translate(0, 5%) scale(1.06, 0.9);
+    transform: translate(-14%, 0) rotate(310deg);
+  }
+  96% {
+    transform: translate(-5%, 8%) rotate(350deg);
+  }
+  100% {
+    transform: translate(0, 0) rotate(360deg);
+  }
+}
+@keyframes avatar-bounce {
+  15% {
+    transform: scale(1.08, 0.9);
+  }
+  35% {
+    transform: translateY(-14%) scale(0.96, 1.05);
+  }
+  50% {
+    transform: scale(1.06, 0.93);
+  }
+  70% {
+    transform: translateY(-9%) scale(0.98, 1.03);
+  }
+  85% {
+    transform: scale(1.03, 0.97);
+  }
+}
+@keyframes avatar-eyes-hop {
+  10%,
+  40%,
+  64% {
+    transform: scale(1.25, 0.55);
+  }
+  26%,
+  52% {
+    transform: scale(1.15, 1.3);
+  }
+  78% {
+    transform: scale(1.35, 0.3);
+  }
+  92% {
+    transform: scale(1.3, 0.35);
+  }
+}
+@keyframes avatar-eyes-work {
+  8%,
+  28%,
+  46% {
+    transform: scale(1.25, 0.55);
+  }
+  18%,
+  38% {
+    transform: scale(1.15, 1.3);
+  }
+  56% {
+    transform: scale(1.2, 1.35);
+  }
+  62% {
+    transform: scale(1.3, 0.4);
+  }
+  68%,
+  96% {
+    transform: scale(1.35, 0.3);
+  }
+}
+@keyframes avatar-gaze {
+  14%,
+  30% {
+    transform: translate(calc(-6px * var(--u, 1)), calc(-2px * var(--u, 1)));
+  }
+  40%,
+  56% {
+    transform: translate(calc(6px * var(--u, 1)), calc(-3px * var(--u, 1)));
+  }
+  66%,
+  80% {
+    transform: translate(0, calc(4px * var(--u, 1)));
+  }
+}
+@keyframes avatar-cheer-hop {
+  0%,
+  8% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  20%,
+  86% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+}
+@keyframes avatar-cheer-work {
+  0%,
+  4% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  12%,
+  92% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.7);
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .rakazo-bot-avatar-ring,
-  .rakazo-bot-avatar[data-working="true"] .rakazo-bot-avatar-picture {
-    animation: none;
-    transition: none;
+/*
+ * A bot whose computer sleeps: bar eyes, three z's drifting up and a slow breath.
+ * Waking: the eyes open, look around and blink while the body stretches.
+ */
+.rakazo-sleep-face .avatar-eye {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.45s var(--ease-spring);
+}
+.rakazo-sleep-face[data-state="asleep"] .avatar-eye {
+  transform: scale(1.45, 0.4);
+}
+.rakazo-sleep-face .sleep-z {
+  position: absolute;
+  inset-inline-end: -12px;
+  top: -8px;
+  width: 30px;
+  height: 34px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.rakazo-sleep-face[data-state="asleep"] .sleep-z {
+  opacity: 1;
+}
+.rakazo-sleep-face .sleep-z b {
+  position: absolute;
+  inset-inline-start: 0;
+  bottom: 0;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--muted-foreground);
+  opacity: 0;
+}
+.rakazo-sleep-face .sleep-z b:nth-child(1) {
+  font-size: 9px;
+}
+.rakazo-sleep-face .sleep-z b:nth-child(2) {
+  font-size: 12px;
+}
+.rakazo-sleep-face .sleep-z b:nth-child(3) {
+  font-size: 15px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rakazo-sleep-face[data-state="asleep"] {
+    animation: avatar-breathe 3.6s ease-in-out infinite;
   }
-
-  .rakazo-bot-avatar {
-    transition: none;
+  .rakazo-sleep-face .sleep-z b {
+    animation: avatar-z 3.2s ease-in-out infinite;
   }
-
-  .rakazo-organic-avatar[data-shape-family] .rakazo-organic-avatar-body {
-    animation: none;
-    d: var(--rakazo-organic-path);
-    transition: none;
+  .rakazo-sleep-face .sleep-z b:nth-child(2) {
+    animation-delay: 1.05s;
   }
-
-  .rakazo-organic-avatar[data-eye-pattern] .rakazo-organic-avatar-eyes {
-    animation: none;
-    transition: none;
+  .rakazo-sleep-face .sleep-z b:nth-child(3) {
+    animation-delay: 2.1s;
+  }
+  .rakazo-sleep-face[data-state="waking"] {
+    animation: avatar-stretch 3.6s ease-in-out infinite;
+  }
+  .rakazo-sleep-face[data-state="waking"] .avatar-gaze {
+    animation: avatar-look-around 3.6s ease-in-out infinite;
+  }
+  .rakazo-sleep-face[data-state="waking"] .avatar-eye {
+    animation:
+      avatar-eyes-open 0.55s ease-out 1,
+      avatar-blink-thrice 3.6s infinite;
+  }
+}
+@keyframes avatar-breathe {
+  50% {
+    transform: scale(1.035) translateY(-1px);
+  }
+}
+@keyframes avatar-z {
+  0% {
+    opacity: 0;
+    transform: translate(0, 4px) scale(0.6);
+  }
+  18% {
+    opacity: 0.95;
+  }
+  70% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(18px, -26px) scale(1.15) rotate(8deg);
+  }
+}
+@keyframes avatar-stretch {
+  0% {
+    transform: scale(0.96);
+  }
+  8% {
+    transform: scale(0.94, 1.12);
+  }
+  18% {
+    transform: scale(1.06, 0.94) rotate(-4deg);
+  }
+  30% {
+    transform: rotate(3deg);
+  }
+  44% {
+    transform: scale(1.03, 0.98) rotate(-3deg);
+  }
+  60% {
+    transform: rotate(2deg);
+  }
+  80% {
+    transform: scale(1.02) rotate(-2deg);
+  }
+}
+@keyframes avatar-look-around {
+  14%,
+  26% {
+    transform: translate(calc(-14px * var(--u, 1)), calc(-2px * var(--u, 1)));
+  }
+  34%,
+  46% {
+    transform: translate(calc(14px * var(--u, 1)), calc(-3px * var(--u, 1)));
+  }
+  54%,
+  62% {
+    transform: translate(0, calc(-9px * var(--u, 1)));
+  }
+  70%,
+  80% {
+    transform: translate(calc(-10px * var(--u, 1)), calc(6px * var(--u, 1)));
+  }
+}
+@keyframes avatar-eyes-open {
+  0% {
+    transform: scale(1.45, 0.4);
+  }
+  55% {
+    transform: scale(1, 1.14);
+  }
+}
+@keyframes avatar-blink-thrice {
+  31%,
+  51%,
+  78% {
+    transform: scale(1, 0.1);
+  }
+  0%,
+  29%,
+  33%,
+  49%,
+  53%,
+  76%,
+  80%,
+  100% {
+    transform: scale(1);
   }
 }

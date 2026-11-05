@@ -1,5 +1,5 @@
 import { Dialog, DialogContent } from "@rakazo/ui-web/components/ui/dialog";
-import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
+import { useIsNarrow } from "@rakazo/ui-web/hooks/use-mobile";
 import { cn } from "@rakazo/ui-web/lib/utils";
 import type { ReactNode } from "react";
 import { useRef } from "react";
@@ -19,7 +19,7 @@ export function CallWindow({
   className: string;
   children: ReactNode;
 }) {
-  const fullScreen = useIsMobile();
+  const fullScreen = useIsNarrow();
   const popup = useRef<HTMLDivElement>(null);
   if (!fullScreen) {
     return (

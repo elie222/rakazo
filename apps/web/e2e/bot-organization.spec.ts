@@ -334,6 +334,8 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
 
   await group.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Unpin", exact: true }).click();
+  // Wait for the row to leave the pinned tiles, so the next menu opens on the row that stays.
+  await expect(sidebar.locator('[data-sidebar-group="pinned"]')).toHaveCount(0);
   await group.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Move to", exact: true }).hover();
   await page

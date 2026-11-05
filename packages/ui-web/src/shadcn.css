@@ -640,7 +640,7 @@
   background-size: 200% 100%;
   background-clip: text;
   color: transparent;
-  animation: text-shimmer 1.5s linear infinite;
+  animation: text-shimmer 2.4s linear infinite;
 
   @media (prefers-reduced-motion: reduce) {
     background-image: none;

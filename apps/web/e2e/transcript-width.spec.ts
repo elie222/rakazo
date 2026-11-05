@@ -17,7 +17,7 @@ async function expectRailBesideCard(row: Locator, cardId: string) {
       if (!cardBox || !railBox) return null;
       return Math.round(railBox.x - cardBox.x - cardBox.width);
     })
-    .toBe(4);
+    .toBe(6);
 }
 
 // 720px leaves 36px of slack beyond the narrowest column (684px) where a card and its actions fit.

@@ -237,7 +237,7 @@ export function HoldToTalkControls({
           size="icon"
           aria-label={t`Discard recording`}
           onClick={talk.cancel}
-          className="size-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+          className="size-[29px] shrink-0 rounded-full text-muted-foreground hover:text-foreground"
         >
           <Trash2 size={16} strokeWidth={1.8} />
         </Button>
@@ -246,7 +246,7 @@ export function HoldToTalkControls({
           aria-label={t`Send recording`}
           disabled={talk.transcribing}
           onClick={talk.submit}
-          className="size-8 shrink-0 rounded-full shadow-sm"
+          className="size-[29px] shrink-0 rounded-full bg-chat-user text-chat-user-foreground hover:bg-chat-user/90"
         >
           <ArrowUp size={16} strokeWidth={2.2} />
         </Button>
@@ -275,17 +275,17 @@ export function HoldToTalkControls({
       ) : null}
       <IconTooltip label={t`Hold to talk, release to send`}>
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon"
           aria-label={t`Hold to talk`}
           disabled={disabled}
           {...talk.buttonProps}
           className={cn(
-            "size-8 shrink-0 touch-none select-none rounded-full text-foreground/75 [-webkit-touch-callout:none]",
+            "h-[29px] w-[26px] shrink-0 touch-none select-none rounded-full text-muted-foreground hover:bg-transparent hover:text-foreground [-webkit-touch-callout:none]",
             // The pointer is over the button while holding, so the outline variant's hover
             // colours (a grey fill in dark, dark text) must not win over the recording red.
             recording &&
-              "scale-125 border-destructive-fill bg-destructive-fill text-destructive-foreground hover:bg-destructive-fill hover:text-destructive-foreground dark:hover:bg-destructive-fill",
+              "w-[29px] scale-125 border-destructive-fill bg-destructive-fill text-destructive-foreground hover:bg-destructive-fill hover:text-destructive-foreground dark:hover:bg-destructive-fill",
           )}
         >
           <Mic size={16} strokeWidth={1.8} />

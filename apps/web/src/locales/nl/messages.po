@@ -4079,10 +4079,6 @@ msgstr "Minimaal"
 msgid "Minimize"
 msgstr "Minimaliseren"
 
-#: src/pages/shell/sidebar-header.tsx
-msgid "Minimize bots"
-msgstr "Bots minimaliseren"
-
 #: src/components/call/CallCard.tsx
 msgid "Minimize call"
 msgstr "Gesprek minimaliseren"
@@ -5907,10 +5903,6 @@ msgstr "Tonen"
 msgid "Show all"
 msgstr "Alles tonen"
 
-#: src/pages/shell/sidebar-header.tsx
-msgid "Show bots"
-msgstr "Bots tonen"
-
 #: src/pages/Artifacts.tsx
 msgid "Show list"
 msgstr "Lijst tonen"
@@ -6758,6 +6750,10 @@ msgstr "Typen zonder opname"
 #: src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "Typ je antwoord"
+
+#: src/pages/shell/transcript.tsx
+msgid "Typing…"
+msgstr "{'pt-BR': 'Digitando…', 'fr': 'Écrit…', 'es': 'Escribiendo…', 'ru': 'Печатает…', 'de': 'Schreibt…', 'hi': 'टाइप कर रहा है…', 'nl': 'Typt…', 'ko': '입력 중…', 'pl': 'Pisze…', 'ja': '入力中…', 'he': 'מקליד…', 'zh-CN': '正在输入…', 'zh-TW': '正在輸入…', 'tr': 'Yazıyor…'}"
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/Shell.tsx

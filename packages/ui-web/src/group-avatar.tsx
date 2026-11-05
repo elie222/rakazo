@@ -16,12 +16,18 @@ export interface GroupAvatarProps {
   members: GroupAvatarMember[];
   size?: number;
   className?: string;
+  /** Never play the working motion here. */
+  still?: boolean;
+  /** Claim working-motion slots ahead of the roster (the status row). */
+  motionPriority?: boolean;
 }
 
 export const GroupAvatar = memo(function GroupAvatar({
   members,
   size = 38,
   className,
+  still = false,
+  motionPriority = false,
 }: GroupAvatarProps) {
   const firstMember = members[0];
   if (!firstMember) {
@@ -60,6 +66,8 @@ export const GroupAvatar = memo(function GroupAvatar({
         identity={firstMember.botId ?? firstMember.name}
         size={size}
         status={firstMember.status}
+        still={still}
+        motionPriority={motionPriority}
         className={cn("rakazo-group-avatar", className)}
       />
     );
@@ -100,6 +108,8 @@ export const GroupAvatar = memo(function GroupAvatar({
             identity={member.botId ?? member.name}
             size={miniSize}
             status={member.status}
+            still={still}
+            motionPriority={motionPriority}
           />
         </div>
       ))}

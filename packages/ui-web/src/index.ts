@@ -4,6 +4,7 @@ export {
   BOT_MASCOT_SHAPES,
   BotAvatar,
   BotShapePreview,
+  BotSleepFace,
   DEFAULT_BOT_AVATAR_COLOR,
   defaultBotAvatarValue,
   parseBotAvatar,

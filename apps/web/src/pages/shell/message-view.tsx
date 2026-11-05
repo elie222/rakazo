@@ -194,6 +194,7 @@ export const MessageView = memo(function MessageView({
             avatarSet={speakerBot?.avatarSet}
             identity={message.botId}
             size={22}
+            still
           />
           {speakerName}
         </div>
@@ -251,7 +252,7 @@ export const MessageView = memo(function MessageView({
           <div className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full">
             <div
               data-testid="message-bot-bubble"
-              className="max-w-full space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-body1 text-foreground"
+              className="max-w-full space-y-2 rounded-xl bg-muted px-3 py-2 text-body1 text-foreground"
               dir="auto"
             >
               {visibleNarrationBlocks.map((block, i) => {
@@ -409,7 +410,7 @@ export const MessageView = memo(function MessageView({
               >
                 <div
                   data-testid="message-bot-bubble"
-                  className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-body1 text-foreground"
+                  className="max-w-full rounded-xl bg-muted px-3 py-2 text-body1 text-foreground"
                   dir="auto"
                 >
                   <ChatMarkdown streaming renderMention={renderMention} onOpenPage={openPage}>
@@ -536,7 +537,7 @@ export const MessageView = memo(function MessageView({
                 <div
                   data-testid="message-user-bubble"
                   data-quote-message-id={quoteMessageId}
-                  className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] bg-chat-user px-[18px] py-3 text-body1 text-chat-user-foreground"
+                  className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-xl bg-chat-user px-3 py-2 text-body1 text-chat-user-foreground"
                   dir="auto"
                 >
                   <LinkifiedText onOpenPage={openPage}>{block.text}</LinkifiedText>
@@ -553,7 +554,7 @@ export const MessageView = memo(function MessageView({
               >
                 <div
                   data-testid="message-bot-bubble"
-                  className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-body1 text-foreground"
+                  className="max-w-full rounded-xl bg-muted px-3 py-2 text-body1 text-foreground"
                   dir="auto"
                 >
                   <div data-quote-message-id={quoteMessageId}>
