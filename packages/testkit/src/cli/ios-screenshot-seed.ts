@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import type { BotSecretDestination, MessageBlock } from "@rakazo/contracts";
-import { encodeLoginSecret } from "@rakazo/contracts";
+import { encodeCardSecret, encodeContactSecret, encodeLoginSecret } from "@rakazo/contracts";
 import { allocateTicketNumber, createDb, createThreadMessage, ensureBoard } from "@rakazo/db";
+import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { PNG } from "pngjs";
 import { sessionCookieHeader } from "../index.js";
 
@@ -9,6 +10,15 @@ const MARKER = "marigold checklist";
 const READY = "The fixture workspace is ready.";
 const GROUP_READY = "The fixture launch plan is ready.";
 const FILE_NAME = "launch-notes.txt";
+const PAGE_TITLE = "Launch dashboard";
+const PAGE_SOURCE = [
+  "const App = () => (",
+  '  <Page title="Launch dashboard" summary="Fixture figures for the screenshot catalog.">',
+  '    <Metrics metrics={[{ value: "128", label: "Signups" }, { value: "4.2%", label: "Trial to paid" }]} />',
+  "  </Page>",
+  ");",
+  "export default App;",
+].join("\n");
 const IMAGE_NAME = "launch-chart.png";
 const NOTES = [
   "Launch notes",
@@ -184,10 +194,12 @@ export async function seedIosScreenshotFixture(input: {
       matchValue: "example.com",
     });
   }
-  // One of each kind people save: a website sign-in, an API token, and a command variable.
+  // One of each kind people save: a website sign-in, a card, a contact, an API token, and a
+  // command variable. The card number is a well-known test number, not a real card.
   const vault = await rpc<{ name: string }[]>(input.apiUrl, populated.headers, "vault/list");
-  const vaultEntries: { destination: BotSecretDestination; value: string }[] = [
+  const vaultEntries: { destination: BotSecretDestination; value: string; title?: string }[] = [
     {
+      title: "Help desk",
       destination: {
         name: "help-desk",
         origin: "https://help.example.com",
@@ -207,6 +219,25 @@ export async function seedIosScreenshotFixture(input: {
         auth: { type: "bearer" },
       },
       value: "fixture-status-token",
+    },
+    {
+      title: "Home",
+      destination: { name: "home", origin: "", auth: { type: "contact" } },
+      value: encodeContactSecret({
+        name: "Sam Fixture",
+        line1: "1 Example Street",
+        city: "Springfield",
+        postalCode: "12345",
+      }),
+    },
+    {
+      destination: { name: "visa-4242", origin: "", auth: { type: "card" } },
+      value: encodeCardSecret({
+        number: "4242424242424242",
+        expMonth: 8,
+        expYear: 2030,
+        billing: "home",
+      }),
     },
     {
       destination: { name: "deploy_token", origin: "", auth: { type: "command" } },
@@ -286,8 +317,25 @@ export async function seedIosScreenshotFixture(input: {
       userId: me.userId,
     });
     await ensureText(db.prisma, group.threadId, "bot", writer.id, GROUP_READY);
+    await ensurePage(db.prisma, {
+      threadId: researcher.threadId,
+      botId: researcher.id,
+      spaceId: me.spaceId,
+      userId: me.userId,
+    });
     await ensureTickets(db.prisma, me.spaceId, me.userId, [researcher.id, writer.id]);
+    await ensureMemoryNotes(db.prisma, {
+      spaceId: me.spaceId,
+      userId: me.userId,
+      botId: researcher.id,
+    });
     await ensureRequestCards(db.prisma, { threadId: support.threadId, botId: support.id });
+    await ensurePayments(db.prisma, {
+      spaceId: me.spaceId,
+      userId: me.userId,
+      researcher,
+      writer,
+    });
     const billing = { apiUrl: input.apiUrl, prisma: db.prisma, complete: input.completeCheckout };
     await ensurePlan({ ...billing, headers: populated.headers, userId: me.userId, trial: false });
     await ensurePlan({ ...billing, headers: empty.headers, userId: emptyMe.userId, trial: true });
@@ -320,6 +368,76 @@ export async function seedIosScreenshotFixture(input: {
     await db.prisma.$disconnect();
     await db.pool.end();
   }
+}
+
+/** A note the bot remembered and one every bot in the space shares, for the memory screens. */
+async function ensureMemoryNotes(
+  prisma: ReturnType<typeof createDb>["prisma"],
+  input: { spaceId: string; userId: string; botId: string },
+) {
+  const notes = [
+    {
+      scope: "bot",
+      botId: input.botId,
+      path: "preferences.md",
+      content:
+        "# Preferences\n\n- Cite a source for every claim.\n- Keep summaries under five bullets.\n",
+    },
+    {
+      scope: "user",
+      botId: null,
+      path: "team.md",
+      content:
+        "# Launch team\n\n- Dana owns the announcement.\n- Lee reviews every customer quote.\n",
+    },
+  ];
+  for (const note of notes) {
+    const existing = await prisma.memoryDocument.findFirst({
+      where: { spaceId: input.spaceId, scope: note.scope, botId: note.botId, path: note.path },
+      select: { id: true },
+    });
+    if (existing) continue;
+    await prisma.memoryDocument.create({
+      data: { ...note, spaceId: input.spaceId, userId: input.userId },
+    });
+  }
+}
+
+/** A page the bot built, named in its reply with the card under it, for the page screens. */
+async function ensurePage(
+  prisma: ReturnType<typeof createDb>["prisma"],
+  input: { threadId: string; botId: string; spaceId: string; userId: string },
+) {
+  const existing = await prisma.page.findFirst({
+    where: { userId: input.userId, spaceId: input.spaceId, title: PAGE_TITLE },
+    select: { id: true },
+  });
+  if (existing) return;
+  const page = await prisma.page.create({
+    data: {
+      spaceId: input.spaceId,
+      userId: input.userId,
+      botId: input.botId,
+      title: PAGE_TITLE,
+      versions: {
+        create: {
+          version: 1,
+          title: PAGE_TITLE,
+          source: PAGE_SOURCE,
+          code: pageViewerCode(PAGE_SOURCE),
+        },
+      },
+    },
+  });
+  await createThreadMessage(prisma, {
+    threadId: input.threadId,
+    role: "bot",
+    botId: input.botId,
+    blocks: [
+      { kind: "text", text: `I made a [${PAGE_TITLE}](page:${page.id}) from the launch notes.` },
+      { kind: "page", pageId: page.id, version: 1, title: PAGE_TITLE },
+    ],
+  });
 }
 
 async function ensureBot(
@@ -544,6 +662,41 @@ const TICKETS = [
 ] as const;
 
 /** Board cards in several columns. Only an API with the board enabled shows them. */
+/** Two payments bots made with the wallet, as the spending limit lists them. */
+async function ensurePayments(
+  prisma: ReturnType<typeof createDb>["prisma"],
+  input: { spaceId: string; userId: string; researcher: BotRow; writer: BotRow },
+) {
+  const payments = [
+    {
+      key: "groceries",
+      bot: input.researcher,
+      site: "groceries.example.com",
+      amount: 2_340,
+      hours: 2,
+    },
+    { key: "books", bot: input.writer, site: "books.example.com", amount: 1_299, hours: 30 },
+  ];
+  for (const payment of payments) {
+    const operationKey = `ios-screenshot-payment-${payment.key}`;
+    const data = {
+      userId: input.userId,
+      spaceId: input.spaceId,
+      botId: payment.bot.id,
+      threadId: payment.bot.threadId,
+      site: payment.site,
+      amount: payment.amount,
+      currency: "usd",
+      createdAt: new Date(Date.now() - payment.hours * 3_600_000),
+    };
+    await prisma.payment.upsert({
+      where: { operationKey },
+      create: { operationKey, ...data },
+      update: data,
+    });
+  }
+}
+
 async function ensureTickets(
   prisma: ReturnType<typeof createDb>["prisma"],
   spaceId: string,
@@ -666,6 +819,30 @@ async function ensureRequestCards(
   ]);
   await bot([
     { kind: "computer", state: "Needs you", text: "Approve the sign-in code on your phone." },
+  ]);
+  await bot([
+    {
+      kind: "ask",
+      approvalEffectId: "ios-screenshot-pay",
+      text: "Pay on freshcart.test?",
+      detailFormat: "text",
+      receipt: {
+        button: "Place order",
+        items: [
+          { name: "Bananas × 6", amount: "$3.00" },
+          { name: "Oat milk 1L × 2", amount: "$8.40" },
+          { name: "Delivery", amount: "$6.00" },
+        ],
+        amount: "$17.40",
+        amountSource: "page",
+      },
+      status: "answered",
+      answer: "allow",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    },
   ]);
 }
 

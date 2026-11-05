@@ -12,10 +12,12 @@ import type {
 import {
   SandboxAllowanceUsedError,
   SandboxDamagedError,
+  SandboxSizeUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
+import type * as Db from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { clearThread } from "@rakazo/db";
+import { clearThread, planComputerSize } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   acquireComputerExecutionLease,
@@ -34,6 +36,12 @@ import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
 import { SandboxUnsafeStopError } from "./sandbox-errors.js";
+
+// The plan's size is read from billing, which these Prisma doubles do not model.
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof Db>()),
+  planComputerSize: vi.fn(async () => "standard"),
+}));
 
 const context = {
   operationId: "test",
@@ -1982,6 +1990,30 @@ describe("Team Computer wake", () => {
 
     expect(harness.prisma.computer.updateMany).not.toHaveBeenCalled();
     expect(harness.sandbox.provision).not.toHaveBeenCalled();
+  });
+
+  it("starts the computer at the size its plan provides", async () => {
+    const harness = wakeHarness("stopped");
+    vi.mocked(planComputerSize).mockResolvedValueOnce("large");
+
+    await boot(harness);
+
+    expect(planComputerSize).toHaveBeenLastCalledWith(harness.prisma, expect.any(String));
+    expect(harness.sandbox.provision).toHaveBeenCalledOnce();
+    expect(vi.mocked(harness.sandbox.provision).mock.calls[0]![0].size).toBe("large");
+  });
+
+  it("starts the computer at the size it has when the provider cannot move it", async () => {
+    const harness = wakeHarness("stopped");
+    vi.mocked(harness.sandbox.provision).mockRejectedValueOnce(
+      new SandboxSizeUnavailableError("too_small"),
+    );
+
+    await expect(boot(harness)).resolves.toMatchObject({ providerRef: "sandbox-1" });
+
+    const sizes = vi.mocked(harness.sandbox.provision).mock.calls.map(([request]) => request.size);
+    expect(sizes).toEqual(["standard", undefined]);
+    expect(activation(harness)?.state).toBe("running");
   });
 
   it("starts the active-lifetime clock when a stopped computer starts", async () => {

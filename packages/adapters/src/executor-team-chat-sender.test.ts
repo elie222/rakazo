@@ -23,6 +23,7 @@ async function teamChatRun(input: {
   senders: Sender[];
   ownerAddress?: string | null;
   linkedAddresses?: string[];
+  sharedChannel?: boolean;
 }) {
   const [waking, ...batched] = input.senders.map((sender, index) => ({
     id: `external-${index}`,
@@ -93,14 +94,19 @@ async function teamChatRun(input: {
       findMany: vi.fn(async () => []),
       findFirst: vi.fn(async () => null),
       findUnique: vi.fn(async () => ({
-        blocks: [{ kind: "text", text: "Slack message from Pat:\n\nWhat do you remember?" }],
+        blocks: input.sharedChannel
+          ? [{ kind: "channel_message", channelId: "channel-1" }]
+          : [{ kind: "text", text: "Slack message from Pat:\n\nWhat do you remember?" }],
         clientNonce: `teamchat:slack:${waking.providerEventId}`,
       })),
       create: vi.fn(async ({ data }: { data: object }) => ({ id: "message-1", ...data })),
     },
     event: { create: vi.fn(async () => ({ seq: 1 })) },
     task: {
-      findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "What do you remember?" })),
+      findUniqueOrThrow: vi.fn(async () => ({
+        id: run.taskId,
+        prompt: "Use @Private recipe and @Rakazo and @Interrogate",
+      })),
     },
     connection: { findMany: vi.fn(async () => []) },
     userModelPreference: { findFirst: vi.fn(async () => null) },
@@ -112,10 +118,36 @@ async function teamChatRun(input: {
         defaultModelId: "fixture-model",
       })),
     },
-    taughtSkill: { findMany: vi.fn(async () => []) },
+    taughtSkill: {
+      findMany: vi.fn(async () => [
+        {
+          id: "taught-1",
+          name: "Private recipe",
+          goal: "PRIVATE_TAUGHT_GOAL",
+          playbook: { whenToUse: "PRIVATE_TAUGHT_HINT", steps: [] },
+        },
+      ]),
+    },
     secret: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
-    agentSkill: { findMany: vi.fn(async () => []) },
+    agentSkill: {
+      findMany: vi.fn(async () => [
+        {
+          id: "skill-1",
+          name: "Private recipe",
+          description: "PRIVATE_SKILL_DESCRIPTION",
+          content: "PRIVATE_SKILL_BODY",
+          source: "user",
+        },
+        {
+          id: "shadow-1",
+          name: "Interrogate",
+          description: "PRIVATE_SKILL_SHADOW",
+          content: "PRIVATE_SKILL_OVERRIDE",
+          source: "user",
+        },
+      ]),
+    },
     scratchpadItem: {
       findMany: vi.fn(async () => [
         {
@@ -226,6 +258,7 @@ async function teamChatRun(input: {
   const context = [request.instructions, request.prompt].join("\n");
   return {
     tools,
+    context,
     sawOwnerState: context.includes(OWNER_MEMORY) || context.includes(OWNER_NOTE),
     toldNonOwner: context.includes("someone other than your owner"),
   };
@@ -269,5 +302,24 @@ describe("team chat runs from the owner", () => {
     expect(result.sawOwnerState).toBe(true);
     expect(result.toldNonOwner).toBe(false);
     for (const tool of ownerOnlyTools) expect(result.tools).toContain(tool);
+  });
+});
+
+describe("private skills in shared-channel prompts", () => {
+  it("keeps private catalogs and expanded bodies out while retaining built-in skills", async () => {
+    const result = await teamChatRun({ senders: [{ senderId: "member" }], sharedChannel: true });
+    expect(result.context).not.toContain("PRIVATE_SKILL");
+    expect(result.context).not.toContain("PRIVATE_TAUGHT");
+    expect(result.context).toContain("Use skill: Rakazo");
+    expect(result.context).toContain("Use skill: Interrogate");
+  });
+
+  it("keeps private skills available to the owner", async () => {
+    const result = await teamChatRun({
+      senders: [{ senderId: "T1:U-OWNER" }],
+      ownerAddress: "T1:U-OWNER",
+    });
+    expect(result.context).toContain("PRIVATE_SKILL_BODY");
+    expect(result.context).toContain("PRIVATE_TAUGHT_HINT");
   });
 });

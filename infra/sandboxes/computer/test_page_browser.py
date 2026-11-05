@@ -569,6 +569,20 @@ class PurchaseTest(unittest.TestCase):
                 "label": "Pay\u200b  $5", "amount": "$5"}
         self.assertTrue(self.act([step], browser)["ok"])
 
+    def test_an_approved_click_is_refused_when_the_page_total_changed(self):
+        approved = {"kind": "click", "ref": "e8", "approved": True, "site": "shop.example.test",
+                    "label": "Pay $5", "amount": "$5"}
+        # The card showed no separate total and the page now shows one; then a total that grew.
+        for shown_total, page_total in (("", "$250"), ("$250", "$900")):
+            browser = pays(FakeAgentBrowser(), "e8", {**PAY, "total": page_total})
+            with self.subTest(shown=shown_total, page=page_total):
+                self.assertEqual(self.act([{**approved, "total": shown_total}], browser)["error"],
+                                 helper.PURCHASE_CHANGED)
+        browser = pays(FakeAgentBrowser(), "e8", {**PAY, "total": "$250"})
+        self.assertTrue(self.act([{**approved, "total": "$250"}], browser)["ok"])
+        # An API that sends no total is not held to one.
+        self.assertTrue(self.act([approved], pays(FakeAgentBrowser(), "e8", {**PAY, "total": "$9"}))["ok"])
+
     def test_an_earlier_click_runs_and_the_purchase_click_after_it_is_refused(self):
         browser = pays(FakeAgentBrowser())
         result = self.act([{"kind": "fill", "ref": "e2", "text": "Grace"}, {"kind": "click", "ref": "e8"}], browser)
@@ -608,6 +622,21 @@ class PurchaseTest(unittest.TestCase):
                                   "title": "Pay", "purchase": {
             "steps": [2], "label": "Pay $5", "amount": "$5", "amountFrom": "button", "reason": "final_step"}})
         self.assertEqual(browser.actions(), [])
+
+    def test_purchase_check_reports_the_page_total_beside_a_button_amount(self):
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "total": "$10"})
+        result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})
+        self.assertEqual(result["purchase"]["amount"], "$5")
+        self.assertEqual(result["purchase"]["total"], "$10")
+
+    def test_purchase_check_passes_on_the_order_lines_the_page_lists(self):
+        items = [{"name": "Bananas \u00d7 6", "amount": "$3.00"}, {"name": "Delivery", "amount": "$6.00"}]
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "items": items})
+        result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})
+        self.assertEqual(result["purchase"]["items"], items)
+        # A page that lists none sends none, as before.
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "items": []})
+        self.assertNotIn("items", page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})["purchase"])
 
     def test_one_card_approves_one_purchase_click_of_a_batch(self):
         browser = pays(pays(FakeAgentBrowser(), "e7"), "e8")
@@ -1863,7 +1892,8 @@ class SavedLoginTest(unittest.TestCase):
 
     def test_a_field_in_another_site_s_frame_is_refused_and_its_own_site_s_is_filled(self):
         browser = LoginFrameBrowser(focus_in_frame=True)
-        with self.assertRaisesRegex(secrets.Refused, "in a frame from https://auth.example.test"):
+        with self.assertRaisesRegex(secrets.Refused, "in a frame from https://auth.example.test, and this login is "
+                                    "saved for https://portal.example.test,"):
             secrets.fill_focused(browser.client, "page", dict(self.STEP))
         self.assertEqual(browser.filled_in(), [])
         browser = LoginFrameBrowser(focus_in_frame=True, frame_check={"same": True})

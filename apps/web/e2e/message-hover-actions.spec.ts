@@ -349,6 +349,8 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await revealHoverRail(parentRow);
   await captureScreenshot(page, testInfo, "message-user-actions-mobile");
   await page.setViewportSize({ width: 1280, height: 812 });
+  await expect(page.getByTestId("bots-sidebar")).toBeVisible();
+  await page.getByTestId("bot-settings-trigger").hover({ trial: true });
   await expectHeaderAboveHoveredRow(page, testInfo, parentRow);
 });
 
@@ -378,10 +380,12 @@ test("a message with an attachment centers hover actions on its text bubble", as
   await expect(row.getByText("notes.txt")).toBeVisible();
   // Blocks in one message keep the same gap as separate messages instead of touching.
   // Poll: the bot's reply can land and scroll the transcript between the two measurements.
+  // Text files preview in place, so the card carries Preview and Download buttons; the
+  // preview button is the card body the gap is measured from.
   await expect
     .poll(async () => {
       const bubbleBox = await row.getByTestId("message-user-bubble").boundingBox();
-      const fileBox = await row.getByRole("button", { name: /notes\.txt/ }).boundingBox();
+      const fileBox = await row.getByRole("button", { name: "Preview notes.txt" }).boundingBox();
       return bubbleBox && fileBox ? fileBox.y - (bubbleBox.y + bubbleBox.height) : null;
     })
     .toBeGreaterThanOrEqual(6);

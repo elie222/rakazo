@@ -5,6 +5,7 @@ import {
   leaveUnavailableSpace,
   rpc,
   rpcForSpace,
+  SPACE_SELECTED_EVENT,
   selectedSpaceId,
   selectSpace,
 } from "./rpc.js";
@@ -53,15 +54,30 @@ describe("unavailable space", () => {
       expect(new Headers(init?.headers).has("x-rakazo-space-id")).toBe(false);
       return Response.json({
         json: {
-          current: {
-            id: "home",
-            name: "Home",
-            bots: [],
-            groups: [],
-            externalConversations: [],
-            botSections: [],
-          },
-          spaces: spaces.map((id) => ({ id })),
+          activeOrganizationId: "personal",
+          organizations: [
+            {
+              id: "personal",
+              name: "Personal",
+              defaultSpaceId: "home",
+              spaceIds: spaces,
+              canManage: true,
+            },
+            {
+              id: "work",
+              name: "Work",
+              defaultSpaceId: "work-home",
+              spaceIds: ["work-home"],
+              canManage: true,
+            },
+            {
+              id: "team",
+              name: "Team",
+              defaultSpaceId: "team-home",
+              spaceIds: ["team-home"],
+              canManage: false,
+            },
+          ],
         },
       });
     });
@@ -71,8 +87,10 @@ describe("unavailable space", () => {
 
   it("drops a space the user is no longer in and reloads", async () => {
     const { items, reload } = browser("space-gone", ["home"]);
+    items.set("rakazo:org-spaces", JSON.stringify({ work: "work-home" }));
     await leaveUnavailableSpace("space-gone");
     expect(items.has("rakazo:space-id")).toBe(false);
+    expect(items.get("rakazo:org-spaces")).toBe(JSON.stringify({ work: "work-home" }));
     expect(reload).toHaveBeenCalledOnce();
   });
 
@@ -98,6 +116,20 @@ describe("unavailable space", () => {
       expect(reload).not.toHaveBeenCalled();
     }
   });
+
+  it("keeps a space in an organization the user is only a member of", async () => {
+    const { items, reload } = browser("team-home", ["home"]);
+    await leaveUnavailableSpace("team-home");
+    expect(items.get("rakazo:space-id")).toBe("team-home");
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("keeps a space that belongs to another of the user's organizations", async () => {
+    const { items, reload } = browser("work-home", ["home"]);
+    await leaveUnavailableSpace("work-home");
+    expect(items.get("rakazo:space-id")).toBe("work-home");
+    expect(reload).not.toHaveBeenCalled();
+  });
 });
 
 describe("space selection storage", () => {
@@ -111,12 +143,30 @@ describe("space selection storage", () => {
         throw new Error("quota exceeded");
       },
     };
-    vi.stubGlobal("window", { localStorage });
+    vi.stubGlobal("window", { localStorage, dispatchEvent: () => true });
     vi.stubGlobal("localStorage", localStorage);
 
     expect(selectSpace("space-support")).toBe(false);
     expect(() => clearSpaceSelection()).not.toThrow();
     expect(selectedSpaceId()).toBeNull();
+  });
+
+  it("announces a new selection so per-organization state reloads", () => {
+    const items = new Map<string, string>();
+    const dispatchEvent = vi.fn(() => true);
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => items.get(key) ?? null,
+        setItem: (key: string, value: string) => items.set(key, value),
+        removeItem: (key: string) => items.delete(key),
+      },
+      dispatchEvent,
+    });
+
+    expect(selectSpace("space-support")).toBe(true);
+    expect(dispatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: SPACE_SELECTED_EVENT }),
+    );
   });
 
   it("treats an already-persisted selection as success when writes fail", () => {
@@ -127,7 +177,7 @@ describe("space selection storage", () => {
       },
       removeItem: vi.fn(),
     };
-    vi.stubGlobal("window", { localStorage });
+    vi.stubGlobal("window", { localStorage, dispatchEvent: () => true });
     vi.stubGlobal("localStorage", localStorage);
 
     expect(selectSpace("space-support")).toBe(true);
@@ -137,7 +187,7 @@ describe("space selection storage", () => {
   it("reports when a space selection was persisted", () => {
     const setItem = vi.fn();
     const localStorage = { getItem: () => null, setItem, removeItem: vi.fn() };
-    vi.stubGlobal("window", { localStorage });
+    vi.stubGlobal("window", { localStorage, dispatchEvent: () => true });
     vi.stubGlobal("localStorage", localStorage);
 
     expect(selectSpace("space-support")).toBe(true);

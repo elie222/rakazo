@@ -132,6 +132,154 @@ describe("team chat engagement judge", () => {
     }
   });
 
+  it("refreshes a due sign-in under the credential lock", async () => {
+    const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      userModelPreference: {
+        findFirst: vi.fn(async () => ({
+          credential: {
+            id: "credential-fixture",
+            provider: "openai-codex",
+            secretId: "secret-fixture",
+          },
+          modelId: "model-fixture",
+        })),
+      },
+      secret: { findFirst: vi.fn(async () => ({ id: "secret-fixture", ciphertext: "encrypted" })) },
+      // The lock is where a due refresh starts; failing it keeps the provider out of the test.
+      $transaction: vi.fn(async () => {
+        throw new Error("lock fixture");
+      }),
+    };
+    withModelRoles(prisma, [
+      mainRole(
+        { spaceId: "space-fixture", userId: "user-fixture" },
+        "openai-codex",
+        "model-fixture",
+      ),
+    ]);
+    const run = vi.fn();
+    const judge = new ModelTeamChatEngagementJudge({
+      prisma: prisma as never,
+      runtime: { run } as never,
+      secrets: {
+        load: async () =>
+          JSON.stringify({
+            kind: "oauth",
+            credential: {
+              type: "oauth",
+              access: "access-fixture",
+              refresh: "refresh-fixture",
+              expires: 1,
+            },
+          }),
+      } as never,
+      deploymentProvider: "openai-codex",
+      deploymentModel: "model-fixture",
+    });
+
+    await expect(
+      judge.decide({
+        bot: {
+          id: "bot-fixture",
+          spaceId: "space-fixture",
+          userId: "user-fixture",
+          name: "Fixture",
+          modelProvider: null,
+          modelId: null,
+        },
+        channelId: "channel-fixture",
+        rules: "",
+        messages: [],
+      }),
+    ).resolves.toEqual({ act: false });
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("refreshes a running judge's sign-in through the locked re-read", async () => {
+    const stored = (access: string, expires: number) =>
+      JSON.stringify({
+        kind: "oauth",
+        credential: { type: "oauth", access, refresh: `refresh-${access}`, expires },
+      });
+    // Another process already rotated the stored copy, so the locked refresh adopts it.
+    const ciphertext = "start";
+    const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      userModelPreference: {
+        findFirst: vi.fn(async () => ({
+          credential: {
+            id: "credential-fixture",
+            provider: "openai-codex",
+            secretId: "secret-fixture",
+          },
+          modelId: "model-fixture",
+        })),
+      },
+      secret: { findFirst: vi.fn(async () => ({ id: "secret-fixture", ciphertext })) },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          $executeRaw: vi.fn(async () => 0),
+          secret: { findUnique: vi.fn(async () => ({ ciphertext: "rotated" })) },
+        }),
+      ),
+    };
+    withModelRoles(prisma, [
+      mainRole(
+        { spaceId: "space-fixture", userId: "user-fixture" },
+        "openai-codex",
+        "model-fixture",
+      ),
+    ]);
+    const providerRefresh = vi.fn(async () => undefined);
+    let midRun: unknown;
+    const judge = new ModelTeamChatEngagementJudge({
+      prisma: prisma as never,
+      runtime: {
+        run: async function* (request: {
+          model: {
+            oauth?: {
+              credential: Record<string, unknown>;
+              refresh?: (held: unknown, refresh: unknown) => Promise<unknown>;
+            };
+          };
+        }) {
+          const oauth = request.model.oauth;
+          midRun = await oauth?.refresh?.({ ...oauth.credential, expires: 1 }, providerRefresh);
+          yield { type: "done", text: '{"act":false}' };
+        },
+      } as never,
+      secrets: {
+        load: async (value: string) =>
+          value === "rotated"
+            ? stored("rotated", Date.now() + 3_600_000)
+            : stored("start", Date.now() + 3_600_000),
+      } as never,
+      deploymentProvider: "openai-codex",
+      deploymentModel: "model-fixture",
+    });
+
+    await judge.decide({
+      bot: {
+        id: "bot-fixture",
+        spaceId: "space-fixture",
+        userId: "user-fixture",
+        name: "Fixture",
+        modelProvider: null,
+        modelId: null,
+      },
+      channelId: "channel-fixture",
+      rules: "",
+      messages: [],
+    });
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    expect(midRun).toMatchObject({ access: "rotated" });
+    expect(providerRefresh).not.toHaveBeenCalled();
+  });
+
   it("persists cache-read and cache-write tokens from usage events", async () => {
     const createMany = vi.fn(async () => ({ count: 1 }));
     const prisma = {

@@ -250,6 +250,31 @@ describe("context pruning on rebuild", () => {
     ).toEqual([false, true, true]);
   });
 
+  it("leaves a note where an older screenshot was removed and keeps the result text", () => {
+    const messages = ["frame-1", "frame-2", "frame-3"].map((frameId) => ({
+      role: "toolResult" as const,
+      toolCallId: frameId,
+      toolName: "computer_act",
+      content: [
+        { type: "text" as const, text: `${frameId} done` },
+        { type: "image" as const, data: frameId, mimeType: "image/png" as const },
+      ],
+      details: { frameId },
+      isError: false,
+      timestamp: 1,
+    }));
+
+    const [oldest, ...latest] = pruneComputerScreenshotContext(messages);
+    expect(oldest).toMatchObject({
+      content: [
+        { type: "text", text: "frame-1 done" },
+        { type: "text", text: expect.stringContaining("Older screenshot removed") },
+      ],
+    });
+    expect(latest).toEqual(messages.slice(1));
+    expect(messages[0]?.content).toHaveLength(2);
+  });
+
   it("reuses the message array when no screenshot needs pruning", () => {
     const messages = [
       {

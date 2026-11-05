@@ -34,9 +34,11 @@ import {
 } from "../thread-message-pages.js";
 import type { ThreadTarget } from "../thread-target.js";
 import {
+  isStopMessage,
   markThreadRead,
   markThreadUnreadFrom,
   reactToThreadMessage,
+  replyParentBotId,
   resolveThreadTarget,
   sendTargetBotIds,
   sendThreadMessage,
@@ -107,11 +109,13 @@ export function threadsRoutes(ctx: RouterContext) {
   ) => {
     const setup = await modelSetup(deps, actor);
     const target = await resolveThreadTarget(deps.prisma, actor, input);
-    // A bot with its own runnable model needs no main model.
-    if (
+    // A bot with its own runnable model needs no main model, and stopping work needs none.
+    const replied =
+      target.kind === "group" ? await replyParentBotId(deps.prisma, target, input) : undefined;
+    const noModel =
       setup.needsModel &&
-      !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input)))
-    ) {
+      !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input, replied)));
+    if (noModel && (target.kind !== "bot" || !isStopMessage(input))) {
       throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
     }
     if (target.kind === "bot") {
@@ -138,7 +142,7 @@ export function threadsRoutes(ctx: RouterContext) {
       },
       actor,
       target,
-      input,
+      { ...input, noModel },
       takeoverReleaser(deps, actor, target),
       startRoutines,
     ).catch((error: unknown) => {

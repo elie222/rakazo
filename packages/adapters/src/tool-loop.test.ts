@@ -55,6 +55,117 @@ describe("advanceToolCallLoopGuard", () => {
     expect(streak.count).toBe(6);
   });
 
+  it.each([
+    [
+      { command: "npm test", cwd: "/workspace" },
+      { cwd: "/workspace", command: "npm test" },
+    ],
+    [
+      { input: { command: "npm test", cwd: "/workspace" } },
+      { input: { cwd: "/workspace", command: "npm test" } },
+    ],
+    [
+      { actions: [{ kind: "click", ref: "target" }] },
+      { actions: [{ ref: "target", kind: "click" }] },
+    ],
+  ])("stops repeated failures despite object field order: %j", (first, second) => {
+    let streak = { key: undefined as string | undefined, count: 0 };
+    let stoppedAt: number | undefined;
+    for (let call = 1; call <= 40; call += 1) {
+      const result = advanceToolCallLoopGuard(
+        streak,
+        "fixture_tool",
+        call % 2 ? first : second,
+        failure(),
+      );
+      streak = result.streak;
+      if (result.stuck) {
+        stoppedAt = call;
+        break;
+      }
+    }
+    expect(stoppedAt).toBe(6);
+    expect(streak.count).toBe(6);
+  });
+
+  it("counts similar text arguments despite reordered fields", () => {
+    let streak = { key: undefined as string | undefined, count: 0 };
+    let stoppedAt: number | undefined;
+    for (let call = 1; call <= 40; call += 1) {
+      const command = `echo noop-${call}`;
+      const args = call % 2 ? { command, cwd: "/workspace" } : { cwd: "/workspace", command };
+      const result = advanceToolCallLoopGuard(streak, "shell", args, failure());
+      streak = result.streak;
+      if (result.stuck) {
+        stoppedAt = call;
+        break;
+      }
+    }
+    expect(stoppedAt).toBe(25);
+  });
+
+  it("keeps polling new results when argument fields are reordered", () => {
+    let streak = { key: undefined as string | undefined, count: 0 };
+    for (let call = 1; call <= 60; call += 1) {
+      const args =
+        call % 2
+          ? { command: "cat job.log", cwd: "/workspace" }
+          : { cwd: "/workspace", command: "cat job.log" };
+      const result = advanceToolCallLoopGuard(streak, "shell", args, answer(`Progress ${call}`));
+      streak = result.streak;
+      expect(result.stuck).toBe(false);
+    }
+  });
+
+  it("counts reordered identical calls only once in a model response", () => {
+    const first = advanceToolCallLoopGuard(
+      { key: undefined, count: 0 },
+      "shell",
+      { command: "npm test", cwd: "/workspace" },
+      failure(),
+      1,
+    );
+    const repeated = advanceToolCallLoopGuard(
+      first.streak,
+      "shell",
+      { cwd: "/workspace", command: "npm test" },
+      failure(),
+      1,
+    );
+    expect(repeated.streak).toBe(first.streak);
+    expect(repeated.stuck).toBe(false);
+  });
+
+  it.each([
+    [
+      [{ ref: "alpha" }, { ref: "beta" }],
+      [{ ref: "beta" }, { ref: "alpha" }],
+    ],
+    [{ field1: "value" }, { field2: "value" }],
+  ])("keeps array order and object field names significant: %j", (first, second) => {
+    let streak = { key: undefined as string | undefined, count: 0 };
+    for (let call = 1; call <= 40; call += 1) {
+      const result = advanceToolCallLoopGuard(
+        streak,
+        "fixture_tool",
+        { input: call % 2 ? first : second },
+        failure(),
+      );
+      streak = result.streak;
+      expect(result.stuck).toBe(false);
+    }
+  });
+
+  it("accepts omitted optional arguments represented by undefined", () => {
+    const result = advanceToolCallLoopGuard({ key: undefined, count: 0 }, "ask_user", {
+      question: "Continue?",
+      options: undefined,
+    });
+    const repeated = advanceToolCallLoopGuard(result.streak, "ask_user", { question: "Continue?" });
+    expect(repeated.streak.count).toBe(2);
+    expect(repeated.stuck).toBe(false);
+  });
+
   it("stops calls that differ only by a number in a text argument", () => {
     let streak = { key: undefined as string | undefined, count: 0 };
     let calls = 0;

@@ -5,13 +5,13 @@
 [![GitHub stars](https://img.shields.io/github/stars/elie222/rakazo?labelColor=black&style=for-the-badge&color=2563EB)](https://github.com/elie222/rakazo/stargazers)
 [![加入 Discord 社区](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?labelColor=black&style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/RWwKa2Sn7h)
 [![在 App Store 下载 iPhone 版](https://img.shields.io/badge/App%20Store-Download%20for%20iPhone-black?labelColor=black&style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/app/rakazo/id6801531099)
-[![下载 Android APK](https://img.shields.io/badge/Android-Download%20APK-black?labelColor=black&style=for-the-badge&logo=android&logoColor=white)](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk)
+[![在 Google Play 下载 Android 版](https://img.shields.io/badge/Google%20Play-Get%20the%20app-black?labelColor=black&style=for-the-badge&logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.rakazo.app)
 
 ![Rakazo：由你掌控的 AI 队友](./docs/readme-hero.png)
 
 Rakazo 是一个开源 AI 智能体项目，让你拥有可长期协作的 AI 队友，也可以作为自托管 AI 助手在自己的电脑上运行。
 它提供网页版、Electron 桌面应用，以及 [iPhone](https://apps.apple.com/app/rakazo/id6801531099) 和
-[Android](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk) 应用。
+[Android](https://play.google.com/store/apps/details?id=com.rakazo.app) 应用。
 你可以接入自己的模型和计算环境提供商，也可以在本地运行完整服务。
 
 它是 Grok Bot、Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Claude Duet 和 Hark Pro 的开源、自托管替代方案。
@@ -233,13 +233,13 @@ chmod +x Rakazo-*.AppImage
 ## 界面语言
 
 网页版及 Electron 内嵌界面可在 **Settings → Language**（设置 → 语言）中选择英语、德语、韩语、土耳其语、
-印地语、巴西葡萄牙语、简体中文、繁体中文、西班牙语、俄语、法语、希伯来语、荷兰语和日语。
-Expo 应用包含英语、简体中文、繁体中文、俄语、德语、荷兰语、日语和西班牙语翻译，**Account → Language**（账号 → 语言）列出这八种语言。
+印地语、巴西葡萄牙语、简体中文、繁体中文、西班牙语、俄语、法语、希伯来语、荷兰语、日语和波兰语。
+Expo 应用包含英语、简体中文、繁体中文、俄语、德语、荷兰语、日语、西班牙语和波兰语翻译，**Account → Language**（账号 → 语言）列出这九种语言。
 在用户保存选择之前，移动端的初始语言由设备语言或 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` 决定。
 
 Electron 原生设置窗口和菜单也支持上述网页版语言，并跟随应用中保存的选择；首次启动使用系统语言。
 
-官网首页（`apps/www`）可通过页脚切换全部 14 种语言，简体中文路径为 `/zh/`，繁体中文为 `/zh-tw/`。
+官网首页（`apps/www`）可通过页脚切换全部 15 种语言，简体中文路径为 `/zh/`，繁体中文为 `/zh-tw/`。
 其他官网页面主要仍为英文。
 
 ## 开发

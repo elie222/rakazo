@@ -445,3 +445,42 @@ describe("creating a bot", () => {
     expect(container!.querySelector('[data-testid="agent-import-preview"]')).toBeNull();
   });
 });
+
+describe("a plain-HTTP LAN server, where crypto.randomUUID is missing", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("previews a pasted document", async () => {
+    vi.stubGlobal("crypto", {
+      getRandomValues: (bytes: Uint8Array) => {
+        bytes.fill(3);
+        return bytes;
+      },
+    });
+    importPreview.mockResolvedValue(plan);
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
+    });
+    const reply = container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Paste the reply"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        reply,
+        "# Instructions\nBe brief.\n",
+      );
+      reply.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      [...container!.querySelectorAll("button")]
+        .find((button) => button.textContent === "Continue")!
+        .click(),
+    );
+    expect(importPreview).toHaveBeenCalledTimes(1);
+    expect(container!.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
+  });
+});

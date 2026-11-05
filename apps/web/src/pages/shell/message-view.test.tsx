@@ -5,6 +5,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { rpc } from "../../lib/rpc";
 import { MessageView } from "./message-view";
 
 const skills = vi.hoisted(() => ({
@@ -73,6 +74,7 @@ function renderView(
   act(() =>
     root.render(
       <MessageView
+        rpc={rpc}
         artifactTarget={{ botId: "parent" }}
         canAnswer={false}
         canDismiss={false}
@@ -198,6 +200,7 @@ it("keeps an edit made after a save when the saved status arrives late", async (
   const render = (block: typeof draft | (Omit<typeof draft, "status"> & { status: "saved" })) =>
     root.render(
       <MessageView
+        rpc={rpc}
         artifactTarget={{ botId: "parent" }}
         canAnswer={false}
         canDismiss={false}
@@ -288,4 +291,27 @@ it("opens one counted peer line without an inline reply toggle", () => {
   expect(container.querySelector('[data-testid="peer-replies-toggle"]')).toBeNull();
   act(() => line?.click());
   expect(open).toHaveBeenCalledWith({ peerBotId: "peer", peerBotName: "Researcher" });
+});
+
+it("sends a settings Undo through the chat's space client", async () => {
+  const spaceRpc = { bots: { update: vi.fn(async () => ({})) } };
+  renderView(
+    "bot",
+    [
+      {
+        kind: "ask",
+        text: "Settings updated",
+        status: "answered",
+        settingsUpdate: {
+          botId: "bot-1",
+          before: { modelProvider: null, modelId: null, thinkingLevel: null },
+          after: { modelProvider: "google", modelId: "gemini-3.8-flash", thinkingLevel: "high" },
+        },
+      },
+    ],
+    { rpc: spaceRpc as never },
+  );
+  const undo = [...container.querySelectorAll("button")].find((b) => b.textContent === "Undo");
+  await act(async () => undo?.click());
+  expect(spaceRpc.bots.update).toHaveBeenCalledTimes(1);
 });

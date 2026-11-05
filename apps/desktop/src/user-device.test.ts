@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -94,6 +94,19 @@ describe("device token storage", () => {
     });
     expect(await readDeviceConsent(userData, other)).toEqual({ consent: "declined", userId: null });
   });
+
+  it("asks again when a decline was saved before accounts were, since the server's sign-out wrote those too", async () => {
+    await saveDeviceConsent(userData, origin, { consent: "declined", userId: null });
+    await saveDeviceConsent(userData, other, { consent: "allowed", userId: null });
+    const dir = path.join(userData, "devices");
+    for (const name of await readdir(dir)) {
+      const file = path.join(dir, name);
+      const { userId: _, ...legacy } = JSON.parse(await readFile(file, "utf8"));
+      await writeFile(file, JSON.stringify(legacy));
+    }
+    expect(await readDeviceConsent(userData, origin)).toBeNull();
+    expect(await readDeviceConsent(userData, other)).toEqual({ consent: "allowed", userId: null });
+  });
 });
 
 describe("remote computer access", () => {
@@ -148,6 +161,20 @@ describe("remote computer access", () => {
     accesses.push(access);
     return { access, requests, clients };
   }
+
+  it("does not pair or grant computer access to a cleartext remote server", async () => {
+    const fetch = vi.fn();
+    const confirm = vi.fn(async () => true);
+    const { access, clients } = setup({ fetch, confirm });
+    const remote = "http://192.168.1.20:3100";
+    await access.select(remote);
+    await access.pair();
+    await access.setAllowed(remote, true);
+    expect(access.state(remote)).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(clients).toHaveLength(0);
+  });
 
   it("pairs with the window session on its own and connects without granting anything", async () => {
     const confirm = vi.fn(async () => true);
@@ -384,11 +411,53 @@ describe("remote computer access", () => {
     await access.pair();
     expect(clients[0]!.closed).toBe(true);
     expect(clients).toHaveLength(1);
-    expect(requests).toEqual([]);
+    expect(requests.map((request) => request.url)).toEqual([`${origin}/api/devices/self/session`]);
     await access.select(origin);
     expect(clients).toHaveLength(2);
     access.close();
     expect(clients[1]!.closed).toBe(true);
+  });
+
+  it("ties a saved pairing to the sign-in once, retrying until the server ties it", async () => {
+    await savePairedDevice(
+      userData,
+      origin,
+      { token: "saved-token", deviceId: "d1", userId: null },
+      cipher,
+    );
+    const statuses = [401, 403, 500];
+    let release: () => void = () => undefined;
+    const { access, requests } = setup({
+      fetch: async (url, init) => {
+        requests.push({ url, init });
+        // The first request is still out when the window signs in.
+        if (requests.length === 1) await new Promise<void>((resolve) => (release = resolve));
+        return new Response(null, { status: statuses.shift() ?? 204 });
+      },
+    });
+    await access.select(origin);
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]).toMatchObject({
+      url: `${origin}/api/devices/self/session`,
+      init: {
+        method: "POST",
+        credentials: "include",
+        headers: { authorization: "Bearer saved-token" },
+      },
+    });
+    await access.pair();
+    release();
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+
+    await access.pair();
+    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    await access.pair();
+    await vi.waitFor(() => expect(requests).toHaveLength(4));
+    // The fake fetch does no I/O, so every pending promise settles before setImmediate runs.
+    await new Promise(setImmediate);
+    await access.pair();
+    await new Promise(setImmediate);
+    expect(requests).toHaveLength(4);
   });
 
   it("forgets a revoked token and stays unpaired until turned back on", async () => {
@@ -411,7 +480,7 @@ describe("remote computer access", () => {
     );
     expect(access.state(origin)).toEqual({ deviceId: null, allowed: false });
     await access.pair();
-    expect(requests).toEqual([]);
+    expect(requests.map((request) => request.url)).toEqual([`${origin}/api/devices/self/session`]);
 
     await access.setAllowed(origin, true);
     expect(confirm).toHaveBeenCalledTimes(1);

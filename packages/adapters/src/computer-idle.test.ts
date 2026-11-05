@@ -329,6 +329,19 @@ describe("sandbox idle", () => {
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
   });
 
+  it("keeps the disk reading when a home too large to save keeps the computer running", async () => {
+    const harness = idleHarness({ exportError: new WorkspaceTooLargeError("bytes") });
+    harness.prisma.run.findFirst.mockResolvedValue(null);
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.prisma.computer.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { diskUsedBytes: 91n * 1024n, diskFreeBytes: 9n * 1024n, state: "running" },
+      }),
+    );
+  });
+
   it("checkpoints before suspending a stable idle computer", async () => {
     const harness = idleHarness();
     harness.prisma.run.findFirst.mockResolvedValue(null);
@@ -348,6 +361,8 @@ describe("sandbox idle", () => {
         updatedAt: expect.any(Date),
       },
       data: {
+        diskUsedBytes: 91n * 1024n,
+        diskFreeBytes: 9n * 1024n,
         state: "suspended",
         runningSince: null,
         controlHolder: "none",
@@ -651,6 +666,33 @@ describe("sandbox idle", () => {
       }),
     );
     expect(sink.events.some((event) => event.level === "error")).toBe(false);
+  });
+
+  it("stops a computer whose files are too large to save when its provider keeps its disk", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness({
+      exportError: new WorkspaceTooLargeError("bytes"),
+      persistentHome: true,
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      undefined,
+    );
+    expect(harness.computer.state).toBe("suspended");
+    expect(harness.computer.homeRevision).toBe("rev-before");
+    expect(harness.prisma.message.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ clientNonce: expect.stringMatching(/^computer-unsaved:/) }),
+      }),
+    );
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ message: "computer.checkpoint_skipped", reason: "too_large" }),
+    );
   });
 
   it("checks again later without an error when another save moved the home first", async () => {
@@ -1928,6 +1970,7 @@ function idleHarness(
     backgroundWorkProbeFailed?: boolean;
     codingAgent?: string;
     exportError?: Error;
+    persistentHome?: boolean;
     probeError?: Error;
     providerBackgroundWorkStatus?: "active" | "idle" | "unknown";
     runningSince?: Date | null;
@@ -2028,10 +2071,19 @@ function idleHarness(
     },
   };
   const sandbox = {
+    describe: () => ({ capabilities: { persistentHome: options.persistentHome ?? false } }),
     billsWhileRunning:
       options.billsWhileRunning === undefined ? undefined : vi.fn(() => options.billsWhileRunning),
     execute: vi.fn(async function* (_computer: unknown, request: { argv: string[] }) {
       if (options.probeError) throw options.probeError;
+      if (request.argv[0] === "df") {
+        yield {
+          type: "stdout",
+          data: "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/vda1 100 91 9 91% /home\n",
+        } as const;
+        yield { type: "exit", code: 0 } as const;
+        return;
+      }
       if (request.argv[3] === "rakazo-coding-agent-probe") {
         if (options.codingAgent)
           yield { type: "stdout", data: `${options.codingAgent}\n` } as const;

@@ -68,7 +68,13 @@ export class AwsKmsKeyProvider implements KeyProvider {
                   },
                 }),
             maxAttempts: 3,
-            requestHandler: { connectionTimeout: 3_000, requestTimeout: 10_000 },
+            // Without throwOnRequestTimeout the SDK only logs when requestTimeout passes and keeps
+            // waiting, so a KMS that stops answering would hold the secret save or run for good.
+            requestHandler: {
+              connectionTimeout: 3_000,
+              requestTimeout: 10_000,
+              throwOnRequestTimeout: true,
+            },
           }),
       };
     });

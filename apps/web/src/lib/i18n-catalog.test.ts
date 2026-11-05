@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { i18n } from "@lingui/core";
+import { i18n, setupI18n } from "@lingui/core";
 import { formatter } from "@lingui/format-po";
 import { RUN_ERROR_LIMIT_MESSAGES } from "@rakazo/core";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -16,6 +16,7 @@ describe("lingui catalogs", () => {
       "ja",
       "ko",
       "nl",
+      "pl",
       "pt-BR",
       "ru",
       "tr",
@@ -91,6 +92,7 @@ describe("lingui catalogs", () => {
       "ja",
       "ko",
       "nl",
+      "pl",
       "pt-BR",
       "ru",
       "tr",
@@ -186,6 +188,7 @@ describe("lingui catalogs", () => {
       "ja",
       "ko",
       "nl",
+      "pl",
       "pt-BR",
       "ru",
       "tr",
@@ -218,6 +221,7 @@ describe("lingui catalogs", () => {
       "ja",
       "ko",
       "nl",
+      "pl",
       "pt-BR",
       "ru",
       "tr",
@@ -330,7 +334,41 @@ describe("lingui catalogs", () => {
   });
 });
 
-it.each(["zh-CN", "zh-TW"])(
+it("renders Polish plural categories and interpolated values in every counted message", async () => {
+  const filename = fileURLToPath(new URL("../locales/pl/messages.po", import.meta.url));
+  const catalog = await formatter().parse(readFileSync(filename, "utf8"), {
+    locale: "pl",
+    sourceLocale: "en",
+    filename,
+  });
+  const counted = Object.entries(catalog).filter(([, entry]) =>
+    entry.message?.includes(", plural,"),
+  );
+  expect(counted.length).toBeGreaterThan(20);
+  const local = setupI18n({ locale: "pl" });
+  const number = new Intl.NumberFormat("pl");
+  for (const [id, entry] of counted) {
+    const translation = entry.translation ?? "";
+    for (const category of new Intl.PluralRules("pl").resolvedOptions().pluralCategories) {
+      expect(translation, entry.message).toContain(`${category} {`);
+    }
+    local.load("pl", { [id]: translation });
+    for (const count of [0, 1, 2, 5, 12, 14, 21, 22, 25, 101, 102, 112, 1.5]) {
+      const values = Object.fromEntries(
+        [...(entry.message ?? "").matchAll(/\{(\w+)(?=\s*[,}])/g)].map((match) => [
+          match[1],
+          match[1] === "peer" || match[1] === "name" ? "Locale QA" : count,
+        ]),
+      );
+      const rendered = local._({ id, values });
+      expect(rendered, `${entry.message}: ${count}`).toContain(number.format(count));
+      expect(rendered).not.toMatch(/[{}]/);
+      if ("peer" in values || "name" in values) expect(rendered).toContain("Locale QA");
+    }
+  }
+});
+
+it.each(["zh-CN", "zh-TW", "pl"])(
   "keeps source placeholders and JSX markers in %s translations",
   async (locale) => {
     const readCatalog = async (locale: string) => {
@@ -348,9 +386,10 @@ it.each(["zh-CN", "zh-TW"])(
       [...new Set(value.match(/\{\w+(?=\s*[,}])|<\/?\d+\s*\/?>/g) ?? [])].sort();
     for (const [id, entry] of Object.entries(source)) {
       const message = entry.message ?? entry.translation ?? id;
-      const translation = translated[id]?.translation;
       // Untranslated entries fall back to English, as in every other catalog.
-      if (!translation) continue;
+      const translation = translated[id]?.translation;
+      if (locale === "pl") expect(translation?.trim(), message).toBeTruthy();
+      if (!translation?.trim()) continue;
       expect(markers(translation), message).toEqual(markers(message));
     }
   },

@@ -34,7 +34,7 @@ import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.j
 import { assistantText, messageHasToolCall, sanitizeProviderError } from "./pi-runtime-errors.js";
 import {
   effectiveOutputReserve,
-  MODEL_STREAM_TIMEOUT_MS,
+  modelStreamTimeoutMs,
   operatorMaxTokens,
   resolveCompletionMaxTokens,
 } from "./pi-runtime-limits.js";
@@ -407,8 +407,17 @@ export function fallbackAwareModelStream(
           continue;
         }
         return candidate;
-      } catch {
-        // Do not persist credential-resolution diagnostics; they can contain secrets.
+      } catch (error) {
+        // Never log the message: credential diagnostics can quote the key.
+        const failure = (error ?? {}) as { name?: unknown; code?: unknown; status?: unknown };
+        getLogger().warn("model.backup.unavailable", {
+          runId: state.request.runId,
+          provider: choice.provider,
+          model: choice.id,
+          "error.type": typeof failure.name === "string" ? failure.name : typeof error,
+          ...(typeof failure.code === "string" ? { "error.code": failure.code } : {}),
+          ...(typeof failure.status === "number" ? { "error.status": failure.status } : {}),
+        });
         skip("The backup connection or request could not be prepared.");
       }
     }
@@ -422,7 +431,7 @@ export function fallbackAwareModelStream(
     // Bound same-model retries. Explicit backups retain their per-model header
     // timeout: a post-header idle watchdog can already exceed that timeout.
     let startedAt = Date.now();
-    const timeoutMs = options?.timeoutMs ?? MODEL_STREAM_TIMEOUT_MS;
+    const timeoutMs = options?.timeoutMs ?? modelStreamTimeoutMs();
     let firstRetryableError: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
     // Set once this call has been repeated after spending its output budget on nothing visible.
     let lengthRecovered = false;
@@ -458,16 +467,14 @@ export function fallbackAwareModelStream(
       let sawVisibleOutput = false;
       let restart = false;
       let stream: AssistantMessageEventStream;
+      // A backup runs at its own effort, never the main model's.
+      const runsRequestModel = sameModelTarget(target.config, state.request.model);
+      const requestedThinking =
+        target.config.thinkingLevel ??
+        (runsRequestModel ? (options?.reasoning ?? state.request.model.thinkingLevel) : undefined);
       const thinkingLevel =
         thinkingOverride ??
-        (target.model.reasoning
-          ? thinkingLevelFor(
-              target.model,
-              target.config.thinkingLevel ??
-                options?.reasoning ??
-                state.request.model.thinkingLevel,
-            )
-          : "off");
+        (target.model.reasoning ? thinkingLevelFor(target.model, requestedThinking) : "off");
       const sentTarget = outputBudget ? withOutputBudget(target, outputBudget) : target;
       const sentMaxTokens = resolveCompletionMaxTokens(
         sentTarget.model.maxTokens,

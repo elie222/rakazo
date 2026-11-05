@@ -192,6 +192,12 @@ export const JA_MESSAGES: Record<string, string> = {
   "Previous Bot": "前のボット",
   "Command Menu…": "コマンドメニュー…",
   "Toggle Sidebar": "サイドバーを切り替え",
-  "Search…": "検索…",
+  "Find…": "検索…",
+  "Search Bots…": "ボットを検索…",
   "The window closed before the app loaded.": "アプリの読み込み前にウインドウが閉じられました。",
+  "New Group Chat": "新規グループチャット",
+  "Connect Apps…": "アプリを接続…",
+  "Chat Details": "チャットの詳細",
+  Help: "ヘルプ",
+  "Keyboard Shortcuts": "キーボードショートカット",
 };

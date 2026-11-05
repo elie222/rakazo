@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import {
   Brain,
+  Building2,
   CloudDownload,
   Cpu,
   CreditCard,
@@ -33,6 +34,7 @@ export function useSettingsNavItems(available: {
   const { t } = useLingui();
   return [
     { id: "general", label: t`General`, icon: Settings },
+    { id: "organization", label: t`Organization`, icon: Building2 },
     { id: "models", label: t`Models`, icon: Cpu },
     { id: "voice", label: t`Voice`, icon: Volume2 },
     { id: "confirmations", label: t`Approvals`, icon: ShieldCheck },

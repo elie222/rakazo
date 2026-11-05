@@ -1,4 +1,4 @@
-import { ChatMarkdown, withBlockMentions } from "@rakazo/chat-ui/native";
+import { ChatMarkdown, MarkdownLongPressContext, withBlockMentions } from "@rakazo/chat-ui/native";
 import type { LoginFieldInput, MessageBlock } from "@rakazo/contracts";
 import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
@@ -36,6 +36,7 @@ import { withUserBubble } from "../../lib/user-bubble";
 import { errorText } from "../../lib/user-error";
 import { AppConnectCard } from "../AppConnectCard";
 import { AskActions } from "../AskActions";
+import { AskReceiptView } from "../ask-receipt";
 import { AudioAttachment } from "../audio-attachment";
 import { MessageMentions } from "../bot-mention";
 import { ChoiceCard } from "../ChoiceCard";
@@ -46,8 +47,10 @@ import { InlineImageAttachment } from "../inline-image-attachment";
 import { McpApprovalCard } from "../McpApprovalCard";
 import { MessageCaption } from "../message-caption";
 import { NativeSymbol } from "../native-symbol";
+import { PageCard } from "../pages/page-card";
 import { PeerReceiptLine } from "../peer-receipt-line";
 import { AskBlock } from "./ask-block";
+import { McpAppCard } from "./mcp-app-card";
 import type { MessageRowActions } from "./message-row";
 import { isSpecialMessageBlock, SpecialMessageCard } from "./special-message-card";
 
@@ -84,7 +87,11 @@ export const MessageBubble = memo(function MessageBubble({
     () => (members?.length ? { targets: userMentionTargets(members), onOpenBot } : undefined),
     [members, onOpenBot],
   );
-  const body = <MessageBubbleWithMentions mentions={mentions} {...props} />;
+  const body = (
+    <MarkdownLongPressContext.Provider value={props.actionProps.onLongPress}>
+      <MessageBubbleWithMentions mentions={mentions} {...props} />
+    </MarkdownLongPressContext.Provider>
+  );
   return props.message.role === "user" && userMentions ? (
     <UserMentionsContext.Provider value={userMentions}>{body}</UserMentionsContext.Provider>
   ) : (
@@ -125,14 +132,19 @@ function MessageBubbleWithMentions({
   );
 }
 
+/** Blocks drawn as their own card between the message's text pieces. */
+function isOwnCardBlock(block: MessageBlock): boolean {
+  return isSpecialMessageBlock(block) || block.kind === "page" || block.kind === "app";
+}
+
 function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
   const { message } = props;
-  if (!message.blocks.some(isSpecialMessageBlock)) return <MessageBubbleContent {...props} />;
+  if (!message.blocks.some(isOwnCardBlock)) return <MessageBubbleContent {...props} />;
 
   const pieces: MessageBlock[][] = [];
   for (const block of message.blocks) {
     const previous = pieces.at(-1);
-    if (isSpecialMessageBlock(block) || !previous || isSpecialMessageBlock(previous[0]!)) {
+    if (isOwnCardBlock(block) || !previous || isOwnCardBlock(previous[0]!)) {
       pieces.push([block]);
     } else {
       previous.push(block);
@@ -140,6 +152,16 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
   }
   const content = pieces.map((blocks, index) => {
     const first = blocks[0]!;
+    if (first.kind === "page")
+      return <PageCard key={`page-${index}`} block={first} messageId={message.id} />;
+    if (first.kind === "app")
+      return (
+        <McpAppCard
+          key={`app-${index}`}
+          block={first}
+          target={props.groupId ? { groupId: props.groupId } : { botId: props.botId }}
+        />
+      );
     return isSpecialMessageBlock(first) ? (
       <SpecialMessageCard
         key={first.kind === "subagent" ? first.agentId : `${first.kind}-${index}`}
@@ -393,7 +415,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                     : plainAskTitle(askBlock.text)}
                 </Text>
               ) : null}
-              {askBlock.detail ? (
+              {askBlock.receipt ? (
+                <AskReceiptView receipt={askBlock.receipt} />
+              ) : askBlock.detail ? (
                 <Text
                   {...(askBlock.text ? {} : actionProps)}
                   style={{

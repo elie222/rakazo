@@ -3,10 +3,15 @@ import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { ComputerCommand } from "@rakazo/contracts";
 import { COMPUTER_COMMAND_OUTPUT_MAX_CHARS } from "@rakazo/contracts";
 import { redactSecrets, sandboxCommandTimeoutMs } from "@rakazo/core";
-import { RunHistoryWriteError } from "@rakazo/db";
+import { RunHistoryWriteError, releasePayment } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { redactShellStreams } from "./agent-environment.js";
-import { resolveCodeFill, resolveLoginFill, shellCommandEnvironment } from "./bot-secrets.js";
+import {
+  resolveCodeFill,
+  resolveLoginFill,
+  resolveVaultCardFill,
+  shellCommandEnvironment,
+} from "./bot-secrets.js";
 import {
   browserActFromTool,
   browserNavigateFromTool,
@@ -32,6 +37,7 @@ import {
   unchangedVisualStreakAfterPageBrowser,
 } from "./computer-tools.js";
 import {
+  desktopGuardApplies,
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
@@ -43,13 +49,16 @@ import { addRunSecrets } from "./run-context.js";
 import { builtinOffered } from "./run-instructions.js";
 import { computerScreenToolResult } from "./run-lifecycle.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { auditToolCall } from "./run-tool-gate.js";
 import {
   isRunningShellCommand,
   observeShellCommand,
   SHELL_STILL_RUNNING_NOTICE,
 } from "./shell-command-stream.js";
+import { recordPagePayment } from "./spending-gate.js";
 import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.js";
 import { getActiveTeachingSession } from "./teaching-session.js";
+import { vaultCardUseOf } from "./vault-card-use.js";
 
 function appendComputerCommand(ctx: RunContext, payload: ComputerCommand) {
   const { deps, run, runId, bot, thread } = ctx;
@@ -134,6 +143,42 @@ async function screenBlocked(ctx: RunContext): Promise<string | undefined> {
   return undefined;
 }
 
+/**
+ * Count the call's approved payment against the user's spending limit, just before its press.
+ * Returns why it may not go ahead: over the limit, or the limit could not be checked.
+ */
+async function countPayment(ctx: RunContext, call: ToolCall): Promise<string | undefined> {
+  if (!call.spend) return undefined;
+  try {
+    const spender = {
+      userId: ctx.run.userId,
+      spaceId: ctx.run.spaceId,
+      botId: ctx.bot.id,
+      threadId: ctx.thread.id,
+    };
+    const refused = await recordPagePayment(ctx.deps.prisma, spender, call.spend, call.effectKey);
+    if (refused) await auditToolCall(ctx, call.name, "denied", { reason: "spending_limit" });
+    return refused;
+  } catch (error) {
+    ctx.context.signal.throwIfAborted();
+    getLogger().warn("spending limit could not be checked", {
+      errorName: error instanceof Error ? error.name : typeof error,
+    });
+    return "The user's spending limit couldn't be checked, so nothing was paid. Try again.";
+  }
+}
+
+/** Stop counting the call's payment: its press clearly never happened. */
+function releaseUnpressedPayment(ctx: RunContext, call: ToolCall): Promise<void> {
+  return call.spend
+    ? releasePayment(ctx.deps.prisma, call.effectKey).catch((error: unknown) =>
+        getLogger().warn("unpaid purchase could not be released", {
+          errorName: error instanceof Error ? error.name : typeof error,
+        }),
+      )
+    : Promise.resolve();
+}
+
 export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, context } = ctx;
   const { name, args } = call;
@@ -178,6 +223,8 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
             downloads,
             redactions,
             approvedPurchase: paying,
+            countPurchase: () => countPayment(ctx, call),
+            releasePurchase: () => releaseUnpressedPayment(ctx, call),
             // Team bots may send only their own folder or shared/ off the computer; a
             // private computer's helper already confines uploads to its home folder.
             uploadRoots:
@@ -202,6 +249,26 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               return { text: resolved.text, origin: resolved.origin, hidden: resolved.hidden };
             },
             resolveCardFill: async (step) => {
+              if ("card" in step) {
+                // Only the card and checkout the person approved for this call.
+                const approvedCard = vaultCardUseOf(args.cardApproval);
+                if (approvedCard?.card !== step.card || approvedCard.site !== step.site)
+                  return { error: "The user has not approved typing this card here." };
+                const resolved = await resolveVaultCardFill({
+                  prisma: deps.prisma,
+                  secretStore: deps.secretStore,
+                  scope: run,
+                  name: step.card,
+                  field: step.field,
+                  site: step.site,
+                  savedAt: approvedCard.savedAt,
+                });
+                if ("error" in resolved) return resolved;
+                addRunSecrets(ctx, resolved.redactions);
+                // No pass for the pay click: approving the card named no amount, so the click
+                // that places the order still asks, showing what the page charges.
+                return { text: resolved.text, origin: resolved.origin };
+              }
               const paymentWallet = deps.paymentWallet;
               if (!paymentWallet) return { error: "Card fills are unavailable here." };
               const resolved = await resolvePurchaseCardFill(
@@ -280,8 +347,12 @@ export const computerTools: ToolHandlers = {
     }
     ctx.computer.checkpoint.markDirty();
     return computerScreenToolResult(async () => {
+      const computer = await ctx.computer.get("tool", name);
+      // Counted just before the press; a desktop press is never known not to have happened.
+      const refused = await countPayment(ctx, call);
+      if (refused) return { error: refused };
       const result = await deps.sandbox.act(
-        await ctx.computer.get("tool", name),
+        computer,
         {
           actions,
           observe: args.observe !== false,
@@ -304,7 +375,7 @@ export const computerTools: ToolHandlers = {
     const { name, args, executionId, observer } = call;
     const command = String(args.command ?? args.cmd ?? "");
     const refusal = protectedComputerLifecycleRefusal(command);
-    if (ctx.computer.graphical && refusal) {
+    if (desktopGuardApplies(ctx.computer) && refusal) {
       return call.finish({ error: desktopProtectionGuardMessage(refusal) });
     }
     const cwd = resolveBotWorkspaceCwd(

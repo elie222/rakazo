@@ -43,12 +43,13 @@ export function ComputerMaintenanceActions({
   if (!computer) return null;
 
   const busy = Boolean(computer.busyBotName) || computer.state === "booting";
-  const showRecover =
+  const showReset =
     computer.state === "error" ||
     computer.state === "running" ||
     computer.state === "suspended" ||
     computer.state === "stopped";
-  const showReset = showRecover;
+  // Recover rebuilds the computer's system, which only computers that can update have.
+  const showRecover = showReset && computer.canUpdate;
   const showStop = computer.state === "running";
   const showUpdate = computer.canUpdate;
   const hasActions = showStop || showRecover || showReset || showUpdate;
@@ -137,7 +138,7 @@ export function ComputerMaintenanceActions({
   );
 
   if (visibleRecover)
-    return (
+    return showRecover ? (
       <>
         <Button
           variant="outline"
@@ -149,7 +150,7 @@ export function ComputerMaintenanceActions({
         </Button>
         {confirmationDialog}
       </>
-    );
+    ) : null;
 
   return (
     <>
