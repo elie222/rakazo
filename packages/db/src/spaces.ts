@@ -551,14 +551,16 @@ export async function claimSpaceForDeletion(
 /**
  * Delete a space claimed by `claimSpaceForDeletion`, once its bots and sandboxes are gone. Rows
  * left in it go by cascade, and its keys with it. Returns the stored artifacts to remove after
- * commit. With `soleMemberId`, a space someone joined after the claim is released instead and
- * null is returned.
+ * commit, but none when another claim has since taken the space over. With `soleMemberId`, a
+ * space someone joined after the claim is released instead and null is returned. With
+ * `organizationId`, the organization goes in the same transaction once its last Space does, so it
+ * is never left without the claim that lets a retry find it.
  */
 export async function deleteClaimedSpace(
   prisma: PrismaClient,
-  input: { spaceId: string; claimId: string; soleMemberId?: string },
+  input: { spaceId: string; claimId: string; soleMemberId?: string; organizationId?: string },
 ): Promise<{ artifactKeys: string[]; pageShareSecrets: PageShareSecret[] } | null> {
-  const { spaceId, claimId, soleMemberId } = input;
+  const { spaceId, claimId, soleMemberId, organizationId } = input;
   return withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
@@ -588,8 +590,11 @@ export async function deleteClaimedSpace(
         const gone = await tx.space.deleteMany({
           where: { id: spaceId, deletionClaimId: claimId },
         });
+        if (organizationId)
+          await tx.organization.deleteMany({ where: { id: organizationId, spaces: { none: {} } } });
+        // The Space went to another claim: its rows and stored files are not this caller's.
         return {
-          artifactKeys: artifacts.map((artifact) => artifact.storageKey),
+          artifactKeys: gone.count > 0 ? artifacts.map((artifact) => artifact.storageKey) : [],
           pageShareSecrets: gone.count > 0 ? pageShareSecrets : [],
         };
       },

@@ -363,6 +363,18 @@ async function snapshotSpace(): Promise<{ ok: true; value: string } | { ok: fals
   }
 }
 
+/**
+ * Hangs up an active call while its session can still authorize the hang-up. Set by the call
+ * module; a server switch runs it before it discards the old server's session, which would
+ * otherwise leave the old server holding an answered call with no marker or wrap-up.
+ */
+let hangUpBeforeCredentialsCleared: (() => Promise<void>) | undefined;
+
+/** Registers (or clears) the hang-up that runs before an endpoint change clears credentials. */
+export function configureSessionEndHangUp(hangUp: (() => Promise<void>) | undefined): void {
+  hangUpBeforeCredentialsCleared = hangUp;
+}
+
 /** Clears session + space for an endpoint change. Restores both if either wipe fails. */
 async function clearCredentialsForEndpointChange(): Promise<
   | {
@@ -372,6 +384,8 @@ async function clearCredentialsForEndpointChange(): Promise<
     }
   | { ok: false; result: EndpointResult }
 > {
+  // The old server's session authorizes the call's hang-up; send it while it still exists.
+  await hangUpBeforeCredentialsCleared?.().catch(() => undefined);
   const previousToken = await snapshotSessionToken();
   const previousSpace = await snapshotSpace();
   if (!previousToken.ok || !previousSpace.ok) {
@@ -870,7 +884,9 @@ export async function signOut() {
 }
 
 export async function deleteAccount(password?: string, token?: string) {
-  await rpc("notifications/unregisterPush").catch(() => undefined);
+  // No push unregistration: deleting the user removes the registrations on the server,
+  // and unregistering first would silently end this device's notifications and calls
+  // whenever the deletion is refused (wrong password, throttling, server error).
   const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/delete-user`,
     {

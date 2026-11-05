@@ -1859,6 +1859,9 @@ model MessagingChannel {
   threadId      String              @unique
   name          String?
   introPostedAt DateTime?
+  /// The platform time of the newest roster this channel has processed, so a
+  /// delayed older roster changes no membership.
+  rosterSeenAt  DateTime?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   members       MessagingChannelMember[]
