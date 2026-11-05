@@ -38,6 +38,18 @@ describe("service_search", () => {
       services: [expect.objectContaining({ id: "people.email", price_usd: 0.005 })],
     });
   });
+
+  it("leaves out services whose price is over the per-call cap", async () => {
+    const provider = new FakePaidServiceProvider();
+    const [email] = await provider.search("email");
+    vi.spyOn(provider, "search").mockResolvedValue([{ ...email!, priceUsd: 1.8 }]);
+    expect(await serviceSearchFromTool(provider, context, { query: "email" }, true)).toEqual({
+      services: [],
+    });
+    expect(await serviceSearchFromTool(provider, context, { query: "email" }, false)).toMatchObject(
+      { services: [{ id: "people.email" }] },
+    );
+  });
 });
 
 describe("service_call", () => {

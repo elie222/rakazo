@@ -63,7 +63,15 @@ export async function serviceSearchFromTool(
   if (!parsed.success) return { error: "query must be 1-200 characters." };
   try {
     const services = await provider.search(parsed.data.query, context);
-    return { services: services.map((service) => shownService(service, billing)) };
+    return {
+      services: services
+        .filter(
+          (service) =>
+            service.priceUsd === null ||
+            service.priceUsd * factor(billing) <= MAX_PAID_SERVICE_CALL_USD,
+        )
+        .map((service) => shownService(service, billing)),
+    };
   } catch (error) {
     context.signal.throwIfAborted();
     getLogger().warn("paid_services.search_failed", {
