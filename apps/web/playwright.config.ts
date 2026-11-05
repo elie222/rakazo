@@ -76,10 +76,9 @@ const reporters = [
     : (["html", { open: "never", outputFolder: "../../playwright-report" }] as const),
 ];
 
-const ignoredSpecs = [
-  ...(skipNightly ? nightlySpecs : []),
-  ...(skipHeavy ? heavySpecs : []),
-].map((name) => `**/${name}.spec.ts`);
+const ignoredSpecs = [...(skipNightly ? nightlySpecs : []), ...(skipHeavy ? heavySpecs : [])].map(
+  (name) => `**/${name}.spec.ts`,
+);
 
 export default defineConfig({
   testDir: "./e2e",
