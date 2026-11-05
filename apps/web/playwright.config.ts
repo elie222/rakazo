@@ -78,8 +78,10 @@ export default defineConfig({
   testIgnore: skipNightly ? nightlySpecs.map((name) => `**/${name}.spec.ts`) : undefined,
   grepInvert: skipNightly ? /@nightly/ : undefined,
   forbidOnly: Boolean(process.env.CI),
-  fullyParallel: false,
-  workers: realSandbox ? 1 : undefined,
+  // Specs that must stay ordered opt into test.describe.configure({ mode: "serial" }).
+  // CI runs four workers per shard on GitHub's 4-vCPU runners; local stays at Playwright's default.
+  fullyParallel: !realSandbox,
+  workers: realSandbox ? 1 : process.env.CI ? 4 : undefined,
   timeout: boatSandbox ? 600_000 : realSandbox ? 300_000 : 120_000,
   expect: { timeout: boatSandbox ? 300_000 : realSandbox ? 90_000 : 20_000 },
   reporter: reporters,
