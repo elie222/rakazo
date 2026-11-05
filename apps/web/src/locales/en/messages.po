@@ -809,10 +809,6 @@ msgstr "Amount"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "An API key is stored for this provider, not a subscription sign-in."
 
-#: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "An existing Honcho peer to read from. Rakazo never writes to it."
-msgstr "An existing Honcho peer to read from. Rakazo never writes to it."
-
 #: src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "An imported API key could not be checked. Try again."
@@ -5162,6 +5158,10 @@ msgstr "Reasoning effort"
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr "Recall and write"
+
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "Recall from this peer; save to Rakazo’s own peers."
+msgstr "Recall from this peer; save to Rakazo’s own peers."
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"

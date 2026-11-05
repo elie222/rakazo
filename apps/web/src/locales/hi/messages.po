@@ -809,10 +809,6 @@ msgstr "राशि"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "इस प्रोवाइडर के लिए API कुंजी संग्रहीत है, सब्सक्रिप्शन साइन-इन नहीं।"
 
-#: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "An existing Honcho peer to read from. Rakazo never writes to it."
-msgstr "पढ़ने के लिए एक मौजूदा Honcho पीयर। Rakazo इसमें कभी नहीं लिखता।"
-
 #: src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "इंपोर्ट की गई एक API कुंजी जाँची नहीं जा सकी। दोबारा कोशिश करें।"
@@ -5162,6 +5158,10 @@ msgstr "रीज़निंग प्रयास"
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr ""
+
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "Recall from this peer; save to Rakazo’s own peers."
+msgstr "इस पीयर से याद करें; Rakazo के अपने पीयर में सहेजें।"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
