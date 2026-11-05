@@ -404,6 +404,10 @@ describe("IncusSandboxProvider", () => {
     expect((create!.body as { config: Record<string, string> }).config["oci.entrypoint"]).toBe(
       `setpriv --no-new-privs -- ${imageCommand.join(" ")}`,
     );
+    // The start command's uid and gid are set on the instance, not inherited from
+    // the image's `USER`: a custom image without one starts as unprivileged anyway.
+    expect((create!.body as { config: Record<string, string> }).config["oci.uid"]).toBe("1000");
+    expect((create!.body as { config: Record<string, string> }).config["oci.gid"]).toBe("1000");
     // Only image paths and settings reach the instance environment.
     const environment = Object.entries((create!.body as { config: Record<string, string> }).config)
       .filter(([key]) => key.startsWith("environment."))

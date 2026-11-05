@@ -29,6 +29,11 @@ vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 // Signed out, every request fails; device voice needs none of them to start the microphone.
 vi.mock("./api", () => ({
   blockText: vi.fn(),
+  captureApiRequestContext: vi.fn(async () => ({
+    apiBase: "https://api.example.test",
+    headers: { "x-rakazo-space-id": "space-riley" },
+    sessionGeneration: currentSessionGeneration(),
+  })),
   rpc: vi.fn(async () => {
     throw new Error("Unauthorized");
   }),
@@ -53,17 +58,20 @@ const bots = [riley, max];
 describe("useThreadVoiceCall hand-over", () => {
   let root: Root;
   let openBotChat: ((target: MobileBot, ring: boolean) => void) | undefined;
+  let startVoiceCall: (() => Promise<void>) | undefined;
 
   function render(botId: string) {
     function Thread() {
-      openBotChat = useThreadVoiceCall({
+      const voiceCall = useThreadVoiceCall({
         botId,
         readOnly: false,
         displayName: bots.find((bot) => bot.id === botId)?.name,
         mentionBots: bots,
         mentionBotsRef: { current: bots },
         activeBotId: { current: botId },
-      }).openBotChat;
+      });
+      openBotChat = voiceCall.openBotChat;
+      startVoiceCall = voiceCall.startVoiceCall;
       return null;
     }
     act(() => root.render(createElement(Thread, { key: botId })));
@@ -106,6 +114,22 @@ describe("useThreadVoiceCall hand-over", () => {
     expect(startCall).toHaveBeenCalledOnce();
     expect(startCall).toHaveBeenCalledWith(
       expect.objectContaining({ botId: "riley", greeting: "Hello, {bot} here." }),
+    );
+  });
+  it("starts an outgoing call pinned to the Space it starts in", async () => {
+    render("riley");
+    await act(async () => {
+      await startVoiceCall?.();
+    });
+    expect(startCall).toHaveBeenCalledOnce();
+    // Switching organization or Space mid-call must not move the call's turns or hang-up
+    // to another Space, so the call starts with the Space captured here.
+    expect(startCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestContext: expect.objectContaining({
+          headers: expect.objectContaining({ "x-rakazo-space-id": "space-riley" }),
+        }),
+      }),
     );
   });
 
