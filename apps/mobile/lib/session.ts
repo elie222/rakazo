@@ -171,8 +171,17 @@ export function currentSessionGeneration() {
 
 /** Token saves still running; a read during one sees no session until its token lands. */
 let sessionSaves = 0;
+const sessionSavesDone: (() => void)[] = [];
 export function sessionSaveInProgress() {
   return sessionSaves > 0;
+}
+function endSessionSave() {
+  sessionSaves -= 1;
+  if (sessionSaves === 0) for (const done of sessionSavesDone.splice(0)) done();
+}
+/** Resolves once no token save is running. */
+export async function sessionSavesSettled(): Promise<void> {
+  while (sessionSaves > 0) await new Promise<void>((done) => sessionSavesDone.push(done));
 }
 
 export async function loadSessionToken() {
@@ -194,7 +203,7 @@ export async function saveSessionToken(token: string, sameAccount = false) {
     await enqueueScopeWrite(() => SecureStore.setItemAsync(SESSION_KEY, token));
     await clearingScope;
   } finally {
-    sessionSaves -= 1;
+    endSessionSave();
   }
   if (generation !== sessionGeneration) return;
   sessionInvalidated = false;
@@ -327,7 +336,7 @@ export async function rotateSessionTokenIfCurrent(
     }
     throw error;
   } finally {
-    sessionSaves -= 1;
+    endSessionSave();
   }
   await clearingScope;
   if (rotation === sessionGeneration) {

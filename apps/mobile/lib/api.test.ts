@@ -3607,6 +3607,49 @@ describe("mobile API authentication", () => {
     await resetApiBase();
   });
 
+  it.each(["still running", "failed"])(
+    "a sign-out after a session save that is %s revokes the session it clears",
+    async (save) => {
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      await restoreSessionToken("token-a");
+      let releaseSave!: () => void;
+      const saveHeld = new Promise<void>((resolve) => {
+        releaseSave = resolve;
+      });
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        if (key === "rakazo.session_token" && value === "token-b") {
+          await saveHeld;
+          if (save === "failed") throw new Error("device locked");
+        }
+        store.set(key, value);
+      });
+      const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+      vi.stubGlobal("fetch", fetchMock);
+      const saving = saveSessionToken("token-b").catch(() => undefined);
+      if (save === "failed") {
+        releaseSave();
+        await saving;
+      }
+      const signingOut = signOut();
+      releaseSave();
+      await saving;
+      await signingOut;
+
+      const revoked = save === "failed" ? "token-a" : "token-b";
+      await vi.waitFor(() => {
+        const signOuts = fetchMock.mock.calls.filter(([url]) =>
+          String(url).endsWith("/api/auth/sign-out"),
+        );
+        expect(signOuts).toHaveLength(1);
+        const [, init] = signOuts[0] as [string, RequestInit];
+        expect(init.headers).toMatchObject({ authorization: `Bearer ${revoked}` });
+      });
+      expect(store.has("rakazo.session_token")).toBe(false);
+      expect(await authHeaders()).not.toHaveProperty("authorization");
+    },
+  );
+
   it("records no revocation when switching servers without a session", async () => {
     const store = new Map<string, string>();
     mockSecureStore(store);

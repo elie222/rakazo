@@ -89,6 +89,7 @@ import {
   saveSessionToken,
   saveVerifiedIntegrationsScope,
   sessionSaveInProgress,
+  sessionSavesSettled,
   snapshotSessionToken,
   snapshotStoredSessionToken,
   tokenFromAuthResponse,
@@ -1476,11 +1477,17 @@ export async function flushPendingSignOut(force = false): Promise<void> {
 
 export async function signOut() {
   const apiBase = currentApiBase();
+  // A save still running reads as no session, and the clear deletes its token once it lands:
+  // wait for it, so the sign-out records the session it clears.
+  await sessionSavesSettled();
   const tokenSnapshot = await snapshotSessionToken();
   if (!tokenSnapshot.ok) throw new Error(t("Could not clear the local session"));
+  // A failed save or wipe can leave a token stored that reads as no session; the clear deletes it
+  // too. An unreadable store only skips that record: signing out still clears this device.
+  const stored = tokenSnapshot.value ? undefined : await snapshotStoredSessionToken();
   const revocation: PendingSignOut = {
     apiBase,
-    token: tokenSnapshot.value,
+    token: tokenSnapshot.value || (stored?.ok ? stored.value : ""),
     headers: serverHeaders(apiBase),
     recordedAt: Date.now(),
   };
