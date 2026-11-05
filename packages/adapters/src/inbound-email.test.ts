@@ -93,6 +93,19 @@ describe("readInboundEmail", () => {
     expect(email.authenticated).toBe(false);
   });
 
+  it("tells a key lookup that failed for now from a bad signature", async () => {
+    const raw = bytes(await signed(message(plain)));
+    const timeout: InboundEmailResolver = async () => {
+      throw Object.assign(new Error("timed out"), { code: "ETIMEOUT" });
+    };
+
+    const later = await readInboundEmail(raw, { resolver: timeout });
+    const missing = await readInboundEmail(bytes(message(plain)), { resolver });
+
+    expect(later).toMatchObject({ authenticated: false, temporaryFailure: true });
+    expect(missing).toMatchObject({ authenticated: false, temporaryFailure: false });
+  });
+
   it("keys a resent copy by its signature, whatever Message-ID it is given", async () => {
     const original = await signed(message(plain), "example.test", "From:To:Cc:Subject:Date");
     const resent = original.replace("<weekly-1@example.test>", "<another@example.test>");

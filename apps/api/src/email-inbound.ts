@@ -40,12 +40,20 @@ export function mountEmailInboundRoute(app: Hono, deps: EmailInboundDeps) {
     }
     const raw = await readBoundedBytes(c.req.raw, INBOUND_EMAIL_MAX_BYTES);
     if (raw === null) return c.json({ error: "Payload too large" }, 413);
-    return c.json(await receiveBotEmail(deps, c.req.query("to") ?? "", raw));
+    const result = await receiveBotEmail(deps, c.req.query("to") ?? "", raw);
+    // The relay keeps the message and tries again, as for any other temporary failure.
+    if ("retry" in result) return c.json({ error: "Try again later" }, 503);
+    return c.json(result);
   });
 }
 
 export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string, raw: Uint8Array) {
-  const ignored = (reason: string) => ({ ok: true as const, ignored: reason });
+  const dropped: { botId?: string; senderDomain?: string } = {};
+  // Logged without addresses or content, so an owner's lost mail can be explained.
+  const ignored = (reason: string) => {
+    getLogger().info("inbound email dropped", { reason, ...dropped });
+    return { ok: true as const, ignored: reason };
+  };
   const target = recipientName(recipient, deps.domain);
   if (!target) return ignored("not this server's domain");
 
@@ -65,6 +73,7 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   });
   const bot = claimed?.bot;
   if (!bot || bot.archivedAt || !bot.thread) return ignored("no such bot");
+  dropped.botId = bot.id;
 
   const emailRoutine = { botId: bot.id, spaceId: bot.spaceId, active: true };
   // Cheap check first: most mail to a bot without an email routine is never parsed.
@@ -83,7 +92,12 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     });
     return ignored("unreadable");
   }
+  if (email.from) dropped.senderDomain = domainOf(email.from.address);
   if (email.automated) return ignored("automated");
+  if (email.from && !email.authenticated && email.temporaryFailure) {
+    getLogger().warn("inbound email signature could not be checked yet", dropped);
+    return { retry: true as const };
+  }
   if (!email.from || !email.authenticated) return ignored("unauthenticated");
   const sender = email.from.address;
   if (domainOf(sender) === deps.domain) return ignored("from a bot");

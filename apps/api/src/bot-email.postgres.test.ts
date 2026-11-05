@@ -133,6 +133,7 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
       key: `<${suffix}@example.test>`,
       from: { address: `colleague-${suffix}@example.test`, name: "" },
       authenticated: true,
+      temporaryFailure: false,
       to: [`${helper}@${DOMAIN}`],
       cc: [],
       subject: "Hello",

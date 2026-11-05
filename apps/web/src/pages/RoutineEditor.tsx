@@ -982,11 +982,15 @@ function MessageTriggerCard({ provider, onRemove }: { provider: string; onRemove
   );
 }
 
-/** A first address suggestion from the bot's name, such as "research-helper". */
+/**
+ * A first address suggestion from the bot's name, such as "research-helper". ASCII only, unlike
+ * page anchors: many mail servers still refuse non-ASCII addresses.
+ */
 export function suggestedEmailName(botName: string): string {
   return botName
     .normalize("NFKD")
     .toLowerCase()
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64)

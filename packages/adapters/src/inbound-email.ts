@@ -27,6 +27,8 @@ export type InboundEmail = {
    * From, To and Cc field, so that domain vouches for the From address and the recipients.
    */
   authenticated: boolean;
+  /** Not authenticated only because a DKIM key lookup failed for now; worth trying again later. */
+  temporaryFailure: boolean;
   to: string[];
   cc: string[];
   subject: string;
@@ -112,6 +114,9 @@ export async function readInboundEmail(
         `sha256:${createHash("sha256").update(buffer).digest("base64url")}`,
     from: fromAddress ? { address: fromAddress, name: fromName } : null,
     authenticated: signature !== undefined,
+    temporaryFailure:
+      signature === undefined &&
+      dkim.results.some((result) => result.status.result === "temperror"),
     to,
     cc,
     subject: email.subject?.trim() ?? "",

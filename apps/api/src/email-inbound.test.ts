@@ -25,6 +25,7 @@ function email(overrides: Partial<InboundEmail> = {}): InboundEmail {
     key: "<m-1@example.test>",
     from: { address: "owner@example.test", name: "Owner" },
     authenticated: true,
+    temporaryFailure: false,
     to: ["helper@bots.test"],
     cc: [],
     subject: "Invoice",
@@ -136,6 +137,15 @@ describe("inbound email route", () => {
     expect(sent.prompt).toContain("wire money");
     expect(sent.clientNonce).toMatch(/^email:bot-1:/);
     expect(enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks the relay to retry when a signature could not be checked yet", async () => {
+    const { post, sendUserMessage } = setup({
+      message: email({ authenticated: false, temporaryFailure: true }),
+    });
+
+    expect((await post()).status).toBe(503);
+    expect(sendUserMessage).not.toHaveBeenCalled();
   });
 
   it("gives the same message the same delivery key", async () => {
