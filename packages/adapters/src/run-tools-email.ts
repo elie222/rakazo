@@ -122,8 +122,13 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
     });
   let emails = await list();
   const deadline = startedAt.getTime() + (input.waitSeconds ?? 0) * 1000;
-  while (emails.length === 0 && Date.now() + POLL_MS <= deadline) {
-    await sleep(POLL_MS, undefined, { signal: ctx.context.signal });
+  // The last look lands on the deadline, so a wait shorter than one poll still waits.
+  for (
+    let left = deadline - Date.now();
+    emails.length === 0 && left > 0;
+    left = deadline - Date.now()
+  ) {
+    await sleep(Math.min(POLL_MS, left), undefined, { signal: ctx.context.signal });
     emails = await list();
   }
   return call.finish({

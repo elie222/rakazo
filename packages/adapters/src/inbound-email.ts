@@ -20,7 +20,7 @@ export type InboundEmailResolver = (
 export type InboundEmail = {
   /**
    * The same message always gets the same key: its verified DKIM signature, which a resent copy
-   * cannot change, else its Message-ID or a hash of the raw bytes.
+   * cannot change, else a hash of what it says.
    */
   key: string;
   /** The single From mailbox, lowercased; null when the From field is missing or malformed. */
@@ -133,10 +133,23 @@ export async function readInboundEmail(
       : "";
 
   return {
+    // Anyone can reuse an unsigned message's Message-ID, so its key is its content: a different
+    // message under the same ID is a different message, and a relay's retry is the same one.
     key: signature?.id
       ? `dkim:${signature.id}`
-      : email.messageId?.trim() ||
-        `sha256:${createHash("sha256").update(buffer).digest("base64url")}`,
+      : `sha256:${createHash("sha256")
+          .update(
+            JSON.stringify([
+              email.messageId ?? "",
+              sender,
+              to,
+              cc,
+              email.subject ?? "",
+              email.date ?? "",
+              text,
+            ]),
+          )
+          .digest("base64url")}`,
     from: sender ? { address: sender, name: fromName } : null,
     messageId: messageIds(email.messageId)[0] ?? null,
     references: [
@@ -178,7 +191,8 @@ const MAX_REFERENCES = 20;
 
 /** The `<id@host>` tokens in a Message-ID, In-Reply-To or References field. */
 function messageIds(value: string | undefined): string[] {
-  return (value?.match(/<[^<>\s]{1,250}>/g) ?? []).slice(0, 100);
+  // The newest come last in References, so a long thread keeps those.
+  return (value?.match(/<[^<>\s]{1,250}>/g) ?? []).slice(-100);
 }
 
 function addresses(list: Address[] | undefined): string[] {

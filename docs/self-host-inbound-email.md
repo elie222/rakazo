@@ -122,7 +122,8 @@ esac
 ## The inbox
 
 Each message is saved once, however often the relay delivers it, until its bot is deleted. A bot
-saves at most 500 messages a day; past that, mail is dropped until the day's count falls. The bot
+saves at most 500 messages a day that start nothing; past that, such mail is dropped until the
+day's count falls, while mail that starts the bot or a routine is always saved. The bot
 reads its inbox only in its owner's own chat, routines and mail, never in a group chat or a shared
 channel, and what it reads counts as outside data.
 
@@ -134,7 +135,9 @@ signature covers its **To** and **Cc**. Many services sign with another domain, 
 saved as unverified: the bot can still read it but is told its sender could be forged.
 
 Only verified mail that names the bot in **To** or **Cc** starts anything, and never an automatic
-reply or mailing-list mail. The owner's own mail starts the bot in its chat. An email trigger
+reply or mailing-list mail. The owner's own mail sent **To** the bot starts it in its chat, once
+the owner has confirmed their account's email address; mail that only copies the bot is saved. An
+email trigger
 starts its routine for the owner's own address, or for anyone at the owner's email domain when
 the routine allows it. Mail that claims the owner's address but fails the check posts a
 note in the bot's chat, at most once a day, without any of its content. That usually means the
@@ -143,6 +146,6 @@ for a custom domain.
 
 A routine's mail reaches the bot as outside data, never as instructions. In the owner's own mail,
 the bot follows what the owner asks but treats anything forwarded or quoted as data. Runs started
-by mail follow the
-stricter [approval](./approvals.md) rules for outside events. Up to four attachments are kept,
-within the usual upload type and size limits; the bot sees the names of any it could not keep.
+by mail follow the stricter [approval](./approvals.md) rules for outside events. Up to four
+attachments of verified mail are kept, within the usual upload type and size limits; the bot sees
+the names of any it could not keep, and of every file in unverified mail.

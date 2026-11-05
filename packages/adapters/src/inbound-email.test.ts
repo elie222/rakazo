@@ -83,6 +83,33 @@ describe("readInboundEmail", () => {
     expect(email.references).toEqual(["<kickoff@example.test>", "<weekly-0@example.test>"]);
   });
 
+  it("keeps a long thread's newest references", async () => {
+    const ids = Array.from({ length: 150 }, (_, index) => `<r-${index}@example.test>`);
+    const email = await readInboundEmail(
+      bytes(message([...plain, `References: ${ids.join(" ")}`])),
+      {
+        resolver,
+      },
+    );
+
+    expect(email.references).toEqual(ids.slice(-20));
+  });
+
+  it("tells apart unsigned messages that reuse one Message-ID", async () => {
+    const first = await readInboundEmail(bytes(message(plain, "Your code is 111111.\r\n")), {
+      resolver,
+    });
+    const again = await readInboundEmail(bytes(message(plain, "Your code is 111111.\r\n")), {
+      resolver,
+    });
+    const reused = await readInboundEmail(bytes(message(plain, "Your code is 222222.\r\n")), {
+      resolver,
+    });
+
+    expect(again.key).toBe(first.key);
+    expect(reused.key).not.toBe(first.key);
+  });
+
   it("does not authenticate unsigned, tampered or unaligned mail", async () => {
     const unsigned = await readInboundEmail(bytes(message(plain)), { resolver });
     const tampered = await readInboundEmail(

@@ -101,44 +101,31 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     return { retry: true as const };
   }
 
-  // Every message is saved, whoever sent it: sign-up codes and receipts come from strangers.
-  const saved = await saveToInbox(deps, bot, email, email.from);
-  if (!saved) return ignored("inbox full");
-  // Saved, but nothing starts: the bot sees it the next time it checks its inbox.
-  const quiet = (reason: string) => {
-    getLogger().info("inbound email saved without a run", { reason, ...dropped });
-    return { ok: true as const, saved: true, skipped: reason };
-  };
-
-  if (email.automated) return quiet("automated");
   const sender = email.from.address;
-  // The rule only decides who may start the owner's own bot, so an address the owner never
-  // verified can expose nothing but that owner's account; servers without email verify no one.
+  // A routine takes the owner's address as given: it starts only that owner's own bot, and servers
+  // without email verify no one. Mail that starts the bot with no routine needs it confirmed.
   const owner = await deps.prisma.user.findUnique({
     where: { id: bot.userId },
-    select: { email: true },
+    select: { email: true, emailVerified: true },
   });
   const ownerEmail = owner?.email.trim().toLowerCase() || null;
-  const named = [...email.to, ...email.cc].some(
-    (address) => recipientName(address, deps.domain) === target,
-  );
-  if (!email.authenticated) {
-    // BCC'd mail never starts anything whatever its signature, so it never earns a note either.
-    if (sender === ownerEmail && named) {
-      await noteUnverifiedOwnerMail(
-        deps,
-        { id: bot.id, spaceId: bot.spaceId, threadId: bot.thread.id },
-        target,
-      );
-    }
-    return quiet("unauthenticated");
-  }
-  if (domainOf(sender) === deps.domain) return quiet("from a bot");
-  // A signed message replayed to the bot does not name it; BCC does not either.
-  if (!named) return quiet("not addressed to this bot");
+  const named = (addresses: string[]) =>
+    addresses.some((address) => recipientName(address, deps.domain) === target);
+  const addressed = named(email.to) || named(email.cc);
 
+  // Why nothing may start, before looking for a routine.
+  const ineligible = email.automated
+    ? "automated"
+    : !email.authenticated
+      ? "unauthenticated"
+      : domainOf(sender) === deps.domain
+        ? "from a bot"
+        : // A signed message replayed to the bot does not name it; BCC does not either.
+          !addressed
+          ? "not addressed to this bot"
+          : null;
   const allowed: RoutineEmailSenders[] =
-    ownerEmail === null
+    ineligible || ownerEmail === null
       ? []
       : sender === ownerEmail
         ? ["owner", "domain"]
@@ -167,8 +154,31 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
         take: 5,
       })
     : [];
-  // Without a routine, only the owner's own mail starts the bot, as a message in its chat would.
-  if (matched.length === 0 && sender !== ownerEmail) return quiet("sender not allowed");
+  // Without a routine, the owner's own mail to the bot starts it, as a chat message would: only
+  // from an address they confirmed, and only sent to the bot, not copied on mail for someone else.
+  const ownerMessage =
+    !ineligible && sender === ownerEmail && owner?.emailVerified === true && named(email.to);
+  const starts = matched.length > 0 || ownerMessage;
+
+  // Every message is saved, whoever sent it: sign-up codes and receipts come from strangers. The
+  // daily cap stops only a flood of mail that starts nothing, never the owner's own.
+  const saved = await saveToInbox(deps, bot, email, email.from, { capped: !starts });
+  if (!saved) return ignored("inbox full");
+  if (!starts) {
+    // BCC'd mail never starts anything whatever its signature, so it never earns a note either.
+    if (!email.authenticated && sender === ownerEmail && addressed) {
+      await noteUnverifiedOwnerMail(
+        deps,
+        { id: bot.id, spaceId: bot.spaceId, threadId: bot.thread.id },
+        target,
+      );
+    }
+    getLogger().info("inbound email saved without a run", {
+      reason: ineligible ?? "sender not allowed",
+      ...dropped,
+    });
+    return { ok: true as const, saved: true, skipped: ineligible ?? "sender not allowed" };
+  }
 
   const artifacts = saved.files.flatMap((file) =>
     file.artifactId
@@ -228,17 +238,23 @@ async function saveToInbox(
   bot: { id: string; spaceId: string; userId: string },
   email: InboundEmail,
   from: NonNullable<InboundEmail["from"]>,
+  options: { capped: boolean },
 ): Promise<{ id: string; files: InboxFile[] } | null> {
   const where = { botId_key: { botId: bot.id, key: email.key } };
   const select = { id: true, attachments: true } as const;
   const found = await deps.prisma.botEmailMessage.findUnique({ where, select });
   if (found) return { id: found.id, files: found.attachments as InboxFile[] };
-  const recent = await deps.prisma.botEmailMessage.count({
-    where: { botId: bot.id, receivedAt: { gte: new Date(Date.now() - DAY_MS) } },
-  });
-  if (recent >= INBOX_DAILY_LIMIT) return null;
+  if (options.capped) {
+    const recent = await deps.prisma.botEmailMessage.count({
+      where: { botId: bot.id, receivedAt: { gte: new Date(Date.now() - DAY_MS) } },
+    });
+    if (recent >= INBOX_DAILY_LIMIT) return null;
+  }
 
-  const files = await storeAttachments(deps, bot, email);
+  // Files cost the owner storage, so only a sender who proved their address gets them kept.
+  const files = email.authenticated
+    ? await storeAttachments(deps, bot, email)
+    : email.attachments.map((file) => ({ name: file.name.slice(0, HEADER_MAX_CHARS) }));
   try {
     const row = await deps.prisma.botEmailMessage.create({
       data: {

@@ -131,6 +131,14 @@ describe("read_email", () => {
     expect(result.emails).toEqual([expect.objectContaining({ id: "late" })]);
   });
 
+  it("waits a wait shorter than one poll", async () => {
+    const { call } = fakeRun([], { arriving: row({ id: "late", receivedAt: new Date() }) });
+
+    const result = await call({ waitSeconds: 1 });
+
+    expect(result.emails).toEqual([expect.objectContaining({ id: "late" })]);
+  });
+
   it("reads one email whole, a page at a time, and copies its files", async () => {
     const { call, copyEarlierFiles } = fakeRun([
       row({
