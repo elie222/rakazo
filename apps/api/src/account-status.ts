@@ -32,24 +32,28 @@ export async function settleDirectoryChange(
 
 /**
  * The operator turns an account off or back on. Deactivating an account that already is off
- * still finishes ending its access. The identity provider owns the accounts it provisions: one
- * it has on is turned off there, and one it turned off or deleted is turned back on there.
- * Either refusal is `"directory"`.
+ * still finishes ending its access. While directory provisioning is on, the identity provider
+ * owns the accounts it provisions: one it has on is turned off there, and one it turned off or
+ * deleted is turned back on there. Either refusal is `"directory"`. With provisioning off, no
+ * provider can reach them, so the operator decides.
  */
 export async function setAccountActive(
   deps: AccountStatusDeps,
   userId: string,
   active: boolean,
+  directoryProvisioning: boolean,
 ): Promise<"changed" | "unchanged" | "directory"> {
   return runAsSystem("change an account's status", async () => {
-    const [links, deleted] = await Promise.all([
-      deps.prisma.scimUser.findMany({ where: { userId }, select: { active: true } }),
-      deps.prisma.scimIdentityTombstone.count({ where: { userId } }),
-    ]);
-    // The directory has it on, so its next update would undo turning it off here; or the
-    // directory turned it off or deleted it (a tombstone) and has not added it back.
-    const on = links.some((link) => link.active);
-    if (on ? !active : active && links.length + deleted > 0) return "directory";
+    if (directoryProvisioning) {
+      const [links, deleted] = await Promise.all([
+        deps.prisma.scimUser.findMany({ where: { userId }, select: { active: true } }),
+        deps.prisma.scimIdentityTombstone.count({ where: { userId } }),
+      ]);
+      // The directory has it on, so its next update would undo turning it off here; or the
+      // directory turned it off or deleted it (a tombstone) and has not added it back.
+      const on = links.some((link) => link.active);
+      if (on ? !active : active && links.length + deleted > 0) return "directory";
+    }
     const { count } = await deps.prisma.user.updateMany({
       where: { id: userId, deactivatedAt: active ? { not: null } : null },
       data: { deactivatedAt: active ? null : new Date() },

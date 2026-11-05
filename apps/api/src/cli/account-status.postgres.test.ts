@@ -21,10 +21,16 @@ describePostgres("the operator's account status command (PostgreSQL)", { timeout
     await db?.pool.end();
   });
 
-  const command = (...args: string[]) =>
-    run("pnpm", ["--filter", "@rakazo/api", "exec", "tsx", "src/cli/account-status.ts", ...args], {
-      env: process.env,
-    });
+  const scim = { SCIM_BEARER_TOKEN: "test-directory-token-0123456789abcdef" };
+  const command = (...args: string[]) => commandWith({}, ...args);
+  function commandWith(env: Record<string, string>, ...args: string[]) {
+    const { SCIM_BEARER_TOKEN: _off, ...rest } = process.env;
+    return run(
+      "pnpm",
+      ["--filter", "@rakazo/api", "exec", "tsx", "src/cli/account-status.ts", ...args],
+      { env: { ...rest, ...env } },
+    );
+  }
 
   async function person(email: string) {
     const user = await system.user.create({
@@ -134,7 +140,7 @@ describePostgres("the operator's account status command (PostgreSQL)", { timeout
     });
     await system.user.update({ where: { id: user.id }, data: { deactivatedAt: now } });
 
-    await expect(command("reactivate", user.email)).rejects.toMatchObject({
+    await expect(commandWith(scim, "reactivate", user.email)).rejects.toMatchObject({
       stderr: expect.stringContaining("turn it off or on there"),
     });
     expect(
@@ -159,12 +165,35 @@ describePostgres("the operator's account status command (PostgreSQL)", { timeout
     });
     await system.user.update({ where: { id: user.id }, data: { deactivatedAt: now } });
 
-    await expect(command("reactivate", user.email)).rejects.toMatchObject({
+    await expect(commandWith(scim, "reactivate", user.email)).rejects.toMatchObject({
       stderr: expect.stringContaining("turn it off or on there"),
     });
     expect(
       (await system.user.findUniqueOrThrow({ where: { id: user.id } })).deactivatedAt,
     ).toBeInstanceOf(Date);
+  });
+
+  it("lets the operator turn back on a deleted directory account once SCIM is off", async () => {
+    const { user } = await person("kim@example.test");
+    const now = new Date();
+    await system.scimIdentityTombstone.create({
+      data: {
+        id: randomUUID(),
+        connectionId: "directory",
+        provisioningDomainId: "directory",
+        externalId: "directory-kim",
+        externalIdKey: randomUUID(),
+        userId: user.id,
+        profile: "manage",
+        deletedAt: now,
+      },
+    });
+    await system.user.update({ where: { id: user.id }, data: { deactivatedAt: now } });
+
+    expect((await command("reactivate", user.email)).stdout.trim()).toBe("Reactivated");
+    expect(
+      (await system.user.findUniqueOrThrow({ where: { id: user.id } })).deactivatedAt,
+    ).toBeNull();
   });
 
   it("leaves an account the identity provider has on for the provider to turn off", async () => {
@@ -192,7 +221,7 @@ describePostgres("the operator's account status command (PostgreSQL)", { timeout
       },
     });
 
-    await expect(command("deactivate", user.email)).rejects.toMatchObject({
+    await expect(commandWith(scim, "deactivate", user.email)).rejects.toMatchObject({
       stderr: expect.stringContaining("turn it off or on there"),
     });
     expect(
