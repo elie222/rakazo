@@ -1,3 +1,7 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type { ArtifactStore, JobPublisher } from "@rakazo/adapter-kit";
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -10,8 +14,10 @@ import {
   keepOrganizationTrialUse,
   ownerHadTrial,
 } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { deleteOrganization } from "./account-deletion.js";
 import { createBillingService, TRIAL_DAYS } from "./billing.js";
+import type { SpaceDeletionDeps } from "./space-deletion.js";
 
 const dbTests =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
@@ -172,5 +178,183 @@ dbTests("own-key trial across organizations", () => {
     await prisma.organization.delete({ where: { id: owner.second.organizationId } });
     await expect(ownerHadTrial(prisma, owner.userId, "byok")).resolves.toBe(true);
     await expect(ownerHadTrial(prisma, owner.userId, "managed")).resolves.toBe(false);
+  });
+});
+
+/** A provider whose own-key checkout creation fails on demand. */
+class FlakyByokEmulator extends BillingEmulator {
+  failByokCheckout = false;
+
+  constructor(namespace: string) {
+    super({ modelCredits: true, namespace });
+  }
+
+  override async createByokCheckout(input: Parameters<BillingEmulator["createByokCheckout"]>[0]) {
+    if (this.failByokCheckout) throw new Error("provider unavailable");
+    return super.createByokCheckout(input);
+  }
+}
+
+/** A provider whose cancellation fails on demand. */
+class FlakyCancelEmulator extends BillingEmulator {
+  failCancellation = false;
+
+  constructor(namespace: string) {
+    super({ modelCredits: true, namespace });
+  }
+
+  override async cancelCustomerSubscriptions(customerId: string) {
+    if (this.failCancellation) throw new Error("provider unavailable");
+    await super.cancelCustomerSubscriptions(customerId);
+  }
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+/** Holds the own-key checkout call until the test releases it. */
+class DelayedByokEmulator extends BillingEmulator {
+  private readonly entered = deferred();
+  private readonly gate = deferred();
+
+  constructor(namespace: string) {
+    super({ modelCredits: true, namespace });
+  }
+
+  get byokCallStarted() {
+    return this.entered.promise;
+  }
+
+  releaseByok() {
+    this.gate.resolve();
+  }
+
+  override async createByokCheckout(input: Parameters<BillingEmulator["createByokCheckout"]>[0]) {
+    this.entered.resolve();
+    await this.gate.promise;
+    return super.createByokCheckout(input);
+  }
+}
+
+dbTests("own-key trial hold lifecycle", () => {
+  const stamp = `${process.pid}-${Date.now()}`;
+  const userIds: string[] = [];
+  const organizationIds: string[] = [];
+  let prisma: PrismaClient, db: ReturnType<typeof createDb>, root: string;
+
+  beforeAll(async () => {
+    db = createDb(process.env.DATABASE_URL!);
+    prisma = asSystem(db.prisma);
+    root = await mkdtemp(path.join(tmpdir(), "rakazo-trial-hold-"));
+  });
+
+  afterAll(async () => {
+    await prisma.organization.deleteMany({ where: { id: { in: organizationIds } } });
+    await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+    await db.prisma.$disconnect();
+    await db.pool.end();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  async function ownerWith(name: string) {
+    const owner = await ownerWithOrganizations(prisma, stamp, name);
+    userIds.push(owner.userId);
+    organizationIds.push(owner.first.organizationId, owner.second.organizationId);
+    return owner;
+  }
+
+  async function customerOf(organizationId: string) {
+    const { customerId } = (await billingAccountForOrganization(prisma, organizationId))!;
+    return customerId;
+  }
+
+  it("gives the hold back when the provider refuses to create the session", async () => {
+    const owner = await ownerWith("refuse");
+    const provider = new FlakyByokEmulator(`hold-refuse-${stamp}`);
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    provider.failByokCheckout = true;
+    await expect(service.selectFunding(owner.first.actor, "byok")).rejects.toThrow(
+      "provider unavailable",
+    );
+    provider.failByokCheckout = false;
+    // The failed attempt left no payable session, so the owner's trial is free to take again.
+    await service.selectFunding(owner.second.actor, "byok");
+    const second = await customerOf(owner.second.organizationId);
+    expect(provider.byokCheckouts.get(second)?.trialDays).toBe(TRIAL_DAYS);
+  });
+
+  it("keeps an earlier open session's hold when a reopened checkout fails", async () => {
+    const owner = await ownerWith("reopenfail");
+    const provider = new FlakyByokEmulator(`hold-reopen-${stamp}`);
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    await service.selectFunding(owner.first.actor, "byok");
+    provider.failByokCheckout = true;
+    await expect(service.selectFunding(owner.first.actor, "byok")).rejects.toThrow(
+      "provider unavailable",
+    );
+    provider.failByokCheckout = false;
+    // The first session is still payable, so it keeps holding the owner's trial.
+    await service.selectFunding(owner.second.actor, "byok");
+    const second = await customerOf(owner.second.organizationId);
+    expect(provider.byokCheckouts.get(second)?.trialDays).toBeUndefined();
+  });
+
+  it("holds the trial from the created session's moment, not the reservation's", async () => {
+    const owner = await ownerWith("delayed");
+    const provider = new DelayedByokEmulator(`hold-delayed-${stamp}`);
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    const pending = service.selectFunding(owner.first.actor, "byok");
+    await provider.byokCallStarted;
+    const beforeCreation = (
+      await prisma.user.findUniqueOrThrow({
+        where: { id: owner.userId },
+        select: { byokTrialCheckoutExpiresAt: true },
+      })
+    ).byokTrialCheckoutExpiresAt!;
+    // The session is created only after this delay; it stays payable a day from then.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    provider.releaseByok();
+    await pending;
+    const hold = (
+      await prisma.user.findUniqueOrThrow({
+        where: { id: owner.userId },
+        select: { byokTrialCheckoutExpiresAt: true },
+      })
+    ).byokTrialCheckoutExpiresAt!;
+    expect(hold.getTime() - beforeCreation.getTime()).toBeGreaterThan(1000);
+  });
+
+  it("keeps the hold while the deletion's billing cancellation keeps failing", async () => {
+    const owner = await ownerWith("cancelfail");
+    const provider = new FlakyCancelEmulator(`hold-cancelfail-${stamp}`);
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    await service.selectFunding(owner.first.actor, "byok");
+    const deps = {
+      prisma,
+      sandbox: { destroy: vi.fn() },
+      home: {},
+      jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+      artifacts: { remove: vi.fn() } as unknown as ArtifactStore,
+      dataDir: root,
+      billing: service,
+    } as unknown as SpaceDeletionDeps & { billing: ReturnType<typeof createBillingService> };
+    provider.failCancellation = true;
+    await expect(
+      deleteOrganization(deps, owner.userId, owner.first.organizationId),
+    ).rejects.toThrow("provider unavailable");
+    // The failed deletion left the organization and its payable session, so the trial stays held.
+    await service.selectFunding(owner.second.actor, "byok");
+    const second = await customerOf(owner.second.organizationId);
+    expect(provider.byokCheckouts.get(second)?.trialDays).toBeUndefined();
+    provider.failCancellation = false;
+    await deleteOrganization(deps, owner.userId, owner.first.organizationId);
+    // The successful cancellation expired that session, so its hold went with it.
+    await service.selectFunding(owner.second.actor, "byok");
+    expect(provider.byokCheckouts.get(second)?.trialDays).toBe(TRIAL_DAYS);
   });
 });

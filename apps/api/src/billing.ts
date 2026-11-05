@@ -31,6 +31,7 @@ import {
   createBillingAccount,
   creditAccount,
   expireModelCredits,
+  extendByokTrialCheckout,
   hasBillingAccess,
   hasModelAccess,
   MICROS_PER_DOLLAR,
@@ -40,6 +41,8 @@ import {
   organizationSeatCount,
   ownedBillingAccounts,
   reconcileCreditPurchase,
+  releaseByokTrialCheckout,
+  releaseByokTrialCheckouts,
   releaseCheckoutLease,
   replaceBillingCustomer,
   reserveByokTrialCheckout,
@@ -365,22 +368,29 @@ export function createBillingService(deps: {
     ]);
     // One trial per owner: the session this opens holds it while it can still be paid, so
     // another organization of the same owner cannot take it in the meantime.
-    const withTrial =
-      byokTrialAvailable(account, credits, hadTrial) &&
-      (await reserveByokTrialCheckout(prisma, organizationId));
+    const hold = byokTrialAvailable(account, credits, hadTrial)
+      ? await reserveByokTrialCheckout(prisma, organizationId)
+      : null;
     try {
-      return await openCheckout(actor, account, true, (customerId) =>
+      const checkout = await openCheckout(actor, account, true, (customerId) =>
         provider.createByokCheckout!({
           customerId,
           amountCents,
           interval,
           tier,
-          ...(withTrial ? { trialDays: days } : {}),
+          ...(hold ? { trialDays: days } : {}),
           successUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
           cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
         }),
       );
+      // The session starts expiring at its creation, so the hold lasts from there too.
+      if (hold) await extendByokTrialCheckout(prisma, organizationId, hold);
+      return checkout;
     } catch (error) {
+      // No session came out of this attempt, so its hold goes back; an earlier or newer
+      // payable session's hold keeps its own expiry and survives.
+      if (hold && !(error instanceof BillingCheckoutCompletedError))
+        await releaseByokTrialCheckout(prisma, organizationId, hold);
       if (!(error instanceof BillingCheckoutCompletedError)) throw error;
       await sync(account.customerId);
       throw new ORPCError("CONFLICT", { message: "Manage your existing subscription in Billing" });
@@ -720,7 +730,11 @@ export function createBillingService(deps: {
 
     async cancelForDeletedOrganization(organizationId) {
       const account = await billingAccountForOrganization(prisma, organizationId);
-      if (account) await cancel(account);
+      if (!account) return;
+      await cancel(account);
+      // The cancellation expired the organization's open checkout sessions, so their hold on
+      // the owners' trial goes; a failed cancellation keeps it until a retry succeeds.
+      await releaseByokTrialCheckouts(prisma, organizationId);
     },
   };
 }
