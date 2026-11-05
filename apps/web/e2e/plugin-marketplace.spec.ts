@@ -36,6 +36,7 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   await dialog.getByRole("textbox", { name: "Search apps", exact: true }).fill("planning");
   const row = dialog.getByTestId("plugin-results").getByTestId("plugin-row");
   await expect(row).toHaveCount(1);
+  await captureScreenshot(page, testInfo, "integrations-plugin-search");
   await row.getByRole("button", { name: "Add", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "Planning Notes", exact: true })).toBeVisible();
   await expect(
