@@ -42,9 +42,13 @@ test("a routine that already ran is not put back when the thread refresh fails",
   const ran = page.waitForResponse(
     (response) => response.url().includes("/rpc/threads/sendWithRoutines") && response.ok(),
   );
+  const refreshFailed = page.waitForEvent("requestfailed", (request) =>
+    request.url().includes("/rpc/threads/get"),
+  );
   await page.route("**/rpc/threads/get", (route) => route.abort("internetdisconnected"));
   await composer.press("Enter");
   await ran;
+  await refreshFailed;
 
   // The server took the send and the routine ran, so the send counts as done even though
   // the refresh after it failed: no error, and nothing comes back for a retry that would
