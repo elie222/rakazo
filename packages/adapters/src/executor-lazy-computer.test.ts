@@ -399,6 +399,7 @@ describe("turn memory through the executor", () => {
           sourceMemoryIds: [],
           scope: "shared",
           target: "initial-connection-target",
+          buildSnapshot: expect.any(Function),
         },
       }),
     );
@@ -441,7 +442,11 @@ describe("turn memory through the executor", () => {
     expect(finalizeRun).toHaveBeenCalledWith(
       expect.objectContaining({
         outcome: "completed",
-        memoryCapture: { sourceMemoryIds: [], scope: "shared" },
+        memoryCapture: {
+          sourceMemoryIds: [],
+          scope: "shared",
+          buildSnapshot: expect.any(Function),
+        },
       }),
     );
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "memory.capture" }));

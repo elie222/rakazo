@@ -282,18 +282,38 @@ function runSourceRole(
 }
 
 /**
- * A steering continuation carries a fixed placeholder as its task prompt, so the text the
- * user actually typed has to come from the thread. History arrives newest-first, and the
- * message that steered this run is the newest user turn, so no extra query is needed.
+ * Resolve steering placeholders before recall. Short replies may depend on the preceding
+ * assistant turn; use only that turn, from this bot in the same owner-scoped thread.
+ * Length is a conservative query-shape bound, not an intent or meaning classifier.
  */
-function steeringQueryText(
-  messages: ReadonlyArray<{ role: string; blocks: unknown }>,
+function turnMemoryQueryText(
+  messages: Awaited<ReturnType<typeof loadRunHistoryMessages>>,
   prompt: string,
+  run: { threadId: string; botId: string; sourceMessageId?: string | null },
+  secrets: readonly string[],
 ): string {
-  if (!prompt.includes(STEERING_CONTINUATION_PROMPT)) return "";
-  const steering = messages.find((message) => message.role === "user");
-  if (!steering) return "";
-  return blocksToAgentHistoryText(steering.blocks as MessageBlock[]).trim();
+  const steering = prompt.includes(STEERING_CONTINUATION_PROMPT);
+  const sourceIndex = messages.findIndex(
+    (message) =>
+      message.threadId === run.threadId &&
+      message.role === "user" &&
+      (steering || message.id === run.sourceMessageId),
+  );
+  const source = messages[sourceIndex];
+  const sourceText =
+    steering && source ? blocksToAgentHistoryText(source.blocks as MessageBlock[]) : "";
+  const rawQuery = sourceText.trim() ? sourceText : prompt;
+  const query = redactSecrets(rawQuery, secrets).trim();
+  if (!rawQuery.trim() || rawQuery.trim().length > 80 || sourceIndex < 0) return query;
+  // History is newest-first. Never borrow a later reply or skip a different bot's reply
+  // to find older, possibly unrelated context in a group conversation.
+  const previous = messages.slice(sourceIndex + 1).find((message) => message.role === "bot");
+  if (previous?.threadId !== run.threadId || previous.botId !== run.botId) return query;
+  // Redact before trimming/slicing, which could otherwise expose only part of a credential.
+  const text = redactSecrets(blocksToAgentHistoryText(previous.blocks as MessageBlock[]), secrets)
+    .trim()
+    .slice(-1200);
+  return text ? `${query}\n\nPrevious assistant reply (historical context):\n${text}` : query;
 }
 
 export function createRunExecutor(executorDeps: ExecutorDeps) {
@@ -841,9 +861,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           sourceMessageId: run.sourceMessageId,
           sourceRole: runSourceRole(messages, run.sourceMessageId),
         });
-        // A steering continuation's task prompt is a fixed placeholder, so recall has to
-        // ask about what the user actually typed.
-        const turnMemoryQuery = steeringQueryText(messages, task.prompt) || task.prompt;
+        const turnMemoryQuery = turnMemoryQueryText(messages, task.prompt, run, runSecrets);
         let history = compactedHistory.history.map(({ id, role, content, createdAt, speaker }) => ({
           id,
           createdAt,

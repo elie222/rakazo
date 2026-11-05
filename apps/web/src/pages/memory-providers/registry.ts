@@ -45,10 +45,10 @@ export const MEMORY_PROVIDER_SETTINGS: readonly MemoryProviderSettingsRegistrati
   },
   {
     id: "memmy",
-    name: "Memmy",
+    name: "Self-hosted",
     SettingsForm: MemmySettingsForm,
     // The provider is self-hosted, so the endpoint is what tells two installs apart.
-    connectedLabel: (config) => config.settings.baseUrl ?? "Memmy",
+    connectedLabel: (config) => config.settings.baseUrl ?? "Self-hosted",
   },
   {
     id: "honcho",

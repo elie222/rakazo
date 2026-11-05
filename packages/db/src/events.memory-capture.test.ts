@@ -7,6 +7,9 @@ import { provisionMessagingIdentity } from "./messaging.js";
 import { asSystem, runAsSystem } from "./row-security.js";
 import { runCodeKind, runCodeSpentKind, runLoginKind, runSecretKind } from "./run-secrets.js";
 
+const snapshot = "synthetic-protected-capture";
+const buildSnapshot = async () => snapshot;
+
 function finalizationFixture() {
   const tx = {
     $queryRaw: vi.fn(async () => []),
@@ -62,7 +65,7 @@ describe("finalizeRun turn-memory capture", () => {
       ...input,
       outcome: "completed",
       blocks: [],
-      memoryCapture: { sourceMemoryIds: [], scope: "isolated" },
+      memoryCapture: { buildSnapshot, sourceMemoryIds: [], scope: "isolated" },
     });
     expect(tx.run.update).not.toHaveBeenCalled();
     expect(tx.secret.deleteMany).toHaveBeenCalled();
@@ -86,6 +89,7 @@ describe("finalizeRun turn-memory capture", () => {
             sourceMemoryIds: [...sourceMemoryIds],
             scope,
             target: "synthetic-connection-target",
+            buildSnapshot,
           },
         }),
       ).resolves.toEqual({ continuationRunId: null });
@@ -99,6 +103,7 @@ describe("finalizeRun turn-memory capture", () => {
           memoryCaptureScope: scope,
           memoryCaptureTarget: "synthetic-connection-target",
           memoryRecallIds: sourceMemoryIds,
+          memoryCapturePayload: snapshot,
         },
       });
       expect(completedAt).toBeInstanceOf(Date);
@@ -112,7 +117,7 @@ describe("finalizeRun turn-memory capture", () => {
       ...input,
       outcome: "failed",
       error: "runtime failed",
-      memoryCapture: { sourceMemoryIds: ["memory-a"], scope: "isolated" },
+      memoryCapture: { buildSnapshot, sourceMemoryIds: ["memory-a"], scope: "isolated" },
     });
 
     expect(tx.run.update).not.toHaveBeenCalled();
@@ -140,14 +145,14 @@ describe("finalizeRun turn-memory capture", () => {
         ...input,
         outcome: "completed",
         blocks: [],
-        memoryCapture: { sourceMemoryIds: ["memory-a"], scope: "isolated" },
+        memoryCapture: { buildSnapshot, sourceMemoryIds: ["memory-a"], scope: "isolated" },
       }),
     ).resolves.toBe(false);
 
     expect(tx.run.update).not.toHaveBeenCalled();
   });
 
-  it("propagates a failure after the capture write without publishing a completion", async () => {
+  it("does not build capture when attempt finalization fails", async () => {
     const { prisma, tx, input } = finalizationFixture();
     tx.attempt.updateMany.mockResolvedValue({ count: 0 });
     const publish = vi.fn(async () => undefined);
@@ -159,13 +164,13 @@ describe("finalizeRun turn-memory capture", () => {
           ...input,
           outcome: "completed",
           blocks: [],
-          memoryCapture: { sourceMemoryIds: ["memory-a"], scope: "shared" },
+          memoryCapture: { buildSnapshot, sourceMemoryIds: ["memory-a"], scope: "shared" },
         },
         { publish } as never,
       ),
     ).rejects.toThrow("Active run attempt was not available to finalize");
 
-    expect(tx.run.update).toHaveBeenCalledOnce();
+    expect(tx.run.update).not.toHaveBeenCalled();
     expect(tx.event.create).not.toHaveBeenCalled();
     expect(publish).not.toHaveBeenCalled();
   });
@@ -272,7 +277,7 @@ describePostgres("turn-memory capture commits and rollback (PostgreSQL)", () => 
         ...input,
         outcome: "completed",
         blocks: [],
-        memoryCapture: { sourceMemoryIds: [], scope: "isolated" },
+        memoryCapture: { buildSnapshot, sourceMemoryIds: [], scope: "isolated" },
       });
       const run = await system.run.findUniqueOrThrow({ where: { id: input.runId } });
       expect(run.status).toBe("completed");
@@ -293,7 +298,7 @@ describePostgres("turn-memory capture commits and rollback (PostgreSQL)", () => 
               ...input,
               outcome: "failed",
               error: "runtime failed",
-              memoryCapture: { sourceMemoryIds: ["memory-a"], scope: "isolated" },
+              memoryCapture: { buildSnapshot, sourceMemoryIds: ["memory-a"], scope: "isolated" },
             }
           : {
               ...input,
@@ -305,6 +310,7 @@ describePostgres("turn-memory capture commits and rollback (PostgreSQL)", () => 
                       sourceMemoryIds: ["memory-a"],
                       scope: mode,
                       target: "fixture-target",
+                      buildSnapshot,
                     },
                   }
                 : {}),
@@ -319,7 +325,7 @@ describePostgres("turn-memory capture commits and rollback (PostgreSQL)", () => 
       expect(run.memoryCapturedAt).toBeNull();
       expect(run.memoryCaptureScope).toEqual(captures ? mode : null);
       expect(run.memoryCaptureTarget).toEqual(captures ? "fixture-target" : null);
-      expect(run.memoryCapturePayload).toBeNull();
+      expect(run.memoryCapturePayload).toEqual(captures ? snapshot : null);
       expect(run.memoryRecallIds).toEqual(captures ? ["memory-a"] : null);
     },
   );
@@ -335,7 +341,7 @@ describePostgres("turn-memory capture commits and rollback (PostgreSQL)", () => 
           attemptId: "missing-attempt",
           outcome: "completed",
           blocks: [],
-          memoryCapture: { sourceMemoryIds: ["memory-a"], scope },
+          memoryCapture: { buildSnapshot, sourceMemoryIds: ["memory-a"], scope },
         }),
       ).rejects.toThrow("Active run attempt was not available to finalize");
 

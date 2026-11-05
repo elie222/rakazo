@@ -16,11 +16,17 @@ import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
 import { ContentKeyRing, ciphertextKeyId, LocalKeyProvider, Prisma } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
+import {
+  commandCredentialRedactions,
+  loadBotCommandEnvironment,
+  loadLoginPasswordRedactions,
+} from "./bot-secrets.js";
 import { createJobReconciler } from "./job-reconciler.js";
 import type { MemmySourceTurnBody } from "./memmy-memory-client.js";
 import { createMemmyTurnMemory, MEMMY_PROVIDER_ID, memmyCaptureBody } from "./memmy-turn-memory.js";
 import type { CaptureTurnRunRow, MemoryCapturePrisma } from "./memory-capture.js";
 import {
+  buildCompletedTurnMemorySnapshot,
   buildTurnMemoryCapture,
   captureFinishedTurn,
   MEMORY_CAPTURE_ANSWER_MAX_CHARS,
@@ -149,6 +155,24 @@ function makeFakeCapturePrisma(options: {
 } {
   const initial = options.runs ?? (options.run === null ? [] : [options.run ?? makeRunRow()]);
   const rows = new Map(initial.map((run) => [run.id, structuredClone(run)]));
+  // Workers now receive snapshots created by completion, never raw messages to freeze.
+  for (const run of rows.values()) {
+    if (run.memoryCapturePayload == null) {
+      run.memoryCapturePayload = buildTurnMemoryCapture(
+        run,
+        {
+          sourceMessage:
+            options.sourceMessage === undefined
+              ? { seq: 4, blocks: [{ kind: "text", text: "How do we deploy Rakazo?" }] }
+              : options.sourceMessage,
+          botMessages: options.botMessages ?? [
+            { blocks: [{ kind: "text", text: "Use the release pipeline." }], clientNonce: null },
+          ],
+        },
+        run.memoryCaptureScope === "shared" ? "shared" : "isolated",
+      );
+    }
+  }
   const runUpdate = vi.fn<MemoryCapturePrisma["run"]["update"]>(async ({ where, data }) => {
     const row = rows.get(where.id);
     if (!row) throw new Error(`Missing fixture run: ${where.id}`);
@@ -234,6 +258,22 @@ function makeFakeCapturePrisma(options: {
     purchase: { findMany: vi.fn(async () => []) },
   });
   return { prisma, runUpdate, rows };
+}
+
+async function freezeFixture(
+  prisma: MemoryCapturePrisma,
+  rows: Map<string, CaptureTurnRunRow>,
+  secrets: string[] = [],
+) {
+  const run = rows.get("run-123")!;
+  run.memoryCapturePayload = await buildCompletedTurnMemorySnapshot(
+    prisma as unknown as PrismaClient,
+    prisma as unknown as Prisma.TransactionClient,
+    run.id,
+    run.memoryCaptureScope === "shared" ? "shared" : "isolated",
+    run.memoryRecallIds as string[],
+    secrets,
+  );
 }
 
 function makeCaptureKeyRing() {
@@ -375,7 +415,7 @@ describe("turn-memory wiring", () => {
       lifecycle.captureTurn.mock.calls[0]![0],
     );
     expect(rows.get("run-2")?.memoryCapturedAt).toBeNull();
-    expect(rows.get("run-2")?.memoryCapturePayload).toBeNull();
+    expect(rows.get("run-2")?.memoryCapturePayload).not.toBeNull();
   });
 
   it("drains shared turns independently for each bot while excluding other scopes and threads", async () => {
@@ -780,11 +820,7 @@ describe("turn-memory wiring", () => {
     });
     await captureFinishedTurn({ prisma, memoryProviders: makeResolver(lifecycle) }, "run-123");
     expect(lifecycle.captureTurn.mock.calls[0]![0].scope).toBe("shared");
-    expect(prisma.run.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: { memoryCapturePayload: expect.objectContaining({ scope: "shared" }) },
-      }),
-    );
+    expect(prisma.run.updateMany).not.toHaveBeenCalled();
   });
 
   it("replays the frozen redacted payload after an ACK loss despite secret and message changes", async () => {
@@ -809,6 +845,7 @@ describe("turn-memory wiring", () => {
     const lifecycle = makeFakeLifecycle({ status: "existing" });
     lifecycle.captureTurn.mockResolvedValueOnce({ status: "retryable", reason: "ack_lost" });
     const deps = { prisma, memoryProviders: makeResolver(lifecycle), secretStore };
+    await freezeFixture(prisma, rows, [secret]);
 
     await expect(captureFinishedTurn(deps, "run-123")).rejects.toThrow("retryable: run-123");
     const first = JSON.stringify(lifecycle.captureTurn.mock.calls[0]![0]);
@@ -836,28 +873,25 @@ describe("turn-memory wiring", () => {
         .mocked(prisma.run.updateMany)
         .mock.calls.filter(([args]) => (args as any).data.memoryCapturePayload !== undefined)
         .length,
-    ).toBe(1);
+    ).toBe(0);
     expect(rows.get("run-123")?.memoryCapturedAt).toBeInstanceOf(Date);
     expect(rows.get("run-123")?.memoryCapturePayload).toBeNull();
   });
 
-  it("uses the persisted winner when another worker wins the snapshot CAS", async () => {
+  it("uses only the completion snapshot without any worker snapshot CAS", async () => {
     const lifecycle = makeFakeLifecycle();
     const { prisma, rows } = makeFakeCapturePrisma({});
     const winner = buildTurnMemoryCapture(makeRunRow(), {
       sourceMessage: { seq: 4, blocks: [{ kind: "text", text: "Winner's frozen query" }] },
       botMessages: [{ blocks: [{ kind: "text", text: "Winner's frozen answer" }] }],
     })!;
-    vi.mocked(prisma.run.updateMany).mockImplementationOnce(async ({ where }) => {
-      expect(where.memoryCapturePayload?.equals).toBe(Prisma.DbNull);
-      rows.get(where.id)!.memoryCapturePayload = structuredClone(winner);
-      return { count: 0 };
-    });
+    rows.get("run-123")!.memoryCapturePayload = structuredClone(winner);
 
     await captureFinishedTurn({ prisma, memoryProviders: makeResolver(lifecycle) }, "run-123");
 
     expect(lifecycle.captureTurn).toHaveBeenCalledOnce();
     expect(lifecycle.captureTurn.mock.calls[0]![0]).toEqual(winner);
+    expect(prisma.run.updateMany).not.toHaveBeenCalled();
     expect(rows.get("run-123")?.memoryCapturePayload).toBeNull();
   });
 
@@ -865,18 +899,17 @@ describe("turn-memory wiring", () => {
     const lifecycle = makeFakeLifecycle();
     const { prisma, rows, runUpdate } = makeFakeCapturePrisma({});
     const capturedAt = new Date("2026-11-04T10:02:00Z");
-    vi.mocked(prisma.run.updateMany).mockImplementationOnce(async ({ where }) => {
-      expect(where.memoryCapturedAt).toBeNull();
-      expect(where.memoryCapturePayload?.equals).toBe(Prisma.DbNull);
-      const row = rows.get(where.id)!;
+    const resolver = makeResolver(lifecycle);
+    vi.mocked(resolver.resolveTurnMemory).mockImplementationOnce(async () => {
+      const row = rows.get("run-123")!;
       row.memoryCapturedAt = capturedAt;
       row.memoryCapturePayload = null;
-      return { count: 0 };
+      return { kind: "configured", lifecycle, defaultScope: "isolated" };
     });
 
-    await captureFinishedTurn({ prisma, memoryProviders: makeResolver(lifecycle) }, "run-123");
+    await captureFinishedTurn({ prisma, memoryProviders: resolver }, "run-123");
 
-    expect(prisma.run.updateMany).toHaveBeenCalledOnce();
+    expect(prisma.run.updateMany).not.toHaveBeenCalled();
     expect(lifecycle.captureTurn).not.toHaveBeenCalled();
     expect(runUpdate).not.toHaveBeenCalled();
     expect(rows.get("run-123")?.memoryCapturedAt).toEqual(capturedAt);
@@ -893,6 +926,7 @@ describe("turn-memory wiring", () => {
     const keys = makeCaptureKeyRing();
     let ring = keys.ring;
     Object.assign(prisma, { $contentEncryption: () => ({ ring }) });
+    await freezeFixture(prisma, rows);
     const deps = { prisma, memoryProviders: makeResolver(lifecycle) };
 
     await expect(captureFinishedTurn(deps, "run-123")).rejects.toThrow("retryable: run-123");
@@ -925,7 +959,7 @@ describe("turn-memory wiring", () => {
         .mocked(prisma.run.updateMany)
         .mock.calls.filter(([args]) => (args as any).data.memoryCapturePayload !== undefined)
         .length,
-    ).toBe(1);
+    ).toBe(0);
     expect(rows.get("run-123")?.memoryCapturedAt).toBeInstanceOf(Date);
     expect(rows.get("run-123")?.memoryCapturePayload).toBeNull();
   });
@@ -939,6 +973,7 @@ describe("turn-memory wiring", () => {
       const keys = makeCaptureKeyRing();
       const original = makeFakeCapturePrisma({});
       Object.assign(original.prisma, { $contentEncryption: () => ({ ring: keys.ring }) });
+      await freezeFixture(original.prisma, original.rows);
       await expect(
         captureFinishedTurn(
           {
@@ -980,6 +1015,7 @@ describe("turn-memory wiring", () => {
     const keys = makeCaptureKeyRing();
     const { prisma, rows } = makeFakeCapturePrisma({});
     Object.assign(prisma, { $contentEncryption: () => ({ ring: keys.ring }) });
+    await freezeFixture(prisma, rows);
     await expect(
       captureFinishedTurn(
         {
@@ -1091,7 +1127,7 @@ describe("turn-memory wiring", () => {
     );
     const command = await secretStore.put(token, context, { recordId: "command-capture" });
     const lifecycle = makeFakeLifecycle();
-    const { prisma } = makeFakeCapturePrisma({
+    const { prisma, rows } = makeFakeCapturePrisma({
       sourceMessage: { seq: 0, blocks: [{ kind: "text", text: `${password} ${token}` }] },
       botMessages: [
         { blocks: [{ kind: "text", text: `${password} ${encodeURIComponent(token)}` }] },
@@ -1107,6 +1143,13 @@ describe("turn-memory wiring", () => {
       },
     });
     const load = vi.spyOn(secretStore, "load");
+    const client = prisma as unknown as PrismaClient;
+    const owner = { userId: "user-1", spaceId: "space-1", botId: "bot-1" };
+    const [passwords, environment] = await Promise.all([
+      loadLoginPasswordRedactions(client, secretStore, owner),
+      loadBotCommandEnvironment(client, secretStore, owner),
+    ]);
+    await freezeFixture(prisma, rows, [...passwords, ...commandCredentialRedactions(environment)]);
 
     await captureFinishedTurn(
       { prisma, memoryProviders: makeResolver(lifecycle), secretStore },

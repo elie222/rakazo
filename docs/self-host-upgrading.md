@@ -5,6 +5,11 @@ for you.
 
 ## Upgrade
 
+Before first adopting turn-memory capture on an existing database, follow the
+[preapply and resolve procedure](./turn-memory-capture-adoption.md). Its original
+index migration blocks writes unless preapplied concurrently; adding the later
+pending-only index does not remove that first-upgrade requirement.
+
 A Compose deployment on a published release tag upgrades by moving that tag:
 
 ```bash

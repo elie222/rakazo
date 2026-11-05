@@ -7,6 +7,7 @@ import {
 } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 import { CrossSpaceCommunicationBlockedError } from "./cross-space-communication.js";
 import type { AnswerRunInput } from "./events.js";
 import {
@@ -538,7 +539,7 @@ describe("thread lock transaction budget", () => {
           })
           .mockResolvedValue({ nextEventSeq: 1 }),
       },
-      run: { findMany: vi.fn().mockResolvedValue([]) },
+      run: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn() },
       computerExecutionLease: { updateMany: vi.fn() },
       message: { deleteMany: vi.fn() },
       event: { deleteMany: vi.fn(), create: vi.fn().mockResolvedValue(event(1)) },
@@ -553,6 +554,10 @@ describe("thread lock transaction budget", () => {
     });
 
     expect($transaction).toHaveBeenCalledWith(expect.any(Function), budget);
+    expect(tx.run.updateMany).toHaveBeenCalledWith({
+      where: { spaceId: "workspace-1", threadId: "thread-1", memoryCapturedAt: null },
+      data: { memoryCaptureDueAt: null, memoryCapturePayload: Prisma.DbNull },
+    });
   });
 
   it("pauses a run for input with the explicit budget", async () => {
@@ -4921,6 +4926,7 @@ describe("clearThread", () => {
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
           where.id.in.map((id) => ({ id })),
         ),
+        updateMany: vi.fn(),
       },
       attempt: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },
@@ -4969,6 +4975,7 @@ describe("clearThread", () => {
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
           where.id.in.map((id) => ({ id })),
         ),
+        updateMany: vi.fn(),
       },
       attempt: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },
@@ -5058,6 +5065,7 @@ describe("clearThread", () => {
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
           where.id.in.map((id) => ({ id })),
         ),
+        updateMany: vi.fn(),
       },
       attempt: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },

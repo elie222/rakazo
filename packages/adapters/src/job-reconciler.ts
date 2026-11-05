@@ -146,9 +146,52 @@ export function createJobReconciler(
   let lastCompletedAt = Date.now();
   let stuckCursor: Cursor | undefined;
   let runCursor: Cursor | undefined;
+  let memoryCaptureCursor: Cursor | undefined;
   let routineCursor: Cursor | undefined;
   let controlCursor: ControlCursor | undefined;
   let controlScanDeadline: Date | undefined;
+
+  const reconcileMemoryCaptures = async () => {
+    for (let page = 0; page < maxPagesPerPass; page += 1) {
+      if (page > 0) {
+        await setImmediate();
+        if (stopping) return;
+        if (deps.leadership && !(await deps.leadership.tryAcquire())) return;
+      }
+      const pending = await deps.prisma.run.findMany({
+        where: {
+          status: "completed",
+          memoryCaptureDueAt: { not: null },
+          memoryCapturedAt: null,
+          ...(memoryCaptureCursor
+            ? {
+                OR: [
+                  { memoryCaptureDueAt: { gt: memoryCaptureCursor.at } },
+                  {
+                    memoryCaptureDueAt: memoryCaptureCursor.at,
+                    id: { gt: memoryCaptureCursor.id },
+                  },
+                ],
+              }
+            : {}),
+        },
+        orderBy: [{ memoryCaptureDueAt: "asc" }, { id: "asc" }],
+        take: batchSize,
+        // Match the worker's lock/drain identity, including independent bots in a group.
+        distinct: ["threadId", "botId"],
+        select: { id: true, memoryCaptureDueAt: true },
+      });
+      // Failed or paused connections leave old rows pending. Advance only after every
+      // publication settles, so neither those rows nor one failed enqueue starves a page.
+      await publishAll(pending.map((run) => deps.jobs.enqueue(memoryCaptureJob(run.id))));
+      const last = pending.at(-1);
+      memoryCaptureCursor =
+        pending.length === batchSize && last?.memoryCaptureDueAt
+          ? { at: last.memoryCaptureDueAt, id: last.id }
+          : undefined;
+      if (!memoryCaptureCursor) return;
+    }
+  };
 
   const reconcileOnce = async () => {
     if (reconciling) return reconciling;
@@ -201,7 +244,7 @@ export function createJobReconciler(
             ],
           }
         : undefined;
-      const [runs, dueOutbound, unmirroredMessagingRuns, uncapturedMemoryRuns] = await Promise.all([
+      const [runs, dueOutbound, unmirroredMessagingRuns] = await Promise.all([
         deps.prisma.run.findMany({
           where: {
             AND: [
@@ -240,18 +283,7 @@ export function createJobReconciler(
           take: batchSize,
           select: { id: true },
         }),
-        deps.prisma.run.findMany({
-          where: {
-            status: "completed",
-            memoryCaptureDueAt: { not: null },
-            memoryCapturedAt: null,
-          },
-          orderBy: [{ memoryCaptureDueAt: "asc" }, { id: "asc" }],
-          take: batchSize,
-          // Match the worker's lock/drain identity, including independent bots in a group.
-          distinct: ["threadId", "botId"],
-          select: { id: true },
-        }),
+        reconcileMemoryCaptures(),
       ]);
 
       // Frozen evidence is released by the acknowledgement/terminal path, not by age.
@@ -349,7 +381,6 @@ export function createJobReconciler(
           ),
         ...(dueOutbound ? [deps.jobs.enqueue(messagingDeliverJob())] : []),
         ...unmirroredMessagingRuns.map((run) => deps.jobs.enqueue(messagingDeliverJob(run.id))),
-        ...(uncapturedMemoryRuns ?? []).map((run) => deps.jobs.enqueue(memoryCaptureJob(run.id))),
       ]);
 
       const lastRun = runs.at(-1);

@@ -174,7 +174,7 @@ describe("createJobReconciler", () => {
       orderBy: [{ memoryCaptureDueAt: "asc" }, { id: "asc" }],
       take: 100,
       distinct: ["threadId", "botId"],
-      select: { id: true },
+      select: { id: true, memoryCaptureDueAt: true },
     });
     expect(enqueue).toHaveBeenCalledWith({
       name: "memory.capture",

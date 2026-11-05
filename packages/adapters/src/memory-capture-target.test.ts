@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +19,11 @@ async function captureFixture() {
   };
   const memoryProviders = new SpaceMemoryProviderResolver(
     {
-      spaceMemoryConfig: { findUnique: vi.fn(async () => config) },
+      spaceMemoryConfig: {
+        findUnique: vi.fn(async () => config),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        updateManyAndReturn: vi.fn(async () => [{ captureBackoffFailures: 0 }]),
+      },
     } as unknown as PrismaClient,
     { load: vi.fn(async () => JSON.stringify(credentials)) } as never,
   );
@@ -93,6 +98,26 @@ describe("turn-memory capture connection identity", () => {
       expect(JSON.stringify(sink.events)).toContain("capture_connection_changed");
     },
   );
+
+  it("never replays a legacy frozen snapshot whose completion-time redaction is unknown", async () => {
+    const { deps, run, config, fetchImpl } = await captureFixture();
+    // The prior revision froze in a background worker. A frozen payload alone cannot
+    // establish that a credential rotated before that worker ran was redacted.
+    run.memoryCaptureTarget = createHash("sha256")
+      .update(
+        JSON.stringify([
+          config.provider,
+          Object.keys(config.settings)
+            .sort()
+            .map((key) => [key, config.settings[key as keyof typeof config.settings]]),
+        ]),
+      )
+      .digest("hex");
+    await captureFinishedTurn(deps, run.id);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(run.memoryCapturedAt).toBeInstanceOf(Date);
+    expect(run.memoryCapturePayload).toBeNull();
+  });
 
   it("replays the frozen turn to the same target after credential rotation", async () => {
     const { deps, run, config, credentials, fetchImpl } = await captureFixture();

@@ -7,6 +7,7 @@ import type {
   TurnMemoryLifecycle,
   TurnMemoryRecall,
 } from "@rakazo/adapter-kit";
+import { encodeLoginSecret } from "@rakazo/contracts";
 import { isOwnerStartedRun, STEERING_CONTINUATION_PROMPT } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -20,6 +21,7 @@ import { turnMemoryCaptureEligible } from "./run-context.js";
 import { threadContextForRun } from "./run-instructions.js";
 import { createReplyState } from "./run-progress.js";
 import { completeRun, consumeRunEvents } from "./run-turn.js";
+import { EncryptedSecretStore } from "./secrets.js";
 import { withModelRoles } from "./testing/model-roles.js";
 import { DEFAULT_TURN_MEMORY_BUDGET_CHARS, formatTurnMemoryContext } from "./turn-memory-prompt.js";
 
@@ -76,11 +78,12 @@ function makeExecutorFixture(options: {
   const historyRows = Array.from({ length: historyCount }, (_, idx) => {
     const seq = idx + 1;
     const isSource = idx === historyCount - 1 && sourceMessageId;
+    const role = isSource ? sourceRole : idx % 2 === 0 ? "user" : "bot";
     return {
       id: isSource ? sourceMessageId : `msg-${seq}`,
       threadId: "thread-1",
-      role: isSource ? sourceRole : idx % 2 === 0 ? "user" : "bot",
-      botId: isSource && sourceRole === "bot" ? "bot-sender" : null,
+      role,
+      botId: role === "bot" ? (isSource ? "bot-sender" : "bot-1") : null,
       runId: isSource ? null : `run-prev-${seq}`,
       seq,
       createdAt: new Date(Date.UTC(2026, 10, 4, 10, 0, seq)),
@@ -133,6 +136,7 @@ function makeExecutorFixture(options: {
     yield { type: "text-delta" as const, text: "Assistant final answer." };
     yield { type: "done" as const, text: "Assistant final answer." };
   });
+  const secretStore = new EncryptedSecretStore("test-only-encryption-key");
 
   const prisma = {
     run: {
@@ -292,6 +296,7 @@ function makeExecutorFixture(options: {
     },
     jobs: { enqueue },
     notifications: { send: vi.fn(async () => undefined) },
+    secretStore,
     secrets: [],
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
@@ -304,6 +309,7 @@ function makeExecutorFixture(options: {
     enqueue,
     semanticRecall,
     sourceRow,
+    secretStore,
   };
 }
 
@@ -765,7 +771,11 @@ describe("R5 TDD audit: turn-memory-prompt, run-context, executor, run-turn", ()
       expect(finalizeRun).toHaveBeenCalledWith(
         expect.objectContaining({
           outcome: "completed",
-          memoryCapture: { sourceMemoryIds: [], scope: "isolated" },
+          memoryCapture: {
+            sourceMemoryIds: [],
+            scope: "isolated",
+            buildSnapshot: expect.any(Function),
+          },
         }),
       );
       expect(enqueue).toHaveBeenCalledWith(
@@ -843,12 +853,218 @@ describe("R5 TDD audit: turn-memory-prompt, run-context, executor, run-turn", ()
       expect(finalizeRun).toHaveBeenCalledWith(
         expect.objectContaining({
           outcome: "completed",
-          memoryCapture: { sourceMemoryIds: ["mem-example-1"], scope: "isolated" },
+          memoryCapture: {
+            sourceMemoryIds: ["mem-example-1"],
+            scope: "isolated",
+            buildSnapshot: expect.any(Function),
+          },
         }),
       );
       expect(enqueue).toHaveBeenCalledWith(
         expect.objectContaining({ name: "memory.capture", payload: { runId: "run-1" } }),
       );
     });
+  });
+});
+
+// These assert the retrieval input, not whether a model understands or obeys prose.
+describe("short-reply recall context", () => {
+  it("includes the previous assistant reply for an ordinary short confirmation", async () => {
+    const previous = "I can prepare a rollback plan for the synthetic database migration.";
+    const beforeTurn = vi.fn(async (_request: { query: string }) => ({
+      sections: [],
+      sourceMemoryIds: [],
+    }));
+    const fixture = makeExecutorFixture({
+      trigger: "user",
+      prompt: "yes, do it",
+      sourceMessageText: "yes, do it",
+      historyCount: 3,
+      turnMemory: { beforeTurn, captureTurn: async () => ({ status: "stored" }) },
+    });
+    const rows = await fixture.prisma.message.findMany();
+    const previousReply = rows.find((row) => row.role === "bot")!;
+    previousReply.blocks = [{ kind: "text", text: previous }];
+
+    await fixture.executor.continueRun("run-1", "worker-1");
+
+    expect(beforeTurn).toHaveBeenCalledOnce();
+    expect(beforeTurn.mock.calls[0]![0].query).toContain("yes, do it");
+    expect(beforeTurn.mock.calls[0]![0].query).toContain(previous);
+    // The ordinary history is unchanged: this fixes only the recall query.
+    expect(JSON.stringify(fixture.runtimeRun.mock.calls[0]![0].history)).toContain(previous);
+    expect(fixture.runtimeRun.mock.calls[0]![0].prompt.startsWith("yes, do it\n")).toBe(true);
+    expect(fixture.runtimeRun.mock.calls[0]![0].prompt).not.toContain(previous);
+  });
+
+  it("borrows only a bounded tail from the last assistant reply, not older history", async () => {
+    const beforeTurn = vi.fn(async (_request: { query: string }) => ({
+      sections: [],
+      sourceMemoryIds: [],
+    }));
+    const fixture = makeExecutorFixture({
+      prompt: "继续",
+      sourceMessageText: "继续",
+      historyCount: 5,
+      turnMemory: { beforeTurn, captureTurn: async () => ({ status: "stored" }) },
+    });
+    const rows = await fixture.prisma.message.findMany();
+    const replies = rows.filter((row) => row.role === "bot");
+    replies[0]!.blocks = [
+      { kind: "text", text: `excluded-prefix-${"x".repeat(2000)}${"z".repeat(1200)}` },
+    ];
+    replies[1]!.blocks = [{ kind: "text", text: "unrelated-older-reply" }];
+
+    await fixture.executor.continueRun("run-1", "worker-1");
+
+    expect(beforeTurn).toHaveBeenCalledOnce();
+    const query = beforeTurn.mock.calls[0]![0].query;
+    expect(query).toBe(
+      `继续\n\nPrevious assistant reply (historical context):\n${"z".repeat(1200)}`,
+    );
+    expect(query).not.toContain("excluded-prefix");
+    expect(query).not.toContain("unrelated-older-reply");
+  });
+
+  it("redacts the current query and saved login values before selecting the assistant tail", async () => {
+    const password = "synthetic-saved-password+fixture";
+    const encoded = encodeURIComponent(password);
+    const previous = `${"x".repeat(1400)}${password}${"t".repeat(1180)}`;
+    const beforeTurn = vi.fn(async (_request: { query: string }) => ({
+      sections: [],
+      sourceMemoryIds: [],
+    }));
+    const fixture = makeExecutorFixture({
+      prompt: `yes, ${encoded}`,
+      sourceMessageText: `yes, ${encoded}`,
+      historyCount: 3,
+      turnMemory: { beforeTurn, captureTurn: async () => ({ status: "stored" }) },
+    });
+    const id = "saved-synthetic-login";
+    const stored = await fixture.secretStore.put(
+      encodeLoginSecret({ fields: [{ label: "Password", value: password, hidden: true }] }),
+      {
+        ...fixture.run,
+        operationId: "fixture",
+        traceId: "fixture",
+        signal: new AbortController().signal,
+      },
+      { recordId: id },
+    );
+    vi.mocked(fixture.prisma.vaultCredential.findMany).mockResolvedValue([
+      { id, auth: { type: "login" }, ciphertext: stored.ciphertext } as never,
+    ]);
+    const rows = await fixture.prisma.message.findMany();
+    rows.find((row) => row.role === "bot")!.blocks = [{ kind: "text", text: previous }];
+
+    await fixture.executor.continueRun("run-1", "worker-1");
+
+    expect(beforeTurn).toHaveBeenCalledOnce();
+    const query = beforeTurn.mock.calls[0]![0].query;
+    expect(query).toBe(
+      `yes, [redacted]\n\nPrevious assistant reply (historical context):\n${previous.replaceAll(password, "[redacted]").slice(-1200)}`,
+    );
+    expect(query).not.toContain(encoded);
+    // Slicing before redaction would leave this credential suffix in the query.
+    expect(query).not.toContain(password.slice(-10));
+  });
+
+  it.each([80, 81])("bounds short-reply enrichment at 80 characters (%s)", async (length) => {
+    const prompt = "q".repeat(length);
+    const beforeTurn = vi.fn(async (_request: { query: string }) => ({
+      sections: [],
+      sourceMemoryIds: [],
+    }));
+    const fixture = makeExecutorFixture({
+      prompt,
+      sourceMessageText: prompt,
+      historyCount: 3,
+      turnMemory: { beforeTurn, captureTurn: async () => ({ status: "stored" }) },
+    });
+    await fixture.executor.continueRun("run-1", "worker-1");
+    expect(beforeTurn).toHaveBeenCalledOnce();
+    expect(beforeTurn.mock.calls[0]![0].query).toBe(
+      length === 80
+        ? `${prompt}\n\nPrevious assistant reply (historical context):\nEarlier message 2`
+        : prompt,
+    );
+  });
+
+  it.each([
+    "other-bot",
+    "unknown-bot",
+    "other-thread",
+    "missing-source",
+    "blank-reply",
+    "blank-query",
+  ] as const)("does not borrow history for %s", async (condition) => {
+    const prompt = condition === "blank-query" ? "" : "yes, do it";
+    const beforeTurn = vi.fn(async (_request: { query: string }) => ({
+      sections: [],
+      sourceMemoryIds: [],
+    }));
+    const fixture = makeExecutorFixture({
+      prompt,
+      sourceMessageText: prompt,
+      historyCount: 5,
+      turnMemory: { beforeTurn, captureTurn: async () => ({ status: "stored" }) },
+    });
+    const rows = await fixture.prisma.message.findMany();
+    const previous = rows.find((row) => row.role === "bot")!;
+    if (condition === "other-bot") previous.botId = "other-bot";
+    if (condition === "unknown-bot") previous.botId = null;
+    if (condition === "other-thread") previous.threadId = "other-thread";
+    if (condition === "missing-source") rows.splice(0, 1);
+    if (condition === "blank-reply") previous.blocks = [{ kind: "text", text: "   " }];
+    await fixture.executor.continueRun("run-1", "worker-1");
+    expect(beforeTurn).toHaveBeenCalledOnce();
+    // An older own-bot reply still exists, but must not replace the immediate context.
+    expect(beforeTurn.mock.calls[0]![0].query).toBe(prompt);
+  });
+
+  it("anchors ordinary replies at their source instead of borrowing later assistant output", async () => {
+    const beforeTurn = vi.fn(async (_request: { query: string }) => ({
+      sections: [],
+      sourceMemoryIds: [],
+    }));
+    const fixture = makeExecutorFixture({
+      prompt: "yes, do it",
+      sourceMessageText: "yes, do it",
+      historyCount: 5,
+      turnMemory: { beforeTurn, captureTurn: async () => ({ status: "stored" }) },
+    });
+    const rows = await fixture.prisma.message.findMany();
+    // Replaying a source may see assistant output written after it.
+    rows.unshift({
+      ...rows[1]!,
+      id: "later-reply",
+      seq: 6,
+      blocks: [{ kind: "text", text: "not-prior-context" }],
+    });
+    await fixture.executor.continueRun("run-1", "worker-1");
+    expect(beforeTurn).toHaveBeenCalledOnce();
+    expect(beforeTurn.mock.calls[0]![0].query).toBe(
+      "yes, do it\n\nPrevious assistant reply (historical context):\nEarlier message 4",
+    );
+  });
+
+  it("enriches the actual short steering text instead of the continuation placeholder", async () => {
+    const beforeTurn = vi.fn(async (_request: { query: string }) => ({
+      sections: [],
+      sourceMemoryIds: [],
+    }));
+    const fixture = makeExecutorFixture({
+      trigger: "follow_up",
+      prompt: STEERING_CONTINUATION_PROMPT,
+      sourceMessageText: "好，继续",
+      steeringOnSource: true,
+      historyCount: 3,
+      turnMemory: { beforeTurn, captureTurn: async () => ({ status: "stored" }) },
+    });
+    await fixture.executor.continueRun("run-1", "worker-1");
+    expect(beforeTurn).toHaveBeenCalledOnce();
+    expect(beforeTurn.mock.calls[0]![0].query).toBe(
+      "好，继续\n\nPrevious assistant reply (historical context):\nEarlier message 2",
+    );
   });
 });

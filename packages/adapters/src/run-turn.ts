@@ -35,6 +35,7 @@ import {
   HISTORY_WINDOW_SIZE,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
+import { buildCompletedTurnMemorySnapshot } from "./memory-capture.js";
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
@@ -893,6 +894,15 @@ export async function completeRun(ctx: RunContext) {
           sourceMemoryIds: ctx.memory.injectedIds,
           scope: captureScope,
           ...(ctx.memory.captureTarget ? { target: ctx.memory.captureTarget } : {}),
+          buildSnapshot: (tx: Parameters<typeof buildCompletedTurnMemorySnapshot>[1]) =>
+            buildCompletedTurnMemorySnapshot(
+              deps.prisma,
+              tx,
+              runId,
+              captureScope,
+              ctx.memory.injectedIds,
+              ctx.secrets,
+            ),
         }
       : null;
   const completed = await deps.events.finalizeRun({

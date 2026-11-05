@@ -1720,6 +1720,11 @@ model SpaceMemoryConfig {
   secretId           String   @unique
   secret             Secret   @relation(fields: [secretId], references: [id], onDelete: Cascade)
   defaultMemoryScope String   @default("isolated")
+  // Shared capture probe lease/backoff; separate from evidence target binding.
+  captureBackoffRevision String?
+  captureBackoffFailures Int @default(0)
+  captureBackoffUntil DateTime?
+  captureLeaseToken String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

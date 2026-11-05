@@ -7,6 +7,7 @@ import type {
   TurnMemoryToolCall,
   TurnMemoryToolResult,
 } from "@rakazo/adapter-kit";
+import { MEMORY_CAPTURE_MAX_ATTEMPTS } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { blocksToAgentHistoryText, redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -20,16 +21,8 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
-import {
-  commandCredentialRedactions,
-  loadBotCommandEnvironment,
-  loadLoginPasswordRedactions,
-  loadRunCodeRedactions,
-  loadRunLoginRedactions,
-} from "./bot-secrets.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { isRetryableMemoryError } from "./memory-provider-factory.js";
-import { loadPurchaseRedactions } from "./purchase-service.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
 
 /**
@@ -56,7 +49,7 @@ export const MEMORY_CAPTURE_BATCH_SIZE = 25;
  * as long as its conversation lives. Six attempts is the queue's own budget, so an
  * exhausted turn is retired with a reason instead of blocking every later turn.
  */
-export const MEMORY_CAPTURE_MAX_ATTEMPTS = 6;
+export { MEMORY_CAPTURE_MAX_ATTEMPTS };
 
 export interface CaptureTurnRunRow {
   id: string;
@@ -322,6 +315,42 @@ async function freezeCapturePayload(
 }
 
 /**
+ * Completion-only builder. Read the final reply and source under the finalizer's
+ * thread lock, while the executing turn still owns its full in-memory redactions.
+ * The only durable result is already redacted; no vault values or lists are retained.
+ */
+export async function buildCompletedTurnMemorySnapshot(
+  prisma: PrismaClient,
+  tx: Prisma.TransactionClient,
+  runId: string,
+  scope: DurableMemoryScope,
+  sourceMemoryIds: string[],
+  secrets: string[],
+): Promise<Prisma.InputJsonValue | null> {
+  const run = await readCaptureRun(tx as unknown as MemoryCapturePrisma, runId);
+  if (run?.status !== "completed" || !run.completedAt || !run.sourceMessageId) return null;
+  const [sourceMessage, botMessages] = await Promise.all([
+    tx.message.findFirst({
+      where: { id: run.sourceMessageId, threadId: run.threadId },
+      select: { seq: true, blocks: true },
+    }),
+    tx.message.findMany({
+      where: { threadId: run.threadId, runId: run.id, role: "bot" },
+      orderBy: { seq: "asc" },
+      select: { blocks: true, clientNonce: true },
+    }),
+  ]);
+  const capture = buildTurnMemoryCapture(
+    { ...run, memoryRecallIds: sourceMemoryIds },
+    { sourceMessage, botMessages },
+    scope,
+    secrets,
+  );
+  if (!capture?.query.trim()) return null;
+  return freezeCapturePayload(prisma, run, capturePayloadSchema.parse(capture));
+}
+
+/**
  * The frozen snapshot is this turn's only authoritative copy, so retiring it must stay
  * limited to evidence that can never become readable: a payload the schema rejects, a
  * key that belongs to another space, or a ciphertext that fails authentication. Reading
@@ -470,7 +499,9 @@ async function capturePendingTurns(deps: CaptureDeps, run: CaptureTurnRunRow): P
     });
     if (pending.length === 0) return;
     for (const row of pending) {
-      if ((await captureOneTurn(deps, row.id)) === "retryable") {
+      const outcome = await captureOneTurn(deps, row.id);
+      if (outcome === "deferred") return;
+      if (outcome === "retryable") {
         // Order is what keeps a provider's conversation consistent, so a turn it cannot
         // take stops the drain. captureOneTurn retires a turn that exhausts its attempts,
         // so this cannot block the conversation forever.
@@ -482,7 +513,10 @@ async function capturePendingTurns(deps: CaptureDeps, run: CaptureTurnRunRow): P
   }
 }
 
-async function captureOneTurn(deps: CaptureDeps, runId: string): Promise<"done" | "retryable"> {
+async function captureOneTurn(
+  deps: CaptureDeps,
+  runId: string,
+): Promise<"done" | "retryable" | "deferred"> {
   // The target (connection/thread/bot/scope/turnId) comes from stored rows, never later settings.
   const run = await readCaptureRun(deps.prisma, runId);
   if (!isPendingCapture(run)) return "done";
@@ -520,8 +554,13 @@ async function captureOneTurn(deps: CaptureDeps, runId: string): Promise<"done" 
 async function capturePendingTurn(
   deps: CaptureDeps,
   run: CaptureTurnRunRow,
-): Promise<"done" | "retryable"> {
+): Promise<"done" | "retryable" | "deferred"> {
   if (!run.userId) throw new InvalidCaptureError("missing_capture_owner");
+  // Today's vault cannot prove which values old evidence needs redacting. Never
+  // rebuild a missing snapshot in a background worker, even when credentials exist.
+  if (run.memoryCapturePayload == null) {
+    throw new InvalidCaptureError("missing_capture_snapshot");
+  }
 
   const availability = await deps.memoryProviders.resolveTurnMemory(run.spaceId);
   if (availability.kind === "unavailable") {
@@ -554,91 +593,7 @@ async function capturePendingTurn(
     throw new InvalidCaptureError("capture_connection_changed");
   }
 
-  let capture: TurnMemoryCapture | null;
-  if (run.memoryCapturePayload != null) {
-    capture = await openCapturePayload(deps.prisma, run);
-  } else {
-    const [sourceMessage, botMessages] = await Promise.all([
-      run.sourceMessageId
-        ? deps.prisma.message.findFirst
-          ? deps.prisma.message.findFirst({
-              where: { id: run.sourceMessageId, threadId: run.threadId },
-              select: { seq: true, blocks: true },
-            })
-          : deps.prisma.message.findUnique
-            ? deps.prisma.message.findUnique({
-                where: { id: run.sourceMessageId },
-                select: { seq: true, blocks: true },
-              })
-            : Promise.resolve(null)
-        : Promise.resolve(null),
-      deps.prisma.message.findMany({
-        where: { threadId: run.threadId, runId: run.id, role: "bot" },
-        orderBy: { seq: "asc" },
-        select: { blocks: true, clientNonce: true },
-      }),
-    ]);
-
-    let secrets: string[] = [];
-    if (deps.secretStore) {
-      // Production supplies the same Prisma client and vault loader as the executor.
-      // The narrower capture interface keeps offline fixtures independent of the vault.
-      const prisma = deps.prisma as unknown as PrismaClient;
-      const secretScope = { userId: run.userId, spaceId: run.spaceId, botId: run.botId };
-      const [passwords, environment, runLogins, runCodes, purchases] = await Promise.all([
-        loadLoginPasswordRedactions(prisma, deps.secretStore, secretScope),
-        loadBotCommandEnvironment(prisma, deps.secretStore, secretScope),
-        // Terminal cleanup removes run-only rows; only values still stored can be loaded here.
-        loadRunLoginRedactions(prisma, deps.secretStore, secretScope, run.id),
-        loadRunCodeRedactions(prisma, deps.secretStore, secretScope, run.id),
-        // Sealed payment values still need hiding after a wallet is disconnected.
-        loadPurchaseRedactions(
-          { prisma, secretStore: deps.secretStore as SecretStore },
-          secretScope,
-        ),
-      ]);
-      secrets = [
-        ...passwords,
-        ...commandCredentialRedactions(environment),
-        ...runLogins,
-        ...runCodes,
-        ...purchases,
-      ];
-    }
-    const scope = effectiveMemoryScope(null, run.memoryCaptureScope ?? "isolated");
-    try {
-      capture = buildTurnMemoryCapture(run, { sourceMessage, botMessages }, scope, secrets);
-      if (capture) capture = capturePayloadSchema.parse(capture);
-    } catch {
-      // This block only assembles stored values; no network or database operation can fail here.
-      throw new InvalidCaptureError("invalid_capture_evidence");
-    }
-    if (capture?.query.trim()) {
-      let payload: Prisma.InputJsonValue;
-      try {
-        payload = await freezeCapturePayload(deps.prisma, run, capture);
-      } catch (error) {
-        if (isRetryableMemoryError(error)) throw error;
-        throw new InvalidCaptureError("capture_snapshot_encryption_failed");
-      }
-      // The first sender freezes redacted evidence; concurrent retries use that same snapshot.
-      const frozen = await deps.prisma.run.updateMany({
-        where: {
-          id: run.id,
-          memoryCapturedAt: null,
-          memoryCapturePayload: { equals: Prisma.DbNull },
-        },
-        data: {
-          memoryCapturePayload: payload,
-        },
-      });
-      if (frozen.count !== 1) {
-        const winner = await readCaptureRun(deps.prisma, run.id);
-        if (!isPendingCapture(winner)) return "done";
-        capture = await openCapturePayload(deps.prisma, winner);
-      }
-    }
-  }
+  const capture = await openCapturePayload(deps.prisma, run);
   if (!capture?.query.trim()) {
     getLogger().debug("turn memory capture skipped: empty query or evidence", { runId: run.id });
     await markCaptureDone(deps.prisma, run.id);
@@ -663,16 +618,26 @@ async function capturePendingTurn(
     signal: AbortSignal.timeout(CAPTURE_TURN_TIMEOUT_MS),
   };
 
-  let result: TurnMemoryCaptureResult;
-  try {
-    result = await availability.lifecycle.captureTurn(capture, context);
-  } catch (error) {
-    if (isRetryableMemoryError(error)) {
-      await countCaptureFailure(deps.prisma, run.id);
-      return "retryable";
+  const send = async (): Promise<TurnMemoryCaptureResult | null> => {
+    // Recheck after the connection lease, key loading and other awaited work. A clear
+    // revokes the durable obligation; it must not become an external acknowledgement.
+    const current = await readCaptureRun(deps.prisma, run.id);
+    if (!isPendingCapture(current) || current.memoryCapturePayload == null) return null;
+    try {
+      return await availability.lifecycle.captureTurn(capture, context);
+    } catch (error) {
+      if (isRetryableMemoryError(error)) {
+        return { status: "retryable", reason: "provider_unavailable" };
+      }
+      throw new InvalidCaptureError("capture_provider_failure");
     }
-    throw new InvalidCaptureError("capture_provider_failure");
-  }
+  };
+  // The resolver's connection guard is optional for provider-neutral fixtures. Database
+  // failures in the guard stay outside the provider catch and must never retire evidence.
+  const result = availability.captureConnection
+    ? await availability.captureConnection(send)
+    : await send();
+  if (!result) return "deferred";
   if (
     result.status === "retryable" &&
     result.reason !== "unauthorized" &&

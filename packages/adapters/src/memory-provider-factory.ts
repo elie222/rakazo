@@ -1,13 +1,14 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   DurableMemoryScope,
   SecretStore,
   SemanticMemoryProvider,
+  TurnMemoryCaptureResult,
   TurnMemoryLifecycle,
 } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { isPoolCheckoutTimeout, isTooManyDatabaseConnections } from "@rakazo/db";
+import { isPoolCheckoutTimeout, isTooManyDatabaseConnections, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
   createHonchoProvider,
@@ -66,7 +67,13 @@ export interface ConfiguredMemoryProvider {
   captureTarget?: string;
   /** Per-turn recall/capture for providers that learn from each turn. */
   lifecycle?: TurnMemoryLifecycle;
+  captureConnection?: CaptureConnection;
 }
+
+/** Null defers delivery without consuming a turn or queue retry. */
+type CaptureConnection = (
+  send: () => Promise<TurnMemoryCaptureResult | null>,
+) => Promise<TurnMemoryCaptureResult | null>;
 
 /** Pending captures retry only failures that can recover without changing their configuration. */
 export type TurnMemoryAvailability =
@@ -75,6 +82,7 @@ export type TurnMemoryAvailability =
       lifecycle: TurnMemoryLifecycle;
       defaultScope: DurableMemoryScope;
       captureTarget?: string;
+      captureConnection?: CaptureConnection;
     }
   | { kind: "unconfigured" }
   | { kind: "unavailable"; reason: string; retryable: boolean };
@@ -343,9 +351,22 @@ function memoryCaptureTarget(provider: string, settings: Record<string, string>)
   const entries = Object.keys(settings)
     .sort()
     .map((key) => [key, settings[key]]);
+  // Version the delivery contract as well as the connection. A snapshot frozen by
+  // an older background worker cannot prove completion-time credential redaction.
   return createHash("sha256")
-    .update(JSON.stringify([provider, entries]))
+    .update(JSON.stringify(["completion-snapshot-v1", provider, entries]))
     .digest("hex");
+}
+
+const CAPTURE_CONNECTION_LEASE_MS = 60_000;
+const CAPTURE_CONNECTION_BACKOFF_MS = 60_000;
+const CAPTURE_CONNECTION_MAX_BACKOFF_MS = 60 * 60_000;
+
+interface CaptureConnectionConfig {
+  id: string;
+  provider: string;
+  settings: Prisma.JsonValue;
+  secret: { id: string; ciphertext: string };
 }
 
 export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
@@ -357,9 +378,9 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
   async resolveTurnMemory(spaceId: string): Promise<TurnMemoryAvailability> {
     const result = await this.loadConfiguredProvider(spaceId, true);
     if (result.kind !== "configured") return result;
-    const { lifecycle, defaultScope, captureTarget } = result.value;
+    const { lifecycle, defaultScope, captureTarget, captureConnection } = result.value;
     return lifecycle
-      ? { kind: "configured", lifecycle, defaultScope, captureTarget }
+      ? { kind: "configured", lifecycle, defaultScope, captureTarget, captureConnection }
       : unavailable("lifecycle_unsupported");
   }
 
@@ -374,6 +395,94 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
       });
     }
     return null;
+  }
+
+  private captureConnection(spaceId: string, config: CaptureConnectionConfig): CaptureConnection {
+    // Unlike captureTarget, this revision changes with credentials. Hash only the sealed
+    // credential revision, never keep or log plaintext tokens in the scheduling state.
+    const revision = createHash("sha256")
+      .update(
+        JSON.stringify([
+          memoryCaptureTarget(config.provider, toStringRecord(config.settings)),
+          config.secret.id,
+          config.secret.ciphertext,
+        ]),
+      )
+      .digest("hex");
+    const identity = {
+      id: config.id,
+      spaceId,
+      provider: config.provider,
+      settings: { equals: config.settings ?? Prisma.JsonNull },
+      secretId: config.secret.id,
+      secret: { ciphertext: config.secret.ciphertext },
+    };
+    return async (send) => {
+      const now = new Date();
+      // A repaired configuration can probe immediately; an old in-flight resolver cannot
+      // reset its replacement's state because every write also checks connection identity.
+      await this.prisma.spaceMemoryConfig.updateMany({
+        where: {
+          ...identity,
+          OR: [{ captureBackoffRevision: null }, { captureBackoffRevision: { not: revision } }],
+        },
+        data: {
+          captureBackoffRevision: revision,
+          captureBackoffFailures: 0,
+          captureBackoffUntil: null,
+          captureLeaseToken: null,
+        },
+      });
+      const leaseToken = randomUUID();
+      // One bounded probe per connection, across all workers and conversations. A crash
+      // leaves a durable lease that expires, rather than a process-local circuit breaker.
+      const [claim] = await this.prisma.spaceMemoryConfig.updateManyAndReturn({
+        where: {
+          ...identity,
+          captureBackoffRevision: revision,
+          OR: [{ captureBackoffUntil: null }, { captureBackoffUntil: { lte: now } }],
+        },
+        data: {
+          captureLeaseToken: leaseToken,
+          captureBackoffUntil: new Date(now.getTime() + CAPTURE_CONNECTION_LEASE_MS),
+        },
+        select: { captureBackoffFailures: true },
+      });
+      if (!claim) return null;
+      const owned = {
+        ...identity,
+        captureBackoffRevision: revision,
+        captureLeaseToken: leaseToken,
+      };
+      let result: TurnMemoryCaptureResult | null;
+      try {
+        result = await send();
+      } catch (error) {
+        await this.prisma.spaceMemoryConfig.updateMany({
+          where: owned,
+          data: { captureBackoffUntil: null, captureLeaseToken: null },
+        });
+        throw error;
+      }
+      const connectionFailure =
+        result?.status === "retryable" &&
+        (result.reason === "unauthorized" || result.reason === "connection_not_found");
+      const delay = Math.min(
+        CAPTURE_CONNECTION_MAX_BACKOFF_MS,
+        CAPTURE_CONNECTION_BACKOFF_MS * 2 ** Math.min(claim.captureBackoffFailures, 6),
+      );
+      // If persisting the result fails, retain the already-durable probe lease. Clearing
+      // it in finally would allow a fresh worker to hammer the same broken connection.
+      await this.prisma.spaceMemoryConfig.updateMany({
+        where: owned,
+        data: {
+          captureBackoffFailures: connectionFailure ? { increment: 1 } : 0,
+          captureBackoffUntil: connectionFailure ? new Date(Date.now() + delay) : null,
+          captureLeaseToken: null,
+        },
+      });
+      return connectionFailure ? null : result;
+    };
   }
 
   /** Both public paths use the same checks; legacy providers need no per-turn lifecycle. */
@@ -435,7 +544,10 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
           defaultScope: config.defaultMemoryScope === "shared" ? "shared" : "isolated",
           captureTarget: memoryCaptureTarget(config.provider, settings),
           ...(adapter.createTurnMemory
-            ? { lifecycle: adapter.createTurnMemory(settings, credentials) }
+            ? {
+                lifecycle: adapter.createTurnMemory(settings, credentials),
+                captureConnection: this.captureConnection(spaceId, config),
+              }
             : {}),
         },
       };

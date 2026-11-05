@@ -147,7 +147,11 @@ describe("turn memory capture eligibility", () => {
     await completeRun(ctx);
     expect(finalizeRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        memoryCapture: { sourceMemoryIds: ["injected-memory-1"], scope: "shared" },
+        memoryCapture: {
+          sourceMemoryIds: ["injected-memory-1"],
+          scope: "shared",
+          buildSnapshot: expect.any(Function),
+        },
       }),
     );
     expect(enqueue).toHaveBeenCalledWith(

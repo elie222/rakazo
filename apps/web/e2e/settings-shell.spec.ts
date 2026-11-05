@@ -187,6 +187,7 @@ test("Memmy memory settings uses a service URL and masked token", async ({ page 
   const memory = settings.getByTestId("memory-settings");
   await memory.getByRole("button", { name: "Connect memory provider", exact: true }).click();
   await memory.getByLabel("Provider").selectOption("memmy");
+  await expect(memory.getByLabel("Provider").locator("option:checked")).toHaveText("Self-hosted");
   const endpoint = memory.getByLabel("Server URL", { exact: true });
   const token = memory.getByLabel("Bearer token", { exact: true });
   const connect = memory.getByRole("button", { name: "Connect", exact: true });

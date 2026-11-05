@@ -4,7 +4,7 @@ import type {
   TurnMemoryCaptureResult,
 } from "@rakazo/adapter-kit";
 import { encodeLoginSecret } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   deleteRunSecretsInTransaction,
   runCodeKind,
@@ -13,15 +13,19 @@ import {
 } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
+  commandCredentialRedactions,
   encodeRunCode,
   encodeRunLogin,
+  loadBotCommandEnvironment,
+  loadLoginPasswordRedactions,
   loadRunCodeRedactions,
   loadRunLoginRedactions,
 } from "./bot-secrets.js";
 import { fakeDatabase } from "./bot-secrets.test-support.js";
 import type { CaptureTurnRunRow, MemoryCapturePrisma } from "./memory-capture.js";
-import { captureFinishedTurn } from "./memory-capture.js";
+import { buildCompletedTurnMemorySnapshot, captureFinishedTurn } from "./memory-capture.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
+import { loadPurchaseRedactions } from "./purchase-service.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 const scope = { userId: "user-1", spaceId: "space-1", botId: "bot-1" };
@@ -36,6 +40,7 @@ const context: AdapterContext = {
 function captureFixture(evidence: string) {
   const db = fakeDatabase();
   const secretStore = new EncryptedSecretStore("test-only-encryption-key");
+  const snapshots: unknown[] = [];
   const load = vi.fn(secretStore.load.bind(secretStore));
   secretStore.load = load;
   const row: CaptureTurnRunRow = {
@@ -175,6 +180,34 @@ function captureFixture(evidence: string) {
       memoryProviders,
       secretStore,
     },
+    snapshots,
+    async freezeAtCompletion() {
+      // Exercise the builder in isolation. The real finalizer's separate guard
+      // excludes run-only credential turns (covered by the completion suite).
+      const [passwords, environment, runLogins, runCodes, payments] = await Promise.all([
+        loadLoginPasswordRedactions(prisma, secretStore, scope),
+        loadBotCommandEnvironment(prisma, secretStore, scope),
+        loadRunLoginRedactions(prisma, secretStore, scope, row.id),
+        loadRunCodeRedactions(prisma, secretStore, scope, row.id),
+        loadPurchaseRedactions({ prisma, secretStore }, scope),
+      ]);
+      row.memoryCapturePayload = await buildCompletedTurnMemorySnapshot(
+        prisma,
+        prisma as unknown as Prisma.TransactionClient,
+        row.id,
+        "isolated",
+        [],
+        [
+          ...passwords,
+          ...commandCredentialRedactions(environment),
+          ...runLogins,
+          ...runCodes,
+          ...payments,
+        ],
+      );
+      if (row.memoryCapturePayload !== null)
+        snapshots.push(structuredClone(row.memoryCapturePayload));
+    },
     async addRunSecret(kind: string, plaintext: string, owner = scope) {
       const stored = await secretStore.put(plaintext, context, { ephemeral: true });
       const entry = { ...stored, userId: owner.userId, spaceId: owner.spaceId, kind };
@@ -201,11 +234,12 @@ function expectRedactedCapture(fixture: ReturnType<typeof captureFixture>, forms
   }
   // Secrets must be gone before the temporary outbox snapshot is persisted, not
   // merely removed by a provider implementation at the final network boundary.
-  const writes = JSON.stringify(vi.mocked(fixture.run.updateMany).mock.calls);
+  expect(fixture.snapshots).toHaveLength(1);
+  const writes = JSON.stringify(fixture.snapshots);
   for (const form of forms) expect(writes).not.toContain(form);
 }
 
-describe("background turn-memory credential redaction", () => {
+describe("completion snapshot credential redaction", () => {
   it("redacts stored run-only login fields before freezing source, bot and tool evidence", async () => {
     const username = "fixture-run-user+one@example.test";
     const password = "fixture-run pass!word+one";
@@ -231,6 +265,7 @@ describe("background turn-memory credential redaction", () => {
       ),
     );
 
+    await fixture.freezeAtCompletion();
     await captureFinishedTurn(fixture.deps, fixture.row.id);
 
     expectRedactedCapture(fixture, forms);
@@ -247,6 +282,7 @@ describe("background turn-memory credential redaction", () => {
       const fixture = captureFixture(forms.join(" | "));
       await fixture.addRunSecret(kind(fixture.row.id), encodeRunCode(origin, code));
 
+      await fixture.freezeAtCompletion();
       await captureFinishedTurn(fixture.deps, fixture.row.id);
 
       expectRedactedCapture(fixture, forms);
@@ -274,6 +310,7 @@ describe("background turn-memory credential redaction", () => {
         tokenCiphertext: kind === "token" ? stored.ciphertext : null,
       });
 
+      await fixture.freezeAtCompletion();
       await captureFinishedTurn(fixture.deps, fixture.row.id);
 
       expectRedactedCapture(fixture, forms);
@@ -296,6 +333,7 @@ describe("background turn-memory credential redaction", () => {
       owner,
     );
 
+    await fixture.freezeAtCompletion();
     await captureFinishedTurn(fixture.deps, fixture.row.id);
 
     expect(fixture.load).not.toHaveBeenCalled();
@@ -321,6 +359,7 @@ describe("background turn-memory credential redaction", () => {
       tokenCiphertext: stored.ciphertext,
     });
 
+    await fixture.freezeAtCompletion();
     await captureFinishedTurn(fixture.deps, fixture.row.id);
 
     expect(fixture.load).not.toHaveBeenCalled();
@@ -333,6 +372,7 @@ describe("background turn-memory credential redaction", () => {
     await fixture.addRunSecret(runCodeSpentKind(fixture.row.id), encodeRunCode(origin, code));
     fixture.captureTurn.mockResolvedValueOnce({ status: "retryable", reason: "ack_lost" });
 
+    await fixture.freezeAtCompletion();
     await expect(captureFinishedTurn(fixture.deps, fixture.row.id)).rejects.toThrow("retryable");
 
     expectRedactedCapture(fixture, [code]);
@@ -364,7 +404,7 @@ describe("background turn-memory credential redaction", () => {
       const failure = new Error("fixture database unavailable");
       (kind === "run" ? fixture.secret : fixture.purchase).findMany.mockRejectedValueOnce(failure);
 
-      await expect(captureFinishedTurn(fixture.deps, fixture.row.id)).rejects.toBe(failure);
+      await expect(fixture.freezeAtCompletion()).rejects.toBe(failure);
 
       expect(fixture.captureTurn).not.toHaveBeenCalled();
       expect(fixture.run.updateMany).not.toHaveBeenCalled();

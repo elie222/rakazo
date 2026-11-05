@@ -20,6 +20,7 @@ import type {
   MemoryCapturePrisma,
 } from "./memory-capture.js";
 import {
+  buildCompletedTurnMemorySnapshot,
   buildTurnMemoryCapture,
   captureFinishedTurn,
   MEMORY_CAPTURE_BATCH_SIZE,
@@ -27,7 +28,7 @@ import {
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 
 function runRow(overrides: Partial<CaptureTurnRunRow> = {}): CaptureTurnRunRow {
-  return {
+  const run: CaptureTurnRunRow = {
     id: "run-123",
     spaceId: "space-1",
     userId: "user-1",
@@ -45,6 +46,15 @@ function runRow(overrides: Partial<CaptureTurnRunRow> = {}): CaptureTurnRunRow {
     memoryCapturePayload: null,
     ...overrides,
   };
+  if (run.memoryCapturePayload == null) {
+    run.memoryCapturePayload = buildTurnMemoryCapture(run, {
+      sourceMessage: { seq: 4, blocks: [{ kind: "text", text: "How do we deploy Rakazo?" }] },
+      botMessages: [
+        { blocks: [{ kind: "text", text: "Use the release pipeline." }], clientNonce: null },
+      ],
+    });
+  }
+  return run;
 }
 
 type CaptureFn = (
@@ -188,7 +198,7 @@ describe("R5 #1 并发：同一 run 被两个 handler 同时处理", () => {
     expect(rows.get("run-123")?.memoryCapturedAt).toBeInstanceOf(Date);
   });
 
-  it("没有 lock 时并发会发送两次，但 CAS 保证两次载荷字节相同", async () => {
+  it("没有 lock 时并发会发送两次，但完成快照保证两次载荷字节相同", async () => {
     const hold = gate();
     const { lifecycle, captureTurn } = lifecycleOf(async () => {
       await hold.opened;
@@ -206,12 +216,12 @@ describe("R5 #1 并发：同一 run 被两个 handler 同时处理", () => {
     await both;
 
     expect(captureTurn).toHaveBeenCalledTimes(2);
-    // Two freezes; the per-attempt counter writes are a separate concern.
+    // Completion already froze the snapshot; neither worker may refreeze it.
     expect(
       vi
         .mocked(prisma.run.updateMany)
         .mock.calls.filter(([args]: any) => args.data.memoryCapturePayload !== undefined).length,
-    ).toBe(2);
+    ).toBe(0);
     const [a, b] = captureTurn.mock.calls.map(([capture]) => JSON.stringify(capture));
     expect(a).toBe(b);
   });
@@ -547,6 +557,14 @@ describe("R5 #5 ACK 后：markCaptureDone 与快照", () => {
     });
     const { prisma, rows } = fakePrisma([runRow()]);
     Object.assign(prisma, { $contentEncryption: () => ({ ring }) });
+    rows.get("run-123")!.memoryCapturePayload = await buildCompletedTurnMemorySnapshot(
+      prisma as unknown as PrismaClient,
+      prisma as unknown as Prisma.TransactionClient,
+      "run-123",
+      "isolated",
+      ["mem-a", "mem-b"],
+      [],
+    );
     const deps = { prisma, memoryProviders: resolverOf(lifecycle) };
     await expect(captureFinishedTurn(deps, "run-123")).rejects.toThrow("retryable");
     expect(ciphertextKeyId(rows.get("run-123")!.memoryCapturePayload)).toBeTruthy();
@@ -572,6 +590,14 @@ describe("R5 #5 ACK 后：markCaptureDone 与快照", () => {
     const { lifecycle } = lifecycleOf(async () => ({ status: "retryable", reason: "ack_lost" }));
     const { prisma, rows } = fakePrisma([runRow()]);
     Object.assign(prisma, { $contentEncryption: () => ({ ring }) });
+    rows.get("run-123")!.memoryCapturePayload = await buildCompletedTurnMemorySnapshot(
+      prisma as unknown as PrismaClient,
+      prisma as unknown as Prisma.TransactionClient,
+      "run-123",
+      "isolated",
+      ["mem-a", "mem-b"],
+      [],
+    );
     const deps = { prisma, memoryProviders: resolverOf(lifecycle) };
     await expect(captureFinishedTurn(deps, "run-123")).rejects.toThrow("retryable");
     ring = new ContentKeyRing(new LocalKeyProvider([keys.master]), {

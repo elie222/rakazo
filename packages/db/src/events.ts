@@ -44,7 +44,8 @@ import { getLogger } from "@rakazo/logging";
 import { saveApprovalRule, storedBatchActions } from "./approval-settings.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import { createChatAlerts } from "./chat-alerts.js";
-import type { Prisma, PrismaClient } from "./client.js";
+import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import { contentEncryptionOf } from "./content-encryption.js";
 import {
@@ -199,6 +200,12 @@ interface FinalizeRunBase {
     scope: "isolated" | "shared";
     /** Non-secret connection identity resolved by this execution attempt. */
     target?: string;
+    /**
+     * Builds an already-redacted, at-rest-protected snapshot using this attempt's
+     * in-memory redactions. Called inside completion, after the final reply is saved.
+     * Never persist the callback or its redaction set; null declines capture.
+     */
+    buildSnapshot(tx: Prisma.TransactionClient): Promise<Prisma.InputJsonValue | null>;
   } | null;
 }
 
@@ -429,6 +436,13 @@ export async function clearThread(
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
     await tx.message.deleteMany({ where: { threadId: input.threadId } });
     await tx.event.deleteMany({ where: { threadId: input.threadId } });
+    // A completion snapshot is derived chat content too. Serialize its removal
+    // with completion through the same thread lock; cleared history cannot reappear
+    // in a later capture job merely because its finalizer already committed.
+    await tx.run.updateMany({
+      where: { spaceId: input.spaceId, threadId: input.threadId, memoryCapturedAt: null },
+      data: { memoryCaptureDueAt: null, memoryCapturePayload: Prisma.DbNull },
+    });
     if (thread.nextMessageSeq > 0) {
       // nextMessageSeq is not reset, so mark every deleted message as already compacted.
       // Leaving the cursor behind would let compaction re-summarize deleted history (or, reset
@@ -1860,9 +1874,8 @@ async function finalizeRunOnce(
       },
     });
     if (terminal.count !== 1) return null;
-    // Completion removes run-only login/code rows below. Do not export a turn that
-    // depends on those values for redaction: the background worker cannot recover them,
-    // and extending their lifetime just for memory would defeat their privacy boundary.
+    // Even a redacted snapshot must not export turns that used run-only credentials.
+    // Keep this check in the terminal transaction, before deleting their rows below.
     const temporaryCredentials =
       input.outcome === "completed" && input.memoryCapture && writableRun
         ? await hasRunSecretsInTransaction(tx, {
@@ -1871,18 +1884,7 @@ async function finalizeRunOnce(
             spaceId: input.spaceId,
           })
         : false;
-    if (input.outcome === "completed" && input.memoryCapture && !temporaryCredentials) {
-      await tx.run.update({
-        where: { id: input.runId },
-        data: {
-          memoryCaptureDueAt: now,
-          memoryCapturedAt: null,
-          memoryCaptureScope: input.memoryCapture.scope,
-          memoryCaptureTarget: input.memoryCapture.target ?? null,
-          memoryRecallIds: input.memoryCapture.sourceMemoryIds,
-        },
-      });
-    }
+
     await tx.externalEffect.deleteMany({
       where: {
         runId: input.runId,
@@ -1960,6 +1962,24 @@ async function finalizeRunOnce(
         payload: { messageId: message.id, role: "bot", blocks: replyBlocks },
       });
       firstResponse = response.firstResponse;
+    }
+    if (input.outcome === "completed" && input.memoryCapture && !temporaryCredentials) {
+      // The final reply and terminal timestamps now exist in this transaction. A
+      // rollback or a losing lease/clear race cannot leave an orphan capture snapshot.
+      const snapshot = await input.memoryCapture.buildSnapshot(tx);
+      if (snapshot !== null) {
+        await tx.run.update({
+          where: { id: input.runId },
+          data: {
+            memoryCaptureDueAt: now,
+            memoryCapturedAt: null,
+            memoryCaptureScope: input.memoryCapture.scope,
+            memoryCaptureTarget: input.memoryCapture.target ?? null,
+            memoryRecallIds: input.memoryCapture.sourceMemoryIds,
+            memoryCapturePayload: snapshot,
+          },
+        });
+      }
     }
     const lastEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
