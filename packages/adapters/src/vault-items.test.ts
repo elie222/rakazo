@@ -303,6 +303,21 @@ describe("approving a saved card", () => {
       title: "Pay with Visa ·· 4242 on shop.example.test?",
       lines: [],
     });
+    // Typed together with the click that pays: the card names what the page lists for the order.
+    const purchase = {
+      steps: [0],
+      site: "shop.example.test",
+      label: "Place order",
+      amount: "$9.00",
+      amountSource: "page" as const,
+      items: [{ name: "Bananas × 6", amount: "$3.00" }],
+    };
+    expect(cardUseSummary(use, purchase).lines).toEqual([
+      'Button: "Place order"',
+      "Bananas × 6: $3.00",
+      "Total on the page: $9.00",
+      "The button label, items and total are read from the page. The bot has not checked them.",
+    ]);
     expect(vaultCardUseOf(use)).toEqual(use);
     expect(vaultCardUseOf({ ...use, site: "http://shop.example.test" })).toBeUndefined();
     expect(vaultCardUseOf({ ...use, card: "Visa Card" })).toBeUndefined();

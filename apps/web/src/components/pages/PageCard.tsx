@@ -113,9 +113,9 @@ function PagePreview({
           <div className="h-5 w-2/5 rounded-[6px] bg-foreground/[0.06]" />
           <div className="h-3 w-3/5 rounded-[5px] bg-foreground/[0.05]" />
           <div className="mt-2 grid grid-cols-3 gap-2">
-            <div className="h-12 rounded-[8px] bg-foreground/[0.05]" />
-            <div className="h-12 rounded-[8px] bg-foreground/[0.05]" />
-            <div className="h-12 rounded-[8px] bg-foreground/[0.05]" />
+            <div className="h-12 rounded-sm bg-foreground/[0.05]" />
+            <div className="h-12 rounded-sm bg-foreground/[0.05]" />
+            <div className="h-12 rounded-sm bg-foreground/[0.05]" />
           </div>
           {failed ? (
             <p className="text-center text-muted-foreground text-sm">{t`This page couldn't load`}</p>

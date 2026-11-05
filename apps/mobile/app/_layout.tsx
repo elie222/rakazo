@@ -50,6 +50,7 @@ import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { AvatarScreenFocus } from "../lib/avatar-life";
 import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
+import { loadHapticsPreference } from "../lib/haptics";
 import { bootstrapI18n, useI18n } from "../lib/i18n";
 import { startIncomingCalls } from "../lib/incoming-calls";
 import { clearLastBot } from "../lib/last-bot";
@@ -348,6 +349,7 @@ function LayoutContent() {
 
   useEffect(() => {
     markMobileStartupMounted();
+    void loadHapticsPreference();
     void Promise.all([
       Promise.all([
         trackMobileStartup("server", loadApiBase()),

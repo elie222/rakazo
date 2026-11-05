@@ -100,6 +100,7 @@ export function ArtifactsPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [madeByBots, setMadeByBots] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ArtifactSummary | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -117,6 +118,7 @@ export function ArtifactsPage() {
   const listingOptions = queries.artifacts.listSpace.infiniteOptions({
     input: (cursor: string | undefined) => ({
       botId: activeBotId ?? undefined,
+      madeByBots,
       ...(cursor ? { cursor } : {}),
       limit: LIST_PAGE_SIZE,
     }),
@@ -168,7 +170,7 @@ export function ArtifactsPage() {
 
   useEffect(() => {
     autoFetchedCursorRef.current = null;
-  }, [searchQuery, dateFilter, activeBotId]);
+  }, [searchQuery, dateFilter, activeBotId, madeByBots]);
 
   // Search and date filters only see loaded pages, so keep paging until something matches.
   useEffect(() => {
@@ -299,6 +301,15 @@ export function ArtifactsPage() {
               <NativeSelectOption value="today">{t`Today`}</NativeSelectOption>
               <NativeSelectOption value="week">{t`This week`}</NativeSelectOption>
               <NativeSelectOption value="month">{t`This month`}</NativeSelectOption>
+            </NativeSelect>
+            <NativeSelect
+              aria-label={t`Filter by who made it`}
+              className="w-auto text-[13px]"
+              value={madeByBots ? "bots" : "all"}
+              onChange={(event) => setMadeByBots(event.target.value === "bots")}
+            >
+              <NativeSelectOption value="all">{t`All files`}</NativeSelectOption>
+              <NativeSelectOption value="bots">{t`Made by bots`}</NativeSelectOption>
             </NativeSelect>
             <FilterChip active={activeBotId === null} onClick={() => setActiveBotId(null)}>
               <Trans>All bots</Trans>
@@ -647,7 +658,7 @@ function ArtifactCard({
         className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 text-foreground hover:bg-accent/40"
       >
         <div className="flex items-start justify-between">
-          <span className="grid h-9 w-9 place-items-center rounded-[10px] bg-accent text-accent-foreground">
+          <span className="grid h-9 w-9 place-items-center rounded-md bg-accent text-accent-foreground">
             <ArtifactMimeIcon mimeType={artifact.mimeType} />
           </span>
           <div className="flex items-center gap-1.5">

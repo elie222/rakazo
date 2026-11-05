@@ -73,7 +73,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
         <button
           type="button"
           onClick={() => void startDownload()}
-          className="rounded-[20px] bg-card px-4 py-3 text-left text-[14px] text-foreground hover:bg-accent"
+          className="rounded-2xl bg-card px-4 py-3 text-left text-[14px] text-foreground hover:bg-accent"
         >
           <div className="font-medium">{props.name}</div>
           <div className="mt-1 flex gap-2 text-muted-foreground">
@@ -97,7 +97,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
             onClick={() => setPreviewOpen(true)}
             className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-accent"
           >
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-muted text-foreground">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-muted text-foreground">
               {props.mimeType === "text/html" ? (
                 <Code2 size={21} strokeWidth={1.8} />
               ) : (

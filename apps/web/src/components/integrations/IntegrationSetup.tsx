@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { IntegrationCatalogResult } from "@rakazo/contracts";
 import { newClientId } from "@rakazo/core";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { connectMcpOauth } from "../../lib/mcp-connect";
 import { rpc } from "../../lib/rpc";
 import type { ErrorDetails } from "../../lib/user-error";
@@ -10,10 +10,19 @@ import { errorDetails } from "../../lib/user-error";
 import { ErrorNotice } from "../ErrorNotice";
 
 /** Personal MCP connections never configure deployment-wide provider credentials. */
-export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId?: string }) {
+export function IntegrationSetup({
+  onDone,
+  botId,
+  initialQuery,
+}: {
+  onDone?: () => void;
+  botId?: string;
+  /** Searches the public catalog for this once on open. */
+  initialQuery?: string;
+}) {
   const { t } = useLingui();
   const [endpoint, setEndpoint] = useState("");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery ?? "");
   const [results, setResults] = useState<IntegrationCatalogResult[]>([]);
   const [searched, setSearched] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -43,6 +52,25 @@ export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId
     }
   }
 
+  function search(text: string) {
+    void run(async () => {
+      const response = await rpc.capabilities.catalogSearch({
+        query: text,
+        usePublicCatalog: true,
+      });
+      setResults(response.results);
+      setSearched(true);
+    });
+  }
+
+  // Ref, not state: a development remount must not send the search twice.
+  const searchedInitial = useRef(false);
+  useEffect(() => {
+    if (searchedInitial.current || !initialQuery?.trim()) return;
+    searchedInitial.current = true;
+    search(initialQuery);
+  }, []);
+
   async function connect(name: string, url: string) {
     await run(async () => {
       const existing = (await rpc.mcp.servers.list()).find((server) => server.endpoint === url);
@@ -70,14 +98,7 @@ export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId
         className="flex gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          void run(async () => {
-            const response = await rpc.capabilities.catalogSearch({
-              query,
-              usePublicCatalog: true,
-            });
-            setResults(response.results);
-            setSearched(true);
-          });
+          search(query);
         }}
       >
         <Input

@@ -1058,6 +1058,9 @@ export const IntegrationCatalogSurfaceSchema = z.object({
 });
 export type IntegrationCatalogSurface = z.infer<typeof IntegrationCatalogSurfaceSchema>;
 
+/** The longest query the integration catalog search accepts. */
+export const CATALOG_SEARCH_QUERY_MAX_LENGTH = 253;
+
 export const IntegrationCatalogResultSchema = z.object({
   domain: z.string(),
   name: z.string(),
@@ -1950,6 +1953,8 @@ export const MeSchema = z.object({
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
   sandboxProvider: z.string(),
+  /** Whether Settings may choose where computers run. Absent from older servers. */
+  computerSettingsEnabled: z.boolean().optional(),
   /** Whether this account can add stdio MCP servers here. Absent from older servers. */
   mcpStdioEnabled: z.boolean().default(false),
   avatarStyle: AvatarStyleSchema,
@@ -2032,8 +2037,8 @@ export const BYOK_TIERS: Record<ByokTier, ByokTierTerms> = {
   },
   max: {
     name: "Max",
-    monthlyPriceCents: 14900,
-    annualPriceCents: 142800,
+    monthlyPriceCents: 9900,
+    annualPriceCents: 94800,
     computerAllowanceCents: 4000,
     computerSize: "xlarge",
   },

@@ -91,6 +91,13 @@ export function mcpServerReady(server: McpServer) {
   return server.oauthStatus === "connected" || server.health.status === "ok";
 }
 
+/** A list row: icon, text and trailing actions on one line. */
+export const ROW_SHELL = "flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2";
+
+/** The row's main button, which fills the row up to its trailing actions. */
+export const ROW_BUTTON =
+  "flex min-w-0 flex-1 items-center gap-3 text-start focus-visible:outline-none";
+
 /** The whole row highlights, including for keyboard focus on its main button. */
 export const ROW_HOVER = "hover:bg-accent/60 has-[button:focus-visible]:bg-accent/60";
 
@@ -110,15 +117,8 @@ export function PluginRow({
   onOpen: () => void;
 }) {
   return (
-    <div
-      data-testid="plugin-row"
-      className={`flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 ${ROW_HOVER}`}
-    >
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-3 text-start focus-visible:outline-none"
-      >
+    <div data-testid="plugin-row" className={`${ROW_SHELL} ${ROW_HOVER}`}>
+      <button type="button" onClick={onOpen} className={ROW_BUTTON}>
         <PluginLogo name={name} logo={logo} site={site} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] font-medium text-foreground">{name}</span>

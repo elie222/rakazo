@@ -837,3 +837,48 @@ it("sends Undo to the chat's space, not the one selected in another tab", async 
   expect(rpc.bots.restoreInstructions).not.toHaveBeenCalled();
   expect(rpc.bots.update).not.toHaveBeenCalled();
 });
+
+it("draws a payment's order as a receipt in place of the text detail", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Pay on freshcart.test?",
+    detail: "Bananas × 6: $3.00",
+    detailFormat: "text",
+    receipt: {
+      button: "Place order",
+      items: [
+        { name: "Bananas × 6", amount: "$3.00" },
+        { name: "Delivery", amount: "$6.00" },
+        // A page line named like the card's own row is left out.
+        { name: "On the button", amount: "$1.00" },
+      ],
+      more: { count: 23, atLeast: true },
+      amount: "$20.00",
+      amountSource: "button",
+      total: "$17.40",
+    },
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+  await render(block);
+  const receipt = container.querySelector('[data-testid="ask-receipt"]');
+  expect([...receipt!.querySelectorAll("li")].map((row) => row.textContent)).toEqual([
+    "Bananas × 6$3.00",
+    "Delivery$6.00",
+    "23+ more",
+    "Total$17.40",
+    "On the button$20.00",
+  ]);
+  expect(receipt?.textContent).toContain("Button “Place order” · read from the page, not checked");
+  expect(container.querySelector('[data-testid="ask-detail"]')).toBeNull();
+
+  await render({ ...block, receipt: { items: [], amount: "$20.00", amountSource: "page" } });
+  expect(
+    [...container.querySelectorAll('[data-testid="ask-receipt"] li')].map((row) => row.textContent),
+  ).toEqual(["Total$20.00"]);
+  expect(container.textContent).toContain("Read from the page, not checked");
+});

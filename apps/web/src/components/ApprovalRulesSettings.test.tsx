@@ -9,7 +9,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 const rpcMock = vi.hoisted(() => ({
   approvalRules: { list: vi.fn(), set: vi.fn(), remove: vi.fn() },
   autoReview: { get: vi.fn(), set: vi.fn() },
-  spendingLimit: { get: vi.fn(), set: vi.fn() },
+  spendingLimit: { get: vi.fn(), set: vi.fn(), payments: vi.fn() },
 }));
 vi.mock("../lib/rpc", () => ({
   rpc: rpcMock,

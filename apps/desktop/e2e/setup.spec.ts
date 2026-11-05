@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import type { ElectronApplication, Page } from "@playwright/test";
 import { _electron as electron, expect, test } from "@playwright/test";
 import type { RakazoDesktop } from "@rakazo/contracts";
+import { shownWindow } from "./shown-window.js";
 
 const APP_MARKER = "Existing Rakazo instance ready";
 /** Outlasts the shell's 20s wait for a mounted app before it rejects the server. */
@@ -298,7 +299,7 @@ test("Continue verifies and remembers the instance so setup does not run again",
   await app.close();
 
   app = await launch();
-  const relaunched = await app.firstWindow();
+  const relaunched = await shownWindow(app);
   await expect(relaunched.getByText(APP_MARKER)).toBeVisible();
   await expect(relaunched.locator("#setup")).toHaveCount(0);
 });
@@ -627,7 +628,7 @@ test("an unreachable saved server falls back to setup with a recovery message", 
 
 test("the native application menu can reopen setup without exposing setup IPC to the server", async () => {
   app = await launch({ RAKAZO_WEB_URL: serverUrl });
-  const appWindow = await app.firstWindow();
+  const appWindow = await shownWindow(app);
   await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
 
   const setupPromise = app.waitForEvent("window");
@@ -683,13 +684,13 @@ test("servers on the same host but different ports do not share login cookies", 
 
   try {
     app = await launch({ RAKAZO_WEB_URL: `http://127.0.0.1:${firstAddress.port}` });
-    const firstWindow = await app.firstWindow();
+    const firstWindow = await shownWindow(app);
     await expect(firstWindow.getByText("Cookie stored")).toBeVisible();
     await expect.poll(() => firstWindow.evaluate(() => document.cookie)).toContain("fake-one");
     await app.close();
 
     app = await launch({ RAKAZO_WEB_URL: `http://127.0.0.1:${secondAddress.port}` });
-    const secondWindow = await app.firstWindow();
+    const secondWindow = await shownWindow(app);
     await expect(secondWindow.getByText("Cookies: none")).toBeVisible();
   } finally {
     await app?.close();
@@ -707,7 +708,7 @@ test("servers on the same host but different ports do not share login cookies", 
 
 test("setup IPC is not reachable from the connected app window", async () => {
   app = await launch({ RAKAZO_WEB_URL: serverUrl });
-  const appWindow = await app.firstWindow();
+  const appWindow = await shownWindow(app);
   await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
 
   const exposed = await appWindow.evaluate(() =>
@@ -741,7 +742,7 @@ test("the app window stays on its server when a link redirects to another site",
   try {
     const launched = await launch({ RAKAZO_WEB_URL: serverUrl });
     app = launched;
-    const appWindow = await launched.firstWindow();
+    const appWindow = await shownWindow(launched);
     await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
     await launched.evaluate(({ shell }) => {
       const opened: string[] = [];
@@ -808,7 +809,7 @@ for (const failure of ["load", "save"] as const) {
     );
     const initialRequests = monitoringRequests;
     app = await launch();
-    const previous = await app.firstWindow();
+    const previous = await shownWindow(app);
     await expect(previous.getByText(APP_MARKER)).toBeVisible();
     await expect.poll(() => monitoringRequests).toBeGreaterThan(initialRequests);
     const connectedRequests = monitoringRequests;

@@ -182,6 +182,10 @@ msgstr ""
 msgid "{count} months"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "{count} और"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr ""
@@ -721,6 +725,10 @@ msgstr "पूरे {credit} मॉडल उपयोग में जात�
 msgid "All bots"
 msgstr ""
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "सभी फ़ाइलें"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr ""
@@ -1203,6 +1211,10 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "अंतर्निहित"
+
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "बटन “{button}” · पेज से पढ़ा गया, जाँचा नहीं गया"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -2653,6 +2665,7 @@ msgstr "दिन"
 msgid "Decline"
 msgstr "अस्वीकार करें"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2770,11 +2783,6 @@ msgstr "अस्वीकृत"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "अस्वीकार करें"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3247,6 +3255,10 @@ msgstr ""
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
 msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "किसने बनाया, उसके अनुसार फ़िल्टर करें"
 
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
@@ -3912,6 +3924,10 @@ msgstr "निम्न"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "निम्न"
+
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "बॉट्स ने बनाई"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
@@ -4664,6 +4680,10 @@ msgstr "{day} तारीख को {time} पर"
 msgid "on the 1st at {0}"
 msgstr "1 तारीख को {0} बजे"
 
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "बटन पर"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "एक बार"
@@ -5129,6 +5149,10 @@ msgstr "प्रतिक्रिया दें"
 msgid "Reactions"
 msgstr "प्रतिक्रियाएँ"
 
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "पेज से पढ़ा गया, जाँचा नहीं गया"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "उत्तर पढ़कर सुनाएं"
@@ -5161,6 +5185,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "हाल के"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "हाल के भुगतान"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -5771,6 +5799,10 @@ msgstr ""
 msgid "Search integrations.sh"
 msgstr ""
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Search MCP servers for “{query}”"
+msgstr "MCP सर्वर में “{query}” खोजें"
+
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5964,6 +5996,7 @@ msgstr "साझा मेमोरी"
 msgid "Show"
 msgstr "दिखाएँ"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""
@@ -6745,6 +6778,10 @@ msgstr "टूल का नाम"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "कुल"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"

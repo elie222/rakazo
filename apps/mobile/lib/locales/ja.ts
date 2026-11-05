@@ -1,4 +1,5 @@
 export const JA_MESSAGES: Record<string, string> = {
+  Haptics: "触覚フィードバック",
   "Add rule": "ルールを追加",
   "Tool name": "ツール名",
   Address: "住所",
@@ -406,6 +407,9 @@ export const JA_MESSAGES: Record<string, string> = {
   Play: "再生",
   Pause: "一時停止",
   "Select text": "テキストを選択",
+  "Filter by who made it": "作成者で絞り込む",
+  "All files": "すべてのファイル",
+  "Made by bots": "ボットが作成",
   "All bots": "すべてのボット",
   Artifact: "アーティファクト",
   Artifacts: "アーティファクト",
@@ -1415,6 +1419,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Discard changes?": "変更を破棄しますか？",
   Discard: "破棄",
   "Could not delete note": "メモを削除できませんでした",
+  "Recent payments": "最近の支払い",
   "Spending limit": "支出上限",
   Amount: "金額",
   Currency: "通貨",
@@ -1430,6 +1435,11 @@ export const JA_MESSAGES: Record<string, string> = {
   "{amount} spent this week": "今週の支出: {amount}",
   "{amount} spent this month": "今月の支出: {amount}",
   "{amount} spent": "支出: {amount}",
+  "Button “{button}” · read from the page, not checked":
+    "ボタン「{button}」· ページから読み取り、未確認",
+  "On the button": "ボタンの金額",
+  "Read from the page, not checked": "ページから読み取り、未確認",
+  Total: "合計",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

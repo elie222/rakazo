@@ -142,6 +142,7 @@ export interface RouterDeps {
     integrationsCatalogUrl?: string;
     mcpAllowPrivateEndpoint?: boolean;
     desktopHostChoiceEnabled?: boolean;
+    computerSettingsEnabled?: boolean;
     mcpStdioEnabled?: boolean;
     mcpStdioAllowedCommands?: string[];
   };

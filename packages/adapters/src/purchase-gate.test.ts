@@ -338,6 +338,7 @@ describe("purchase detection for the page tools", () => {
     expect(purchaseCardSummary(approval)).toEqual({
       onceOnly: true,
       title: "Pay on a\\_b\\*.test?",
+      receipt: { items: [], amountSource: "page" },
       lines: [CHECKED],
     });
     const shop = { steps: [], site: "shop.test", label: "Pay $5", amount: "$5" };
@@ -358,8 +359,137 @@ describe("purchase detection for the page tools", () => {
       "Total on the page: $12",
       CHECKED,
     ]);
+    expect(purchaseCardSummary({ ...shop, amountSource: "button", total: "$12" }).receipt).toEqual({
+      button: "Pay $5",
+      items: [],
+      amount: "$5",
+      amountSource: "button",
+      total: "$12",
+    });
     expect(purchaseApprovalOf({ ...shop, steps: [0], total: "$12" })).toMatchObject({
       total: "$12",
     });
+  });
+
+  it("lists the order lines the page shows, at most eight, between the button and the total", () => {
+    const shop = {
+      steps: [],
+      site: "freshcart.test",
+      label: "Pay $23.40",
+      amount: "$23.40",
+      amountSource: "button",
+    } satisfies PurchaseApproval;
+    const items = [
+      { name: "Bananas × 6", amount: "$3.00" },
+      { name: "Oat milk 1L × 2", amount: "$8.40" },
+      { name: "Delivery", amount: "$6.00" },
+    ];
+    expect(purchaseCardSummary({ ...shop, items }).lines).toEqual([
+      'Button: "Pay $23.40"',
+      "Bananas × 6: $3.00",
+      "Oat milk 1L × 2: $8.40",
+      "Delivery: $6.00",
+      "Amount on the button: $23.40",
+      "The button label, items and total are read from the page. The bot has not checked them.",
+    ]);
+    // Apps draw the same order as a receipt.
+    expect(purchaseCardSummary({ ...shop, items }).receipt).toEqual({
+      button: "Pay $23.40",
+      items,
+      amount: "$23.40",
+      amountSource: "button",
+    });
+    const line = (n: number) => ({ name: `Item ${n}`, amount: "$1" });
+    const lines = (count: number) =>
+      purchaseCardSummary({ ...shop, items: Array.from({ length: count }, (_, n) => line(n)) })
+        .lines;
+    expect(lines(8).filter((text) => text.startsWith("Item "))).toHaveLength(8);
+    const long = lines(12);
+    expect(long.filter((text) => text.startsWith("Item "))).toHaveLength(7);
+    expect(long[8]).toBe("and 5 more");
+    // The page reads no more than 30 lines, so a full list may stand for a longer order.
+    expect(lines(30)[8]).toBe("and 23+ more");
+    const receipt = (count: number) =>
+      purchaseCardSummary({ ...shop, items: Array.from({ length: count }, (_, n) => line(n)) })
+        .receipt;
+    expect(receipt(12)).toMatchObject({ more: { count: 5, atLeast: false } });
+    expect(receipt(12)?.items).toHaveLength(7);
+    expect(receipt(30)).toMatchObject({ more: { count: 23, atLeast: true } });
+    expect(receipt(8)?.more).toBeUndefined();
+    // A computer that lists none, or an older one, shows the card as before.
+    expect(purchaseCardSummary({ ...shop, items: [] }).lines).toEqual(
+      purchaseCardSummary(shop).lines,
+    );
+  });
+
+  it("reads stored order lines as page text, dropping anything else", () => {
+    const stored = {
+      steps: [0],
+      site: "freshcart.test",
+      label: "Place order",
+      amount: "$9",
+      items: [
+        { name: " Bananas\u202e \u001f × 6\u0007", amount: "$3.00" },
+        { name: "No amount" },
+        { name: "Amount on the button", amount: "$1" },
+        { name: "On the button", amount: "$1" },
+        { name: "Total due", amount: "$1" },
+        { name: 'Button: "Place order"', amount: "$1" },
+        "Delivery $6.00",
+        { name: "", amount: "$1" },
+      ],
+    };
+    expect(purchaseApprovalOf(stored)?.items).toEqual([{ name: "Bananas × 6", amount: "$3.00" }]);
+    expect(purchaseApprovalOf({ ...stored, items: "Bananas" })).not.toHaveProperty("items");
+    expect(purchaseApprovalOf({ ...stored, items: [] })).not.toHaveProperty("items");
+  });
+
+  it("stores the page's order lines bounded, without a value the run keeps secret", async () => {
+    const items = [
+      { name: "Gift for 4242424242424242", amount: "$5" },
+      { name: `Note ${"a".repeat(70)}${"9".repeat(30)}`, amount: "$5" },
+      { name: `Tax ${"a".repeat(100)}`, amount: "$1" },
+      ...Array.from({ length: 40 }, () => ({ name: "Gum", amount: "$1" })),
+    ];
+    const ctx = contextWith(async () => ({ purchase: { ...found, items } }) as never, {
+      secrets: ["4242424242424242", "9".repeat(30)],
+    });
+    const purchase = await detectPurchase(ctx, "computer_act", {
+      actions: [{ kind: "click", x: 1, y: 2 }],
+    });
+    expect(JSON.stringify(purchase)).not.toContain("4242424242424242");
+    // A secret the name limit would cut is still redacted whole: not even its start is kept.
+    expect(purchase?.items?.[1]?.name).not.toMatch(/9{5}/);
+    expect(purchase?.items?.[2]).toEqual({ name: `Tax ${"a".repeat(76)}`, amount: "$1" });
+    expect(purchase?.items).toHaveLength(30);
+  });
+
+  it("shows the order lines on the card a pay click asks with", async () => {
+    const items = [{ name: "Bananas × 6", amount: "$3.00" }];
+    const ctx = contextWith(async () => ({ purchase: { ...found, steps: [0], items } }));
+    const request = {
+      name: "browser_act",
+      args: { actions: [{ kind: "click", ref: "e1" }] },
+    } as unknown as ToolRequest;
+    expect(await prepareToolRequest(ctx, request)).toBeUndefined();
+    expect(request.purchase?.items).toEqual(items);
+    expect(request.args.purchaseApproval).toMatchObject({ items });
+    expect(request.fleetSummary?.lines).toContain("Bananas × 6: $3.00");
+    // A replay of the approved desktop press does not hold the page to its order lines: the total does.
+    const replay = {
+      name: "computer_act",
+      nextApprovedTool: "computer_act",
+      args: {
+        actions: [{ kind: "click", x: 1, y: 2 }],
+        purchaseApproval: {
+          steps: [],
+          site: "shop.example.test",
+          label: "Pay now",
+          amount: "$5",
+          items,
+        },
+      },
+    } as unknown as ToolRequest;
+    expect(await prepareToolRequest(ctx, replay)).toBeUndefined();
   });
 });

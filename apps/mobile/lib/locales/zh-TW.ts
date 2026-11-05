@@ -1,4 +1,5 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
+  Haptics: "觸覺回饋",
   "Add rule": "新增規則",
   "Tool name": "工具名稱",
   Address: "地址",
@@ -932,6 +933,9 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
 
   Artifact: "成品",
   Artifacts: "成品",
+  "Filter by who made it": "依建立者篩選",
+  "All files": "所有檔案",
+  "Made by bots": "由機器人建立",
   "All bots": "所有機器人",
   "Search artifacts…": "搜尋成品…",
   "No artifacts yet": "尚無成品",
@@ -1388,6 +1392,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Discard changes?": "要捨棄變更嗎？",
   Discard: "捨棄",
   "Could not delete note": "無法刪除筆記",
+  "Recent payments": "最近付款",
   "Spending limit": "支出上限",
   Amount: "金額",
   Currency: "幣別",
@@ -1403,6 +1408,10 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "{amount} spent this week": "本週已花費 {amount}",
   "{amount} spent this month": "本月已花費 {amount}",
   "{amount} spent": "已花費 {amount}",
+  "Button “{button}” · read from the page, not checked": "按鈕「{button}」· 讀取自頁面，未核實",
+  "On the button": "按鈕上的金額",
+  "Read from the page, not checked": "讀取自頁面，未核實",
+  Total: "合計",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

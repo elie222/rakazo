@@ -182,6 +182,10 @@ msgstr "{count}日"
 msgid "{count} months"
 msgstr "{count}か月"
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "他 {count} 件"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr "{count}週間"
@@ -721,6 +725,10 @@ msgstr "{credit} はすべてモデルの利用に充てられます。"
 msgid "All bots"
 msgstr "すべてのボット"
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "すべてのファイル"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr ""
@@ -1203,6 +1211,10 @@ msgstr "MCPサーバーを探す"
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "組み込み"
+
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "ボタン「{button}」· ページから読み取り、未確認"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -2653,6 +2665,7 @@ msgstr "日"
 msgid "Decline"
 msgstr "拒否"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2770,11 +2783,6 @@ msgstr "拒否済み"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "拒否"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3247,6 +3255,10 @@ msgstr "ボットを絞り込む"
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
 msgstr "日付で絞り込む"
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "作成者で絞り込む"
 
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
@@ -3912,6 +3924,10 @@ msgstr "低"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "低"
+
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "ボットが作成"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
@@ -4664,6 +4680,10 @@ msgstr "{day}日 {time}"
 msgid "on the 1st at {0}"
 msgstr "1日 {0}"
 
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "ボタンの金額"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "1回のみ"
@@ -5129,6 +5149,10 @@ msgstr "リアクション"
 msgid "Reactions"
 msgstr "リアクション"
 
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "ページから読み取り、未確認"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "返信を読み上げる"
@@ -5161,6 +5185,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "最近"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "最近の支払い"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -5771,6 +5799,10 @@ msgstr "ドメインで検索"
 msgid "Search integrations.sh"
 msgstr "integrations.shを検索"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Search MCP servers for “{query}”"
+msgstr "MCPサーバーで「{query}」を検索"
+
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5964,6 +5996,7 @@ msgstr "共有メモリ"
 msgid "Show"
 msgstr "表示"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr "すべて表示"
@@ -6745,6 +6778,10 @@ msgstr "ツール名"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "ツール"
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "合計"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
