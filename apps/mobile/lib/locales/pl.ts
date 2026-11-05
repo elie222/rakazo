@@ -1389,6 +1389,11 @@ export const PL_MESSAGES: Record<string, string> = {
   "{amount} spent this week": "Wydano w tym tygodniu: {amount}",
   "{amount} spent this month": "Wydano w tym miesiącu: {amount}",
   "{amount} spent": "Wydano: {amount}",
+  "Button “{button}” · read from the page, not checked":
+    "Przycisk „{button}” · odczytane ze strony, niesprawdzone",
+  "On the button": "Na przycisku",
+  "Read from the page, not checked": "Odczytane ze strony, niesprawdzone",
+  Total: "Razem",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

@@ -779,6 +779,30 @@ async function ensureRequestCards(
   await bot([
     { kind: "computer", state: "Needs you", text: "Approve the sign-in code on your phone." },
   ]);
+  await bot([
+    {
+      kind: "ask",
+      approvalEffectId: "ios-screenshot-pay",
+      text: "Pay on freshcart.test?",
+      detailFormat: "text",
+      receipt: {
+        button: "Place order",
+        items: [
+          { name: "Bananas × 6", amount: "$3.00" },
+          { name: "Oat milk 1L × 2", amount: "$8.40" },
+          { name: "Delivery", amount: "$6.00" },
+        ],
+        amount: "$17.40",
+        amountSource: "page",
+      },
+      status: "answered",
+      answer: "allow",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    },
+  ]);
 }
 
 /**

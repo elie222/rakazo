@@ -101,6 +101,17 @@ export function purchaseCardSummary(purchase: PurchaseApproval): FleetCardSummar
   return {
     onceOnly: true,
     title: `Pay on ${cardName(purchase.site)}?`,
+    receipt: {
+      ...(purchase.label ? { button: purchase.label } : {}),
+      items: listed,
+      ...(items.length > listed.length
+        ? { more: { count: items.length - listed.length, atLeast: items.length >= MAX_ITEMS } }
+        : {}),
+      ...(purchase.amount ? { amount: purchase.amount } : {}),
+      amountSource: purchase.amountSource,
+      ...(purchase.total && purchase.total !== purchase.amount ? { total: purchase.total } : {}),
+    },
+    // The same order as text, for anywhere that cannot draw the receipt.
     lines: [
       ...(purchase.label ? [`Button: "${purchase.label}"`] : []),
       ...listed.map((item) => `${item.name}: ${item.amount}`),

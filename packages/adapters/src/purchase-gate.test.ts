@@ -338,6 +338,7 @@ describe("purchase detection for the page tools", () => {
     expect(purchaseCardSummary(approval)).toEqual({
       onceOnly: true,
       title: "Pay on a\\_b\\*.test?",
+      receipt: { items: [], amountSource: "page" },
       lines: [CHECKED],
     });
     const shop = { steps: [], site: "shop.test", label: "Pay $5", amount: "$5" };
@@ -358,6 +359,13 @@ describe("purchase detection for the page tools", () => {
       "Total on the page: $12",
       CHECKED,
     ]);
+    expect(purchaseCardSummary({ ...shop, amountSource: "button", total: "$12" }).receipt).toEqual({
+      button: "Pay $5",
+      items: [],
+      amount: "$5",
+      amountSource: "button",
+      total: "$12",
+    });
     expect(purchaseApprovalOf({ ...shop, steps: [0], total: "$12" })).toMatchObject({
       total: "$12",
     });
@@ -384,6 +392,13 @@ describe("purchase detection for the page tools", () => {
       "Amount on the button: $23.40",
       "The button label, items and total are read from the page. The bot has not checked them.",
     ]);
+    // Apps draw the same order as a receipt.
+    expect(purchaseCardSummary({ ...shop, items }).receipt).toEqual({
+      button: "Pay $23.40",
+      items,
+      amount: "$23.40",
+      amountSource: "button",
+    });
     const line = (n: number) => ({ name: `Item ${n}`, amount: "$1" });
     const lines = (count: number) =>
       purchaseCardSummary({ ...shop, items: Array.from({ length: count }, (_, n) => line(n)) })
@@ -394,6 +409,13 @@ describe("purchase detection for the page tools", () => {
     expect(long[8]).toBe("and 5 more");
     // The page reads no more than 30 lines, so a full list may stand for a longer order.
     expect(lines(30)[8]).toBe("and 23+ more");
+    const receipt = (count: number) =>
+      purchaseCardSummary({ ...shop, items: Array.from({ length: count }, (_, n) => line(n)) })
+        .receipt;
+    expect(receipt(12)).toMatchObject({ more: { count: 5, atLeast: false } });
+    expect(receipt(12)?.items).toHaveLength(7);
+    expect(receipt(30)).toMatchObject({ more: { count: 23, atLeast: true } });
+    expect(receipt(8)?.more).toBeUndefined();
     // A computer that lists none, or an older one, shows the card as before.
     expect(purchaseCardSummary({ ...shop, items: [] }).lines).toEqual(
       purchaseCardSummary(shop).lines,

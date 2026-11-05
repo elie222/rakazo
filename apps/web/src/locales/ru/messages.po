@@ -182,6 +182,10 @@ msgstr ""
 msgid "{count} months"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "ещё {count}"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr ""
@@ -1203,6 +1207,10 @@ msgstr "Просмотреть MCP-серверы"
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "Встроенный"
+
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "Кнопка «{button}» · прочитано со страницы, не проверено"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -4664,6 +4672,10 @@ msgstr "{day}-го числа в {time}"
 msgid "on the 1st at {0}"
 msgstr "1-го числа в {0}"
 
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "На кнопке"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "Один раз"
@@ -5128,6 +5140,10 @@ msgstr ""
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Reactions"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "Прочитано со страницы, не проверено"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
@@ -6745,6 +6761,10 @@ msgstr "Название инструмента"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "Инструменты"
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "Итого"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"

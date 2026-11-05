@@ -224,6 +224,16 @@ const approvals: Scenario = {
           "The button label, items and total are read from the page. The bot has not checked them.",
         ].join("\n"),
         detailFormat: "text",
+        receipt: {
+          button: "Place order",
+          items: [
+            { name: "Bananas × 6", amount: "$3.00" },
+            { name: "Oat milk 1L × 2", amount: "$8.40" },
+            { name: "Delivery", amount: "$6.00" },
+          ],
+          amount: "$17.40",
+          amountSource: "page",
+        },
         status: "pending",
         actions: [
           { id: "allow", label: "Allow once" },
