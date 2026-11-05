@@ -8,6 +8,7 @@ import {
   attachmentMaxCount,
   attachmentSizeLabel,
   isAttachmentAudioMimeType,
+  MCP_APP_MIME_TYPE,
 } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
@@ -387,7 +388,7 @@ export async function listSpaceArtifacts(
     WITH scoped AS (
       SELECT * FROM "artifacts"
       WHERE "spaceId" = ${actor.spaceId} ${botFilter}
-        AND "createdAt" <= ${asOf}
+        AND "createdAt" <= ${asOf} AND "mimeType" <> ${MCP_APP_MIME_TYPE}
     ),
     latest AS (
       SELECT DISTINCT ON (COALESCE("rootArtifactId", id))

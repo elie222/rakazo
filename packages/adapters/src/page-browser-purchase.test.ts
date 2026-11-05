@@ -551,6 +551,17 @@ describe("a key on the screen", () => {
     expect(ordinary.helper.paymentPage(false, true).purchase).toBeNull();
   });
 
+  it("reports the page's total beside a button that names less", () => {
+    const deposit = page(`<p>Total: $250</p>\n<button>Pay $5 deposit</button>`);
+    expect(deposit.helper.paymentPage().purchase).toEqual({
+      reason: "payment_page",
+      label: "Pay $5 deposit",
+      amount: "$5",
+      amountFrom: "button",
+      total: "$250",
+    });
+  });
+
   it("does not let a gift card or voucher field make a form a card form", () => {
     const gift = page(`<form><input name="gift_card_number"><button>Redeem</button></form>`);
     expect(gift.intent("Redeem")).toBeNull();

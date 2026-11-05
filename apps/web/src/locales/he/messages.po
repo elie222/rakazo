@@ -368,6 +368,38 @@ msgstr "נותרו {remaining}"
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {# מושב} other {# מושבים}}"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a day"
+msgstr "{shown} ליום"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a month"
+msgstr "{shown} לחודש"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a week"
+msgstr "{shown} לשבוע"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} in total"
+msgstr "{shown} בסך הכול"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent"
+msgstr "{shown} הוצאו"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this month"
+msgstr "{shown} הוצאו החודש"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this week"
+msgstr "{shown} הוצאו השבוע"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent today"
+msgstr "{shown} הוצאו היום"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
 msgstr "{size} B"
@@ -772,6 +804,10 @@ msgstr "מאושר תמיד"
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
 msgstr "תמיד לפתוח את {site}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Amount"
+msgstr "סכום"
 
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
@@ -1225,6 +1261,7 @@ msgstr "לא ניתן לקרוא תמונות"
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SpaceMembersSettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2348,6 +2385,10 @@ msgstr "לא ניתן לשמור את הכלל"
 msgid "Could not save skill"
 msgstr "לא ניתן לשמור את המיומנות"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Could not save spending limit"
+msgstr "לא ניתן היה לשמור את מגבלת ההוצאות"
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "Could not save that choice"
 msgstr "לא ניתן לשמור את הבחירה"
@@ -2588,6 +2629,10 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "ביטוי Cron"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Currency"
+msgstr "מטבע"
+
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
@@ -2612,6 +2657,10 @@ msgstr "התאמה אישית של {label}"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
 msgstr "התאמת תמונת הבוט"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Daily"
+msgstr "יומי"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
@@ -2962,6 +3011,7 @@ msgid "Each name can be used once."
 msgstr "ניתן להשתמש בכל שם פעם אחת בלבד."
 
 #: src/components/AskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -4236,6 +4286,7 @@ msgid "month"
 msgstr "חודש"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "חודשי"
@@ -4541,6 +4592,10 @@ msgstr "לא נמצאו שרתי MCP מרוחקים"
 msgid "No reply"
 msgstr "אין תשובה"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "No reset"
+msgstr "ללא איפוס"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx
@@ -4576,6 +4631,7 @@ msgstr "עדיין אין כרטיסים"
 msgid "No trigger"
 msgstr "ללא טריגר"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr ""
@@ -5327,6 +5383,7 @@ msgstr "טעינה מחדש"
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SpaceMembersSettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -5502,6 +5559,10 @@ msgstr "איפוס סיסמה"
 msgid "Reset your password"
 msgstr "איפוס הסיסמה"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Resets"
+msgstr "איפוס"
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "מאפס…"
@@ -5675,6 +5736,7 @@ msgstr "שבת"
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5915,6 +5977,10 @@ msgstr "שם השרת"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Server URL"
 msgstr "URL של השרת"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Set"
+msgstr "הגדרה"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
@@ -6200,6 +6266,10 @@ msgstr ""
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
 msgstr "מודל דיבור"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Spending limit"
+msgstr "מגבלת הוצאות"
 
 #: src/components/AccountAccess.tsx
 msgid "SSO"
@@ -7158,6 +7228,10 @@ msgstr "שני עד שישי"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "סופי שבוע"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Weekly"
+msgstr "שבועי"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

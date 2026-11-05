@@ -1428,6 +1428,21 @@ export const JA_MESSAGES: Record<string, string> = {
   "Discard changes?": "変更を破棄しますか？",
   Discard: "破棄",
   "Could not delete note": "メモを削除できませんでした",
+  "Spending limit": "支出上限",
+  Amount: "金額",
+  Currency: "通貨",
+  Daily: "毎日",
+  Weekly: "毎週",
+  "No reset": "リセットなし",
+  "Enter an amount": "金額を入力してください",
+  "{amount} a day": "1日あたり{amount}",
+  "{amount} a week": "1週間あたり{amount}",
+  "{amount} a month": "1か月あたり{amount}",
+  "{amount} in total": "合計{amount}",
+  "{amount} spent today": "今日の支出: {amount}",
+  "{amount} spent this week": "今週の支出: {amount}",
+  "{amount} spent this month": "今月の支出: {amount}",
+  "{amount} spent": "支出: {amount}",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

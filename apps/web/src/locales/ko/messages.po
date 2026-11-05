@@ -368,6 +368,38 @@ msgstr "남은 시간 {remaining}"
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr ""
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a day"
+msgstr "하루 {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a month"
+msgstr "월 {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a week"
+msgstr "주당 {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} in total"
+msgstr "총 {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent"
+msgstr "{shown} 지출"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this month"
+msgstr "이번 달 {shown} 지출"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this week"
+msgstr "이번 주 {shown} 지출"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent today"
+msgstr "오늘 {shown} 지출"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
 msgstr "{size} B"
@@ -772,6 +804,10 @@ msgstr "항상 허용됨"
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
 msgstr "{site} 항상 열기"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Amount"
+msgstr "금액"
 
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
@@ -1225,6 +1261,7 @@ msgstr "이미지를 읽을 수 없음"
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SpaceMembersSettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2348,6 +2385,10 @@ msgstr "확인 규칙을 저장하지 못했습니다."
 msgid "Could not save skill"
 msgstr "스킬을 저장하지 못했습니다"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Could not save spending limit"
+msgstr "지출 한도를 저장하지 못했습니다"
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "Could not save that choice"
 msgstr "선택 내용을 저장하지 못했습니다."
@@ -2588,6 +2629,10 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Cron 표현식"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Currency"
+msgstr "통화"
+
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
@@ -2612,6 +2657,10 @@ msgstr "{label} 맞춤설정"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
 msgstr "봇 아바타 맞춤설정"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Daily"
+msgstr "매일"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
@@ -2962,6 +3011,7 @@ msgid "Each name can be used once."
 msgstr "각 이름은 한 번만 사용할 수 있습니다."
 
 #: src/components/AskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -4236,6 +4286,7 @@ msgid "month"
 msgstr ""
 
 #: src/components/ModelCredits.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "매월"
@@ -4541,6 +4592,10 @@ msgstr ""
 msgid "No reply"
 msgstr "답장 없음"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "No reset"
+msgstr "초기화 안 함"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx
@@ -4576,6 +4631,7 @@ msgstr ""
 msgid "No trigger"
 msgstr "트리거 없음"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr ""
@@ -5327,6 +5383,7 @@ msgstr "새로고침"
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SpaceMembersSettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -5502,6 +5559,10 @@ msgstr "비밀번호 재설정"
 msgid "Reset your password"
 msgstr "비밀번호를 재설정하세요"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Resets"
+msgstr "초기화"
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "재설정 중…"
@@ -5675,6 +5736,7 @@ msgstr "토요일"
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5915,6 +5977,10 @@ msgstr "서버 이름"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Server URL"
 msgstr "서버 URL"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Set"
+msgstr "설정"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
@@ -6200,6 +6266,10 @@ msgstr ""
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
 msgstr "음성 모델"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Spending limit"
+msgstr "지출 한도"
 
 #: src/components/AccountAccess.tsx
 msgid "SSO"
@@ -7158,6 +7228,10 @@ msgstr "주중"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "주말"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Weekly"
+msgstr "매주"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

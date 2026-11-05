@@ -1395,6 +1395,21 @@ export const NL_MESSAGES: Record<string, string> = {
   "Discard changes?": "Wijzigingen verwerpen?",
   Discard: "Verwerpen",
   "Could not delete note": "Notitie kon niet worden verwijderd",
+  "Spending limit": "Bestedingslimiet",
+  Amount: "Bedrag",
+  Currency: "Valuta",
+  Daily: "Dagelijks",
+  Weekly: "Wekelijks",
+  "No reset": "Niet resetten",
+  "Enter an amount": "Voer een bedrag in",
+  "{amount} a day": "{amount} per dag",
+  "{amount} a week": "{amount} per week",
+  "{amount} a month": "{amount} per maand",
+  "{amount} in total": "{amount} in totaal",
+  "{amount} spent today": "{amount} vandaag uitgegeven",
+  "{amount} spent this week": "{amount} deze week uitgegeven",
+  "{amount} spent this month": "{amount} deze maand uitgegeven",
+  "{amount} spent": "{amount} uitgegeven",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
