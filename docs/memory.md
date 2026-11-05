@@ -45,7 +45,10 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
 The Server URL is reached by the Rakazo API and worker, not by the browser. If those run in
 containers, `127.0.0.1` points at that container. Use an endpoint reachable from both services;
 private endpoints require the operator's existing `MCP_ALLOW_PRIVATE_ENDPOINT` permission. Keep
-service tokens out of URLs and use the encrypted credential field.
+service tokens out of URLs and use the encrypted credential field. Capture freezes a non-secret
+connection identity when the turn completes. If the configured service/owner changes before delivery,
+the old turn is not forwarded to the replacement connection; captures with an unknown older identity
+are also skipped. Credential rotation for the same connection does not change its identity.
 
 **Memmy isolation:** its source/profile labels are not an authorization boundary. Bots and spaces
 connected to the same Memmy database can retrieve each other's derived memories, regardless of the

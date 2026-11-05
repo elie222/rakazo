@@ -889,7 +889,11 @@ export async function completeRun(ctx: RunContext) {
   const captureScope = ctx.memory.scope;
   const memoryCapture =
     ctx.memory.captureEligible && captureScope
-      ? { sourceMemoryIds: ctx.memory.injectedIds, scope: captureScope }
+      ? {
+          sourceMemoryIds: ctx.memory.injectedIds,
+          scope: captureScope,
+          ...(ctx.memory.captureTarget ? { target: ctx.memory.captureTarget } : {}),
+        }
       : null;
   const completed = await deps.events.finalizeRun({
     spaceId: run.spaceId,

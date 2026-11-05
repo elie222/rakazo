@@ -436,6 +436,19 @@ describe("R5 #3 毒丸：最老一轮永久失败", () => {
 
 // ---------------------------------------------------------------------------
 describe("R5 #4 排空循环边界（BATCH = 25）", () => {
+  it("does not exhaust a turn's delivery budget on connection configuration failures", async () => {
+    const { lifecycle } = lifecycleOf(async () => ({
+      status: "retryable",
+      reason: "unauthorized",
+    }));
+    const { prisma, rows } = fakePrisma([runRow()]);
+    const deps = { prisma, memoryProviders: resolverOf(lifecycle) };
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await captureFinishedTurn(deps, "run-123").catch(() => undefined);
+    }
+    expect(rows.get("run-123")?.memoryCapturedAt).toBeNull();
+    expect(rows.get("run-123")?.memoryCapturePayload).not.toBeNull();
+  });
   it.each([
     [24, 2],
     [25, 2],

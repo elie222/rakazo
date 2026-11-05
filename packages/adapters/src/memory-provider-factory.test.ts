@@ -97,6 +97,26 @@ describe("SpaceMemoryProviderResolver.resolveTurnMemory", () => {
     },
   );
 
+  it("identifies the connection with stable settings order, not its rotating token", async () => {
+    const first = resolverFor(credentials, {
+      ...options,
+      settings: { ownerId: "owner-1", contextBudget: "8000" },
+    });
+    const reordered = resolverFor(JSON.stringify({ token: "rotated-synthetic-token" }), {
+      ...options,
+      settings: { contextBudget: "8000", ownerId: "owner-1" },
+    });
+
+    const initial = await first.resolver.resolveTurnMemory("space-1");
+    const rotated = await reordered.resolver.resolveTurnMemory("space-1");
+    if (initial.kind !== "configured" || rotated.kind !== "configured") {
+      throw new Error("Expected configured lifecycles");
+    }
+    expect(initial.captureTarget).toMatch(/^[a-f0-9]{64}$/);
+    expect(rotated.captureTarget).toBe(initial.captureTarget);
+    expect((await first.resolver.resolve("space-1"))?.captureTarget).toBe(initial.captureTarget);
+  });
+
   it.each(["honcho", "supermemory", "serenity"])(
     "keeps legacy %s usable while treating its missing lifecycle as terminal",
     async (provider) => {

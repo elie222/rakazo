@@ -49,6 +49,7 @@ async function runRoutine(
     trigger?: "user" | "webhook" | "tickets";
     sourceMessageId?: string | null;
     turnMemory?: TurnMemoryLifecycle;
+    captureTarget?: string;
   } = {},
 ) {
   const attachment: Extract<MessageBlock, { kind: "file" | "image" }> = {
@@ -290,6 +291,7 @@ async function runRoutine(
               kind: "configured" as const,
               lifecycle: options.turnMemory,
               defaultScope: "shared" as const,
+              captureTarget: options.captureTarget,
             }
           : { kind: "unconfigured" as const },
       resolve: async () => {
@@ -299,6 +301,7 @@ async function runRoutine(
             provider: { recall: async () => ({ ok: true, value: [] }) },
             defaultScope: "shared",
             lifecycle: options.turnMemory,
+            captureTarget: options.captureTarget,
           };
         }
         return null;
@@ -372,6 +375,35 @@ afterEach(() => {
 });
 
 describe("turn memory through the executor", () => {
+  it("finalizes with the connection identity resolved for the turn, not later settings", async () => {
+    const options = {
+      trigger: "user" as const,
+      sourceMessageId: "message-1",
+      captureTarget: "initial-connection-target",
+      turnMemory: {
+        beforeTurn: vi.fn(async () => {
+          options.captureTarget = "replacement-connection-target";
+          return { sections: [], sourceMemoryIds: [] };
+        }),
+        captureTurn: vi.fn(async () => ({ status: "stored" as const })),
+      },
+    };
+
+    const { finalizeRun } = await runRoutine([], options);
+
+    expect(options.turnMemory.beforeTurn).toHaveBeenCalledOnce();
+    expect(finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "completed",
+        memoryCapture: {
+          sourceMemoryIds: [],
+          scope: "shared",
+          target: "initial-connection-target",
+        },
+      }),
+    );
+  });
+
   it.each(["webhook", "tickets"] as const)(
     "completes %s without recalling or scheduling capture",
     async (trigger) => {

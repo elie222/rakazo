@@ -1016,10 +1016,12 @@ model Run {
   memoryCapturedAt    DateTime?
   // Freeze the turn's scope so retries do not follow later bot settings changes.
   memoryCaptureScope  String?
+  // Non-secret connection identity; never redirect an earlier turn to a replacement service.
+  memoryCaptureTarget String?
   // Frozen redacted delivery payload; retries must not re-read mutable evidence or secrets.
   memoryCapturePayload Json?
-  // Counts send attempts so a turn the provider keeps failing transiently is retired
-  // instead of blocking its conversation inside the drain order.
+  // Counts turn-delivery failures, excluding connection authentication/route faults,
+  // so a persistently invalid turn cannot block its conversation indefinitely.
   memoryCaptureAttempts Int               @default(0)
   // Provider ids recalled into this turn; capture echoes them so the provider does not
   // re-learn its own output.

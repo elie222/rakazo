@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   DurableMemoryScope,
   SecretStore,
@@ -61,6 +62,8 @@ export interface PreparedMemoryProviderConnection {
 export interface ConfiguredMemoryProvider {
   provider: SemanticMemoryProvider;
   defaultScope: DurableMemoryScope;
+  /** Connection identity without credentials; stable across token rotation. */
+  captureTarget?: string;
   /** Per-turn recall/capture for providers that learn from each turn. */
   lifecycle?: TurnMemoryLifecycle;
 }
@@ -71,6 +74,7 @@ export type TurnMemoryAvailability =
       kind: "configured";
       lifecycle: TurnMemoryLifecycle;
       defaultScope: DurableMemoryScope;
+      captureTarget?: string;
     }
   | { kind: "unconfigured" }
   | { kind: "unavailable"; reason: string; retryable: boolean };
@@ -335,6 +339,15 @@ function decodeCredentials(provider: string, plaintext: string): Record<string, 
   throw new Error(`Stored credentials for memory provider "${provider}" are invalid.`);
 }
 
+function memoryCaptureTarget(provider: string, settings: Record<string, string>): string {
+  const entries = Object.keys(settings)
+    .sort()
+    .map((key) => [key, settings[key]]);
+  return createHash("sha256")
+    .update(JSON.stringify([provider, entries]))
+    .digest("hex");
+}
+
 export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
   constructor(
     private readonly prisma: Pick<PrismaClient, "spaceMemoryConfig">,
@@ -344,9 +357,9 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
   async resolveTurnMemory(spaceId: string): Promise<TurnMemoryAvailability> {
     const result = await this.loadConfiguredProvider(spaceId, true);
     if (result.kind !== "configured") return result;
-    const { lifecycle, defaultScope } = result.value;
+    const { lifecycle, defaultScope, captureTarget } = result.value;
     return lifecycle
-      ? { kind: "configured", lifecycle, defaultScope }
+      ? { kind: "configured", lifecycle, defaultScope, captureTarget }
       : unavailable("lifecycle_unsupported");
   }
 
@@ -420,6 +433,7 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
         value: {
           provider: adapter.create(settings, credentials),
           defaultScope: config.defaultMemoryScope === "shared" ? "shared" : "isolated",
+          captureTarget: memoryCaptureTarget(config.provider, settings),
           ...(adapter.createTurnMemory
             ? { lifecycle: adapter.createTurnMemory(settings, credentials) }
             : {}),

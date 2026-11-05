@@ -773,6 +773,25 @@ describe("R5 TDD audit: turn-memory-prompt, run-context, executor, run-turn", ()
       );
     });
 
+    it("keeps legacy recall when a lifecycle exists but this run is ineligible", async () => {
+      const beforeTurn = vi.fn(async () => null);
+      const captureTurn = vi.fn(
+        async (): Promise<TurnMemoryCaptureResult> => ({ status: "stored" }),
+      );
+      const semanticRecall = vi.fn(async () => ({ ok: true as const, value: [] }));
+      const { executor, finalizeRun } = makeExecutorFixture({
+        trigger: "webhook",
+        historyCount: 30,
+        historyCompactedUpToSeq: 20,
+        turnMemory: { beforeTurn, captureTurn },
+        semanticRecall,
+      });
+      await executor.continueRun("run-1", "worker-1");
+      expect(beforeTurn).not.toHaveBeenCalled();
+      expect(semanticRecall).toHaveBeenCalledOnce();
+      expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ memoryCapture: null }));
+    });
+
     it("injects rendered <turn_memory> into historicalContext, records injectedIds, suppresses semanticMemory.recall, and keeps the full 200-message window on compacted threads", async () => {
       const beforeTurn = vi.fn(async () => ({
         sections: [

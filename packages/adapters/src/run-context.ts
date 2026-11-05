@@ -291,6 +291,8 @@ export interface RunContext {
     turnMemory: TurnMemoryLifecycle | null;
     scope: ReturnType<typeof effectiveMemoryScope> | null;
     captureEligible: boolean;
+    /** Connection resolved for this attempt, never reloaded while finalizing. */
+    captureTarget?: string;
     /** Ids actually injected this attempt; echoed to the provider on capture. */
     injectedIds: string[];
   };

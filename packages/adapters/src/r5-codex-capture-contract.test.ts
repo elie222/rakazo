@@ -71,8 +71,8 @@ const completionReplies: Array<{
 ];
 
 const httpFailures: Array<{ http: number; expected: TurnMemoryCaptureResult }> = [
-  { http: 401, expected: { status: "terminal", reason: "unauthorized" } },
-  { http: 403, expected: { status: "terminal", reason: "unauthorized" } },
+  { http: 401, expected: { status: "retryable", reason: "unauthorized" } },
+  { http: 403, expected: { status: "retryable", reason: "unauthorized" } },
   { http: 409, expected: { status: "terminal", reason: "rejected_409" } },
   { http: 422, expected: { status: "terminal", reason: "rejected_422" } },
   { http: 429, expected: { status: "retryable", reason: "http_429" } },
@@ -155,10 +155,10 @@ describe("R5 complete HTTP and body contract", () => {
   });
 
   it.each([
-    { http: 401, expected: { status: "terminal", reason: "unauthorized" } },
+    { http: 401, expected: { status: "retryable", reason: "unauthorized" } },
     { http: 422, expected: { status: "terminal", reason: "rejected_422" } },
   ])(
-    "keeps HTTP $http terminal when its response body stream fails",
+    "preserves HTTP $http classification when its response body stream fails",
     async ({ http, expected }) => {
       const { client } = fixture(
         () =>

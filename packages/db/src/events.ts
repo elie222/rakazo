@@ -194,7 +194,12 @@ interface FinalizeRunBase {
    * Present when this turn owes a turn-memory capture. Written in the same
    * transaction as the outcome so a crash between commit and enqueue cannot lose it.
    */
-  memoryCapture?: { sourceMemoryIds: string[]; scope: "isolated" | "shared" } | null;
+  memoryCapture?: {
+    sourceMemoryIds: string[];
+    scope: "isolated" | "shared";
+    /** Non-secret connection identity resolved by this execution attempt. */
+    target?: string;
+  } | null;
 }
 
 export type FinalizeRunInput = FinalizeRunBase &
@@ -1873,6 +1878,7 @@ async function finalizeRunOnce(
           memoryCaptureDueAt: now,
           memoryCapturedAt: null,
           memoryCaptureScope: input.memoryCapture.scope,
+          memoryCaptureTarget: input.memoryCapture.target ?? null,
           memoryRecallIds: input.memoryCapture.sourceMemoryIds,
         },
       });

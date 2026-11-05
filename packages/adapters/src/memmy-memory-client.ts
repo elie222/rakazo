@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   TurnMemoryCaptureResult,
   TurnMemoryLayer,
@@ -122,7 +122,7 @@ interface BreakerState {
   openUntil: number;
 }
 
-/** Keyed by base URL: every provider instance for one Memmy shares its health. */
+/** Keyed by endpoint and credential fingerprint; one broken connection cannot silence another. */
 const breakers = new Map<string, BreakerState>();
 
 /** Test seam: forget breaker state between cases. */
@@ -360,10 +360,13 @@ export class MemmyMemoryClient {
   }
 
   private breaker(): BreakerState {
-    let state = breakers.get(this.options.baseUrl);
+    // An invalid credential is a failed connection, not a server outage for other users.
+    // Keep raw tokens out of map keys and diagnostics.
+    const key = `${this.options.baseUrl}:${createHash("sha256").update(this.options.token).digest("hex")}`;
+    let state = breakers.get(key);
     if (!state) {
       state = { failures: 0, openUntil: 0 };
-      breakers.set(this.options.baseUrl, state);
+      breakers.set(key, state);
     }
     return state;
   }
@@ -458,13 +461,14 @@ export function classifyCaptureResponse(
   jsonOk: boolean,
   json: unknown,
 ): TurnMemoryCaptureResult {
-  if (status === 401 || status === 403) return { status: "terminal", reason: "unauthorized" };
+  if (status === 401 || status === 403) return { status: "retryable", reason: "unauthorized" };
+  if (status === 404) return { status: "retryable", reason: "connection_not_found" };
   if (status === 408 || status === 425 || status === 429 || status >= 500) {
     return { status: "retryable", reason: `http_${status}` };
   }
   if (status >= 400) {
-    // 400/404/422 per contract; other 4xx (409, 413, ...) are equally a payload or route
-    // problem that a resend cannot fix.
+    // Other 4xx responses describe a rejected payload. Authentication and missing-route
+    // failures above are connection configuration faults and preserve the pending turn.
     return { status: "terminal", reason: `rejected_${status}` };
   }
   if (status < 200 || status >= 300) return { status: "retryable", reason: `http_${status}` };

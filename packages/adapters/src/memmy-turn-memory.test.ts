@@ -455,7 +455,7 @@ describe("createMemmyTurnMemory.captureTurn", () => {
       reason: "source_turn_content_conflict",
     });
     await expect(memory.captureTurn(capture, context)).resolves.toEqual({
-      status: "terminal",
+      status: "retryable",
       reason: "unauthorized",
     });
     await expect(memory.captureTurn(capture, context)).resolves.toEqual({

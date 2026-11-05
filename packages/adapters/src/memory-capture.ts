@@ -73,6 +73,7 @@ export interface CaptureTurnRunRow {
   memoryCapturedAt: Date | null;
   memoryRecallIds: unknown;
   memoryCaptureScope: string | null;
+  memoryCaptureTarget?: string | null;
   memoryCapturePayload: unknown;
   memoryCaptureAttempts?: number;
 }
@@ -106,6 +107,7 @@ export interface MemoryCapturePrisma {
         memoryCapturedAt: true;
         memoryRecallIds: true;
         memoryCaptureScope: true;
+        memoryCaptureTarget: true;
         memoryCapturePayload: true;
         memoryCaptureAttempts: true;
       };
@@ -377,6 +379,15 @@ async function readCapturePayload(prisma: MemoryCapturePrisma, run: CaptureTurnR
   return parsed.data;
 }
 
+async function countCaptureFailure(prisma: MemoryCapturePrisma, runId: string) {
+  // Connection/authentication faults affect the connection, not the validity of every
+  // queued turn. Only individual delivery failures consume a turn's retry budget.
+  await prisma.run.updateMany({
+    where: { id: runId, memoryCapturedAt: null },
+    data: { memoryCaptureAttempts: { increment: 1 } },
+  });
+}
+
 async function markCaptureDone(prisma: MemoryCapturePrisma, runId: string) {
   // The snapshot is only needed until acknowledgement; don't retain a second content archive.
   await prisma.run.update({
@@ -403,6 +414,7 @@ function readCaptureRun(prisma: MemoryCapturePrisma, runId: string) {
       memoryCapturedAt: true,
       memoryRecallIds: true,
       memoryCaptureScope: true,
+      memoryCaptureTarget: true,
       memoryCapturePayload: true,
       memoryCaptureAttempts: true,
     },
@@ -426,9 +438,9 @@ export async function captureFinishedTurn(deps: CaptureDeps, runId: string): Pro
   }
   const held = await deps.lock(`memory.capture:${run.threadId}:${run.botId}`, drain);
   if (!held.acquired) {
-    // Another handler is draining this conversation and its loop runs until the queue is
-    // empty, so a turn that finished during the drain is caught by it. Anything older
-    // than that window is the reconciler's job; failing here would only add job errors.
+    // Another handler may pick this turn up, but it can also be releasing its lock after
+    // an empty read. The durable capture obligation remains pending for the reconciler;
+    // lock contention does not acknowledge the row or consume its delivery attempts.
     getLogger().debug("turn memory capture deferred: conversation busy", { runId: run.id });
   }
 }
@@ -471,7 +483,7 @@ async function capturePendingTurns(deps: CaptureDeps, run: CaptureTurnRunRow): P
 }
 
 async function captureOneTurn(deps: CaptureDeps, runId: string): Promise<"done" | "retryable"> {
-  // The target (thread/bot/scope/turnId) comes only from stored rows and cannot drift on retry.
+  // The target (connection/thread/bot/scope/turnId) comes from stored rows, never later settings.
   const run = await readCaptureRun(deps.prisma, runId);
   if (!isPendingCapture(run)) return "done";
   if ((run.memoryCaptureAttempts ?? 0) >= MEMORY_CAPTURE_MAX_ATTEMPTS) {
@@ -534,6 +546,12 @@ async function capturePendingTurn(
     });
     await markCaptureDone(deps.prisma, run.id);
     return "done";
+  }
+
+  // Unknown older targets cannot be assigned to today's connection. Both absent is
+  // retained only for resolver implementations that do not expose connection identities.
+  if ((run.memoryCaptureTarget ?? undefined) !== availability.captureTarget) {
+    throw new InvalidCaptureError("capture_connection_changed");
   }
 
   let capture: TurnMemoryCapture | null;
@@ -635,12 +653,6 @@ async function capturePendingTurn(
     throw new InvalidCaptureError("capture_target_mismatch");
   }
 
-  // Counted only when a send is really about to happen, so a provider that is merely
-  // unavailable leaves the row untouched.
-  await deps.prisma.run.updateMany({
-    where: { id: run.id, memoryCapturedAt: null },
-    data: { memoryCaptureAttempts: { increment: 1 } },
-  });
   const context: AdapterContext = {
     operationId: `memory.capture:${run.id}`,
     traceId: run.id,
@@ -655,8 +667,18 @@ async function capturePendingTurn(
   try {
     result = await availability.lifecycle.captureTurn(capture, context);
   } catch (error) {
-    if (isRetryableMemoryError(error)) return "retryable";
+    if (isRetryableMemoryError(error)) {
+      await countCaptureFailure(deps.prisma, run.id);
+      return "retryable";
+    }
     throw new InvalidCaptureError("capture_provider_failure");
+  }
+  if (
+    result.status === "retryable" &&
+    result.reason !== "unauthorized" &&
+    result.reason !== "connection_not_found"
+  ) {
+    await countCaptureFailure(deps.prisma, run.id);
   }
   if (result.status === "stored" || result.status === "existing") {
     await markCaptureDone(deps.prisma, run.id);

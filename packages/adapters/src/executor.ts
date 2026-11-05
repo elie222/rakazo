@@ -907,23 +907,24 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? `Update from ${peerMessage.fromBotName}: ${peerMessage.text}`
             : DELEGATED_EMPTY_NOTICE
           : undefined;
-        const recallPromise = turnMemory
-          ? Promise.resolve(null)
-          : threadContext.includeSemanticRecall &&
-              semanticMemory &&
-              memoryScope &&
-              thread.historyCompactedUpToSeq != null
-            ? semanticMemory.recall(
-                {
-                  query: task.prompt,
-                  scope: memoryScope,
-                  botId: bot.id,
-                  historyGeneration: thread.historyCompactionGeneration,
-                  limit: MAX_RECALLED_MEMORIES,
-                },
-                context,
-              )
-            : Promise.resolve(null);
+        const recallPromise =
+          turnMemory && captureEligible
+            ? Promise.resolve(null)
+            : threadContext.includeSemanticRecall &&
+                semanticMemory &&
+                memoryScope &&
+                thread.historyCompactedUpToSeq != null
+              ? semanticMemory.recall(
+                  {
+                    query: task.prompt,
+                    scope: memoryScope,
+                    botId: bot.id,
+                    historyGeneration: thread.historyCompactionGeneration,
+                    limit: MAX_RECALLED_MEMORIES,
+                  },
+                  context,
+                )
+              : Promise.resolve(null);
         const turnMemoryPromise =
           captureEligible && turnMemory && memoryScope
             ? recallTurnMemory(
@@ -1659,6 +1660,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             turnMemory,
             scope: memoryScope,
             captureEligible,
+            captureTarget: configuredMemory?.captureTarget,
             injectedIds: injectedMemoryIds,
           },
           scripted,

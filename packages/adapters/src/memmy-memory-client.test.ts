@@ -506,10 +506,10 @@ describe("MemmyMemoryClient.complete", () => {
   });
 
   it.each([
-    [401, { status: "terminal", reason: "unauthorized" }],
-    [403, { status: "terminal", reason: "unauthorized" }],
+    [401, { status: "retryable", reason: "unauthorized" }],
+    [403, { status: "retryable", reason: "unauthorized" }],
     [400, { status: "terminal", reason: "rejected_400" }],
-    [404, { status: "terminal", reason: "rejected_404" }],
+    [404, { status: "retryable", reason: "connection_not_found" }],
     [422, { status: "terminal", reason: "rejected_422" }],
     [408, { status: "retryable", reason: "http_408" }],
     [425, { status: "retryable", reason: "http_425" }],

@@ -82,7 +82,11 @@ describe("finalizeRun turn-memory capture", () => {
           ...input,
           outcome: "completed",
           blocks: [],
-          memoryCapture: { sourceMemoryIds: [...sourceMemoryIds], scope },
+          memoryCapture: {
+            sourceMemoryIds: [...sourceMemoryIds],
+            scope,
+            target: "synthetic-connection-target",
+          },
         }),
       ).resolves.toEqual({ continuationRunId: null });
 
@@ -93,6 +97,7 @@ describe("finalizeRun turn-memory capture", () => {
           memoryCaptureDueAt: completedAt,
           memoryCapturedAt: null,
           memoryCaptureScope: scope,
+          memoryCaptureTarget: "synthetic-connection-target",
           memoryRecallIds: sourceMemoryIds,
         },
       });
@@ -295,7 +300,13 @@ describePostgres("turn-memory capture commits and rollback (PostgreSQL)", () => 
               outcome: "completed",
               blocks: [],
               ...(captures
-                ? { memoryCapture: { sourceMemoryIds: ["memory-a"], scope: mode } }
+                ? {
+                    memoryCapture: {
+                      sourceMemoryIds: ["memory-a"],
+                      scope: mode,
+                      target: "fixture-target",
+                    },
+                  }
                 : {}),
             };
 
@@ -307,6 +318,7 @@ describePostgres("turn-memory capture commits and rollback (PostgreSQL)", () => 
       expect(run.memoryCaptureDueAt).toEqual(captures ? run.completedAt : null);
       expect(run.memoryCapturedAt).toBeNull();
       expect(run.memoryCaptureScope).toEqual(captures ? mode : null);
+      expect(run.memoryCaptureTarget).toEqual(captures ? "fixture-target" : null);
       expect(run.memoryCapturePayload).toBeNull();
       expect(run.memoryRecallIds).toEqual(captures ? ["memory-a"] : null);
     },
