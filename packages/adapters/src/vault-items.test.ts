@@ -66,8 +66,10 @@ describe("saving cards and contacts", () => {
     const db = await vaultWithCard();
     const row = db.rows().find((stored) => stored.name === "visa")!;
     // Random base64 can hold a short substring by chance, so look for whole plaintext
-    // pieces it cannot produce: the full card number, and a street line with spaces.
+    // pieces it cannot produce: the full card number (as saved and as typed), and a street
+    // line with spaces.
     expect(row.ciphertext).not.toContain("4242424242424242");
+    expect(row.ciphertext).not.toContain(fakeCard.number);
     expect(JSON.parse(await secretStore.load(row.ciphertext, row.id))).toMatchObject({
       number: "4242424242424242",
     });
