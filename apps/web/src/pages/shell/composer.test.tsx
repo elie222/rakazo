@@ -1449,6 +1449,50 @@ it("does not auto-send a queued dictation when a reply arms as the earlier send 
   }
 });
 
+it("does not auto-send a queued dictation into a page opened before the earlier send settles", async () => {
+  let finish!: (accepted: boolean) => void;
+  const onSend = vi.fn(
+    (_text: string) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    renderComposer(onSend, { phoneCallsEnabled: true });
+    const session = createPageSession();
+    const renderInChat = (overrides: Partial<ComponentProps<typeof Composer>>) => {
+      composerProps = { ...composerProps, ...overrides };
+      act(() =>
+        root?.render(
+          <PagesProvider value={{ open: () => {}, session }}>
+            <Composer {...composerProps} />
+          </PagesProvider>,
+        ),
+      );
+    };
+    renderInChat({});
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("first words"));
+    await act(async () => {});
+    renderInChat({ sending: true });
+    act(() => onFinal("second words"));
+    await act(async () => {});
+    act(() => session.dock.set({ page: { id: "page-1", title: "Plan" } }));
+    await act(async () => finish(true));
+    renderInChat({ sending: false });
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(container?.querySelector("textarea")?.value).toBe("second words");
+  } finally {
+    listen.mockRestore();
+  }
+});
+
 it("does not keep the nonce when a reopened chat rebinds the same mention text", async () => {
   const nonces: string[] = [];
   let fail!: (error: Error) => void;

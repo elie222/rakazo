@@ -227,11 +227,12 @@ const ComposerBody = memo(function Composer({
       : null,
   );
   const retryNonce = useRef(storedRetryNonce);
+  // Opening or closing a page counts as an edit, like a reply change.
   const previousPageId = useRef(openPageId);
   useEffect(() => {
     if (previousPageId.current === openPageId) return;
     previousPageId.current = openPageId;
-    retryNonce.current = null;
+    markEdited();
   }, [openPageId]);
   const replyId = replyTarget?.id ?? null;
   const quote = replyTarget ? (replyQuote ?? null) : null;
@@ -555,10 +556,9 @@ const ComposerBody = memo(function Composer({
     }
     // Restore only an untouched draft, retaining its nonce for an unchanged retry.
     // This composer still carries the reply and attachments the send carried, so
-    // the in-memory nonce is safe here unless the open page changed; the stored
-    // one is only for plain text.
+    // the in-memory nonce is safe here; the stored one is only for plain text.
     if (editRevision.current !== revision) return;
-    if ((pageSession?.dock.get().page?.id ?? null) === openPageId) retryNonce.current = clientNonce;
+    retryNonce.current = clientNonce;
     if (nonceRecoverable) keepComposerRetryNonce(draftKey, submission, clientNonce);
     commitComposition(submitted, false);
     setSelectedSkill(selectedSkill);
