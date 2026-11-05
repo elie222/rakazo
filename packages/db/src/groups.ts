@@ -644,7 +644,7 @@ export function createGroupRepos(prisma: PrismaClient) {
 
     async removeGroup(actor: Actor, groupId: string) {
       return prisma.$transaction(async (tx) => {
-        await lockOwnedGroup(tx, actor, groupId);
+        await lockOwnedGroup(tx, actor, groupId, { forDelete: true });
         const group = await tx.chatGroup.findUnique({
           where: { id: groupId },
           select: {
@@ -683,19 +683,36 @@ export function createGroupRepos(prisma: PrismaClient) {
   };
 }
 
+/**
+ * Serializes writers of one group. Callers lock the group before its thread, while a
+ * thread writer that writes the thread row twice (message, then event counter) takes a
+ * foreign-key share on the group row under its thread lock. FOR NO KEY UPDATE lets that
+ * share through so the two orders cannot deadlock; only deleting the group needs
+ * FOR UPDATE, which also keeps new rows from referencing it.
+ */
 export async function lockOwnedGroup(
   prisma: Pick<Prisma.TransactionClient, "$queryRaw">,
   actor: Pick<Actor, "spaceId" | "userId">,
   groupId: string,
+  options: { forDelete?: boolean } = {},
 ) {
-  const locked = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT id
-    FROM chat_groups
-    WHERE id = ${groupId}
-      AND "spaceId" = ${actor.spaceId}
-      AND "userId" = ${actor.userId}
-    FOR UPDATE
-  `;
+  const locked = options.forDelete
+    ? await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id
+        FROM chat_groups
+        WHERE id = ${groupId}
+          AND "spaceId" = ${actor.spaceId}
+          AND "userId" = ${actor.userId}
+        FOR UPDATE
+      `
+    : await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id
+        FROM chat_groups
+        WHERE id = ${groupId}
+          AND "spaceId" = ${actor.spaceId}
+          AND "userId" = ${actor.userId}
+        FOR NO KEY UPDATE
+      `;
   if (locked.length !== 1) throw new IsolationError();
 }
 
@@ -708,3 +725,4 @@ export async function touchGroupUpdatedAt(
     data: { updatedAt: new Date() },
   });
 }
+
