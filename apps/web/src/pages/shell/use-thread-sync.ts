@@ -36,7 +36,11 @@ import {
   reduceComputerStatus,
   reduceThreadSnapshot,
 } from "../../lib/thread-events";
-import { transcriptCanSnapAfterFrame, transcriptIsNearEnd } from "../../lib/transcript-scroll";
+import {
+  firstVisibleTranscriptRow,
+  transcriptCanSnapAfterFrame,
+  transcriptIsNearEnd,
+} from "../../lib/transcript-scroll";
 import type { useBrowserNotifications } from "./use-browser-notifications";
 import type { ComputerState } from "./use-computer";
 import type { ThreadState } from "./use-thread-state";
@@ -274,6 +278,10 @@ export function useThreadSync({
       return;
     pinnedAroundRef.current = null;
     const scrollElement = messageScroll.current;
+    // Hold the first visible row steady: a plain height delta would also count
+    // content appended at the bottom while the older page was loading.
+    const anchorRow = firstVisibleTranscriptRow(scrollElement);
+    const anchorTop = anchorRow?.offsetTop ?? null;
     const previousHeight = scrollElement?.scrollHeight ?? 0;
     const epoch = historyEpoch.current;
     const before = snapshot.olderCursor;
@@ -293,7 +301,11 @@ export function useThreadSync({
       updateSnapshot((prev) => prependThreadMessagePage(prev, page));
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
-        if (element) element.scrollTop += element.scrollHeight - previousHeight;
+        if (!element) return;
+        element.scrollTop +=
+          anchorRow?.isConnected && anchorTop !== null
+            ? anchorRow.offsetTop - anchorTop
+            : element.scrollHeight - previousHeight;
       });
     } finally {
       setLoadingOlder(false);

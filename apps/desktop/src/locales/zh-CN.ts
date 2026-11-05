@@ -171,6 +171,12 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "Previous Bot": "上一个机器人",
   "Command Menu…": "命令菜单…",
   "Toggle Sidebar": "切换边栏",
-  "Search…": "搜索…",
+  "Find…": "查找…",
+  "Search Bots…": "搜索 Bot…",
   "The window closed before the app loaded.": "应用加载完成前窗口已关闭。",
+  "New Group Chat": "新建群聊",
+  "Connect Apps…": "连接应用…",
+  "Chat Details": "聊天详情",
+  Help: "帮助",
+  "Keyboard Shortcuts": "键盘快捷键",
 };

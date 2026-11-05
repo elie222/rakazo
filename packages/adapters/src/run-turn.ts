@@ -34,6 +34,7 @@ import {
   HISTORY_WINDOW_SIZE,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
+import { connectorStepNames } from "./pi-runtime-tools.js";
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
@@ -517,7 +518,8 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   // client must see that text before the tool call it describes.
   await flushProgress(ctx);
   // Queued first so the text written before this call becomes its note.
-  reply.pendingToolNames.push(event.name);
+  const stepNames = connectorStepNames(ctx.tools.connector.get(event.name), event.args);
+  reply.pendingToolNames.push(...(stepNames.length > 0 ? stepNames : [event.name]));
   // Text before ask_user stays pending: the run pauses next, and the question needs it.
   const heldNote =
     event.name === "message_user" || event.name === "ask_user"
@@ -605,6 +607,9 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
 async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
   const { deps, run, runId, bot, thread, workerId, fence } = ctx;
   const { reply } = ctx.state;
+  // Otherwise the model keeps calling tools while the stop is saved. The run's own signal stays
+  // live, so the save still finishes.
+  ctx.runtimeAbortController.abort();
   ctx.tools.approvedReplays.assertDrained();
   flushPendingTools(reply);
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;

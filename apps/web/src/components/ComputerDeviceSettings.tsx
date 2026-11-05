@@ -1,17 +1,37 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { RakazoDesktopDevice, UserDeviceSummary } from "@rakazo/contracts";
+import type { RakazoDesktop, UserDeviceSummary } from "@rakazo/contracts";
 import { Button, Label, Switch } from "@rakazo/ui-web";
 import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { desktopBridge } from "../lib/desktop";
+import { rpc } from "../lib/rpc";
 import { listUserDevices, removeUserDevice } from "../lib/user-devices";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
 
+type ThisComputer = { allowed: boolean; setAllowed: (allowed: boolean) => Promise<unknown> };
+
+/** A remote server pairs this computer; the app-managed local stack runs bots on it directly. */
+async function thisComputerAccess(
+  desktop: RakazoDesktop | undefined,
+): Promise<ThisComputer | null> {
+  const device = desktop?.device;
+  const paired = await device?.state().catch(() => null);
+  if (device && paired) return { allowed: paired.allowed, setAllowed: device.setAllowed };
+  const computer = desktop?.computer;
+  if (!computer?.managesHostChoice) return null;
+  const me = await rpc.me();
+  if (!me.canChooseHostComputer) return null;
+  return {
+    allowed: me.computerHost === "this-mac",
+    setAllowed: (allowed) => (allowed ? computer.requestAccess() : computer.revokeAccess()),
+  };
+}
+
 export function ComputerDeviceSettings() {
   const { t } = useLingui();
-  const desktop = desktopBridge()?.device;
+  const desktop = desktopBridge();
   const [devices, setDevices] = useState<UserDeviceSummary[]>([]);
-  const [thisComputer, setThisComputer] = useState<RakazoDesktopDevice | null>(null);
+  const [thisComputer, setThisComputer] = useState<ThisComputer | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const switchId = useId();
@@ -19,10 +39,11 @@ export function ComputerDeviceSettings() {
   const load = useCallback(async () => {
     const [listed, local] = await Promise.all([
       listUserDevices().catch(() => null),
-      desktop?.state().catch(() => null) ?? null,
+      // A failed profile read keeps the last known switch rather than hiding it.
+      thisComputerAccess(desktop).catch(() => undefined),
     ]);
     if (listed) setDevices(listed);
-    setThisComputer(local);
+    if (local !== undefined) setThisComputer(local);
   }, [desktop]);
 
   useEffect(() => {
@@ -60,7 +81,7 @@ export function ComputerDeviceSettings() {
               checked={thisComputer.allowed}
               disabled={pending}
               onCheckedChange={(allowed) =>
-                void run(() => desktop!.setAllowed(allowed), t`Could not change`)
+                void run(() => thisComputer.setAllowed(allowed), t`Could not change`)
               }
             />
           }

@@ -236,7 +236,7 @@ describe("createBackgroundJobHandlers", () => {
       executor.resolveModel({ userId: "user-1", spaceId: "workspace-1" }),
     ).resolves.toEqual({
       provider: "openrouter",
-      id: "openai/gpt-6-luna",
+      id: "anthropic/claude-haiku-5.5",
       apiKey: "deployment-key",
       baseUrl: undefined,
       thinkingLevel: null,

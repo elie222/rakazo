@@ -14,6 +14,7 @@ import {
   createThreadMessageInTransaction,
   crossSpaceCommunicationAllowed,
   runAsSystem,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { currentBotMessageHop } from "./bot-messages.js";
@@ -448,7 +449,7 @@ async function deliverToConnectedAgent(
         targetEventSeq: inboundEvent.seq,
         senderEventSeq: outboundEvent.seq,
       };
-    });
+    }, THREAD_LOCK_TRANSACTION_OPTIONS);
   try {
     committed = await deliverTx();
   } catch (error) {

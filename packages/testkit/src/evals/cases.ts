@@ -29,9 +29,18 @@ export type Evidence = {
   routineRuns?: RoutineEvidence[];
   /** Per fromPeer step: what the peer sent and what came back to it, or null if nothing did. */
   peerExchanges?: Array<{ message: string; reply: string | null }>;
+  /** The peer's folder on a shared computer, as `bots/<id>`, when the case has a peer. */
+  peerHome?: string;
+  /**
+   * What the subject delivered to other bots: messages that reached the peer's chat and handoffs
+   * posted in the group, with the names of the files attached to each.
+   */
+  deliveries?: Array<{ kind: "message" | "handoff"; text: string; files: string[] }>;
   /** For an unaddressed group step: what each member posted afterwards, by name; empty if nothing. */
   memberReplies?: Record<string, string>;
   files: Record<string, string | null>;
+  /** Files seeded into history, by name: their computer path and content there after the trial. */
+  seededAttachments?: Record<string, { path: string; content: string | null }>;
   records: EvalServices["records"];
   notes: EvalServices["notes"];
   calls: ServiceCall[];
@@ -86,8 +95,14 @@ export type EvalCase = {
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;
   routine?: { prompt: string };
-  /** A second bot of the same user that fromPeer steps speak as. */
-  peer?: { name: string; description: string; instructions: string };
+  /**
+   * A second bot of the same user that fromPeer steps speak as. It shares the subject's computer
+   * unless `ownComputer` gives it one of its own. In a fromPeer step, `{peerHome}` is replaced by
+   * the peer's folder on the shared computer.
+   */
+  peer?: { name: string; description: string; instructions: string; ownComputer?: true };
+  /** Files written onto a computer before the first step: the subject's home, or the peer's. */
+  computerFiles?: Array<{ path: string; content: string | Uint8Array; owner?: "peer" }>;
   /**
    * Run the case in a group thread with these other member bots, named as history authors. With
    * `roles`, every member (the subject as "Assistant" too) gets that description, any

@@ -1,5 +1,5 @@
 import { SITE_URL } from "../site";
-import type { ArticleHub, ArticleLink, ArticleSection, ProviderArticle } from "./types";
+import type { ArticleHub, ArticleLink, ArticleSection, ArticleTable, ProviderArticle } from "./types";
 
 /** Absolute links for agent Markdown, which is read outside the site. */
 export function absolute(text: string): string {
@@ -10,11 +10,25 @@ export function cell(value: string): string {
   return value.replaceAll("|", "\\|");
 }
 
-function sectionMarkdown(section: ArticleSection): string[] {
+function tableMarkdown(table: ArticleTable): string[] {
+  const row = (cells: readonly string[]) => `| ${cells.map((value) => cell(absolute(value))).join(" | ")} |`;
+  return [
+    `**${table.caption}**`,
+    "",
+    row(table.columns),
+    `| ${table.columns.map(() => "---").join(" | ")} |`,
+    ...table.rows.map((item) => row([item.topic, ...item.cells])),
+    "",
+    ...(table.note ? [absolute(table.note), ""] : []),
+  ];
+}
+
+export function sectionMarkdown(section: ArticleSection): string[] {
   return [
     `## ${section.heading}`,
     "",
     ...(section.paragraphs ?? []).flatMap((paragraph) => [absolute(paragraph), ""]),
+    ...(section.table ? tableMarkdown(section.table) : []),
     ...(section.bullets?.length ? [...section.bullets.map((item) => `- ${absolute(item)}`), ""] : []),
     ...(section.steps?.length
       ? [...section.steps.map((step, index) => `${index + 1}. ${absolute(step)}`), ""]

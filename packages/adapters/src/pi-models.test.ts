@@ -229,7 +229,7 @@ describe("Pi model catalog", () => {
       expect.arrayContaining([
         { provider: "openai-codex", id: "gpt-6-luna" },
         { provider: "openai", id: "gpt-6-luna" },
-        { provider: "openrouter", id: "openai/gpt-6-luna" },
+        { provider: "openrouter", id: "anthropic/claude-haiku-5.5" },
         { provider: "anthropic", id: "claude-haiku-5-5" },
       ]),
     );

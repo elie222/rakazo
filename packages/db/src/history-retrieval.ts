@@ -1,12 +1,17 @@
 import { createHash } from "node:crypto";
 import type { HistoryReadInput, HistorySearchInput } from "@rakazo/contracts";
-import { HistoryQueriesSchema } from "@rakazo/contracts";
-import { shortenedTextLength, textBoundary } from "@rakazo/core";
+import {
+  ATTACHMENT_MAX_COUNT,
+  HISTORY_ATTACHMENTS_PER_RESPONSE,
+  HistoryQueriesSchema,
+} from "@rakazo/contracts";
+import { attachmentComputerPath, shortenedTextLength, textBoundary } from "@rakazo/core";
+import { LISTED_ARTIFACT } from "./artifact-versions.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { searchTerms } from "./content-crypto.js";
 import { contentEncryptionOf, INDEXED_MESSAGE, UNINDEXED_MESSAGE } from "./content-encryption.js";
-import { historyMessageText } from "./history-text.js";
+import { historyAttachmentBlocks, historyMessageText, historySearchText } from "./history-text.js";
 
 export { historyMessageText };
 
@@ -53,7 +58,43 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
     }>;
     refs.push(...runs.flatMap((run) => run.outcomes));
   }
+  const messages = response.messages as AttachedReference[];
+  const crowded = () =>
+    messages.reduce<AttachedReference | undefined>(
+      (best, ref) =>
+        ref.attachments?.length &&
+        (!best || ref.attachments.length > (best.attachments?.length ?? 0))
+          ? ref
+          : best,
+      undefined,
+    );
+  // Return where a cut file list continues so a read of that message can page through the rest.
+  const dropFile = (ref: AttachedReference) => {
+    const files = ref.attachments ?? [];
+    files.pop();
+    ref.nextAttachmentOffset = (ref.attachmentOffset ?? 0) + files.length;
+    if (!files.length) delete ref.attachments;
+  };
+  // The run copies at most this many listed files at once, so list no more than that.
+  let listed = 0;
+  for (const ref of messages) {
+    const files = ref.attachments;
+    if (!files) continue;
+    const room = Math.max(0, HISTORY_ATTACHMENTS_PER_RESPONSE - listed);
+    if (files.length > room) {
+      files.length = room;
+      ref.nextAttachmentOffset = (ref.attachmentOffset ?? 0) + room;
+      if (!room) delete ref.attachments;
+    }
+    listed += files.length;
+  }
   while (Buffer.byteLength(JSON.stringify(response), "utf8") > MAX_RESPONSE_BYTES) {
+    // A message with more files than one upload carries gives up files before any text shrinks.
+    const fullest = crowded();
+    if (fullest?.attachments && fullest.attachments.length > ATTACHMENT_MAX_COUNT) {
+      dropFile(fullest);
+      continue;
+    }
     const longest = refs.reduce<ReturnType<typeof reference> | undefined>(
       (best, ref) =>
         shortenedTextLength(ref.text) > 0 && (!best || ref.text.length > best.text.length)
@@ -61,15 +102,24 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
           : best,
       undefined,
     );
-    if (!longest) throw new Error("History metadata exceeds response budget");
-    longest.text = longest.text.slice(0, shortenedTextLength(longest.text));
-    longest.truncated = true;
-    longest.nextTextOffset = longest.textOffset + longest.text.length;
+    if (longest) {
+      longest.text = longest.text.slice(0, shortenedTextLength(longest.text));
+      longest.truncated = true;
+      longest.nextTextOffset = longest.textOffset + longest.text.length;
+      continue;
+    }
+    if (!fullest?.attachments) throw new Error("History metadata exceeds response budget");
+    dropFile(fullest);
   }
   return response;
 }
+/**
+ * Matches the expression of messages_history_search_files_idx: conversational text plus
+ * attachment names. The parser keeps a name like "q3-report.pdf" as one token, so its
+ * separators become spaces first, as searchTerms splits them.
+ */
 const searchableText = Prisma.sql`jsonb_path_query_array(m.blocks,
-  '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").result')::text`;
+  '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ')`;
 const columns = Prisma.sql`m.id, m.seq, m.role, m."runId", m."replyToMessageId", m."createdAt", m.blocks, m."threadId", t."groupId" AS "groupId"`;
 
 function visible(scope: HistoryScope, myChats = false, targetThreadId?: string): Prisma.Sql {
@@ -138,7 +188,9 @@ async function historyMatch(
   spaceId: string,
   query: string,
 ): Promise<Prisma.Sql> {
-  const fullText = Prisma.sql`to_tsvector('simple', ${searchableText}) @@ plainto_tsquery('simple', ${query})`;
+  // A file name typed whole ("q3-report.pdf") matches its indexed parts through the second query.
+  const fullText = Prisma.sql`(to_tsvector('simple', ${searchableText}) @@ plainto_tsquery('simple', ${query})
+    OR to_tsvector('simple', ${searchableText}) @@ plainto_tsquery('simple', translate(${query}, '._-', '   ')))`;
   const encryption = contentEncryptionOf(prisma);
   if (!encryption) return fullText;
   const tokenSets = (await encryption.messageSearchTokens(spaceId, query, "word")).filter(
@@ -182,6 +234,74 @@ function reference(row: HistoryRow, query = "", maxLength = 800, textOffset = 0)
     nextTextOffset,
     truncated: textOffset > 0 || nextTextOffset !== null,
   };
+}
+
+export interface HistoryAttachment {
+  artifactId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  /** Where the run copies the file on the bot's computer before its next computer tool. */
+  path: string;
+}
+
+/**
+ * Files and images on these messages that still exist and belong to the history's owner.
+ * A deleted file drops out, so a model-supplied reference never reaches it.
+ */
+async function messageAttachments(
+  prisma: PrismaClient,
+  scope: Pick<HistoryScope, "spaceId" | "userId">,
+  rows: readonly HistoryRow[],
+): Promise<Map<string, HistoryAttachment[]>> {
+  const blocks = new Map(rows.map((row) => [row.id, historyAttachmentBlocks(row.blocks)]));
+  const ids = [...new Set([...blocks.values()].flat().map((block) => block.artifactId))];
+  if (!ids.length) return new Map();
+  const artifacts = new Map(
+    (
+      await prisma.artifact.findMany({
+        where: { id: { in: ids }, spaceId: scope.spaceId, userId: scope.userId },
+        select: { id: true, name: true, mimeType: true, size: true },
+      })
+    ).map((row) => [row.id, row]),
+  );
+  return new Map(
+    [...blocks].map(([messageId, attached]) => [
+      messageId,
+      attached.flatMap((block) => {
+        const row = artifacts.get(block.artifactId);
+        return row
+          ? [
+              {
+                artifactId: row.id,
+                name: row.name,
+                mimeType: row.mimeType,
+                size: row.size,
+                path: attachmentComputerPath(row.id, row.mimeType),
+              },
+            ]
+          : [];
+      }),
+    ]),
+  );
+}
+
+type AttachedReference = ReturnType<typeof reference> & {
+  attachments?: HistoryAttachment[];
+  attachmentOffset?: number;
+  /** Set when the response budget cut the list: read this message with it as attachmentOffset. */
+  nextAttachmentOffset?: number;
+};
+
+function withAttachments<T extends { messageId: string }>(
+  ref: T,
+  attachments: Map<string, HistoryAttachment[]>,
+  offset = 0,
+): T & { attachments?: HistoryAttachment[]; attachmentOffset?: number } {
+  const attached = attachments.get(ref.messageId)?.slice(offset);
+  return attached?.length
+    ? { ...ref, attachments: attached, ...(offset ? { attachmentOffset: offset } : {}) }
+    : ref;
 }
 
 /**
@@ -236,7 +356,7 @@ export async function searchHistory(
           kind === "bot_messages"
             ? Prisma.sql`jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "bot_message_sent" || @.kind == "bot_message_received" || @.kind == "handoff")')`
             : kind === "user_messages"
-              ? Prisma.sql`m.role = 'user' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text" || @.kind == "channel_message")')`
+              ? Prisma.sql`m.role = 'user' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "file" || @.kind == "image")')`
               : Prisma.sql`m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text")')`,
         ),
         " OR ",
@@ -292,7 +412,7 @@ export async function searchHistory(
     );
     for (const row of batch) {
       scanned += 1;
-      const text = new Set(searchTerms(historyMessageText(row.blocks)));
+      const text = new Set(searchTerms(historySearchText(row.blocks)));
       const matchedQueryIndexes = terms.flatMap((words, index) =>
         words.every((word) => text.has(word)) ? [index] : [],
       );
@@ -303,6 +423,7 @@ export async function searchHistory(
     cursor = batch.at(-1)!.seq;
   }
   const page = rows.slice(0, limit);
+  const attachments = await messageAttachments(prisma, scope, page);
   const hasMore = rows.length > limit || unscanned;
   const nextOffset = rows.length > limit ? page.at(-1)!.nextOffset : scanned;
   const capped = byOffset && hasMore && nextOffset > MAX_SEARCH_OFFSET;
@@ -331,7 +452,7 @@ export async function searchHistory(
       ...(capped ? { capped: true } : {}),
     },
     messages: page.map((row) => ({
-      ...reference(row, queries[row.matchedQueryIndexes[0] ?? 0]),
+      ...withAttachments(reference(row, queries[row.matchedQueryIndexes[0] ?? 0]), attachments),
       ...(byOffset ? { threadId: row.threadId, matchedQueryIndexes: row.matchedQueryIndexes } : {}),
     })),
     nextBeforeSeq,
@@ -369,6 +490,11 @@ export async function readHistory(
     (!Number.isInteger(input.textOffset) || input.textOffset < 0)
   )
     throw new Error("Invalid history text offset");
+  if (
+    input.attachmentOffset !== undefined &&
+    (!Number.isInteger(input.attachmentOffset) || input.attachmentOffset < 0)
+  )
+    throw new Error("Invalid history attachment offset");
   if (!["around", "older", "newer"].includes(direction))
     throw new Error("Invalid history direction");
   const anchors = await messageRows(
@@ -399,7 +525,7 @@ export async function readHistory(
         ? Prisma.sql`m.seq > ${anchor.seq}`
         : Prisma.sql`m.seq >= ${Math.max(0, anchor.seq - Math.floor(limit / 2))}`;
   const rows =
-    input.textOffset !== undefined
+    input.textOffset !== undefined || input.attachmentOffset !== undefined
       ? [anchor]
       : await messageRows(
           prisma,
@@ -480,6 +606,7 @@ export async function readHistory(
               : { botId: scope.botId, groupId: null }),
             runId: { in: runs.map((run) => run.id) },
             ...(input.artifactAfterId ? { id: { gt: input.artifactAfterId } } : {}),
+            ...LISTED_ARTIFACT,
           },
           select: {
             id: true,
@@ -495,13 +622,18 @@ export async function readHistory(
   ]);
   const outcomes = outcomeRows.slice(0, LINK_PAGE_SIZE);
   const artifacts = artifactRows.slice(0, LINK_PAGE_SIZE);
+  const attachments = await messageAttachments(prisma, scope, rows);
   return bounded({
     untrusted: true as const,
     nextRunId: runRows.length > LINK_PAGE_SIZE ? runs.at(-1)!.id : null,
     nextArtifactId: artifactRows.length > LINK_PAGE_SIZE ? artifacts.at(-1)!.id : null,
     nextOutcomeSeq: outcomeRows.length > LINK_PAGE_SIZE ? outcomes.at(-1)!.seq : null,
     messages: rows.map((row) =>
-      reference(row, "", 2000, row.id === anchor.id ? (input.textOffset ?? 0) : 0),
+      withAttachments(
+        reference(row, "", 2000, row.id === anchor.id ? (input.textOffset ?? 0) : 0),
+        attachments,
+        row.id === anchor.id ? (input.attachmentOffset ?? 0) : 0,
+      ),
     ),
     runs: runs.map((run) => ({
       ...run,

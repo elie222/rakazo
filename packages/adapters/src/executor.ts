@@ -34,7 +34,9 @@ import {
 } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
 import {
+  accountDeactivated,
   availableInSpace,
+  cancelDeactivatedAccountRuns,
   effectiveMemoryScope,
   isPartialReplyClientNonce,
   isTooManyDatabaseConnections,
@@ -225,10 +227,12 @@ import {
 import { TASK_CATALOG_GUIDANCE } from "./task-catalog.js";
 import { parsePlaybook } from "./teaching-session.js";
 import {
+  createEarlierFileQueue,
   currentTurnFilesInstruction,
   listCurrentTurnFiles,
   listRecentThreadFiles,
   materializeCurrentTurnFiles,
+  materializeEarlierFiles,
   materializeRecentThreadFiles,
   recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
@@ -319,6 +323,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // connector's own idle bound holds it.
         endRunConnectorState(runId);
         return;
+      }
+      // Every way work reaches a bot ends here, so a deactivated account's run stops before it starts.
+      if (await accountDeactivated(deps.prisma, run.userId)) {
+        // Nothing cancelled: the owner is back (or the run already ended), so carry on.
+        if (await cancelDeactivatedAccountRuns(deps.prisma, deps.events, run.userId, runId)) return;
       }
       let { resumeCheckpoint, heldForTakeover, takeoverResume } = takeoverContinuePlan(run);
 
@@ -1052,6 +1061,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                     callObserver: pinnedComputerModels.main.callObserver,
                     oauth: pinnedComputerModels.main.oauth?.credential,
                     persistOAuth: pinnedComputerModels.main.oauth?.persist,
+                    refreshOAuth: pinnedComputerModels.main.oauth?.refresh,
                     retireOAuth: pinnedComputerModels.main.oauth?.retire,
                     redact: [],
                   }
@@ -1115,10 +1125,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           skipMessageId: currentTurnMessage?.id,
           maxTurns: RECENT_TURN_IMAGE_TURNS,
         };
+        // Files from earlier messages that history tools surfaced this run.
+        const earlierFiles = createEarlierFileQueue();
         const runComputer = lazyRunComputer(
           async () => {
             getLogger().info("computer.requested");
             const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
+            earlierFiles.computerStarted();
             computerUse.screenRelease = { computer, context, keepWarm: false };
             recordComputerDisk(deps, storedComputer.id, computer, context);
             scheduleComputerSleep(deps.jobs, storedComputer.id);
@@ -1178,6 +1191,19 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                     );
                     workspaceCheckpoint.markFiles(files);
                     pendingTurnFiles.shift();
+                  }
+                  const earlier = earlierFiles.take();
+                  if (artifacts && earlier.length) {
+                    earlierFiles.copiedTo(
+                      earlier,
+                      // Saved with the run's checkpoint, so a resumed attempt still has them.
+                      await materializeEarlierFiles({ ...deps, artifacts }, earlier, {
+                        context,
+                        computer: async () => computer,
+                        computerMode,
+                        markWorkspaceDirty: workspaceCheckpoint.markDirty,
+                      }),
+                    );
                   }
                 });
               await copyingTurnFiles;
@@ -1513,6 +1539,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           task,
           context,
           abortController: runAbortController,
+          runtimeAbortController: new AbortController(),
           fleetRun,
           secrets: runSecrets,
           source: {
@@ -1543,6 +1570,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             lease: computerLease,
             lazy: runComputer,
             get: getRunComputer,
+            copyEarlierFiles: earlierFiles.add,
             checkpoint: workspaceCheckpoint,
             hostEnvironment,
             graphical,
@@ -1667,7 +1695,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           // A hang-up turn is read, not heard: no spoken-reply constraint.
           voiceCall && !callEndRun ? voiceCallInstruction(disabledBuiltinTools) : undefined,
           // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
-          formatCurrentTimeInstruction(new Date(), userTimeZone),
+          formatCurrentTimeInstruction(deps.now?.() ?? new Date(), userTimeZone),
           lateRoutineNote,
         ]
           .filter(Boolean)
@@ -1992,7 +2020,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   },
                 ),
             },
-            context,
+            {
+              ...context,
+              signal: AbortSignal.any([context.signal, ctx.runtimeAbortController.signal]),
+            },
           );
           if (await consumeRunEvents(ctx, runtimeEvents)) return;
           if (await interruptedByShutdown()) return;

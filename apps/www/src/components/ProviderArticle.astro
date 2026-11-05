@@ -2,9 +2,9 @@
 import { ogPublicPath } from "../og-pages";
 import type { ArticleHub, ArticleLink, ProviderArticle } from "../provider-article/types";
 import { GITHUB_URL } from "../site";
+import ArticleSections from "./ArticleSections.astro";
 import ArticleText from "./ArticleText.astro";
 import Button from "./Button.astro";
-import CaptionedImage from "./CaptionedImage.astro";
 import ProviderCard from "./ProviderCard.astro";
 import { ProviderScene } from "./ProviderScene";
 import SiteFrame from "./SiteFrame.astro";
@@ -35,46 +35,7 @@ const { article, hub, others, updated, ogId, markdownPath } = Astro.props;
 
   <ProviderScene {...article.scene} />
 
-  {
-    article.sections.map((section) => (
-      <section class="sandbox-section">
-        <h2>{section.heading}</h2>
-        {section.paragraphs?.map((paragraph) => (
-          <p>
-            <ArticleText text={paragraph} />
-          </p>
-        ))}
-        {section.bullets && (
-          <ul>
-            {section.bullets.map((item) => (
-              <li>
-                <ArticleText text={item} />
-              </li>
-            ))}
-          </ul>
-        )}
-        {section.steps && (
-          <ol class="sandbox-steps">
-            {section.steps.map((step) => (
-              <li>
-                <ArticleText text={step} />
-              </li>
-            ))}
-          </ol>
-        )}
-        {section.image && (
-          <CaptionedImage
-            src={article.image.webp}
-            avif={article.image.avif}
-            alt={article.image.alt}
-            caption={article.image.caption}
-            width={article.image.width}
-            height={article.image.height}
-          />
-        )}
-      </section>
-    ))
-  }
+  <ArticleSections sections={article.sections} image={article.image} />
 
   <div class="alt-actions">
     <Button href={hub.guide.href}>{hub.guide.label}</Button>

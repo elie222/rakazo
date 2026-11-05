@@ -56,6 +56,7 @@ describe("desktop preload bridge", () => {
       "oauth",
       "passkeys",
       "platform",
+      "server",
       "settings",
       "update",
       "window",
@@ -89,6 +90,7 @@ describe("desktop preload bridge", () => {
     await bridge.update.check();
     await bridge.update.download();
     await bridge.update.install();
+    await bridge.server!.change();
     expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
       "desktop.badge.set",
       "desktop.device.state",
@@ -106,6 +108,7 @@ describe("desktop preload bridge", () => {
       "desktop.update.check",
       "desktop.update.download",
       "desktop.update.install",
+      "desktop.server.change",
     ]);
   });
 
