@@ -75,6 +75,7 @@ function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
     messagingIdentity: { deleteMany: vi.fn(async () => ({})) },
     messagingLinkCode: { deleteMany: vi.fn(async () => ({})) },
     userDevice: { updateMany: vi.fn(async () => ({})) },
+    passkey: { deleteMany: vi.fn(async () => ({})) },
     account: {
       deleteMany: vi.fn(async ({ where }: { where: { userId: string } }) => {
         const kept = rows("account").filter(
@@ -103,7 +104,6 @@ function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
         provisionedUsers.has(where.userId) ? { id: `scim-${where.userId}` } : null,
       ),
     },
-    passkey: { deleteMany: vi.fn(async () => ({})) },
   };
   prisma.$transaction = vi.fn(async (operations: (tx: unknown) => Promise<unknown>) =>
     operations(prisma),

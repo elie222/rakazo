@@ -110,10 +110,7 @@ async function auditRows(
     action: input.action.slice(0, 128),
     targetType: bounded(input.target?.type, 64),
     targetId: bounded(input.target?.id, 200),
-    targetLabel: bounded(
-      input.target?.label ?? (actor.type !== "user" && personId ? user?.email : undefined),
-      200,
-    ),
+    targetLabel: bounded(input.target?.label ?? (actor.type === "user" ? null : user?.email), 200),
     outcome: input.outcome ?? "success",
     runId: bounded(input.runId, 128),
     threadId: bounded(input.threadId, 128),

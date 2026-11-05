@@ -6,9 +6,6 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { APIError } from "better-auth/api";
 
-/** The one directory a deployment provisions from. */
-export const DIRECTORY_CONNECTION_ID = "directory";
-
 /**
  * The directory's word on an account, inside a SCIM request that may still fail: on or off,
  * and whether that changed it. An account kept off is reported again, so a retried request
@@ -127,7 +124,7 @@ export async function createDirectory(
       scim({
         connections: [
           {
-            id: DIRECTORY_CONNECTION_ID,
+            id: "directory",
             credentials: [
               {
                 type: "bearer",
