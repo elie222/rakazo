@@ -647,7 +647,7 @@ function ArtifactCard({
         className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 text-foreground hover:bg-accent/40"
       >
         <div className="flex items-start justify-between">
-          <span className="grid h-9 w-9 place-items-center rounded-[10px] bg-accent text-accent-foreground">
+          <span className="grid h-9 w-9 place-items-center rounded-md bg-accent text-accent-foreground">
             <ArtifactMimeIcon mimeType={artifact.mimeType} />
           </span>
           <div className="flex items-center gap-1.5">

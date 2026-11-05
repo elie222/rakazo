@@ -166,7 +166,7 @@ export function McpAppCard({ block, target }: { block: AppBlock; target: Artifac
         {block.server}
       </div>
       <div
-        className={cn("overflow-hidden", bordered && "rounded-[20px] border border-border bg-card")}
+        className={cn("overflow-hidden", bordered && "rounded-2xl border border-border bg-card")}
       >
         {appDocument ? (
           <iframe
