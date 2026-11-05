@@ -51,7 +51,13 @@ export async function readInboundEmail(
   ]);
   const buffer = Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength);
   const [email, dkim] = await Promise.all([
-    PostalMime.parse(buffer, { attachmentEncoding: "arraybuffer" }),
+    // Far below the parser's own defaults: real mail has a handful of parts, and anything past
+    // these limits is rejected as unreadable instead of costing a worker its time.
+    PostalMime.parse(buffer, {
+      attachmentEncoding: "arraybuffer",
+      maxPartCount: 200,
+      maxNestingDepth: 20,
+    }),
     dkimVerify(buffer, options.resolver ? { resolver: options.resolver } : {}),
   ]);
 
@@ -131,7 +137,8 @@ export async function readInboundEmail(
     to,
     cc,
     subject: email.subject?.trim() ?? "",
-    date: email.date ?? null,
+    // Date is not required to be signed, so cut it like any other unverified header.
+    date: email.date?.slice(0, 100) ?? null,
     text,
     automated,
     attachments: email.attachments

@@ -77,15 +77,16 @@ rakazo  unix  -  n  n  -  -  pipe
   flags=Rq user=nobody argv=/usr/local/bin/rakazo-inbound-email ${recipient}
 ```
 
-In `main.cf`, route the domain to it and hand it one recipient at a time:
+In `main.cf`, add the domain to `relay_domains` and a transport map, keeping any values already
+there, and hand the transport one recipient at a time:
 
 ```text
-relay_domains = bots.example.com
-transport_maps = hash:/etc/postfix/transport
+relay_domains = <existing domains> bots.example.com
+transport_maps = <existing maps> hash:/etc/postfix/transport
 rakazo_destination_recipient_limit = 1
 ```
 
-with `bots.example.com rakazo:` in `/etc/postfix/transport` (run `postmap` on it). Save the same
+Add `bots.example.com rakazo:` to `/etc/postfix/transport` and run `postmap` on it. Save the same
 `INBOUND_EMAIL_SECRET` where the pipe's user can read it and no one else can:
 
 ```sh

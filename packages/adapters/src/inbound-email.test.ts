@@ -161,6 +161,23 @@ describe("readInboundEmail", () => {
     expect(human.automated).toBe(false);
   });
 
+  it("refuses mail with more parts than real mail has", async () => {
+    const boundary = "b2";
+    const parts = Array.from(
+      { length: 250 },
+      () => `--${boundary}\r\nContent-Type: text/plain\r\n\r\nx`,
+    ).join("\r\n");
+    const raw = message(
+      [
+        ...plain.filter((line) => !line.startsWith("Content-Type")),
+        `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      ],
+      `${parts}\r\n--${boundary}--\r\n`,
+    );
+
+    await expect(readInboundEmail(bytes(raw), { resolver })).rejects.toThrow(/part count/i);
+  });
+
   it("reads HTML-only bodies, attachments and long text", async () => {
     const boundary = "b1";
     const raw = message(
