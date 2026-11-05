@@ -2274,6 +2274,33 @@ describe("mobile API authentication", () => {
     }
   });
 
+  it("keeps the unsent queue of a session the server rejects", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "revoked-token"]]);
+    mockSecureStore(store);
+    await loadApiBase();
+    const clear = vi.fn();
+    configureUnsentSends({
+      request: vi.fn(),
+      serverReachable: () => true,
+      passwordChanging: () => false,
+      scope: () => null,
+      disk: { clear, save: vi.fn() } as unknown as UnsentDisk,
+      errorText: String,
+      notDelivered: vi.fn(),
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized")),
+    );
+
+    // The rejection ends the session, but the queue must survive it: the app reports
+    // those messages before a sign-in deletes them.
+    await expect(rpc("bots/list")).rejects.toThrow("Unauthorized");
+
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(clear).not.toHaveBeenCalled();
+  });
+
   it("checks Space access before treating a 401 as a rejected session", async () => {
     const store = new Map<string, string>([
       ["rakazo.session_token", "session-token"],
