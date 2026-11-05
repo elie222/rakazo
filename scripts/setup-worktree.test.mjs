@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -59,6 +67,23 @@ test("worktree settings stay private and local", () => {
     });
     setup(bareWorktree);
     assert.equal(existsSync(path.join(bareWorktree, ".env")), false);
+
+    writeFileSync(path.join(worktree, ".gitignore"), ".env\n");
+    git("add", "-f", ".env");
+    assert.throws(() => setup(worktree));
+    assert.equal(existsSync(path.join(worktree, ".env")), false);
+    git("reset", "--", ".env");
+    if (process.platform !== "win32") {
+      const unrelated = path.join(dir, "unrelated-file");
+      writeFileSync(unrelated, "fake-unrelated-secret\n");
+      rmSync(path.join(main, ".env"));
+      symlinkSync(unrelated, path.join(main, ".env"));
+      assert.throws(() => setup(worktree));
+      assert.equal(existsSync(path.join(worktree, ".env")), false);
+      writeFileSync(path.join(worktree, ".env"), "RAKAZO_DEV_TAILNET=0\n");
+      setup(worktree);
+      assert.equal(readFileSync(path.join(worktree, ".env"), "utf8"), "RAKAZO_DEV_TAILNET=0\n");
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
