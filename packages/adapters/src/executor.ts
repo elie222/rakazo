@@ -178,7 +178,7 @@ import {
   resolveRunModel,
   runtimeFallbackModel,
 } from "./run-model.js";
-import { createReplyState } from "./run-progress.js";
+import { createReplyState, recordToolOutcome } from "./run-progress.js";
 import {
   DELEGATED_EMPTY_NOTICE,
   GROUP_UNADDRESSED_REPLY_GUIDANCE,
@@ -237,6 +237,7 @@ import {
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
+import { toolResultError } from "./tool-result-error.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
@@ -1975,6 +1976,17 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   effects.restoredPending = undefined;
                 if (!completion.paused)
                   effects.pendingTurnCheckpoints.delete(completion.executionId);
+                if (!completion.paused) {
+                  recordToolOutcome(
+                    state.reply,
+                    completion.executionId,
+                    completion.error === undefined &&
+                      toolResultError(completion.result) === undefined
+                      ? "ok"
+                      : "error",
+                    completion.durationMs,
+                  );
+                }
                 const audited = appendToolCompletionAudit(
                   deps,
                   {

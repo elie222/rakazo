@@ -24,6 +24,8 @@ import {
   stopsRunHelpers,
   subagentBlockFromPayload,
   takeLiveMessage,
+  toolCalledUpdate,
+  toolCompletedUpdate,
   updateCloudAgentMessages,
   upsertMessageById,
 } from "@rakazo/core";
@@ -491,10 +493,7 @@ export function reduceThreadSnapshot(
   if (event.type === "agent.tool.called") {
     const liveId = progressMessageId(event);
     const { previous, remaining } = takeLiveMessage(prev.messages, liveId);
-    const blocks = reduceLiveMessageBlocks(previous?.blocks ?? [], {
-      type: "tool",
-      name: String(event.payload.name ?? ""),
-    });
+    const blocks = reduceLiveMessageBlocks(previous?.blocks ?? [], toolCalledUpdate(event.payload));
     const next: ThreadMessage = {
       id: liveId,
       threadId: event.threadId,
@@ -508,7 +507,16 @@ export function reduceThreadSnapshot(
     return { ...prev, cursor: event.seq, messages: [...remaining, next] };
   }
   if (event.type === "agent.tool.completed") {
-    return { ...prev, cursor: event.seq };
+    const update = toolCompletedUpdate(event.payload);
+    const liveId = progressMessageId(event);
+    const live = prev.messages.find((message) => message.id === liveId);
+    if (!update || !live) return { ...prev, cursor: event.seq };
+    const blocks = reduceLiveMessageBlocks(live.blocks, update);
+    return {
+      ...prev,
+      cursor: event.seq,
+      messages: prev.messages.map((message) => (message === live ? { ...live, blocks } : message)),
+    };
   }
   if (event.type === "thread.subagent") {
     const block = subagentBlockFromPayload(event.payload);

@@ -1,7 +1,8 @@
-import type { MessageBlock } from "@rakazo/contracts";
+import type { MessageBlock, ToolCallRef, ToolStepOutcome } from "@rakazo/contracts";
 import {
   appendTextSegment,
   appendToolCallSegment,
+  completeToolStep,
   createStreamingRedactor,
   endsSentence,
   isBackgroundRunTrigger,
@@ -57,7 +58,7 @@ export async function createReplyState(
     textSinceLastStep: "",
     narrationSoFar: "",
     narrationStatusShowing: false,
-    pendingToolNames: [],
+    pendingTools: [],
     pendingProgress: "",
     lastProgressAt: 0,
     hasStreamedText: false,
@@ -141,15 +142,32 @@ export function flushPendingTools(reply: ReplyState) {
     reply.messageSegments = appendTextSegment(reply.messageSegments, reply.currentTextSegment);
     reply.currentTextSegment = "";
   }
-  for (const name of reply.pendingToolNames) {
-    reply.messageSegments = appendToolCallSegment(reply.messageSegments, name);
+  for (const call of reply.pendingTools) {
+    reply.messageSegments = appendToolCallSegment(reply.messageSegments, call);
   }
-  reply.pendingToolNames = [];
+  reply.pendingTools = [];
 }
 
 export function tryFlushPendingTools(reply: ReplyState) {
-  if (reply.pendingToolNames.length > 0 && endsSentence(reply.currentTextSegment))
+  if (reply.pendingTools.length > 0 && endsSentence(reply.currentTextSegment))
     flushPendingTools(reply);
+}
+
+/**
+ * A finished call marks its step, or the pending call still waiting to become one. A call whose
+ * step was already published in an interim message keeps showing as it was.
+ */
+export function recordToolOutcome(
+  reply: ReplyState,
+  executionId: string,
+  outcome: ToolStepOutcome,
+  durationMs: number,
+) {
+  const duration = Math.max(0, Math.round(durationMs));
+  reply.pendingTools = reply.pendingTools.map((call: ToolCallRef) =>
+    call.executionId === executionId ? { ...call, outcome, durationMs: duration } : call,
+  );
+  reply.messageSegments = completeToolStep(reply.messageSegments, executionId, outcome, duration);
 }
 
 /**

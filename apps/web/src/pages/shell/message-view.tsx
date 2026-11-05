@@ -24,6 +24,7 @@ import {
   ToolActivityDisclosure,
   ToolOnlyNarration,
   ToolSteps,
+  toolStepSource,
 } from "../../components/ToolActivityDisclosure";
 import { SkillDraftCard } from "../../components/teach/SkillDraftCard";
 import type { ArtifactTarget } from "../../lib/artifact-open";
@@ -238,7 +239,7 @@ export const MessageView = memo(function MessageView({
         <>
           {messageContext}
           <div className="relative">
-            <ToolOnlyNarration blocks={visibleNarrationBlocks} live={isLive} />
+            <ToolOnlyNarration blocks={visibleNarrationBlocks} live={isLive} message={message} />
             {hoverActions}
           </div>
         </>
@@ -262,11 +263,13 @@ export const MessageView = memo(function MessageView({
                       live={isLive}
                       stepCount={toolStepCount(block.steps)}
                       durationMs={block.durationMs}
+                      startedAt={message.createdAt}
                     >
                       <ToolSteps
                         steps={block.steps}
-                        currentIndex={isLive ? block.steps.length - 1 : undefined}
+                        live={isLive}
                         limit={isLive ? LIVE_TOOL_STEP_WINDOW : undefined}
+                        source={toolStepSource(message)}
                       />
                     </ToolActivityDisclosure>
                   );
@@ -326,6 +329,8 @@ export const MessageView = memo(function MessageView({
                 steps={block.steps}
                 stepCount={toolStepCount(block.steps)}
                 durationMs={block.durationMs}
+                startedAt={message.createdAt}
+                source={toolStepSource(message)}
               />
             );
           }

@@ -7,6 +7,7 @@ import {
   CALL_CLIENT_NONCE_PREFIX,
   callClientNonce,
   expandSkillReferencesInPrompt,
+  foldToolCallRecords,
   MODEL_REQUIRED_SEND_ERROR,
   QUEUE_HOLDING_RUN_STATUSES,
 } from "@rakazo/core";
@@ -68,6 +69,9 @@ export function callMarkerClientNonce(callId: string): string {
 }
 
 /** The card is closed by a marker; the run that follows finishes whatever the call left open. */
+/** Enough events for a long run: two per call, plus one more per streamed shell command. */
+const TOOL_CALL_RECORD_EVENTS = 4_000;
+
 const HANG_UP_PROMPT =
   "The voice call just ended because the user hung up. First call end_call with a short title for the call (leave farewell empty). Then, if anything the user asked for during the call is still unfinished, complete it now as a normal chat reply with full formatting. If nothing is pending, reply with one short sentence.";
 
@@ -333,6 +337,29 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         await stopThreadRuns(deps, context.actor, target);
         return { ok: true as const };
+      }),
+      toolCalls: authed.threads.toolCalls.handler(async ({ context, input }) => {
+        // The same ownership check a read receipt uses: the person's own thread in this space.
+        const thread = await deps.prisma.thread.findFirst({
+          where: {
+            id: input.threadId,
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+          },
+          select: { id: true },
+        });
+        if (!thread) throw new IsolationError();
+        const events = await deps.prisma.event.findMany({
+          where: {
+            threadId: thread.id,
+            runId: input.runId,
+            type: { in: ["agent.tool.completed", "computer.command"] },
+          },
+          orderBy: { seq: "asc" },
+          take: TOOL_CALL_RECORD_EVENTS,
+          select: { type: true, payload: true },
+        });
+        return foldToolCallRecords(events);
       }),
       clear: authed.threads.clear.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);

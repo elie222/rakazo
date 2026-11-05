@@ -1266,6 +1266,64 @@ describe("thread event reduction", () => {
     expect(next?.messages).toEqual(initial.messages);
   });
 
+  it("marks the live step a completion belongs to, by its call id", () => {
+    const initial = snapshot(
+      [
+        message(
+          "progress:run-1",
+          [
+            {
+              kind: "steps",
+              steps: [{ label: "Shell", count: 1, executionId: "x1", detail: "pnpm test" }],
+            },
+          ],
+          4,
+        ),
+      ],
+      4,
+    );
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "agent.tool.completed",
+        seq: 5,
+        runId: "run-1",
+        payload: { name: "shell", executionId: "x1", outcome: "error", durationMs: 2500 },
+      }),
+    );
+    expect(next?.messages[0]?.blocks).toEqual([
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Shell",
+            count: 1,
+            executionId: "x1",
+            detail: "pnpm test",
+            outcome: "error",
+            durationMs: 2500,
+          },
+        ],
+      },
+    ]);
+    // A tool called with its detail keeps it on the row.
+    const called = reduceThreadSnapshot(
+      next,
+      event({
+        type: "agent.tool.called",
+        seq: 6,
+        runId: "run-1",
+        payload: { name: "read_file", executionId: "x2", detail: "vitest.config.ts" },
+      }),
+    );
+    expect(called?.messages[0]?.blocks[0]).toMatchObject({
+      steps: [
+        expect.anything(),
+        { label: "Read file", executionId: "x2", detail: "vitest.config.ts" },
+      ],
+    });
+  });
+
   it("holds a tool call that lands mid-sentence until the sentence completes", () => {
     const initial = snapshot([]);
 
@@ -1296,7 +1354,7 @@ describe("thread event reduction", () => {
           {
             kind: "progress",
             text: "Let me check Slack ",
-            pendingToolNames: ["SLACK_FIND_CHANNELS"],
+            pendingTools: [{ name: "SLACK_FIND_CHANNELS" }],
           },
         ],
       }),
@@ -1414,7 +1472,7 @@ describe("thread event reduction", () => {
           {
             kind: "progress",
             text: "Let me check Slack Found it, now sanding",
-            pendingToolNames: ["SLACK_FIND_CHANNELS"],
+            pendingTools: [{ name: "SLACK_FIND_CHANNELS" }],
           },
         ],
       }),
@@ -1427,7 +1485,7 @@ describe("thread event reduction", () => {
         {
           kind: "progress",
           text: "Let me check Slack ",
-          pendingToolNames: ["SLACK_FIND_CHANNELS"],
+          pendingTools: [{ name: "SLACK_FIND_CHANNELS" }],
         },
       ]),
     ]);
@@ -1454,7 +1512,7 @@ describe("thread event reduction", () => {
         {
           kind: "progress",
           text: "Old unfinished narration ",
-          pendingToolNames: ["SLACK_FIND_CHANNELS"],
+          pendingTools: [{ name: "SLACK_FIND_CHANNELS" }],
         },
       ]),
     ]);

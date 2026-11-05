@@ -1836,6 +1836,7 @@ msgstr "對話"
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1843,6 +1844,7 @@ msgstr "對話"
 msgid "Copied"
 msgstr "已複製"
 
+#: src/components/ToolActivityDisclosure.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -2442,6 +2444,10 @@ msgstr ""
 #: src/pages/SharedPage.tsx
 msgid "Couldn't load this page. Try again."
 msgstr "無法載入此頁面。請再試一次。"
+
+#: src/components/ToolActivityDisclosure.tsx
+msgid "Couldn’t load this step."
+msgstr ""
 
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
@@ -3096,6 +3102,11 @@ msgstr "每週"
 msgid "Executor token"
 msgstr "Executor 權杖"
 
+#. placeholder {0}: record.exitCode
+#: src/components/ToolActivityDisclosure.tsx
+msgid "exit {0}"
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "展開"
@@ -3158,6 +3169,7 @@ msgid "failed"
 msgstr "失敗"
 
 #: src/components/SubagentCard.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "失敗"
@@ -3827,6 +3839,7 @@ msgstr "正在載入語音供應商…"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -4456,6 +4469,10 @@ msgstr "未列出模型。"
 #: src/pages/shell/agent-import.tsx
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "找不到 OpenClaw、Hermes 或代理程式文件。"
+
+#: src/components/ToolActivityDisclosure.tsx
+msgid "No output recorded."
+msgstr ""
 
 #: src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
@@ -5558,6 +5575,7 @@ msgid "running"
 msgstr "執行中"
 
 #: src/components/SubagentCard.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Running"

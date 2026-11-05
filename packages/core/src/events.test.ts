@@ -3,6 +3,7 @@ import {
   appendTextSegment,
   appendToolCallSegment,
   appendToolStep,
+  completeToolStep,
   containsSecret,
   createStreamingRedactor,
   endsSentence,
@@ -20,6 +21,7 @@ import {
   sanitizeJsonValue,
   sanitizeUtf16ForJson,
   stripLiveStreamingProgress,
+  toolCallDetail,
   toolNameFromLabel,
   trackToolCallStreak,
   trackToolNameStreak,
@@ -531,7 +533,7 @@ describe("projectMessages", () => {
       {
         kind: "progress",
         text: "Let me check what I have locally and try the GitHub API",
-        pendingToolNames: ["shell"],
+        pendingTools: [{ name: "shell" }],
       },
     ]);
   });
@@ -653,6 +655,44 @@ describe("humanizeToolName", () => {
 });
 
 describe("appendToolStep", () => {
+  it("keeps the call's id and detail on its row, and the newest result on a repeat", () => {
+    const first = appendToolStep([], { name: "shell", executionId: "x1", detail: "ls" });
+    expect(first).toEqual([{ label: "Shell", count: 1, executionId: "x1", detail: "ls" }]);
+    const done = completeToolStep([{ kind: "steps", steps: first }], "x1", "ok", 40);
+    expect(done).toEqual([
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Shell",
+            count: 1,
+            executionId: "x1",
+            detail: "ls",
+            outcome: "ok",
+            durationMs: 40,
+          },
+        ],
+      },
+    ]);
+    const steps = done[0]?.kind === "steps" ? done[0].steps : [];
+    expect(appendToolStep(steps, { name: "shell", executionId: "x2", detail: "ls" })).toEqual([
+      { label: "Shell", count: 2, executionId: "x2", detail: "ls" },
+    ]);
+  });
+
+  it("starts a new row when the same tool runs with a different detail", () => {
+    const first = appendToolStep([], { name: "shell", executionId: "x1", detail: "ls" });
+    expect(appendToolStep(first, { name: "shell", executionId: "x2", detail: "pwd" })).toEqual([
+      { label: "Shell", count: 1, executionId: "x1", detail: "ls" },
+      { label: "Shell", count: 1, executionId: "x2", detail: "pwd" },
+    ]);
+  });
+
+  it("leaves blocks alone when a result names a call they never saw", () => {
+    const blocks = [{ kind: "steps" as const, steps: [{ label: "Shell", count: 1 }] }];
+    expect(completeToolStep(blocks, "missing", "error")).toEqual(blocks);
+  });
+
   it("starts a new step for the first call", () => {
     expect(appendToolStep([], "SLACK_FIND_CHANNELS")).toEqual([
       { label: "Slack find channels", count: 1 },
@@ -791,6 +831,108 @@ describe("appendTextSegment", () => {
     expect(appendTextSegment(segments, "done")).toEqual([
       { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
       { kind: "text", text: "done" },
+    ]);
+  });
+});
+
+describe("toolCallDetail", () => {
+  it("prefers the command, path or query, on one bounded line", () => {
+    expect(toolCallDetail({ command: "ls -la\n  apps", cwd: "." })).toBe("ls -la apps");
+    expect(toolCallDetail({ path: "apps/web/package.json" })).toBe("apps/web/package.json");
+    expect(toolCallDetail({ query: "weather tomorrow", limit: 5 })).toBe("weather tomorrow");
+    expect(toolCallDetail({ command: "x".repeat(400) })).toHaveLength(200);
+  });
+
+  it("falls back to the scalar arguments and gives nothing for nested or empty ones", () => {
+    expect(toolCallDetail({ limit: 5, archived: false, cursor: "" })).toBe(
+      "limit: 5, archived: false",
+    );
+    expect(toolCallDetail({ items: [{ action: "a" }] })).toBeUndefined();
+    expect(toolCallDetail({})).toBeUndefined();
+    expect(toolCallDetail("ls")).toBeUndefined();
+  });
+});
+
+describe("reduceLiveMessageBlocks tool results", () => {
+  it("marks a step done, and a call still waiting on a sentence once it shows", () => {
+    let blocks = reduceLiveMessageBlocks([], { type: "progress", payload: { text: "Checking" } });
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "tool",
+      name: "shell",
+      executionId: "x1",
+      detail: "ls",
+    });
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "tool_done",
+      executionId: "x1",
+      outcome: "error",
+      durationMs: 12,
+    });
+    expect(blocks).toEqual([
+      {
+        kind: "progress",
+        text: "Checking",
+        pendingTools: [
+          { name: "shell", executionId: "x1", detail: "ls", outcome: "error", durationMs: 12 },
+        ],
+      },
+    ]);
+    blocks = reduceLiveMessageBlocks(blocks, { type: "progress", payload: { delta: " totals." } });
+    expect(blocks).toEqual([
+      { kind: "text", text: "Checking totals." },
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Shell",
+            count: 1,
+            executionId: "x1",
+            detail: "ls",
+            outcome: "error",
+            durationMs: 12,
+          },
+        ],
+      },
+    ]);
+  });
+});
+
+describe("projectMessages tool results", () => {
+  it("applies a completion to the live step it belongs to", () => {
+    const messages = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 0,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "shell", executionId: "x1", detail: "pnpm test" },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 1,
+        type: "agent.tool.completed",
+        runId: "r1",
+        payload: { name: "shell", executionId: "x1", outcome: "succeeded", durationMs: 2500 },
+        createdAt: "2026-01-01T00:00:03.000Z",
+      },
+    ]);
+    expect(messages[0]?.blocks).toEqual([
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Shell",
+            count: 1,
+            executionId: "x1",
+            detail: "pnpm test",
+            outcome: "ok",
+            durationMs: 2500,
+          },
+        ],
+      },
     ]);
   });
 });

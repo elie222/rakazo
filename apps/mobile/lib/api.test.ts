@@ -4064,7 +4064,7 @@ describe("mobile thread event reduction", () => {
       {
         kind: "progress",
         text: "Let me check ",
-        pendingToolNames: ["SLACK_FIND_CHANNELS"],
+        pendingTools: [{ name: "SLACK_FIND_CHANNELS" }],
       },
     ]);
     expect(completed?.messages[0]?.blocks).toEqual([

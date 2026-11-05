@@ -55,6 +55,8 @@ import {
   signupRequiresEmailVerification,
   stopsRunHelpers,
   takeLiveMessage,
+  toolCalledUpdate,
+  toolCompletedUpdate,
   updateCloudAgentMessages,
   upsertMessageById,
   withAbort,
@@ -1423,7 +1425,10 @@ export function blockText(message: MobileMessage) {
       }
       if (block.kind === "steps") {
         return (block.steps ?? [])
-          .map((step) => `${step.label}${step.count > 1 ? ` ×${step.count}` : ""}`)
+          .map(
+            (step) =>
+              `${step.label}${step.detail ? `: ${step.detail}` : ""}${step.count > 1 ? ` ×${step.count}` : ""}`,
+          )
           .join(", ");
       }
       return ("text" in block ? block.text : "state" in block ? block.state : "") ?? "";
@@ -1894,10 +1899,10 @@ export function applyMobileThreadEvent(
     const streaming: MobileMessage = {
       id: progressId,
       role: "bot",
-      blocks: reduceLiveMessageBlocks((previous?.blocks ?? []) as MessageBlock[], {
-        type: "tool",
-        name: String(event.payload?.name ?? ""),
-      }),
+      blocks: reduceLiveMessageBlocks(
+        (previous?.blocks ?? []) as MessageBlock[],
+        toolCalledUpdate(event.payload ?? {}),
+      ),
       ...(event.botId ? { botId: event.botId } : {}),
       ...(event.runId ? { runId: event.runId } : {}),
     };
@@ -1908,7 +1913,16 @@ export function applyMobileThreadEvent(
     };
   }
   if (event.type === "agent.tool.completed") {
-    return { ...prev, cursor: event.seq ?? prev.cursor };
+    const update = toolCompletedUpdate(event.payload ?? {});
+    const progressId = progressMessageId(event);
+    const live = prev.messages.find((message) => message.id === progressId);
+    if (!update || !live) return { ...prev, cursor: event.seq ?? prev.cursor };
+    const blocks = reduceLiveMessageBlocks(live.blocks as MessageBlock[], update);
+    return {
+      ...prev,
+      cursor: event.seq ?? prev.cursor,
+      messages: prev.messages.map((message) => (message === live ? { ...live, blocks } : message)),
+    };
   }
   if (event.type === "thread.subagent") {
     const agentId = String(event.payload?.agentId ?? event.id ?? "live");

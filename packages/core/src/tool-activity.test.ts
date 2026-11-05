@@ -18,7 +18,7 @@ describe("tool activity", () => {
       isToolActivityBlock({
         kind: "progress",
         text: "Let me check",
-        pendingToolNames: ["browser"],
+        pendingTools: [{ name: "browser" }],
       }),
     ).toBe(false);
     expect(

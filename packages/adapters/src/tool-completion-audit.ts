@@ -1,10 +1,12 @@
 import type { AgentToolCompletion } from "@rakazo/adapter-kit";
+import { TOOL_RESULT_PREVIEW_MAX_CHARS } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
+import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
 import { isFailedToolResult, toolResultError } from "./tool-result-error.js";
 
 function isAuditableToolResult(value: unknown): value is {
@@ -47,6 +49,8 @@ export function toolCompletionAuditPayload(
   if (error !== undefined) {
     payload.error = sanitizeConnectorError(error, secrets);
   }
+  const preview = toolResultPreview(completion.result, secrets);
+  if (preview) payload.preview = preview;
   if (!isAuditableToolResult(completion.result)) return payload;
 
   payload.contentTypes = completion.result.content.flatMap((part) => {
@@ -72,6 +76,29 @@ export function toolCompletionAuditPayload(
     payload.height = record.height;
   }
   return payload;
+}
+
+/** The text the tool returned, bounded and with secrets taken out, for the activity view. */
+function toolResultPreview(result: unknown, secrets: string[]): string | undefined {
+  const content = (result as { content?: unknown } | undefined)?.content;
+  const text = (
+    typeof result === "string"
+      ? result
+      : Array.isArray(content)
+        ? content
+            .flatMap((part) =>
+              part && typeof part === "object" && (part as { type?: unknown }).type === "text"
+                ? [String((part as { text?: unknown }).text ?? "")]
+                : [],
+            )
+            .join("\n")
+        : ""
+  ).trim();
+  if (!text) return undefined;
+  const safe = sanitizeSensitiveText(redactSecrets(text, secrets));
+  return safe.length > TOOL_RESULT_PREVIEW_MAX_CHARS
+    ? `${safe.slice(0, TOOL_RESULT_PREVIEW_MAX_CHARS)}…`
+    : safe;
 }
 
 export async function appendToolCompletionAudit(

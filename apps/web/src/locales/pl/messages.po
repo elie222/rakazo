@@ -1835,6 +1835,7 @@ msgstr "Rozmowy"
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1842,6 +1843,7 @@ msgstr "Rozmowy"
 msgid "Copied"
 msgstr "Skopiowano"
 
+#: src/components/ToolActivityDisclosure.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -2441,6 +2443,10 @@ msgstr "Nie udało się wczytać zgłoszeń"
 #: src/pages/SharedPage.tsx
 msgid "Couldn't load this page. Try again."
 msgstr "Nie udało się wczytać tej strony. Spróbuj ponownie."
+
+#: src/components/ToolActivityDisclosure.tsx
+msgid "Couldn’t load this step."
+msgstr "Nie udało się wczytać tego kroku."
 
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
@@ -3095,6 +3101,11 @@ msgstr "Co tydzień"
 msgid "Executor token"
 msgstr "Token wykonawcy"
 
+#. placeholder {0}: record.exitCode
+#: src/components/ToolActivityDisclosure.tsx
+msgid "exit {0}"
+msgstr "kod wyjścia {0}"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "Rozwiń"
@@ -3157,6 +3168,7 @@ msgid "failed"
 msgstr "błąd"
 
 #: src/components/SubagentCard.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "Błąd"
@@ -3826,6 +3838,7 @@ msgstr "Wczytywanie dostawców głosu…"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -4455,6 +4468,10 @@ msgstr "Brak modeli na liście."
 #: src/pages/shell/agent-import.tsx
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "Nie znaleziono dokumentu OpenClaw, Hermes ani agenta."
+
+#: src/components/ToolActivityDisclosure.tsx
+msgid "No output recorded."
+msgstr "Brak zapisanego wyniku."
 
 #: src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
@@ -5557,6 +5574,7 @@ msgid "running"
 msgstr "działa"
 
 #: src/components/SubagentCard.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Running"

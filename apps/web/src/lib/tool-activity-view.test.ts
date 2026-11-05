@@ -6,6 +6,7 @@ import {
   renderableMessageBlocks,
   shouldRenderToolCard,
   toolStepCount,
+  toolStepStatus,
 } from "./tool-activity-view";
 
 const stepsBlock: MessageBlock = { kind: "steps", steps: [{ label: "Shell", count: 2 }] };
@@ -18,6 +19,15 @@ describe("tool step count", () => {
   it("sums each row's count", () => {
     expect(toolStepCount([{ count: 1 }, { count: 3 }])).toBe(4);
     expect(toolStepCount([])).toBe(0);
+  });
+});
+
+describe("tool step status", () => {
+  it("reads a failed call as an error and an unfinished one as running only while live", () => {
+    expect(toolStepStatus({ outcome: "error" }, true)).toBe("error");
+    expect(toolStepStatus({ outcome: "ok" }, true)).toBe("ok");
+    expect(toolStepStatus({}, true)).toBe("running");
+    expect(toolStepStatus({}, false)).toBe("ok");
   });
 });
 

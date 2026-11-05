@@ -18,6 +18,7 @@ import {
   redactSecrets,
   redactSecretsAfter,
   TAKEOVER_COMPUTER_PENDING_STATE,
+  toolCallDetail,
   userRunError,
   withoutLastToolStepNotes,
 } from "@rakazo/core";
@@ -26,6 +27,7 @@ import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { isToolPauseResult } from "./approval-effect.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
+import { USE_TOOL } from "./builtin-tool-bridge.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { holdComputerExecutionLeaseForTakeover } from "./computer-lifecycle.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
@@ -34,6 +36,7 @@ import {
   HISTORY_WINDOW_SIZE,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
+import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
 import { connectorStepNames } from "./pi-runtime-tools.js";
 import {
   backOffRoutineAfterAccountError,
@@ -62,6 +65,7 @@ import {
   publishMidTurnNarration,
   publishNarrationBeforeAsk,
   recordExplicitNoResponse,
+  recordToolOutcome,
   showNarrationStatus,
   tryFlushPendingTools,
 } from "./run-progress.js";
@@ -93,6 +97,7 @@ import {
   overLimitStopText,
   toolResultFingerprint,
 } from "./tool-loop.js";
+import { toolResultError } from "./tool-result-error.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
@@ -519,7 +524,14 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   await flushProgress(ctx);
   // Queued first so the text written before this call becomes its note.
   const stepNames = connectorStepNames(ctx.tools.connector.get(event.name), event.args);
-  reply.pendingToolNames.push(...(stepNames.length > 0 ? stepNames : [event.name]));
+  const detail = toolStepDetail(event, ctx.secrets);
+  reply.pendingTools.push(
+    ...(stepNames.length > 0 ? stepNames : [event.name]).map((name) => ({
+      name,
+      executionId: event.executionId,
+      ...(detail === undefined ? {} : { detail }),
+    })),
+  );
   // Text before ask_user stays pending: the run pauses next, and the question needs it.
   const heldNote =
     event.name === "message_user" || event.name === "ask_user"
@@ -536,7 +548,11 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     botId: bot.id,
     type: "agent.tool.called",
     runId,
-    payload: { name: event.name, executionId: event.executionId },
+    payload: {
+      name: event.name,
+      executionId: event.executionId,
+      ...(detail === undefined ? {} : { detail }),
+    },
   });
   await showNarrationStatus(ctx, heldNote);
   tryFlushPendingTools(reply);
@@ -573,34 +589,38 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   try {
     const result = await applyTool(ctx, event.name, event.args, event.executionId);
     toolResults.set(event.executionId, toolResultFingerprint(result));
-    await appendToolCompletionAudit(
-      deps,
-      audit,
-      toolCompletionFromResult(
-        {
-          name: event.name,
-          executionId: event.executionId,
-          durationMs: Date.now() - startedAt,
-        },
-        result,
-      ),
-      ctx.secrets,
+    const completion = toolCompletionFromResult(
+      { name: event.name, executionId: event.executionId, durationMs: Date.now() - startedAt },
+      result,
     );
+    if (!completion.paused) {
+      recordToolOutcome(
+        reply,
+        event.executionId,
+        completion.error === undefined && toolResultError(result) === undefined ? "ok" : "error",
+        completion.durationMs,
+      );
+    }
+    await appendToolCompletionAudit(deps, audit, completion, ctx.secrets);
     return isToolPauseResult(result);
   } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    recordToolOutcome(reply, event.executionId, "error", durationMs);
     await appendToolCompletionAudit(
       deps,
       audit,
-      {
-        name: event.name,
-        executionId: event.executionId,
-        durationMs: Date.now() - startedAt,
-        error,
-      },
+      { name: event.name, executionId: event.executionId, durationMs, error },
       ctx.secrets,
     );
     throw error;
   }
+}
+
+/** What the call is about, safe to show: its arguments' main line with secrets taken out. */
+function toolStepDetail(event: RuntimeEvent<"tool">, secrets: string[]): string | undefined {
+  const inner = event.name === USE_TOOL ? event.args.arguments : undefined;
+  const detail = toolCallDetail(inner && typeof inner === "object" ? inner : event.args);
+  return detail === undefined ? undefined : sanitizeSensitiveText(redactSecrets(detail, secrets));
 }
 
 /** The model keeps repeating the same call: finish the run with what it has and say why. */

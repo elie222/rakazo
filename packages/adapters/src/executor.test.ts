@@ -6,6 +6,7 @@ import {
   CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
   cloudflareModelConfigMessage,
   FLEET_TOOL_NAMES,
+  TOOL_RESULT_PREVIEW_MAX_CHARS,
 } from "@rakazo/contracts";
 import { isOwnerStartedRun, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -112,7 +113,7 @@ describe("bot tool permissions", () => {
 });
 
 describe("tool completion audit", () => {
-  it("records result metadata without persisting tool contents", () => {
+  it("records result metadata and the text a tool returned, never image bytes or details", () => {
     const payload = toolCompletionAuditPayload({
       name: "computer_observe",
       executionId: "call-1",
@@ -138,6 +139,7 @@ describe("tool completion audit", () => {
       executionId: "call-1",
       durationMs: 13,
       outcome: "succeeded",
+      preview: "Visible window",
       contentTypes: ["text", "image"],
       frameId: "frame-1",
       capturedAt: "2026-09-07T00:00:00.000Z",
@@ -271,6 +273,38 @@ describe("tool completion audit", () => {
       error: "destination rejected the record",
     });
     expect(completion).not.toHaveProperty("result");
+  });
+
+  it("keeps a bounded, redacted preview of the text a tool returned", () => {
+    const secret = "FAKE_TOKEN_4431";
+    const payload = toolCompletionAuditPayload(
+      {
+        name: "shell",
+        executionId: "call-1",
+        durationMs: 9,
+        result: {
+          kind: "agent_tool_result",
+          content: [
+            { type: "text", text: `token=${secret}\n${"x".repeat(TOOL_RESULT_PREVIEW_MAX_CHARS)}` },
+            { type: "image", data: "", mimeType: "image/png" },
+          ],
+          details: {},
+        },
+      },
+      [secret],
+    );
+    expect(payload.preview).toMatch(/^token=\[redacted\]\n/);
+    expect(payload.preview).toHaveLength(TOOL_RESULT_PREVIEW_MAX_CHARS + 1);
+    expect(payload.preview).toMatch(/…$/);
+    expect(payload.contentTypes).toEqual(["text", "image"]);
+    expect(
+      toolCompletionAuditPayload({
+        name: "shell",
+        executionId: "c",
+        durationMs: 1,
+        result: { content: [] },
+      }),
+    ).not.toHaveProperty("preview");
   });
 
   it("records an MCP tool result flagged isError as an error", () => {

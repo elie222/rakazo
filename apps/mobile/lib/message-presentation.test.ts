@@ -73,7 +73,7 @@ describe("mobile message presentation", () => {
     const mixed: Extract<MessageBlock, { kind: "progress" }> = {
       kind: "progress",
       text: "Let me check",
-      pendingToolNames: ["browser"],
+      pendingTools: [{ name: "browser" }],
     };
     expect(messagePresentationSegments([mixed])).toEqual([{ kind: "content", blocks: [mixed] }]);
   });
