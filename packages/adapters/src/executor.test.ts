@@ -1274,6 +1274,7 @@ function pinnedRoutineRunPrisma(modelId: string) {
     computer: { id: "computer-1", scope: "private" },
   };
   return {
+    user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
@@ -2090,6 +2091,7 @@ describe("createRunExecutor", () => {
     const taskCreate = vi.fn(async () => ({ id: "task-1" }));
     const runCreate = vi.fn(async () => ({ id: "run-1" }));
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       routine: {
         findUnique: vi.fn(async () => ({
           id: "routine-1",
@@ -2163,6 +2165,7 @@ describe("createRunExecutor", () => {
     const taskCreate = vi.fn(async () => ({ id: "task-1" }));
     const runCreate = vi.fn(async () => ({ id: "run-1" }));
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       routine: {
         findUnique: vi.fn(async () => ({
           id: "routine-1",
@@ -2254,6 +2257,7 @@ describe("createRunExecutor", () => {
       claimedModel = model,
     ) {
       return {
+        user: { findUnique: vi.fn(async () => null) },
         routine: {
           findUnique: vi.fn(async () => ({
             id: "routine-1",
@@ -2355,6 +2359,7 @@ describe("createRunExecutor", () => {
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const $transaction = vi.fn();
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       routine: {
         findUnique: vi.fn(async () => ({
           id: "routine-1",
@@ -2402,6 +2407,7 @@ describe("createRunExecutor", () => {
     const append = vi.fn(async () => undefined);
     const findFirst = vi.fn(async () => ({ id: "group-thread-1" }));
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       routine: {
         findUnique: vi.fn(async () => ({
           id: "routine-1",
@@ -2479,6 +2485,7 @@ describe("createRunExecutor", () => {
     const append = vi.fn(async () => undefined);
     const findFirst = vi.fn(async () => ({ id: "dm-thread-1" }));
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       routine: {
         findUnique: vi.fn(async () => ({
           id: "routine-1",
@@ -2565,6 +2572,7 @@ description: Prepare standup notes
 1. Summarize wins.
 `;
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       routine: {
         findUnique: vi.fn(async () => ({
           id: "routine-1",
@@ -2633,6 +2641,7 @@ description: Prepare standup notes
     });
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       routine: {
         findUnique: vi.fn(async () => ({
           id: "routine-1",
@@ -2697,6 +2706,7 @@ description: Prepare standup notes
     const deleteTaskMany = vi.fn(async () => ({ count: 1 }));
     let transactionCalls = 0;
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       routine: {
         findUnique: vi.fn(async () => ({
           id: "routine-1",
@@ -2760,6 +2770,7 @@ description: Prepare standup notes
   it("consumes a persisted takeover checkpoint when claiming the run", async () => {
     const updateMany = vi.fn(async () => ({ count: 0 }));
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       run: {
         findUnique: vi.fn(async () => ({
           id: "run-1",
@@ -2813,6 +2824,7 @@ description: Prepare standup notes
       return { count: matchesClaim(args.where, row) ? 1 : 0 };
     });
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       run: {
         findUnique: vi.fn(async () => ({
           id: "run-1",
@@ -2840,6 +2852,41 @@ description: Prepare standup notes
     expect(row).toEqual({ status: "queued", checkpoint: "takeover" });
   });
 
+  it("claims a run after all when its owner is reactivated while it was being refused", async () => {
+    // Deactivated at the first look, active again by the time the cancel takes its lock.
+    const findUser = vi
+      .fn()
+      .mockResolvedValueOnce({ deactivatedAt: new Date() })
+      .mockResolvedValue({ deactivatedAt: null });
+    const updateMany = vi.fn(async () => ({ count: 0 }));
+    const prisma = {
+      user: { findUnique: findUser },
+      run: {
+        findUnique: vi.fn(async () => ({
+          id: "run-1",
+          botId: "bot-1",
+          threadId: "thread-1",
+          userId: "user-1",
+          status: "queued",
+          checkpoint: null,
+          leaseFence: 0,
+        })),
+        findMany: vi.fn(async () => [{ threadId: "thread-1" }]),
+        updateMany,
+      },
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({ $queryRaw: vi.fn(async () => []), user: { findUnique: findUser } }),
+      ),
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({ prisma } as Parameters<typeof createRunExecutor>[0]);
+
+    await executor.continueRun("run-1", "worker-1");
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "leased" }) }),
+    );
+  });
+
   it("restores a takeover checkpoint when a switching computer requeues the run", async () => {
     const updateMany = vi.fn(
       async (args: {
@@ -2853,6 +2900,7 @@ description: Prepare standup notes
     );
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       run: {
         findUnique: vi.fn(async () => ({
           id: "run-1",
@@ -2950,6 +2998,7 @@ description: Prepare standup notes
     );
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       run: {
         findUnique: vi.fn(async () => ({
           id: "run-1",
@@ -3007,6 +3056,7 @@ description: Prepare standup notes
     );
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       run: {
         findUnique: vi.fn(async () => ({
           id: "run-1",
@@ -3087,6 +3137,7 @@ description: Prepare standup notes
             },
       );
       const prisma = {
+        user: { findUnique: vi.fn(async () => null) },
         run: {
           findUnique: vi.fn(async () => run),
           findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
@@ -3205,6 +3256,7 @@ description: Prepare standup notes
       leaseFence: 0,
     };
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       run: {
         findUnique: vi.fn(async () => run),
         findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
@@ -3310,6 +3362,7 @@ description: Prepare standup notes
       leaseFence: 0,
     };
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       run: {
         findUnique: vi.fn(async () => run),
         findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
@@ -3426,6 +3479,7 @@ description: Prepare standup notes
       return null;
     });
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       bot: {
         findFirst: vi.fn(async () => ({
           modelProvider: "xai",
@@ -3480,6 +3534,7 @@ description: Prepare standup notes
       },
     );
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       userModelPreference: { findFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
@@ -3532,6 +3587,7 @@ description: Prepare standup notes
     );
     const plaintext = compatibleSecret(["newest-model"]);
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       userModelPreference: { findFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       secret: {
@@ -3599,6 +3655,7 @@ description: Prepare standup notes
         }),
       };
       const prisma = {
+        user: { findUnique: vi.fn(async () => null) },
         userModelPreference: {
           findMany: vi.fn(async () => [preference]),
           findFirst: vi.fn(async () => null),
@@ -3857,6 +3914,7 @@ description: Prepare standup notes
       expires: Date.now() + 60_000,
     });
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       bot: {
         findFirst: vi.fn(async () => ({
           modelProvider: provider,
@@ -3901,6 +3959,7 @@ description: Prepare standup notes
       accountId: "acct-live",
     });
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       bot: {
         findFirst: vi.fn(async () => ({
           modelProvider: provider,
@@ -3966,6 +4025,7 @@ description: Prepare standup notes
         accountId: "acct-live",
       });
       const prisma = {
+        user: { findUnique: vi.fn(async () => null) },
         bot: {
           findFirst: vi.fn(async () => ({
             modelProvider: provider,
@@ -4042,6 +4102,7 @@ description: Prepare standup notes
       accountId: "acct-live",
     });
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       bot: {
         findFirst: vi.fn(async () => ({
           modelProvider: provider,
@@ -4091,6 +4152,7 @@ description: Prepare standup notes
       }),
     );
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       bot: {
         findFirst: vi.fn(async () => ({
           modelProvider: provider,
@@ -4146,6 +4208,7 @@ description: Prepare standup notes
       thinkingLevel: null,
     };
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       bot: { findFirst: vi.fn(async () => bot) },
       userModelPreference: { findFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
@@ -4197,6 +4260,7 @@ description: Prepare standup notes
       return null;
     });
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       bot: {
         findFirst: vi.fn(async () => ({
           modelProvider: "xai",
@@ -4270,6 +4334,7 @@ description: Prepare standup notes
 
   it("withholds the deployment key when settings name a different provider", async () => {
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       bot: { findFirst: vi.fn(async () => null) },
       userModelPreference: { findFirst: vi.fn(async () => null) },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
@@ -4303,6 +4368,7 @@ description: Prepare standup notes
       });
     });
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       bot: {
         findFirst: vi.fn(async () => ({
           modelProvider: null,

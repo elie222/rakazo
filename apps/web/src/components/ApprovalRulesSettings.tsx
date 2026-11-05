@@ -15,6 +15,7 @@ import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
+import { SpendingLimitSettings } from "./SpendingLimitSettings";
 
 const segmented = "rounded-lg bg-muted p-1";
 const segment = "h-7 px-3 text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm";
@@ -149,6 +150,8 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
           ) : null}
         </SettingsRow>
       </SettingsGroup>
+      {/* Spending is the person's own across every Space, so it is set with the account's approvals. */}
+      {scope === "account" ? <SpendingLimitSettings /> : null}
       <Button
         variant="outline"
         size="sm"

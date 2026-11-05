@@ -18,6 +18,7 @@ describe("current model compatibility", () => {
     ["opencode", "claude-sonnet-5-5"],
     ["opencode-go", "claude-haiku-5-5"],
     ["openai-codex", "gpt-6.1-sol"],
+    ["openrouter", "deepseek/deepseek-v4.1-flash-1017"],
     ["amazon-bedrock", "anthropic.claude-sonnet-5-5"],
     ["amazon-bedrock", "eu.anthropic.claude-sonnet-5-5"],
     ["amazon-bedrock", "global.anthropic.claude-sonnet-5-5"],

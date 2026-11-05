@@ -70,6 +70,14 @@ it.each([
   await expect(continueWithSso()).rejects.toThrow();
   expect(replaceSessionTokenIfCurrent).not.toHaveBeenCalled();
 });
+it("says when the server refused a deactivated account", async () => {
+  vi.mocked(openAuthSessionAsync).mockResolvedValue({
+    type: "success",
+    url: "rakazo://sign-in?error=ACCOUNT_DEACTIVATED",
+  });
+  await expect(continueWithSso()).rejects.toThrow("This account is deactivated");
+  expect(replaceSessionTokenIfCurrent).not.toHaveBeenCalled();
+});
 it.each(["server", "session"])("drops results when the %s changes", async (changed) => {
   vi.mocked(openAuthSessionAsync).mockImplementation(async () => {
     if (changed === "server")

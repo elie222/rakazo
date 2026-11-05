@@ -266,6 +266,26 @@ describePostgres("account export (PostgreSQL)", () => {
     await db.pool.end();
   });
 
+  it("refuses a link once the account is deactivated", async () => {
+    const app = new Hono();
+    mountAccountExportRoute(app, {
+      prisma,
+      auth: { consumeAccountExportToken: async (token) => (token === "good" ? exporter : null) },
+      artifacts: { get: async (key) => new TextEncoder().encode(`bytes:${key}`) },
+      home: { exportHome: async function* () {} },
+    });
+    const setDeactivated = (deactivatedAt: Date | null) =>
+      runAsSystem("test fixture", () =>
+        prisma.user.update({ where: { id: exporter }, data: { deactivatedAt } }),
+      );
+    await setDeactivated(new Date());
+    try {
+      expect((await app.request("/api/account/export?token=good")).status).toBe(410);
+    } finally {
+      await setDeactivated(null);
+    }
+  });
+
   it("downloads only the exporter's content, decrypted", async () => {
     const app = new Hono();
     mountAccountExportRoute(app, {

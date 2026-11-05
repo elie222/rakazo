@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { AxiomIngestClient } from "./axiom.js";
-import { createAxiomSink, createAxiomSinkFromEnv } from "./axiom.js";
+import { createAxiomSinkFromEnv } from "./axiom.js";
+import type { AxiomIngestClient } from "./axiom-sink.js";
+import { createAxiomSink } from "./axiom-sink.js";
 import { createLogger } from "./logger.js";
 import type { LogEvent } from "./types.js";
 
@@ -33,7 +34,7 @@ function sampleEvent(): LogEvent {
 describe("axiom sink", () => {
   it("ingests through the injected client and flushes", async () => {
     const client = new FakeAxiom();
-    const sink = createAxiomSink({ dataset: "rakazo-logs", client });
+    const sink = await createAxiomSink({ dataset: "rakazo-logs", client });
     const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
     logger.info("hello", { "request.id": "r1" });
     await logger.flush();
@@ -50,20 +51,22 @@ describe("axiom sink", () => {
   it("does not throw when ingest or flush fails", async () => {
     const client = new FakeAxiom();
     client.failIngest = true;
-    const sink = createAxiomSink({ dataset: "rakazo-logs", client });
+    const sink = await createAxiomSink({ dataset: "rakazo-logs", client });
     expect(() => sink.write(sampleEvent())).not.toThrow();
     client.failFlush = true;
     await expect(sink.flush?.()).resolves.toBeUndefined();
   });
 
-  it("enables only when token and dataset are both set", () => {
+  it("enables only when token and dataset are both set", async () => {
     const client = new FakeAxiom();
-    expect(createAxiomSinkFromEnv({}, client)).toEqual({});
-    expect(createAxiomSinkFromEnv({ AXIOM_TOKEN: "t" }, client)).toEqual({
+    expect(await createAxiomSinkFromEnv({}, client)).toEqual({});
+    expect(await createAxiomSinkFromEnv({ AXIOM_TOKEN: "t" }, client)).toEqual({
       warning: "Axiom logging is disabled; AXIOM_TOKEN and AXIOM_DATASET must both be set.",
     });
-    expect(createAxiomSinkFromEnv({ AXIOM_DATASET: "logs" }, client).warning).toMatch(/disabled/);
-    const enabled = createAxiomSinkFromEnv(
+    expect((await createAxiomSinkFromEnv({ AXIOM_DATASET: "logs" }, client)).warning).toMatch(
+      /disabled/,
+    );
+    const enabled = await createAxiomSinkFromEnv(
       {
         AXIOM_TOKEN: "t",
         AXIOM_DATASET: "logs",
@@ -76,9 +79,9 @@ describe("axiom sink", () => {
     expect(enabled.warning).toBeUndefined();
   });
 
-  it("rejects non-https edge URLs and non-hostname edges", () => {
+  it("rejects non-https edge URLs and non-hostname edges", async () => {
     const client = new FakeAxiom();
-    const httpUrl = createAxiomSinkFromEnv(
+    const httpUrl = await createAxiomSinkFromEnv(
       {
         AXIOM_TOKEN: "t",
         AXIOM_DATASET: "logs",
@@ -89,7 +92,7 @@ describe("axiom sink", () => {
     expect(httpUrl.sink).toBeUndefined();
     expect(httpUrl.warning).toMatch(/https/);
 
-    const badHost = createAxiomSinkFromEnv(
+    const badHost = await createAxiomSinkFromEnv(
       {
         AXIOM_TOKEN: "t",
         AXIOM_DATASET: "logs",
@@ -100,7 +103,7 @@ describe("axiom sink", () => {
     expect(badHost.sink).toBeUndefined();
     expect(badHost.warning).toMatch(/hostname/);
 
-    const withUser = createAxiomSinkFromEnv(
+    const withUser = await createAxiomSinkFromEnv(
       {
         AXIOM_TOKEN: "t",
         AXIOM_DATASET: "logs",

@@ -1,4 +1,5 @@
 export * from "./account-export.js";
+export * from "./account-status.js";
 export * from "./approval-settings.js";
 export * from "./artifact-versions.js";
 export * from "./audit-events.js";
@@ -48,6 +49,7 @@ export * from "./security-events.js";
 export * from "./sessions.js";
 export * from "./space-settings.js";
 export * from "./spaces.js";
+export * from "./spending.js";
 export { primaryActiveRun } from "./thread-listing.js";
 export * from "./transaction-retry.js";
 export * from "./unread-inbox-chats.js";

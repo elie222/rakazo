@@ -1,12 +1,19 @@
+import type { ConnectorApp } from "@rakazo/adapter-kit";
+import { isBackgroundRunTrigger, redactSecrets } from "@rakazo/core";
 import { normalizedHttpUrl } from "@rakazo/core/egress";
+import { getLogger } from "@rakazo/logging";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
 import { collectLogIds } from "./composio-connector.js";
 import { connectApp } from "./connect-app.js";
+import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
+import { mcpAppViewArguments, mcpAppViewResult } from "./mcp-app.js";
 import { addMcpServerFromTool } from "./mcp-server-tool.js";
 import type { RunContext } from "./run-context.js";
 import { runScopedToolExecutionId } from "./run-effects.js";
+import { publishMessage } from "./run-messages.js";
 import { flushProgress, publishMidTurnNarration, showNarrationStatus } from "./run-progress.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { storeMcpAppHtml } from "./thread-artifacts.js";
 import { webFetchFromTool, webSearchFromTool } from "./web-tools.js";
 
 export async function cloudAgentTool(ctx: RunContext, call: ToolCall) {
@@ -28,10 +35,16 @@ export async function connectorTool(ctx: RunContext, call: ToolCall) {
   const { name, args, effectKey, connectorCall } = call;
   if (deps.connector) {
     let result: unknown = { error: `unknown tool ${name}` };
+    // Background work posts no cards, so it does not fetch the app either.
+    const withApp = Boolean(deps.artifacts) && !isBackgroundRunTrigger(run.trigger);
     for await (const event of deps.connector.execute(
-      { ...connectorCall, tool: name, args, executionId: effectKey },
+      { ...connectorCall, tool: name, args, executionId: effectKey, withApp },
       context,
     )) {
+      if (event.type === "app") {
+        await showConnectorApp(ctx, call, event.app, result);
+        continue;
+      }
       if (event.type === "result") {
         result = event.data;
         const logIds = collectLogIds(event.data);
@@ -63,6 +76,55 @@ export async function connectorTool(ctx: RunContext, call: ToolCall) {
     return call.finish(result);
   }
   return call.finish({ error: `unknown tool ${name}` });
+}
+
+/**
+ * Posts an MCP server's app for this call as a card above the bot's reply. The card is extra:
+ * storing or posting it failing leaves the call's result, which the bot already has, as it is.
+ */
+async function showConnectorApp(
+  ctx: RunContext,
+  call: ToolCall,
+  app: ConnectorApp,
+  result: unknown,
+): Promise<void> {
+  const { deps, run, bot, thread } = ctx;
+  if (!deps.artifacts) return;
+  try {
+    const artifactId = await storeMcpAppHtml(
+      { prisma: deps.prisma, artifacts: deps.artifacts },
+      {
+        spaceId: run.spaceId,
+        userId: run.userId,
+        botId: bot.id,
+        groupId: thread.groupId ?? undefined,
+        runId: run.id,
+        server: app.server,
+        html: redactSecrets(app.html, ctx.secrets),
+        operationId: `${call.effectKey}:app`,
+      },
+    );
+    await publishMessage(deps, run, "bot", [
+      {
+        kind: "app",
+        artifactId,
+        server: app.server.slice(0, 200),
+        tool: (call.connectorCall.route?.toolName ?? call.name).slice(0, 200),
+        // Secrets revealed earlier in the run stay out of the card, as they do from replies.
+        toolArguments: mcpAppViewArguments(
+          redactConnectorPayload(call.args, ctx.secrets) as Record<string, unknown>,
+        ),
+        toolResult: mcpAppViewResult(redactConnectorPayload(result, ctx.secrets)),
+        ...(app.csp.connectDomains || app.csp.resourceDomains ? { csp: app.csp } : {}),
+        ...(app.prefersBorder !== undefined ? { prefersBorder: app.prefersBorder } : {}),
+      },
+    ]);
+  } catch (error) {
+    getLogger().warn("mcp_app.card_failed", {
+      "tool.name": call.name,
+      error: sanitizeConnectorError(error),
+    });
+  }
 }
 
 /** Web, cloud agents, MCP servers, app connections and connector tools. */

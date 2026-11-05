@@ -15,6 +15,7 @@ import type { MobileBot, MobileMessage, MobileSnapshot } from "./api";
 import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "./api";
 import { findSwitchTarget } from "./bot-switch";
 import { chatSettingsRoute } from "./chat-settings-route";
+import { subscribeComposerOffer } from "./composer-offer";
 import { cancelFocusPrompt } from "./focus-prompt";
 import { useI18n } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
@@ -105,6 +106,14 @@ export function useThreadSend({
     setReplyQuote(null);
     replyPage.current = reply.page;
   }, [threadKey]);
+  // An app card in this chat offers its text straight into the open composer.
+  useEffect(
+    () =>
+      threadKey
+        ? subscribeComposerOffer(threadKey, (text) => composerRef.current?.addReply(text))
+        : undefined,
+    [threadKey],
+  );
   const composerEmptied = useCallback(() => {
     replyPage.current = null;
   }, []);

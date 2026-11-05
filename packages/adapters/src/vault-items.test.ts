@@ -65,12 +65,16 @@ describe("saving cards and contacts", () => {
   it("encrypts the whole value and saves it in its canonical shape", async () => {
     const db = await vaultWithCard();
     const row = db.rows().find((stored) => stored.name === "visa")!;
-    expect(row.ciphertext).not.toContain("4242");
+    // Random base64 can hold a short substring by chance, so look for whole plaintext
+    // pieces it cannot produce: the full card number (as saved and as typed), and a street
+    // line with spaces.
+    expect(row.ciphertext).not.toContain("4242424242424242");
+    expect(row.ciphertext).not.toContain(fakeCard.number);
     expect(JSON.parse(await secretStore.load(row.ciphertext, row.id))).toMatchObject({
       number: "4242424242424242",
     });
     const home = db.rows().find((stored) => stored.name === "home")!;
-    expect(home.ciphertext).not.toContain("Elm");
+    expect(home.ciphertext).not.toContain("12 Elm St");
   });
 
   it("refuses a value that is not a card or contact without quoting it", async () => {

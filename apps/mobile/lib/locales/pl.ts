@@ -998,6 +998,7 @@ export const PL_MESSAGES: Record<string, string> = {
   "Email verification required": "Wymagana weryfikacja adresu e-mail",
   "Link SSO": "Połącz SSO",
   "Registration is closed": "Rejestracja jest zamknięta",
+  "This account is deactivated": "To konto jest dezaktywowane",
   Retry: "Ponów",
   "Send deletion code": "Wyślij kod usunięcia",
   "Sign in to your existing account to link SSO":
@@ -1373,6 +1374,21 @@ export const PL_MESSAGES: Record<string, string> = {
   "Discard changes?": "Odrzucić zmiany?",
   Discard: "Odrzuć",
   "Could not delete note": "Nie udało się usunąć notatki",
+  "Spending limit": "Limit wydatków",
+  Amount: "Kwota",
+  Currency: "Waluta",
+  Daily: "Codziennie",
+  Weekly: "Co tydzień",
+  "No reset": "Bez resetu",
+  "Enter an amount": "Wpisz kwotę",
+  "{amount} a day": "{amount} dziennie",
+  "{amount} a week": "{amount} tygodniowo",
+  "{amount} a month": "{amount} miesięcznie",
+  "{amount} in total": "{amount} łącznie",
+  "{amount} spent today": "Wydano dziś: {amount}",
+  "{amount} spent this week": "Wydano w tym tygodniu: {amount}",
+  "{amount} spent this month": "Wydano w tym miesiącu: {amount}",
+  "{amount} spent": "Wydano: {amount}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
