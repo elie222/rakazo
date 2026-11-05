@@ -51,9 +51,11 @@ init_database() {
 start_database() {
   as_postgres "$PG_BIN/pg_ctl" -D "$PGDATA" -l "$PGDATA/server.log" -w -s \
     -o "-c listen_addresses=127.0.0.1 -c port=5432 -c unix_socket_directories=''" start
-  PGPASSWORD=$PG_OWNER_PASSWORD "$PG_BIN/psql" -qtA -h 127.0.0.1 -U rakazo -d postgres \
-    -c "SELECT 1 FROM pg_database WHERE datname = 'rakazo'" | grep -q 1 \
-    || PGPASSWORD=$PG_OWNER_PASSWORD "$PG_BIN/createdb" -h 127.0.0.1 -U rakazo rakazo
+  if ! PGPASSWORD=$PG_OWNER_PASSWORD "$PG_BIN/psql" -qtA -h 127.0.0.1 -U rakazo -d postgres \
+    -c "SELECT 1 FROM pg_database WHERE datname = 'rakazo'" | grep -q 1; then
+    rm -f "$INITIALIZED_IMAGE"
+    PGPASSWORD=$PG_OWNER_PASSWORD "$PG_BIN/createdb" -h 127.0.0.1 -U rakazo rakazo
+  fi
 }
 
 stop_database() {

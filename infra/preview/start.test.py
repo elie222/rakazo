@@ -22,11 +22,14 @@ elif name == "gosu":
     os.execvp(args[1], args[1:])
 elif name == "initdb":
     (data / "postgres/PG_VERSION").write_text("18")
+elif name == "createdb":
+    assert not (data / "postgres/.preview-image").exists(), "Stale setup marker"
+    (data / "postgres/database").touch()
 elif name == "psql":
     if any(a.startswith("owner_email=") for a in args):
         print("t" if (data / "postgres/demo-account").exists() else "f")
     else:
-        print("1")
+        if (data / "postgres/database").exists(): print("1")
 elif name == "node" and any("migrate-database" in a for a in args):
     with (data / "calls").open("a") as f: f.write("migrate\n")
     fail = data / "fail-migrate"
@@ -60,7 +63,7 @@ class PreviewBoot(unittest.TestCase):
         self.data.mkdir()
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        for name in ("install", "chown", "gosu", "initdb", "pg_ctl", "psql", "curl", "node"):
+        for name in ("install", "chown", "gosu", "initdb", "createdb", "pg_ctl", "psql", "curl", "node"):
             stub = self.bin / name
             stub.write_text(STUB)
             stub.chmod(0o755)
@@ -136,6 +139,14 @@ class PreviewBoot(unittest.TestCase):
     def test_replaced_database_needs_setup_again(self):
         self.boot()
         shutil.rmtree(self.data / "postgres")
+        self.boot()
+        self.assertEqual(self.calls(), ["migrate", "bootstrap"] * 2)
+
+    def test_recreated_database_in_existing_cluster_needs_setup_again(self):
+        self.boot()
+        (self.data / "postgres/database").unlink()
+        (self.data / "postgres/demo-account").unlink()
+        self.assertTrue((self.data / "postgres/.preview-image").exists())
         self.boot()
         self.assertEqual(self.calls(), ["migrate", "bootstrap"] * 2)
 
