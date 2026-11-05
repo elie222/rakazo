@@ -17,13 +17,11 @@ export function SettingsGroup({
 }) {
   return (
     <section data-testid={testId}>
-      {title && action ? (
-        <div className="mb-2 flex items-center justify-between gap-3 ps-1">
+      {title ? (
+        <div className="mb-2 flex items-center justify-between gap-3 px-1">
           <h3 className="text-[14px] font-medium text-foreground">{title}</h3>
           {action}
         </div>
-      ) : title ? (
-        <h3 className="mb-2 px-1 text-[14px] font-medium text-foreground">{title}</h3>
       ) : null}
       <div className="divide-y divide-border rounded-xl border border-border">{children}</div>
     </section>

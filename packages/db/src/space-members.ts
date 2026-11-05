@@ -375,7 +375,12 @@ export async function prepareAccountDeletion(
     if (isOwnerRole(membership.role) && !(await handOwnership(prisma, { spaceId, userId }))) {
       continue;
     }
-    departures.push({ spaceId, ...(await departSpace(prisma, { spaceId, userId })) });
+    // Someone who left or was removed meanwhile has already departed: nothing is left to do.
+    const departure = await departSpace(prisma, { spaceId, userId }).catch((error: unknown) => {
+      if (error instanceof SpaceMemberNotFoundError) return null;
+      throw error;
+    });
+    if (departure) departures.push({ spaceId, ...departure });
   }
   return departures;
 }
