@@ -1383,7 +1383,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const builtins = [
           ...selectBuiltinToolsForRun({
             ticketBoardEnabled: deps.ticketBoardEnabled,
-            phoneCallsEnabled: deps.phoneCallsEnabled,
+            // A call rings the bot's own person, whose chat it is; other members of a shared
+            // Space reach it by message for now.
+            phoneCallsEnabled: deps.phoneCallsEnabled && run.userId === bot.userId,
             historyRetrievalEnabled: contextStrategy !== "current",
             graphicalToolsAllowed,
             pageBrowserAllowed,

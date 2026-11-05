@@ -236,7 +236,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     <AuthFrame onSubmit={submit} title={title}>
       {sent ? (
         <div className="w-full text-center">
-          <Link to="/sign-in" className="font-medium text-foreground">
+          <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
             <Trans>Back to sign in</Trans>
           </Link>
         </div>
@@ -449,7 +449,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                       </Link>
                     </>
                   ) : (
-                    <Link to="/sign-in" className="font-medium text-foreground">
+                    <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
                       <Trans>Back to sign in</Trans>
                     </Link>
                   )}
