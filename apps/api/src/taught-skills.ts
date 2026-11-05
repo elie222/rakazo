@@ -168,6 +168,25 @@ async function ensureGraphicalComputer(
   return bot;
 }
 
+/** Someone else's run on this bot, or on any bot sharing its computer, keeps the screen. */
+async function refuseOthersWork(
+  deps: TaughtSkillsDeps,
+  actor: Actor,
+  bot: { id: string; computerId: string | null },
+): Promise<void> {
+  const othersWork = await deps.prisma.run.findFirst({
+    where: {
+      status: { in: [...ACTIVE_RUN_STATUSES] },
+      userId: { not: actor.userId },
+      ...(bot.computerId ? { bot: { computerId: bot.computerId } } : { botId: bot.id }),
+    },
+    select: { id: true },
+  });
+  if (othersWork) {
+    throw new ORPCError("CONFLICT", { message: "The computer is working for someone else" });
+  }
+}
+
 async function grantTakeover(
   deps: TaughtSkillsDeps,
   actor: Actor,
@@ -183,6 +202,8 @@ async function grantTakeover(
   ) {
     throw new ORPCError("CONFLICT", { message: "Someone else is using this computer" });
   }
+  // The computer may be new since start's check, so look again for work that shares it.
+  await refuseOthersWork(deps, actor, bot);
   if (await extendActiveComputerControl(deps.prisma, deps.jobs, bot.computer, bot.id, until)) {
     const leaseId = bot.computer.controlLeaseId;
     if (!leaseId) throw new IsolationError();
@@ -363,13 +384,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       ) {
         throw new ORPCError("CONFLICT", { message: "Someone else is using this computer" });
       }
-      const othersWork = await deps.prisma.run.findFirst({
-        where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] }, userId: { not: actor.userId } },
-        select: { id: true },
-      });
-      if (othersWork) {
-        throw new ORPCError("CONFLICT", { message: "The bot is working for someone else" });
-      }
+      await refuseOthersWork(deps, actor, bot);
       await cancelActiveRuns(deps, actor, botId);
       bot = await ensureGraphicalComputer(deps, actor, bot);
       const startedAt = new Date();

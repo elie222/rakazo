@@ -874,6 +874,56 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(
       call(asInvitee, "computer/input", { botId: bot.id, kind: "key", payload: { key: "a" } }),
     ).resolves.toMatchObject({ status: 403 });
+
+    // With the screen free, the owner's run on one bot still keeps teaching on another bot of
+    // the same computer away.
+    await system.computer.update({
+      where: { id: computer.id },
+      data: {
+        controlHolder: "none",
+        controlLeaseId: null,
+        controlLeaseExpiresAt: null,
+        controlBotId: null,
+      },
+    });
+    const thread = await system.thread.create({
+      data: { spaceId: home, botId: bot.id, userId: owner.id },
+    });
+    const task = await system.task.create({
+      data: {
+        spaceId: home,
+        botId: bot.id,
+        threadId: thread.id,
+        userId: owner.id,
+        prompt: "Shop",
+        status: "running",
+      },
+    });
+    await system.run.create({
+      data: {
+        spaceId: home,
+        botId: bot.id,
+        threadId: thread.id,
+        taskId: task.id,
+        userId: owner.id,
+        status: "running",
+        trigger: "user",
+        leaseOwner: "worker-1",
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    const otherBot = await system.bot.create({
+      data: {
+        spaceId: home,
+        userId: invitee.id,
+        name: "Planner",
+        color: "test",
+        computerId: computer.id,
+      },
+    });
+    await expect(
+      call(asInvitee, "skills/start", { botId: otherBot.id, goal: "Book a table" }),
+    ).resolves.toMatchObject({ status: 409 });
   });
 
   it("gives a shared space one team computer, whoever creates the bot", async () => {
