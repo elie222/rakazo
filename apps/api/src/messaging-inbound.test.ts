@@ -2032,6 +2032,174 @@ describe("createMessagingInboundHandler channel routing", () => {
     expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-1")).toBe(false);
   });
 
+  it("sweeps a member out when a real roster follows one with a far-future platform time", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
+      const member = {
+        id: "cm-f",
+        channelId: "ch-1",
+        address: "+15552222222",
+        identityId: null,
+        status: "approved",
+      };
+      const deps = createDeps({ members: [member] });
+      const handle = createMessagingInboundHandler(deps);
+      // The sender's clock is far ahead of the server's: the roster's membership is
+      // not trusted, so the member keeps their status.
+      await handle({
+        ...groupEvent,
+        handle: "handle-future",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2099-01-01T00:00:00.000Z"),
+      });
+      expect(member.status).toBe("approved");
+
+      // A later real roster without the member must still win and sweep them out.
+      vi.setSystemTime(new Date("2026-11-05T10:00:01.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-now",
+        participants: ["+15551111111"],
+        rosterAt: new Date("2026-11-05T10:00:01.000Z"),
+      });
+
+      expect(member.status).toBe("left");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps two rosters' own order when both run seconds ahead of the server", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // Both platform clocks are seconds ahead of the server's: within the accepted
+      // skew, so each roster keeps its own time as its version.
+      vi.setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
+      const member = {
+        id: "cm-g",
+        channelId: "ch-1",
+        address: "+15552222222",
+        identityId: null,
+        status: "approved",
+      };
+      const deps = createDeps({ members: [member] });
+      const handle = createMessagingInboundHandler(deps);
+      await handle({
+        ...groupEvent,
+        handle: "handle-first",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2026-11-05T10:00:05.000Z"),
+      });
+      // A second roster, one platform second newer, without the member.
+      await handle({
+        ...groupEvent,
+        handle: "handle-second",
+        participants: ["+15551111111"],
+        rosterAt: new Date("2026-11-05T10:00:06.000Z"),
+      });
+
+      expect(member.status).toBe("left");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not re-invite a removed member when its roster is redelivered later", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const member = {
+        id: "cm-h",
+        channelId: "ch-1",
+        address: "+15552222222",
+        identityId: null,
+        status: "approved",
+      };
+      const deps = createDeps({ members: [member] });
+      const handle = createMessagingInboundHandler(deps);
+      // The roster runs seconds ahead of the server, within the accepted skew.
+      vi.setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-first",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2026-11-05T10:00:05.000Z"),
+      });
+      // A newer roster removes the member.
+      vi.setSystemTime(new Date("2026-11-05T10:00:01.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-second",
+        participants: ["+15551111111"],
+        rosterAt: new Date("2026-11-05T10:00:06.000Z"),
+      });
+      expect(member.status).toBe("left");
+
+      // The first webhook is redelivered after both. Its own time is still the older
+      // version, so it must not restart the member's approval cycle.
+      vi.setSystemTime(new Date("2026-11-05T10:00:02.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-first",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2026-11-05T10:00:05.000Z"),
+      });
+
+      expect(member.status).toBe("left");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not re-invite a removed member when a far-future roster naming them is replayed", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const member = {
+        id: "cm-i",
+        channelId: "ch-1",
+        address: "+15552222222",
+        identityId: null,
+        status: "approved",
+      };
+      const deps = createDeps({ members: [member] });
+      const handle = createMessagingInboundHandler(deps);
+      // A roster dated far ahead of the server's clock: its membership is not trusted,
+      // so it changes nothing.
+      vi.setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-future",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2099-01-01T00:00:00.000Z"),
+      });
+      expect(member.status).toBe("approved");
+
+      // A real roster removes the member.
+      vi.setSystemTime(new Date("2026-11-05T10:00:01.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-now",
+        participants: ["+15551111111"],
+        rosterAt: new Date("2026-11-05T10:00:01.000Z"),
+      });
+      expect(member.status).toBe("left");
+
+      // The far-future webhook is replayed after both: still distrusted, so it must
+      // not restart the member's approval cycle.
+      vi.setSystemTime(new Date("2026-11-05T10:00:02.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-future",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2099-01-01T00:00:00.000Z"),
+      });
+
+      expect(member.status).toBe("left");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("sanitizes attacker-controlled channel names before storing them", async () => {
     const deps = createDeps();
     const handle = createMessagingInboundHandler(deps);
