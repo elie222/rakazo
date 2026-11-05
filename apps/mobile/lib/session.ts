@@ -398,6 +398,20 @@ export async function snapshotSessionToken(): Promise<{ ok: true; value: string 
 }
 
 /**
+ * The stored token, even one this launch stopped sending after a failed save or wipe: a restart
+ * would send it again, so discarding it must revoke it.
+ */
+export async function snapshotStoredSessionToken(): Promise<
+  { ok: true; value: string } | { ok: false }
+> {
+  try {
+    return { ok: true, value: (await SecureStore.getItemAsync(SESSION_KEY)) ?? "" };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
  * The server only accepts a signed bearer. `set-auth-token` and the session cookie are signed on
  * every server version; the body token is signed only by servers that refuse unsigned bearers.
  */

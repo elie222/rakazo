@@ -3265,6 +3265,73 @@ describe("mobile API authentication", () => {
   );
 
   it.each(["save", "reset"])(
+    "a %s revokes a stored session that a failed save during the hang-up left unsent",
+    async (change) => {
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      if (change === "reset") await saveApiBase("https://old-server.example");
+      await restoreSessionToken("token-a");
+      await selectSpace("space-old");
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        if (key === "rakazo.session_token" && value === "token-b") throw new Error("device locked");
+        store.set(key, value);
+      });
+      configureSessionEndHangUp(() => saveSessionToken("token-b"));
+      let result: Awaited<ReturnType<typeof saveApiBase>>;
+      try {
+        result = await (change === "save"
+          ? saveApiBase("https://second-server.example")
+          : resetApiBase());
+      } finally {
+        configureSessionEndHangUp(undefined);
+        mockSecureStore(store);
+      }
+
+      // The failed save left token-a stored; a restart would send it, so the switch revokes it.
+      expect(result).toMatchObject({ ok: true });
+      expect(store.has("rakazo.session_token")).toBe(false);
+      expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
+      await resetApiBase();
+    },
+  );
+
+  it.each(["save", "reset"])(
+    "a %s stopped by a session change stores a Space selected during its restoring write",
+    async (change) => {
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      if (change === "reset") await saveApiBase("https://old-server.example");
+      await restoreSessionToken("token-a");
+      await selectSpace("space-old");
+      let selecting: Promise<boolean> | undefined;
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        if (key === "rakazo.space_rollback" && value) await saveSessionToken("token-b");
+        if (key === "rakazo.space_id" && value === "space-old" && !selecting) {
+          // A new selection lands before the switch's restoring write.
+          selecting = selectSpace("space-new");
+          await selecting;
+        }
+        store.set(key, value);
+      });
+      let result: Awaited<ReturnType<typeof saveApiBase>>;
+      try {
+        result = await (change === "save"
+          ? saveApiBase("https://second-server.example")
+          : resetApiBase());
+      } finally {
+        mockSecureStore(store);
+      }
+
+      expect(selecting).toBeDefined();
+      expect(result).toMatchObject({ ok: false });
+      expect(selectedSpaceId()).toBe("space-new");
+      expect(store.get("rakazo.space_id")).toBe("space-new");
+      expect(store.has("rakazo.space_rollback")).toBe(false);
+      await resetApiBase();
+    },
+  );
+
+  it.each(["save", "reset"])(
     "a %s stopped by a session change keeps a Space selected while it read the old one",
     async (change) => {
       const store = new Map<string, string>();

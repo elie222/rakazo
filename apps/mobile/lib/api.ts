@@ -90,6 +90,7 @@ import {
   saveVerifiedIntegrationsScope,
   sessionSaveInProgress,
   snapshotSessionToken,
+  snapshotStoredSessionToken,
   tokenFromAuthResponse,
 } from "./session";
 import { clearUnsentSends } from "./thread-feedback";
@@ -456,21 +457,25 @@ async function clearCredentialsForEndpointChange(
   const previousToken = sessionSaveInProgress()
     ? ({ ok: false } as const)
     : await snapshotSessionToken();
+  // A failed save or wipe can leave a token stored that reads as no session. A restart would send
+  // it again, so the switch revokes it too, but restores only the session in use.
+  const revokedToken =
+    previousToken.ok && !previousToken.value ? await snapshotStoredSessionToken() : previousToken;
   // An unreadable session is not an empty one: clearing now could strand a live session
   // with no record to revoke it, so the switch stops before touching anything.
-  if (!previousToken.ok) {
+  if (!previousToken.ok || !revokedToken.ok) {
     return {
       ok: false,
       result: { ok: false, error: t("Could not save the previous server session") },
     };
   }
   let pendingSignOut: PendingSignOut | undefined;
-  if (previousToken.value) {
+  if (revokedToken.value) {
     // Recorded before the old credentials are discarded, so a process kill cannot lose both —
     // but provisionally: a retry must not revoke a session a rolled-back switch still uses.
     pendingSignOut = {
       apiBase: previous,
-      token: previousToken.value,
+      token: revokedToken.value,
       headers: previousHeaders,
       recordedAt: Date.now(),
       provisional: true,
@@ -501,10 +506,16 @@ async function clearCredentialsForEndpointChange(
   // Checked in the same tick as the clear: a session saved after the read has no record.
   if (generation !== currentSessionGeneration()) {
     // An earlier failed switch may have left the rollback as the selection's only stored copy.
-    const kept =
-      !previousSpace.value ||
-      spaceSelectionGeneration !== spaceGeneration ||
-      (await writeStoredValue(SPACE_KEY, previousSpace.value));
+    let kept = true;
+    if (previousSpace.value && spaceSelectionGeneration === spaceGeneration) {
+      kept = await writeStoredValue(SPACE_KEY, previousSpace.value);
+      // A selection made during that write may have landed first; store the live one again.
+      if (spaceSelectionGeneration !== spaceGeneration) {
+        kept = cachedSpaceId
+          ? await writeStoredValue(SPACE_KEY, cachedSpaceId)
+          : await clearStoredValue(SPACE_KEY);
+      }
+    }
     if (kept) await clearStoredValue(SPACE_ROLLBACK_KEY);
     return failed();
   }
