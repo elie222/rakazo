@@ -16,8 +16,9 @@ if echo "$sha256  $dest/agent-browser" | sha256sum -c --status 2>/dev/null; then
 mkdir -p "$dest"
 binary="$(mktemp)"
 trap 'rm -f "$binary"' EXIT
-# Release downloads sometimes answer 5xx for a moment; retry instead of failing the build or CI job.
-curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
+# Release downloads sometimes answer 5xx for a moment; curl retries 5xx and timeouts. Plain
+# --retry keeps old curl builds working (--retry-all-errors needs 7.71).
+curl -fsSL --retry 3 --retry-delay 2 \
   "https://github.com/vercel-labs/agent-browser/releases/download/v${version}/agent-browser-linux-${arch}" -o "$binary"
 echo "$sha256  $binary" | sha256sum -c -
 install -m 755 "$binary" "$dest/agent-browser"
