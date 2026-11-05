@@ -42,6 +42,7 @@ import {
   reconcileCreditPurchase,
   releaseCheckoutLease,
   replaceBillingCustomer,
+  reserveByokTrialCheckout,
   syncBillingSnapshot,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -362,6 +363,11 @@ export function createBillingService(deps: {
       trialDays(organizationId),
       organizationOwnerHadTrial(prisma, organizationId, "byok"),
     ]);
+    // One trial per owner: the session this opens holds it while it can still be paid, so
+    // another organization of the same owner cannot take it in the meantime.
+    const withTrial =
+      byokTrialAvailable(account, credits, hadTrial) &&
+      (await reserveByokTrialCheckout(prisma, organizationId));
     try {
       return await openCheckout(actor, account, true, (customerId) =>
         provider.createByokCheckout!({
@@ -369,7 +375,7 @@ export function createBillingService(deps: {
           amountCents,
           interval,
           tier,
-          ...(byokTrialAvailable(account, credits, hadTrial) ? { trialDays: days } : {}),
+          ...(withTrial ? { trialDays: days } : {}),
           successUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
           cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
         }),

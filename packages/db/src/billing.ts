@@ -32,6 +32,8 @@ export function byokFreeUntil(credits: { byokFreeUntil: Date | null }, now = new
 }
 
 export const FREE_MONTH_DAYS = 30;
+/** How long an open checkout session holds the owner's trial; sessions live about a day. */
+const BYOK_TRIAL_CHECKOUT_HOLD_MS = 24 * 60 * 60 * 1000;
 
 /** One statement, so concurrent grants each add their days. */
 export async function extendByokFreePeriod(
@@ -43,6 +45,8 @@ export async function extendByokFreePeriod(
     UPDATE model_credit_accounts
     SET "byokFreeUntil" = GREATEST(COALESCE("byokFreeUntil", now()), now()) + make_interval(days => ${days}::int)
     WHERE "organizationId" = ${organizationId}`;
+  // The free days are the owners' own-key trial, used even if the organization later goes away.
+  await markOwnersByokTrialUsed(tx, { id: organizationId });
 }
 
 const SUBSCRIBED: Prisma.OrganizationWhereInput = {
@@ -64,6 +68,55 @@ async function markOwnersTrialUsed(
     },
     data: { billingTrialUsedAt: new Date() },
   });
+}
+
+/** Free own-key days use up only the own-key trial, and survive the organization they belonged to. */
+async function markOwnersByokTrialUsed(
+  db: Pick<PrismaClient, "user"> | Prisma.TransactionClient,
+  organization: Prisma.OrganizationWhereInput,
+) {
+  await db.user.updateMany({
+    where: {
+      byokTrialUsedAt: null,
+      members: { some: { organization, role: { contains: "owner" } } },
+    },
+    data: { byokTrialUsedAt: new Date() },
+  });
+}
+
+/**
+ * Takes the owners' one own-key trial for this organization's checkout session, so another
+ * organization of theirs cannot take it while the session is open. The hold lasts as long as
+ * the session can still be paid, and moving to the same organization's newest session renews
+ * it. Returns false when a fresh hold for another organization wins the race.
+ */
+export async function reserveByokTrialCheckout(
+  prisma: PrismaClient,
+  organizationId: string,
+): Promise<boolean> {
+  const owners = await prisma.member.findMany({
+    where: { organizationId, role: { contains: "owner" } },
+    select: { userId: true, role: true },
+  });
+  const ownerIds = owners.filter((owner) => isOwnerRole(owner.role)).map((owner) => owner.userId);
+  if (ownerIds.length === 0) return false;
+  const { count } = await prisma.user.updateMany({
+    where: {
+      id: { in: ownerIds },
+      billingTrialUsedAt: null,
+      byokTrialUsedAt: null,
+      OR: [
+        { byokTrialCheckoutOrganizationId: null },
+        { byokTrialCheckoutOrganizationId: organizationId },
+        { byokTrialCheckoutExpiresAt: { lte: new Date() } },
+      ],
+    },
+    data: {
+      byokTrialCheckoutOrganizationId: organizationId,
+      byokTrialCheckoutExpiresAt: new Date(Date.now() + BYOK_TRIAL_CHECKOUT_HOLD_MS),
+    },
+  });
+  return count === ownerIds.length;
 }
 
 export async function spaceHasModelAccess(prisma: PrismaClient, spaceId: string) {
@@ -289,23 +342,47 @@ export async function ownedBillingAccounts(
 /** Before an organization's billing rows go, so a subscription that predates the user-level mark still counts. */
 export async function keepOrganizationTrialUse(prisma: PrismaClient, organizationId: string) {
   await markOwnersTrialUsed(prisma, { id: organizationId, ...SUBSCRIBED });
+  // Free own-key days granted before the owner-level mark existed also outlast the rows.
+  await markOwnersByokTrialUsed(prisma, { id: organizationId, ...HAD_FREE_DAYS });
+  // The organization's open checkout session dies with it, so its hold on the trial goes.
+  await prisma.user.updateMany({
+    where: { byokTrialCheckoutOrganizationId: organizationId },
+    data: { byokTrialCheckoutOrganizationId: null, byokTrialCheckoutExpiresAt: null },
+  });
 }
 
 /**
  * One trial per person: any subscription uses it up. Free own-key days also use up the own-key
- * trial, but not the managed plan's. Organizations that subscribed before the user-level mark
- * existed still count, so older accounts need no backfill.
+ * trial, but not the managed plan's, and so does another organization's still-open trial
+ * checkout. Organizations that subscribed before the user-level mark existed still count, so
+ * older accounts need no backfill.
  */
 export async function ownerHadTrial(
   prisma: PrismaClient,
   userId: string,
   plan: "byok" | "managed",
+  forOrganizationId?: string,
 ): Promise<boolean> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { billingTrialUsedAt: true },
+    select: {
+      billingTrialUsedAt: true,
+      byokTrialUsedAt: true,
+      byokTrialCheckoutOrganizationId: true,
+      byokTrialCheckoutExpiresAt: true,
+    },
   });
   if (user?.billingTrialUsedAt) return true;
+  if (plan === "byok") {
+    if (user?.byokTrialUsedAt) return true;
+    // The owner's own open session keeps their trial available; another organization's holds it.
+    if (
+      user?.byokTrialCheckoutExpiresAt &&
+      user.byokTrialCheckoutExpiresAt > new Date() &&
+      user.byokTrialCheckoutOrganizationId !== forOrganizationId
+    )
+      return true;
+  }
   const used = await prisma.member.findFirst({
     where: {
       userId,
@@ -328,7 +405,11 @@ export async function organizationOwnerHadTrial(
     select: { userId: true, role: true },
   });
   for (const member of members) {
-    if (isOwnerRole(member.role) && (await ownerHadTrial(prisma, member.userId, plan))) return true;
+    if (
+      isOwnerRole(member.role) &&
+      (await ownerHadTrial(prisma, member.userId, plan, organizationId))
+    )
+      return true;
   }
   return false;
 }
