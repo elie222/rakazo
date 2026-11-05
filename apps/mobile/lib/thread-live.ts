@@ -229,17 +229,20 @@ export function useThreadLiveSubscription({
                   }
                 }
               }
-              if ((event.seq ?? -1) <= projectionFloor) return;
-              if (event.type === "thread.cleared") {
-                expandedHistoryThread.current = null;
-                pinnedAroundRef.current = null;
-                jumpScrollTarget.current = null;
-                jumpAnchor.current.release();
-                historyEpoch.current += 1;
+              const shouldProject = (event.seq ?? -1) > projectionFloor;
+              if (!shouldProject && !newEvent) return;
+              if (shouldProject) {
+                if (event.type === "thread.cleared") {
+                  expandedHistoryThread.current = null;
+                  pinnedAroundRef.current = null;
+                  jumpScrollTarget.current = null;
+                  jumpAnchor.current.release();
+                  historyEpoch.current += 1;
+                }
+                const previous = snapRef.current;
+                const reduced = applyMobileThreadEvent(previous, event);
+                if (reduced !== previous) commitSnap(reduced);
               }
-              const previous = snapRef.current;
-              const reduced = applyMobileThreadEvent(previous, event);
-              if (reduced !== previous) commitSnap(reduced);
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
               }
@@ -250,7 +253,10 @@ export function useThreadLiveSubscription({
               if (isRunTerminalEvent(event)) {
                 void refreshMentionBots();
               }
-              if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
+              if (
+                shouldProject &&
+                (isRunTerminalEvent(event) || event.type === "run.waiting_input")
+              ) {
                 // Reconcile run ownership for ask cards first seen through live events.
                 void snapshotRefresh.invalidate().catch(() => undefined);
               }

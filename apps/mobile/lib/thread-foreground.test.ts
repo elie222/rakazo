@@ -390,6 +390,73 @@ describe("thread foreground subscription", () => {
     },
   );
 
+  it("marks snapshot-covered bot messages read without projecting replay over the snapshot", async () => {
+    type Event = Parameters<Parameters<typeof subscribeThread>[2]>[0];
+    let deliver!: (event: Event) => void;
+    vi.mocked(subscribeThread).mockImplementation(async (_target, _cursor, onEvent, signal) => {
+      deliver = onEvent;
+      await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
+    });
+    vi.mocked(rpc).mockResolvedValue({ cursor: 10, threadId: "thread-1" } as never);
+    const snapshot = { cursor: 15 } as MobileSnapshot;
+    const snapRef = ref<MobileSnapshot | null>(snapshot);
+    const readVisibleTarget = ref<string | null>("bot-1");
+    const markReadIfVisible = vi.fn();
+    const refreshMentionBots = vi.fn(async () => {});
+    const refresh = vi.fn(async () => snapshot);
+    const commitSnap = vi.fn();
+    const root = createRoot(document.createElement("div"));
+    function Probe() {
+      useThreadLiveSubscription({
+        botId: "bot-1",
+        focused: true,
+        foreground: true,
+        readOnly: false,
+        sessionEpoch: 1,
+        historyEpoch: ref(0),
+        expandedHistoryThread: ref(null),
+        pinnedAroundRef: ref(null),
+        jumpScrollTarget: ref(null),
+        jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
+        snapRef,
+        readVisibleTarget,
+        showSavedThread: vi.fn(),
+        refresh,
+        commitSnap,
+        setError: vi.fn(),
+        refreshMentionBots,
+        markReadIfVisible,
+      });
+      return null;
+    }
+    try {
+      await act(async () => root.render(createElement(Probe)));
+      expect(subscribeThread).toHaveBeenCalledWith(
+        { botId: "bot-1" },
+        10,
+        expect.anything(),
+        expect.anything(),
+      );
+      deliver({
+        type: "thread.message.created",
+        seq: 13,
+        botId: "bot-1",
+        createdAt: "1970-01-01T00:00:00Z",
+        payload: { role: "bot" },
+      });
+      expect(markReadIfVisible).toHaveBeenCalledOnce();
+      expect(readVisibleTarget.current).toBeNull();
+      deliver({ type: "bot.updated", seq: 14, botId: "bot-1", createdAt: "1970-01-01T00:00:00Z" });
+      expect(refreshMentionBots).toHaveBeenCalledOnce();
+      expect(applyMobileThreadEvent).not.toHaveBeenCalled();
+      expect(commitSnap).not.toHaveBeenCalled();
+      expect(snapRef.current).toBe(snapshot);
+      expect(refresh).toHaveBeenCalledOnce();
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
   it.each([503, 403])(
     "bounds a slow feedback lookup and handles HTTP %s without holding up chat",
     async (status) => {

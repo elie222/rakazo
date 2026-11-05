@@ -3,6 +3,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { rpc } from "./api";
 import { hapticImpact, hapticSuccess } from "./haptics";
 import * as feedbackModule from "./thread-feedback";
 
@@ -177,7 +178,6 @@ it("taps only valid sends and confirms delivery only for the visible chat", asyn
 });
 
 it("does not confirm a card answer accepted after navigation leaves the mounted chat", async () => {
-  const { rpc } = await import("./api");
   let accept!: () => void;
   vi.mocked(rpc).mockReturnValueOnce(
     new Promise<void>((resolve) => {
