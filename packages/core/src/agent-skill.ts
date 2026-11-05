@@ -49,8 +49,8 @@ const ROUTINE_SKILL_STOP = new Set([
   "an",
 ]);
 // Detection, expansion, and import renames must agree on mention boundaries.
-const ROUTINE_SKILL_LEAD = "[\\s(,������������������������]";
-const ROUTINE_SKILL_END = "(?=[\\s,.)������������������������]|$)";
+const ROUTINE_SKILL_LEAD = "[\\s(,，。、；：！？（【「『《]";
+const ROUTINE_SKILL_END = "(?=[\\s,.)，。、；：！？）】」』》]|$)";
 /** Fallback when no catalog is available: @Token with optional Title-case words. */
 const ROUTINE_SKILL_MENTION = new RegExp(
   `(?:^|${ROUTINE_SKILL_LEAD})@([A-Za-z][\\w-]*(?:[ ]+[A-Za-z][\\w-]*){0,5})${ROUTINE_SKILL_END}`,
@@ -129,7 +129,7 @@ export function formatSkillsCatalogInstruction(entries: SkillCatalogEntry[]): st
     "Available Claude Agent Skills (SKILL.md recipes shared across assistants; generic how-tos, not account-specific routines). The Pi runtime already understands this format; we persist and inject them:",
     lines,
     "When a skill matches the user's request, call skill_read for that name and follow it immediately. Prefer matching skills over improvising multi-step recipes.",
-    "Users can force a skill with /Name in the composer. Routines may mention a skill as @Name �� that loads the skill at fire time.",
+    "Users can force a skill with /Name in the composer. Routines may mention a skill as @Name — that loads the skill at fire time.",
     "Create a skill with skill_create when a multi-step task is worth repeating (or when asked). After creating one, mention /Name so the user can open it.",
     "Only skill_update / skill_delete user-created skills (not builtin or plugin).",
   ].join("\n");
@@ -257,7 +257,7 @@ export function expandSkillReferencesInPrompt(
   if (forced) {
     const skill = findSkillByName(skills, forced.name);
     if (skill) {
-      // Routines expand at fire time into `Use skill: ��`; run time expands again �� stay idempotent.
+      // Routines expand at fire time into `Use skill: …`; run time expands again — stay idempotent.
       if (restAlreadyIncludesSkillContent(forced.rest, skill.content)) {
         return prompt.trimStart();
       }
@@ -372,7 +372,7 @@ function decodeYamlBlockScalar(rawLines: string[], header: YamlBlockScalarHeader
   if (header.style === "|") {
     text = contentLines.join("\n");
   } else {
-    // Folded (YAML 1.2 ��8.1.3): same-indent lines join with spaces; empty source
+    // Folded (YAML 1.2 §8.1.3): same-indent lines join with spaces; empty source
     // lines become paragraph breaks; more-indented lines stay literal. Parts are
     // always joined with "\n" so folded paragraphs and indented fragments keep
     // line-break separation (never concatenated into one folded run).
@@ -415,7 +415,7 @@ function decodeYamlBlockScalar(rawLines: string[], header: YamlBlockScalarHeader
 
 /**
  * Minimal YAML object parser for SKILL.md frontmatter.
- * Supports scalars, folded/literal block scalars (`>`, `|`, `>-`, `|+`, `|2`, ��),
+ * Supports scalars, folded/literal block scalars (`>`, `|`, `>-`, `|+`, `|2`, …),
  * inline arrays, and nested maps one level deep.
  * Unrecognized lines are kept as string values under their key when possible.
  */
@@ -515,7 +515,7 @@ function parseYamlScalar(raw: string): string | number | boolean {
 
 function formatYamlBlockScalar(key: string, value: string): string {
   // Choose chomp so decodeYamlBlockScalar round-trips trailing newlines:
-  // strip (0), clip (1), keep (2+). Folded (`>`) style is not preserved �� only the string value.
+  // strip (0), clip (1), keep (2+). Folded (`>`) style is not preserved — only the string value.
   const trailing = /\n*$/.exec(value)?.[0].length ?? 0;
   let indicator = "|";
   let lines: string[];
@@ -573,4 +573,3 @@ function formatYamlLine(key: string, value: unknown): string {
   }
   return `${key}: ${JSON.stringify(String(value))}`;
 }
-
