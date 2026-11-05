@@ -253,7 +253,7 @@ const Recipients = z
   );
 const SendEmailSchema = z
   .object({
-    to: Recipients,
+    to: Recipients.refine((list) => list.length > 0, "Name at least one recipient."),
     cc: Recipients.optional(),
     subject: z.string().trim().max(500).optional(),
     text: z.string().trim().min(1).max(SEND_TEXT_MAX_CHARS),

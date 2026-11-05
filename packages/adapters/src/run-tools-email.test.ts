@@ -675,6 +675,9 @@ describe("send_email", () => {
     expect(await sendRun().call({ to: ["a@shop.test"], text: "x" })).toEqual({
       error: "Give the email a subject.",
     });
+    expect((await sendRun().call({ to: [], subject: "Hi", text: "x" })).error).toContain(
+      "Name at least one recipient.",
+    );
     expect(send).not.toHaveBeenCalled();
   });
 
