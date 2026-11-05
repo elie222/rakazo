@@ -1295,7 +1295,8 @@ export async function sendThreadMessage(
       const firstRun = runs[0];
       // The message belongs to a run of the sender's, never to one another member started.
       const ownRun = runs.find((run) => !othersRunIds.has(run.id));
-      const eventBotId = firstRun?.botId ?? targetBotIds[0];
+      // The event names the bot of the run it carries, so clients pair them correctly.
+      const eventBotId = ownRun?.botId ?? firstRun?.botId ?? targetBotIds[0];
       if (!eventBotId) throw new IsolationError("Group send did not resolve a target");
       if (firstRun) {
         if (ownRun) {
