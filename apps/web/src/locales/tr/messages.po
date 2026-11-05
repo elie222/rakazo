@@ -146,6 +146,11 @@ msgstr "{0} toplama saatleri"
 msgid "{0} TB"
 msgstr "{0} TB"
 
+#. placeholder {0}: schedule(routine.crons)
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "{0}, paused until you turn it on"
+msgstr "{0}, sen açana kadar duraklatılmış durumda"
+
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -414,6 +419,100 @@ msgstr "{vcpus} vCPU, {memoryGb} GB, ayda {hours} bilgisayar saati"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**12 new since 8:00**\n"
+"\n"
+"**Reply needed**\n"
+"1. Priya wants to move Friday's review. Draft: \"Friday works if we start at 2.\"\n"
+"2. Your card expires on the 30th. Draft ready.\n"
+"3. Sam asked about the API limits. Draft ready.\n"
+"\n"
+"**For your information**: a shipping update and a calendar change\n"
+"\n"
+"**Low priority**: 7 newsletters and notifications"
+msgstr "**8:00'den beri 12 yeni e-posta**\n"
+"\n"
+"**Yanıt gerekiyor**\n"
+"1. Priya cuma günkü incelemenin saatini değiştirmek istiyor. Taslak: \"14:00'te başlarsak cuma uyar.\"\n"
+"2. Kartının süresi ayın 30'unda doluyor. Taslak hazır.\n"
+"3. Sam API sınırlarını sordu. Taslak hazır.\n"
+"\n"
+"**Bilgin olsun**: bir kargo güncellemesi ve bir takvim değişikliği\n"
+"\n"
+"**Düşük öncelik**: 7 bülten ve bildirim"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**2 pull requests are waiting on you**\n"
+"\n"
+"**#482 Add retry to webhook delivery**\n"
+"- Retries on 404 too, so a deleted endpoint is retried five times. Retry only 5xx and timeouts?\n"
+"- No test for the backoff cap.\n"
+"\n"
+"Suggested review: request changes.\n"
+"\n"
+"**#479 Fix date parsing in reports**\n"
+"Looks good. Suggested review: approve."
+msgstr "**Seni bekleyen 2 çekme isteği var**\n"
+"\n"
+"**#482 Webhook teslimatına yeniden deneme ekle**\n"
+"- 404'te de yeniden deniyor, bu yüzden silinmiş bir uç nokta beş kez yeniden deneniyor. Yalnızca 5xx ve zaman aşımlarında mı yeniden denensin?\n"
+"- Backoff üst sınırı için test yok.\n"
+"\n"
+"Önerilen inceleme: değişiklik iste.\n"
+"\n"
+"**#479 Raporlardaki tarih ayrıştırmayı düzelt**\n"
+"İyi görünüyor. Önerilen inceleme: onayla."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**This week**\n"
+"\n"
+"**Open-source AI agents**\n"
+"- A major release adds scheduled tasks (3 days ago)\n"
+"- Two new comparisons; both call memory the main gap\n"
+"\n"
+"**competitor.example**\n"
+"- Pricing: the Team plan went from $20 to $25 per seat\n"
+"\n"
+"Nothing new on battery recycling."
+msgstr "**Bu hafta**\n"
+"\n"
+"**Açık kaynak yapay zekâ ajanları**\n"
+"- Büyük bir sürüm zamanlanmış görevler ekledi (3 gün önce)\n"
+"- İki yeni karşılaştırma; ikisi de hafızayı en büyük eksik olarak görüyor\n"
+"\n"
+"**competitor.example**\n"
+"- Fiyatlandırma: Team planı kullanıcı başına $20'den $25'e çıktı\n"
+"\n"
+"Pil geri dönüşümünde yeni bir şey yok."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**Thursday**\n"
+"\n"
+"**Calendar**\n"
+"- 10:00 Design review, moved to 11:30\n"
+"- 14:00 Call with Dana\n"
+"\n"
+"**Needs you**\n"
+"- Alex asked for the Q4 numbers by noon\n"
+"- A contract is waiting for your signature\n"
+"\n"
+"**Worth knowing**\n"
+"- Light rain after 4pm\n"
+"- Two stories on the topics you follow"
+msgstr "**Perşembe**\n"
+"\n"
+"**Takvim**\n"
+"- 10:00 Tasarım incelemesi, 11:30'a alındı\n"
+"- 14:00 Dana ile görüşme\n"
+"\n"
+"**Seni bekleyenler**\n"
+"- Alex, Q4 rakamlarını öğlene kadar istedi\n"
+"- Bir sözleşme imzanı bekliyor\n"
+"\n"
+"**Bilmekte fayda var**\n"
+"- 16:00'dan sonra hafif yağmur\n"
+"- Takip ettiğin konularda iki haber"
+
 #: src/components/ModelCredits.tsx
 msgid "/ month"
 msgstr "/ ay"
@@ -439,6 +538,10 @@ msgstr "Oturum açma sekmesi <0>{0}</0> adresinde açıldı. Bu kodu oraya gir �
 #: src/pages/model-settings/use-model-settings.ts
 msgid "A subscription credential is stored securely."
 msgstr "Bir abonelik kimlik bilgisi güvenli şekilde saklanıyor."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "A weekly digest of what changed on topics you follow"
+msgstr "Takip ettiğin konulardaki değişikliklerin haftalık özeti"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "About {kb} KB of memory no longer reaches the bot."
@@ -655,6 +758,10 @@ msgstr "Adres"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Address line 2"
 msgstr "Adres satırı 2"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Adds"
+msgstr "Eklenecekler"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -1014,6 +1121,7 @@ msgstr "Kabuk komutlarında {commandVariable} olarak kullanılabilir"
 msgid "Avatar Studio"
 msgstr "Avatar Stüdyosu"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/vault/VaultPageHeader.tsx
@@ -1130,6 +1238,13 @@ msgstr "Bot ekranı önizlemesi"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
 msgstr "Bot stili"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+#: src/pages/Shell.tsx
+msgid "Bot templates"
+msgstr "Bot şablonları"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
@@ -1467,6 +1582,10 @@ msgstr "Temizleniyor…"
 msgid "Close"
 msgstr "Kapat"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Close bot templates"
+msgstr "Bot şablonlarını kapat"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
 msgstr "Grafiği kapat"
@@ -1740,6 +1859,7 @@ msgstr "Önce bu modelin sağlayıcısını bağla."
 msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
 msgstr "Modeller bölümünde kendi API anahtarınızı bağlayın veya Faturalandırma'da Rakazo kredilerini seçin."
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/ComputerDeviceSettings.tsx
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
@@ -1997,6 +2117,10 @@ msgstr "Bölüm oluşturulamadı"
 msgid "Could not create space"
 msgstr "Alan oluşturulamadı"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not create the bot"
+msgstr "Bot oluşturulamadı"
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "Botun oluşturulamadı"
@@ -2148,6 +2272,10 @@ msgstr "Giriş seçenekleri yüklenemedi"
 msgid "Could not load skill"
 msgstr "Beceri yüklenemedi"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not load templates"
+msgstr "Şablonlar yüklenemedi"
+
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr "Bu çıktı yüklenemedi."
@@ -2174,6 +2302,10 @@ msgstr "Çıkış yapılamadı. Tekrar deneyin."
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
 msgstr "Faturalandırma açılamadı"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not open the bot"
+msgstr "Bot açılamadı"
 
 #: src/components/pages/PagesList.tsx
 msgid "Could not pin this page. Try again."
@@ -2484,6 +2616,10 @@ msgstr "Bir bölüm oluştur ve {0} botunu içine taşı."
 msgid "Create account"
 msgstr "Hesap oluştur"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Create bot"
+msgstr "Bot oluştur"
+
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "Grup oluştur"
@@ -2510,6 +2646,7 @@ msgstr "Rakazo hesabını oluştur"
 msgid "Created"
 msgstr "Oluşturuldu"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3547,6 +3684,10 @@ msgstr "Etkin değil"
 msgid "Inbox & email"
 msgstr "Gelen kutusu ve e-posta"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Inbox triage"
+msgstr "Gelen kutusu ayıklama"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Include API keys"
 msgstr "API anahtarlarını dahil et"
@@ -3588,6 +3729,7 @@ msgid "Instruction history"
 msgstr "Talimat geçmişi"
 
 #: src/components/AskCard.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/InstructionSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions"
@@ -3819,6 +3961,7 @@ msgstr "Önizleme yükleniyor…"
 msgid "Loading voice providers…"
 msgstr "Ses sağlayıcıları yükleniyor…"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
@@ -4183,6 +4326,10 @@ msgstr "Daha fazla uygulama"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr "Diğer bilgisayar işlemleri"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Morning briefing"
+msgstr "Sabah özeti"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -4629,6 +4776,7 @@ msgstr "Yalnızca {codeHost} tarafından gönderilen kodu gir."
 msgid "Only you"
 msgstr "Yalnızca siz"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/pages/PagesList.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
@@ -4980,6 +5128,10 @@ msgstr "Sohbete “Değişiklik yok” gönder"
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr "Şuraya POST gönder"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "PR reviewer"
+msgstr "PR inceleyici"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Preferences"
@@ -5461,6 +5613,7 @@ msgid "Restoring your workspace"
 msgstr "Çalışma alanın geri yükleniyor"
 
 #: src/components/AccountAccess.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
@@ -5495,6 +5648,10 @@ msgstr "Rakazo'ya dön"
 #: src/lib/model-connection-preflight.ts
 msgid "Review provider settings and test again."
 msgstr "Sağlayıcı ayarlarını gözden geçir ve yeniden test et."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Reviews pull requests waiting on you"
+msgstr "Seni bekleyen çekme isteklerini inceler"
 
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5995,6 +6152,10 @@ msgstr "Oturum açma iptal edildi. Tekrar dene."
 msgid "Site"
 msgstr "Site"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Skill"
+msgstr "Beceri"
+
 #. placeholder {0}: skill.name
 #: src/pages/shell/composer.tsx
 msgid "Skill {0}"
@@ -6082,6 +6243,10 @@ msgstr "{column} sütununa göre sıralandı, artan"
 #: src/components/markdown-copy.tsx
 msgid "Sorted by {column}, descending"
 msgstr "{column} sütununa göre sıralandı, azalan"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Sorts new email and drafts the replies"
+msgstr "Yeni e-postaları ayıklar ve yanıt taslaklarını hazırlar"
 
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
@@ -6601,6 +6766,10 @@ msgstr "Bu sunucunun araç sonucu modele sığmıyor. O sunucu için \"Araç son
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 msgstr "Bu abonelik girişi Rakazo'da henüz kullanılamıyor. Bir dağıtım kimlik bilgisi kullan veya başka bir sağlayıcı seç."
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "This template was just updated. Check it again."
+msgstr "Bu şablon az önce güncellendi. Tekrar göz at."
+
 #: src/pages/Artifacts.tsx
 msgid "This week"
 msgstr "Bu hafta"
@@ -6676,6 +6845,10 @@ msgstr "Araç adı"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "Araçlar"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Topic watch"
+msgstr "Konu takibi"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
@@ -7151,6 +7324,10 @@ msgstr "Çalışma talimatları"
 msgid "Working…"
 msgstr "Çalışıyor…"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Works with"
+msgstr "Uyumlu uygulamalar"
+
 #: src/components/ModelCredits.tsx
 msgid "Works with your ChatGPT or Claude plan."
 msgstr "ChatGPT veya Claude aboneliğinle çalışır."
@@ -7221,6 +7398,10 @@ msgstr "Bilgisayarınızın diski neredeyse dolu. Artık ihtiyaç duymadığın�
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr "Verilerin"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Your day at a glance, every weekday morning"
+msgstr "Her hafta içi sabahı, gününe kısa bir bakış"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"

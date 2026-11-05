@@ -146,6 +146,11 @@ msgstr "{0} rollup-uren"
 msgid "{0} TB"
 msgstr "{0} TB"
 
+#. placeholder {0}: schedule(routine.crons)
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "{0}, paused until you turn it on"
+msgstr "{0}, gepauzeerd tot je hem aanzet"
+
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -414,6 +419,100 @@ msgstr "{vcpus} vCPU, {memoryGb} GB, {hours} computeruren per maand"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**12 new since 8:00**\n"
+"\n"
+"**Reply needed**\n"
+"1. Priya wants to move Friday's review. Draft: \"Friday works if we start at 2.\"\n"
+"2. Your card expires on the 30th. Draft ready.\n"
+"3. Sam asked about the API limits. Draft ready.\n"
+"\n"
+"**For your information**: a shipping update and a calendar change\n"
+"\n"
+"**Low priority**: 7 newsletters and notifications"
+msgstr "**12 nieuw sinds 8:00**\n"
+"\n"
+"**Antwoord nodig**\n"
+"1. Priya wil de review van vrijdag verzetten. Concept: \"Vrijdag kan als we om 14:00 beginnen.\"\n"
+"2. Je kaart verloopt op de 30e. Concept klaar.\n"
+"3. Sam vroeg naar de API-limieten. Concept klaar.\n"
+"\n"
+"**Ter info**: een verzendupdate en een agendawijziging\n"
+"\n"
+"**Lage prioriteit**: 7 nieuwsbrieven en meldingen"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**2 pull requests are waiting on you**\n"
+"\n"
+"**#482 Add retry to webhook delivery**\n"
+"- Retries on 404 too, so a deleted endpoint is retried five times. Retry only 5xx and timeouts?\n"
+"- No test for the backoff cap.\n"
+"\n"
+"Suggested review: request changes.\n"
+"\n"
+"**#479 Fix date parsing in reports**\n"
+"Looks good. Suggested review: approve."
+msgstr "**2 pull requests wachten op je**\n"
+"\n"
+"**#482 Retry toevoegen aan webhook-bezorging**\n"
+"- Probeert ook opnieuw bij 404, dus een verwijderd endpoint wordt vijf keer opnieuw geprobeerd. Alleen opnieuw proberen bij 5xx en time-outs?\n"
+"- Geen test voor de backoff-limiet.\n"
+"\n"
+"Voorgestelde review: wijzigingen vragen.\n"
+"\n"
+"**#479 Datumverwerking in rapporten herstellen**\n"
+"Ziet er goed uit. Voorgestelde review: goedkeuren."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**This week**\n"
+"\n"
+"**Open-source AI agents**\n"
+"- A major release adds scheduled tasks (3 days ago)\n"
+"- Two new comparisons; both call memory the main gap\n"
+"\n"
+"**competitor.example**\n"
+"- Pricing: the Team plan went from $20 to $25 per seat\n"
+"\n"
+"Nothing new on battery recycling."
+msgstr "**Deze week**\n"
+"\n"
+"**Opensource-AI-agents**\n"
+"- Een grote release voegt geplande taken toe (3 dagen geleden)\n"
+"- Twee nieuwe vergelijkingen; beide noemen geheugen het grootste gemis\n"
+"\n"
+"**competitor.example**\n"
+"- Prijzen: het Team-abonnement ging van $20 naar $25 per gebruiker\n"
+"\n"
+"Niets nieuws over batterijrecycling."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**Thursday**\n"
+"\n"
+"**Calendar**\n"
+"- 10:00 Design review, moved to 11:30\n"
+"- 14:00 Call with Dana\n"
+"\n"
+"**Needs you**\n"
+"- Alex asked for the Q4 numbers by noon\n"
+"- A contract is waiting for your signature\n"
+"\n"
+"**Worth knowing**\n"
+"- Light rain after 4pm\n"
+"- Two stories on the topics you follow"
+msgstr "**Donderdag**\n"
+"\n"
+"**Agenda**\n"
+"- 10:00 Designreview, verplaatst naar 11:30\n"
+"- 14:00 Gesprek met Dana\n"
+"\n"
+"**Wacht op jou**\n"
+"- Alex wil de Q4-cijfers voor 12 uur\n"
+"- Een contract wacht op je handtekening\n"
+"\n"
+"**Goed om te weten**\n"
+"- Lichte regen na 16:00\n"
+"- Twee artikelen over onderwerpen die je volgt"
+
 #: src/components/ModelCredits.tsx
 msgid "/ month"
 msgstr "/ maand"
@@ -439,6 +538,10 @@ msgstr "Er is een aanmeldtabblad geopend op <0>{0}</0>. Voer daar deze code in �
 #: src/pages/model-settings/use-model-settings.ts
 msgid "A subscription credential is stored securely."
 msgstr "Een abonnementsgegeven wordt veilig opgeslagen."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "A weekly digest of what changed on topics you follow"
+msgstr "Een wekelijks overzicht van wat er veranderde bij onderwerpen die je volgt"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "About {kb} KB of memory no longer reaches the bot."
@@ -655,6 +758,10 @@ msgstr ""
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Address line 2"
 msgstr ""
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Adds"
+msgstr "Bevat"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -1014,6 +1121,7 @@ msgstr "Beschikbaar voor shellcommando's als {commandVariable}"
 msgid "Avatar Studio"
 msgstr "Avatarstudio"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/vault/VaultPageHeader.tsx
@@ -1130,6 +1238,13 @@ msgstr "Voorbeeld van het bot-scherm"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
 msgstr ""
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+#: src/pages/Shell.tsx
+msgid "Bot templates"
+msgstr "Botsjablonen"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
@@ -1467,6 +1582,10 @@ msgstr "Bezig met wissen…"
 msgid "Close"
 msgstr "Sluiten"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Close bot templates"
+msgstr "Botsjablonen sluiten"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
 msgstr "Grafiek sluiten"
@@ -1740,6 +1859,7 @@ msgstr "Verbind eerst de aanbieder van dit model."
 msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
 msgstr "Verbind je eigen API-sleutel bij Modellen of kies Rakazo-tegoed bij Facturatie."
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/ComputerDeviceSettings.tsx
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
@@ -1997,6 +2117,10 @@ msgstr "Sectie aanmaken mislukt"
 msgid "Could not create space"
 msgstr "Space aanmaken mislukt"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not create the bot"
+msgstr "Bot aanmaken mislukt"
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "Je bot aanmaken mislukt"
@@ -2148,6 +2272,10 @@ msgstr "Aanmeldopties laden mislukt"
 msgid "Could not load skill"
 msgstr "Skill laden mislukt"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not load templates"
+msgstr "Sjablonen laden mislukt"
+
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr "Dit artefact laden mislukt."
@@ -2174,6 +2302,10 @@ msgstr "Uitloggen mislukt. Probeer het opnieuw."
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
 msgstr "Facturatie openen mislukt"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not open the bot"
+msgstr "Bot openen mislukt"
 
 #: src/components/pages/PagesList.tsx
 msgid "Could not pin this page. Try again."
@@ -2484,6 +2616,10 @@ msgstr "Maak een sectie aan en verplaats {0} erin."
 msgid "Create account"
 msgstr "Account aanmaken"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Create bot"
+msgstr "Bot aanmaken"
+
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "Groep aanmaken"
@@ -2510,6 +2646,7 @@ msgstr "Maak je Rakazo"
 msgid "Created"
 msgstr "Aangemaakt"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3547,6 +3684,10 @@ msgstr "Inactief"
 msgid "Inbox & email"
 msgstr "Postvak IN & e-mail"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Inbox triage"
+msgstr "Inbox sorteren"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Include API keys"
 msgstr "API-sleutels meenemen"
@@ -3588,6 +3729,7 @@ msgid "Instruction history"
 msgstr "Instructiegeschiedenis"
 
 #: src/components/AskCard.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/InstructionSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions"
@@ -3819,6 +3961,7 @@ msgstr "Voorbeeld laden…"
 msgid "Loading voice providers…"
 msgstr "Spraakanbieders laden…"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
@@ -4183,6 +4326,10 @@ msgstr ""
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr "Meer computeracties"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Morning briefing"
+msgstr "Ochtendbriefing"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -4629,6 +4776,7 @@ msgstr ""
 msgid "Only you"
 msgstr "Alleen jij"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/pages/PagesList.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
@@ -4980,6 +5128,10 @@ msgstr "Plaats \"No changes\" in de chat"
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr "POST naar"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "PR reviewer"
+msgstr "PR-reviewer"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Preferences"
@@ -5461,6 +5613,7 @@ msgid "Restoring your workspace"
 msgstr "Je werkruimte herstellen"
 
 #: src/components/AccountAccess.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
@@ -5495,6 +5648,10 @@ msgstr "Terug naar Rakazo"
 #: src/lib/model-connection-preflight.ts
 msgid "Review provider settings and test again."
 msgstr "Controleer de aanbiedersinstellingen en test daarna opnieuw."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Reviews pull requests waiting on you"
+msgstr "Beoordeelt pull requests die op je wachten"
 
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5995,6 +6152,10 @@ msgstr ""
 msgid "Site"
 msgstr "Site"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Skill"
+msgstr "Skill"
+
 #. placeholder {0}: skill.name
 #: src/pages/shell/composer.tsx
 msgid "Skill {0}"
@@ -6082,6 +6243,10 @@ msgstr "Gesorteerd op {column}, oplopend"
 #: src/components/markdown-copy.tsx
 msgid "Sorted by {column}, descending"
 msgstr "Gesorteerd op {column}, aflopend"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Sorts new email and drafts the replies"
+msgstr "Sorteert nieuwe e-mail en schrijft conceptantwoorden"
 
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
@@ -6601,6 +6766,10 @@ msgstr ""
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 msgstr "Deze abonnementsaanmelding is nog niet beschikbaar in Rakazo. Gebruik een implementatiegegeven of kies een andere aanbieder."
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "This template was just updated. Check it again."
+msgstr "Dit sjabloon is net bijgewerkt. Bekijk het opnieuw."
+
 #: src/pages/Artifacts.tsx
 msgid "This week"
 msgstr "Deze week"
@@ -6676,6 +6845,10 @@ msgstr "Toolnaam"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "Tools"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Topic watch"
+msgstr "Onderwerpradar"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
@@ -7151,6 +7324,10 @@ msgstr "Werkinstructies"
 msgid "Working…"
 msgstr "Bezig…"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Works with"
+msgstr "Werkt met"
+
 #: src/components/ModelCredits.tsx
 msgid "Works with your ChatGPT or Claude plan."
 msgstr "Werkt met je ChatGPT- of Claude-abonnement."
@@ -7221,6 +7398,10 @@ msgstr "De schijf van je computer is bijna vol. Maak ruimte vrij door build-uitv
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Your day at a glance, every weekday morning"
+msgstr "Je dag in één oogopslag, elke doordeweekse ochtend"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"

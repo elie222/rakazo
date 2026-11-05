@@ -44,7 +44,7 @@ export const AgentImportFilesSchema = z
     }
   });
 
-export const AgentImportSourceSchema = z.enum(["openclaw", "hermes", "document"]);
+export const AgentImportSourceSchema = z.enum(["openclaw", "hermes", "document", "template"]);
 export type AgentImportSource = z.infer<typeof AgentImportSourceSchema>;
 
 /**

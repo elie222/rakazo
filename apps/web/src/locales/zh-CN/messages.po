@@ -146,6 +146,11 @@ msgstr "{0} 的合并间隔（小时）"
 msgid "{0} TB"
 msgstr "{0} TB"
 
+#. placeholder {0}: schedule(routine.crons)
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "{0}, paused until you turn it on"
+msgstr "{0}，开启前保持暂停"
+
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -414,6 +419,100 @@ msgstr "{vcpus} vCPU、{memoryGb} GB、每月 {hours} 小时电脑时长"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**12 new since 8:00**\n"
+"\n"
+"**Reply needed**\n"
+"1. Priya wants to move Friday's review. Draft: \"Friday works if we start at 2.\"\n"
+"2. Your card expires on the 30th. Draft ready.\n"
+"3. Sam asked about the API limits. Draft ready.\n"
+"\n"
+"**For your information**: a shipping update and a calendar change\n"
+"\n"
+"**Low priority**: 7 newsletters and notifications"
+msgstr "**8:00 以来 12 封新邮件**\n"
+"\n"
+"**需要回复**\n"
+"1. Priya 想调整周五评审的时间。草稿：“如果下午 2 点开始，周五可以。”\n"
+"2. 你的卡将于 30 日到期。草稿已备好。\n"
+"3. Sam 询问了 API 限额。草稿已备好。\n"
+"\n"
+"**供你参考**：一条物流更新和一项日程变更\n"
+"\n"
+"**低优先级**：7 封新闻通讯和通知"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**2 pull requests are waiting on you**\n"
+"\n"
+"**#482 Add retry to webhook delivery**\n"
+"- Retries on 404 too, so a deleted endpoint is retried five times. Retry only 5xx and timeouts?\n"
+"- No test for the backoff cap.\n"
+"\n"
+"Suggested review: request changes.\n"
+"\n"
+"**#479 Fix date parsing in reports**\n"
+"Looks good. Suggested review: approve."
+msgstr "**有 2 个拉取请求在等你**\n"
+"\n"
+"**#482 为 webhook 投递添加重试**\n"
+"- 遇到 404 也会重试，导致已删除的端点被重试五次。只对 5xx 和超时重试？\n"
+"- 缺少退避上限的测试。\n"
+"\n"
+"建议审查结果：请求修改。\n"
+"\n"
+"**#479 修复报表中的日期解析**\n"
+"看起来不错。建议审查结果：批准。"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**This week**\n"
+"\n"
+"**Open-source AI agents**\n"
+"- A major release adds scheduled tasks (3 days ago)\n"
+"- Two new comparisons; both call memory the main gap\n"
+"\n"
+"**competitor.example**\n"
+"- Pricing: the Team plan went from $20 to $25 per seat\n"
+"\n"
+"Nothing new on battery recycling."
+msgstr "**本周**\n"
+"\n"
+"**开源 AI 智能体**\n"
+"- 一个重大版本新增了定时任务（3 天前）\n"
+"- 两篇新的对比文章；都认为记忆是最大短板\n"
+"\n"
+"**competitor.example**\n"
+"- 定价：Team 套餐从每席位 $20 涨到 $25\n"
+"\n"
+"电池回收方面没有新动态。"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**Thursday**\n"
+"\n"
+"**Calendar**\n"
+"- 10:00 Design review, moved to 11:30\n"
+"- 14:00 Call with Dana\n"
+"\n"
+"**Needs you**\n"
+"- Alex asked for the Q4 numbers by noon\n"
+"- A contract is waiting for your signature\n"
+"\n"
+"**Worth knowing**\n"
+"- Light rain after 4pm\n"
+"- Two stories on the topics you follow"
+msgstr "**星期四**\n"
+"\n"
+"**日程**\n"
+"- 10:00 设计评审，改到 11:30\n"
+"- 14:00 与 Dana 通话\n"
+"\n"
+"**需要你处理**\n"
+"- Alex 要你中午前提供 Q4 数据\n"
+"- 一份合同等你签字\n"
+"\n"
+"**值得了解**\n"
+"- 下午 4 点后有小雨\n"
+"- 你关注的话题有两篇新报道"
+
 #: src/components/ModelCredits.tsx
 msgid "/ month"
 msgstr "/ 月"
@@ -439,6 +538,10 @@ msgstr "已在 <0>{0}</0> 打开登录页。请在那里输入验证码，这个
 #: src/pages/model-settings/use-model-settings.ts
 msgid "A subscription credential is stored securely."
 msgstr "订阅凭据已安全存储。"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "A weekly digest of what changed on topics you follow"
+msgstr "每周汇总你关注话题的最新变化"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "About {kb} KB of memory no longer reaches the bot."
@@ -655,6 +758,10 @@ msgstr ""
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Address line 2"
 msgstr ""
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Adds"
+msgstr "将添加"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -1014,6 +1121,7 @@ msgstr "Shell 命令可通过 {commandVariable} 使用"
 msgid "Avatar Studio"
 msgstr "头像工作室"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/vault/VaultPageHeader.tsx
@@ -1130,6 +1238,13 @@ msgstr "Bot 屏幕预览"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
 msgstr ""
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+#: src/pages/Shell.tsx
+msgid "Bot templates"
+msgstr "Bot 模板"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
@@ -1467,6 +1582,10 @@ msgstr "正在清空…"
 msgid "Close"
 msgstr "关闭"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Close bot templates"
+msgstr "关闭 Bot 模板"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
 msgstr "关闭图表"
@@ -1740,6 +1859,7 @@ msgstr "请先连接此模型的提供方。"
 msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
 msgstr "请在“模型”中连接你自己的 API 密钥，或在“账单”中选择 Rakazo 额度。"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/ComputerDeviceSettings.tsx
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
@@ -1997,6 +2117,10 @@ msgstr "无法创建分组"
 msgid "Could not create space"
 msgstr "无法创建工作区"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not create the bot"
+msgstr "无法创建 Bot"
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "无法创建你的 Bot"
@@ -2148,6 +2272,10 @@ msgstr "无法加载登录选项"
 msgid "Could not load skill"
 msgstr "无法加载技能"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not load templates"
+msgstr "无法加载模板"
+
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr "无法加载此产物。"
@@ -2174,6 +2302,10 @@ msgstr "无法退出登录。请重试。"
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
 msgstr "无法打开账单"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not open the bot"
+msgstr "无法打开 Bot"
 
 #: src/components/pages/PagesList.tsx
 msgid "Could not pin this page. Try again."
@@ -2484,6 +2616,10 @@ msgstr "创建分组并把 {0} 移入。"
 msgid "Create account"
 msgstr "创建账户"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Create bot"
+msgstr "创建 Bot"
+
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "创建群组"
@@ -2510,6 +2646,7 @@ msgstr "创建你的 Rakazo"
 msgid "Created"
 msgstr "已创建"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3547,6 +3684,10 @@ msgstr "未启用"
 msgid "Inbox & email"
 msgstr "收件箱和邮件"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Inbox triage"
+msgstr "收件箱整理"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Include API keys"
 msgstr "包含 API 密钥"
@@ -3588,6 +3729,7 @@ msgid "Instruction history"
 msgstr "指令历史"
 
 #: src/components/AskCard.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/InstructionSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions"
@@ -3819,6 +3961,7 @@ msgstr "正在加载预览…"
 msgid "Loading voice providers…"
 msgstr "正在加载语音提供方…"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
@@ -4183,6 +4326,10 @@ msgstr "更多应用"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr "更多电脑操作"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Morning briefing"
+msgstr "晨间简报"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -4629,6 +4776,7 @@ msgstr ""
 msgid "Only you"
 msgstr "仅自己"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/pages/PagesList.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
@@ -4980,6 +5128,10 @@ msgstr "在聊天中发布“无变化”"
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr "POST 到"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "PR reviewer"
+msgstr "PR 审查员"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Preferences"
@@ -5461,6 +5613,7 @@ msgid "Restoring your workspace"
 msgstr "正在恢复工作区"
 
 #: src/components/AccountAccess.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
@@ -5495,6 +5648,10 @@ msgstr "返回 Rakazo"
 #: src/lib/model-connection-preflight.ts
 msgid "Review provider settings and test again."
 msgstr "请检查提供方设置并重新测试。"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Reviews pull requests waiting on you"
+msgstr "审查等你处理的拉取请求"
 
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5995,6 +6152,10 @@ msgstr "登录已取消。请重试。"
 msgid "Site"
 msgstr "网站"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Skill"
+msgstr "技能"
+
 #. placeholder {0}: skill.name
 #: src/pages/shell/composer.tsx
 msgid "Skill {0}"
@@ -6082,6 +6243,10 @@ msgstr "按 {column} 排序，升序"
 #: src/components/markdown-copy.tsx
 msgid "Sorted by {column}, descending"
 msgstr "按 {column} 排序，降序"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Sorts new email and drafts the replies"
+msgstr "分拣新邮件并起草回复"
 
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
@@ -6601,6 +6766,10 @@ msgstr ""
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 msgstr "此订阅登录在 Rakazo 中尚不可用。请使用部署凭据或选择其他提供方。"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "This template was just updated. Check it again."
+msgstr "此模板刚刚更新，请重新查看。"
+
 #: src/pages/Artifacts.tsx
 msgid "This week"
 msgstr "本周"
@@ -6676,6 +6845,10 @@ msgstr "工具名称"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "工具"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Topic watch"
+msgstr "话题追踪"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
@@ -7151,6 +7324,10 @@ msgstr "工作指令"
 msgid "Working…"
 msgstr "处理中…"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Works with"
+msgstr "配合使用的应用"
+
 #: src/components/ModelCredits.tsx
 msgid "Works with your ChatGPT or Claude plan."
 msgstr "可使用你的 ChatGPT 或 Claude 套餐。"
@@ -7221,6 +7398,10 @@ msgstr "电脑的磁盘快满了。请删除不再需要的构建输出和缓存
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Your day at a glance, every weekday morning"
+msgstr "每个工作日早上，一眼了解当天安排"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"

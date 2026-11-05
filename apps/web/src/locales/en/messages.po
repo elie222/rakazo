@@ -146,6 +146,11 @@ msgstr "{0} rollup hours"
 msgid "{0} TB"
 msgstr "{0} TB"
 
+#. placeholder {0}: schedule(routine.crons)
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "{0}, paused until you turn it on"
+msgstr "{0}, paused until you turn it on"
+
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -414,6 +419,100 @@ msgstr "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**12 new since 8:00**\n"
+"\n"
+"**Reply needed**\n"
+"1. Priya wants to move Friday's review. Draft: \"Friday works if we start at 2.\"\n"
+"2. Your card expires on the 30th. Draft ready.\n"
+"3. Sam asked about the API limits. Draft ready.\n"
+"\n"
+"**For your information**: a shipping update and a calendar change\n"
+"\n"
+"**Low priority**: 7 newsletters and notifications"
+msgstr "**12 new since 8:00**\n"
+"\n"
+"**Reply needed**\n"
+"1. Priya wants to move Friday's review. Draft: \"Friday works if we start at 2.\"\n"
+"2. Your card expires on the 30th. Draft ready.\n"
+"3. Sam asked about the API limits. Draft ready.\n"
+"\n"
+"**For your information**: a shipping update and a calendar change\n"
+"\n"
+"**Low priority**: 7 newsletters and notifications"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**2 pull requests are waiting on you**\n"
+"\n"
+"**#482 Add retry to webhook delivery**\n"
+"- Retries on 404 too, so a deleted endpoint is retried five times. Retry only 5xx and timeouts?\n"
+"- No test for the backoff cap.\n"
+"\n"
+"Suggested review: request changes.\n"
+"\n"
+"**#479 Fix date parsing in reports**\n"
+"Looks good. Suggested review: approve."
+msgstr "**2 pull requests are waiting on you**\n"
+"\n"
+"**#482 Add retry to webhook delivery**\n"
+"- Retries on 404 too, so a deleted endpoint is retried five times. Retry only 5xx and timeouts?\n"
+"- No test for the backoff cap.\n"
+"\n"
+"Suggested review: request changes.\n"
+"\n"
+"**#479 Fix date parsing in reports**\n"
+"Looks good. Suggested review: approve."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**This week**\n"
+"\n"
+"**Open-source AI agents**\n"
+"- A major release adds scheduled tasks (3 days ago)\n"
+"- Two new comparisons; both call memory the main gap\n"
+"\n"
+"**competitor.example**\n"
+"- Pricing: the Team plan went from $20 to $25 per seat\n"
+"\n"
+"Nothing new on battery recycling."
+msgstr "**This week**\n"
+"\n"
+"**Open-source AI agents**\n"
+"- A major release adds scheduled tasks (3 days ago)\n"
+"- Two new comparisons; both call memory the main gap\n"
+"\n"
+"**competitor.example**\n"
+"- Pricing: the Team plan went from $20 to $25 per seat\n"
+"\n"
+"Nothing new on battery recycling."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**Thursday**\n"
+"\n"
+"**Calendar**\n"
+"- 10:00 Design review, moved to 11:30\n"
+"- 14:00 Call with Dana\n"
+"\n"
+"**Needs you**\n"
+"- Alex asked for the Q4 numbers by noon\n"
+"- A contract is waiting for your signature\n"
+"\n"
+"**Worth knowing**\n"
+"- Light rain after 4pm\n"
+"- Two stories on the topics you follow"
+msgstr "**Thursday**\n"
+"\n"
+"**Calendar**\n"
+"- 10:00 Design review, moved to 11:30\n"
+"- 14:00 Call with Dana\n"
+"\n"
+"**Needs you**\n"
+"- Alex asked for the Q4 numbers by noon\n"
+"- A contract is waiting for your signature\n"
+"\n"
+"**Worth knowing**\n"
+"- Light rain after 4pm\n"
+"- Two stories on the topics you follow"
+
 #: src/components/ModelCredits.tsx
 msgid "/ month"
 msgstr "/ month"
@@ -439,6 +538,10 @@ msgstr "A sign-in tab opened at <0>{0}</0>. Enter this code there — this windo
 #: src/pages/model-settings/use-model-settings.ts
 msgid "A subscription credential is stored securely."
 msgstr "A subscription credential is stored securely."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "A weekly digest of what changed on topics you follow"
+msgstr "A weekly digest of what changed on topics you follow"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "About {kb} KB of memory no longer reaches the bot."
@@ -655,6 +758,10 @@ msgstr "Address"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Address line 2"
 msgstr "Address line 2"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Adds"
+msgstr "Adds"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -1014,6 +1121,7 @@ msgstr "Available to shell commands as {commandVariable}"
 msgid "Avatar Studio"
 msgstr "Avatar Studio"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/vault/VaultPageHeader.tsx
@@ -1130,6 +1238,13 @@ msgstr "Bot screen preview"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
 msgstr "Bot style"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+#: src/pages/Shell.tsx
+msgid "Bot templates"
+msgstr "Bot templates"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
@@ -1467,6 +1582,10 @@ msgstr "Clearing…"
 msgid "Close"
 msgstr "Close"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Close bot templates"
+msgstr "Close bot templates"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
 msgstr "Close chart"
@@ -1740,6 +1859,7 @@ msgstr "Connect this model's provider first."
 msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
 msgstr "Connect your own API key in Models or choose Rakazo credits in Billing."
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/ComputerDeviceSettings.tsx
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
@@ -1997,6 +2117,10 @@ msgstr "Could not create section"
 msgid "Could not create space"
 msgstr "Could not create space"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not create the bot"
+msgstr "Could not create the bot"
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "Could not create your bot"
@@ -2148,6 +2272,10 @@ msgstr "Could not load sign-in options"
 msgid "Could not load skill"
 msgstr "Could not load skill"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not load templates"
+msgstr "Could not load templates"
+
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr "Could not load this artifact."
@@ -2174,6 +2302,10 @@ msgstr "Could not log out. Try again."
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
 msgstr "Could not open billing"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not open the bot"
+msgstr "Could not open the bot"
 
 #: src/components/pages/PagesList.tsx
 msgid "Could not pin this page. Try again."
@@ -2484,6 +2616,10 @@ msgstr "Create a section and move {0} into it."
 msgid "Create account"
 msgstr "Create account"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Create bot"
+msgstr "Create bot"
+
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "Create group"
@@ -2510,6 +2646,7 @@ msgstr "Create your Rakazo"
 msgid "Created"
 msgstr "Created"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3547,6 +3684,10 @@ msgstr "Inactive"
 msgid "Inbox & email"
 msgstr "Inbox & email"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Inbox triage"
+msgstr "Inbox triage"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Include API keys"
 msgstr "Include API keys"
@@ -3588,6 +3729,7 @@ msgid "Instruction history"
 msgstr "Instruction history"
 
 #: src/components/AskCard.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/InstructionSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions"
@@ -3819,6 +3961,7 @@ msgstr "Loading preview…"
 msgid "Loading voice providers…"
 msgstr "Loading voice providers…"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
@@ -4183,6 +4326,10 @@ msgstr "More apps"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr "More computer actions"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Morning briefing"
+msgstr "Morning briefing"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -4629,6 +4776,7 @@ msgstr "Only enter a code {codeHost} sent you."
 msgid "Only you"
 msgstr "Only you"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/pages/PagesList.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
@@ -4980,6 +5128,10 @@ msgstr "Post \"No changes\" in chat"
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr "POST to"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "PR reviewer"
+msgstr "PR reviewer"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Preferences"
@@ -5461,6 +5613,7 @@ msgid "Restoring your workspace"
 msgstr "Restoring your workspace"
 
 #: src/components/AccountAccess.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
@@ -5495,6 +5648,10 @@ msgstr "Return to Rakazo"
 #: src/lib/model-connection-preflight.ts
 msgid "Review provider settings and test again."
 msgstr "Review provider settings and test again."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Reviews pull requests waiting on you"
+msgstr "Reviews pull requests waiting on you"
 
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5995,6 +6152,10 @@ msgstr "Sign-in cancelled. Try again."
 msgid "Site"
 msgstr "Site"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Skill"
+msgstr "Skill"
+
 #. placeholder {0}: skill.name
 #: src/pages/shell/composer.tsx
 msgid "Skill {0}"
@@ -6082,6 +6243,10 @@ msgstr "Sorted by {column}, ascending"
 #: src/components/markdown-copy.tsx
 msgid "Sorted by {column}, descending"
 msgstr "Sorted by {column}, descending"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Sorts new email and drafts the replies"
+msgstr "Sorts new email and drafts the replies"
 
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
@@ -6601,6 +6766,10 @@ msgstr "This server's tool result does not fit the model. Turn off Keep tool res
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 msgstr "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "This template was just updated. Check it again."
+msgstr "This template was just updated. Check it again."
+
 #: src/pages/Artifacts.tsx
 msgid "This week"
 msgstr "This week"
@@ -6676,6 +6845,10 @@ msgstr "Tool name"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "Tools"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Topic watch"
+msgstr "Topic watch"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
@@ -7151,6 +7324,10 @@ msgstr "Working instructions"
 msgid "Working…"
 msgstr "Working…"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Works with"
+msgstr "Works with"
+
 #: src/components/ModelCredits.tsx
 msgid "Works with your ChatGPT or Claude plan."
 msgstr "Works with your ChatGPT or Claude plan."
@@ -7221,6 +7398,10 @@ msgstr "Your computer's disk is nearly full. Free up space by removing build out
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr "Your data"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Your day at a glance, every weekday morning"
+msgstr "Your day at a glance, every weekday morning"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"

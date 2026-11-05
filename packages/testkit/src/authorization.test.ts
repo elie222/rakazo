@@ -288,6 +288,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/remove", { botId: "missing-bot" }],
       ["bots/importCreate"],
       ["bots/importSetupState"],
+      ["bots/templates"],
+      ["bots/createFromTemplate", { templateId: "morning-briefing", version: 1 }],
       ["bots/reorder"],
       ["bots/restoreInstructions"],
       ["bots/setComputer"],

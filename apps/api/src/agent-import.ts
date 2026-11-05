@@ -160,7 +160,7 @@ async function takenNames(db: Reader, actor: Actor) {
   };
 }
 
-type Built = {
+export type Built = {
   plan: AgentImportPlan;
   settings: (AgentImportSettings & { keyValues: Map<string, string> }) | null;
   routineInputs: Map<string, CreateRoutineInputType>;
@@ -222,13 +222,7 @@ async function buildPlan(
     };
   });
 
-  const saved = (
-    await services.prisma.user.findUnique({
-      where: { id: actor.userId },
-      select: { timezone: true },
-    })
-  )?.timezone;
-  const fallbackZone = saved && isValidTimeZone(saved) ? saved : "UTC";
+  const fallbackZone = await savedTimeZone(services.prisma, actor);
   const routines = settings.routines.flatMap((routine) => {
     const timezone = routine.timezone ?? fallbackZone;
     const parsed = CreateRoutineInput.safeParse({
@@ -263,6 +257,14 @@ async function buildPlan(
     mcpConfigs,
     connectedKeyIds,
   };
+}
+
+/** The user's saved time zone, for routines that don't name one. */
+export async function savedTimeZone(prisma: PrismaClient, actor: Actor): Promise<string> {
+  const saved = (
+    await prisma.user.findUnique({ where: { id: actor.userId }, select: { timezone: true } })
+  )?.timezone;
+  return saved && isValidTimeZone(saved) ? saved : "UTC";
 }
 
 export async function previewAgentImport(
@@ -302,9 +304,41 @@ export async function createImportedBot<PreparedKey>(
   input: AgentImportCreateInput,
   signal?: AbortSignal,
 ): Promise<Bot> {
-  const owner = { spaceId: actor.spaceId, userId: actor.userId };
   const { importKey, ...request } = input;
-  const digest = requestDigest(request);
+  const written = await writeImportedBot(
+    services,
+    actor,
+    {
+      ...input,
+      digest: requestDigest(request),
+      build: () => buildPlan(services as AgentImportServices, actor, input),
+    },
+    signal,
+  );
+  return written.bot;
+}
+
+/** A bot to create from a plan: an import's files or a template build it. */
+export type ImportedBotRequest = Pick<
+  AgentImportCreateInput,
+  "importKey" | "selection" | "name" | "description" | "computerMode" | "color" | "avatarSet"
+> & {
+  /** Of the request without its key: reusing a key for another request is refused. */
+  digest: string;
+  build: () => Promise<Built>;
+  /** Posted before the checklist, such as cards for apps the bot works with. */
+  cards?: MessageBlock[];
+};
+
+/** `created` is false when the key's earlier create is returned instead. */
+export async function writeImportedBot<PreparedKey>(
+  services: AgentImportServices<PreparedKey>,
+  actor: Actor,
+  input: ImportedBotRequest,
+  signal?: AbortSignal,
+): Promise<{ bot: Bot; created: boolean }> {
+  const owner = { spaceId: actor.spaceId, userId: actor.userId };
+  const { importKey, digest } = input;
   const already = async () => {
     if (!importKey) return null;
     const found = await services.prisma.agentImport.findFirst({
@@ -322,12 +356,8 @@ export async function createImportedBot<PreparedKey>(
     return services.findBot(actor, found.botId);
   };
   const retried = await already();
-  if (retried) return retried;
-  const { plan, settings, routineInputs, mcpConfigs, connectedKeyIds } = await buildPlan(
-    services as AgentImportServices,
-    actor,
-    input,
-  );
+  if (retried) return { bot: retried, created: false };
+  const { plan, settings, routineInputs, mcpConfigs, connectedKeyIds } = await input.build();
   const instructions = combineImportedInstructions(
     selected(plan.instructions, input.selection.instructions),
   );
@@ -584,6 +614,14 @@ export async function createImportedBot<PreparedKey>(
         providerName: plan.model.providerName,
       });
     }
+    if (input.cards?.length) {
+      const message = await createThreadMessageInTransaction(tx, {
+        threadId: thread.id,
+        role: "bot",
+        blocks: input.cards,
+      });
+      await announceAdded(tx, botId, message, thread.id, input.cards);
+    }
     if (setup.length) {
       const checklist: MessageBlock[] = [{ kind: "import_setup", items: setup }];
       const message = await createThreadMessageInTransaction(tx, {
@@ -622,7 +660,7 @@ export async function createImportedBot<PreparedKey>(
     // Two requests with one import key: the second's transaction lost the race.
     const winner = isUniqueViolation(error) ? await already() : null;
     if (!winner) throw error;
-    return winner;
+    return { bot: winner, created: false };
   }
   const settle = (label: string) => (error: unknown) => {
     getLogger().error(label, error);
@@ -645,7 +683,7 @@ export async function createImportedBot<PreparedKey>(
       .announceRoutine(actor, { id: bot.id, thread }, row)
       .catch(settle("imported routine notice"));
   }
-  return bot;
+  return { bot, created: true };
 }
 
 /** Only the actor's own rows are read; unknown ids are not done. */
