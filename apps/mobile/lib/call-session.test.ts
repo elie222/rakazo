@@ -225,6 +225,21 @@ describe("mobile call session", () => {
     expect(hapticSuccess).toHaveBeenCalledTimes(1);
   });
 
+  it("does not confirm a connection when the remote farewell starts during its opening cue", async () => {
+    const fake = fakes();
+    const opening = deferred<void>();
+    const id = startCall(
+      { botId: "bot-1", botName: "Ada" },
+      { ...fake.deps, cue: () => opening.promise },
+    );
+    vi.mocked(hapticSuccess).mockClear();
+    fake.endedCall(id, "Goodbye.");
+    opening.resolve();
+    await flush();
+    expect(hapticSuccess).not.toHaveBeenCalled();
+    expect(fake.spoken).toEqual(["Goodbye."]);
+  });
+
   it("keeps shared teardown and call replacement silent", async () => {
     const fake = fakes();
     startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);

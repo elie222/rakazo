@@ -261,7 +261,7 @@ async function openCall(openedCallId: string, greeting?: string): Promise<void> 
   deps.waitSound("preload");
   opening = true;
   await deps.cue("start").catch(() => undefined);
-  if (!state || callId !== openedCallId) return;
+  if (!state || callId !== openedCallId || botEndedCall) return;
   hapticSuccess();
   opening = false;
   if (greeting) speakAndListen(greeting);

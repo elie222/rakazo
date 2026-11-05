@@ -1,4 +1,4 @@
-import { Stack, useRouter } from "expo-router";
+import { Stack, useNavigation, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, ScrollView, Text, TextInput } from "react-native";
 import { NativeActionButton } from "../components/native-action-button";
@@ -17,6 +17,7 @@ export default function NewSpace() {
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const router = useRouter();
+  const navigation = useNavigation();
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +30,7 @@ export default function NewSpace() {
     const askedIn = searchInboxSession();
     try {
       const space = await rpc("spaces/create", { name: trimmed });
-      if (isSearchInboxSession(askedIn)) hapticSuccess();
+      if (navigation.isFocused() && isSearchInboxSession(askedIn)) hapticSuccess();
       void refreshOrganizations();
       if (!(await selectSpace(space.id))) {
         Alert.alert(t("Space created"), t("It could not be opened. Try again from the sidebar."));

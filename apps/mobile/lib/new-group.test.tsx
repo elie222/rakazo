@@ -24,7 +24,7 @@ const {
 } = vi.hoisted(() => ({
   rpc: vi.fn(),
   hapticSuccess: vi.fn(),
-  session: { generation: 4, apiBase: "http://api.test" },
+  session: { generation: 4, apiBase: "http://api.test", focused: true },
   groupPreview: vi.fn(),
   addToSearchInbox: vi.fn(),
   back: vi.fn(),
@@ -39,12 +39,13 @@ vi.mock("./api", () => ({ rpc }));
 vi.mock("./haptics", () => ({ hapticSuccess }));
 vi.mock("./search-inbox", () => ({
   addToSearchInbox,
-  searchInboxSession: () => ({ ...session }),
+  searchInboxSession: () => ({ generation: session.generation, apiBase: session.apiBase }),
   isSearchInboxSession: (askedIn: typeof session) =>
     askedIn.generation === session.generation && askedIn.apiBase === session.apiBase,
 }));
 vi.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 56 }));
 vi.mock("expo-router", () => ({
+  useNavigation: () => ({ isFocused: () => session.focused }),
   Stack: {
     Screen: ({
       options,
@@ -226,7 +227,7 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.clearAllMocks();
   nativeHeader.current = false;
-  Object.assign(session, { generation: 4, apiBase: "http://api.test" });
+  Object.assign(session, { generation: 4, apiBase: "http://api.test", focused: true });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   root = createRoot(container);
@@ -483,4 +484,21 @@ it("closes a standalone deep link to home", async () => {
   await start();
   await click("Close");
   expect(replace).toHaveBeenCalledWith("/");
+});
+
+it("does not confirm group creation after its screen loses focus", async () => {
+  let finish!: (group: { id: string; name: string }) => void;
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "bots/list"
+      ? bots
+      : new Promise((resolve) => {
+          finish = resolve;
+        }),
+  );
+  await start();
+  await pickPair();
+  await click("Skip");
+  session.focused = false;
+  await act(async () => finish({ id: "group-1", name: "Created" }));
+  expect(hapticSuccess).not.toHaveBeenCalled();
 });

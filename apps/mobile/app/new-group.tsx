@@ -4,7 +4,7 @@ import {
   GROUP_MEMBER_MIN,
   GROUP_NAME_MAX_LENGTH,
 } from "@rakazo/contracts";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useNavigation, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useEffect, useRef, useState } from "react";
 import { BackHandler, Platform, ScrollView, Text, TextInput, View } from "react-native";
@@ -29,6 +29,7 @@ export default function NewGroup() {
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const router = useRouter();
+  const navigation = useNavigation();
   const headerHeight = useHeaderHeight();
   const [bots, setBots] = useState<MobileBot[]>([]);
   const [step, setStep] = useState<"bots" | "name">("bots");
@@ -72,7 +73,7 @@ export default function NewGroup() {
         name: name.trim() || defaultGroupName(picked.map((bot) => bot.name)),
         botIds: selected,
       });
-      if (isSearchInboxSession(askedIn)) hapticSuccess();
+      if (navigation.isFocused() && isSearchInboxSession(askedIn)) hapticSuccess();
       addToSearchInbox({ kind: "group", group }, askedIn);
       router.replace({
         pathname: "/group-thread",

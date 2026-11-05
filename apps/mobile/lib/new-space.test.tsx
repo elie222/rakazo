@@ -8,6 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import NewSpace from "../app/new-space";
 
 const state = vi.hoisted(() => ({
+  focused: true,
   rpc: vi.fn(),
   selectSpace: vi.fn(),
   hapticSuccess: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock("./i18n", () => ({
 }));
 vi.mock("../components/sheet-header", () => ({ cancelHeaderOptions: () => ({}) }));
 vi.mock("expo-router", () => ({
+  useNavigation: () => ({ isFocused: () => state.focused }),
   Stack: { Screen: () => null },
   useRouter: () => ({
     replace: state.replace,
@@ -83,6 +85,7 @@ let root: Root;
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  state.focused = true;
   Object.assign(state.session, { generation: 4, apiBase: "http://api.test" });
   state.rpc.mockResolvedValue({ id: "space-new", name: "Work" });
   state.selectSpace.mockResolvedValue(true);
@@ -154,5 +157,21 @@ it("does not confirm a space created after the session changes", async () => {
   });
   await type("Work");
   await act(async () => container.querySelector("button")!.click());
+  expect(state.hapticSuccess).not.toHaveBeenCalled();
+});
+
+it("does not confirm space creation after its screen loses focus", async () => {
+  let finish!: (space: { id: string; name: string }) => void;
+  state.rpc.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await type("Work");
+  await act(async () => container.querySelector("button")!.click());
+  expect(state.rpc).toHaveBeenCalledWith("spaces/create", { name: "Work" });
+  state.focused = false;
+  await act(async () => finish({ id: "space-new", name: "Work" }));
   expect(state.hapticSuccess).not.toHaveBeenCalled();
 });
