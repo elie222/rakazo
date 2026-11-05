@@ -196,6 +196,8 @@ export default function SpaceMembersScreen() {
               key="cancel-invites"
               title={t("Cancel open invites")}
               destructive
+              // A link still being created would outlive the cancel.
+              disabled={pending}
               accessibilityRole="button"
               onPress={() => void cancelInvites()}
             />

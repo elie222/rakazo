@@ -210,6 +210,8 @@ export function SpaceMembersSettings({
           variant="text"
           size="sm"
           className="h-auto px-1 text-[13px]"
+          // A link still being created would outlive the cancel.
+          disabled={inviting}
           onClick={() => void cancelInvites()}
         >
           <Trans>Cancel open invites</Trans>

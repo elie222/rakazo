@@ -425,13 +425,16 @@ export async function organizationSeatCount(
 /** The org role of someone who belongs to an organization only through Spaces they were invited to. */
 export const GUEST_ROLE = "guest";
 
-/** The oldest organization the user owns, where their own Spaces live. */
+/** The oldest organization the user owns that is not being deleted, where their own Spaces live. */
 export async function ownedOrganizationId(
   db: Pick<PrismaClient, "member">,
   userId: string,
 ): Promise<string> {
   const memberships = await db.member.findMany({
-    where: { userId },
+    where: {
+      userId,
+      organization: { spaces: { some: { isDefault: true, deletingAt: null } } },
+    },
     select: { organizationId: true, role: true },
     orderBy: { createdAt: "asc" },
   });
