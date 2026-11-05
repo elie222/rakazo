@@ -1080,6 +1080,7 @@ export async function replaceComputer(
         controlLeaseId: existing.controlLeaseId,
         controlLeaseExpiresAt: existing.controlLeaseExpiresAt,
         controlBotId: existing.controlBotId,
+        controlUserId: existing.controlUserId,
         controlRunId: null,
       }
     : null;

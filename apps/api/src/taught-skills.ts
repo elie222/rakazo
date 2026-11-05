@@ -19,6 +19,7 @@ import {
   extendActiveComputerControl,
   getActiveTeachingSession,
   hasActiveComputerControl,
+  holdsUserControl,
   mapTaughtSkill,
   observeStopSnapshot,
   parsePlaybook,
@@ -342,8 +343,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       if (
         computer?.controlHolder === "user" &&
         hasActiveComputerControl(computer) &&
-        computer.controlUserId &&
-        computer.controlUserId !== actor.userId
+        !holdsUserControl(computer, actor.userId)
       ) {
         throw new ORPCError("CONFLICT", { message: "Someone else is using this computer" });
       }

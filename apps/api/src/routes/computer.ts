@@ -19,6 +19,7 @@ import {
   ensureComputerWorkspaceLayout,
   expireComputerControl,
   hasActiveComputerControl,
+  holdsUserControl,
   isComputerScreenUnavailable,
   isSandboxGoneError,
   provisionComputer,
@@ -138,6 +139,7 @@ export function computerRoutes(ctx: RouterContext) {
       stop: authed.computer.stop.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
+        assertNotAnotherPersonsControl(bot.computer, context.actor);
         // A repeated Stop must not turn an unsafe guest back into an auto-startable one.
         if (bot.computer.state === "quarantined") {
           if (bot.computer.providerRef)
@@ -254,6 +256,7 @@ export function computerRoutes(ctx: RouterContext) {
       recover: authed.computer.recover.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
+        assertNotAnotherPersonsControl(bot.computer, context.actor);
         if (!computerSupportsUpdate(bot.computer.kind))
           throw new ORPCError("BAD_REQUEST", {
             message: "Computer recovery is not available on this device",
@@ -272,6 +275,7 @@ export function computerRoutes(ctx: RouterContext) {
       update: authed.computer.update.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
+        assertNotAnotherPersonsControl(bot.computer, context.actor);
         if (!computerSupportsUpdate(bot.computer.kind))
           throw new ORPCError("BAD_REQUEST", {
             message: "Computer update is not available on this device",
@@ -912,6 +916,7 @@ function holdsComputerControl(
   computer: Parameters<typeof hasActiveComputerControl>[0] & {
     controlBotId: string | null;
     controlUserId: string | null;
+    userId?: string;
   },
   botId: string,
   actor: Actor,
@@ -919,8 +924,7 @@ function holdsComputerControl(
   return (
     hasActiveComputerControl(computer) &&
     computer.controlBotId === botId &&
-    // Control taken before holders were recorded has none.
-    (!computer.controlUserId || computer.controlUserId === actor.userId)
+    holdsUserControl(computer, actor.userId)
   );
 }
 
@@ -929,14 +933,14 @@ function assertNotAnotherPersonsControl(
   computer: Parameters<typeof hasActiveComputerControl>[0] & {
     controlHolder: string;
     controlUserId: string | null;
+    userId?: string;
   },
   actor: Actor,
 ): void {
   if (
     computer.controlHolder === "user" &&
     hasActiveComputerControl(computer) &&
-    computer.controlUserId &&
-    computer.controlUserId !== actor.userId
+    !holdsUserControl(computer, actor.userId)
   ) {
     throw new ORPCError("CONFLICT", { message: "Someone else is using this computer" });
   }
@@ -983,7 +987,7 @@ export async function releaseComputerControl(
   const controlLeaseId = bot.computer.controlLeaseId;
   if (bot.computer.controlHolder !== "user" || !controlBotId || controlBotId !== bot.id) return;
   // Read with the lease released below, so control someone took meanwhile is never ended.
-  if (bot.computer.controlUserId && bot.computer.controlUserId !== actor.userId) return;
+  if (!holdsUserControl(bot.computer, actor.userId)) return;
   if (expectedRunId !== undefined && bot.computer.controlRunId !== expectedRunId) return;
   if (!hasActiveComputerControl(bot.computer) || !controlLeaseId) {
     // Stale controlHolder=user. Prefer expiry (revokes provider control). If a lease id
@@ -1035,6 +1039,8 @@ async function runComputerReplace(
   const repos = createRepos(deps.prisma);
   const bot = await repos.getBot(context.actor, botId);
   if (!bot.computer) throw new IsolationError();
+  // Stopping, resetting or updating would end someone else's control of the screen.
+  assertNotAnotherPersonsControl(bot.computer, context.actor);
   if (mode === "update" && !computerSupportsUpdate(bot.computer.kind)) {
     throw new ORPCError("BAD_REQUEST", {
       message: "Computer update is not available on this device",

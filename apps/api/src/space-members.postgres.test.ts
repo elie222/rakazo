@@ -851,6 +851,12 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(call(asInvitee, "computer/release", { botId: bot.id })).resolves.toMatchObject({
       status: 409,
     });
+    // Nor can stopping or resetting the computer under them.
+    for (const procedure of ["computer/stop", "computer/reset"]) {
+      await expect(call(asInvitee, procedure, { botId: bot.id })).resolves.toMatchObject({
+        status: 409,
+      });
+    }
     // Teaching cannot take the owner's screen either.
     await expect(
       call(asInvitee, "skills/start", { botId: bot.id, goal: "Book a table" }),
@@ -862,6 +868,11 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(
       system.computer.findUniqueOrThrow({ where: { id: computer.id } }),
     ).resolves.toMatchObject({ controlHolder: "user", controlUserId: owner.id });
+    // A lease from before holders were recorded belongs to the person the computer is kept for.
+    await system.computer.update({ where: { id: computer.id }, data: { controlUserId: null } });
+    await expect(
+      call(asInvitee, "computer/input", { botId: bot.id, kind: "key", payload: { key: "a" } }),
+    ).resolves.toMatchObject({ status: 403 });
   });
 
   it("gives a shared space one team computer, whoever creates the bot", async () => {
