@@ -11,6 +11,7 @@ import type {
 import {
   CONNECTION_LABEL_MAX_LENGTH,
   mcpServerConnection,
+  mcpServerNeedsSignIn,
   SUBMIT_PLUGIN_URL,
 } from "@rakazo/contracts";
 import type { PluginCategory } from "@rakazo/core";
@@ -72,7 +73,6 @@ import {
   gitImportParams,
   hasPluginConnector,
   managedPluginParams,
-  mcpServerReady,
   pluginCategories,
   pluginParams,
   pluginSite,
@@ -621,7 +621,7 @@ export default function Integrations() {
                 servers.length === 1
                   ? t("1 connector")
                   : t("{count} connectors", { count: servers.length }),
-                !servers.every(mcpServerReady),
+                servers.some(mcpServerNeedsSignIn),
               );
             })}
             {standaloneServers.map(renderSavedServer)}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
 import type { McpServer } from "./domain.js";
-import { mcpServerConnection } from "./domain.js";
+import { mcpServerConnection, mcpServerNeedsSignIn } from "./domain.js";
 
 function server(overrides: Partial<McpServer> = {}): McpServer {
   return {
@@ -63,5 +63,18 @@ describe("mcpServerConnection", () => {
     expect(
       mcpServerConnection(server({ health: { ...failed, status: "installing", message: null } })),
     ).toBe("not_connected");
+  });
+
+  it("asks for a sign-in only when one is what the server is missing", () => {
+    expect(mcpServerNeedsSignIn(server({ oauthStatus: "connected" }))).toBe(false);
+    expect(mcpServerNeedsSignIn(server({ oauthStatus: "connected", health: failed }))).toBe(false);
+    expect(mcpServerNeedsSignIn(server({ enabled: false }))).toBe(false);
+    // An unauthenticated first check fails before any sign-in has started.
+    expect(mcpServerNeedsSignIn(server({ health: failed }))).toBe(true);
+    expect(mcpServerNeedsSignIn(server({ oauthStatus: "reconnect", health: ok }))).toBe(true);
+    expect(mcpServerNeedsSignIn(server())).toBe(true);
+    expect(
+      mcpServerNeedsSignIn(server({ health: { ...failed, code: MCP_OAUTH_CLIENT_REQUIRED } })),
+    ).toBe(true);
   });
 });

@@ -1218,6 +1218,12 @@ export function mcpServerConnection(
   return "not_connected";
 }
 
+/** Whether Sign in or Reconnect can help: on, not connected, not signed in (even if failing). */
+export function mcpServerNeedsSignIn(server: Parameters<typeof mcpServerConnection>[0]): boolean {
+  const state = mcpServerConnection(server);
+  return state !== "disabled" && state !== "connected" && server.oauthStatus !== "connected";
+}
+
 export const BotMcpServerSchema = z.object({
   id: Id,
   botId: Id,

@@ -820,6 +820,80 @@ it("lists a plugin connector under Apps, with its servers kept under the plugin"
   expect(container.querySelectorAll('[data-testid="registered-mcp-server"]')).toHaveLength(0);
 });
 
+it.each([
+  ["signed in", { oauthStatus: "connected", health: { status: "ok" } }, ""],
+  ["signed in with a failed check", { oauthStatus: "connected", health: { status: "error" } }, ""],
+  [
+    "never signed in with a failed check",
+    { oauthStatus: "none", health: { status: "error" } },
+    "Sign in",
+  ],
+  ["disabled", { oauthStatus: "connected", enabled: false }, ""],
+  [
+    "signed out after an ok check",
+    { oauthStatus: "reconnect", health: { status: "ok" } },
+    "Sign in",
+  ],
+])(
+  "offers Sign in on a plugin whose connector is %s only when it needs one",
+  async (_, change, action) => {
+    state.marketplace.mockResolvedValue({
+      entries: [plugin],
+      unavailableRegistries: [],
+      skippedEntries: 0,
+    });
+    const fallback = state.rpc.getMockImplementation();
+    state.rpc.mockImplementation((proc: string) =>
+      proc === "capabilities/list"
+        ? Promise.resolve([
+            {
+              id: "install-a",
+              kind: "plugin",
+              name: "calcom",
+              source: plugin.installedSource,
+              config: {
+                format: "grok",
+                name: "calcom",
+                version: null,
+                description: "",
+                author: null,
+                homepage: null,
+                repository: null,
+                license: null,
+                keywords: [],
+                resolvedSha: "a".repeat(40),
+                digest: `sha256:${"b".repeat(64)}`,
+                skills: [
+                  { name: "book", description: "" },
+                  { name: "cancel", description: "" },
+                ],
+                mcpServers: [],
+                skipped: [],
+              },
+            },
+          ])
+        : proc === "mcp/servers/list"
+          ? Promise.resolve([
+              {
+                id: "owned",
+                installId: "install-a",
+                name: "calcom: calcom",
+                enabled: true,
+                hasSecret: false,
+                health: { status: "unknown" },
+                ...change,
+              },
+            ])
+          : fallback?.(proc),
+    );
+    await render();
+    await act(async () => resolveCatalog([item]));
+    expect(container.querySelector('[data-testid="connected-apps"]')?.textContent).toBe(
+      `AppsCCalcom1 connector${action}`,
+    );
+  },
+);
+
 async function openMcpSource() {
   await render();
   await act(async () => resolveCatalog([]));

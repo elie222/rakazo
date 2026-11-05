@@ -11,6 +11,7 @@ import type {
 import {
   CONNECTION_LABEL_MAX_LENGTH,
   mcpServerConnection,
+  mcpServerNeedsSignIn,
   PluginPreviewSchema,
   SUBMIT_PLUGIN_URL,
 } from "@rakazo/contracts";
@@ -66,7 +67,6 @@ import type {
   PluginSelection,
 } from "../components/integrations/plugin-marketplace";
 import {
-  mcpServerReady,
   PluginDetail,
   PluginLogo,
   PluginRow,
@@ -1374,7 +1374,7 @@ export function PluginsOverlay({
     const servers = pluginServers(install);
     const parsed = PluginPreviewSchema.safeParse(install.config);
     const skillCount = parsed.success ? parsed.data.skills.length : 0;
-    const signInNeeded = part === "connector" && !servers.every(mcpServerReady);
+    const signInNeeded = part === "connector" && servers.some(mcpServerNeedsSignIn);
     return (
       <div
         key={`${install.id}:${part}`}
