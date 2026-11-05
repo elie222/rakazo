@@ -137,7 +137,9 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
             error.message
               .split("\n")
               .find((line) => /expired|timeout/i.test(line))
-              ?.trim() ?? error.message.split("\n")[0] ?? error.message;
+              ?.trim() ??
+            error.message.split("\n")[0] ??
+            error.message;
           return `settled: ${reason.slice(0, 160)}`;
         },
       ),
