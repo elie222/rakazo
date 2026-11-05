@@ -50,18 +50,25 @@ describe("stopProcess", () => {
     }
   }, 4_000);
 
-  it.skipIf(process.platform === "win32")("kills a child that ignores SIGTERM", async () => {
-    const child = spawn(
-      process.execPath,
-      ["-e", "process.on('SIGTERM', () => {}); process.send('ready'); setInterval(() => {}, 1000)"],
-      { stdio: ["ignore", "ignore", "ignore", "ipc"] },
-    );
-    try {
-      await once(child, "message");
-      await stopProcess(child);
-      expect(child.signalCode).toBe("SIGKILL");
-    } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    }
-  }, 10_000);
+  it.skipIf(process.platform === "win32")(
+    "kills a child that ignores SIGTERM",
+    async () => {
+      const child = spawn(
+        process.execPath,
+        [
+          "-e",
+          "process.on('SIGTERM', () => {}); process.send('ready'); setInterval(() => {}, 1000)",
+        ],
+        { stdio: ["ignore", "ignore", "ignore", "ipc"] },
+      );
+      try {
+        await once(child, "message");
+        await stopProcess(child);
+        expect(child.signalCode).toBe("SIGKILL");
+      } finally {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      }
+    },
+    10_000,
+  );
 });
