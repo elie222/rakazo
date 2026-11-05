@@ -1956,6 +1956,11 @@ PURCHASE_HELPERS = r"""
   const TOTAL_LINE = new RegExp(`(?<!\\p{L})(?:${TOTAL.source})(?!\\p{L})`, "iu");
   // What the shopper sees: an element hidden by its own style, or by a transparent or hidden ancestor, is not.
   const seen = (el) => visible(el) && (el.checkVisibility?.({ opacityProperty: true, visibilityProperty: true }) ?? true);
+  // Text drawn in a transparent color, or at no size, is on the page but not in front of the shopper.
+  const inkless = (el) => {
+    const style = window.getComputedStyle(el);
+    return parseFloat(style.fontSize) === 0 || /^(?:transparent|rgba\([^)]*,\s*0\))$/.test(style.color.trim());
+  };
   // A choice is not an order line, and nor is an offer to add something: a delivery option or an extra names
   // its price too. Other controls, such as a quantity picker or Remove, may sit in a line; their words are not read.
   const CHOICES = "label, input[type=radio], input[type=checkbox], [role=radio], [role=checkbox], [role=switch], "
@@ -1972,7 +1977,7 @@ PURCHASE_HELPERS = r"""
     for (let node = walker.nextNode(), parts = 0; node && parts < 40; node = walker.nextNode()) {
       const parent = node.parentElement;
       const part = tidy(node.data);
-      if (part && parent && !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(parent.tagName) && seen(parent)
+      if (part && parent && !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(parent.tagName) && seen(parent) && !inkless(parent)
           && !parent.closest(CONTROLS)) {
         // A price split over tags ("$", "3", ".", "00") is one amount; two numbers side by side are not.
         const within = (/\d$/.test(text) && /^[.,]/.test(part)) || (/[$€£₪¥.,]$/.test(text) && /^\d/.test(part));

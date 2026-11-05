@@ -634,6 +634,15 @@ describe("a key on the screen", () => {
     ]);
   });
 
+  it("leaves out an order line written in a color or size the shopper cannot see", () => {
+    const { intent } = page(`
+      <p><span>Bananas × 6</span> <span>$3.00</span></p>
+      <p style="color: transparent"><span>Gift card</span> <span>$50.00</span></p>
+      <p><span style="font-size: 0">Socks</span> <span>$5.00</span></p>
+      <p>Total: $3.00</p><button>Place order</button>`);
+    expect(intent("Place order")?.items).toEqual([{ name: "Bananas × 6", amount: "$3.00" }]);
+  });
+
   it("never reads several products as one line with the last one's price", () => {
     const { intent } = page(`
       <div><span>Bananas</span> <span>$3.00</span> <span>Oat milk</span> <span>$8.40</span></div>
