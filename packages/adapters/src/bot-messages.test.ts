@@ -824,7 +824,7 @@ describe("automatic outcome return", () => {
 
     expect(returned).toBe(true);
     expect(harness.deps.prisma.bot.findFirst).toHaveBeenCalledWith({
-      where: { id: "bot-target", spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+      where: { id: "bot-target", spaceId: run.spaceId, archivedAt: null },
       select: { id: true },
     });
     expect(harness.enqueue).not.toHaveBeenCalled();

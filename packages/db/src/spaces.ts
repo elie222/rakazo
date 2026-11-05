@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { displayName } from "@rakazo/core";
+import { GUEST_ROLE, isOwnerRole, ownedOrganizationId } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import type { PageShareSecret } from "./page-shares.js";
@@ -132,7 +133,7 @@ export function normalizeSpaceName(name: string): string {
   return trimmed;
 }
 
-/** Create a sibling privacy boundary for a member of the active organization. */
+/** Create a sibling privacy boundary in the active organization, or the member's own one from a shared Space. */
 export async function createSpaceForMember(
   prisma: PrismaClient,
   input: {
@@ -149,36 +150,28 @@ export async function createSpaceForMember(
   await withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
-        const currentMembership = await tx.spaceMember.findUnique({
-          where: {
-            spaceId_userId: {
-              spaceId: input.currentSpaceId,
-              userId: input.userId,
-            },
-          },
-          select: { organizationId: true },
+        // From a Space someone shared, a new Space goes in the person's own organization.
+        const organizationId = await homeOrganizationId(tx, {
+          userId: input.userId,
+          spaceId: input.currentSpaceId,
         });
-        if (!currentMembership) throw new IsolationError();
-        await lockOrganizationSpaces(tx, currentMembership.organizationId);
+        await lockOrganizationSpaces(tx, organizationId);
         const deleting = await tx.space.count({
           where: {
-            organizationId: currentMembership.organizationId,
+            organizationId,
             isDefault: true,
             deletingAt: { not: null },
           },
         });
         if (deleting > 0) throw new SpaceDeletionInProgressError();
         const count = await tx.spaceMember.count({
-          where: {
-            userId: input.userId,
-            organizationId: currentMembership.organizationId,
-          },
+          where: { userId: input.userId, organizationId },
         });
         if (count >= MAX_SPACES_PER_MEMBER) throw new SpaceLimitError();
         await createSpace(tx, {
           spaceId,
           spaceMembershipId,
-          organizationId: currentMembership.organizationId,
+          organizationId,
           userId: input.userId,
           name,
           createdAt,
@@ -194,6 +187,48 @@ export async function createSpaceForMember(
   );
 
   return { id: spaceId, name };
+}
+
+/**
+ * The organization whose Spaces a person sees around this one: its own, unless they are a guest
+ * there, in which case their oldest own organization.
+ */
+export async function homeOrganizationId(
+  db: Pick<PrismaClient, "spaceMember" | "member">,
+  actor: { userId: string; spaceId: string },
+): Promise<string> {
+  const membership = await db.spaceMember.findUnique({
+    where: { spaceId_userId: { spaceId: actor.spaceId, userId: actor.userId } },
+    select: { organizationId: true, member: { select: { role: true } } },
+  });
+  if (!membership) throw new IsolationError();
+  return membership.member.role === GUEST_ROLE
+    ? ownedOrganizationId(db, actor.userId)
+    : membership.organizationId;
+}
+
+/**
+ * The Space a member lands in after leaving or deleting one: their own default
+ * Space first, then the oldest they own, then the oldest they belong to.
+ */
+export async function fallbackSpaceForMember(
+  db: Pick<PrismaClient, "spaceMember">,
+  userId: string,
+  exceptSpaceId?: string,
+): Promise<string | null> {
+  const memberships = await db.spaceMember.findMany({
+    where: {
+      userId,
+      space: { deletingAt: null },
+      ...(exceptSpaceId ? { spaceId: { not: exceptSpaceId } } : {}),
+    },
+    select: { spaceId: true, role: true, space: { select: { isDefault: true } } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const owned = memberships.filter((membership) => isOwnerRole(membership.role));
+  const fallback =
+    owned.find((membership) => membership.space.isDefault) ?? owned[0] ?? memberships[0];
+  return fallback?.spaceId ?? null;
 }
 
 type SpaceMemberTargetInput = {
@@ -232,7 +267,10 @@ export async function lockOrganizationSpaces(
   `);
 }
 
-async function lockSpaceDeletion(tx: Prisma.TransactionClient, spaceId: string): Promise<void> {
+export async function lockSpaceDeletion(
+  tx: Prisma.TransactionClient,
+  spaceId: string,
+): Promise<void> {
   await tx.$queryRaw(Prisma.sql`
     SELECT pg_advisory_xact_lock(hashtextextended(${spaceId}, 0))::text AS "lock"
   `);
@@ -459,8 +497,16 @@ export async function deleteClaimedSpaceForMember(
         // was cut short; a retry finishes it.
         if (remainingBots > 0 || provisioned > 0) throw new SpaceDeletionInProgressError();
         const pageShareSecrets = await deletePageShareSecrets(tx, { spaceId: input.spaceId });
+        await rehomeMemberItems(tx, input.spaceId);
         await releasePendingSpacePayments(tx, input.spaceId);
-        await tx.space.delete({ where: { id: input.spaceId } });
+        const { organizationId } = await tx.space.delete({
+          where: { id: input.spaceId },
+          select: { organizationId: true },
+        });
+        // Guests who only belonged to this Space leave its organization with it.
+        await tx.member.deleteMany({
+          where: { organizationId, role: GUEST_ROLE, spaceMemberships: { none: {} } },
+        });
         const removed = {
           artifactKeys: artifacts.map((artifact) => artifact.storageKey),
           homeKeys: computers.map((computer) => computer.homeKey),
@@ -479,26 +525,129 @@ export async function deleteClaimedSpaceForMember(
   );
 }
 
-/** Organizations whose only member is this user; they are deleted with the account. */
+/**
+ * What the departing person made available in other Spaces of theirs was homed in this one, and
+ * would go when it does. Each item moves to a Space it is already available in: one it was chosen
+ * for, or for an item available everywhere their fallback Space. A plugin moves with its servers
+ * and skills, as one. An item whose new home already has one with the same name stays, and goes
+ * with this Space.
+ */
+export async function rehomeSharedItems(
+  tx: Prisma.TransactionClient,
+  input: { spaceId: string; userId: string },
+): Promise<void> {
+  const { spaceId, userId } = input;
+  const fallback = await fallbackSpaceForMember(tx, userId, spaceId);
+  const shared = {
+    spaceId,
+    userId,
+    OR: [{ allSpaces: true }, { availableIn: { some: { spaceId: { not: spaceId } } } }],
+  };
+  const chosen = {
+    where: { spaceId: { not: spaceId }, space: { deletingAt: null } },
+    select: { spaceId: true },
+    orderBy: { spaceId: "asc" as const },
+    take: 1,
+  };
+  const [servers, skills, installs] = await Promise.all([
+    tx.mcpServer.findMany({
+      where: shared,
+      select: { id: true, slug: true, installId: true, allSpaces: true, availableIn: chosen },
+    }),
+    tx.agentSkill.findMany({
+      where: shared,
+      select: { id: true, name: true, installId: true, allSpaces: true, availableIn: chosen },
+    }),
+    tx.capabilityInstall.findMany({
+      where: shared,
+      select: { id: true, allSpaces: true, availableIn: chosen },
+    }),
+  ]);
+  const homeOf = (item: { allSpaces: boolean; availableIn: Array<{ spaceId: string }> }) =>
+    item.allSpaces ? fallback : (item.availableIn[0]?.spaceId ?? null);
+  const nameTaken = async (home: string, items: { slugs: string[]; names: string[] }) =>
+    (items.slugs.length > 0 &&
+      (await tx.mcpServer.count({ where: { spaceId: home, userId, slug: { in: items.slugs } } })) >
+        0) ||
+    (
+      await Promise.all(
+        items.names.map((name) =>
+          tx.agentSkill.count({
+            where: { spaceId: home, userId, name: { equals: name, mode: "insensitive" } },
+          }),
+        ),
+      )
+    ).some((count) => count > 0);
+  for (const server of servers) {
+    const home = homeOf(server);
+    if (server.installId || !home) continue;
+    if (await nameTaken(home, { slugs: [server.slug], names: [] })) continue;
+    await tx.mcpServer.update({ where: { id: server.id }, data: { spaceId: home } });
+    await tx.mcpServerSpace.deleteMany({ where: { serverId: server.id, spaceId: home } });
+  }
+  for (const skill of skills) {
+    const home = homeOf(skill);
+    if (skill.installId || !home) continue;
+    if (await nameTaken(home, { slugs: [], names: [skill.name] })) continue;
+    await tx.agentSkill.update({ where: { id: skill.id }, data: { spaceId: home } });
+    await tx.agentSkillSpace.deleteMany({ where: { skillId: skill.id, spaceId: home } });
+  }
+  for (const install of installs) {
+    const home = homeOf(install);
+    if (!home) continue;
+    const parts = await Promise.all([
+      tx.mcpServer.findMany({ where: { installId: install.id }, select: { slug: true } }),
+      tx.agentSkill.findMany({ where: { installId: install.id }, select: { name: true } }),
+    ]);
+    const items = {
+      slugs: parts[0].map((server) => server.slug),
+      names: parts[1].map((skill) => skill.name),
+    };
+    if (await nameTaken(home, items)) continue;
+    const moved = { where: { installId: install.id }, data: { spaceId: home } };
+    await tx.capabilityInstall.update({ where: { id: install.id }, data: { spaceId: home } });
+    await tx.mcpServer.updateMany(moved);
+    await tx.agentSkill.updateMany(moved);
+    await tx.capabilityInstallSpace.deleteMany({ where: { installId: install.id, spaceId: home } });
+  }
+}
+
+/** Before a Space goes, what its members made available elsewhere moves out of it (see above). */
+async function rehomeMemberItems(tx: Prisma.TransactionClient, spaceId: string): Promise<void> {
+  const members = await tx.spaceMember.findMany({
+    where: { spaceId, role: { not: "owner" } },
+    select: { userId: true },
+  });
+  for (const { userId } of members) await rehomeSharedItems(tx, { spaceId, userId });
+}
+
+/**
+ * Organizations that go with this account: those where everyone else is a guest, that is, the
+ * people it invited into some of its Spaces.
+ */
 export async function personalOrganizationIds(
   prisma: Pick<PrismaClient, "member">,
   userId: string,
 ): Promise<string[]> {
   const memberships = await prisma.member.findMany({
-    where: { userId },
+    where: { userId, role: { not: GUEST_ROLE } },
     select: {
       organizationId: true,
-      organization: { select: { members: { select: { userId: true } } } },
+      organization: { select: { members: { select: { userId: true, role: true } } } },
     },
   });
   return memberships
-    .filter(({ organization }) => organization.members.every((member) => member.userId === userId))
+    .filter(({ organization }) =>
+      organization.members.every(
+        (member) => member.userId === userId || member.role === GUEST_ROLE,
+      ),
+    )
     .map(({ organizationId }) => organizationId);
 }
 
 /**
- * Claim the spaces nobody else can use once this account is gone: every space of its personal
- * organizations, and spaces elsewhere where it is the only member. A claimed space refuses new
+ * Claim the spaces that go with this account: every space of its own organizations, shared ones
+ * included, and spaces elsewhere where it is the only member. A claimed space refuses new
  * content, so nobody who joins later can lose a bot to the teardown. A retry after a failed
  * deletion keeps every space this account already claimed, even one someone has since joined,
  * so the last step can release it. A space another deletion is still working on fails the
@@ -515,6 +664,9 @@ export async function claimSpacesLeavingWithAccount(
       OR: [
         { organizationId: { in: organizationIds } },
         { memberships: { some: { userId }, every: { userId } } },
+        // A Space they own elsewhere: claimed below only when no other full member shares it.
+        // One that keeps a full member is handed to them afterwards (prepareAccountDeletion).
+        { memberships: { some: { userId, role: "owner" } } },
         { deletionClaimId: claimId },
       ],
     },
@@ -554,6 +706,11 @@ export type SpaceDeletionTakeover = {
   deletingAt: Date | null;
 };
 
+/** Guests joined through an invite and leave with the Space, so they never keep it alive. */
+function otherNonGuests(spaceId: string, userId: string): Prisma.SpaceMemberWhereInput {
+  return { spaceId, userId: { not: userId }, member: { role: { not: GUEST_ROLE } } };
+}
+
 /**
  * Claims a Space for a whole-account or whole-organization deletion, keeping a claim it already
  * holds. Not claimed when the Space is gone or, with `soleMemberId`, someone else belongs to it.
@@ -572,9 +729,7 @@ export async function claimSpaceForDeletion(
   if (!space) return { claimed: false };
   if (space.deletionClaimId === claimId) return { claimed: true, tookOver: null };
   if (soleMemberId) {
-    const others = await tx.spaceMember.count({
-      where: { spaceId, userId: { not: soleMemberId } },
-    });
+    const others = await tx.spaceMember.count({ where: otherNonGuests(spaceId, soleMemberId) });
     if (others > 0) return { claimed: false };
   }
   const stale = new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS);
@@ -608,9 +763,7 @@ export async function deleteClaimedSpace(
       async (tx) => {
         await lockSpaceDeletion(tx, spaceId);
         const [others, remainingBots, remainingComputers, artifacts] = await Promise.all([
-          soleMemberId
-            ? tx.spaceMember.count({ where: { spaceId, userId: { not: soleMemberId } } })
-            : 0,
+          soleMemberId ? tx.spaceMember.count({ where: otherNonGuests(spaceId, soleMemberId) }) : 0,
           tx.bot.count({ where: { spaceId } }),
           tx.computer.count({ where: { spaceId } }),
           tx.artifact.findMany({ where: { spaceId }, select: { storageKey: true } }),
@@ -624,6 +777,7 @@ export async function deleteClaimedSpace(
         }
         // Teardown was cut short; deleting again finishes it.
         if (remainingBots > 0 || remainingComputers > 0) throw new SpaceDeletionInProgressError();
+        await rehomeMemberItems(tx, spaceId);
         // The page links' tokens go with the Space; the caller removes them from the store.
         const pageShareSecrets = await tx.secret.findMany({
           where: { pageShare: { is: { spaceId } } },

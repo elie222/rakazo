@@ -716,6 +716,7 @@ export function mcpRoutes(ctx: RouterContext) {
           return { ok: true as const };
         }),
       },
+      // Any bot in the space can use the member's own servers; servers and assignments stay personal.
       assignments: {
         all: authed.mcp.assignments.all.handler(async ({ context }) => {
           const rows = await deps.prisma.botMcpServer.findMany({
@@ -734,7 +735,6 @@ export function mcpRoutes(ctx: RouterContext) {
             where: {
               id: input.botId,
               spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
             },
             select: { id: true },
           });
@@ -767,7 +767,6 @@ export function mcpRoutes(ctx: RouterContext) {
                   where: {
                     id: input.botId,
                     spaceId: context.actor.spaceId,
-                    userId: context.actor.userId,
                   },
                   select: { id: true },
                 }),
@@ -831,7 +830,6 @@ export function mcpRoutes(ctx: RouterContext) {
               where: {
                 id: input.botId,
                 spaceId: context.actor.spaceId,
-                userId: context.actor.userId,
               },
               select: { id: true },
             });

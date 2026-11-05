@@ -4,8 +4,14 @@ import path from "node:path";
 import type { ArtifactStore, JobPublisher } from "@rakazo/adapter-kit";
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
-import { asSystem, createDb, runAsSystem, SPACE_DELETION_CLAIM_TIMEOUT_MS } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import {
+  asSystem,
+  createDb,
+  createThreadEvents,
+  runAsSystem,
+  SPACE_DELETION_CLAIM_TIMEOUT_MS,
+} from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { deleteAccountContent } from "./account-deletion.js";
 import { createBillingService } from "./billing.js";
@@ -113,7 +119,11 @@ describePostgres("account deletion billing ordering (PostgreSQL)", () => {
       artifacts: { remove: vi.fn() } as unknown as ArtifactStore,
       dataDir: root,
       billing,
-    } as unknown as SpaceDeletionDeps & { billing: ReturnType<typeof createBillingService> };
+      events: createThreadEvents(prisma),
+    } as unknown as SpaceDeletionDeps & {
+      billing: ReturnType<typeof createBillingService>;
+      events: ThreadEvents;
+    };
   }
 
   it("refuses a checkout opened while the account's billing cancellation is still running", async () => {

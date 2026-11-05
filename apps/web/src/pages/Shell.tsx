@@ -18,6 +18,7 @@ import {
   isRunWorking,
   memberName,
   newClientId,
+  otherAuthor,
 } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
@@ -718,7 +719,9 @@ function SpaceShell() {
 
   const replyTargetName = composer.replyTarget
     ? composer.replyTarget.role === "user"
-      ? (channelMessageSender(composer.replyTarget.blocks) ?? t`You`)
+      ? (otherAuthor(composer.replyTarget.author, userId)?.name ??
+        channelMessageSender(composer.replyTarget.blocks) ??
+        t`You`)
       : (resolveTranscriptMemberName(composer.replyTarget.botId) ?? active?.name ?? t`Bot`)
     : undefined;
   useRightPanelRestore({
@@ -942,6 +945,16 @@ function SpaceShell() {
     await refreshBots(true);
   }
 
+  async function leftSpace(spaceId: string, activeSpaceId: string) {
+    const effectiveSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId;
+    // Leaving the open space changes the auth boundary, so reload like a space switch.
+    if (effectiveSpaceId === spaceId && selectSpace(activeSpaceId)) {
+      window.location.assign("/app");
+      return;
+    }
+    await refreshBots(true);
+  }
+
   function openCreatedBot(bot: Bot) {
     roster.addCreatedBot(bot);
     navigate(`/app/${bot.id}`);
@@ -1131,6 +1144,7 @@ function SpaceShell() {
           ) : (
             <Transcript
               key={activeSnapshot?.threadId}
+              meId={userId}
               scrollRef={thread.messageScroll}
               scrollRequest={scrollRequest}
               onScrollRequestHandled={clearScrollRequest}
@@ -1386,6 +1400,7 @@ function SpaceShell() {
           spaces={spaces}
           renameSpace={renameSpace}
           removeSpace={removeSpace}
+          leftSpace={leftSpace}
           refreshSpaces={() => refreshBots()}
           openAgentImport={() => setPanel("import-agent")}
           alive={alive}

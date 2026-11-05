@@ -324,6 +324,14 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Always allow this tool": "始终允许此工具",
   "Always allow {site}": "始终允许 {site}",
   "Replaces the login saved for {site}": "替换为 {site} 保存的登录信息",
+  "Cancel open invites": "取消未使用的邀请",
+  "Could not cancel invites": "无法取消邀请",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "此机器人空间中的每个人都能阅读它从 {app} 收到的聊天。",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "你登录的网站会为此空间中的每个人保持登录",
+  "The bot's browser stays signed in for everyone in this space":
+    "机器人的浏览器会为此空间中的每个人保持登录",
   "Always allowed": "已始终允许",
   "Android blocked notifications.": "Android 已阻止通知。",
   Answer: "接听",
@@ -1189,6 +1197,13 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{count} need attention": "{count} 个需要处理",
   "{label}, above": "{label}，上方",
   "{label}, below": "{label}，下方",
+  Invite: "邀请",
+  "Leave space": "退出空间",
+  "Leave {name}?": "退出 {name}？",
+  "Could not load members": "无法加载成员",
+  "Could not create invite link": "无法创建邀请链接",
+  "Could not remove member": "无法移除成员",
+  "Could not leave space": "无法退出空间",
   Work: "工作",
   Both: "两者都有",
   "How will you use Rakazo?": "你会如何使用 Rakazo？",

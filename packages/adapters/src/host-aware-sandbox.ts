@@ -107,6 +107,7 @@ async function createBaseRunSandbox(
               controlFence: { increment: 1 },
               controlHolder: "none",
               controlLeaseId: null,
+              controlUserId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
               controlRunId: null,

@@ -190,6 +190,11 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
               {destination}
             </div>
           ) : null}
+          {block.sharedBrowser && !ownerOnly && !answered ? (
+            <div className="text-body-sm text-muted-foreground">
+              {t`The bot's browser stays signed in for everyone in this space`}
+            </div>
+          ) : null}
           {block.replaces && !ownerOnly && !answered ? (
             <div className="break-all text-body-sm text-muted-foreground">
               {t`Replaces the login saved for ${block.replaces.origin}`}

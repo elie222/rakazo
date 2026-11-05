@@ -14,11 +14,12 @@ import {
   wallClock,
   zonedDateTime,
 } from "@rakazo/core";
-import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { runAsSystemInTransaction } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 import { localDateTime } from "./current-time.js";
+import { finishRoutineHandover } from "./routine-handover.js";
 import { validateRoutineWatch } from "./routine-watch.js";
 
 export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
@@ -664,9 +665,9 @@ async function createWatchFromTool(
   const parsed = scheduleWatch(input.schedule);
   if (!parsed.success) return { error: parsed.error };
   try {
-    // Match routine editing's owner/space boundary before creating unattended work.
+    // Match routine editing's space boundary before creating unattended work.
     const bot = await deps.prisma.bot.findFirst({
-      where: { id: input.botId, spaceId: input.spaceId, userId: input.userId, archivedAt: null },
+      where: { id: input.botId, spaceId: input.spaceId, archivedAt: null },
       include: { computer: true },
     });
     if (!bot) return { error: "Bot not found." };
@@ -729,16 +730,15 @@ async function createWatchFromTool(
   };
 }
 
-/** List bot routines, optionally restricted to the current group thread. */
+/** List bot routines (every member's), optionally restricted to the current group thread. */
 export async function listSchedulesFromTool(
   deps: Pick<ScheduleToolDeps, "prisma">,
-  input: { spaceId: string; botId: string; userId: string; threadId?: string },
+  input: { spaceId: string; botId: string; threadId?: string },
 ) {
   const rows = await deps.prisma.routine.findMany({
     where: {
       spaceId: input.spaceId,
       botId: input.botId,
-      userId: input.userId,
       ...(input.threadId ? { threadId: input.threadId } : {}),
     },
     orderBy: { createdAt: "desc" },
@@ -818,7 +818,6 @@ export async function updateScheduleFromTool(
   const scope = {
     spaceId: input.spaceId,
     botId: input.botId,
-    userId: input.userId,
     ...(input.scopeThreadId ? { threadId: input.scopeThreadId } : {}),
   };
   const existing = await deps.prisma.routine.findFirst({
@@ -892,11 +891,17 @@ export async function updateScheduleFromTool(
   const { count } = await deps.prisma.routine.updateMany({
     where: {
       ...scope,
+      userId: existing.userId,
       id: existing.id,
       bot: { archivedAt: null },
       ...(timingChanged ? { active: existing.active, nextRunAt: existing.nextRunAt } : {}),
     },
     data: {
+      // A routine runs with its owner's accounts, so whoever edits it takes it over, and a watch
+      // starts a fresh baseline from the new owner's accounts.
+      ...(existing.userId === input.userId
+        ? {}
+        : { userId: input.userId, watchState: Prisma.DbNull }),
       ...(name === undefined ? {} : { name }),
       ...(prompt === undefined ? {} : { prompt }),
       ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
@@ -913,6 +918,13 @@ export async function updateScheduleFromTool(
   if (timingChanged) {
     if (active && nextRunAt) await deps.jobs.enqueue(routineWakeupJob(existing.id, nextRunAt));
     else if (existing.active) await deps.jobs.cancel(routineJobKey(existing.id));
+  }
+  if (existing.userId !== input.userId) {
+    await finishRoutineHandover(deps, {
+      id: existing.id,
+      previousUserId: existing.userId,
+      userId: input.userId,
+    });
   }
 
   try {
@@ -946,7 +958,6 @@ export async function cancelScheduleFromTool(
   input: {
     spaceId: string;
     botId: string;
-    userId: string;
     threadId?: string;
     routineId?: string;
     name?: string;
@@ -961,7 +972,6 @@ export async function cancelScheduleFromTool(
   const scope = {
     spaceId: input.spaceId,
     botId: input.botId,
-    userId: input.userId,
     ...(input.threadId ? { threadId: input.threadId } : {}),
   };
   const existing = await deps.prisma.routine.findFirst({

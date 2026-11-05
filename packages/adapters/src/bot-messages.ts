@@ -100,7 +100,7 @@ export async function messageBot(
   const hop = nextBotMessageHop(sourceContext?.hop);
 
   const candidates = await deps.prisma.bot.findMany({
-    where: { spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+    where: { spaceId: run.spaceId, archivedAt: null },
     select: { id: true, name: true, thread: { select: { id: true } } },
   });
   const target = resolveBotAddress(candidates, {
@@ -204,7 +204,6 @@ export async function messageBot(
           where: {
             id: target.id,
             spaceId: run.spaceId,
-            userId: run.userId,
             archivedAt: null,
           },
           select: { id: true },
@@ -373,10 +372,10 @@ export async function returnBotMessageOutcome(
     await markBotOutcomeReturned(deps.prisma, run.id);
     return true;
   }
-  // messageBot reaches only active bots of this space and user, so an archived or deleted
+  // messageBot reaches only active bots of this space, so an archived or deleted
   // requester can never take the outcome. Handled: nothing is left to deliver.
   const requester = await deps.prisma.bot.findFirst({
-    where: { id: source.fromBotId, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+    where: { id: source.fromBotId, spaceId: run.spaceId, archivedAt: null },
     select: { id: true },
   });
   if (!requester) {

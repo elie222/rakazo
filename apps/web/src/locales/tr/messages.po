@@ -222,6 +222,10 @@ msgstr "{hiddenSelectedCount, plural, one {# seçili model aramanla gizleniyor.}
 msgid "{hours}h ago"
 msgstr "{hours} sa önce"
 
+#: src/pages/Invite.tsx
+msgid "{inviterName} invited you"
+msgstr ""
+
 #: src/components/markdown-copy.tsx
 msgid "{label}, empty"
 msgstr "{label}, boş"
@@ -527,6 +531,10 @@ msgstr "{name} için hesap menüsü"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Actions for {0}"
 msgstr "{0} için işlemler"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Actions for {name}"
+msgstr ""
 
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Actions for space"
@@ -1186,6 +1194,10 @@ msgstr "Botlar"
 msgid "Bots and browser automation"
 msgstr "Botlar ve tarayıcı otomasyonu"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "Bots use the accounts of whoever messages them"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
 msgstr "Kendi bilgisayarı ve tarayıcısı olan botlar"
@@ -1255,6 +1267,7 @@ msgstr "Görselleri okuyamaz"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -1282,6 +1295,10 @@ msgstr "Yeni botu iptal et"
 #: src/pages/GroupPanel.tsx
 msgid "Cancel new group"
 msgstr "Yeni grubu iptal et"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Cancel open invites"
+msgstr ""
 
 #: src/pages/shell/chat-context.tsx
 msgid "Cancel reply"
@@ -1900,6 +1917,10 @@ msgstr "Kodu kopyala"
 msgid "Copy diagram source"
 msgstr "Diyagram kaynağını kopyala"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Copy invite link"
+msgstr ""
+
 #: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
@@ -1941,6 +1962,10 @@ msgstr "Bu sunucu onaylanamadı"
 #: src/pages/shell/message-cards.tsx
 msgid "Could not authorize this app"
 msgstr "Bu uygulama yetkilendirilemedi"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not cancel invites"
+msgstr ""
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Could not change"
@@ -2027,6 +2052,10 @@ msgstr "Bot oluşturulamadı"
 #: src/pages/GroupPanel.tsx
 msgid "Could not create group"
 msgstr "Grup oluşturulamadı"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not create invite link"
+msgstr ""
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
@@ -2125,6 +2154,10 @@ msgstr "Bağlayıcı kurulamadı"
 msgid "Could not install plugin"
 msgstr "Eklenti kurulamadı"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not leave space"
+msgstr ""
+
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
 #: src/lib/user-devices.ts
@@ -2168,6 +2201,10 @@ msgstr "Entegrasyonlar yüklenemedi"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load MCP servers"
 msgstr "MCP sunucuları yüklenemedi"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not load members"
+msgstr ""
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
@@ -2258,6 +2295,10 @@ msgstr "Kaldırılamadı"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not remove connector"
 msgstr "Bağlayıcı kaldırılamadı"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not remove member"
+msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not remove plugin"
@@ -3131,6 +3172,14 @@ msgstr "Her ay"
 msgid "Every week"
 msgstr "Her hafta"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "Everyone here sees its chats, bots and memory"
+msgstr ""
+
+#: src/pages/MessagingSettingsPanel.tsx
+msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
 msgstr "Executor belirteci"
@@ -3683,6 +3732,10 @@ msgstr "Aralık birimi"
 msgid "Invalid code"
 msgstr "Geçersiz kod"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite"
+msgstr ""
+
 #: src/pages/shell/chat-header.tsx
 msgid "Invite a friend"
 msgstr "Bir arkadaşını davet et"
@@ -3692,8 +3745,13 @@ msgid "Invite friends"
 msgstr "Arkadaşlarını davet et"
 
 #: src/components/InviteDialog.tsx
+#: src/components/SpaceMembersSettings.tsx
 msgid "Invite link"
 msgstr "Davet bağlantısı"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite link copied"
+msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3719,6 +3777,14 @@ msgstr "Sohbeti, dosyaları ve rutinleri kalıcı olarak silinecek. Oluşturduğ
 #: src/components/pages/PagesList.tsx
 msgid "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
 msgstr "Paylaşılan bağlantısı çalışmayı durdurur ve sohbetteki kartları silinmiş olarak görünür. Bu işlem geri alınamaz."
+
+#: src/pages/Invite.tsx
+msgid "Join"
+msgstr ""
+
+#: src/pages/Invite.tsx
+msgid "Join {spaceName}"
+msgstr ""
 
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
@@ -3776,9 +3842,19 @@ msgstr "Son kontrol {0}: değişiklik yok"
 msgid "Later"
 msgstr "Daha sonra"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr "Ayrıl"
+
+#. placeholder {0}: space.name
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave {0}?"
+msgstr ""
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave space"
+msgstr ""
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
@@ -3870,9 +3946,11 @@ msgstr "Ses sağlayıcıları yükleniyor…"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/Invite.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4028,6 +4106,10 @@ msgstr "Orta"
 #: src/lib/identity-display.ts
 msgid "Member"
 msgstr "Üye"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Members"
+msgstr ""
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -4224,6 +4306,7 @@ msgstr "Aylık krediler"
 msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "Aylık krediler yenilemede sona erer. Ek krediler sona ermez."
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "More"
@@ -4743,6 +4826,7 @@ msgid "Open navigation"
 msgstr "Gezinmeyi aç"
 
 #: src/components/pages/PublicPageShell.tsx
+#: src/pages/Invite.tsx
 #: src/pages/SharedPage.tsx
 msgid "Open Rakazo"
 msgstr "Rakazo'yu aç"
@@ -4812,6 +4896,7 @@ msgid "Output"
 msgstr "Çıktı"
 
 #: src/components/pages/SharePopover.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -5315,6 +5400,7 @@ msgstr "Yeniden yükle"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
@@ -5337,6 +5423,10 @@ msgstr "{0} kaldır"
 #: src/pages/GroupPanel.tsx
 msgid "Remove {0} from the group"
 msgstr "{0} kişisini gruptan çıkar"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Remove {memberName}?"
+msgstr ""
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
@@ -5538,6 +5628,7 @@ msgstr "Çalışma alanın geri yükleniyor"
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
+#: src/pages/Invite.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -6078,6 +6169,10 @@ msgstr "Oturum açma iptal edildi. Tekrar dene."
 msgid "Site"
 msgstr "Site"
 
+#: src/pages/shell/computer-overlay.tsx
+msgid "Sites you sign in to stay signed in for everyone in this space"
+msgstr ""
+
 #. placeholder {0}: skill.name
 #: src/pages/shell/composer.tsx
 msgid "Skill {0}"
@@ -6451,6 +6546,10 @@ msgstr "Test ediliyor…"
 msgid "The bot can use the file but won't see the picture."
 msgstr "Bot dosyayı kullanabilir ama resmi göremez."
 
+#: src/components/SecretAskCard.tsx
+msgid "The bot's browser stays signed in for everyone in this space"
+msgstr ""
+
 #: src/lib/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
 msgstr "Tarayıcı mikrofonu sürekli bırakıyor. Tekrar denemek için dikteyi yeniden başlat."
@@ -6609,6 +6708,10 @@ msgstr "Bu dosya geçerli UTF-8 metni değil."
 #: src/lib/agent-import-errors.ts
 msgid "This import was already used. Choose the files again."
 msgstr "Bu içe aktarma zaten kullanıldı. Dosyaları yeniden seç."
+
+#: src/pages/Invite.tsx
+msgid "This invite link is no longer valid."
+msgstr ""
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -7351,6 +7454,10 @@ msgstr "OpenAI sağlayıcınız"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "OpenRouter sağlayıcınız"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Your other spaces stay private"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."

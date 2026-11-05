@@ -795,6 +795,14 @@ export const DE_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Dieses Tool immer erlauben",
   "Always allow {site}": "{site} immer erlauben",
   "Replaces the login saved for {site}": "Ersetzt die für {site} gespeicherte Anmeldung",
+  "Cancel open invites": "Offene Einladungen widerrufen",
+  "Could not cancel invites": "Einladungen konnten nicht widerrufen werden",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "Alle im Bereich dieses Bots können die Chats lesen, die er über {app} erhält.",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "Websites, bei denen du dich anmeldest, bleiben für alle in diesem Bereich angemeldet",
+  "The bot's browser stays signed in for everyone in this space":
+    "Der Browser des Bots bleibt für alle in diesem Bereich angemeldet",
   "Could not submit answer": "Antwort konnte nicht gesendet werden",
   Deny: "Ablehnen",
   "Please try again.": "Versuche es erneut.",
@@ -1186,6 +1194,13 @@ export const DE_MESSAGES: Record<string, string> = {
   "{count} need attention": "{count} brauchen Aufmerksamkeit",
   "{label}, above": "{label}, oben",
   "{label}, below": "{label}, unten",
+  Invite: "Einladen",
+  "Leave space": "Space verlassen",
+  "Leave {name}?": "{name} verlassen?",
+  "Could not load members": "Mitglieder konnten nicht geladen werden",
+  "Could not create invite link": "Einladungslink konnte nicht erstellt werden",
+  "Could not remove member": "Mitglied konnte nicht entfernt werden",
+  "Could not leave space": "Space konnte nicht verlassen werden",
   Work: "Arbeit",
   Both: "Beides",
   "How will you use Rakazo?": "Wie wirst du Rakazo nutzen?",

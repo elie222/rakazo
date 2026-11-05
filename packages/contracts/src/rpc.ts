@@ -135,6 +135,9 @@ import {
   SignupSurveySchema,
   SkillPlaybookSchema,
   SpaceAvailabilitySchema,
+  SpaceInviteLinkSchema,
+  SpaceInvitePreviewSchema,
+  SpaceMembersSchema,
   SpaceMemoryConfigSchema,
   SpaceNavigationSchema,
   SpaceSchema,
@@ -395,6 +398,29 @@ export const appContract = {
     remove: oc
       .input(z.object({ spaceId: Id }))
       .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
+    members: {
+      list: oc.input(z.object({ spaceId: Id })).output(SpaceMembersSchema),
+      /** Owner only. The removed person's bots, chats and routines stay with the space. */
+      remove: oc
+        .input(z.object({ spaceId: Id, userId: Id }))
+        .output(z.object({ ok: z.literal(true) })),
+      /** Members only; an owner deletes the space instead. */
+      leave: oc
+        .input(z.object({ spaceId: Id }))
+        .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
+    },
+    invites: {
+      /** Owner only. A new single-use link each call. */
+      create: oc.input(z.object({ spaceId: Id })).output(SpaceInviteLinkSchema),
+      preview: oc
+        .input(z.object({ token: z.string().min(1).max(200) }))
+        .output(SpaceInvitePreviewSchema),
+      accept: oc
+        .input(z.object({ token: z.string().min(1).max(200) }))
+        .output(z.object({ spaceId: Id })),
+      /** Owner only. Every unused link stops working, for one that went to the wrong place. */
+      cancel: oc.input(z.object({ spaceId: Id })).output(z.object({ ok: z.literal(true) })),
+    },
   },
   organizations: {
     list: oc.output(OrganizationListSchema),
@@ -1212,9 +1238,14 @@ export const appContract = {
     status: oc.output(MessagingStatusSchema),
     link: {
       /** Issue a short-lived code the user sends to the line from a chat app. */
-      start: oc
-        .input(z.object({ botId: Id }))
-        .output(z.object({ code: z.string(), expiresAt: z.string() })),
+      start: oc.input(z.object({ botId: Id })).output(
+        z.object({
+          code: z.string(),
+          expiresAt: z.string(),
+          /** Others share the bot's Space, so they can read the chats this link brings in. */
+          shared: z.boolean().optional(),
+        }),
+      ),
     },
     identities: {
       setBot: oc

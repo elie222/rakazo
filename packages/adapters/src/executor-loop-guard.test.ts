@@ -174,6 +174,7 @@ async function runLoop(
   };
   const prisma = {
     externalEffect,
+    spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     $transaction: async (work: unknown): Promise<unknown> =>
       typeof work === "function" ? work(proxied) : Promise.all(work as unknown[]),
     run: {

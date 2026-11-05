@@ -792,6 +792,14 @@ export const NL_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Deze tool altijd toestaan",
   "Always allow {site}": "{site} altijd toestaan",
   "Replaces the login saved for {site}": "Vervangt de opgeslagen login voor {site}",
+  "Cancel open invites": "Openstaande uitnodigingen intrekken",
+  "Could not cancel invites": "Uitnodigingen konden niet worden ingetrokken",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "Iedereen in de ruimte van deze bot kan de chats lezen die hij via {app} krijgt.",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "Sites waarop je inlogt, blijven ingelogd voor iedereen in deze ruimte",
+  "The bot's browser stays signed in for everyone in this space":
+    "De browser van de bot blijft ingelogd voor iedereen in deze ruimte",
   "Could not submit answer": "Antwoord insturen mislukt",
   Deny: "Weigeren",
   "Please try again.": "Probeer het opnieuw.",
@@ -1178,6 +1186,13 @@ export const NL_MESSAGES: Record<string, string> = {
   "{count} need attention": "{count} vragen aandacht",
   "{label}, above": "{label}, boven",
   "{label}, below": "{label}, onder",
+  Invite: "Uitnodigen",
+  "Leave space": "Space verlaten",
+  "Leave {name}?": "{name} verlaten?",
+  "Could not load members": "Kan leden niet laden",
+  "Could not create invite link": "Kan uitnodigingslink niet maken",
+  "Could not remove member": "Kan lid niet verwijderen",
+  "Could not leave space": "Kan space niet verlaten",
   Work: "Werk",
   Both: "Allebei",
   "How will you use Rakazo?": "Hoe ga je Rakazo gebruiken?",

@@ -321,6 +321,7 @@ function fixture({
     | undefined;
   const spending = fakeSpendingPrisma(spendingLimit);
   const prisma = {
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     spendingLimit: spending.client.spendingLimit,
     payment: spending.client.payment,
     user: { findUnique: vi.fn(async () => null) },

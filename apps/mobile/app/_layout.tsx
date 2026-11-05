@@ -476,6 +476,15 @@ function LayoutContent() {
                       }}
                     />
                     <Stack.Screen
+                      name="space-members"
+                      options={{
+                        title: t("Members"),
+                        presentation: "modal",
+                        gestureEnabled: true,
+                        headerBackVisible: false,
+                      }}
+                    />
+                    <Stack.Screen
                       name="new-organization"
                       options={{
                         headerShown: false,

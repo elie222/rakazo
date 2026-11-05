@@ -351,6 +351,14 @@ export const RU_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Всегда разрешать этот инструмент",
   "Always allow {site}": "Всегда разрешать {site}",
   "Replaces the login saved for {site}": "Заменяет сохранённый вход для {site}",
+  "Cancel open invites": "Отменить открытые приглашения",
+  "Could not cancel invites": "Не удалось отменить приглашения",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "Все в пространстве этого бота могут читать чаты, которые он получает из {app}.",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "Сайты, на которых вы входите, остаются в аккаунте для всех в этом пространстве",
+  "The bot's browser stays signed in for everyone in this space":
+    "Браузер бота остаётся в аккаунте для всех в этом пространстве",
   "Always allowed": "Всегда разрешено",
   "Android blocked notifications.": "Android заблокировал уведомления.",
   Answer: "Ответить",
@@ -1217,6 +1225,13 @@ export const RU_MESSAGES: Record<string, string> = {
   "{count} need attention": "Требуют внимания: {count}",
   "{label}, above": "{label}, выше",
   "{label}, below": "{label}, ниже",
+  Invite: "Пригласить",
+  "Leave space": "Покинуть пространство",
+  "Leave {name}?": "Покинуть {name}?",
+  "Could not load members": "Не удалось загрузить участников",
+  "Could not create invite link": "Не удалось создать ссылку-приглашение",
+  "Could not remove member": "Не удалось удалить участника",
+  "Could not leave space": "Не удалось покинуть пространство",
   Work: "Работа",
   Both: "И то, и другое",
   "How will you use Rakazo?": "Как вы будете использовать Rakazo?",

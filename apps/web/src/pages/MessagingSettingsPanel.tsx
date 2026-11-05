@@ -46,6 +46,7 @@ export function MessagingSettingsPanel() {
   const [linkRequest, setLinkRequest] = useState<{
     code: string;
     expiresAt: string;
+    shared?: boolean;
     botId: string;
     provider: string;
   } | null>(null);
@@ -449,6 +450,11 @@ export function MessagingSettingsPanel() {
                 within 10 minutes.
               </Trans>
             )}
+          </p>
+        ) : null}
+        {linkCode && linkRequest?.shared ? (
+          <p className="mt-1 text-body-sm text-muted-foreground">
+            <Trans>Everyone in this bot's space can read the chats it gets from {linkApp}.</Trans>
           </p>
         ) : null}
       </section>

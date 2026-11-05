@@ -275,6 +275,14 @@ it("starts an ID and a phone visible and a PIN hidden, and the person can flip e
   expect(dialog()).toBeNull();
 });
 
+it("says the bot's browser stays signed in for everyone in a shared space", async () => {
+  const line = "The bot's browser stays signed in for everyone in this space";
+  await render({ ...loginCard, sharedBrowser: true });
+  expect(container.textContent).toContain(line);
+  await render(loginCard);
+  expect(container.textContent).not.toContain(line);
+});
+
 it("starts every field hidden when no label names an identifier", async () => {
   await render({ ...loginCard, loginFields: ["Memorable word", "Card number"] });
   await openEditor();
