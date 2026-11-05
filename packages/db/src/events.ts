@@ -1446,7 +1446,7 @@ export async function pauseRunForTakeover(
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
     const run = await tx.run.findUnique({
       where: { id: input.runId },
-      select: { checkpoint: true },
+      select: { checkpoint: true, userId: true },
     });
     const released = run?.checkpoint === "takeover" || run?.checkpoint === "takeover-skipped";
     const paused = await tx.run.updateMany({
@@ -1497,6 +1497,8 @@ export async function pauseRunForTakeover(
         controlBotId: true,
         controlLeaseId: true,
         controlLeaseExpiresAt: true,
+        controlUserId: true,
+        userId: true,
       },
     });
     const activeUserLease = Boolean(
@@ -1510,9 +1512,14 @@ export async function pauseRunForTakeover(
     // this run to that lease: release validates controlBotId and could clear the binding without
     // resuming the waiting run. The requesting bot's takeover flow binds it after revocation.
     // Otherwise clear stale control, but bind controlRunId so takeoverRequested is true.
-    const retainControl = Boolean(activeUserLease && computer?.controlBotId === input.botId);
+    // In a shared Space the lease must also be this run's person's: another member's stays
+    // theirs, like another bot's, and never answers this run.
+    const leaseHolder = computer?.controlUserId || computer?.userId;
+    const retainControl = Boolean(
+      activeUserLease && computer?.controlBotId === input.botId && leaseHolder === run?.userId,
+    );
     const preserveForeignLease = Boolean(
-      activeUserLease && computer?.controlBotId && computer.controlBotId !== input.botId,
+      activeUserLease && computer?.controlBotId && !retainControl,
     );
     const marked = await tx.computer.updateMany({
       where: { id: input.computerId, spaceId: input.spaceId },

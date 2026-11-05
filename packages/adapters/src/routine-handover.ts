@@ -12,7 +12,13 @@ export async function finishRoutineHandover(
   routine: { id: string; previousUserId: string; userId: string },
 ): Promise<void> {
   const moved = await deps.prisma.run.updateManyAndReturn({
-    where: { routineId: routine.id, userId: routine.previousUserId, status: "queued" },
+    // Only while the routine is still theirs: a later edit's handover wins over a late one.
+    where: {
+      routineId: routine.id,
+      userId: routine.previousUserId,
+      status: "queued",
+      routine: { userId: routine.userId },
+    },
     data: { userId: routine.userId },
     select: { taskId: true },
   });

@@ -7636,7 +7636,12 @@ describe("routines.update", () => {
     // An occurrence already queued runs with the new owner's accounts.
     expect(moveQueued).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { routineId: routine.id, userId: "user-2", status: "queued" },
+        where: {
+          routineId: routine.id,
+          userId: "user-2",
+          status: "queued",
+          routine: { userId: "user-1" },
+        },
         data: { userId: "user-1" },
       }),
     );

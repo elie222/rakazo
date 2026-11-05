@@ -326,7 +326,7 @@ export async function stopTeachingSession(
       current.botId,
       parseRecording(current.recording).controlLeaseId,
     );
-    return mapTaughtSkill(current);
+    return skillFor(actor, current);
   }
   if (current.status !== "recording" && current.status !== "drafting") {
     throw new ORPCError("BAD_REQUEST", { message: "Teaching session is not active" });
@@ -342,7 +342,18 @@ export async function stopTeachingSession(
       : undefined;
   const finalized = await completeTeachingSession(deps, actor, skillId, "stopped", stopSnapshot);
   await deps.jobs.cancel(skillTeachingExpireJobKey(current.id));
-  return mapTaughtSkill(finalized);
+  return skillFor(actor, finalized);
+}
+
+/**
+ * A skill is shared with the space, but its raw recording (keystrokes, clipboard text) stays with
+ * the person who taught it; everyone else gets the playbook.
+ */
+function skillFor(actor: Actor, row: TaughtSkillRow): TaughtSkill {
+  const skill = mapTaughtSkill(row);
+  return row.userId === actor.userId
+    ? skill
+    : { ...skill, recording: { events: [], snapshots: [] } };
 }
 
 export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
@@ -352,14 +363,14 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         where: { spaceId: actor.spaceId, botId },
         orderBy: { updatedAt: "desc" },
       });
-      return rows.map(mapTaughtSkill);
+      return rows.map((row) => skillFor(actor, row));
     },
 
     async get(actor: Actor, skillId: string): Promise<TaughtSkill> {
       const row = await getOwnedSkill(deps, actor, skillId);
       await expireTeachingSessionIfNeeded(deps, row.id);
       const current = await deps.prisma.taughtSkill.findUniqueOrThrow({ where: { id: skillId } });
-      return mapTaughtSkill(current);
+      return skillFor(actor, current);
     },
 
     async start(actor: Actor, botId: string, goal: string): Promise<TaughtSkill> {
@@ -436,7 +447,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           payload: { skillId: row.id, goal },
         });
       }
-      return mapTaughtSkill(withSnapshot);
+      return skillFor(actor, withSnapshot);
     },
 
     async appendEvent(
@@ -454,7 +465,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       if (updated.status !== "recording") {
         throw new ORPCError("BAD_REQUEST", { message: "Teaching session is not recording" });
       }
-      return mapTaughtSkill(updated);
+      return skillFor(actor, updated);
     },
 
     async snapshot(actor: Actor, skillId: string): Promise<TaughtSkill> {
@@ -470,7 +481,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       });
       if (!bot) throw new IsolationError();
       const updated = await captureTeachingSnapshot(deps, actor, bot, current);
-      return mapTaughtSkill(updated);
+      return skillFor(actor, updated);
     },
 
     stop: (actor: Actor, skillId: string) => stopTeachingSession(deps, actor, skillId),
@@ -499,7 +510,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         playbook: parsePlaybook(row.playbook),
         status: row.status === "saved" ? "saved" : "draft",
       });
-      return mapTaughtSkill(row);
+      return skillFor(actor, row);
     },
 
     async save(actor: Actor, skillId: string, name?: string): Promise<TaughtSkill> {
@@ -533,7 +544,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           payload: { skillId: row.id, name: row.name },
         });
       }
-      return mapTaughtSkill(row);
+      return skillFor(actor, row);
     },
 
     async testRun(actor: Actor, skillId: string, prompt?: string): Promise<{ runId: string }> {

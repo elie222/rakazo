@@ -1018,6 +1018,8 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     };
     const waiting = await queued("queued");
     const started = await queued("running");
+    // The owner edits it, which makes it theirs, and then the queued occurrence follows.
+    await system.routine.update({ where: { id: routine.id }, data: { userId: owner.id } });
 
     await runAsTenant({ spaceId: home, userId: owner.id }, () =>
       finishRoutineHandover(
@@ -1191,10 +1193,30 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     const bot = await system.bot.create({
       data: { spaceId: home, userId: owner.id, name: "Shopper", color: "test" },
     });
+    const typed = {
+      events: [{ kind: "key", at: "2026-11-05T12:00:00.000Z", text: "my-password" }],
+      snapshots: [],
+    };
     const recording = await system.taughtSkill.create({
-      data: { spaceId: home, botId: bot.id, userId: owner.id, goal: "Book", status: "recording" },
+      data: {
+        spaceId: home,
+        botId: bot.id,
+        userId: owner.id,
+        goal: "Book",
+        status: "recording",
+        recording: typed,
+      },
     });
     const asInvitee = inSpace(invitee.actor, home);
+    // The skill is shared, but what its teacher typed is not.
+    const listed = await call(asInvitee, "skills/list", { botId: bot.id });
+    expect(listed.status).toBe(200);
+    expect((listed.json as Array<{ recording: unknown }>)[0]?.recording).toEqual({
+      events: [],
+      snapshots: [],
+    });
+    const own = await call(inSpace(owner.actor, home), "skills/get", { skillId: recording.id });
+    expect((own.json as { recording: { events: unknown[] } }).recording.events).toHaveLength(1);
     await expect(call(asInvitee, "skills/stop", { skillId: recording.id })).resolves.toMatchObject({
       status: 404,
     });
