@@ -1083,7 +1083,7 @@ describe("model role lists", () => {
     mocks.backups = [model(2), model(3), model(4)];
     await renderModels();
     for (const [index, name] of ["Model 2", "Model 3", "Model 4"].entries()) {
-      const wrapper = rowButton("Main model", name).parentElement!;
+      const wrapper = rowButton("Main model", name).parentElement!.parentElement!;
       act(() =>
         mocks.layouts
           .get(wrapper)!
@@ -1095,7 +1095,7 @@ describe("model role lists", () => {
     const responder = mocks.responders.findLast((item) =>
       item.onMoveShouldSetPanResponderCapture(),
     )!;
-    return { responder, wrapper: button.parentElement! };
+    return { responder, wrapper: button.parentElement!.parentElement! };
   };
 
   it.each(["onTouchEnd", "onTouchCancel"] as const)(
@@ -1142,6 +1142,15 @@ describe("model role lists", () => {
     });
     expect(roleSaves()).toEqual([]);
     expect(responder.onMoveShouldSetPanResponderCapture()).toBe(false);
+  });
+
+  it("keeps the native menu outside the model picker's press target", async () => {
+    mocks.primary = model(1);
+    await renderModels();
+    const menu = section("Main model").querySelector('[data-menu="Model 1"]')!;
+    expect(menu.closest("button")).toBeNull();
+    act(() => rowButton("Main model", "Model 1").click());
+    expect(mocks.push).toHaveBeenCalledWith(expect.objectContaining({ pathname: "/model-picker" }));
   });
 
   it("numbers the main model and its fallbacks, then offers Add fallback", async () => {

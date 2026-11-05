@@ -528,7 +528,8 @@ export function ModelRoleSettings({
             }}
             onTouchCancel={() => endDrag(false)}
             {...(draggable ? dragResponder.panHandlers : null)}
-            style={
+            style={[
+              rowMenuStyles.row,
               dragging
                 ? {
                     transform: [{ translateY: drag?.dy ?? 0 }],
@@ -536,30 +537,30 @@ export function ModelRoleSettings({
                     elevation: 4,
                     opacity: 0.95,
                   }
-                : null
-            }
+                : null,
+            ]}
           >
             {markerAbove ? marker : null}
-            <SettingsRow
-              accessibilityRole="button"
-              leading={ordered ? number(index + offset) : undefined}
+            <View style={rowMenuStyles.content}>
+              <SettingsRow
+                accessibilityRole="button"
+                leading={ordered ? number(index + offset) : undefined}
+                title={name}
+                detail={detail}
+                disabled={busy}
+                onPress={() => pick(index)}
+                onLongPress={
+                  draggable ? (event) => grabRow(index, event.nativeEvent.pageY) : undefined
+                }
+                accessibilityActions={accessibilityActions}
+                onAccessibilityAction={({ nativeEvent }) => act(index, nativeEvent.actionName)}
+              />
+            </View>
+            <RowMenuButton
               title={name}
-              detail={detail}
+              actions={actions}
               disabled={busy}
-              onPress={() => pick(index)}
-              onLongPress={
-                draggable ? (event) => grabRow(index, event.nativeEvent.pageY) : undefined
-              }
-              accessibilityActions={accessibilityActions}
-              onAccessibilityAction={({ nativeEvent }) => act(index, nativeEvent.actionName)}
-              trailing={
-                <RowMenuButton
-                  title={name}
-                  actions={actions}
-                  disabled={busy}
-                  onAction={(id) => act(index, id)}
-                />
-              }
+              onAction={(id) => act(index, id)}
             />
             {markerBelow ? marker : null}
           </View>
@@ -672,8 +673,10 @@ export function RowMenu({
 
 const rowMenuStyles = StyleSheet.create({
   fullWidth: { width: "100%" },
-  button: { borderRadius: 18, overflow: "hidden" },
-  buttonInner: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+  row: { flexDirection: "row", alignItems: "center" },
+  content: { flex: 1 },
+  button: { borderRadius: 22, overflow: "hidden", marginEnd: 16 },
+  buttonInner: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
 });
 
 function createStyles() {
