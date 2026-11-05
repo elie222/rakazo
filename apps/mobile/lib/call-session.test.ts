@@ -36,7 +36,16 @@ vi.mock("react-native", () => ({
     },
   },
 }));
-vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
+const files = vi.hoisted(() => ({ base64: async () => "" }));
+vi.mock("expo-file-system", () => ({
+  File: class {
+    async base64() {
+      return files.base64();
+    }
+    delete() {}
+  },
+  Paths: {},
+}));
 vi.mock("./voice", () => ({
   createSpeechOwner: () => Symbol("SpeechOwner"),
   speakText: vi.fn(),
@@ -58,17 +67,19 @@ const audio = vi.hoisted(() => ({
   record: vi.fn(),
   release: vi.fn(),
   setAudioMode: vi.fn(),
+  status: {} as { metering?: number },
+  uri: null as string | null,
 }));
 const expoAudioMock = vi.hoisted(() => () => ({
   AudioModule: {
     requestRecordingPermissionsAsync: () => audio.permission,
     AudioRecorder: class {
-      uri = null;
+      uri = audio.uri;
       prepareToRecordAsync = () => audio.prepared;
       record = audio.record;
       stop = async () => undefined;
       release = audio.release;
-      getStatus = () => ({});
+      getStatus = () => audio.status;
     },
   },
   RecordingPresets: { HIGH_QUALITY: {} },
@@ -1492,6 +1503,63 @@ describe("mobile call session on a timer", () => {
     expect(vi.mocked(subscribeThread).mock.calls[1]?.[1]).toBe(7);
     vi.mocked(rpc).mockReset();
     vi.mocked(subscribeThread).mockReset();
+  });
+});
+
+// Kept above the hang-up describe: its audio-import test resets modules, and the
+// production recorder does not work in this file after that reset.
+describe("mobile call recording without metering", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    audio.permission = Promise.resolve({ granted: true });
+    audio.prepared = Promise.resolve();
+    audio.record.mockClear();
+    audio.release.mockClear();
+    audio.setAudioMode.mockClear();
+    // A healthy recorder that never reports a level: pure silence is indistinguishable.
+    audio.status = {};
+    audio.uri = "file://silence.m4a";
+    files.base64 = async () => "c2lsZW5jZQ==";
+  });
+  afterEach(() => {
+    endCall();
+    vi.useRealTimers();
+    audio.status = {};
+    audio.uri = null;
+    files.base64 = async () => "";
+  });
+
+  it("ends the clip before the cap and sends nothing for silence", async () => {
+    const fake = fakes();
+    const transcribe = vi.fn(async (clip: CallClip) => clip.base64);
+    const { record: _record, ...deps } = fake.deps;
+    startCall({ botId: "bot-1", botName: "Ada" }, { ...deps, transcribe });
+    await vi.advanceTimersByTimeAsync(0);
+    // The clip ends about a second in, well before the 30 s cap, and the next one starts.
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(audio.record.mock.calls.length).toBeGreaterThan(1);
+
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(transcribe).not.toHaveBeenCalled();
+    expect(fake.send).not.toHaveBeenCalled();
+  });
+
+  it("keeps speech from a recorder that reports its first level late", async () => {
+    const fake = fakes();
+    const transcribe = vi.fn(async () => "hello");
+    const { record: _record, ...deps } = fake.deps;
+    startCall({ botId: "bot-1", botName: "Ada" }, { ...deps, transcribe });
+    await vi.advanceTimersByTimeAsync(0);
+    // A web recorder reports no level until it has started recording.
+    await vi.advanceTimersByTimeAsync(400);
+    audio.status = { metering: -10 };
+    await vi.advanceTimersByTimeAsync(600);
+    // Still the first recording: the late start did not end it.
+    expect(audio.record).toHaveBeenCalledTimes(1);
+    audio.status = { metering: -60 };
+    await vi.advanceTimersByTimeAsync(1_600);
+
+    expect(transcribe).toHaveBeenCalledTimes(1);
   });
 });
 

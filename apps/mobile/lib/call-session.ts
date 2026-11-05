@@ -117,6 +117,8 @@ const FEED_RETRY_MAX_MS = 5_000;
 const SPEECH_LEVEL_DB = -35;
 const SILENCE_HANG_MS = 1_200;
 const METER_POLL_MS = 200;
+/** How long a starting recorder may go without a level (web reports one once it records). */
+const METER_START_MS = 1_000;
 const MAX_CLIP_MS = 30_000;
 
 let state: CallState | null = null;
@@ -730,11 +732,19 @@ async function recordClip(signal: AbortSignal): Promise<CallClip | null> {
     if (signal.aborted) return null;
     recorder.record();
     let quietMs = 0;
+    let metered = false;
     for (let elapsed = 0; elapsed < MAX_CLIP_MS && !signal.aborted; elapsed += METER_POLL_MS) {
       await abortableDelay(METER_POLL_MS, signal);
       if (signal.aborted) break;
-      // Platforms without metering report nothing; keep recording to the cap.
-      const level = recorder.getStatus().metering ?? 0;
+      // A missing level is unknown, not 0 dB: a stand-in that loud hears speech in
+      // silence and holds the clip to the cap. A recorder may still be starting; once it
+      // has reported a level, or never does, nothing is left to endpoint on, so stop.
+      const level = recorder.getStatus().metering;
+      if (level === undefined) {
+        if (metered || elapsed + METER_POLL_MS >= METER_START_MS) break;
+        continue;
+      }
+      metered = true;
       if (level > SPEECH_LEVEL_DB) {
         heardSpeech = true;
         quietMs = 0;
