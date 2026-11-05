@@ -27,6 +27,7 @@ import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
   byokFreeUntil,
+  checkoutLeaseHeld,
   claimCheckoutLease,
   createBillingAccount,
   creditAccount,
@@ -44,6 +45,7 @@ import {
   releaseByokTrialCheckout,
   releaseByokTrialCheckouts,
   releaseCheckoutLease,
+  renewCheckoutLease,
   replaceBillingCustomer,
   reserveByokTrialCheckout,
   syncBillingSnapshot,
@@ -58,6 +60,8 @@ export const INVITED_TRIAL_DAYS = INVITED_TRIAL_WEEKS * 7;
 const PRICE_CACHE_MS = 60 * 60 * 1000;
 const CHECKOUT_LEASE_MS = 120_000;
 const CHECKOUT_LEASE_POLL_MS = 250;
+/** Keeps a held lease valid through a provider operation longer than one lease period. */
+const CHECKOUT_LEASE_RENEW_MS = CHECKOUT_LEASE_MS / 4;
 /** Stripe returns here after checkout; served by the API through the web origin. */
 export const BILLING_RETURN_PATH = "/api/v1/billing/return";
 
@@ -189,12 +193,17 @@ export function createBillingService(deps: {
     const found = await organization(actor);
     if (!found.isOwner) throw new ORPCError("FORBIDDEN");
     // Deletion cancels billing once, so nothing may start a charge after it claims the org.
+    if (await organizationBeingDeleted(found.organizationId))
+      throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
+    return found;
+  }
+
+  async function organizationBeingDeleted(organizationId: string) {
     const deleting = await prisma.space.findFirst({
-      where: { organizationId: found.organizationId, isDefault: true, deletingAt: { not: null } },
+      where: { organizationId, isDefault: true, deletingAt: { not: null } },
       select: { id: true },
     });
-    if (deleting) throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
-    return found;
+    return deleting !== null;
   }
 
   async function sync(customerId: string): Promise<void> {
@@ -282,8 +291,12 @@ export function createBillingService(deps: {
   }
 
   async function cancel(account: BillingAccount) {
-    await provider.cancelCustomerSubscriptions(account.customerId);
-    await sync(account.customerId);
+    // Holds the organization's checkout lease, so a checkout still opening finishes first and
+    // the session it leaves is expired here instead of outliving the cancellation.
+    await withCheckoutLease(account.organizationId, async () => {
+      await provider.cancelCustomerSubscriptions(account.customerId);
+      await sync(account.customerId);
+    });
   }
 
   async function newCustomer(actor: Actor, organizationId: string) {
@@ -309,16 +322,21 @@ export function createBillingService(deps: {
     }
   }
 
-  /** Opens a checkout; with `serialize`, one per organization at a time across API instances. */
+  /** Opens a checkout, one per organization at a time across API instances. */
   async function openCheckout(
     actor: Actor,
     account: BillingAccount,
-    serialize: boolean,
     call: (customerId: string) => Promise<{ url: string }>,
   ) {
-    if (!serialize) return withLiveCustomer(actor, account, call);
     // Opening another recurring checkout expires the old one.
-    return withCheckoutLease(account.organizationId, () => withLiveCustomer(actor, account, call));
+    return withCheckoutLease(account.organizationId, async () => {
+      // The entry check ran before this request waited for the lease, and a deletion's
+      // cancellation holds the same lease: re-check, so no session opens that the
+      // cancellation cannot see and the organization cannot outlive.
+      if (await organizationBeingDeleted(account.organizationId))
+        throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
+      return withLiveCustomer(actor, account, call);
+    });
   }
 
   /** Runs `work` holding the organization's checkout lease, one at a time across API instances. */
@@ -330,9 +348,25 @@ export function createBillingService(deps: {
       await sleep(CHECKOUT_LEASE_POLL_MS);
       leaseId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
     }
+    // A provider operation can outlast the lease's validity, so renew it while work runs; a
+    // deletion's cancellation then waits for the operation instead of taking the lease over
+    // mid-flight. A renewal that finds the lease lapsed leaves it to the next claimant.
+    const renew = setInterval(
+      () =>
+        void renewCheckoutLease(prisma, organizationId, leaseId, CHECKOUT_LEASE_MS).catch(() => {}),
+      CHECKOUT_LEASE_RENEW_MS,
+    );
+    renew.unref();
     try {
-      return await work();
+      const result = await work();
+      // Renewal keeps the lease unless the database refused every attempt for a whole lease
+      // period. A cancellation that still took the lease over expired the sessions open at
+      // that moment, so a session created after it must not be handed back.
+      if (!(await checkoutLeaseHeld(prisma, organizationId, leaseId)))
+        throw new ORPCError("CONFLICT", { message: "Billing is busy; try again shortly" });
+      return result;
     } finally {
+      clearInterval(renew);
       await releaseCheckoutLease(prisma, organizationId, leaseId);
     }
   }
@@ -367,7 +401,7 @@ export function createBillingService(deps: {
       organizationOwnerHadTrial(prisma, organizationId, "byok"),
     ]);
     try {
-      return await openCheckout(actor, account, true, async (customerId) => {
+      return await openCheckout(actor, account, async (customerId) => {
         // One trial per owner: reserve inside the organization's checkout lease, so overlapping
         // requests of the same organization cannot interleave their holds; the lease already
         // serializes their provider calls.
@@ -497,7 +531,7 @@ export function createBillingService(deps: {
       const account = await billingAccountFor(actor, organizationId);
       await creditAccount(prisma, organizationId);
       try {
-        const checkout = await openCheckout(actor, account, input.monthly, (customerId) =>
+        const checkout = await openCheckout(actor, account, (customerId) =>
           provider.createCreditCheckout!({
             customerId,
             ...input,
@@ -651,7 +685,7 @@ export function createBillingService(deps: {
           ? {}
           : { trialDays: await trialDays(organizationId) };
       try {
-        return await withLiveCustomer(actor, account, (customerId) =>
+        return await openCheckout(actor, account, (customerId) =>
           provider.createCheckout({
             customerId,
             seats,
