@@ -174,4 +174,3 @@ export function positiveInteger(value: string) {
 export function safeName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
 }
-
