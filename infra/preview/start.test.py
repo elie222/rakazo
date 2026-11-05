@@ -23,7 +23,10 @@ elif name == "gosu":
 elif name == "initdb":
     (data / "postgres/PG_VERSION").write_text("18")
 elif name == "psql":
-    print("1")
+    if any(a.startswith("owner_email=") for a in args):
+        print("t" if (data / "postgres/demo-account").exists() else "f")
+    else:
+        print("1")
 elif name == "node" and any("migrate-database" in a for a in args):
     with (data / "calls").open("a") as f: f.write("migrate\n")
     fail = data / "fail-migrate"
@@ -33,6 +36,7 @@ elif name == "node" and any("migrate-database" in a for a in args):
 elif name == "node" and any("bootstrap-owner" in a for a in args):
     with (data / "calls").open("a") as f: f.write("bootstrap\n")
     if (data / "fail-bootstrap").exists(): sys.exit(1)
+    (data / "postgres/demo-account").touch()
 elif name == "node":
     if "preview" in args:
         (data / "serving").touch()
@@ -134,6 +138,24 @@ class PreviewBoot(unittest.TestCase):
         shutil.rmtree(self.data / "postgres")
         self.boot()
         self.assertEqual(self.calls(), ["migrate", "bootstrap"] * 2)
+
+    def test_deleted_demo_account_is_restored_without_migrations(self):
+        self.boot()
+        (self.data / "postgres/demo-account").unlink()
+        self.boot()
+        self.assertTrue((self.data / "postgres/demo-account").exists())
+        self.assertEqual(self.calls(), ["migrate", "bootstrap", "bootstrap"])
+
+    def test_failed_demo_account_recovery_is_retried(self):
+        self.boot()
+        (self.data / "postgres/demo-account").unlink()
+        (self.data / "fail-bootstrap").touch()
+        self.boot(succeeds=False)
+        self.assertFalse((self.data / "postgres/.preview-image").exists())
+        (self.data / "fail-bootstrap").unlink()
+        self.boot()
+        self.assertTrue((self.data / "postgres/demo-account").exists())
+        self.assertEqual(self.calls(), ["migrate", "bootstrap", "bootstrap", "migrate", "bootstrap"])
 
 
 if __name__ == "__main__":

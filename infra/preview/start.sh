@@ -77,6 +77,13 @@ migrate() {
     _ "$ROOT"
 }
 
+demo_account_exists() {
+  PGPASSWORD=$PG_OWNER_PASSWORD "$PG_BIN/psql" -qtA -v ON_ERROR_STOP=1 \
+    -v owner_email="$OWNER_EMAIL" -h 127.0.0.1 -U rakazo -d rakazo <<'SQL' | grep -qx t
+SELECT EXISTS (SELECT 1 FROM "user" WHERE email = :'owner_email' AND "emailVerified");
+SQL
+}
+
 shutdown() {
   kill $(jobs -pr) 2> /dev/null || true
   wait || true
@@ -97,6 +104,7 @@ waiting=$!
 
 [[ -f "$PGDATA/PG_VERSION" ]] || init_database
 start_database
+setup_required=
 if [[ -z $IMAGE_ID || $(cat "$INITIALIZED_IMAGE" 2> /dev/null || true) != "$IMAGE_ID" ]]; then
   rm -f "$INITIALIZED_IMAGE"
   if ! migrate; then
@@ -109,6 +117,10 @@ if [[ -z $IMAGE_ID || $(cat "$INITIALIZED_IMAGE" 2> /dev/null || true) != "$IMAG
     start_database
     migrate
   fi
+  setup_required=1
+fi
+if [[ -n $setup_required ]] || ! demo_account_exists; then
+  rm -f "$INITIALIZED_IMAGE"
   OWNER_EMAIL=$OWNER_EMAIL OWNER_PASSWORD=$OWNER_PASSWORD \
     gosu node bash -c 'cd "$1/apps/api" && node dist/cli/bootstrap-owner.js' _ "$ROOT"
   if [[ -n $IMAGE_ID ]]; then

@@ -9,7 +9,8 @@ emulated: scripted model replies, fake computers, and emulated billing and cloud
 proxy suspends the machine a few minutes after the last visit and resumes it on the next one.
 Resuming normally avoids restarting the app. A new image or a lost snapshot needs a cold start;
 migrations and demo-account setup run once per image on each database. Data survives sleeps and
-is deleted with the preview when the pull request closes, or by a daily sweep.
+is deleted with the preview when the pull request closes, or by a daily sweep. A deleted demo
+account is recreated on the next cold boot.
 
 Idle machines incur storage charges, including the root filesystem and the data volume; compute
 is billed only while running. See [Fly pricing](https://fly.io/docs/about/pricing/).
