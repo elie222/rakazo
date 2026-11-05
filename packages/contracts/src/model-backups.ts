@@ -70,6 +70,8 @@ export function withConnectionName(label: string, connection: string): string {
 export function connectedBackupOptions(
   catalog: ModelCatalogEntry[],
   credentials: ModelCredential[],
+  /** Screen work needs a model that accepts images, on a connection of the member's own. */
+  computerUse = false,
 ): ConnectedBackupOption[] {
   const connections = new Map<string, ModelCredential[]>();
   for (const credential of credentials) {
@@ -97,7 +99,8 @@ export function connectedBackupOptions(
       };
     };
     if (owners.length === 0) {
-      options.push(...models.filter((entry) => entry.managed).map((entry) => option(entry)));
+      if (!computerUse)
+        options.push(...models.filter((entry) => entry.managed).map((entry) => option(entry)));
       continue;
     }
     for (const connection of owners)
@@ -113,6 +116,7 @@ export function connectedBackupOptions(
     for (const raw of credential.enabledModelIds ?? [credential.modelId ?? ""]) {
       const modelId = raw.trim();
       if (!modelId || seen.has(modelId)) continue;
+      if (computerUse && !credential.visionModelIds?.includes(modelId)) continue;
       seen.add(modelId);
       const entry = catalog.find(
         (candidate) =>

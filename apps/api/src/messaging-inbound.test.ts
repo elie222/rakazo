@@ -66,6 +66,7 @@ function createDeps(
     threadId: "sendblue:grp-1",
     name: "Family",
     introPostedAt: null,
+    rosterSeenAt: null as Date | null,
   };
   const outboundRows: Array<Record<string, unknown>> = [];
   const txMock = {
@@ -139,8 +140,13 @@ function createDeps(
     messagingChannel: {
       findMany: vi.fn(async () => [{ id: channel.id }]),
       findUnique: vi.fn(async () => channel),
+      // The transaction's roster read and write share the channel object's state.
+      findUniqueOrThrow: vi.fn(async () => channel),
       upsert: vi.fn(async () => channel),
-      update: vi.fn(async () => ({ ...channel, introPostedAt: new Date() })),
+      update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        Object.assign(channel, data);
+        return channel;
+      }),
     },
     messagingChannelMember: {
       findUnique: vi.fn(
@@ -244,16 +250,52 @@ function createDeps(
               (row.status ?? "pending") !== where.status.not,
           ).length,
       ),
+      findFirst: vi.fn(
+        async ({
+          where,
+        }: {
+          where: { identityId: string; kind: string; status: { in: string[] } };
+        }) =>
+          outboundRows
+            .filter(
+              (row) =>
+                row.identityId === where.identityId &&
+                row.kind === where.kind &&
+                where.status.in.includes((row.status as string | undefined) ?? "pending"),
+            )
+            .toSorted(
+              (a, b) => (b.createdAt as Date).getTime() - (a.createdAt as Date).getTime(),
+            )[0] ?? null,
+      ),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         let count = 0;
         for (const item of data) {
           // Honors skipDuplicates against the idempotencyKey unique key.
           if (outboundRows.some((row) => row.idempotencyKey === item.idempotencyKey)) continue;
-          outboundRows.push(item);
+          outboundRows.push({ createdAt: new Date(), ...item });
           count += 1;
         }
         return { count };
       }),
+      aggregate: vi.fn(
+        async ({
+          where,
+          _max,
+        }: {
+          where?: { threadId?: string };
+          _max?: { createdAt?: boolean };
+        }) => {
+          const times = outboundRows
+            .filter((row) => !where?.threadId || row.threadId === where.threadId)
+            .map((row) => (row.createdAt as Date | undefined)?.getTime())
+            .filter((time): time is number => time !== undefined);
+          return {
+            _max: {
+              createdAt: _max?.createdAt && times.length ? new Date(Math.max(...times)) : null,
+            },
+          };
+        },
+      ),
       deleteMany: vi.fn(async ({ where }: { where: { idempotencyKey?: string } }) => {
         let count = 0;
         for (let i = outboundRows.length - 1; i >= 0; i -= 1) {
@@ -287,6 +329,7 @@ function createDeps(
           })),
         ),
         agentConnection: prisma.agentConnection,
+        messagingChannel: prisma.messagingChannel,
         messagingChannelMember: prisma.messagingChannelMember,
         messagingOutbound: prisma.messagingOutbound,
         messagingIdentity: prisma.messagingIdentity,
@@ -1237,6 +1280,7 @@ describe("inbound receipt", () => {
     const deps = createDeps({
       invitedMember: { id: "cm-1", status: "invited", identityId: "mi-1" },
     });
+    sentPrompt(deps, "invite:ch-1:mi-1");
     const handle = createMessagingInboundHandler(deps);
     await handle({ ...dmEvent, content: "YES" });
 
@@ -1262,6 +1306,23 @@ describe("inbound receipt", () => {
   });
 });
 
+/** The request prompt the line sent this person, as invites and connection requests write it. */
+function sentPrompt(
+  deps: { outboundRows: Array<Record<string, unknown>> },
+  idempotencyKey: string,
+  ageMs = 60_000,
+  status = "sent",
+) {
+  deps.outboundRows.push({
+    idempotencyKey,
+    kind: "dm",
+    identityId: "mi-1",
+    body: "Reply YES to allow, NO to decline.",
+    status,
+    createdAt: new Date(Date.now() - ageMs),
+  });
+}
+
 describe("createMessagingInboundHandler owner commands", () => {
   it("approves the most recent pending invite on YES and confirms by DM", async () => {
     const invited = {
@@ -1272,6 +1333,7 @@ describe("createMessagingInboundHandler owner commands", () => {
       status: "invited",
     };
     const deps = createDeps({ invitedMember: invited });
+    sentPrompt(deps, "invite:ch-1:mi-1");
     const handle = createMessagingInboundHandler(deps);
     await handle({ ...dmEvent, content: "YES" });
 
@@ -1282,7 +1344,12 @@ describe("createMessagingInboundHandler owner commands", () => {
       }),
     );
     expect(deps.outboundRows).toEqual([
-      expect.objectContaining({ kind: "dm", identityId: "mi-1" }),
+      expect.objectContaining({ idempotencyKey: "invite:ch-1:mi-1" }),
+      expect.objectContaining({
+        kind: "dm",
+        identityId: "mi-1",
+        idempotencyKey: "command:approve:cm-1",
+      }),
     ]);
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
@@ -1290,6 +1357,7 @@ describe("createMessagingInboundHandler owner commands", () => {
   it("declines on NO", async () => {
     const invited = { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" };
     const deps = createDeps({ invitedMember: invited });
+    sentPrompt(deps, "invite:ch-1:mi-1");
     const handle = createMessagingInboundHandler(deps);
     await handle({ ...dmEvent, content: "no" });
 
@@ -1364,6 +1432,7 @@ describe("createMessagingInboundHandler owner commands", () => {
         },
       ),
     });
+    sentPrompt(deps, "connect:bot-9:bot-1");
     const handle = createMessagingInboundHandler(deps);
     await handle({ ...dmEvent, content: "YES" });
 
@@ -1378,6 +1447,87 @@ describe("createMessagingInboundHandler owner commands", () => {
         expect.objectContaining({ kind: "dm", identityId: "mi-1" }),
         expect.objectContaining({ kind: "dm", identityId: "mi-9" }),
       ]),
+    );
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["the bot wrote since the invite", "reply"],
+    ["the invite is more than a day old", "stale"],
+    ["no prompt was ever sent", "none"],
+  ])("passes YES to the bot when %s", async (_case, setup) => {
+    const deps = createDeps({
+      invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
+    });
+    if (setup === "reply") {
+      sentPrompt(deps, "invite:ch-1:mi-1", 120_000);
+      sentPrompt(deps, "reply:msg-7:0", 60_000);
+    }
+    if (setup === "stale") sentPrompt(deps, "invite:ch-1:mi-1", 25 * 60 * 60 * 1000);
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ blocks: [{ kind: "text", text: "YES" }] }),
+    );
+  });
+
+  it("answers the delivered question, not a request still waiting to go out", async () => {
+    const deps = createDeps({
+      invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
+    });
+    sentPrompt(deps, "reply:msg-7:0", 120_000);
+    sentPrompt(deps, "invite:ch-1:mi-1", 60_000, "pending");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalled();
+  });
+
+  it("treats YES as a reply once the bot has answered, even before that answer is sent", async () => {
+    const deps = createDeps({
+      invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
+    });
+    sentPrompt(deps, "invite:ch-1:mi-1", 120_000);
+    sentPrompt(deps, "reply:msg-7:0", 60_000, "pending");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalled();
+  });
+
+  it("answers only the request whose prompt was sent last", async () => {
+    const deps = createDeps({
+      invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
+    });
+    const connection = vi.fn(async () => null);
+    Object.assign(deps.prisma.agentConnection, { findFirst: connection });
+    sentPrompt(deps, "invite:ch-1:mi-1", 120_000);
+    sentPrompt(deps, "connect:bot-9:bot-1", 60_000);
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    // The newer prompt names a connection that is no longer pending; the older invite stays open.
+    expect(connection).toHaveBeenCalledWith({
+      where: { requesterBotId: "bot-9", targetBotId: "bot-1", status: "pending" },
+    });
+    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalled();
+  });
+
+  it("accepts a YES sent as a plain text message", async () => {
+    const deps = createDeps({
+      invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
+    });
+    sentPrompt(deps, "invite:ch-1:mi-1");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES", transport: "SMS" });
+
+    expect(deps.prisma.messagingChannelMember.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "approved" }) }),
     );
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
@@ -1695,6 +1845,191 @@ describe("createMessagingInboundHandler channel routing", () => {
     // A webhook with no participants roster must not mass-mark members left.
     await sparseHandle({ ...groupEvent, participants: [] });
     expect(sparse.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not sweep an approved member when a delayed roster older than the newest arrives", async () => {
+    const joined = {
+      id: "cm-x",
+      channelId: "ch-1",
+      address: "+15553333333",
+      identityId: "mi-2",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [joined] });
+    const handle = createMessagingInboundHandler(deps);
+    // The newer event first: its roster names the member, so the channel records it.
+    await handle({
+      ...groupEvent,
+      handle: "handle-new",
+      participants: ["+15551111111", "+15553333333"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    // A retry of an older webhook, delivered late: its roster predates the member.
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(joined.status).toBe("approved");
+  });
+
+  it("does not re-invite a member who left when the roster naming them is older", async () => {
+    const gone = {
+      id: "cm-y",
+      channelId: "ch-1",
+      address: "+15552222222",
+      identityId: "mi-2",
+      status: "left",
+    };
+    const deps = createDeps({ members: [gone] });
+    const handle = createMessagingInboundHandler(deps);
+    // A newer event without the member sets the channel's roster time first.
+    await handle({
+      ...groupEvent,
+      handle: "handle-new",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    // The delayed older roster still names the member, who has since left.
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111", "+15552222222"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(gone.status).toBe("left");
+    expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-2")).toBe(false);
+  });
+
+  it("does not discover members or queue invitations from a delayed older roster", async () => {
+    const deps = createDeps();
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...groupEvent,
+      handle: "handle-new",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111", "+15554444444"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(deps.members.map((member) => member.address)).not.toContain("+15554444444");
+  });
+
+  it("ignores a roster whose time is not newer than the newest one seen", async () => {
+    const joined = {
+      id: "cm-z",
+      channelId: "ch-1",
+      address: "+15553333333",
+      identityId: null,
+      status: "approved",
+    };
+    const deps = createDeps({ members: [joined] });
+    const handle = createMessagingInboundHandler(deps);
+    const at = new Date("2026-11-04T10:01:00.000Z");
+    await handle({
+      ...groupEvent,
+      handle: "handle-first",
+      participants: ["+15551111111", "+15553333333"],
+      rosterAt: at,
+    });
+    await handle({
+      ...groupEvent,
+      handle: "handle-conflict",
+      participants: ["+15551111111"],
+      rosterAt: at,
+    });
+
+    expect(joined.status).toBe("approved");
+  });
+
+  it("keeps a leaver out and a peer in when an older roster follows the LEAVE", async () => {
+    const leaver = {
+      id: "cm-a",
+      channelId: "ch-1",
+      address: "+15551111111",
+      identityId: "mi-1",
+      status: "approved",
+    };
+    const peer = {
+      id: "cm-b",
+      channelId: "ch-1",
+      address: "+15552222222",
+      identityId: null,
+      status: "approved",
+    };
+    const deps = createDeps({ members: [leaver, peer], approvedMember: leaver });
+    const handle = createMessagingInboundHandler(deps);
+    // The newest roster names both; the channel settles on its time.
+    await handle({
+      ...groupEvent,
+      handle: "handle-settled",
+      participants: ["+15551111111", "+15552222222"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    await handle({ ...dmEvent, content: "LEAVE" });
+    expect(leaver.status).toBe("left");
+
+    // A delayed delivery of a roster from before the settled one, naming only
+    // the leaver: it must not re-invite them or sweep the peer out.
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(leaver.status).toBe("left");
+    expect(peer.status).toBe("approved");
+    expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-1")).toBe(false);
+  });
+
+  it("keeps a leaver out and a peer in when an equal-time roster follows the LEAVE", async () => {
+    const leaver = {
+      id: "cm-a",
+      channelId: "ch-1",
+      address: "+15551111111",
+      identityId: "mi-1",
+      status: "approved",
+    };
+    const peer = {
+      id: "cm-b",
+      channelId: "ch-1",
+      address: "+15552222222",
+      identityId: null,
+      status: "approved",
+    };
+    const deps = createDeps({ members: [leaver, peer], approvedMember: leaver });
+    const handle = createMessagingInboundHandler(deps);
+    const settled = new Date("2026-11-04T10:02:00.000Z");
+    await handle({
+      ...groupEvent,
+      handle: "handle-settled",
+      participants: ["+15551111111", "+15552222222"],
+      rosterAt: settled,
+    });
+    await handle({ ...dmEvent, content: "LEAVE" });
+    expect(leaver.status).toBe("left");
+
+    // A conflicting roster claiming the same time as the settled one: not
+    // newer, so it changes no membership either.
+    await handle({
+      ...groupEvent,
+      handle: "handle-equal",
+      participants: ["+15551111111"],
+      rosterAt: settled,
+    });
+
+    expect(leaver.status).toBe("left");
+    expect(peer.status).toBe("approved");
+    expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-1")).toBe(false);
   });
 
   it("sanitizes attacker-controlled channel names before storing them", async () => {
@@ -2073,6 +2408,7 @@ describe("createMessagingInboundHandler owner-command status races", () => {
       status: "invited",
     };
     const deps = createDeps({ invitedMember: swept, members: [swept] });
+    sentPrompt(deps, "invite:ch-1:mi-1");
     Object.assign(deps.prisma.messagingChannelMember, {
       findFirst: vi.fn(async ({ where }: { where?: { status?: string } }) => {
         if (where?.status === "invited" && swept.status === "invited") {
@@ -2089,13 +2425,14 @@ describe("createMessagingInboundHandler owner-command status races", () => {
     await handle({ ...dmEvent, content: "YES" });
 
     expect(swept.status).toBe("left");
-    expect(deps.outboundRows).toHaveLength(0);
+    expect(deps.outboundRows).toHaveLength(1);
     // No longer actionable: the text falls through as a normal message.
     expect(deps.sendUserMessage).toHaveBeenCalled();
   });
 
   it("does not let YES overwrite a concurrently revoked agent connection", async () => {
     const deps = createDeps();
+    sentPrompt(deps, "connect:bot-9:bot-1");
     const state = {
       id: "ac-7",
       requesterBotId: "bot-9",
@@ -2128,7 +2465,7 @@ describe("createMessagingInboundHandler owner-command status races", () => {
     await handle({ ...dmEvent, content: "YES" });
 
     expect(state.status).toBe("revoked");
-    expect(deps.outboundRows).toHaveLength(0);
+    expect(deps.outboundRows).toHaveLength(1);
     expect(deps.sendUserMessage).toHaveBeenCalled();
   });
 
@@ -2226,6 +2563,7 @@ describe("createMessagingInboundHandler approval-cycle notifications", () => {
 describe("createMessagingInboundHandler confirmation atomicity", () => {
   it("writes the connection confirmations under the claim's transaction", async () => {
     const deps = createDeps();
+    sentPrompt(deps, "connect:bot-9:bot-1");
     Object.assign(deps.prisma, {
       agentConnection: {
         findFirst: vi.fn(async () => ({
@@ -2283,6 +2621,7 @@ describe("createMessagingInboundHandler confirmation atomicity", () => {
       status: "invited",
     };
     const deps = createDeps({ invitedMember: invited });
+    sentPrompt(deps, "invite:ch-1:mi-1");
     const txCreateMany = vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
       deps.outboundRows.push(...data);
       return { count: data.length };

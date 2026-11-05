@@ -9,6 +9,8 @@ name: Thread
 - extendedWaitUntil:
     visible: ".*The fixture workspace is ready.*"
     timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 01-thread
 - scrollUntilVisible:
     element: ".*launch-notes.txt.*"
@@ -16,11 +18,15 @@ name: Thread
     timeout: 15000
     visibilityPercentage: 40
     optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 02-attachment
 - openLink: "rakazo:///group-thread?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}&name=Launch%20team"
 - extendedWaitUntil:
     visible: ".*The fixture launch plan is ready.*"
     timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 03-group-thread
 - openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
 - extendedWaitUntil:
@@ -37,5 +43,28 @@ name: Thread
       visible: ".*Reply.*"
     commands:
       - assertVisible: ".*Copy.*"
+      - waitForAnimationToEnd:
+          timeout: 3000
       - takeScreenshot: 04-message-actions
       - tapOn: "Copy"
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- scrollUntilVisible:
+    element: ".*launch-notes.txt.*"
+    direction: DOWN
+    timeout: 15000
+- tapOn: ".*launch-notes.txt.*"
+- extendedWaitUntil:
+    visible: ".*Collect three customer quotes.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 05-attachment-preview
+# The catalog's offline billing has invites on, so the Pro account always sees the gift.
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- tapOn: "Invite a friend"
+- extendedWaitUntil:
+    visible: ".*2 weeks free.*"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 06-invite

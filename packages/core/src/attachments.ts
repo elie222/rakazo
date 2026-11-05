@@ -170,6 +170,10 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
       if (block.kind === "text") return block.text;
       if (block.kind === "chart") return `[chart: ${block.name}]`;
       if (block.kind === "image") return `[image: ${block.name}]`;
+      // The id lets a later turn, or another chat, update this page instead of making a new one.
+      if (block.kind === "page") {
+        return `[page: ${block.title} (pageId ${block.pageId}, version ${block.version})]`;
+      }
       if (block.kind === "file") {
         return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
       }
@@ -248,6 +252,14 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "application/zip": ".zip",
 };
 
+/** Short file-type badge, as a file's extension reads ("TXT", "MD", "PDF"). */
+export function artifactTypeLabel(mimeType: string): string {
+  const extension = attachmentExtensionForMimeType(mimeType);
+  if (extension) return extension.slice(1).toUpperCase();
+  const slash = mimeType.indexOf("/");
+  return (slash === -1 ? mimeType : mimeType.slice(slash + 1)).toUpperCase().slice(0, 6);
+}
+
 export function inferAttachmentMimeType(
   name: string,
   reportedType?: string,
@@ -285,6 +297,11 @@ export function inferAttachmentMimeType(
 
 export function attachmentExtensionForMimeType(mimeType: string): string {
   return isAllowedAttachmentMimeType(mimeType) ? MIME_TYPE_EXTENSIONS[mimeType] : "";
+}
+
+/** Where a run copies an attached file in the bot's workspace; history tools report the same path. */
+export function attachmentComputerPath(artifactId: string, mimeType: string): string {
+  return `attachments/${artifactId}${attachmentExtensionForMimeType(mimeType)}`;
 }
 
 export function attachmentsForThread<T extends { threadKey: string }>(

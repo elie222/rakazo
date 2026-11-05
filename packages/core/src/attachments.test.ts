@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AttachmentValidationError,
+  artifactTypeLabel,
   attachmentExtensionForMimeType,
   attachmentsForBot,
   blocksToAgentHistoryText,
@@ -116,8 +117,11 @@ describe("attachment helpers", () => {
           name: "brief.pdf",
           size: 99,
         },
+        { kind: "page", pageId: "p1", version: 3, title: "Signups" },
       ]),
-    ).toBe("hello\n[image: shot.png]\n[file: brief.pdf (application/pdf, 99 bytes)]");
+    ).toBe(
+      "hello\n[image: shot.png]\n[file: brief.pdf (application/pdf, 99 bytes)]\n[page: Signups (pageId p1, version 3)]",
+    );
   });
 
   it("appends a voice note transcript after the file note", () => {
@@ -254,5 +258,21 @@ describe("ask history", () => {
         { kind: "ask", text: "API key", input: "secret", status: "answered", answer: "" },
       ]),
     ).toBe("API key");
+  });
+});
+
+describe("artifactTypeLabel", () => {
+  it("reads like the file's extension", () => {
+    expect(artifactTypeLabel("text/plain")).toBe("TXT");
+    expect(artifactTypeLabel("text/markdown")).toBe("MD");
+    expect(artifactTypeLabel("application/pdf")).toBe("PDF");
+    expect(artifactTypeLabel("image/png")).toBe("PNG");
+    expect(
+      artifactTypeLabel("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    ).toBe("XLSX");
+  });
+
+  it("falls back to the subtype for a type without a known extension", () => {
+    expect(artifactTypeLabel("application/x-custom")).toBe("X-CUST");
   });
 });

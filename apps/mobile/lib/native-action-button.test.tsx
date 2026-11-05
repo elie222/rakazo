@@ -129,7 +129,6 @@ describe("iOS action styling", () => {
           root.render(
             <IosButton
               label="Set your own key"
-              variant="rectangular"
               fill={fill}
               style={fill ? { width: 280 } : undefined}
               onPress={() => {}}

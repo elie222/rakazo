@@ -7,8 +7,9 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
-import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "./api";
+import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode, signOut } from "./api";
 import { replaceWithSignIn } from "./auth-routing";
+import { endCallBeforeSessionEnd } from "./call-session";
 import { promptAccountDeletion } from "./delete-account-prompt";
 import { registerSettingsSheet } from "./settings-sheet";
 
@@ -36,6 +37,7 @@ const { element, account } = vi.hoisted(() => ({
     push: vi.fn(),
     approvals: { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: true },
     rules: [] as { id: string }[],
+    messaging: { enabled: true },
   },
 }));
 
@@ -180,7 +182,9 @@ vi.mock("./api", () => ({
         ? account.approvals
         : method === "approvalRules/list"
           ? account.rules
-          : {},
+          : method === "messaging/status"
+            ? account.messaging
+            : {},
   ),
   selectedSpaceId: () => "space-1",
   signOut: vi.fn(),
@@ -200,6 +204,7 @@ vi.mock("./archived-chats", () => ({
   loadArchivedChats: vi.fn(async () => ({ bots: [], groups: [] })),
 }));
 vi.mock("./auth-routing", () => ({ replaceWithSignIn: vi.fn() }));
+vi.mock("./call-session", () => ({ endCallBeforeSessionEnd: vi.fn(async () => undefined) }));
 vi.mock("./delete-account-prompt", () => ({ promptAccountDeletion: vi.fn() }));
 vi.mock("./i18n", () => {
   // Stable across renders, as the real hook's is.
@@ -228,7 +233,12 @@ vi.mock("./passkey", () => ({
   passkeysAvailable: vi.fn(async () => false),
   renamePasskey: vi.fn(),
 }));
+vi.mock("./organizations", () => ({
+  activeOrganization: () => undefined,
+  useOrganizations: () => ({ data: undefined }),
+}));
 vi.mock("./push", () => ({ registerPushToken: vi.fn() }));
+vi.mock("./returning-user", () => ({ forgetSignedIn: vi.fn() }));
 vi.mock("./queued-save", () => ({ createQueuedSave: () => ({ save: vi.fn() }) }));
 vi.mock("./remote-images-preference", () => ({
   getCachedRemoteImagesEnabled: () => true,
@@ -272,6 +282,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   account.me = { userId: "user-1", name: "Tester", email: "tester@example.test" };
   account.rules = [];
+  account.messaging = { enabled: true };
   vi.mocked(fetchAccountSecurity).mockResolvedValue(security());
 });
 
@@ -453,6 +464,7 @@ it.each([false, true])(
         "Vault",
         "Integrations",
         "Skills",
+        "Memory",
         "Messaging",
         "AI data sharing",
       ];
@@ -469,6 +481,7 @@ it.each([false, true])(
       for (const [title, href] of [
         ["Models", "/models"],
         ["Vault", "/vault"],
+        ["Memory", "/memory"],
         ["Messaging", "/messaging"],
       ]) {
         events.length = 0;
@@ -531,4 +544,25 @@ it("shows the approval mode as the Approvals row's value, with Rules only once t
   expect(view.button("Rules")!.dataset.value).toBe("2");
   await view.press("Rules");
   expect(account.push).toHaveBeenCalledWith("/approvals");
+});
+
+it("hides Messaging when no chat app is connected to the server", async () => {
+  account.messaging = { enabled: false };
+  const view = await renderAccount();
+  const titles = Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
+  expect(titles).toContain("Skills");
+  expect(titles).not.toContain("Messaging");
+});
+
+it("hangs up the active call before signing out", async () => {
+  const view = await renderAccount();
+  const order: string[] = [];
+  vi.mocked(endCallBeforeSessionEnd).mockImplementationOnce(async () => {
+    order.push("hang-up");
+  });
+  vi.mocked(signOut).mockImplementationOnce(async () => {
+    order.push("sign-out");
+  });
+  await view.press("Sign out");
+  expect(order).toEqual(["hang-up", "sign-out"]);
 });

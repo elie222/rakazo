@@ -43,7 +43,7 @@ test("live page helper preserves identity, masks passwords, and reports partial 
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     async function command(name: string, args: Record<string, unknown> = {}) {
@@ -211,7 +211,7 @@ test("live page helper waits for a site's sign-in check, or says the page is sti
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     const snapshot = async () => {
@@ -269,7 +269,7 @@ test("live page helper reaches a form past the control limit by query or by scro
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     async function command(name: string, args: Record<string, unknown> = {}) {
@@ -511,7 +511,7 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     async function command(name: string, args: Record<string, unknown> = {}) {
@@ -534,8 +534,10 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
       return result;
     }
     const page = context.pages()[0]!;
-    await page.route("https://code.example.test/**", (route) =>
-      route.fulfill({
+    await page.route("https://code.example.test/**", async (route) => {
+      // A slow next page keeps the one that is leaving on screen while the keys are typed.
+      if (route.request().url().endsWith("/next")) await new Promise((r) => setTimeout(r, 500));
+      await route.fulfill({
         contentType: "text/html",
         body: route.request().url().endsWith("/done")
           ? "<title>Signed in</title>"
@@ -546,8 +548,8 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
               : route.request().url().endsWith("/next")
                 ? '<title>Next</title><input aria-label="Next" autofocus>'
                 : CODE_FIELDS,
-      }),
-    );
+      });
+    });
     const open = async () => {
       await page.goto("https://code.example.test/");
       await refresh();
@@ -819,7 +821,7 @@ test("live page helper types a purchase's card into a payment provider's frame o
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     async function command(name: string, args: Record<string, unknown> = {}) {

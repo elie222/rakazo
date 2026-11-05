@@ -13,6 +13,7 @@ const RESPONSE_BLOCK_KINDS = new Set<string>([
   "call_request",
   "image",
   "file",
+  "page",
   "handoff",
   "skill_draft",
   "mcp_approval",

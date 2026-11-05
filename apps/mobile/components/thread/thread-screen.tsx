@@ -9,6 +9,7 @@ import {
   liveMessageComposing,
   memberName,
   newClientId,
+  newestPageCards,
   displayName as safeDisplayName,
 } from "@rakazo/core";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
@@ -27,6 +28,7 @@ import { composerDraftScope } from "../../lib/composer-draft";
 import { cronLabels } from "../../lib/cron";
 import { useI18n } from "../../lib/i18n";
 import { useThemedStyles } from "../../lib/native";
+import { useChatOnScreen } from "../../lib/page-card-detail";
 import { useInboxBot } from "../../lib/search-inbox";
 import { useSplitView } from "../../lib/split-view";
 import { useIncomingShareImport, useThreadAttachments } from "../../lib/thread-attachments";
@@ -56,8 +58,7 @@ import { useThreadTranscript } from "../../lib/thread-transcript";
 import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "../../lib/thread-voice";
 import { liveEndRunError } from "../../lib/thread-window";
 import { FailedSendBubble } from "../failed-send-bubble";
-import type { MarkdownArtifactPreviewTarget } from "../markdown-artifact-preview";
-import { MarkdownArtifactPreview } from "../markdown-artifact-preview";
+import { NewestPageCards } from "../pages/page-card";
 import { RunErrorSheet } from "../run-error-sheet";
 import { SelectTextSheet } from "../select-text-sheet";
 import { ThreadComposer } from "../thread-composer";
@@ -65,7 +66,7 @@ import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../thread-error-notic
 import { createThreadHeaderStyles } from "../thread-header-styles";
 import { QuoteSheet } from "./quote-sheet";
 import { ThreadComposerDock } from "./thread-composer-dock";
-import { BotActionsModal, useThreadHeader } from "./thread-header";
+import { useThreadHeader } from "./thread-header";
 import { LoadEarlierButton, ThreadWorkingFooter } from "./thread-list-controls";
 import { ThreadMessageList } from "./thread-message-list";
 import { useLatestRowActions, useThreadRows } from "./thread-rows";
@@ -80,6 +81,7 @@ function isActiveStatus(status: string | undefined): boolean {
  * effects at the positions the screen ran them before they were split out.
  */
 export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string }) {
+  useChatOnScreen();
   const tokens = mobileTokens();
   const styles = useThemedStyles(createThreadHeaderStyles);
   const { t, locale } = useI18n();
@@ -205,12 +207,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const feedback = useThreadFeedback(threadKey, newClientId, echoed);
   const { error, setError } = feedback;
   const [selectableText, setSelectableText] = useState<string | null>(null);
-  const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
-    null,
-  );
   const transcript = useThreadTranscript(snap?.messages, inGroup);
   const { reactionView, peerTranscript, setExpandedPeerMarkers } = transcript;
   const visibleMessages = transcript.visibleMessages;
+  const newestPages = useMemo(() => newestPageCards(visibleMessages), [visibleMessages]);
   const latestMessage = latestArrivalMessage(reactionView.visibleMessages, peerTranscript.markerOf);
   const composerMentionTargets = useMemo(
     () =>
@@ -247,7 +247,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const composerPrompt = displayName ? t("Message {name}", { name: displayName }) : t("Message…");
   const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
-  const currentBotStatus = snap ? snap.run?.status : titleBot?.status;
+  const currentBotStatus =
+    snap && (!showingSaved || error)
+      ? snap.run?.status
+      : (titleBot?.threadStatus ?? snap?.run?.status);
   // The group's members in its order, once the chat or its group list has loaded them; the
   // title seats the inbox's copy until then.
   const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);
@@ -306,7 +309,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     ),
   });
 
-  const { botActions, botActionsOpen, closeBotActions } = useThreadHeader({
+  useThreadHeader({
     botId,
     groupId,
     inGroup,
@@ -317,7 +320,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     groupMembers,
     currentBotStatus,
     composingBots,
-    styles,
     onCleared: history.clear,
   });
 
@@ -381,6 +383,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   });
   const { replyTarget, setReplyTarget, replyQuote, setReplyQuote, quoteTarget, setQuoteTarget } =
     composer;
+  // A reply tapped on one of this chat's pages, full screen, lands in the composer unsent.
+  useFocusEffect(composer.receivePageReply);
   useIncomingShareImport({
     attachments,
     composerRef: composer.composerRef,
@@ -436,7 +440,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     answer: composer.answer,
     openBot,
     openComputer,
-    previewMarkdown: setMarkdownPreview,
+    // A chat attachment opens the version it was sent with, not the newest.
+    previewFile: (artifactId) =>
+      router.push({ pathname: "/artifact", params: { artifactId, exact: "1" } }),
     previewImage: (target) =>
       router.push({
         pathname: "/image",
@@ -488,13 +494,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   });
 
   const workingBots =
-    !inGroup && currentBot && isRunWorking(currentBotStatus) && !hasLiveProgress
+    !inGroup && titleBot && isRunWorking(currentBotStatus) && !hasLiveProgress
       ? [
           {
-            id: currentBot.id,
-            name: currentBot.name,
-            color: currentBot.color,
-            avatarSet: currentBot.avatarSet,
+            id: titleBot.id,
+            name: titleBot.name,
+            color: titleBot.color,
+            avatarSet: titleBot.avatarSet,
             status: currentBotStatus,
           },
         ]
@@ -567,24 +573,26 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       >
         {/* The keyboard's padding shrinks this, so the floating composer rides above it. */}
         <View style={{ flex: 1 }}>
-          <ThreadMessageList
-            scroll={scroll}
-            pinnedListHandlers={paging.pinnedListHandlers}
-            threadKey={threadKey}
-            headerClearance={headerClearance}
-            bottomInset={bottomInset}
-            columnPadding={columnPadding}
-            visibleMessages={visibleMessages}
-            liveItems={liveItems}
-            renderItem={renderItem}
-            renderMessageRow={renderMessageRow}
-            loadEarlierControl={loadEarlierControl}
-            failedSendBubbles={failedSendBubbles}
-            errorNotice={errorNotice}
-            workingFooter={workingFooter}
-            loadingNewer={paging.loadingNewer}
-            showLatest={showLatest}
-          />
+          <NewestPageCards.Provider value={newestPages}>
+            <ThreadMessageList
+              scroll={scroll}
+              pinnedListHandlers={paging.pinnedListHandlers}
+              threadKey={threadKey}
+              headerClearance={headerClearance}
+              bottomInset={bottomInset}
+              columnPadding={columnPadding}
+              visibleMessages={visibleMessages}
+              liveItems={liveItems}
+              renderItem={renderItem}
+              renderMessageRow={renderMessageRow}
+              loadEarlierControl={loadEarlierControl}
+              failedSendBubbles={failedSendBubbles}
+              errorNotice={errorNotice}
+              workingFooter={workingFooter}
+              loadingNewer={paging.loadingNewer}
+              showLatest={showLatest}
+            />
+          </NewestPageCards.Provider>
           {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
           <ThreadComposerDock
             hidden={readOnly}
@@ -635,10 +643,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               stop={composer.stop}
               startVoiceCall={startVoiceCall}
               onSlashAction={composer.runSlashAction}
+              onEmptied={composer.composerEmptied}
             />
           </ThreadComposerDock>
         </View>
-        {botActionsOpen ? <BotActionsModal actions={botActions} onClose={closeBotActions} /> : null}
         {selectableText !== null ? (
           <SelectTextSheet text={selectableText} onClose={() => setSelectableText(null)} />
         ) : null}
@@ -647,13 +655,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           onClose={() => setDetailsOpen(false)}
           action={runErrorAction}
         />
-        {markdownPreview && artifactTarget ? (
-          <MarkdownArtifactPreview
-            threadTarget={artifactTarget}
-            target={markdownPreview}
-            onClose={() => setMarkdownPreview(null)}
-          />
-        ) : null}
         {quoteTarget ? (
           <QuoteSheet
             message={quoteTarget}

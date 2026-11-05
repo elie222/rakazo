@@ -6,6 +6,7 @@ import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BuiCard, SuccessPop } from "../../components/ai/primitives";
+import { ErrorNotice } from "../../components/ErrorNotice";
 import { OptionRow } from "../../components/OptionRow";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { chartViewport } from "../../lib/chart-viewport";
@@ -13,7 +14,8 @@ import { connectMcpOauth } from "../../lib/mcp-connect";
 import { importChunk } from "../../lib/preload-recovery";
 import { rpc } from "../../lib/rpc";
 import { useArtifactImage } from "../../lib/use-artifact-image";
-import { errorText } from "../../lib/user-error";
+import type { ErrorDetails } from "../../lib/user-error";
+import { errorDetails, errorText } from "../../lib/user-error";
 
 export function ChoiceCard({
   botId,
@@ -222,7 +224,7 @@ export function AppConnectCard({
           <SuccessPop label={t`Connected`} />
         ) : (
           <Button disabled={busy} onClick={() => void authorize()}>
-            {busy ? t`Waiting…` : t`Authorize`}
+            {busy ? t`Waiting…` : t`Connect`}
           </Button>
         )}
       </div>
@@ -335,7 +337,7 @@ export function McpApprovalCard({
   const { t } = useLingui();
   const { name, serverId, transport, endpoint, needsOAuth, status: savedStatus } = block;
   const [localStatus, setLocalStatus] = useState<McpApprovalState>("pending");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorDetails | null>(null);
   const [busy, setBusy] = useState(false);
   // A removal repaints the block to pending. Drop an in-session connected
   // override so the card does not keep the old decision.
@@ -351,7 +353,7 @@ export function McpApprovalCard({
 
   async function authorize() {
     if (!botId || busy) {
-      if (!botId) setError(t`This server cannot be assigned without a bot.`);
+      if (!botId) setError(errorDetails(t`This server cannot be assigned without a bot.`));
       return;
     }
     setBusy(true);
@@ -368,7 +370,7 @@ export function McpApprovalCard({
       await rpc.mcp.assignments.approve({ botId, serverId, threadId });
       setLocalStatus("connected");
     } catch (err) {
-      setError(errorText(err, t`Could not approve this server`));
+      setError(errorDetails(err, t`Could not approve this server`));
       setLocalStatus("pending");
     } finally {
       setBusy(false);
@@ -386,7 +388,7 @@ export function McpApprovalCard({
       setLocalStatus("dismissed");
     } catch (err) {
       setLocalStatus("pending");
-      setError(errorText(err, t`Could not dismiss this server`));
+      setError(errorDetails(err, t`Could not dismiss this server`));
     } finally {
       setBusy(false);
     }
@@ -411,7 +413,11 @@ export function McpApprovalCard({
               ? t`Authorize this server so agents can use its tools. A popup opens.`
               : t`Approve this server to let your agent use its tools.`}
           </p>
-          {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
+          {error ? (
+            <div className="mt-2">
+              <ErrorNotice error={error} />
+            </div>
+          ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
             <Button disabled={state !== "pending" || busy} onClick={() => void authorize()}>
               {state === "connecting" ? t`Connecting…` : needsOAuth ? t`Authorize` : t`Approve`}

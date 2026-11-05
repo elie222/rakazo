@@ -8,9 +8,10 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { Actor, MessagingInstallationSummary } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, requireMembership, runAsSystem } from "@rakazo/db";
+import { IsolationError, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { credentialDigest } from "./credential-digest.js";
+import { installationSenderAddress } from "./installed-messaging-surface.js";
 
 /** OAuth state is short-lived, single-use and tied to a user, space and bot. */
 export class MessagingInstallations implements MessagingInstallationStore {
@@ -21,14 +22,14 @@ export class MessagingInstallations implements MessagingInstallationStore {
     private readonly cleanupJobs?: Pick<JobPublisher, "enqueue">,
   ) {}
 
-  /** Without a chosen bot, the workspace answers as the first bot in the user's default space. */
+  /** Without a chosen bot, the workspace answers as the user's first bot in the current space. */
   async start(actor: Actor, botId?: string): Promise<string> {
     const bot = botId
       ? await this.prisma.bot.findFirst({
           where: { id: botId, spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
           select: { id: true, spaceId: true },
         })
-      : await this.defaultBot(actor.userId);
+      : await this.defaultBot(actor);
     if (!bot) throw new IsolationError("Bot not found");
     const state = randomBytes(32).toString("base64url");
     await runAsSystem("start messaging workspace installation", async () => {
@@ -49,15 +50,14 @@ export class MessagingInstallations implements MessagingInstallationStore {
     return this.provider.authorizeUrl(state);
   }
 
-  private defaultBot(userId: string) {
-    return runAsSystem("resolve default messaging bot", async () => {
-      const { spaceId } = await requireMembership(this.prisma, userId);
-      return this.prisma.bot.findFirst({
-        where: { spaceId, userId, archivedAt: null },
+  private defaultBot(actor: Actor) {
+    return runAsSystem("resolve default messaging bot", () =>
+      this.prisma.bot.findFirst({
+        where: { spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: { id: true, spaceId: true },
-      });
-    });
+      }),
+    );
   }
 
   /** Only the user who started it may finish, so a forwarded authorize link cannot attach their workspace. */
@@ -106,6 +106,9 @@ export class MessagingInstallations implements MessagingInstallationStore {
         throw new Error("Workspace is already connected");
       }
       const id = existing?.id ?? randomBytes(16).toString("hex");
+      const ownerAddress = external.ownerId
+        ? installationSenderAddress(external.workspaceId, external.ownerId)
+        : null;
       const previousCiphertext = existing?.ciphertext;
       const sealed = await this.secrets.put(
         external.credential,
@@ -129,7 +132,11 @@ export class MessagingInstallations implements MessagingInstallationStore {
               botId: session.botId,
               ciphertext: previousCiphertext,
             },
-            data: { ciphertext: sealed.ciphertext, workspaceName: external.workspaceName },
+            data: {
+              ciphertext: sealed.ciphertext,
+              workspaceName: external.workspaceName,
+              ownerAddress,
+            },
           });
           if (updated.count !== 1) throw new Error("Workspace connection changed; try again");
         } else {
@@ -144,6 +151,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
               userId: session.userId,
               botId: session.botId,
               ciphertext: sealed.ciphertext,
+              ownerAddress,
             },
           });
         }

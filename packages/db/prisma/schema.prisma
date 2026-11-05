@@ -23,6 +23,7 @@ model AiDataConsent {
 
 model User {
   aiDataConsents AiDataConsent[]
+  pages          Page[]
   id                          String                       @id
   name                        String
   email                       String
@@ -31,12 +32,23 @@ model User {
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
   avatarStyle                 String                       @default("organic")
+  /// The icon set this user's bots wear unless one is pinned to another: "organic" or "rakazo".
+  botAvatarSet                String                       @default("organic")
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
   /// emails then follow the language of the browser that asked for them.
   locale                      String?
   marketingEmailOptOutAt      DateTime?
+  /// When an organization this person owns first subscribed; uses up every trial kind.
+  billingTrialUsedAt          DateTime?
+  /// When an organization this person owns was given free own-key days; uses up only that
+  /// trial, and survives the organization the days belonged to.
+  byokTrialUsedAt             DateTime?
+  /// The organization whose open checkout session holds this owner's one own-key trial,
+  /// and until when that hold lasts. Null once the session is paid, expired, or cancelled.
+  byokTrialCheckoutOrganizationId String?
+  byokTrialCheckoutExpiresAt      DateTime?
   sessions                    Session[]
   accounts                    Account[]
   passkeys                    Passkey[]
@@ -63,6 +75,7 @@ model User {
   createdTickets              Ticket[]                     @relation("TicketCreatorUser")
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
+  callPushDevices             CallPushDevice[]
   trustedLinkSites            TrustedLinkSite[]
   feedbackReports             FeedbackReport[]
   emailSends                  EmailSend[]
@@ -114,9 +127,26 @@ model PushToken {
   ciphertext String
   tokenDigest String @unique
   sessionId String
+  /// "android_sender" when the installed Android build renders data-only sender pushes.
+  presentation String?
   updatedAt DateTime @updatedAt
 
   @@map("push_tokens")
+}
+
+/// Encrypted call registrations per installation. Legacy message push remains compatible.
+model CallPushDevice {
+  id String @id
+  expoTokenDigest String? @unique
+  voipTokenDigest String? @unique
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId String
+  ciphertext String
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, sessionId])
+  @@map("call_push_devices")
 }
 
 model EmailSend {
@@ -136,9 +166,13 @@ model UserDevice {
   name        String
   platform    String
   tokenHash   String                 @unique
+  /// The session that paired it. Ending that session revokes the device.
+  sessionId   String?
   createdAt   DateTime               @default(now())
   lastSeenAt  DateTime?
   revokedAt   DateTime?
+  /// Who revoked it: "owner", "device" or "session" (its sign-in ended). Null when unknown.
+  revokedBy   String?
   connections UserDeviceConnection[]
 
   @@index([userId, revokedAt])
@@ -247,6 +281,8 @@ model BillingAccount {
   byokPriceCents      Int?
   /// "month" or "year": how often byokPriceCents bills.
   byokInterval        String?
+  /// "standard", "pro" or "max": the own-key plan's tier; null reads as standard.
+  byokTier            String?
   subscriptionId      String?
   subscriptionItemId  String?
   priceId             String?
@@ -260,6 +296,8 @@ model BillingAccount {
   cancellationReason  String?
   cancellationComment String?
   subscribedAt        DateTime?
+  /// When a subscription was first seen active, so a trial that never paid is not a paid plan.
+  paidAt              DateTime?
   syncedAt            DateTime?
   checkoutLeaseId     String?
   checkoutLeaseExpiresAt DateTime?
@@ -415,6 +453,7 @@ model Space {
   agentHomes                  AgentHome[]
   browserProfiles             BrowserProfile[]
   artifacts                   Artifact[]
+  pages                       Page[]
   notificationPreferences     NotificationPreference[]
   computers                   Computer[]
   computerRuns                ComputerRun[]
@@ -516,6 +555,10 @@ model DeploymentSettings {
   defaultModelId                  String?
   deploymentModelCredentialCipher String?
   computerHost                    String?
+  /// Provider id for new computers chosen in Settings; null keeps SANDBOX_PROVIDER.
+  computerProvider                String?
+  /// That provider's encrypted connection settings, owned by the deployment rather than a user.
+  computerProviderCipher          String?
   createdAt                       DateTime @default(now())
   updatedAt                       DateTime @updatedAt
 
@@ -702,6 +745,8 @@ model Bot {
   instructionHistory Json @default("[]")
   color             String
   avatarSet         String            @default("organic")
+  /// True once the owner picks this bot a set other than their default; the default no longer moves it.
+  avatarSetPinned   Boolean           @default(false)
   notifyOnFinish    Boolean           @default(true)
   pinned            Boolean           @default(false)
   position          Int               @default(0)
@@ -739,6 +784,7 @@ model Bot {
   agentHome         AgentHome?
   browserProfile    BrowserProfile?
   artifacts         Artifact[]
+  pages             Page[]
   tasks             Task[]
   runs              Run[]
   steeringMessages  SteeringMessage[]
@@ -808,6 +854,7 @@ model ChatGroup {
   members    ChatGroupMember[]
   thread     Thread?
   artifacts  Artifact[]
+  pages      Page[]
 
   @@index([spaceId, userId, archivedAt, pinned, updatedAt])
   @@index([sectionId])
@@ -950,6 +997,8 @@ model Run {
   // True when these columns are the model the run must keep. A later attempt
   // may record the model it used in the same columns without setting this.
   modelPinned          Boolean           @default(false)
+  // A group message that named nobody reached this member; it may end without a reply.
+  groupReplyOptional   Boolean           @default(false)
   error                String?
   leaseOwner           String?
   leaseFence           Int               @default(0)
@@ -967,6 +1016,8 @@ model Run {
   // Server-side first visible output, preserved across attempts and resumes.
   firstResponseAt      DateTime?
   startedAt            DateTime?
+  // The occurrence a recurring timer run was due at, recorded at its first start only when it started late.
+  lateSince            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
   messagingMirroredAt  DateTime?
@@ -985,7 +1036,7 @@ model Run {
   @@index([trigger, status, messagingMirroredAt, updatedAt])
   @@index([trigger, status, teamChatMirroredAt, updatedAt])
   @@index([spaceId, botId])
-  @@index([botId])
+  @@index([botId, createdAt])
   @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
@@ -1148,6 +1199,7 @@ model ExternalEffect {
   @@unique([idempotencyKey])
   @@index([runId, status])
   @@index([spaceId, kind, status])
+  @@index([kind, status, updatedAt])
   @@map("external_effects")
 }
 
@@ -1441,15 +1493,37 @@ model Computer {
   screenUrl               String?
   /// When the computer last started running; bounds how long it can stay up in one stretch.
   runningSince            DateTime?
+  /// The home's disk as the computer last reported it; null where it was never measured.
+  diskUsedBytes           BigInt?
+  diskFreeBytes           BigInt?
+  /// How full the disk was when the user hid its warning; the warning returns once it is fuller.
+  diskDismissedPercent    Int?
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   bots                    Bot[]
   executionLeases         ComputerExecutionLease[]
   maintenanceId           String?
   updates                 ComputerUpdate[]
+  homeDeletionNotice      HomeDeletionNotice?
 
   @@index([spaceId, scope])
   @@map("computers")
+}
+
+/// Hosted billing only: a stopped computer whose saved home is due for deletion after its plan
+/// ended or it went unused. `claimId` leases the row to one process while it emails.
+model HomeDeletionNotice {
+  computerId     String    @id
+  computer       Computer  @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  claimId        String?
+  claimExpiresAt DateTime?
+  /// When the owner was emailed; null until then, and nothing is deleted before it.
+  warnedAt       DateTime?
+  /// The deletion date the email gave.
+  deleteAfter    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@map("home_deletion_notices")
 }
 
 /// One stretch a computer ran at its provider, from `computers.runningSince` until it stopped,
@@ -1533,6 +1607,52 @@ model Artifact {
   @@map("artifacts")
 }
 
+/// A page a bot built: a report, dashboard or tracker the user opens from chat and can share.
+model Page {
+  id             String        @id @default(cuid())
+  spaceId        String
+  space          Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  botId          String?
+  bot            Bot?          @relation(fields: [botId], references: [id], onDelete: SetNull)
+  groupId        String?
+  group          ChatGroup?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  title          String
+  visibility     String        @default("private")
+  /// sha256 of the link token; the public read looks pages up by it.
+  shareTokenHash String?       @unique
+  /// The link token itself, sealed in the secret store so the owner can copy the link again.
+  shareSecretId  String?       @unique
+  shareSecret    Secret?       @relation(fields: [shareSecretId], references: [id], onDelete: SetNull)
+  pinnedAt       DateTime?
+  currentVersion Int           @default(1)
+  createdAt      DateTime      @default(now())
+  /// Set when the page's content or title changes; pinning or sharing it is not an update.
+  updatedAt      DateTime      @default(now())
+  versions       PageVersion[]
+
+  @@index([spaceId, userId, updatedAt])
+  @@index([botId])
+  @@index([groupId])
+  @@map("pages")
+}
+
+model PageVersion {
+  id        String   @id @default(cuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  version   Int
+  title     String
+  source    String
+  /// The source compiled for the viewer when it was saved, so reads never run the compiler.
+  code      String
+  createdAt DateTime @default(now())
+
+  @@unique([pageId, version])
+  @@map("page_versions")
+}
+
 model UsageRecord {
   id                 String   @id @default(cuid())
   spaceId            String
@@ -1614,6 +1734,7 @@ model Secret {
   mcpServers        McpServer[]
   spaceMemoryConfig SpaceMemoryConfig?
   agentSecret       AgentSecret?
+  pageShare         Page?
 
   @@index([userId, spaceId])
   @@map("secrets")
@@ -1751,6 +1872,9 @@ model MessagingChannel {
   threadId      String              @unique
   name          String?
   introPostedAt DateTime?
+  /// The platform time of the newest roster this channel has processed, so a
+  /// delayed older roster changes no membership.
+  rosterSeenAt  DateTime?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   members       MessagingChannelMember[]
@@ -1843,8 +1967,10 @@ model BotSecret {
   @@map("bot_secrets")
 }
 
-/// A member's saved credentials. A null spaceId is the account vault every Space uses; a Space
-/// with a "credentials" override uses its own rows instead, which no other Space can read.
+/// A member's vault items: logins, cards, contacts, API credentials and command variables. A null
+/// spaceId is the account vault every Space uses; a Space with a "credentials" override uses its
+/// own rows instead, which no other Space can read. `name` is the handle bots use, `auth` says what
+/// kind of item it is and how it is used, and `ciphertext` holds every value, contacts included.
 model VaultCredential {
   id         String   @id
   userId     String
@@ -1852,6 +1978,10 @@ model VaultCredential {
   spaceId    String?
   space      Space?   @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   name       String
+  /// What people call it; empty uses a default read from the item.
+  title      String   @default("")
+  /// When the bot should use it, such as "For travel".
+  note       String   @default("")
   origin     String
   auth       Json
   ciphertext String
@@ -2212,6 +2342,8 @@ model MessagingInstallation {
   botId String
   bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
   ciphertext String
+  /// Sender address of the person who installed it, as inbound messages carry it.
+  ownerAddress String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@unique([provider, workspaceId])

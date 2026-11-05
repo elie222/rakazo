@@ -6,7 +6,12 @@ import { redactSecrets, sandboxCommandTimeoutMs } from "@rakazo/core";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { redactShellStreams } from "./agent-environment.js";
-import { resolveCodeFill, resolveLoginFill, shellCommandEnvironment } from "./bot-secrets.js";
+import {
+  resolveCodeFill,
+  resolveLoginFill,
+  resolveVaultCardFill,
+  shellCommandEnvironment,
+} from "./bot-secrets.js";
 import {
   browserActFromTool,
   browserNavigateFromTool,
@@ -32,6 +37,7 @@ import {
   unchangedVisualStreakAfterPageBrowser,
 } from "./computer-tools.js";
 import {
+  desktopGuardApplies,
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
@@ -50,6 +56,7 @@ import {
 } from "./shell-command-stream.js";
 import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.js";
 import { getActiveTeachingSession } from "./teaching-session.js";
+import { vaultCardUseOf } from "./vault-card-use.js";
 
 function appendComputerCommand(ctx: RunContext, payload: ComputerCommand) {
   const { deps, run, runId, bot, thread } = ctx;
@@ -202,6 +209,26 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               return { text: resolved.text, origin: resolved.origin, hidden: resolved.hidden };
             },
             resolveCardFill: async (step) => {
+              if ("card" in step) {
+                // Only the card and checkout the person approved for this call.
+                const approvedCard = vaultCardUseOf(args.cardApproval);
+                if (approvedCard?.card !== step.card || approvedCard.site !== step.site)
+                  return { error: "The user has not approved typing this card here." };
+                const resolved = await resolveVaultCardFill({
+                  prisma: deps.prisma,
+                  secretStore: deps.secretStore,
+                  scope: run,
+                  name: step.card,
+                  field: step.field,
+                  site: step.site,
+                  savedAt: approvedCard.savedAt,
+                });
+                if ("error" in resolved) return resolved;
+                addRunSecrets(ctx, resolved.redactions);
+                // No pass for the pay click: approving the card named no amount, so the click
+                // that places the order still asks, showing what the page charges.
+                return { text: resolved.text, origin: resolved.origin };
+              }
               const paymentWallet = deps.paymentWallet;
               if (!paymentWallet) return { error: "Card fills are unavailable here." };
               const resolved = await resolvePurchaseCardFill(
@@ -304,7 +331,7 @@ export const computerTools: ToolHandlers = {
     const { name, args, executionId, observer } = call;
     const command = String(args.command ?? args.cmd ?? "");
     const refusal = protectedComputerLifecycleRefusal(command);
-    if (ctx.computer.graphical && refusal) {
+    if (desktopGuardApplies(ctx.computer) && refusal) {
       return call.finish({ error: desktopProtectionGuardMessage(refusal) });
     }
     const cwd = resolveBotWorkspaceCwd(

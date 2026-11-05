@@ -23,7 +23,7 @@ export const activeRunSelection = {
     trigger: { notIn: statusHiddenRunTriggers },
   },
   orderBy: { createdAt: "desc" as const },
-  select: { status: true },
+  select: { status: true, threadId: true },
 } as const;
 
 /** Waiting, running, then leased work wins over queued work, regardless of creation order. */
@@ -34,6 +34,13 @@ export function primaryActiveRun<T extends { status: string }>(runs: readonly T[
     runs.find((run) => run.status === "leased") ??
     runs[0]
   );
+}
+
+export function threadRunStatus(
+  runs: readonly { status: string; threadId: string }[],
+  threadId: string,
+): string {
+  return primaryActiveRun(runs.filter((run) => run.threadId === threadId))?.status ?? "idle";
 }
 
 /** Latest user-visible run per thread, bounded in SQL rather than by Prisma in memory. */

@@ -6,8 +6,9 @@ import type { Exec, V1Pod } from "@kubernetes/client-node";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { describe, expect, it, vi } from "vitest";
+import { encodeTarEntry, TarReader } from "./exec-computer.js";
 import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
-import { encodeTarEntry, KubernetesSandboxProvider, TarReader } from "./kubernetes-sandbox.js";
+import { KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
 
 const TAR_END = Buffer.alloc(1024);
@@ -1112,7 +1113,7 @@ describe("KubernetesSandboxProvider", () => {
           const argv = args[3] as string[];
           const script = argv[argv.indexOf("bash") + 2];
           queueMicrotask(() => {
-            if (script?.includes("&& find . ")) {
+            if (script?.includes(" workspace-save ")) {
               args[4]?.write(
                 execFileSync("bash", [
                   "-c",

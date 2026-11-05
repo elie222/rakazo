@@ -17,6 +17,7 @@ import { replaceWithSignIn } from "../lib/auth-routing";
 import { promptAccountDeletion } from "../lib/delete-account-prompt";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
+import { forgetSignedIn } from "../lib/returning-user";
 import { continueWithSso } from "../lib/sso";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
@@ -117,6 +118,7 @@ export function useAccountDeletion({
         await deleteAccount(undefined, token);
       }
       setOpen(false);
+      await forgetSignedIn();
       replaceWithSignIn("/sign-in");
     } catch (err) {
       setError(errorText(err, t("Could not delete account")));

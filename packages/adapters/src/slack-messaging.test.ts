@@ -74,7 +74,7 @@ function createSlackSurface() {
   );
 }
 
-function mentionWebhook(retryNum?: number): Request {
+function mentionWebhook(retryNum?: number, text = "<@UBOT> ship it?"): Request {
   const body = JSON.stringify({
     type: "event_callback",
     team_id: "TTEST",
@@ -85,7 +85,7 @@ function mentionWebhook(retryNum?: number): Request {
       channel_type: "channel",
       channel: "CTEST",
       user: "USENDER",
-      text: "<@UBOT> ship it?",
+      text,
       ts: "1700000000.000001",
     },
   });
@@ -196,6 +196,35 @@ describe("Slack inbound retries", () => {
     } finally {
       await surface.shutdown();
     }
+  });
+});
+
+describe("Slack inbound formatting", () => {
+  it.each([
+    ["unmatched emphasis", "*_".repeat(8_000)],
+    ["deeply nested quotes", ">".repeat(7_000)],
+  ])("delivers a message full of %s promptly and in full", async (_name, hostile) => {
+    const surface = createSlackSurface();
+    const events: MessagingInboundMessage[] = [];
+    surface.onInbound(async (event) => {
+      if (event.type === "message") events.push(event);
+    });
+    const started = performance.now();
+    const response = await surface.handleWebhook("slack", mentionWebhook(undefined, hostile));
+    expect(performance.now() - started).toBeLessThan(1_500);
+    expect(response?.status).toBe(200);
+    expect(events[0]?.content).toBe(hostile);
+  });
+
+  it("still renders link targets in an ordinary message", async () => {
+    const surface = createSlackSurface();
+    const events: MessagingInboundMessage[] = [];
+    surface.onInbound(async (event) => {
+      if (event.type === "message") events.push(event);
+    });
+    const text = "<@UBOT> *read* <https://example.test/spec|the spec> first";
+    await surface.handleWebhook("slack", mentionWebhook(undefined, text));
+    expect(events[0]?.content).toBe("@Test User read the spec (https://example.test/spec) first");
   });
 });
 

@@ -37,7 +37,7 @@ jobs:
       native: ${{ steps.areas.outputs.native }}
       compose: ${{ steps.areas.outputs.compose }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
           # The merge commit's first parent is the base, so this diff is exactly what the PR adds.
@@ -54,11 +54,11 @@ jobs:
     runs-on: incredibuild-ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -89,15 +89,15 @@ jobs:
     concurrency:
       group: ci-checks-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
           fetch-depth: 2
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -148,6 +148,9 @@ jobs:
       - name: Changed-area classification tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/changed-areas.test.py
+      - name: Mobile OTA base selection tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 .github/scripts/ota-base.test.py
       - name: App Store review submission tests
         if: steps.areas.outputs.all_packages != 'false'
         run: node --test .github/scripts/app-store-review.test.mjs
@@ -166,15 +169,15 @@ jobs:
     concurrency:
       group: ci-unit-${{ matrix.shard }}-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
           fetch-depth: 2
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -221,11 +224,11 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -260,16 +263,16 @@ jobs:
       group: ci-postgres-${{ matrix.shard }}-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
           fetch-depth: 2
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         if: steps.areas.outputs.server != 'false'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: steps.areas.outputs.server != 'false'
         with:
           node-version: 22
@@ -295,7 +298,7 @@ jobs:
     runs-on: incredibuild-ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
       - run: bash infra/compose/upgrade-postgres.docker-test.sh
@@ -343,17 +346,17 @@ jobs:
         id: ota
         shell: bash
         env:
-          BEFORE_SHA: ${{ github.event.before }}
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
           # Compare against the commit installed builds already run, not just this push, so a
-          # change from a cancelled or skipped run is still published (or still blocks).
+          # change from a cancelled or skipped run is still published (or still blocks). Without
+          # a published update for the current runtime, the commit that introduced the runtime
+          # version anchors the diff, so a native change from an earlier push cannot escape it.
           runtime="$(jq -r .expo.version apps/mobile/app.json)"
           project="$(jq -r .expo.extra.eas.projectId apps/mobile/app.json)"
           # The GraphQL API reports failures inside an HTTP 200 body, and transport failures
-          # leave no body; neither may pass as "no published update", which would shrink the
-          # comparison to this push only and let an earlier native change escape the diff.
+          # leave no body; ota-base.sh must not read either as "no published update".
           response="$(
             curl -fsS --max-time 30 https://api.expo.dev/graphql \
               -H "authorization: Bearer $EXPO_TOKEN" \
@@ -363,36 +366,8 @@ jobs:
                 variables: { id: $id }
               }')"
           )" || response=""
-          published="$(
-            jq -er --arg runtime "$runtime" '
-              if has("errors") or (.data.app.byId | type) != "object" or
-                 (.data.app.byId | has("updateBranchByName") | not) then
-                error("no usable update data")
-              else
-                .data.app.byId.updateBranchByName
-                | if . == null then []
-                  elif (.updates | type) == "array" then .updates
-                  else error("malformed updates") end
-                | . as $updates
-                | map(select(.runtimeVersion == $runtime and (.isRollBackToEmbedded | not)))[0] as $update
-                | if $update == null and ($updates | length) >= 50 then
-                    error("update lookup is incomplete")
-                  elif $update == null then
-                    ""
-                  elif ($update.gitCommitHash | type) != "string" or $update.gitCommitHash == "" then
-                    error("missing published commit")
-                  else
-                    $update.gitCommitHash
-                  end
-              end
-            ' <<<"$response"
-          )" || published="unknown"
-          # A published update this checkout has no object for cannot anchor the diff either.
-          if [[ -n "$published" && "$published" != "unknown" ]] &&
-            ! git cat-file -e "${published}^{commit}" 2>/dev/null; then
-            published="unknown"
-          fi
-          if [[ "$published" == "unknown" ]]; then
+          decision="$(bash .github/scripts/ota-base.sh "$response")"
+          if [[ "$decision" == "unknown" ]]; then
             echo "::warning::Could not determine the last published update for runtime $runtime; not publishing this push."
             {
               echo "### Mobile OTA skipped"
@@ -402,21 +377,16 @@ jobs:
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [[ -n "$published" ]] && git merge-base --is-ancestor "$published" "$GITHUB_SHA" 2>/dev/null; then
-            base="$published"
-          else
-            echo "::warning::No published update for runtime $runtime on main's history; comparing with the previous push only."
-            base="$BEFORE_SHA"
-          fi
-          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}"; then
+          if [[ -z "$decision" || "$decision" == "no-base" ]]; then
             {
               echo "### Mobile OTA skipped"
               echo
-              echo "Found neither the last published update for runtime \`$runtime\` nor \`github.event.before\`, so this job will not publish a partial-range update."
+              echo "Found neither a published update for runtime \`$runtime\` on this history nor the commit that introduced the runtime version, so this job will not publish a partial-range update."
             } >> "$GITHUB_STEP_SUMMARY"
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          base="$decision"
 
           # Every package the mobile app resolves, transitive ones included, from the lockfile.
           mobile_dependencies() {
@@ -446,7 +416,9 @@ jobs:
 
             eligible=false
             case "$file" in
-              apps/mobile/app/*|apps/mobile/components/*|apps/mobile/lib/*)
+              # index.ts is the bundle entry the manifest's "main" names; the other
+              # top-level scripts (app config, metro) shape the native build.
+              apps/mobile/app/*|apps/mobile/components/*|apps/mobile/lib/*|apps/mobile/index.ts)
                 case "$file" in
                   *.ts|*.tsx) eligible=true ;;
                 esac

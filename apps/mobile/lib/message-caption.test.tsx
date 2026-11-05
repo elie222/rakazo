@@ -7,6 +7,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageCaption } from "../components/message-caption";
+import { OpenPageContext } from "./message-mentions";
 
 const linking = vi.hoisted(() => ({
   canOpenURL: vi.fn(async () => true),
@@ -57,6 +58,7 @@ vi.mock("react-native", () => {
       ) => buttons.find((button) => button.text === "Open")?.onPress?.(),
     },
     I18nManager: { isRTL: false },
+    useColorScheme: () => "light",
   };
 });
 
@@ -113,5 +115,31 @@ describe("attachment captions", () => {
     await act(async () => link?.click());
 
     expect(linking.openURL).toHaveBeenCalledWith("https://example.test/docs");
+  });
+
+  it("opens the page a sent page link names from the user's bubble", async () => {
+    const openPage = vi.fn();
+    const role = "user";
+    act(() => {
+      root.render(
+        <OpenPageContext.Provider value={openPage}>
+          <MessageCaption
+            role={role}
+            text={"[Plan](page:pg_1)\nnice"}
+            tokens={lightTokens}
+            colorScheme="light"
+            streaming={false}
+          />
+        </OpenPageContext.Provider>,
+      );
+    });
+
+    expect(container.textContent).not.toContain("page:pg_1");
+    const chip = container.querySelector<HTMLElement>('[role="link"]');
+    expect(chip?.textContent).toContain("Plan");
+
+    await act(async () => chip?.click());
+
+    expect(openPage).toHaveBeenCalledWith("pg_1");
   });
 });

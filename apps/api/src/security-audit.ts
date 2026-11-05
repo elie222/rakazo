@@ -67,6 +67,16 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
     type: "deployment.settings.changed",
     fields: ["signupsEnabled", "computerHost"],
   },
+  "computerProvider.update": {
+    type: "credential.changed",
+    kind: "computer_provider",
+    fields: ["provider"],
+  },
+  "computerProvider.account.update": {
+    type: "credential.changed",
+    kind: "computer_provider",
+    fields: ["provider"],
+  },
   "mcp.assignments.approve": {
     type: "approval.decided",
     kind: "mcp",

@@ -25,7 +25,10 @@ export const BACKGROUND_HELPER_TASK_CUE = "You are a background helper";
 const RESULT_LIMIT = 12_000;
 
 // Stop only settles a card, so it brings no job queue.
-type HelperDeps = Pick<ExecutorDeps, "prisma" | "events"> & { jobs?: ExecutorDeps["jobs"] };
+type HelperDeps = Pick<ExecutorDeps, "prisma"> & {
+  events: Pick<ExecutorDeps["events"], "notify">;
+  jobs?: ExecutorDeps["jobs"];
+};
 type HelperBlock = Extract<MessageBlock, { kind: "subagent" }>;
 
 /**

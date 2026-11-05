@@ -145,6 +145,26 @@ describe("agent secrets on the vault", () => {
     expect(rows[0]!.ciphertext).not.toBe("unused");
   });
 
+  it("refuses a variable named like a saved login, leaving the login as it was", async () => {
+    const { deps, rows } = fixture();
+    const login = {
+      id: "login",
+      userId: "user-1",
+      spaceId: null,
+      name: "acme_token",
+      origin: "https://login.example.test",
+      auth: { type: "login" },
+      ciphertext: "unused",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    rows.push({ ...login });
+    await expect(
+      putAgentSecret(deps, actor, { name: "ACME_TOKEN", value: "fake" }),
+    ).rejects.toThrow("Remove the existing credential before changing its destination");
+    expect(rows).toEqual([login]);
+  });
+
   it("refuses a variable that starts with an underscore", async () => {
     const { deps, rows } = fixture();
     await expect(

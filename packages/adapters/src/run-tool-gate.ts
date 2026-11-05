@@ -51,6 +51,7 @@ import {
 import { reviewWithBackups } from "./auto-review-backups.js";
 import { RAKAZO_DOCS_URLS } from "./builtin-skills.js";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { CATALOG_LOAD, CATALOG_SEARCH } from "./lazy-tool-catalog.js";
 import { findConnectedModelCredential } from "./model-selection.js";
 import { paidRequestEffect } from "./paid-request.js";
 import { PURCHASE_CHECKED_TOOLS, purchaseApprovalOf } from "./purchase-gate.js";
@@ -158,26 +159,34 @@ export async function gateToolCall(
   const unidentifiedAction = Boolean(batch && !batch.complete);
   const approvalName = connectorCall.route?.connectionId ? connectorCall.route.toolName : name;
   const approvalToolNames = batch?.actions.length ? batch.actions : [approvalName];
+  // Search and load return a list or a schema. They never call the connector.
+  const catalogControlRead =
+    !connectorCall.route?.connectionId &&
+    !connectorCall.route?.resourceId &&
+    (connectorCall.route?.toolName === CATALOG_SEARCH ||
+      connectorCall.route?.toolName === CATALOG_LOAD);
   // A batch tool declared as a write makes each of its actions one.
   const declaredReadOnlyFor = (toolName: string) =>
     toolName === approvalName || toolName === name || declaredReadOnly === false
       ? declaredReadOnly
       : ctx.tools.connector.get(toolName)?.readOnly;
   const requiresUnattendedApproval =
-    (unidentifiedAction && run.trigger === "webhook") ||
-    approvalToolNames.some((toolName) =>
-      unattendedTriggerToolRequiresApproval(
-        run.trigger,
-        toolName,
-        viaConnector,
-        declaredReadOnlyFor(toolName),
-      ),
-    );
+    !catalogControlRead &&
+    ((unidentifiedAction && run.trigger === "webhook") ||
+      approvalToolNames.some((toolName) =>
+        unattendedTriggerToolRequiresApproval(
+          run.trigger,
+          toolName,
+          viaConnector,
+          declaredReadOnlyFor(toolName),
+        ),
+      ));
   // A background helper only reads, whatever the approval mode or rules: a connector call
   // runs only when every action it names is declared read-only.
   if (
     run.trigger === BACKGROUND_HELPER_TRIGGER &&
     viaConnector &&
+    !catalogControlRead &&
     (unidentifiedAction ||
       approvalToolNames.some((toolName) => declaredReadOnlyFor(toolName) !== true))
   ) {
@@ -231,9 +240,10 @@ export async function gateToolCall(
       )
     : viaConnector &&
         !unidentifiedAction &&
-        approvalToolNames.every(
-          (toolName) => !connectorToolRequiresApproval(toolName, declaredReadOnlyFor(toolName)),
-        )
+        (catalogControlRead ||
+          approvalToolNames.every(
+            (toolName) => !connectorToolRequiresApproval(toolName, declaredReadOnlyFor(toolName)),
+          ))
       ? connectorTrusts
       : undefined;
   const connectorReadGated =
@@ -257,21 +267,24 @@ export async function gateToolCall(
       (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
-  const { purchase } = request;
+  const { purchase, cardUse } = request;
+  // Typing a saved card is approved like a purchase: every time, by a person.
+  const paying = Boolean(purchase) || Boolean(cardUse);
   const requiresApprovalByDefault =
     request.heldForApproval ||
-    Boolean(purchase) ||
+    paying ||
     commandWatch ||
     requiresUnattendedApproval ||
     siteGate === "new" ||
     unidentifiedAction ||
-    approvalToolNames.some((toolName) =>
-      toolRequiresApproval(toolName, viaConnector, declaredReadOnlyFor(toolName)),
-    );
+    (!catalogControlRead &&
+      approvalToolNames.some((toolName) =>
+        toolRequiresApproval(toolName, viaConnector, declaredReadOnlyFor(toolName)),
+      ));
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;
   const requiresMandatoryApproval =
-    Boolean(purchase) ||
+    paying ||
     commandWatch ||
     scheduleNamesNewSite ||
     requiresUnattendedApproval ||
@@ -343,10 +356,10 @@ export async function gateToolCall(
         reviewOnly: connectorReadGated,
         checkerConfigured,
         newDestination: siteGate === "new",
-        purchase: Boolean(purchase),
+        purchase: paying,
       });
   // Nobody is there to approve a purchase a webhook run reaches.
-  if (purchase && run.trigger === "webhook" && plan !== "deny") {
+  if (paying && run.trigger === "webhook" && plan !== "deny") {
     await auditToolCall(ctx, name, "denied", { reason: "purchase_unattended" });
     return {
       result: {

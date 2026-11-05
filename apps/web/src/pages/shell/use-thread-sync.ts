@@ -11,6 +11,7 @@ import {
   anySignal,
   createRefreshCoalescer,
   isRunTerminalEvent,
+  isRunWorking,
   runThreadSubscription,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
@@ -21,11 +22,13 @@ import {
   openLogoAvatarActivityFeed,
   webLogoAvatarActivity,
 } from "../../lib/logo-avatar-activity.js";
+import { relistPagesForBlocks } from "../../lib/page-actions";
 import { markOnce } from "../../lib/performance";
 import type { SpaceQueries } from "../../lib/query";
 import { queryClient } from "../../lib/query";
 import type { createSpaceRpc } from "../../lib/rpc";
 import {
+  activeThreadRuns,
   isComputerStatusEvent,
   isThreadSnapshotEvent,
   prependThreadMessagePage,
@@ -33,7 +36,11 @@ import {
   reduceComputerStatus,
   reduceThreadSnapshot,
 } from "../../lib/thread-events";
-import { transcriptCanSnapAfterFrame, transcriptIsNearEnd } from "../../lib/transcript-scroll";
+import {
+  firstVisibleTranscriptRow,
+  transcriptCanSnapAfterFrame,
+  transcriptIsNearEnd,
+} from "../../lib/transcript-scroll";
 import type { useBrowserNotifications } from "./use-browser-notifications";
 import type { ComputerState } from "./use-computer";
 import type { ThreadState } from "./use-thread-state";
@@ -271,6 +278,10 @@ export function useThreadSync({
       return;
     pinnedAroundRef.current = null;
     const scrollElement = messageScroll.current;
+    // Hold the first visible row steady: a plain height delta would also count
+    // content appended at the bottom while the older page was loading.
+    const anchorRow = firstVisibleTranscriptRow(scrollElement);
+    const anchorTop = anchorRow?.offsetTop ?? null;
     const previousHeight = scrollElement?.scrollHeight ?? 0;
     const epoch = historyEpoch.current;
     const before = snapshot.olderCursor;
@@ -290,7 +301,11 @@ export function useThreadSync({
       updateSnapshot((prev) => prependThreadMessagePage(prev, page));
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
-        if (element) element.scrollTop += element.scrollHeight - previousHeight;
+        if (!element) return;
+        element.scrollTop +=
+          anchorRow?.isConnected && anchorTop !== null
+            ? anchorRow.offsetTop - anchorTop
+            : element.scrollHeight - previousHeight;
       });
     } finally {
       setLoadingOlder(false);
@@ -311,7 +326,14 @@ export function useThreadSync({
       ? undefined
       : (queryClient.getQueryData(threadKey) ??
         (seed?.thread?.botId === active.id ? seed.thread : undefined));
-    if (cachedThread && snapshotRef.current?.botId !== active.id) commitSnapshot(cachedThread);
+    if (
+      cachedThread &&
+      snapshotRef.current?.botId !== active.id &&
+      (active.threadStatus === undefined ||
+        activeThreadRuns(cachedThread).some((run) => isRunWorking(run.status)) ===
+          isRunWorking(active.threadStatus))
+    )
+      commitSnapshot(cachedThread);
     const sidebarRefresh = createRefreshCoalescer(() => refreshBots());
     const snapshotRefresh = createRefreshCoalescer(() => refreshThread(active.id));
     const abort = new AbortController();
@@ -375,6 +397,7 @@ export function useThreadSync({
         }
         if (event.type === "thread.message.created") {
           const blocks = (event.payload.blocks as Array<{ kind?: string }>) ?? [];
+          relistPagesForBlocks(queries, queryClient, blocks);
           if (blocks.some((block) => block.kind === "child_bot")) {
             void sidebarRefresh.invalidate().catch(() => undefined);
           }
@@ -456,6 +479,13 @@ export function useThreadSync({
         );
         if (event.type === "thread.message.created" && event.payload.role === "bot") {
           markGroupReadOnReply(groupId);
+        }
+        if (event.type === "thread.message.created") {
+          relistPagesForBlocks(
+            queries,
+            queryClient,
+            (event.payload.blocks as Array<{ kind?: string }>) ?? [],
+          );
         }
         if (
           event.type === "run.started" ||

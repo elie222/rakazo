@@ -13,13 +13,16 @@ const ENTRIES = ["apps/api/src/index.ts", "apps/worker/src/index.ts"];
 // @chat-adapter/state-memory is left out: it is the Chat SDK's own in-memory state, which
 // every messaging platform needs, not a vendor.
 const OPTIONAL_VENDORS =
-  /^(@aws-sdk\/.+|@daytona\/sdk|@e2b\/desktop|novita-sandbox|@composio\/core|@stripe\/link-sdk|@chat-adapter\/(slack|telegram|whatsapp))$/;
+  /^(@aws-sdk\/.+|@daytona\/sdk|@e2b\/desktop|novita-sandbox|@composio\/core|@stripe\/link-sdk|@chat-adapter\/(slack|telegram|whatsapp)|@boatdev\/sdk|@boxd-sh\/sdk|chat-adapter-sendblue)$/;
 // Known static imports still to make lazy. Remove an entry once its SDK loads on demand.
 const PENDING = [
   "@chat-adapter/slack",
   "@chat-adapter/telegram",
   "@chat-adapter/whatsapp",
   "@daytona/sdk",
+  "@boatdev/sdk",
+  "@boxd-sh/sdk",
+  "chat-adapter-sendblue",
 ];
 
 for (const entry of ENTRIES) {

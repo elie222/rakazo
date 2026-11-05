@@ -405,9 +405,10 @@ async function readComputer(
   if (!bot?.computer) throw new RoutineWatchError("This bot has no computer to check.");
   const mode = parseComputerMode(bot.computer.scope);
   if (watch.kind === "command") {
-    const graphical =
-      bot.computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
-    const refusal = graphical ? deps.commandRefusal?.(watch.command ?? "") : undefined;
+    // The guard reads bash, so it protects the Linux desktop and never a native shell.
+    const guarded =
+      !usesNativeShell(bot.computer.kind) && deps.sandbox.describe().capabilities.graphical;
+    const refusal = guarded ? deps.commandRefusal?.(watch.command ?? "") : undefined;
     if (refusal) {
       throw new RoutineWatchError(
         `The check command is refused by the desktop-protection guard: ${refusal}.`,

@@ -38,12 +38,26 @@ test("ordinary accounts can add personal MCP connections without server setup", 
       },
     }),
   );
+  const message = "The sign-in address does not match this server's configuration.";
   await page.route("**/rpc/mcp/oauth/begin", (route) =>
-    route.fulfill({ json: { json: { status: "already_connected" } } }),
+    route.fulfill({
+      status: 400,
+      json: { json: { defined: false, code: "MCP_OAUTH_REDIRECT_MISMATCH", status: 400, message } },
+    }),
   );
   await page.getByRole("textbox", { name: "Search apps", exact: true }).fill("Notion");
   await page.getByRole("button", { name: "Search integrations.sh", exact: true }).click();
   await expect(page.getByText("Notion", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText(message);
+  await expect(page.getByRole("link", { name: "Troubleshoot", exact: true })).toHaveAttribute(
+    "href",
+    "https://rakazo.com/docs/troubleshooting/#mcp-oauth-redirect-mismatch",
+  );
+  await captureScreenshot(page, testInfo, "personal-mcp-callback-mismatch");
+  await page.route("**/rpc/mcp/oauth/begin", (route) =>
+    route.fulfill({ json: { json: { status: "already_connected" } } }),
+  );
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "Connected", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "personal-mcp-without-server-admin");

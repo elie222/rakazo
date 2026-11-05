@@ -6,7 +6,7 @@
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* Web type: the system font and a 14/20 base scale. Mobile sets its own type natively. */
+/* Web type: the system font; chat messages read at 15/22, other UI at Tailwind sizes. Mobile sets its own type natively. */
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono:
@@ -19,8 +19,8 @@
   --text-label--line-height: 16px;
   --text-body2: 13px;
   --text-body2--line-height: 18px;
-  --text-body1: 14px;
-  --text-body1--line-height: 20px;
+  --text-body1: 15px;
+  --text-body1--line-height: 22px;
   --text-heading3: 17px;
   --text-heading3--line-height: 24px;
   --text-heading3--letter-spacing: -0.008em;

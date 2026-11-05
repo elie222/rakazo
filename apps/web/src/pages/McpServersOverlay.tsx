@@ -41,6 +41,7 @@ import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Ellipsis, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ErrorNotice } from "../components/ErrorNotice";
 import type { AgentAccess } from "../components/integrations/agent-access";
 import { AgentAccessControl } from "../components/integrations/agent-access";
 import {
@@ -52,7 +53,8 @@ import { McpServerHealthLine } from "../components/McpServerHealthLine";
 import { connectMcpOauth, MCP_OAUTH_CHANNEL, mcpOAuthRedirectUri } from "../lib/mcp-connect";
 import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
-import { errorCode, errorText } from "../lib/user-error";
+import type { ErrorDetails } from "../lib/user-error";
+import { errorCode, errorDetails } from "../lib/user-error";
 
 /** How often the list is re-read while a server installs its package or is being tested. */
 const INSTALL_POLL_MS = 2500;
@@ -126,7 +128,7 @@ export function McpServersOverlay({
   const [args, setArgs] = useState("");
   const [verbatimResults, setVerbatimResults] = useState(false);
   const [envRows, setEnvRows] = useState<EnvRow[]>(() => [emptyEnvRow()]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorDetails | null>(null);
   const [saving, setSaving] = useState(false);
   const [oauthPending, setOauthPending] = useState<string | null>(null);
   const [testingIds, setTestingIds] = useState<Set<string>>(() => new Set());
@@ -165,7 +167,7 @@ export function McpServersOverlay({
   // replace() overwrites a bot's whole list, so changes wait for a read of every assignment.
   const assignmentsReady = assignmentsQuery.isSuccess && !assignmentsQuery.isFetching;
   const loadFailed = serversQuery.isError || botsQuery.isError || assignmentsQuery.isError;
-  const shownError = error ?? (loadFailed ? t`Could not load MCP servers` : null);
+  const shownError = error ?? (loadFailed ? errorDetails(t`Could not load MCP servers`) : null);
 
   /** Reads everything again with requests sent after a change. */
   async function refresh() {
@@ -266,15 +268,15 @@ export function McpServersOverlay({
     if (transport === "stdio" && duplicateNames.size > 0) return;
     setError(null);
     if (!name.trim()) {
-      setError(t`Add a server name.`);
+      setError(errorDetails(t`Add a server name.`));
       return;
     }
     if (transport !== "stdio" && !endpoint.trim()) {
-      setError(t`Add an HTTPS server URL.`);
+      setError(errorDetails(t`Add an HTTPS server URL.`));
       return;
     }
     if (transport === "stdio" && !command.trim()) {
-      setError(t`Add a stdio command.`);
+      setError(errorDetails(t`Add a stdio command.`));
       return;
     }
     setSaving(true);
@@ -357,7 +359,7 @@ export function McpServersOverlay({
       if (created.health.status === "unknown" && !created.health.checkedAt)
         void testServer(created, false);
     } catch (err) {
-      setError(errorText(err, editing ? t`Could not save` : t`Could not add MCP server`));
+      setError(errorDetails(err, editing ? t`Could not save` : t`Could not add MCP server`));
     } finally {
       setSaving(false);
     }
@@ -376,11 +378,15 @@ export function McpServersOverlay({
       await refresh();
       if (result === "connected") return;
       if (result === "already_connected") {
-        setError(t`This server is already connected. Disconnect it first to authorize again.`);
+        setError(
+          errorDetails(
+            t`This server is already connected. Disconnect it first to authorize again.`,
+          ),
+        );
         return;
       }
       if (result === "authorization_not_requested") {
-        setError(t`This server did not request browser authorization.`);
+        setError(errorDetails(t`This server did not request browser authorization.`));
         return;
       }
       setOauthPending((current) => (current === server.id ? null : current));
@@ -390,7 +396,7 @@ export function McpServersOverlay({
         startEditing(server, true);
         void refresh().catch(() => undefined);
       }
-      setError(errorText(err, t`Could not start OAuth`));
+      setError(errorDetails(err, t`Could not start OAuth`));
     }
   }
 
@@ -409,7 +415,7 @@ export function McpServersOverlay({
         ]),
       ]);
     } catch (err) {
-      setError(errorText(err, t`Could not update bot access`));
+      setError(errorDetails(err, t`Could not update bot access`));
     }
   }
 
@@ -432,7 +438,7 @@ export function McpServersOverlay({
       if (editing?.id === server.id) resetForm();
       await refresh();
     } catch (err) {
-      setError(errorText(err, t`Could not delete MCP server`));
+      setError(errorDetails(err, t`Could not delete MCP server`));
     }
   }
 
@@ -451,7 +457,7 @@ export function McpServersOverlay({
         toast.error(t`${updated.name} is not working`);
       }
     } catch (err) {
-      setError(errorText(err, t`Could not test MCP server`));
+      setError(errorDetails(err, t`Could not test MCP server`));
     } finally {
       setTestingIds((current) => {
         const next = new Set(current);
@@ -468,13 +474,15 @@ export function McpServersOverlay({
       await rpc.mcp.oauth.disconnect({ serverId: server.id });
       await refresh();
     } catch (err) {
-      setError(errorText(err, t`Could not disconnect OAuth`));
+      setError(errorDetails(err, t`Could not disconnect OAuth`));
     } finally {
       setOauthPending(null);
     }
   }
 
-  const formOpen = adding || editing !== null || (serversQuery.isSuccess && servers.length === 0);
+  // A save refreshes the list before it resets the form, so the form waits for the reset.
+  const formOpen =
+    saving || adding || editing !== null || (serversQuery.isSuccess && servers.length === 0);
 
   function renderForm() {
     return (
@@ -943,12 +951,9 @@ export function McpServersOverlay({
           </div>
         </DialogHeader>
         {shownError ? (
-          <p
-            role="alert"
-            className="mx-6 mt-5 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive"
-          >
-            {shownError}
-          </p>
+          <div className="mx-6 mt-5 rounded-xl border border-destructive/40 bg-destructive/10 p-3">
+            <ErrorNotice error={shownError} />
+          </div>
         ) : null}
         <div className="rk-scroll min-h-0 overflow-y-auto px-6 py-5">
           {formOpen ? (

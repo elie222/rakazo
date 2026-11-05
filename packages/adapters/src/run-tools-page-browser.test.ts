@@ -1,6 +1,8 @@
 import type { AdapterContext, ComputerRef, PageBrowserCommand } from "@rakazo/adapter-kit";
+import { createStreamingRedactor } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
-import { encodeRunCode } from "./bot-secrets.js";
+import { encodeRunCode, storeBotSecret } from "./bot-secrets.js";
+import { fakeDatabase } from "./bot-secrets.test-support.js";
 import { ComputerBrowserProvider } from "./computer-browser.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 import { FakeBrowserProvider } from "./fake-browser.js";
@@ -279,6 +281,111 @@ describe("a run remembers the sites it typed an approved wallet purchase into", 
       { ...call, args: { actions: [action], purchaseApproval: approved } } as never,
     );
     expect([...walletHosts]).toEqual([]);
+  });
+});
+
+describe("browser_act types a saved card only where the user approved it", () => {
+  /** `approval` names a card and site; it is bound to the card as saved unless it says otherwise. */
+  async function fillSavedCard(approval?: Record<string, unknown>) {
+    const db = fakeDatabase();
+    const secretStore = new EncryptedSecretStore("test-only-encryption-key");
+    const scope = { userId: "u", spaceId: "space" };
+    await storeBotSecret({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      destination: { name: "visa", origin: "", auth: { type: "card" } },
+      plaintext: JSON.stringify({ number: "4242424242424242", expMonth: 8, expYear: 2030 }),
+    });
+    const walletHosts = new Set<string>();
+    const secrets: string[] = [];
+    const browser = new FakeBrowserProvider({
+      pages: { [url]: { title: "Pay", html: "<input aria-label='Card number' />" } },
+    });
+    await browser.navigate(computer, { url }, context);
+    const ctx = {
+      deps: { prisma: { ...db.prisma, taughtSkill: { findFirst: async () => null } }, secretStore },
+      run: { ...scope, id: "run-1", botId: "b1" },
+      bot: { id: "b1" },
+      context,
+      computer: {
+        heldForTakeover: false,
+        mode: "private",
+        checkpoint: { markDirty: () => {} },
+        get: async () => computer,
+      },
+      tools: { disabled: new Set<string>() },
+      providers: { browser },
+      secrets,
+      state: {
+        walletHosts,
+        screen: { unchangedVisualStreak: { count: 0 } },
+        reply: { pendingProgress: "", redactor: createStreamingRedactor([]) },
+      },
+    };
+    const action = {
+      kind: "fill_card",
+      ref: "e1",
+      card: "visa",
+      site: "https://example.test/checkout",
+      field: "number",
+    };
+    const result = await pageBrowserTool(
+      ctx as never,
+      {
+        name: "browser_act",
+        args: {
+          actions: [action],
+          ...(approval
+            ? {
+                cardApproval: {
+                  savedAt: db.rows()[0]!.updatedAt!.toISOString(),
+                  ...approval,
+                },
+              }
+            : {}),
+        },
+        finish: async (r: unknown) => r,
+      } as never,
+    );
+    return { seen: JSON.stringify(result), walletHosts, secrets };
+  }
+
+  it("refuses without the user's approval of this card on this site", async () => {
+    for (const approval of [
+      undefined,
+      { card: "visa", site: "https://other.example.test", title: "Visa ·· 4242" },
+      { card: "amex", site: "https://example.test", title: "Amex ·· 0005" },
+    ]) {
+      const { seen, walletHosts, secrets } = await fillSavedCard(approval);
+      expect(seen).toContain("not approved");
+      expect(walletHosts.size).toBe(0);
+      expect(secrets).toEqual([]);
+    }
+  });
+
+  it("types it once approved and hides the number, leaving the pay click to ask", async () => {
+    const { seen, walletHosts, secrets } = await fillSavedCard({
+      card: "visa",
+      site: "https://example.test",
+      title: "Visa ·· 4242",
+    });
+    expect(
+      (
+        await fillSavedCard({
+          card: "visa",
+          site: "https://example.test",
+          title: "Visa ·· 4242",
+          savedAt: "2026-01-01T00:00:00.000Z",
+        })
+      ).seen,
+    ).toContain("changed after the user approved");
+    expect(seen).not.toContain("not approved");
+    expect(seen).not.toContain("could not");
+    expect(seen).not.toContain("4242424242424242");
+    expect(secrets).toContain("4242424242424242");
+    // Approving the card named no amount, so placing the order still asks.
+    expect(walletHosts.size).toBe(0);
   });
 });
 

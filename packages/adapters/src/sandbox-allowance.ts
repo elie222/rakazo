@@ -1,12 +1,7 @@
 import type { ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import { SANDBOX_HOURLY_COST_MICROS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { MICROS_PER_DOLLAR, sandboxAllowancePlan, sandboxRunHours } from "@rakazo/db";
-
-/**
- * What an hour of a billed computer counts against the allowance, $0.20: above a small cloud
- * machine's raw price, so the allowance also covers storage and saves, and $5 is 25 hours.
- */
-export const DEFAULT_SANDBOX_HOURLY_COST_MICROS = 200_000;
 
 type AllowanceDeps = { prisma: PrismaClient; sandbox: SandboxProvider };
 
@@ -16,7 +11,7 @@ export function sandboxHourlyCostMicros(
   computer: Pick<ComputerRef, "kind">,
 ): number {
   if (computer.kind === "desktop") return 0;
-  return sandbox.billsWhileRunning?.(computer) ? DEFAULT_SANDBOX_HOURLY_COST_MICROS : 0;
+  return sandbox.billsWhileRunning?.(computer) ? SANDBOX_HOURLY_COST_MICROS : 0;
 }
 
 /** This period's computer allowance and spend, in micro-dollars; null when it has no limit. */
@@ -43,7 +38,7 @@ export async function sandboxAllowance(
 /** Whole hours, or tenths under one hour, so time that is left never reads as zero. */
 export function sandboxHoursLeft(allowance: { limitMicros: number; usedMicros: number }): number {
   const hours =
-    Math.max(0, allowance.limitMicros - allowance.usedMicros) / DEFAULT_SANDBOX_HOURLY_COST_MICROS;
+    Math.max(0, allowance.limitMicros - allowance.usedMicros) / SANDBOX_HOURLY_COST_MICROS;
   return hours >= 1 ? Math.floor(hours) : Math.floor(hours * 10) / 10;
 }
 

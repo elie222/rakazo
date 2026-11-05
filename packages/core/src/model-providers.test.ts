@@ -28,15 +28,30 @@ it("counts only bots that pick both a provider and a model", () => {
 });
 
 describe("popularModelProvidersFirst", () => {
-  it("lists subscriptions and the common API providers first", () => {
-    const ids = ["azure", "google", "openai", "anthropic", "openai-codex", "openrouter"];
-    expect(popularModelProvidersFirst(ids, (id) => id)).toEqual([
-      "openai-codex",
-      "anthropic",
-      "openai",
-      "openrouter",
-      "google",
-      "azure",
+  it("lists the popular providers in curated order first, then the rest by name", () => {
+    const providers = [
+      { id: "openai-compatible", name: "OpenAI-compatible" },
+      { id: "azure", name: "Azure OpenAI" },
+      { id: "google", name: "Google" },
+      { id: "openai-compatible", name: "Ollama Cloud" },
+      { id: "groq", name: "Groq" },
+      { id: "openrouter", name: "OpenRouter" },
+      { id: "openai-codex", name: "ChatGPT" },
+    ];
+    expect(
+      popularModelProvidersFirst(
+        providers,
+        (provider) => provider.id,
+        (provider) => provider.name,
+      ).map((provider) => provider.name),
+    ).toEqual([
+      "ChatGPT",
+      "OpenRouter",
+      "Google",
+      "Azure OpenAI",
+      "Groq",
+      "Ollama Cloud",
+      "OpenAI-compatible",
     ]);
   });
 });

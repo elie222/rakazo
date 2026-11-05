@@ -27,6 +27,19 @@ describe("inferScript ask resumes", () => {
   });
 });
 
+describe("inferScript save_page", () => {
+  it("calls save_page only with a JSON object and treats anything else as plain words", () => {
+    expect(inferScript('call save_page with {"help":true}')[0]?.toolCalls).toEqual([
+      { name: "save_page", args: { help: true } },
+    ]);
+    for (const text of ["call save_page with {", "call save_page with null"]) {
+      expect(inferScript(text)[0]?.toolCalls ?? []).not.toContainEqual(
+        expect.objectContaining({ name: "save_page" }),
+      );
+    }
+  });
+});
+
 describe("inferScript message_bot", () => {
   const messageBotScript = (confirmName: string, message: string) => [
     {

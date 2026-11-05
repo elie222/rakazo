@@ -36,8 +36,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Have any questions? Reply to this email.": "¿Tienes alguna pregunta? Responde a este correo.",
   Unsubscribe: "Cancelar suscripción",
   "Invite a friend": "Invita a un amigo",
-  "Invite a friend to Rakazo and earn a free month when they start a qualifying subscription with a new card.":
-    "Invita a un amigo a Rakazo y gana un mes gratis cuando inicie una suscripción que califique con una tarjeta nueva.",
+  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
+    "Invita a un amigo a Rakazo: recibe {weeks} semanas gratis y tú ganas un mes gratis cuando empiece una suscripción válida con una tarjeta nueva.",
   "Open Rakazo": "Abre Rakazo",
   "and choose Invite friends for your link.": "y elige Invitar amigos para obtener tu enlace.",
   "Have any questions? Just reply to this email.":
@@ -68,4 +68,10 @@ export const ES_MESSAGES: Record<string, string> = {
     "{name} ya aparece en el marketplace de plugins de Rakazo.",
   "We couldn't list {name} in the Rakazo plugin marketplace.":
     "No pudimos publicar {name} en el marketplace de plugins de Rakazo.",
+  "Your saved computer files will be deleted":
+    "Se eliminarán los archivos guardados de tu ordenador",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "Los archivos guardados de tu ordenador se eliminarán el {date} a menos que vuelvas a suscribirte.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Los archivos guardados de tu ordenador se eliminarán el {date} a menos que elijas un plan.",
 };

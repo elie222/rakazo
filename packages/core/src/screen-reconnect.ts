@@ -1,7 +1,20 @@
 /** How long a dropped screen waits before it loads again by itself. */
 export const SCREEN_RECONNECT_DELAY_MS = 1_000;
-/** A screen reconnects by itself at most once in this long; a later drop shows the error. */
-export const SCREEN_RECONNECT_EVERY_MS = 30_000;
+/**
+ * How many times a screen loads itself again over one trouble before its error shows: the
+ * load right after a drop, then one more for each reload that comes back without connecting
+ * for long. A connection that stays up for SCREEN_RECONNECT_STABLE_MS ends the trouble, so a
+ * screen the computer keeps restarting — each restart drops it, each reload brings it back —
+ * reconnects every time without the error.
+ */
+export const SCREEN_RECONNECT_TRIES = 3;
+/**
+ * How long a connection must stay up before the next drop counts as a new trouble rather
+ * than the same one. The restarts a working bot causes are at least this far apart, while a
+ * connection that only flashes up — such as one of two viewers a provider keeps displacing —
+ * drops within a second or two of connecting.
+ */
+export const SCREEN_RECONNECT_STABLE_MS = 5_000;
 /**
  * Marks a screen request as a status-only probe. The web server answers it itself right after
  * the access check (204, 403 or 503) and never passes it to the computer, so its answer can't
@@ -34,36 +47,91 @@ export type ScreenReconnect = {
   /** A new page load: only a drop after this load connected can reconnect by itself. */
   loaded(): void;
   /**
+   * A retry someone pressed starts the screen over: its tries and its trouble are forgotten.
+   * A page load alone never does this, so an automatic reload keeps the budget.
+   */
+  reset(): void;
+  /**
+   * The wait before the reconnect that report last asked for: one delay after a drop, doubled
+   * for each try this trouble has already taken.
+   */
+  delayMs(): number;
+  /**
    * What to do about a reported state: load the screen again after the delay, show the
    * page's error, or nothing. Each reconnect goes through the screen's full authorization.
    */
   report(state: ScreenPageState, now?: number): "reconnect" | "error" | "none";
 };
 
-/** Reconnects a screen that dropped after connecting, once in a while, never one that never connected. */
+/**
+ * The clock a connection's life is measured on. A corrected wall clock can jump backwards,
+ * which would make a connection that stayed up look like one that only flashed; a clock that
+ * only moves forward cannot.
+ */
+function stableClock(): number {
+  const clock = (globalThis as { performance?: { now(): number } }).performance;
+  return clock ? clock.now() : Date.now();
+}
+
+/**
+ * Reconnects a screen that dropped after connecting, as often as each connection stays up,
+ * and never one that never connected. A reload the drop's restart raced — the page loads but
+ * the screen server refuses its connection — tries again, waiting longer each time, and so
+ * does a screen whose connections only flash up, until it runs out and shows its error.
+ */
 export function createScreenReconnect(): ScreenReconnect {
   let connected = false;
-  let lastReconnectAt: number | undefined;
+  // A drop's screen is coming back: its reloads haven't connected for long yet.
+  let reconnecting = false;
+  // The page now showing is a load made after the last try this trouble took.
+  let freshLoad = false;
+  let tries = 0;
+  let connectedAt: number | undefined;
   return {
     loaded() {
       connected = false;
+      freshLoad = true;
     },
-    report(state, now = Date.now()) {
+    reset() {
+      connected = false;
+      reconnecting = false;
+      freshLoad = false;
+      tries = 0;
+      connectedAt = undefined;
+    },
+    delayMs() {
+      return SCREEN_RECONNECT_DELAY_MS * 2 ** Math.max(0, tries - 1);
+    },
+    report(state, now = stableClock()) {
       if (state === "connected") {
+        if (!connected) connectedAt = now;
         connected = true;
+        reconnecting = false;
+        freshLoad = false;
         return "none";
       }
       if (state !== "disconnected" && state !== "failed") return "none";
       // A screen that had connected and then dropped may report it as a failure: the computer's
       // embed page marks an unclean disconnect, such as the proxy closing the socket, as an error.
-      if (
-        !connected ||
-        (lastReconnectAt !== undefined && now - lastReconnectAt < SCREEN_RECONNECT_EVERY_MS)
-      )
-        return "error";
-      connected = false;
-      lastReconnectAt = now;
-      return "reconnect";
+      if (connected) {
+        connected = false;
+        reconnecting = true;
+        freshLoad = false;
+        // A connection that stayed up ended the previous trouble; one that only flashed up
+        // spends another try of the same trouble.
+        const stable = connectedAt !== undefined && now - connectedAt >= SCREEN_RECONNECT_STABLE_MS;
+        tries = stable ? 1 : tries + 1;
+        return tries <= SCREEN_RECONNECT_TRIES ? "reconnect" : "error";
+      }
+      // A failure while no reconnect is under way is a first load that never connected.
+      if (!reconnecting) return "error";
+      // The dying page can report several terminal states for one load. Only the first spends
+      // a try; the rest re-arm the reconnect that try asked for, so the apps don't show their
+      // error for a report that is only another word for the same drop.
+      if (!freshLoad) return tries <= SCREEN_RECONNECT_TRIES ? "reconnect" : "error";
+      freshLoad = false;
+      tries += 1;
+      return tries <= SCREEN_RECONNECT_TRIES ? "reconnect" : "error";
     },
   };
 }

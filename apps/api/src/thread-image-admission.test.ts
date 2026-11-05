@@ -81,7 +81,13 @@ function fixture(group = false) {
     imageHandling: "confirm" | "file" | null = "confirm",
   ) =>
     sendThreadMessage(
-      { prisma, events: { notify } as never, jobs: { enqueue } as never, imageAdmission },
+      {
+        prisma,
+        sandbox: {} as never,
+        events: { notify } as never,
+        jobs: { enqueue } as never,
+        imageAdmission,
+      },
       { userId: "user-1", spaceId: "space-1" } as Actor,
       (group
         ? { kind: "group", groupId: "group-1", threadId: "thread-1" }
