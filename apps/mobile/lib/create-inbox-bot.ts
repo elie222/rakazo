@@ -42,6 +42,7 @@ export async function createInboxBot({
     { name: "New Bot", notifyOnFinish: true, computerMode: "team" },
     options,
   );
+  if (!isSearchInboxSession(askedIn)) return;
   void refreshBots().catch(() => undefined);
   allowFocusPrompt(bot.id);
   addToSearchInbox({ kind: "bot", bot }, askedIn);

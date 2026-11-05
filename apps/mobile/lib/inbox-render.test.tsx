@@ -689,6 +689,55 @@ it("pins a bot made for a space to that space while another is selected", async 
   ]);
 });
 
+it.each(["session", "space"])(
+  "abandons pinned creation if the %s changes while listing bots",
+  async (change) => {
+    let complete!: (value: unknown[]) => void;
+    ui.rpc
+      .mockReset()
+      .mockImplementation(async (method: string) =>
+        method === "bots/list" ? new Promise<unknown[]>((resolve) => (complete = resolve)) : {},
+      );
+    const openChat = vi.fn();
+    const creating = createInboxBot({
+      refreshBots: async () => undefined,
+      openChat,
+      spaceId: "space-work",
+    });
+    await vi.waitFor(() => expect(complete).toBeDefined());
+    if (change === "session") ui.sameSession = false;
+    else ui.spaceSeq += 2;
+    complete([]);
+    await creating;
+    ui.sameSession = true;
+    expect(ui.rpc.mock.calls.map(([method]) => method)).not.toContain("bots/create");
+    expect(openChat).not.toHaveBeenCalled();
+  },
+);
+
+it("does not open a created bot after its account or server changes", async () => {
+  let complete!: (value: { id: string; name: string }) => void;
+  ui.rpc
+    .mockReset()
+    .mockImplementation(async (method: string) =>
+      method === "bots/create"
+        ? new Promise<{ id: string; name: string }>((resolve) => (complete = resolve))
+        : [{ id: "bot-existing" }],
+    );
+  const openChat = vi.fn();
+  const creating = createInboxBot({
+    refreshBots: async () => undefined,
+    openChat,
+    spaceId: "space-work",
+  });
+  await vi.waitFor(() => expect(complete).toBeDefined());
+  ui.sameSession = false;
+  complete({ id: "bot-new", name: "New Bot" });
+  await creating;
+  ui.sameSession = true;
+  expect(openChat).not.toHaveBeenCalled();
+});
+
 it("opens a heading-created bot in its space after the selection changes during creation", async () => {
   const bot = { id: "bot-new", name: "New Bot", spaceId: "space-work" };
   let complete!: (value: typeof bot) => void;

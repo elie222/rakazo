@@ -589,8 +589,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   }, [router]);
 
   const chooseInboxSpace = useCallback(
-    async (spaceId: string): Promise<boolean> => {
-      if (spaceActionRef.current.busy) return false;
+    async (spaceId: string) => {
+      if (spaceActionRef.current.busy) return;
       spaceActionRef.current.busy = true;
       setSpaceBusy(true);
       inboxRequestId.current += 1;
@@ -623,12 +623,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         const message = errorText(err, t("Could not switch spaces"));
         setError(message);
         Alert.alert(message, t("Try again."));
-        return false;
       } finally {
         spaceActionRef.current.busy = false;
         setSpaceBusy(false);
       }
-      return true;
     },
     [refreshBots, loadActivity, onSelectSpace, t],
   );
@@ -705,15 +703,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       }
     },
     [openChat, refreshBots, t],
-  );
-
-  const createBotInSpace = useCallback(
-    async (spaceId: string) => {
-      if (creatingBotRef.current || spaceActionRef.current.recoveryId) return;
-      if (selectedSpaceId() !== spaceId && !(await chooseInboxSpace(spaceId))) return;
-      await createQuickBot(spaceId);
-    },
-    [chooseInboxSpace, createQuickBot],
   );
 
   const runCreateAction = useCallback(
@@ -813,7 +802,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     botSections,
     chooseInboxSpace,
     confirmDeleteSpace,
-    createBotInSpace,
+    createBotInSpace: createQuickBot,
     day,
     deleteSection,
     editSectionFromMenu,
