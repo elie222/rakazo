@@ -621,11 +621,7 @@ export function botsRoutes(ctx: RouterContext) {
         return botEmailAddress(deps.prisma, deps.env.inboundEmailDomain, bot.id);
       }),
       emailAddresses: authed.bots.emailAddresses.handler(async ({ context }) =>
-        botEmailAddresses(
-          deps.prisma,
-          deps.env.inboundEmailDomain,
-          await repos.listBots(context.actor),
-        ),
+        botEmailAddresses(deps.prisma, deps.env.inboundEmailDomain, context.actor),
       ),
       claimEmailAddress: authed.bots.claimEmailAddress.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);

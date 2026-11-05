@@ -1,5 +1,5 @@
 import type { BotEmailAddress, BotEmailAddresses } from "@rakazo/contracts";
-import { BOT_EMAIL_NAME_TAKEN, BotEmailNameSchema, suggestedEmailName } from "@rakazo/contracts";
+import { parseBotEmailName, suggestedEmailName } from "@rakazo/contracts";
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect } from "expo-router";
 import type { ReactElement } from "react";
@@ -82,22 +82,21 @@ export function useBotEmailRows({
 
   async function claim() {
     if (claiming || !domain) return;
-    const parsed = BotEmailNameSchema.safeParse(name);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
+    const parsed = parseBotEmailName(name);
+    if (parsed.problem) {
       setClaimError(
-        issue?.code === "too_small" || issue?.code === "too_big"
-          ? t("Use 2 to 64 characters")
-          : issue?.message === BOT_EMAIL_NAME_TAKEN
-            ? t("That address isn't available")
-            : t("Use letters, numbers, dots, dashes or underscores"),
+        {
+          length: t("Use 2 to 64 characters"),
+          taken: t("That address isn't available"),
+          characters: t("Use letters, numbers, dots, dashes or underscores"),
+        }[parsed.problem],
       );
       return;
     }
     setClaiming(true);
     setClaimError(null);
     try {
-      email.setAddress((await rpc("bots/claimEmailAddress", { botId, name: parsed.data })).address);
+      email.setAddress((await rpc("bots/claimEmailAddress", { botId, name: parsed.name })).address);
     } catch (cause) {
       setClaimError(errorText(cause, t("That address isn't available")));
     } finally {

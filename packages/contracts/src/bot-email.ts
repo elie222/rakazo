@@ -33,6 +33,26 @@ export const BotEmailNameSchema = z
   .refine((name) => !name.includes(".."), "Use letters, numbers, dots, dashes or underscores")
   .refine((name) => !RESERVED_BOT_EMAIL_NAMES.has(name), BOT_EMAIL_NAME_TAKEN);
 
+/** Why a name can't be claimed, for each app to word in its own language. */
+export type BotEmailNameProblem = "length" | "taken" | "characters";
+
+/** A name the owner typed, ready to claim, or what is wrong with it. */
+export function parseBotEmailName(
+  raw: string,
+): { name: string; problem?: undefined } | { name?: undefined; problem: BotEmailNameProblem } {
+  const parsed = BotEmailNameSchema.safeParse(raw);
+  if (parsed.success) return { name: parsed.data };
+  const issue = parsed.error.issues[0];
+  return {
+    problem:
+      issue?.code === "too_small" || issue?.code === "too_big"
+        ? "length"
+        : issue?.message === BOT_EMAIL_NAME_TAKEN
+          ? "taken"
+          : "characters",
+  };
+}
+
 /** Null when this server receives no email, or for anyone but the bot's owner. */
 export const BotEmailAddressSchema = z
   .object({

@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { BOT_EMAIL_NAME_TAKEN, BotEmailNameSchema, suggestedEmailName } from "@rakazo/contracts";
+import { parseBotEmailName, suggestedEmailName } from "@rakazo/contracts";
 import { Button, Input } from "@rakazo/ui-web";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Copy } from "lucide-react";
@@ -28,22 +28,21 @@ export function BotEmailAddressField({
   const [claimError, setClaimError] = useState<string | null>(null);
 
   async function claim() {
-    const parsed = BotEmailNameSchema.safeParse(name);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
+    const parsed = parseBotEmailName(name);
+    if (parsed.problem) {
       setClaimError(
-        issue?.code === "too_small" || issue?.code === "too_big"
-          ? t`Use 2 to 64 characters`
-          : issue?.message === BOT_EMAIL_NAME_TAKEN
-            ? t`That address isn't available`
-            : t`Use letters, numbers, dots, dashes or underscores`,
+        {
+          length: t`Use 2 to 64 characters`,
+          taken: t`That address isn't available`,
+          characters: t`Use letters, numbers, dots, dashes or underscores`,
+        }[parsed.problem],
       );
       return;
     }
     setClaiming(true);
     setClaimError(null);
     try {
-      const claimed = await rpc.bots.claimEmailAddress({ botId: bot.id, name: parsed.data });
+      const claimed = await rpc.bots.claimEmailAddress({ botId: bot.id, name: parsed.name });
       queryClient.setQueryData(
         queries.bots.emailAddress.queryKey({ input: { botId: bot.id } }),
         (current) => (current ? { ...current, address: claimed.address } : current),

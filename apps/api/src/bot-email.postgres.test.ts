@@ -3,7 +3,12 @@ import type { InboundEmail } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, bootstrapUserSpace, createDb, runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { assertEmailTrigger, botEmailAddress, claimBotEmailAddress } from "./bot-email-address.js";
+import {
+  assertEmailTrigger,
+  botEmailAddress,
+  botEmailAddresses,
+  claimBotEmailAddress,
+} from "./bot-email-address.js";
 import { receiveBotEmail } from "./email-inbound.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -92,6 +97,19 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
       "Choose an email address",
     );
     await expect(assertEmailTrigger(system, DOMAIN, first.id)).resolves.toBeUndefined();
+
+    const someoneElse = await signup(`eve-${suffix}@example.test`);
+    const theirs = await bot(someoneElse);
+    await claimBotEmailAddress(system, DOMAIN, theirs.id, name("theirs"));
+    await expect(botEmailAddresses(system, DOMAIN, owner)).resolves.toEqual({
+      domain: DOMAIN,
+      addresses: [{ botId: first.id, botName: "Scout", address: `${scout}@${DOMAIN}` }],
+    });
+    await system.bot.update({ where: { id: first.id }, data: { archivedAt: new Date() } });
+    await expect(botEmailAddresses(system, DOMAIN, owner)).resolves.toEqual({
+      domain: DOMAIN,
+      addresses: [],
+    });
 
     await system.bot.delete({ where: { id: first.id } });
     await expect(claimBotEmailAddress(system, DOMAIN, second.id, scout)).rejects.toThrow(

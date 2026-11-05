@@ -20,33 +20,26 @@ export async function botEmailAddress(
   return { domain, address: row ? `${row.name}@${domain}` : null };
 }
 
-/** The claimed addresses of `bots`, for the Vault; null when this server receives no email. */
+/** The addresses of the owner's own bots in this Space, for the Vault; null without email. */
 export async function botEmailAddresses(
   prisma: PrismaClient,
   domain: string | undefined,
-  bots: Array<{ id: string; name: string }>,
+  owner: { spaceId: string; userId: string },
 ): Promise<BotEmailAddresses> {
   if (!domain) return null;
   const rows = await prisma.botEmailAddress.findMany({
-    where: { botId: { in: bots.map((bot) => bot.id) } },
-    select: { localPart: true, botId: true },
+    // Archived bots receive no mail, so their addresses would only mislead.
+    where: { bot: { spaceId: owner.spaceId, userId: owner.userId, archivedAt: null } },
+    select: { localPart: true, bot: { select: { id: true, name: true } } },
+    orderBy: { localPart: "asc" },
   });
-  const names = new Map(bots.map((bot) => [bot.id, bot.name]));
   return {
     domain,
-    addresses: rows
-      .flatMap((row) =>
-        row.botId
-          ? [
-              {
-                botId: row.botId,
-                botName: names.get(row.botId) ?? "",
-                address: `${row.localPart}@${domain}`,
-              },
-            ]
-          : [],
-      )
-      .sort((a, b) => a.botName.localeCompare(b.botName)),
+    addresses: rows.flatMap((row) =>
+      row.bot
+        ? [{ botId: row.bot.id, botName: row.bot.name, address: `${row.localPart}@${domain}` }]
+        : [],
+    ),
   };
 }
 
