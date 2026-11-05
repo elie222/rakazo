@@ -252,8 +252,8 @@ export function CreditChoice({
   const [interval, setByokInterval] = useState<ByokInterval>("month");
   const credit = formatBillingAmount(amount, "usd", i18n.locale);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState(false);
-  const { logOut, signingOut } = useSignOut("/sign-in", () => setError(true));
+  const [error, setError] = useState<string | null>(null);
+  const { logOut, signingOut } = useSignOut("/sign-in", setError);
   // A choice that answers after the plans were closed must not leave the app.
   const closed = useRef(false);
   useEffect(() => {
@@ -267,7 +267,7 @@ export function CreditChoice({
   }
   async function choose(ownKey: boolean) {
     setPending(true);
-    setError(false);
+    setError(null);
     try {
       if (ownKey && status.byokFreeUntil) {
         go((await rpc.billing.checkout({ interval })).url);
@@ -282,7 +282,7 @@ export function CreditChoice({
         go(url);
       }
     } catch {
-      setError(true);
+      setError(t`Could not open billing`);
       setPending(false);
     }
   }
@@ -405,7 +405,7 @@ export function CreditChoice({
       </div>
       {error ? (
         <p role="alert" className="text-sm text-destructive">
-          <Trans>Could not open billing</Trans>
+          {error}
         </p>
       ) : null}
     </div>
