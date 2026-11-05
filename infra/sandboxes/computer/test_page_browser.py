@@ -629,6 +629,22 @@ class PurchaseTest(unittest.TestCase):
         self.assertEqual(result["purchase"]["amount"], "$5")
         self.assertEqual(result["purchase"]["total"], "$10")
 
+    def test_purchase_check_passes_on_the_order_lines_the_page_lists_as_short_plain_text(self):
+        items = [{"name": "Bananas \u00d7 6", "amount": "$3.00"},
+                 {"name": "Oat\u200b milk\u202e \n 1L", "amount": " $8.40 "},
+                 {"name": "x" * 200, "amount": "$1"}, {"name": "", "amount": "$1"}, {"name": "Tax"},
+                 "Delivery $6.00", {"name": 5, "amount": "$5"}] + [{"name": "Gum", "amount": "$1"}] * 40
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "items": items})
+        result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})
+        found = result["purchase"]["items"]
+        self.assertEqual(found[:3], [{"name": "Bananas \u00d7 6", "amount": "$3.00"},
+                                     {"name": "Oat milk 1L", "amount": "$8.40"}, {"name": "x" * 80, "amount": "$1"}])
+        # Only names with amounts, and no more than the card could ever list.
+        self.assertEqual(found[3:], [{"name": "Gum", "amount": "$1"}] * (helper.MAX_ORDER_ITEMS - 7))
+        # A page that lists none sends none, as before.
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "items": "Bananas"})
+        self.assertNotIn("items", page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})["purchase"])
+
     def test_one_card_approves_one_purchase_click_of_a_batch(self):
         browser = pays(pays(FakeAgentBrowser(), "e7"), "e8")
         result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}, {"kind": "click", "ref": "e8"}]})

@@ -21,6 +21,8 @@ export type PurchaseApproval = {
   amountSource: "button" | "page";
   /** The page's total beside a button that names its own amount, when the page shows one. */
   total?: string;
+  /** The order lines the page lists above its total, as page text; none when it lists none. */
+  items?: Array<{ name: string; amount: string }>;
 };
 
 // Empty when the check failed and the page is unknown.
@@ -30,10 +32,29 @@ const INVISIBLE = /[\u{E0000}-\u{E007F}​-‏⁠-⁤‪-‮⁦-⁩﻿]/gu;
 const pageText = (text: string, max: number) =>
   Array.from(text.replace(INVISIBLE, "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
 
+/** Order lines as the card shows them: page text, cut short, at most 30. Anything else is dropped. */
+function withItems(
+  value: unknown,
+  shown: (text: string, max: number) => string = pageText,
+): Pick<PurchaseApproval, "items"> {
+  const items = (Array.isArray(value) ? value.slice(0, 30) : []).flatMap((item) => {
+    const { name, amount } = (item ?? {}) as Record<string, unknown>;
+    if (typeof name !== "string" || typeof amount !== "string") return [];
+    const line = { name: shown(name, 80), amount: shown(amount, 40) };
+    return line.name && line.amount ? [line] : [];
+  });
+  return items.length ? { items } : {};
+}
+// The card lists this many order lines; a longer order shows one fewer and how many more there are.
+const CARD_ITEMS = 8;
+
 /** A purchase approval as the persisted request holds it, or nothing when it is not one. */
 export function purchaseApprovalOf(value: unknown): PurchaseApproval | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const { steps, site, label, amount, amountSource, total } = value as Record<string, unknown>;
+  const { steps, site, label, amount, amountSource, total, items } = value as Record<
+    string,
+    unknown
+  >;
   if (
     !Array.isArray(steps) ||
     !steps.every((step) => Number.isInteger(step) && step >= 0 && step < 24) ||
@@ -50,6 +71,7 @@ export function purchaseApprovalOf(value: unknown): PurchaseApproval | undefined
     amount,
     amountSource: amountSource === "button" ? "button" : "page",
     ...(typeof total === "string" && total ? { total } : {}),
+    ...withItems(items),
   };
 }
 
@@ -62,11 +84,15 @@ export function purchaseCardSummary(purchase: PurchaseApproval): FleetCardSummar
       lines: ["The page could not be checked, so this may complete a payment."],
     };
   }
+  const items = purchase.items ?? [];
+  const listed = items.length > CARD_ITEMS ? items.slice(0, CARD_ITEMS - 1) : items;
   return {
     onceOnly: true,
     title: `Pay on ${cardName(purchase.site)}?`,
     lines: [
       ...(purchase.label ? [`Button: "${purchase.label}"`] : []),
+      ...listed.map((item) => `${item.name}: ${item.amount}`),
+      ...(items.length > listed.length ? [`and ${items.length - listed.length} more`] : []),
       ...(purchase.amount
         ? [
             `${purchase.amountSource === "button" ? "Amount on the button" : "Total on the page"}: ${purchase.amount}`,
@@ -75,7 +101,9 @@ export function purchaseCardSummary(purchase: PurchaseApproval): FleetCardSummar
       ...(purchase.total && purchase.total !== purchase.amount
         ? [`Total on the page: ${purchase.total}`]
         : []),
-      "The button label and total are read from the page. The bot has not checked them.",
+      items.length
+        ? "The button label, items and total are read from the page. The bot has not checked them."
+        : "The button label and total are read from the page. The bot has not checked them.",
     ],
   };
 }
@@ -207,5 +235,6 @@ export async function detectPurchase(
     amount: shown(found.amount, 40),
     amountSource: found.amountSource === "button" ? "button" : "page",
     ...(found.total ? { total: shown(found.total, 40) } : {}),
+    ...withItems(found.items, shown),
   };
 }

@@ -1018,9 +1018,11 @@ class PageBrowser:
                 break
         if args.get("desktop") is True and not steps:
             first = self.purchases().desktop(args)
+        items = order_items(first.get("items")) if first else []
         purchase = {"steps": steps, "label": first.get("label", ""), "amount": first.get("amount", ""),
                     "amountFrom": first.get("amountFrom", "page"), "reason": first.get("reason"),
-                    **({"total": first["total"]} if first and first.get("total") else {})} if first else None
+                    **({"total": first["total"]} if first and first.get("total") else {}),
+                    **({"items": items} if items else {})} if first else None
         return {"ok": True, "url": "", "title": "", **self.purchases().where(), "site": site, "purchase": purchase}
 
     # -- commands ---------------------------------------------------------------------------------
@@ -1944,15 +1946,71 @@ PURCHASE_HELPERS = r"""
   }
   // Page text is cut by characters, not code units, so a cut never leaves half an emoji.
   const cut = (text, max) => Array.from(text).slice(0, max).join("");
+  // An order line ends with its one amount: "Oat milk 1L × 2 $8.40", "Delivery 6,00 €".
+  const LINE_AMOUNT = new RegExp(`(?:${MONEY.source})$`, "i");
+  const ANY_AMOUNT = new RegExp(MONEY.source, "i");
+  const SUBTOTAL = /sub-?\s?total|סכום ביניים/i;
+  // Controls and choices are not order lines: a delivery option names its price too.
+  const NOT_A_LINE = "input:not([type=hidden]), select, textarea, button, label, [role=button], [role=radio], "
+    + "[role=checkbox], [role=option], [role=switch], [contenteditable]";
+  const PAGE_EDGES = "header, nav, footer, [role=banner], [role=navigation], [role=contentinfo]";
+  // What an element shows, with a space between its parts so "6" and "$3.00" in two cells stay apart.
+  function shownText(el) {
+    const parts = [];
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node && parts.length < 40; node = walker.nextNode()) {
+      const parent = node.parentElement;
+      if (parent && !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(parent.tagName) && visible(parent)) {
+        parts.push(node.data);
+      }
+    }
+    return tidy(parts.join(" "));
+  }
+  // The order lines the checkout lists above its total, as the page words them: each a name and the amount
+  // at its end, such as an item with its quantity and price, delivery or tax. Read back from the total no further
+  // than a card field, so a summary beside the card form is not mixed with the page above it. None without a total.
+  function orderItems() {
+    const elements = [...(document.body?.querySelectorAll("*") || [])].slice(0, 5000);
+    const small = (el, max) => (el.textContent || "").length <= max && !el.matches(NOT_A_LINE)
+      && !el.closest(PAGE_EDGES) && !el.parentElement?.closest(NOT_A_LINE);
+    const totals = elements.filter((el) => small(el, 200) && TOTAL.test(el.textContent)
+      && !SUBTOTAL.test(el.textContent) && visible(el)).slice(-5);
+    if (!totals.length) return [];
+    const rows = [];
+    for (const el of elements) {
+      if (rows.length >= 400 || !small(el, 400) || !ANY_AMOUNT.test(el.textContent) || el.querySelector(NOT_A_LINE)
+          || !visible(el)) continue;
+      const text = shownText(el);
+      const amount = text.length <= 160 ? text.match(LINE_AMOUNT)?.[0] : "";
+      const name = amount ? text.slice(0, -amount.length).replace(/[\s:·•–—-]+$/u, "") : "";
+      if (/\p{L}/u.test(name)) rows.push({ el, name: cut(name, 80), amount: cut(amount, 40) });
+    }
+    // The line itself, not the list or row group around it.
+    const lines = rows.filter((row) => !rows.some((other) => other !== row && row.el.contains(other.el)));
+    const cards = pageCards();
+    const before = (a, b) => Boolean(b.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_PRECEDING);
+    // The last total first; an earlier one when the last has nothing listed above it.
+    for (const total of totals.reverse()) {
+      const found = [];
+      for (const line of [...lines].reverse()) {
+        if (!before(line.el, total) || line.el.contains(total)) continue;
+        if (cards.some((card) => before(line.el, card) && before(card, total))) break;
+        if (!TOTAL.test(line.name) && !SUBTOTAL.test(line.name)) found.unshift({ name: line.name, amount: line.amount });
+      }
+      if (found.length) return found.slice(0, 30);
+    }
+    return [];
+  }
   // What the card shows: the button's text, and the amount the button names or else the page's total.
   // `words`: everything the control says, so an amount only its aria label names is the one shown.
   // A button that names another amount than the page's total also reports the total, which the spending
-  // limit counts if larger.
+  // limit counts if larger. `items`: the order lines the page lists, when it lists any.
   function shownPurchase(reason, label, words = [label]) {
     const named = words.map((word) => moneyIn(word, false)).find(Boolean) || "";
     const total = totalShown();
+    const items = orderItems();
     return { reason, label: cut(label, 80), amount: named || total, amountFrom: named ? "button" : "page",
-      ...(named && total && total !== named ? { total } : {}) };
+      ...(named && total && total !== named ? { total } : {}), ...(items.length ? { items } : {}) };
   }
   // `frame`: the page shows a payment provider's card frame, which only the caller can vouch for.
   function purchaseOf(el, frame) {
@@ -2049,6 +2107,21 @@ FRAME_ELEMENTS = ("IFRAME", "FRAME", "OBJECT", "EMBED")
 def shown(text: Any) -> str:
     """Page text as the card shows it: no invisible characters, one space between words."""
     return " ".join(INVISIBLE.sub("", str(text or "")).split())
+
+
+MAX_ORDER_ITEMS = 30
+
+
+def order_items(found: Any) -> list[dict[str, str]]:
+    """The order lines the page lists beside a purchase, as the card shows them: page text, each a name and
+    an amount, cut short. Anything else the page answered is dropped."""
+    items: list[dict[str, str]] = []
+    for item in found[:MAX_ORDER_ITEMS] if isinstance(found, list) else []:
+        if isinstance(item, dict) and isinstance(item.get("name"), str) and isinstance(item.get("amount"), str):
+            name, amount = shown(item["name"])[:80], shown(item["amount"])[:40]
+            if name and amount:
+                items.append({"name": name, "amount": amount})
+    return items
 
 
 class Offscreen(RuntimeError):
