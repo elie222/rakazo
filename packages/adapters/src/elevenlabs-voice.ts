@@ -16,6 +16,7 @@ import {
   speechUploadName,
   verifyVoiceHttpGet,
   voiceDeadline,
+  voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
 
@@ -90,8 +91,8 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     form.set("model_id", TRANSCRIBE_MODEL);
     // Without a hint Scribe guesses the language, and a short clip in one language can
     // come back as lookalike words in another.
-    const language = request.language?.split("-")[0]?.toLowerCase();
-    if (language && /^[a-z]{2,3}$/.test(language)) form.set("language_code", language);
+    const language = voiceLanguageHint(request.language);
+    if (language) form.set("language_code", language);
     form.set(
       "file",
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),
