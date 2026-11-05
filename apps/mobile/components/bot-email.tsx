@@ -3,7 +3,7 @@ import { BOT_EMAIL_NAME_TAKEN, BotEmailNameSchema, suggestedEmailName } from "@r
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect } from "expo-router";
 import type { ReactElement } from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Text } from "react-native";
 import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
@@ -69,6 +69,11 @@ export function useBotEmailRows({
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const [name, setName] = useState(() => suggestedEmailName(botName));
+  const [edited, setEdited] = useState(false);
+  // The bot's real name can arrive after the screen opens; follow it until the owner types.
+  useEffect(() => {
+    if (!edited) setName(suggestedEmailName(botName));
+  }, [botName, edited]);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -135,6 +140,7 @@ export function useBotEmailRows({
       value={name}
       onChangeText={(next) => {
         setName(next);
+        setEdited(true);
         setClaimError(null);
       }}
       onSubmitEditing={() => void claim()}
