@@ -131,7 +131,7 @@ export function ModelRoleSettings({
         canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider) &&
         entry.id === choice.modelId,
     );
-  const options = connectedBackupOptions(state.catalog, credentials);
+  const options = connectedBackupOptions(state.catalog, credentials, role === "computer");
   const optionFor = (choice: ModelRoleChoice) =>
     options.find((option) => backupChoiceKey(option) === backupChoiceKey(choice));
   const modelLabel = (choice: ModelRoleChoice) =>
@@ -219,7 +219,9 @@ export function ModelRoleSettings({
 
   function pickerRequest(slot: Slot, narrowed?: Narrowed): ModelPickerRequest {
     const primarySlot = isPrimarySlot(slot);
-    const all = narrowed ? connectedBackupOptions(narrowed.catalog, narrowed.credentials) : options;
+    const all = narrowed
+      ? connectedBackupOptions(narrowed.catalog, narrowed.credentials, role === "computer")
+      : options;
     const pool = all.filter(
       (option) => !narrowed || option.credentialId === narrowed.choice.credentialId,
     );

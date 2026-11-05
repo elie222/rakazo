@@ -3,8 +3,8 @@ import { useNavigation, useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { Alert, AppState } from "react-native";
-import type { MobileBot, MobileMessage, MobileSnapshot } from "./api";
-import { blockText, rpc } from "./api";
+import type { ApiRequestContext, MobileBot, MobileMessage, MobileSnapshot } from "./api";
+import { blockText, captureApiRequestContext, rpc } from "./api";
 import { nextAutoSpeakAction } from "./auto-speak";
 import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "./bot-switch";
 import { setCallProviderTranscribe, startCall } from "./call-session";
@@ -77,7 +77,7 @@ export function useAutoSpeakReply({
       botId: currentBot.id,
       speaker: {
         name: currentBot.name,
-        color: resolvePersonaColorDef(currentBot.id, currentBot.color).light,
+        color: resolvePersonaColorDef(currentBot.id, currentBot.color).hex,
       },
     }).catch(() => undefined);
   }, [
@@ -230,6 +230,9 @@ export function useThreadVoiceCall({
         return;
       }
       const botName = displayName ?? t("Bot");
+      // The call keeps the Space it starts in: an organization or Space switch mid-call must
+      // not move its turns, speech or hang-up to another Space.
+      const requestContext: ApiRequestContext = await captureApiRequestContext();
       const startedCallId = startCall({
         botId: targetBotId,
         botName,
@@ -238,6 +241,7 @@ export function useThreadVoiceCall({
         transcribe: plan.transcribe,
         greeting: callGreeting(botName, callerName, switchedHere),
         session: setupSession,
+        requestContext,
         switchBot: (text) => {
           const target = findSwitchTarget(text, mentionBotsRef.current);
           if (!target || target.id === targetBotId) return undefined;

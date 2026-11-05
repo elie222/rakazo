@@ -1,9 +1,10 @@
-import { translate } from "@rakazo/core";
+import { polishPluralCategory, translate } from "@rakazo/core";
 import { useSyncExternalStore } from "react";
 import { DE_MESSAGES, PEER_MESSAGE_FORMS as DE_PEER_FORMS } from "./locales/de";
 import { ES_MESSAGES, PEER_MESSAGE_FORMS as ES_PEER_FORMS } from "./locales/es";
 import { JA_MESSAGES, PEER_MESSAGE_FORMS as JA_PEER_FORMS } from "./locales/ja";
 import { NL_MESSAGES, PEER_MESSAGE_FORMS as NL_PEER_FORMS } from "./locales/nl";
+import { PL_MESSAGES, PEER_MESSAGE_FORMS as PL_PEER_FORMS } from "./locales/pl";
 import { RU_MESSAGES, PEER_MESSAGE_FORMS as RU_PEER_FORMS } from "./locales/ru";
 import { ZH_MESSAGES, PEER_MESSAGE_FORMS as ZH_PEER_FORMS } from "./locales/zh";
 import { ZH_TW_MESSAGES, PEER_MESSAGE_FORMS as ZH_TW_PEER_FORMS } from "./locales/zh-TW";
@@ -18,6 +19,7 @@ const catalogs: Partial<Record<UiLocale, Record<string, string>>> = {
   nl: NL_MESSAGES,
   ja: JA_MESSAGES,
   es: ES_MESSAGES,
+  pl: PL_MESSAGES,
 };
 
 let activeLocale: UiLocale = "en";
@@ -59,7 +61,7 @@ export function activateUiLocale(locale: UiLocale): UiLocale {
 
 async function applyDirection(locale: UiLocale): Promise<void> {
   try {
-    // Direction follows the active UI locale only (en / zh-CN / zh-TW / ru / de / nl / ja / es → LTR), never the
+    // Direction follows the active UI locale only (all supported locales are LTR), never the
     // device language. Applying device RTL here would fight this and reload-loop.
     const { applyMobileUiDirection } = await import("./ui-direction");
     applyMobileUiDirection(htmlLangForLocale(locale));
@@ -156,6 +158,7 @@ export function peerExchangeLabel(
     ru: RU_PEER_FORMS,
     "zh-CN": ZH_PEER_FORMS,
     es: ES_PEER_FORMS,
+    pl: PL_PEER_FORMS,
   };
   // Hermes ships without Intl.PluralRules, so pick the category by hand.
   const category = pluralCategory(activeLocale, count);
@@ -166,6 +169,7 @@ export function peerExchangeLabel(
 
 function pluralCategory(locale: UiLocale, count: number): Intl.LDMLPluralRule {
   if (locale === "zh-CN") return "other";
+  if (locale === "pl") return polishPluralCategory(count);
   if (locale === "ru") {
     const mod10 = count % 10;
     const mod100 = count % 100;

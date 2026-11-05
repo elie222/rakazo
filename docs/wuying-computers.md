@@ -119,8 +119,9 @@ An unchanged Caddy matcher would add X-Frame-Options to the new runtime and bloc
 
 ## Limits
 
-- **Team Computers only.** Every bot on a desktop shares it, so Rakazo refuses Private Computers
-  on Wuying.
+- **Private Computers share the desktop.** Wuying has no per-computer machine, so a Private
+  Computer on Wuying runs on the same desktop and Windows account as every other computer
+  configured with it.
 - **One Windows account per desktop.** Every account that uses the same desktop, including every
   account left on the deployment default, shares its files, screen, input and command
   environment, including saved command credentials. A screen login opened for watching can also

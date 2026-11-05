@@ -18,12 +18,14 @@ export function InboxHeader({
   toggleActivityMode,
   runCreateAction,
   columnInsets,
+  title,
 }: {
   initials: string;
   activityMode: boolean;
   toggleActivityMode: () => void;
   runCreateAction: (action: CreateAction) => void;
   columnInsets: { left: number; right: number };
+  title?: ReactNode;
 }) {
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
@@ -47,6 +49,7 @@ export function InboxHeader({
           <Text style={styles.profileInitials}>{initials}</Text>
         </HeaderButton>
       </View>
+      {title}
       <View style={styles.headerActions}>
         <HeaderButton
           accessibilityLabel={t("Activity")}

@@ -48,6 +48,7 @@ import {
   subscribeComposerDraftAccepted,
   writeComposerDraft,
 } from "../../lib/composer-draft";
+import { hasOpenDialog } from "../../lib/has-open-dialog";
 import { usePageSession } from "../../lib/pages";
 import { isFileDrag, isFilePaste } from "../../lib/pending-attachments";
 import { ComposerReplyPreview } from "./chat-context";
@@ -60,6 +61,7 @@ import {
   MentionOptionIcon,
   slashActionLabel,
 } from "./composer-mentions";
+import { isApplePlatform, isEditableTarget, primaryModifier } from "./shell-shortcuts";
 import { useComposerLayout } from "./use-composer-layout";
 
 const ATTACHMENT_ACCEPT = attachmentPickerAccept(navigator.userAgent);
@@ -231,6 +233,34 @@ const ComposerBody = memo(function Composer({
     composerFieldRef,
     expanded,
   } = useComposerLayout(draft, selectedSkill !== null);
+  // Cmd/Ctrl+D in the message field dictates hands-free, like a keyboard press on the mic button,
+  // and sends once pressed again. The field hides while recording, so the key is heard window-wide.
+  const dictateKey = useRef({ talk, available: false });
+  dictateKey.current = {
+    talk,
+    available: Boolean(phoneCallsEnabled) && !disabled && !onCall && draft.trim().length === 0,
+  };
+  useEffect(() => {
+    const apple = isApplePlatform();
+    function onKey(event: KeyboardEvent) {
+      if (event.repeat || event.altKey || event.shiftKey || event.key?.toLowerCase() !== "d")
+        return;
+      if (!primaryModifier(event, apple)) return;
+      const { talk, available } = dictateKey.current;
+      if (talk.recording) {
+        // Pressed while typing elsewhere, it belongs to that field rather than this recording.
+        if (!talk.recording.locked || talk.transcribing) return;
+        if (isEditableTarget(event.target) || hasOpenDialog(document)) return;
+        event.preventDefault();
+        talk.submit();
+      } else if (available && document.activeElement === textareaRef.current) {
+        event.preventDefault();
+        talk.startHandsFree();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [textareaRef]);
   const pendingCaret = useRef<ComposerMentionRange | null>(null);
   const completedSelection = useRef<number | null>(null);
   useLayoutEffect(() => {
@@ -761,7 +791,7 @@ const ComposerBody = memo(function Composer({
         data-testid="composer-bar"
         data-expanded={expanded}
         className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-colors focus-within:border-input ${
-          docked ? "bg-card" : "bg-background"
+          docked ? "bg-card" : "bg-background dark:bg-card"
         } ${
           expanded
             ? "gap-x-2 gap-y-2 pb-[9px] pt-3"

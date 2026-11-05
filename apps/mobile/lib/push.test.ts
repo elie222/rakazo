@@ -8,7 +8,7 @@ vi.mock("./live-notifications.js", () => ({
 vi.mock("./network-cache.js", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 vi.mock("expo-constants", () => ({ default: { easConfig: { projectId: "fake-project" } } }));
-vi.mock("expo-modules-core", () => ({ requireOptionalNativeModule: () => null }));
+vi.mock("expo-modules-core", () => ({ requireOptionalNativeModule: vi.fn(() => null) }));
 
 // Expo runs every module's async functions on one serial native queue, so a call
 // that waits there holds up SecureStore too.
@@ -43,6 +43,7 @@ vi.mock("expo-notifications", () => ({
   getExpoPushTokenAsync: vi.fn(async () => ({ data: "ExponentPushToken[fake]" })),
 }));
 
+import { requireOptionalNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { rpc, selectInitialSpace } from "./api";
@@ -73,6 +74,7 @@ let permission: ReturnType<typeof deferred<{ granted: boolean }>>;
 
 beforeEach(async () => {
   native.reset();
+  vi.mocked(requireOptionalNativeModule).mockReturnValue(null);
   vi.stubGlobal("fetch", fetch);
   fetch.mockClear();
   vi.mocked(Notifications.requestPermissionsAsync).mockClear();
@@ -139,4 +141,14 @@ describe("push registration on Android", () => {
       expect.anything(),
     );
   });
+});
+
+it("registers native sender delivery only when the installed Android module supports it", async () => {
+  Platform.OS = "android";
+  vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as never);
+  vi.mocked(requireOptionalNativeModule).mockReturnValue({ supportsSenderAvatars: true });
+  await registerPushToken();
+  const call = fetch.mock.calls.find(([url]) => url.endsWith("/rpc/notifications/registerPush"));
+  const options = (call as unknown as [string, RequestInit])[1];
+  expect(JSON.parse(String(options.body)).json).toMatchObject({ presentation: "android_sender" });
 });

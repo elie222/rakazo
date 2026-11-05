@@ -401,6 +401,7 @@ describe("modelCredentialDto", () => {
       modelId: "qwen3-4b",
       reasoning: false,
       thinkingLevels: ["off"],
+      visionModelIds: [],
     });
   });
 

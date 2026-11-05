@@ -17,6 +17,7 @@ import {
   speechUploadName,
   verifyVoiceHttpGet,
   voiceDeadline,
+  voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
 
@@ -39,7 +40,6 @@ let invalidTtsModelWarned = false;
  */
 const DEFAULT_ASR_MODEL = "transcribe-1-pro";
 /** BCP-47 tag or ISO 639-1 code; Fish wants the lowercase primary subtag. */
-const ASR_LANGUAGE_PATTERN = /^([A-Za-z]{2,3})(?:-[A-Za-z0-9]{2,8})*$/;
 let invalidAsrModelWarned = false;
 
 export class FishAudioVoiceProvider implements VoiceProvider {
@@ -128,7 +128,7 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     form.set("ignore_timestamps", "true");
     // transcribe-1-pro otherwise leaves bracketed audio events ("[risas]") in the text.
     form.set("tag_audio_events", "false");
-    const language = asrLanguageHint(request.language);
+    const language = voiceLanguageHint(request.language);
     if (language) form.set("language", language);
     const model = resolveFishTranscriptionModel();
     const res = await fetch(`${API}/v1/asr`, {
@@ -238,15 +238,6 @@ function resolveFishTranscriptionModel(): string {
     });
   }
   return DEFAULT_ASR_MODEL;
-}
-
-/**
- * The lowercase ISO 639-1 code Fish expects in `language`, or undefined when the value is
- * not a tag we can honor ("es-ES" and "es" both ask for Spanish).
- */
-export function asrLanguageHint(language: string | undefined): string | undefined {
-  const match = ASR_LANGUAGE_PATTERN.exec(language?.trim() ?? "");
-  return match?.[1] ? match[1].toLowerCase() : undefined;
 }
 
 /**

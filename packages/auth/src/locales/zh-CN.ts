@@ -60,4 +60,9 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "Your Rakazo page claim: {name}": "你在 Rakazo 的页面认领：{name}",
   "Your changes to the {name} page are approved.": "你对 {name} 页面的修改已获批准。",
   "We couldn't approve your changes to the {name} page.": "我们无法批准你对 {name} 页面的修改。",
+  "Your saved computer files will be deleted": "你保存的电脑文件将被删除",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "除非你重新订阅，否则你保存的电脑文件将于 {date} 被删除。",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "除非你选择一个套餐，否则你保存的电脑文件将于 {date} 被删除。",
 };

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
 
 // win32 shares the non-darwin "this computer" branch with linux.
 for (const platform of ["darwin", "linux"]) {
@@ -96,6 +96,12 @@ for (const platform of ["darwin", "linux"]) {
     await captureScreenshot(page, testInfo, `host-computer-configure-${platform}`);
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
     await expect(dialog).toBeHidden();
+    // Settings keeps the choice reachable after the one-time prompt.
+    const settings = await openUserSettings(page);
+    const toggle = settings.getByTestId("this-computer-toggle");
+    await toggle.scrollIntoViewIfNeeded();
+    await expect(toggle).toBeChecked();
+    await captureScreenshot(page, testInfo, `host-computer-settings-${platform}`);
   });
 }
 

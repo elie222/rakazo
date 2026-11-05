@@ -69,4 +69,9 @@ export const TR_MESSAGES: Record<string, string> = {
     "{name} sayfasındaki değişiklikleriniz onaylandı.",
   "We couldn't approve your changes to the {name} page.":
     "{name} sayfasındaki değişikliklerinizi onaylayamadık.",
+  "Your saved computer files will be deleted": "Kayıtlı bilgisayar dosyaların silinecek",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "Yeniden abone olmazsan kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Bir plan seçmezsen kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.",
 };

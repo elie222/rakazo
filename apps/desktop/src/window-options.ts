@@ -15,7 +15,7 @@ function windowChrome(platform: NodeJS.Platform) {
     // Keep in sync with webDarkTokens.background from @rakazo/ui-tokens (asserted in tests).
     // Do not import that package here: desktop packs compiled JS only and ui-tokens is a
     // TypeScript source / devDependency.
-    backgroundColor: "#161616",
+    backgroundColor: "#0A0A0A",
     show: true,
     autoHideMenuBar: true,
     frame: mac || platform === "win32",

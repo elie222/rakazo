@@ -26,6 +26,7 @@ import type {
   SandboxActionResponse,
   SandboxInfoResponse,
   SandboxStateEnum,
+  SandboxTypeEnum,
   SavedSnapshot,
   SavedSnapshotInfoResponse,
   SavedSnapshotSavingResponse,
@@ -144,6 +145,10 @@ export class FakeBoatApi implements BoatSandboxSdk {
   readonly requestTimes: number[] = [];
   private rejectAll?: { status: number; code: string; message: string };
   readonly creates: CreateSandboxRequest[] = [];
+  /** Machine types the account may start; Boat refuses the rest as needing a higher plan. */
+  availableTypes = new Set<SandboxTypeEnum>(["small", "default", "large"]);
+  /** Machine types a sandbox's files would not fit, so a resume onto them is refused. */
+  tooSmallTypes = new Set<SandboxTypeEnum>();
   /** Saved snapshots; the current computer snapshot is ready unless a test removes it. */
   readonly savedSnapshots = new Map<string, SavedSnapshot>([
     [
@@ -219,8 +224,16 @@ export class FakeBoatApi implements BoatSandboxSdk {
     return this.require(id).files;
   }
 
+  /** Refuses a machine type the account's plan does not include, as Boat does. */
+  private checkType(type: SandboxTypeEnum | undefined): void {
+    if (type && !this.availableTypes.has(type)) {
+      throw boatError(403, "machine_class_plan_required", "This machine type needs a higher plan");
+    }
+  }
+
   async create(request: CreateRequest = {}): Promise<CreateSandboxResponse> {
     this.start();
+    this.checkType(request.createSandboxRequest?.type);
     const from = request.createSandboxRequest?.from;
     if (from && this.savedSnapshots.get(from)?.status !== "ready") {
       throw boatError(404, "snapshot_not_found", "Snapshot not found");
@@ -231,6 +244,7 @@ export class FakeBoatApi implements BoatSandboxSdk {
       id,
       name: "Fake Boat",
       state: "ready",
+      type: request.createSandboxRequest?.type ?? "default",
       dataExpiredAt: null,
       desktopAvailable: true,
       snapshotAvailable: false,
@@ -290,13 +304,22 @@ export class FakeBoatApi implements BoatSandboxSdk {
     };
   }
 
-  async resume({ sandboxId }: ResumeOperationRequest): Promise<SandboxActionResponse> {
+  async resume({
+    sandboxId,
+    resumeRequest,
+  }: ResumeOperationRequest): Promise<SandboxActionResponse> {
     const box = this.require(sandboxId);
     if (box.sandbox.dataExpiredAt) {
       throw boatError(409, "snapshot_data_expired", "The snapshot data of this sandbox expired");
     }
     if (box.sandbox.state === "archived" || box.sandbox.state === "error") {
       this.start();
+      const type = resumeRequest?.type;
+      this.checkType(type);
+      if (type && this.tooSmallTypes.has(type)) {
+        throw boatError(409, "type_too_small", "The sandbox's data does not fit this type");
+      }
+      if (type) box.sandbox.type = type;
       box.sandbox.state = "ready";
       if (box.damaged === "resume_heals") {
         box.damaged = undefined;

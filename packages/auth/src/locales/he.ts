@@ -65,4 +65,9 @@ export const HE_MESSAGES: Record<string, string> = {
   "Your changes to the {name} page are approved.": "השינויים שלך בדף {name} אושרו.",
   "We couldn't approve your changes to the {name} page.":
     "לא הצלחנו לאשר את השינויים שלך בדף {name}.",
+  "Your saved computer files will be deleted": "קבצי המחשב השמורים שלך יימחקו",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "קבצי המחשב השמורים שלך יימחקו ב-{date} אלא אם תחדש את המינוי.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "קבצי המחשב השמורים שלך יימחקו ב-{date} אלא אם תבחר תוכנית.",
 };

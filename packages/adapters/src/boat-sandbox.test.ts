@@ -6,6 +6,7 @@ import type { ComputerRef, PortableFile, StreamedPortableFile } from "@rakazo/ad
 import {
   SandboxDamagedError,
   SandboxRateLimitError,
+  SandboxSizeUnavailableError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
   WorkspaceTooLargeError,
@@ -128,6 +129,101 @@ function reconnect(provider: BoatSandboxProvider, computer: ComputerRef, savedAt
 }
 
 describe("BoatSandboxProvider", () => {
+  describe("computer sizes", () => {
+    it("creates a new computer on the machine type for its size", async () => {
+      const api = new FakeBoatApi();
+      const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+      await provider.provision({ botId: "bot-a", homePath: "/unused", size: "large" }, context);
+      expect(api.creates.at(-1)?.type).toBe("large");
+      await provider.provision({ botId: "bot-b", homePath: "/unused" }, context);
+      expect(api.creates.at(-1)?.type).toBeUndefined();
+    });
+
+    it("moves a stopped computer to its size on resume and leaves a running one alone", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      const request = {
+        botId: computer.botId,
+        homePath: "/unused",
+        providerRef: computer.providerRef,
+        providerKind: "boat" as const,
+        size: "xlarge" as const,
+      };
+      api.availableTypes.add("xlarge");
+
+      await expect(provider.provision(request, context)).resolves.toMatchObject({
+        started: false,
+      });
+      expect(resume).not.toHaveBeenCalled();
+
+      api.setState(computer.id, "archived");
+      await expect(provider.provision(request, context)).resolves.toMatchObject({
+        started: true,
+      });
+      expect(resume).toHaveBeenCalledWith(
+        {
+          sandboxId: computer.id,
+          resumeRequest: { noEnv: true, ttlSeconds: 7200, type: "xlarge" },
+        },
+        { signal: context.signal },
+      );
+    });
+
+    it("moves a computer Boat recovers by resuming to its size", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.fail(computer.id, "no_machine");
+
+      await provider.provision(
+        {
+          botId: computer.botId,
+          homePath: "/unused",
+          providerRef: computer.providerRef,
+          providerKind: "boat",
+          size: "large",
+        },
+        context,
+      );
+
+      expect(resume).toHaveBeenCalledWith(
+        {
+          sandboxId: computer.id,
+          resumeRequest: { noEnv: true, ttlSeconds: 7200, type: "large" },
+        },
+        { signal: context.signal },
+      );
+    });
+
+    it("reports a size Boat refuses as unavailable and keeps the computer as it was", async () => {
+      const { api, provider, computer } = await boat();
+      api.setState(computer.id, "archived");
+      const request = {
+        botId: computer.botId,
+        homePath: "/unused",
+        providerRef: computer.providerRef,
+        providerKind: "boat" as const,
+      };
+
+      await expect(provider.provision({ ...request, size: "xlarge" }, context)).rejects.toEqual(
+        expect.objectContaining({ name: "SandboxSizeUnavailableError", reason: "not_offered" }),
+      );
+      api.tooSmallTypes.add("default");
+      await expect(provider.provision({ ...request, size: "standard" }, context)).rejects.toEqual(
+        expect.objectContaining({ name: "SandboxSizeUnavailableError", reason: "too_small" }),
+      );
+      expect(api.state(computer.id)).toBe("archived");
+      // Without a size it resumes as it was.
+      await expect(provider.provision(request, context)).resolves.toMatchObject({
+        providerRef: computer.providerRef,
+        started: true,
+      });
+
+      await expect(
+        provider.provision({ botId: "bot-b", homePath: "/unused", size: "xlarge" }, context),
+      ).rejects.toBeInstanceOf(SandboxSizeUnavailableError);
+    });
+  });
+
   it("logs actual creates and resumes without counting reuse or exposing request content", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
@@ -2036,6 +2132,23 @@ describe("BoatSandboxProvider", () => {
       fallback: "computer_act",
       error: "CDP not ready on port 9241: refused",
     });
+
+    // An older computer image refuses a command it does not know with exit 2.
+    api.withInput = () => ({
+      exitCode: 2,
+      stdout: JSON.stringify({
+        ok: false,
+        error: "unknown command: purchase_check",
+        fallback: "computer_act",
+      }),
+    });
+    await expect(
+      browser.purchaseCheck(
+        computer,
+        { desktop: true, enter: false, points: [{ x: 10, y: 10 }], unplaced: false },
+        context,
+      ),
+    ).resolves.toEqual({ purchase: null });
 
     api.withInput = () => ({ exitCode: 1, stdout: "Traceback" });
     await expect(

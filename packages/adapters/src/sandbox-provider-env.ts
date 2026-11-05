@@ -25,6 +25,15 @@ export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env):
   )
     return "none";
   if (
+    requested === "incus" &&
+    [
+      source.INCUS_SANDBOX_URL,
+      source.INCUS_SANDBOX_CLIENT_CERT,
+      source.INCUS_SANDBOX_CLIENT_KEY,
+    ].some((value) => !optional(value))
+  )
+    return "none";
+  if (
     requested === "railway" &&
     (!optional(source.RAILWAY_API_TOKEN) || !optional(source.RAILWAY_ENVIRONMENT_ID))
   )
@@ -75,6 +84,15 @@ export function sandboxProviderOptionsFromEnv(
   | "kubernetesHomeClaim"
   | "kubernetesHomeColocateNamespace"
   | "kubernetesHomeColocateLabels"
+  | "incusUrl"
+  | "incusClientCert"
+  | "incusClientKey"
+  | "incusServerCert"
+  | "incusProject"
+  | "incusComputerImage"
+  | "incusCpuLimit"
+  | "incusMemoryLimit"
+  | "incusProcessLimit"
   | "wuyingAccessKeyId"
   | "wuyingAccessKeySecret"
   | "wuyingRegionId"
@@ -129,6 +147,15 @@ export function sandboxProviderOptionsFromEnv(
       source.KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS,
       "KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS",
     ),
+    incusUrl: optional(source.INCUS_SANDBOX_URL),
+    incusClientCert: pem(source.INCUS_SANDBOX_CLIENT_CERT),
+    incusClientKey: pem(source.INCUS_SANDBOX_CLIENT_KEY),
+    incusServerCert: pem(source.INCUS_SANDBOX_SERVER_CERT),
+    incusProject: optional(source.INCUS_SANDBOX_PROJECT),
+    incusComputerImage: optional(source.INCUS_SANDBOX_COMPUTER_IMAGE),
+    incusCpuLimit: optional(source.INCUS_SANDBOX_CPU_LIMIT),
+    incusMemoryLimit: optional(source.INCUS_SANDBOX_MEMORY_LIMIT),
+    incusProcessLimit: optional(source.INCUS_SANDBOX_PROCESS_LIMIT),
     wuyingAccessKeyId: optional(source.WUYING_ACCESS_KEY_ID),
     wuyingAccessKeySecret: optional(source.WUYING_ACCESS_KEY_SECRET),
     wuyingRegionId: optional(source.WUYING_REGION_ID),
@@ -167,6 +194,11 @@ function positiveInteger(value: string | undefined, name: string): number | unde
     throw new Error(`${name} must be a positive integer`);
   }
   return parsed;
+}
+
+/** PEM text, with `\n` escapes allowed so it fits on one line of an env file. */
+function pem(value: string | undefined): string | undefined {
+  return optional(value)?.replace(/\\n/g, "\n");
 }
 
 function optional(value: string | undefined): string | undefined {

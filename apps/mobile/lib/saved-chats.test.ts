@@ -131,7 +131,14 @@ const navigation = {
   current: {
     id: "space-a",
     name: "Personal",
-    bots: [{ ...bot, instructions: "Private bot instructions", teamChatRules: "Private rules" }],
+    bots: [
+      {
+        ...bot,
+        instructions: "Private bot instructions",
+        teamChatRules: "Private rules",
+        threadStatus: "running",
+      },
+    ],
     groups: [{ ...group, createdAt: "2026-10-01T09:00:00.000Z" }],
     externalConversations: [],
     botSections: [],

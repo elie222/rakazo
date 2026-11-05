@@ -25,11 +25,17 @@ const imageLoads = vi.hoisted(
     [] as Array<(event: { nativeEvent: { source: { width: number; height: number } } }) => void>,
 );
 
+type TouchEvent = { nativeEvent: { pageX: number; pageY: number }; persist(): void };
+
 const tableEvents = vi.hoisted(() => ({
   onLayout: undefined as
     | ((event: { nativeEvent: { layout: { width: number; height: number } } }) => void)
     | undefined,
   onStartShouldSetResponder: undefined as (() => boolean) | undefined,
+  onResponderGrant: undefined as ((event: TouchEvent) => void) | undefined,
+  onResponderMove: undefined as ((event: TouchEvent) => void) | undefined,
+  onResponderRelease: undefined as (() => void) | undefined,
+  onResponderTerminate: undefined as (() => void) | undefined,
   onContentSizeChange: undefined as ((width: number, height: number) => void) | undefined,
 }));
 
@@ -53,7 +59,7 @@ vi.mock("react-native", async () => {
         children,
         style,
         onPress,
-        onLongPress: _onLongPress,
+        onLongPress,
         onAccessibilityAction: _onAccessibilityAction,
         ...rest
       } = props;
@@ -77,6 +83,18 @@ vi.mock("react-native", async () => {
           rest.onStartShouldSetResponder as typeof tableEvents.onStartShouldSetResponder;
         delete rest.onStartShouldSetResponder;
       }
+      if (tag === "rn-view" && typeof rest.onResponderGrant === "function") {
+        for (const key of [
+          "onResponderGrant",
+          "onResponderMove",
+          "onResponderRelease",
+          "onResponderTerminate",
+        ] as const) {
+          tableEvents[key] = rest[key] as never;
+          delete rest[key];
+        }
+        delete rest.onResponderTerminationRequest;
+      }
       if (tag === "rn-image" && typeof rest.onLoad === "function") {
         imageLoads.push(rest.onLoad as (typeof imageLoads)[number]);
         delete rest.onLoad;
@@ -92,6 +110,7 @@ vi.mock("react-native", async () => {
         {
           ...rest,
           ...data,
+          onContextMenu: onLongPress,
           onClick:
             typeof onPress === "function"
               ? (event: { preventDefault(): void; stopPropagation(): void }) => {
@@ -210,6 +229,7 @@ import {
   LinkFaviconsContext,
   LinkifiedText,
   MarkdownLinkPromptProvider,
+  MarkdownLongPressContext,
   MermaidDiagramContext,
   markdownCodeBlocks,
   RemoteImagesContext,
@@ -363,35 +383,126 @@ describe("native markdown tables", () => {
     container.remove();
   });
 
-  it.each([
-    ["ios", SIX_COLUMN_TABLE, 200, true],
-    ["ios", THREE_COLUMN_TABLE, 1000, false],
-    ["android", SIX_COLUMN_TABLE, 200, false],
-  ])(
-    "on %s, keeps the touch inside a table only when it is wider than the bubble",
-    async (os, table, width, claims) => {
+  describe.each(["ios", "android"])("on %s", (os) => {
+    it.each([
+      [
+        "wide table",
+        SIX_COLUMN_TABLE.replace("| A |", "| [A](https://example.com/docs) |"),
+        200,
+        true,
+      ],
+      ["fitting table", THREE_COLUMN_TABLE, 1000, false],
+      ["wide code", "```xml\nlong code line\n```", 200, true],
+      ["fitting code", "```xml\nshort\n```", 1000, false],
+    ])(
+      "claims overflowing content at touch start on a %s",
+      async (_case, markdown, width, overflows) => {
+        vi.useFakeTimers();
+        vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+        const platform = Platform as { OS: string };
+        const previousOS = platform.OS;
+        platform.OS = os;
+        const container = document.createElement("div");
+        document.body.appendChild(container);
+        const root = createRoot(container);
+        const openMenu = vi.fn();
+        const touch = (pageX: number, pageY: number) => ({
+          nativeEvent: { pageX, pageY },
+          persist() {},
+        });
+        try {
+          await act(async () => {
+            root.render(
+              <Pressable onLongPress={os === "ios" ? undefined : openMenu}>
+                <MarkdownLongPressContext.Provider value={os === "ios" ? undefined : openMenu}>
+                  <ChatMarkdown>{markdown}</ChatMarkdown>
+                </MarkdownLongPressContext.Provider>
+              </Pressable>,
+            );
+          });
+          await act(async () => {
+            tableEvents.onLayout?.({ nativeEvent: { layout: { width, height: 40 } } });
+            if (_case.includes("code")) tableEvents.onContentSizeChange?.(500, 40);
+          });
+
+          expect(tableEvents.onStartShouldSetResponder?.()).toBe(overflows);
+          const timersBeforeTouch = vi.getTimerCount();
+          if (overflows) expect(tableEvents.onResponderGrant?.(touch(100, 100))).toBeUndefined();
+          // iOS leaves long presses to the native context menu without a JS timer.
+          if (os === "ios") expect(vi.getTimerCount()).toBe(timersBeforeTouch);
+          vi.advanceTimersByTime(499);
+          expect(openMenu).not.toHaveBeenCalled();
+          vi.advanceTimersByTime(1);
+          vi.advanceTimersByTime(500);
+          expect(openMenu).toHaveBeenCalledTimes(overflows && os !== "ios" ? 1 : 0);
+          if (_case === "wide table") {
+            alert.mockClear();
+            linking.openURL.mockClear();
+            const link = container.querySelector<HTMLElement>("[data-accessibility-role='link']");
+            expect(link).not.toBeNull();
+            await act(async () => {
+              link?.click();
+            });
+            expect(alert).toHaveBeenCalledTimes(1);
+            const buttons = alert.mock.calls[0]?.[2];
+            await act(async () => {
+              buttons[1].onPress();
+            });
+            expect(linking.openURL).toHaveBeenCalledWith("https://example.com/docs");
+            expect(openMenu).toHaveBeenCalledTimes(overflows && os !== "ios" ? 1 : 0);
+          }
+
+          expect(
+            container.querySelector("rn-scroll-view")?.getAttribute("data-scroll-enabled"),
+          ).toBe(String(overflows));
+        } finally {
+          vi.useRealTimers();
+          platform.OS = previousOS;
+          await act(async () => {
+            root.unmount();
+          });
+          container.remove();
+        }
+      },
+    );
+  });
+
+  it.each(["move horizontally", "move vertically", "release", "terminate", "unmount"])(
+    "cancels a claimed long press on %s",
+    async (reason) => {
+      vi.useFakeTimers();
       vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-      const platform = Platform as { OS: string };
-      const previousOS = platform.OS;
-      platform.OS = os;
-      const container = document.createElement("div");
-      document.body.appendChild(container);
-      const root = createRoot(container);
+      const root = createRoot(document.createElement("div"));
+      const openMenu = vi.fn();
       try {
         await act(async () => {
-          root.render(<ChatMarkdown>{table}</ChatMarkdown>);
+          root.render(
+            <MarkdownLongPressContext.Provider value={openMenu}>
+              <ChatMarkdown>{SIX_COLUMN_TABLE}</ChatMarkdown>
+            </MarkdownLongPressContext.Provider>,
+          );
         });
         await act(async () => {
-          tableEvents.onLayout?.({ nativeEvent: { layout: { width, height: 40 } } });
+          tableEvents.onLayout?.({ nativeEvent: { layout: { width: 200, height: 40 } } });
         });
-
-        expect(tableEvents.onStartShouldSetResponder?.()).toBe(claims);
+        tableEvents.onResponderGrant?.({ nativeEvent: { pageX: 100, pageY: 100 }, persist() {} });
+        vi.advanceTimersByTime(499);
+        if (reason.startsWith("move"))
+          tableEvents.onResponderMove?.({
+            nativeEvent: {
+              pageX: reason === "move horizontally" ? 106 : 100,
+              pageY: reason === "move vertically" ? 106 : 100,
+            },
+            persist() {},
+          });
+        if (reason === "release") tableEvents.onResponderRelease?.();
+        if (reason === "terminate") tableEvents.onResponderTerminate?.();
+        if (reason === "unmount") await act(async () => root.unmount());
+        vi.advanceTimersByTime(500);
+        expect(openMenu).not.toHaveBeenCalled();
       } finally {
-        platform.OS = previousOS;
-        await act(async () => {
-          root.unmount();
-        });
-        container.remove();
+        if (reason !== "unmount") await act(async () => root.unmount());
+        vi.useRealTimers();
       }
     },
   );

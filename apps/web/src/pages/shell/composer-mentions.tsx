@@ -101,7 +101,7 @@ export function ComposerMentionHighlights({
             className="rounded-full bg-accent ring-1 ring-accent box-decoration-clone"
             style={
               mention.kind === "bot" && mention.color
-                ? { color: resolvePersonaColorDef(mention.id, mention.color).light }
+                ? { color: resolvePersonaColorDef(mention.id, mention.color).hex }
                 : undefined
             }
           >

@@ -2,7 +2,7 @@
 
 import type { MessageBlock } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode, Ref } from "react";
-import { act } from "react";
+import { act, createContext } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { Linking } from "react-native";
@@ -92,6 +92,7 @@ vi.mock("./native", () => ({
 }));
 
 vi.mock("@rakazo/chat-ui/native", () => ({
+  MarkdownLongPressContext: createContext(undefined),
   ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
   withBlockMentions: <T,>(blocks: T) => blocks,
 }));

@@ -14,7 +14,7 @@ import {
   nextBotMessageHop,
   pageLinksAsTitles,
 } from "@rakazo/core";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   CrossSpaceCommunicationBlockedError,
@@ -35,6 +35,17 @@ export const MESSAGING_DM_OUTBOUND_CAP = 140;
 
 /** Provider-send attempts before a mirrored row is declared lost. */
 export const MESSAGING_OUTBOUND_MAX_ATTEMPTS = 5;
+
+/**
+ * The send order every drain agrees on: mirrored rows carry explicit
+ * per-part createdAt values, and id breaks the ties that remain (separate
+ * inserts can share a timestamp) so two concurrent drains never order one
+ * conversation's rows differently.
+ */
+const SEND_ORDER: Prisma.MessagingOutboundOrderByWithRelationInput[] = [
+  { createdAt: "asc" },
+  { id: "asc" },
+];
 
 /** The outbox columns a drain reads and updates. */
 type MessagingOutboundRow = {
@@ -158,35 +169,60 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
     .some((platform) => platform.provider === identity.provider && platform.capabilities.files);
   // One row per platform-sized part, then one per image or file, so a retry
   // re-sends only the parts that failed and never repeats delivered text.
-  // Explicit createdAt keeps the parts in order for the drain.
-  const createdAt = Date.now();
+  // The whole reply takes one explicit, non-overlapping range, like a group
+  // reply, so a concurrent DM mirror cannot interleave its parts.
   const linkedPages = linkedPageIds(messages);
-  const rows = messages
-    .flatMap((message) => {
-      const body = extractText(message.blocks, linkedPages);
-      const parts = body ? splitOutboundBody(identity.provider, body) : [];
-      return [
-        ...parts.map((part, index) => ({
-          idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
-          kind: "dm",
-          identityId: identity.id,
-          body: part,
-          sourceMessageId: message.id,
-        })),
-        ...(sendsFiles ? extractArtifactIds(message.blocks) : []).map((artifactId) => ({
-          idempotencyKey: `msg:${message.id}:file:${artifactId}`,
-          kind: "dm",
-          identityId: identity.id,
-          body: "",
-          sourceMessageId: message.id,
-        })),
-      ];
-    })
-    .map((row, index) => ({ ...row, createdAt: new Date(createdAt + index) }));
+  const rows = messages.flatMap((message) => {
+    const body = extractText(message.blocks, linkedPages);
+    const parts = body ? splitOutboundBody(identity.provider, body) : [];
+    return [
+      ...parts.map((part, index) => ({
+        idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
+        kind: "dm",
+        identityId: identity.id,
+        body: part,
+        sourceMessageId: message.id,
+      })),
+      ...(sendsFiles ? extractArtifactIds(message.blocks) : []).map((artifactId) => ({
+        idempotencyKey: `msg:${message.id}:file:${artifactId}`,
+        kind: "dm",
+        identityId: identity.id,
+        body: "",
+        sourceMessageId: message.id,
+      })),
+    ];
+  });
   if (rows.length === 0) return;
   // Atomic dedupe: a concurrent messaging.deliver for the same run loses on
   // the idempotencyKey unique key instead of throwing P2002.
-  await deps.prisma.messagingOutbound.createMany({ data: rows, skipDuplicates: true });
+  await insertOutboundRows(deps.prisma, { identityId: identity.id }, rows);
+}
+
+/**
+ * Inserts outbox rows for one conversation with a non-overlapping position
+ * range: under the conversation row lock, every writer of a conversation
+ * (mirrors, intros) takes timestamps starting past the newest committed row,
+ * so no writer's rows interleave with another's — not even on a clock tie or
+ * a delayed commit. Only rows are read and written here; sends stay in the
+ * drain.
+ */
+export async function insertOutboundRows(
+  prisma: PrismaClient,
+  conversation: Conversation,
+  rows: Array<Omit<Prisma.MessagingOutboundCreateManyInput, "createdAt">>,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await lockConversation(tx, conversation);
+    const latest = await tx.messagingOutbound.aggregate({
+      _max: { createdAt: true },
+      where: conversation,
+    });
+    const base = Math.max(Date.now(), (latest._max.createdAt?.getTime() ?? 0) + 1);
+    await tx.messagingOutbound.createMany({
+      data: rows.map((row, index) => ({ ...row, createdAt: new Date(base + index) })),
+      skipDuplicates: true,
+    });
+  });
 }
 
 /**
@@ -235,16 +271,22 @@ async function mirrorChannelRun(
     .filter((entry) => entry.text);
   if (messages.length === 0) return;
 
-  await deps.prisma.messagingOutbound.createMany({
-    data: messages.map(({ message, text }) => ({
-      idempotencyKey: `msg:${message.id}`,
-      kind: "group",
-      threadId: channel.threadId,
-      body: `${fromLabel}: ${text}`,
-      sourceMessageId: message.id,
-    })),
-    skipDuplicates: true,
-  });
+  // One row per platform-sized part, like the DM path: the adapter truncates
+  // an oversized body instead of failing, which would drop the reply's tail.
+  // The whole reply takes one explicit, non-overlapping range.
+  await insertOutboundRows(
+    deps.prisma,
+    { identityId: null, threadId: channel.threadId },
+    messages.flatMap(({ message, text }) =>
+      splitOutboundBody(identity.provider, `${fromLabel}: ${text}`).map((part, index) => ({
+        idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
+        kind: "group",
+        threadId: channel.threadId,
+        body: part,
+        sourceMessageId: message.id,
+      })),
+    ),
+  );
 
   const hop = nextBotMessageHop(channelBlock.hop);
   const peers = await deps.prisma.messagingChannelMember.findMany({
@@ -448,7 +490,7 @@ async function sendConnectInvite(
 async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Promise<void> {
   const pending = await deps.prisma.messagingOutbound.findMany({
     where: { status: "pending" },
-    orderBy: { createdAt: "asc" },
+    orderBy: SEND_ORDER,
   });
   // Each conversation is its own lane, so a slow provider holds back only
   // the replies queued behind it.
@@ -473,6 +515,41 @@ function conversationOf(row: MessagingOutboundRow): Conversation | null {
 }
 
 /**
+ * Takes the per-conversation lock every outbox-row writer allocates under:
+ * the channel row for a group, the identity row for a direct message.
+ */
+async function lockConversation(tx: Prisma.TransactionClient, conversation: Conversation) {
+  if ("threadId" in conversation) {
+    await tx.$queryRaw`SELECT id FROM messaging_channels WHERE "threadId" = ${conversation.threadId} FOR UPDATE`;
+    return;
+  }
+  await tx.$queryRaw`SELECT id FROM messaging_identities WHERE id = ${conversation.identityId} FOR UPDATE`;
+}
+
+/**
+ * Claims the row for sending, or returns false when the conversation must
+ * wait. The blocker check and the claim commit together under the
+ * conversation's lock, so a row another writer commits in between (an intro
+ * landing mid-flight) cannot put two sends of one conversation on the wire.
+ * The lock is released before any provider call.
+ */
+async function claimForSend(
+  deps: MessagingDeliveryDeps,
+  conversation: Conversation,
+  row: MessagingOutboundRow,
+): Promise<boolean> {
+  return deps.prisma.$transaction(async (tx) => {
+    await lockConversation(tx, conversation);
+    if (await hasBlockingRow(tx, conversation, row, Date.now())) return false;
+    const claim = await tx.messagingOutbound.updateMany({
+      where: { id: row.id, status: "pending" },
+      data: { status: "sent", nextAttemptAt: null },
+    });
+    return claim.count === 1;
+  });
+}
+
+/**
  * Sends one conversation's rows in order, reading each next row after the
  * previous send so a reply queued meanwhile is not left behind. Stops at the
  * first row that has to wait, or that another drain already owns.
@@ -487,20 +564,22 @@ async function deliverLane(
   while (row) {
     const now = Date.now();
     if (row.nextAttemptAt && row.nextAttemptAt.getTime() > now) return;
-    if (conversation && (await hasUndeliveredEarlierRow(deps, conversation, row.createdAt, now)))
-      return;
-    // Claim before sending: concurrent drains and crash retries must never
-    // deliver the same message twice.
-    const claim = await deps.prisma.messagingOutbound.updateMany({
-      where: { id: row.id, status: "pending" },
-      data: { status: "sent", nextAttemptAt: null },
-    });
-    if (claim.count === 0) return;
+    if (conversation) {
+      // Claim before sending: concurrent drains and crash retries must never
+      // deliver the same message twice.
+      if (!(await claimForSend(deps, conversation, row))) return;
+    } else {
+      const claim = await deps.prisma.messagingOutbound.updateMany({
+        where: { id: row.id, status: "pending" },
+        data: { status: "sent", nextAttemptAt: null },
+      });
+      if (claim.count === 0) return;
+    }
     if (!(await deliverRow(deps, context, row))) return;
     row = conversation
       ? await deps.prisma.messagingOutbound.findFirst({
           where: { status: "pending", ...conversation },
-          orderBy: { createdAt: "asc" },
+          orderBy: SEND_ORDER,
         })
       : null;
   }
@@ -678,19 +757,32 @@ async function deliverRow(
 /** A claimed row still without a handle after this long is treated as abandoned. */
 const MESSAGING_ROW_IN_FLIGHT_MS = 2 * 60_000;
 
-/** True while an earlier row to the conversation is still pending or in flight. */
-async function hasUndeliveredEarlierRow(
-  deps: MessagingDeliveryDeps,
+/**
+ * True while the conversation must not start another send: a row that sorts
+ * earlier is still pending, or any row is in flight. A row can commit after a
+ * later-ordered row already left (a range allocated before it existed), and a
+ * second send beside it would arrive unordered, so in flight blocks
+ * regardless of order — bounded by the abandoned-claim deadline.
+ */
+async function hasBlockingRow(
+  client: Prisma.TransactionClient,
   conversation: Conversation,
-  createdAt: Date,
+  row: Pick<MessagingOutboundRow, "id" | "createdAt">,
   now: number,
 ): Promise<boolean> {
-  const earlier = await deps.prisma.messagingOutbound.findFirst({
+  const blocking = await client.messagingOutbound.findFirst({
     where: {
       ...conversation,
-      createdAt: { lt: createdAt },
       OR: [
-        { status: "pending" },
+        {
+          status: "pending",
+          // SEND_ORDER's notion of earlier, so an equal-createdAt row from a
+          // separate insert still holds its place instead of being overtaken.
+          OR: [
+            { createdAt: { lt: row.createdAt } },
+            { createdAt: row.createdAt, id: { lt: row.id } },
+          ],
+        },
         {
           status: "sent",
           providerHandle: null,
@@ -700,7 +792,7 @@ async function hasUndeliveredEarlierRow(
     },
     select: { id: true },
   });
-  return earlier !== null;
+  return blocking !== null;
 }
 
 /**

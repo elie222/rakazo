@@ -67,22 +67,3 @@ export function sendReferralEmails(deps: {
     }
   };
 }
-
-/** Runs the sweep at startup and hourly; every API instance may run it, the claim dedupes. */
-export function startReferralEmails(sweep: () => Promise<void>, onError: (error: unknown) => void) {
-  let running: Promise<void> | undefined;
-  const tick = () => {
-    running ??= sweep()
-      .catch(onError)
-      .finally(() => {
-        running = undefined;
-      });
-  };
-  const timer = setInterval(tick, HOUR_MS);
-  timer.unref();
-  tick();
-  return async () => {
-    clearInterval(timer);
-    await running;
-  };
-}

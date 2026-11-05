@@ -100,12 +100,28 @@ export default function SettingsLayout() {
           contentStyle: { backgroundColor: native.groupedPage },
         })}
       />
+      <Stack.Screen
+        name="organization"
+        options={{
+          ...glassHeaderOptions(t("Organization")),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
       <Stack.Screen name="messaging" options={glassHeaderOptions(t("Messaging"))} />
       <Stack.Screen name="team-conversation" />
       <Stack.Screen name="integrations" options={glassHeaderOptions(t("Integrations"))} />
       <Stack.Screen name="skills" options={glassHeaderOptions(t("Skills"))} />
       {/* Titled by the screen once the skill loads. */}
       <Stack.Screen name="skill" options={glassHeaderOptions("")} />
+      <Stack.Screen
+        name="memory"
+        options={{
+          ...glassHeaderOptions(t("Memory")),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
+      {/* Titled by the screen once the note loads. */}
+      <Stack.Screen name="memory-note" options={glassHeaderOptions("")} />
       <Stack.Screen
         name="plugin"
         // Named after the plugin it opened.

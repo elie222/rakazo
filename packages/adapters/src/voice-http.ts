@@ -227,3 +227,14 @@ export async function verifyVoiceHttpGet(options: {
     };
   }
 }
+
+const LANGUAGE_TAG = /^([A-Za-z]{2,3})(?:-[A-Za-z0-9]{2,8})*$/;
+
+/**
+ * The lowercase primary language subtag speech-to-text providers expect, or undefined when the
+ * value is not a tag we can honor ("es-ES" and "es" both ask for Spanish).
+ */
+export function voiceLanguageHint(language: string | undefined): string | undefined {
+  const match = LANGUAGE_TAG.exec(language?.trim() ?? "");
+  return match?.[1] ? match[1].toLowerCase() : undefined;
+}
