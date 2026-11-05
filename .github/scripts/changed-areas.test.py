@@ -89,6 +89,9 @@ class ChangedAreasTests(unittest.TestCase):
             ("packages/core/src/run-error.ts", expect(*EVERY_BROWSER_AREA)),
             ("pnpm-lock.yaml", expect(*AREAS)),
             (".github/workflows/ci.yml", expect(*AREAS)),
+            (".github/workflows/playwright.yml", expect(*AREAS)),
+            (".github/actions/setup-workspace/action.yml", expect(*AREAS)),
+            (".github/scripts/restore-postgres-image.sh", expect(*AREAS)),
         ]
         for path, expected in cases:
             with self.subTest(path=path):
