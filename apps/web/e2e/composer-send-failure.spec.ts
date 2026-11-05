@@ -46,9 +46,12 @@ test("a routine that already ran is not put back when the thread refresh fails",
   await composer.press("Enter");
   await ran;
 
-  await expect(page.getByTestId("composer-error")).toBeVisible();
+  // The server took the send and the routine ran, so the send counts as done even though
+  // the refresh after it failed: no error, and nothing comes back for a retry that would
+  // run the routine twice.
   await expect(chip).toHaveCount(0);
   await expect(composer).toHaveValue("");
+  await expect(page.getByTestId("composer-error")).toHaveCount(0);
 });
 
 test("a failed send with routines gives back the message and its routines", {
