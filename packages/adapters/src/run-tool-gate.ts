@@ -762,7 +762,12 @@ async function settleToolUncertainty(
   }
   if (call.name === "service_call") {
     const recovered = await callPaidService(ctx, call).catch(() => undefined);
-    if (recovered && (await completeEffect(ctx.deps, effectId, "executing", recovered)))
+    // Only an answer the provider settled carries a cost; anything else stays uncertain.
+    if (
+      recovered &&
+      "cost_usd" in recovered &&
+      (await completeEffect(ctx.deps, effectId, "executing", recovered))
+    )
       return recovered;
   }
   return settleUncertainEffect(ctx.deps.prisma, effectId, toolName, call.args);
