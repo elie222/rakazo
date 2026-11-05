@@ -305,7 +305,10 @@ export class TregPaidServiceProvider implements PaidServiceProvider {
           costUsd: headerCost / 1_000_000,
           providerCallId,
         };
-      if (response.status === 400 || response.status === 422) {
+      if (
+        (response.status === 400 || response.status === 422) &&
+        !(code !== undefined && ACCOUNT_ERROR_CODES.has(code))
+      ) {
         const message = typeof error?.message === "string" ? error.message : undefined;
         return {
           outcome: "refused",

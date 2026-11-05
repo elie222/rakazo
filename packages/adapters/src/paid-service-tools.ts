@@ -198,8 +198,17 @@ export async function serviceCallFromTool(
       costSource: "provider-reported",
       usageSource: result.outcome === "answered" ? "provider-reported" : "not-started",
     };
+    if (reservationId) {
+      try {
+        await recordModelCreditReceipt(deps.prisma, reservationId, usage);
+      } catch (error) {
+        getLogger().error("paid_services.receipt_unrecorded", {
+          service: service.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     try {
-      if (reservationId) await recordModelCreditReceipt(deps.prisma, reservationId, usage);
       await recordUsage(
         deps.prisma,
         {
@@ -218,7 +227,6 @@ export async function serviceCallFromTool(
         },
       );
     } catch (error) {
-      // With billing on, the receipt stays on the hold for the reconciler; otherwise usage is informational.
       getLogger().error("paid_services.usage_unrecorded", {
         service: service.id,
         error: error instanceof Error ? error.message : String(error),
