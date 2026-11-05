@@ -100,7 +100,7 @@ export async function listMemberOrganizations(
     prisma.spaceMember.findMany({
       where: { userId: actor.userId, space: { deletingAt: null } },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      select: { spaceId: true, organizationId: true },
+      select: { spaceId: true, organizationId: true, member: { select: { role: true } } },
     }),
   ]);
   return {
@@ -113,8 +113,14 @@ export async function listMemberOrganizations(
       canManage:
         organization._count.members === 1 &&
         organization.members.some((member) => member.role.includes("owner")),
+      // Spaces shared with them as a guest show beside the active organization's, as in the
+      // sidebar.
       spaceIds: memberships
-        .filter((membership) => membership.organizationId === organization.id)
+        .filter((membership) =>
+          membership.member.role === GUEST_ROLE
+            ? organization.id === activeOrganizationId
+            : membership.organizationId === organization.id,
+        )
         .map((membership) => membership.spaceId),
     })),
   };

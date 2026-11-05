@@ -1028,6 +1028,9 @@ export async function sendThreadMessage(
           holdingRuns.find(steersUserMessage) ??
           holdingRuns[0];
         if (active) {
+          // Another person's message waits for a run of its own, which acts with their accounts,
+          // and is never shown as part of theirs.
+          const ownRunId = active.userId === actor.userId ? active.id : null;
           await tx.steeringMessage.create({
             data: {
               messageId: message.id,
@@ -1036,13 +1039,15 @@ export async function sendThreadMessage(
               runId: steersMessageFrom(active, actor) ? active.id : null,
             },
           });
-          await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
+          if (ownRunId) {
+            await tx.message.update({ where: { id: message.id }, data: { runId: ownRunId } });
+          }
           const event = await appendEventInTransaction(tx, {
             spaceId: actor.spaceId,
             threadId: target.threadId,
             botId: target.botId,
             type: "thread.message.created",
-            runId: active.id,
+            runId: ownRunId ?? undefined,
             payload: {
               messageId: message.id,
               seq: message.seq,
@@ -1223,6 +1228,7 @@ export async function sendThreadMessage(
         userId: string;
         trigger?: string | null;
       }> = [];
+      const othersRunIds = new Set<string>();
       for (const botId of targetBotIds) {
         const answered = answeredByBotId.get(botId);
         if (answered) {
@@ -1257,6 +1263,7 @@ export async function sendThreadMessage(
             },
           });
           runs.push(active);
+          if (active.userId !== actor.userId) othersRunIds.add(active.id);
           continue;
         }
         const task = await tx.task.create({
@@ -1286,10 +1293,14 @@ export async function sendThreadMessage(
         runs.push(run);
       }
       const firstRun = runs[0];
+      // The message belongs to a run of the sender's, never to one another member started.
+      const ownRun = runs.find((run) => !othersRunIds.has(run.id));
       const eventBotId = firstRun?.botId ?? targetBotIds[0];
       if (!eventBotId) throw new IsolationError("Group send did not resolve a target");
       if (firstRun) {
-        await tx.message.update({ where: { id: message.id }, data: { runId: firstRun.id } });
+        if (ownRun) {
+          await tx.message.update({ where: { id: message.id }, data: { runId: ownRun.id } });
+        }
         const createdRuns = runs.filter(
           (run) => !activeByBotId.has(run.botId) && !answeredByBotId.has(run.botId),
         );
@@ -1307,7 +1318,7 @@ export async function sendThreadMessage(
         threadId: target.threadId,
         botId: eventBotId,
         type: "thread.message.created",
-        runId: firstRun?.id ?? activeRuns[0]?.id,
+        runId: firstRun ? ownRun?.id : activeRuns[0]?.id,
         payload: {
           messageId: message.id,
           seq: message.seq,

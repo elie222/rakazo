@@ -2287,7 +2287,13 @@ describe("sendThreadMessage", () => {
         findMany: vi
           .fn()
           .mockResolvedValue([
-            { id: "intro-run", taskId: "intro-task", status: "running", trigger: "created" },
+            {
+              id: "intro-run",
+              taskId: "intro-task",
+              status: "running",
+              trigger: "created",
+              userId: "user-1",
+            },
           ]),
         create: vi.fn(),
         findUnique: vi.fn().mockResolvedValue({ status: "running", startedAt: new Date() }),
@@ -2616,9 +2622,13 @@ describe("sendThreadMessage", () => {
     expect(tx.task.create).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
   });
-  it.each(["routine", "bot_message"])(
-    "keeps a message pending instead of steering into an active %s run",
-    async (trigger) => {
+  it.each([
+    ["routine", "user-1"],
+    ["bot_message", "user-1"],
+    ["user", "user-2"],
+  ])(
+    "keeps a message pending instead of steering into an active %s run of %s",
+    async (trigger, owner) => {
       let messageSeq = 0;
       let eventSeq = 0;
       const tx = {
@@ -2652,7 +2662,7 @@ describe("sendThreadMessage", () => {
                 id: "run-routine",
                 taskId: "task-routine",
                 status: "running",
-                userId: "user-1",
+                userId: owner,
                 trigger,
               },
             ])
@@ -2708,10 +2718,16 @@ describe("sendThreadMessage", () => {
       });
       expect(tx.task.create).not.toHaveBeenCalled();
       expect(tx.run.create).not.toHaveBeenCalled();
-      expect(tx.message.update).toHaveBeenCalledWith({
-        where: { id: "msg-1" },
-        data: { runId: "run-routine" },
-      });
+      // Another member's run acts with their accounts; the message is never shown as part of it.
+      if (owner === "user-1") {
+        expect(tx.message.update).toHaveBeenCalledWith({
+          where: { id: "msg-1" },
+          data: { runId: "run-routine" },
+        });
+      } else {
+        expect(tx.message.update).not.toHaveBeenCalled();
+        expect(tx.event.create.mock.calls[0]![0].data.runId).toBeUndefined();
+      }
       expect(enqueue).not.toHaveBeenCalled();
     },
   );

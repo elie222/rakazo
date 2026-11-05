@@ -662,6 +662,10 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       organizations: [expect.objectContaining({ id: invitee.organizationId })],
     });
     expect(organizationList.json.organizations).toHaveLength(1);
+    // The shared Space counts as one of theirs, so losing a request's session never drops it.
+    expect(
+      (organizationList.json.organizations as Array<{ spaceIds: string[] }>)[0]!.spaceIds,
+    ).toContain(home);
     const ownerList = await call(owner.actor, "spaces/list", {});
     expect(
       (ownerList.json.spaces as Array<Record<string, unknown>>).find((space) => space.id === home),
