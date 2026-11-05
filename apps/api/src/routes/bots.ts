@@ -44,6 +44,7 @@ import {
   restoreBotUnderComputerQuota,
   SpaceDeletionInProgressError,
   settingsTarget,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { AgentImportServices } from "../agent-import.js";
@@ -291,7 +292,7 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
       },
       select: { id: true },
     });
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (run) await deps.jobs.enqueue(runContinueJob(run.id));
 }
 

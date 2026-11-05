@@ -17,6 +17,11 @@ import {
   replaceComputer,
 } from "./computer-lifecycle.js";
 import { toComputerRef } from "./computer-support.js";
+import {
+  performComputerUpdate,
+  queueComputerUpdate,
+  reconcileComputerUpdates,
+} from "./computer-update.js";
 import { checkpointAndStopComputer, checkpointRunComputerWorkspace } from "./computer-workspace.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
@@ -514,6 +519,169 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       await prisma.run.update({ where: { id: run.id }, data: { status: "cancelled" } });
       await prisma.computer.update({ where: { id: computerId }, data: { maintenanceId: null } });
       await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("frees a computer a vanished update left booting, then recovers it", async () => {
+    const { botId } = identity;
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-abandoned-update-"));
+    const jobs = { enqueue: vi.fn(async () => {}), cancel: vi.fn() } as unknown as JobPublisher;
+    const deps = {
+      prisma,
+      sandbox: new FakeSandboxProvider(),
+      home: new LocalAgentHomeStore(dataDir),
+      jobs,
+      events: { append: vi.fn() } as unknown as ThreadEvents,
+      dataDir,
+    };
+    const update = await prisma.computerUpdate.create({
+      data: {
+        computerId,
+        botId,
+        status: "running",
+        stage: "restoring",
+        updatedAt: new Date(Date.now() - 2 * 60 * 60_000),
+      },
+    });
+    const computer = () =>
+      prisma.computer.findUniqueOrThrow({
+        where: { id: computerId },
+        select: { state: true, maintenanceId: true },
+      });
+    const status = async (id: string) =>
+      (await prisma.computerUpdate.findUniqueOrThrow({ where: { id } })).status;
+    try {
+      // Teardown cleared the old machine before the dead worker started the new one.
+      await prisma.computer.update({
+        where: { id: computerId },
+        data: {
+          kind: "fake",
+          state: "booting",
+          providerRef: null,
+          maintenanceId: update.id,
+          controlHolder: "none",
+          controlLeaseId: null,
+          controlLeaseExpiresAt: null,
+          controlBotId: null,
+          controlRunId: null,
+        },
+      });
+      await reconcileComputerUpdates(deps);
+      expect(await status(update.id)).toBe("interrupted");
+      // Marking it interrupted restarts the clock, so the next pass keeps it reserved.
+      await reconcileComputerUpdates(deps);
+      expect(await status(update.id)).toBe("interrupted");
+      expect(await computer()).toEqual({ state: "booting", maintenanceId: update.id });
+
+      await prisma.computerUpdate.update({
+        where: { id: update.id },
+        data: { updatedAt: new Date(Date.now() - 61 * 60_000) },
+      });
+      await reconcileComputerUpdates(deps);
+      expect(await status(update.id)).toBe("failed");
+      expect(await computer()).toEqual({ state: "error", maintenanceId: null });
+
+      const recover = await queueComputerUpdate(deps, computerId, botId, "recover");
+      await performComputerUpdate(deps, recover.id);
+      expect(await status(recover.id)).toBe("completed");
+      expect(await computer()).toEqual({ state: "running", maintenanceId: null });
+    } finally {
+      await prisma.computer.update({
+        where: { id: computerId },
+        data: { state: "stopped", providerRef: null, maintenanceId: null },
+      });
+      await prisma.computerUpdate.deleteMany({ where: { computerId } });
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ["suspending", "fake-old", "quarantined"],
+    ["suspending", null, "error"],
+    ["booting", null, "error"],
+    ["running", "fake-old", "running"],
+    ["stopped", null, "stopped"],
+    ["quarantined", "fake-old", "quarantined"],
+    ["error", "fake-old", "error"],
+  ] as const)(
+    "releases a %s computer with machine %s left by a vanished update as %s",
+    async (left, providerRef, expected) => {
+      const jobs = { enqueue: vi.fn(async () => {}), cancel: vi.fn() } as unknown as JobPublisher;
+      const update = await prisma.computerUpdate.create({
+        data: {
+          computerId,
+          botId: identity.botId,
+          status: "interrupted",
+          stage: "saving",
+          updatedAt: new Date(Date.now() - 61 * 60_000),
+        },
+      });
+      try {
+        await prisma.computer.update({
+          where: { id: computerId },
+          data: {
+            state: left,
+            providerRef,
+            maintenanceId: update.id,
+            controlHolder: "none",
+            controlLeaseId: null,
+            controlLeaseExpiresAt: null,
+            controlBotId: null,
+            controlRunId: null,
+          },
+        });
+        await reconcileComputerUpdates({ prisma, jobs });
+        await expect(
+          prisma.computer.findUniqueOrThrow({
+            where: { id: computerId },
+            select: { state: true, maintenanceId: true },
+          }),
+        ).resolves.toEqual({ state: expected, maintenanceId: null });
+        await expect(
+          queueComputerUpdate({ prisma, jobs }, computerId, identity.botId, "recover"),
+        ).resolves.toMatchObject({ status: "queued" });
+      } finally {
+        await prisma.computer.update({
+          where: { id: computerId },
+          data: { state: "stopped", providerRef: null, maintenanceId: null },
+        });
+        await prisma.computerUpdate.deleteMany({ where: { computerId } });
+      }
+    },
+  );
+
+  it("leaves a computer another operation reserved alone", async () => {
+    const jobs = { enqueue: vi.fn(async () => {}), cancel: vi.fn() } as unknown as JobPublisher;
+    const update = await prisma.computerUpdate.create({
+      data: {
+        computerId,
+        botId: identity.botId,
+        status: "interrupted",
+        stage: "saving",
+        updatedAt: new Date(Date.now() - 61 * 60_000),
+      },
+    });
+    try {
+      await prisma.computer.update({
+        where: { id: computerId },
+        data: { state: "suspending", providerRef: "fake-old", maintenanceId: "later-operation" },
+      });
+      await reconcileComputerUpdates({ prisma, jobs });
+      expect(
+        (await prisma.computerUpdate.findUniqueOrThrow({ where: { id: update.id } })).status,
+      ).toBe("failed");
+      await expect(
+        prisma.computer.findUniqueOrThrow({
+          where: { id: computerId },
+          select: { state: true, maintenanceId: true },
+        }),
+      ).resolves.toEqual({ state: "suspending", maintenanceId: "later-operation" });
+    } finally {
+      await prisma.computer.update({
+        where: { id: computerId },
+        data: { state: "stopped", providerRef: null, maintenanceId: null },
+      });
+      await prisma.computerUpdate.deleteMany({ where: { computerId } });
     }
   });
 

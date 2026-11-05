@@ -250,7 +250,7 @@ PAYMENT_WALLET_PROVIDER=link
 PAYMENT_WALLET_CLIENT_ID=
 ```
 
-Users then see a Link connect button in Settings. Connecting opens Link's sign-in page with a code to confirm. Once connected, bots get `request_purchase`, `purchase_status` and `paid_request`. Each request names the amount and reason; the user approves or denies it in Link.
+Users then see a Link connect button in Settings. Connecting opens Link's sign-in page with a code to confirm. Once connected, bots get `request_purchase`, `purchase_status` and `paid_request`. Each request names the amount and reason; the user approves or denies it in Link. A purchase also counts against the user's [spending limit](./approvals.md#spending-limit), if they set one, before Link is asked.
 
 Link is available to users in the US and Canada only.
 

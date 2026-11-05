@@ -99,6 +99,7 @@ export async function autoReviewCheckerProvider(
             ? {
                 credential: judgeKey.oauth,
                 persist: judgeKey.persistOAuth,
+                refresh: judgeKey.refreshOAuth,
                 retire: judgeKey.retireOAuth,
               }
             : undefined,

@@ -1045,6 +1045,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Email verification required": "Требуется подтверждение электронной почты",
   "Link SSO": "Привязать SSO",
   "Registration is closed": "Регистрация закрыта",
+  "This account is deactivated": "Эта учётная запись деактивирована",
   Retry: "Повторить",
   "Send deletion code": "Отправить код удаления",
   "Sign in to your existing account to link SSO":
@@ -1457,6 +1458,21 @@ export const RU_MESSAGES: Record<string, string> = {
   Adds: "Будет добавлено",
   "Works with": "Работает с",
   "Bot templates": "Шаблоны ботов",
+  "Spending limit": "Лимит расходов",
+  Amount: "Сумма",
+  Currency: "Валюта",
+  Daily: "Ежедневно",
+  Weekly: "Еженедельно",
+  "No reset": "Без сброса",
+  "Enter an amount": "Введите сумму",
+  "{amount} a day": "{amount} в день",
+  "{amount} a week": "{amount} в неделю",
+  "{amount} a month": "{amount} в месяц",
+  "{amount} in total": "{amount} всего",
+  "{amount} spent today": "Потрачено сегодня: {amount}",
+  "{amount} spent this week": "Потрачено на этой неделе: {amount}",
+  "{amount} spent this month": "Потрачено в этом месяце: {amount}",
+  "{amount} spent": "Потрачено: {amount}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

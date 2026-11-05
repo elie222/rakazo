@@ -11,6 +11,7 @@ import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   IsolationError,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { requireBotThread } from "./bot-thread.js";
 import { resolveThreadTarget } from "./thread-target.js";
@@ -199,7 +200,7 @@ export async function promptFocus(
       payload: { messageId: message.id, role: "bot", blocks },
     });
     return { message, event };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!committed) return;
   await deps.events.notify(target.threadId, committed.event.seq);
 }
@@ -235,7 +236,7 @@ export async function dismissFocus(
       payload: { messageId: pending.id, role: "bot", blocks },
     });
     return { messageId: pending.id, blocks, event };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!claimed) return;
   await deps.events.notify(target.threadId, claimed.event.seq);
 }
@@ -273,7 +274,7 @@ export async function chooseFocus(
       payload: { messageId: pending.id, role: "bot", blocks },
     });
     return { messageId: pending.id, blocks, event };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!claimed) return;
   await deps.events.notify(target.threadId, claimed.event.seq);
 
@@ -401,7 +402,7 @@ export async function markAppConnected(
       );
     }
     return events;
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   for (const event of updates) await deps.events.notify(thread.id, event.seq);
 }
 

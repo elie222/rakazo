@@ -370,6 +370,27 @@ reply. Sending every unnamed message to the first member instead missed every
 roll call, cost a handoff for any question owned by another member, and on the
 Anthropic model often answered a question about both peers with one of them.
 
+### Bot file pass-off evals
+
+```sh
+pnpm test:evals --suite bot-files --list
+pnpm test:evals --live --suite bot-files --connection <private-connection.json> --pricing <pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/bot-files.json
+```
+
+The cases check that a bot passes a project to another bot with `files` instead
+of pasting the code. A coding bot sends a small site to a deploying bot on the
+same computer, to one with its own computer (only a zip can travel there), and
+through a group handoff. A question for that bot must go without files, and a
+deploying bot handed a shared path must open the files there. The harness writes
+the site onto the computer before the turn, and the receiving case's message
+comes through `message_bot`'s delivery path. Graders read the tool calls: the
+right tool with the expected files, and no message carrying an exact line of the
+site's code.
+
+The November 2026 baseline on a small Anthropic model passed all 15 trials. A
+bot sending to its own-computer teammate usually tried the folder with the zip
+first and, told a folder cannot be copied, sent the zip alone.
+
 ### Routine silence evals
 
 ```sh

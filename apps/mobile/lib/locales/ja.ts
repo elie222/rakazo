@@ -992,6 +992,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Email verification required": "メールアドレスの確認が必要です",
   "Link SSO": "SSOを連携",
   "Registration is closed": "新規登録は受け付けていません",
+  "This account is deactivated": "このアカウントは無効化されています",
   Retry: "再試行",
   "Send deletion code": "削除コードを送信",
   "Sign in to your existing account to link SSO":
@@ -1449,6 +1450,21 @@ export const JA_MESSAGES: Record<string, string> = {
   Adds: "追加されるもの",
   "Works with": "連携するアプリ",
   "Bot templates": "ボットのテンプレート",
+  "Spending limit": "支出上限",
+  Amount: "金額",
+  Currency: "通貨",
+  Daily: "毎日",
+  Weekly: "毎週",
+  "No reset": "リセットなし",
+  "Enter an amount": "金額を入力してください",
+  "{amount} a day": "1日あたり{amount}",
+  "{amount} a week": "1週間あたり{amount}",
+  "{amount} a month": "1か月あたり{amount}",
+  "{amount} in total": "合計{amount}",
+  "{amount} spent today": "今日の支出: {amount}",
+  "{amount} spent this week": "今週の支出: {amount}",
+  "{amount} spent this month": "今月の支出: {amount}",
+  "{amount} spent": "支出: {amount}",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };
