@@ -40,10 +40,18 @@ export function registerSessionDiskCache(
   sessionDiskCaches.add(clear);
 }
 
-/** `keepUnsent` is for a new token of the same account and server; its unsent messages stay. */
-function invalidateSessionCaches(keepUnsent = false, sameAccount = keepUnsent): Promise<void> {
+/**
+ * `keepUnsent` is for a new token of the same account and server; its unsent messages stay.
+ * `rejectedUnsent` keeps only the queue of a session the server rejected, so the sign-in
+ * warning can still report those messages; it grants no same-account data.
+ */
+function invalidateSessionCaches(
+  keepUnsent = false,
+  sameAccount = keepUnsent,
+  rejectedUnsent = false,
+): Promise<void> {
   scopeInvalidated = true;
-  if (!keepUnsent) clearFailedSends();
+  if (!keepUnsent && !rejectedUnsent) clearFailedSends();
   clearNetworkCache();
   // Another account must never see, or share, the previous owner's invite link.
   forgetReferrals();
@@ -183,13 +191,17 @@ export async function saveSessionToken(token: string, sameAccount = false) {
   if (generation === sessionGeneration) publishSessionGeneration();
 }
 
-/** Clears the session. Returns false only when SecureStore could neither delete nor overwrite. */
-export async function clearSessionToken(): Promise<boolean> {
+/**
+ * Clears the session. Returns false only when SecureStore could neither delete nor overwrite.
+ * `keepUnsent` leaves the unsent queue in place for a session the server rejected; signing
+ * out and signing in clear the queue themselves.
+ */
+export async function clearSessionToken(options: { keepUnsent?: boolean } = {}): Promise<boolean> {
   const generation = ++sessionGeneration;
   publishSessionGeneration(false);
   sessionInvalidated = true;
   sessionFallback = undefined;
-  const clearingScope = invalidateSessionCaches();
+  const clearingScope = invalidateSessionCaches(false, false, options.keepUnsent);
   const clearingToken = clearStoredSessionToken(generation);
   await stopLiveNotifications(true).catch(() => undefined);
   const tokenCleared = await clearingToken;

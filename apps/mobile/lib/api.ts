@@ -961,7 +961,9 @@ export function subscribeSessionRejected(listener: () => void): () => void {
 }
 
 async function rejectSession() {
-  await clearSessionToken();
+  // The server ended the session; the user never asked to leave. Keep the unsent
+  // queue, so the app can report those messages before a sign-in deletes them.
+  await clearSessionToken({ keepUnsent: true });
   for (const listener of sessionRejectedListeners) listener();
 }
 
