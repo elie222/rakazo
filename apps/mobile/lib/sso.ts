@@ -91,7 +91,7 @@ export async function continueWithSso(
     try {
       if (action === "sign-in" && !(await clearSpace()))
         throw new Error(t("Could not save your sign-in on this device. Try again."));
-      return await replaceSessionTokenIfCurrent(generation, token);
+      return await replaceSessionTokenIfCurrent(generation, token, action === "reauthenticate");
     } catch (error) {
       throw new Error(sessionSaveErrorText(error));
     }

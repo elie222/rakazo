@@ -207,6 +207,9 @@ export function accountRoutes(ctx: RouterContext) {
                 emitBotUpdated: true,
                 // Pinned since it was listed: leave the owner's choice alone.
                 expectedSettings: { avatarSetPinned: false },
+                // Re-read under lock inside the transaction: a newer save of the
+                // default that lands while this writes owns the bot instead.
+                expectedUserAvatarSet: { userId, botAvatarSet },
                 data: { avatarSet: botAvatarSet },
               }),
             ).catch((error) => {

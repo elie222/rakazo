@@ -19,16 +19,23 @@ function demuxLogs(data: Buffer): string {
 /**
  * Opt-in check of a real daemon: an open-egress computer network as the supervisor
  * creates it gets an automatically allocated IPv6 subnet, and a computer on it
- * resolves and reaches an IPv6-only destination. Needs Docker, the computer image
- * (RAKAZO_COMPUTER_IMAGE or rakazo/computer:local, which ships python3), and a
- * host with outbound IPv6; skips without them.
+ * resolves and reaches an IPv6-only destination. With the opt-in set, an
+ * unreachable daemon or a missing computer image fails the suite instead of
+ * skipping it: a silent skip reads as a verified check. The reachability half
+ * still skips on a host without outbound IPv6, after the subnet allocation is
+ * verified. Needs the computer image (RAKAZO_COMPUTER_IMAGE or
+ * rakazo/computer:local, which ships python3).
  */
 it.skipIf(process.env.VERIFY_DOCKER_COMPUTER_IPV6 !== "1")(
   "gives a computer network IPv6 that reaches IPv6-only destinations",
   { timeout: 180_000 },
   async (ctx) => {
     const docker = new Docker();
-    if (!(await docker.ping().catch(() => false))) ctx.skip();
+    if (!(await docker.ping().catch(() => false))) {
+      throw new Error(
+        "VERIFY_DOCKER_COMPUTER_IPV6=1 but the Docker daemon is not reachable; the opt-in means this check runs",
+      );
+    }
 
     const botId = `ipv6-${randomUUID().slice(0, 8)}`;
     // Open egress: restricted networks stay IPv4-only.
@@ -71,8 +78,11 @@ print("V6_OK")`;
           },
         });
       } catch (error) {
-        // No computer image locally: the allocation above already ran its part.
-        if (/404|No such image|manifest/i.test(String(error))) ctx.skip();
+        if (/404|No such image|manifest/i.test(String(error))) {
+          throw new Error(
+            `VERIFY_DOCKER_COMPUTER_IPV6=1 but the computer image is not available locally; build it or set RAKAZO_COMPUTER_IMAGE: ${String(error)}`,
+          );
+        }
         throw error;
       }
       await container.start();
