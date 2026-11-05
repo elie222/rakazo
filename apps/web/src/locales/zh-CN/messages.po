@@ -946,7 +946,6 @@ msgid "Approving…"
 msgstr "正在批准…"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
 msgid "Apps"
 msgstr "应用"
 
@@ -2567,10 +2566,6 @@ msgstr "正在创建…"
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential"
 msgstr "凭据"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Credential saved"
-msgstr "凭据已保存"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
@@ -4320,6 +4315,7 @@ msgstr "等你回答"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
+#: src/pages/PluginsOverlay.tsx
 msgid "Needs an OAuth client ID"
 msgstr "需要 OAuth 客户端 ID"
 
@@ -4330,6 +4326,10 @@ msgstr "需要处理"
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "需要输入"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Needs sign-in"
+msgstr "需要登录"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4453,10 +4453,6 @@ msgstr "没有匹配的应用。"
 #: src/pages/Artifacts.tsx
 msgid "No artifacts found."
 msgstr "没有找到产物。"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No auth"
-msgstr "无认证"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4583,6 +4579,10 @@ msgstr "未添加：{0}"
 msgid "Not checked yet"
 msgstr "尚未检查"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Not connected"
+msgstr "未连接"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Not imported"
 msgstr "未导入"
@@ -4610,6 +4610,7 @@ msgid "Not used by Rakazo"
 msgstr "Rakazo 不使用"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Not working"
 msgstr "无法正常工作"
 
@@ -4637,17 +4638,9 @@ msgstr "OAuth 客户端 ID（可选）"
 msgid "OAuth client secret (optional)"
 msgstr "OAuth 客户端密钥（可选）"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth connected"
-msgstr "OAuth 已连接"
-
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "OAuth 连接失败"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth expired"
-msgstr "OAuth 已过期"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
@@ -7311,6 +7304,10 @@ msgstr "你已接管"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "你的 Anthropic"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Your apps"
+msgstr "你的应用"
 
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."

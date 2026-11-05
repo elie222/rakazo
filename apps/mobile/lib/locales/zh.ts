@@ -1064,10 +1064,10 @@ export const ZH_MESSAGES: Record<string, string> = {
   "The server had a problem": "服务器出现问题",
   "Could not load MCP servers": "无法加载 MCP 服务器",
   Disabled: "已禁用",
-  "OAuth connected": "OAuth 已连接",
-  "OAuth expired": "OAuth 已过期",
+  "Needs sign-in": "需要登录",
+  "Not connected": "未连接",
+  "Not working": "无法正常工作",
   "Needs an OAuth client ID": "需要 OAuth 客户端 ID",
-  "Credential saved": "凭据已保存",
   Authentication: "身份验证方式",
   "No auth": "无需身份验证",
   "The bot couldn't reply because its provider's daily limit was reached.":
@@ -1262,7 +1262,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   // Native remote MCP authentication controls.
   "API key header name": "API 密钥请求头名称",
   Bearer: "Bearer",
-  "Connect OAuth": "通过 OAuth 连接",
   "Could not start MCP OAuth": "无法启动 MCP OAuth 授权",
   OAuth: "OAuth",
   "Always open {site}": "始终打开 {site}",

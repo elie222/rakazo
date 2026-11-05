@@ -946,7 +946,6 @@ msgid "Approving…"
 msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
 msgid "Apps"
 msgstr ""
 
@@ -2567,10 +2566,6 @@ msgstr "Создание…"
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential"
 msgstr "Учётные данные"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Credential saved"
-msgstr "Учетные данные сохранены"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
@@ -4320,6 +4315,7 @@ msgstr ""
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
+#: src/pages/PluginsOverlay.tsx
 msgid "Needs an OAuth client ID"
 msgstr "Нужен идентификатор клиента OAuth"
 
@@ -4330,6 +4326,10 @@ msgstr "Требует внимания"
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "Требуется ввод данных"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Needs sign-in"
+msgstr "Нужен вход"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4453,10 +4453,6 @@ msgstr "Нет приложений, соответствующих вашему
 #: src/pages/Artifacts.tsx
 msgid "No artifacts found."
 msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No auth"
-msgstr "Нет авторизации"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4583,6 +4579,10 @@ msgstr ""
 msgid "Not checked yet"
 msgstr "Ещё не проверено"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Not connected"
+msgstr "Не подключено"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Not imported"
 msgstr "Не импортировано"
@@ -4610,6 +4610,7 @@ msgid "Not used by Rakazo"
 msgstr "Не используется в Rakazo"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Not working"
 msgstr "Не работает"
 
@@ -4637,17 +4638,9 @@ msgstr "ID клиента OAuth (необязательно)"
 msgid "OAuth client secret (optional)"
 msgstr "Секрет клиента OAuth (необязательно)"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth connected"
-msgstr "OAuth подключен"
-
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "Соединение OAuth не удалось"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth expired"
-msgstr "Срок действия OAuth истек"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
@@ -7311,6 +7304,10 @@ msgstr "Вы управляете"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "Ваш Anthropic"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Your apps"
+msgstr "Ваши приложения"
 
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."

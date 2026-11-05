@@ -946,7 +946,6 @@ msgid "Approving…"
 msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
 msgid "Apps"
 msgstr ""
 
@@ -2567,10 +2566,6 @@ msgstr "作成中…"
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential"
 msgstr "認証情報"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Credential saved"
-msgstr "認証情報を保存しました"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
@@ -4320,6 +4315,7 @@ msgstr "回答が必要"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
+#: src/pages/PluginsOverlay.tsx
 msgid "Needs an OAuth client ID"
 msgstr "OAuth クライアント ID が必要です"
 
@@ -4330,6 +4326,10 @@ msgstr "要対応"
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "入力が必要"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Needs sign-in"
+msgstr "ログインが必要"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4453,10 +4453,6 @@ msgstr "検索に一致するアプリはありません。"
 #: src/pages/Artifacts.tsx
 msgid "No artifacts found."
 msgstr "アーティファクトが見つかりません。"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No auth"
-msgstr "認証なし"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4583,6 +4579,10 @@ msgstr ""
 msgid "Not checked yet"
 msgstr "未確認"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Not connected"
+msgstr "未接続"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Not imported"
 msgstr "インポートされていません"
@@ -4610,6 +4610,7 @@ msgid "Not used by Rakazo"
 msgstr "Rakazoでは使用しません"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Not working"
 msgstr "動作していません"
 
@@ -4637,17 +4638,9 @@ msgstr "OAuthクライアントID（任意）"
 msgid "OAuth client secret (optional)"
 msgstr "OAuthクライアントシークレット（任意）"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth connected"
-msgstr "OAuth接続済み"
-
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "OAuth接続に失敗しました"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth expired"
-msgstr "OAuthの有効期限切れ"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
@@ -7311,6 +7304,10 @@ msgstr "あなたが操作中"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "お使いのAnthropic"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Your apps"
+msgstr "あなたのアプリ"
 
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."

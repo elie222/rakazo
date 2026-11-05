@@ -946,7 +946,6 @@ msgid "Approving…"
 msgstr "Onaylanıyor…"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
 msgid "Apps"
 msgstr "Uygulamalar"
 
@@ -2567,10 +2566,6 @@ msgstr "Oluşturuluyor…"
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential"
 msgstr "Kimlik bilgisi"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Credential saved"
-msgstr "Kimlik bilgisi kaydedildi"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
@@ -4320,6 +4315,7 @@ msgstr "Yanıt bekliyor"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
+#: src/pages/PluginsOverlay.tsx
 msgid "Needs an OAuth client ID"
 msgstr "OAuth istemci kimliği gerekli"
 
@@ -4330,6 +4326,10 @@ msgstr "İlgi gerekiyor"
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "Girdi bekliyor"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Needs sign-in"
+msgstr "Oturum açılması gerekiyor"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4453,10 +4453,6 @@ msgstr "Aramanla eşleşen uygulama yok."
 #: src/pages/Artifacts.tsx
 msgid "No artifacts found."
 msgstr "Çıktı bulunamadı."
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No auth"
-msgstr "Kimlik doğrulamasız"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4583,6 +4579,10 @@ msgstr "Eklenmedi: {0}"
 msgid "Not checked yet"
 msgstr "Henüz kontrol edilmedi"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Not connected"
+msgstr "Bağlı değil"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Not imported"
 msgstr "İçe aktarılmadı"
@@ -4610,6 +4610,7 @@ msgid "Not used by Rakazo"
 msgstr "Rakazo tarafından kullanılmıyor"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Not working"
 msgstr "Çalışmıyor"
 
@@ -4637,17 +4638,9 @@ msgstr "OAuth istemci kimliği (isteğe bağlı)"
 msgid "OAuth client secret (optional)"
 msgstr "OAuth istemci gizli anahtarı (isteğe bağlı)"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth connected"
-msgstr "OAuth bağlandı"
-
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "OAuth bağlantısı başarısız"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth expired"
-msgstr "OAuth süresi doldu"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
@@ -7311,6 +7304,10 @@ msgstr "Kontrol sende"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "Anthropic sağlayıcınız"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Your apps"
+msgstr "Uygulamaların"
 
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."

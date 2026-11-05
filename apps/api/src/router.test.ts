@@ -2315,9 +2315,10 @@ describe("MCP server health", () => {
     const recordHealth = async (patch: Row) => {
       if (server) server = { ...server, healthCheckedAt: new Date(5), ...patch };
     };
-    const updateMany = vi.fn(async ({ data }: { data: Row }) => {
+    const updateMany = vi.fn(async ({ where, data }: { where: Row; data: Row }) => {
+      if (!matches(where)) return { count: 0 };
       await recordHealth(data);
-      return { count: server ? 1 : 0 };
+      return { count: 1 };
     });
     const matches = (where: Row): boolean =>
       Boolean(server) &&
@@ -2853,16 +2854,13 @@ describe("MCP server health", () => {
 
     it("probes the server once its OAuth session completes", async () => {
       const h = harness({ row: baseRow() });
-      const complete = vi.fn(async () => undefined);
+      const complete = vi.fn(async () => ({ serverId: "server-1", revision: 1 }));
       Object.assign(h.deps, {
         mcpOAuth: {
           ...(h.deps.mcpOAuth as object),
           complete,
         },
       });
-      (h.deps.prisma as unknown as { mcpOAuthSession: unknown }).mcpOAuthSession = {
-        findFirst: vi.fn(async () => ({ serverId: "server-1" })),
-      };
       const client = createRouterClient(createRouter(h.deps), {
         context: {
           actor: {
@@ -2879,6 +2877,188 @@ describe("MCP server health", () => {
 
       expect(complete).toHaveBeenCalledTimes(1);
       expect(h.probe).toHaveBeenCalledTimes(1);
+    });
+
+    it("drops a check from before sign-in as soon as its OAuth session completes", async () => {
+      const h = harness({
+        row: baseRow({
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.test/mcp",
+          command: null,
+          args: [],
+          healthStatus: "error",
+          healthMessage: "HTTP 401",
+        }),
+        probe: () => new Promise(() => undefined),
+      });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          complete: vi.fn(async () => ({ serverId: "server-1", revision: 1 })),
+        },
+      });
+      // A separate session lookup failing must not skip the reset: the completed sign-in names
+      // its server.
+      (h.deps.prisma as unknown as { mcpOAuthSession: unknown }).mcpOAuthSession = {
+        findFirst: vi.fn(async () => {
+          throw new Error("pool timeout");
+        }),
+      };
+
+      await h
+        .clientFor()
+        .mcp.oauth.complete({ sessionId: "session-1", code: "code", state: "session-1" });
+
+      // The new check is still running, so the list must not keep showing the old failure.
+      expect(h.row()).toMatchObject({ healthStatus: "unknown", healthMessage: null });
+      await flush();
+      expect(h.probe).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps an edit's failed check that lands while its OAuth session completes", async () => {
+      const h = harness({ row: baseRow({ revision: 1 }) });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          complete: vi.fn(async () => {
+            // The sign-in wrote revision 2; an edit (revision 3) and its failed check land
+            // before the handler resets health.
+            Object.assign(h.row() as Row, {
+              revision: 3,
+              healthStatus: "error",
+              healthMessage: "HTTP 500",
+            });
+            return { serverId: "server-1", revision: 2 };
+          }),
+        },
+      });
+
+      await h
+        .clientFor()
+        .mcp.oauth.complete({ sessionId: "session-1", code: "code", state: "session-1" });
+      await flush();
+
+      expect(h.row()).toMatchObject({
+        revision: 3,
+        healthStatus: "error",
+        healthMessage: "HTTP 500",
+      });
+      // The edit already checks its own settings.
+      expect(h.probe).not.toHaveBeenCalled();
+    });
+
+    // Each API health write below runs after its server row was read; an edit (revision 2)
+    // and its failed check that land in between must survive it.
+    const editLandsDuring = (h: { row: () => Row | null }) =>
+      Object.assign(h.row() as Row, {
+        revision: 2,
+        healthStatus: "error",
+        healthMessage: "HTTP 500",
+      });
+    const stillFailing = { revision: 2, healthStatus: "error", healthMessage: "HTTP 500" };
+
+    it("keeps an edit's failed check over a check of the old settings with no runtime", async () => {
+      const h = harness();
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          summaryFor: vi.fn(async () => {
+            editLandsDuring(h);
+            return { status: "none", clientId: null, credential: true };
+          }),
+        },
+      });
+      await h.createRouterWithoutProbe().mcp.servers.test({ id: "server-1" });
+      expect(h.row()).toMatchObject(stillFailing);
+    });
+
+    it("keeps an edit's failed check over a crashed check of the old settings", async () => {
+      const h = harness({
+        probe: async () => {
+          editLandsDuring(h);
+          throw new Error("crashed");
+        },
+      });
+      await h.client.mcp.servers.test({ id: "server-1" }).catch(() => undefined);
+      expect(h.row()).toMatchObject(stillFailing);
+    });
+
+    it("keeps an edit's failed check over an account-pending write for the old settings", async () => {
+      const h = harness();
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          summaryFor: vi.fn(async () => {
+            editLandsDuring(h);
+            return { status: "none", clientId: "client-1", credential: false };
+          }),
+        },
+      });
+      await h
+        .clientFor()
+        .mcp.servers.test({ id: "server-1" })
+        .catch(() => undefined);
+      expect(h.row()).toMatchObject(stillFailing);
+    });
+
+    it("keeps an edit's failed check over the reset that starts a check of the old settings", async () => {
+      const h = harness({ probe: () => new Promise(() => undefined) });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          complete: vi.fn(async () => ({ serverId: "server-1", revision: 1 })),
+          summaryFor: vi.fn(async () => {
+            editLandsDuring(h);
+            return { status: "connected", clientId: null, credential: true };
+          }),
+        },
+      });
+      await h
+        .clientFor()
+        .mcp.oauth.complete({ sessionId: "session-1", code: "code", state: "session-1" });
+      await flush();
+      expect(h.row()).toMatchObject(stillFailing);
+    });
+
+    it("resets health to account-pending for the revision a disconnect committed", async () => {
+      const h = harness({ row: baseRow({ revision: 2, healthStatus: "ok" }) });
+      Object.assign(h.deps, {
+        mcpOAuth: { ...(h.deps.mcpOAuth as object), disconnect: vi.fn(async () => 2) },
+      });
+
+      await h.clientFor().mcp.oauth.disconnect({ serverId: "server-1" });
+
+      expect(h.row()).toMatchObject({
+        healthStatus: "unknown",
+        healthMessage: "Connect this server's account to check it.",
+      });
+    });
+
+    it("keeps a newer sign-in's failed check that lands before a disconnect resets health", async () => {
+      const h = harness({ row: baseRow({ revision: 1 }) });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          disconnect: vi.fn(async () => {
+            // The disconnect committed revision 2; a new sign-in (revision 3) and its failed
+            // check land before the handler resets health.
+            Object.assign(h.row() as Row, {
+              revision: 3,
+              healthStatus: "error",
+              healthMessage: "HTTP 500",
+            });
+            return 2;
+          }),
+        },
+      });
+
+      await h.clientFor().mcp.oauth.disconnect({ serverId: "server-1" });
+
+      expect(h.row()).toMatchObject({
+        revision: 3,
+        healthStatus: "error",
+        healthMessage: "HTTP 500",
+      });
     });
   });
 });

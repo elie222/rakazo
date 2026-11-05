@@ -7,7 +7,7 @@ import type {
   PluginPart,
   PluginPreview,
 } from "@rakazo/contracts";
-import { PluginPreviewSchema } from "@rakazo/contracts";
+import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
 import { installedPluginParts } from "@rakazo/core";
 import { Button, Spinner } from "@rakazo/ui-web";
 import { ArrowUpRight, Check, ChevronLeft, FileText, Plug } from "lucide-react";
@@ -84,11 +84,6 @@ export function PluginLogo({
       {name[0]?.toUpperCase()}
     </div>
   );
-}
-
-/** Signed in, or answering without a sign-in. */
-export function mcpServerReady(server: McpServer) {
-  return server.oauthStatus === "connected" || server.health.status === "ok";
 }
 
 /** A list row: icon, text and trailing actions on one line. */
@@ -508,9 +503,9 @@ export function PluginDetail({
                       {server.endpoint}
                     </span>
                   </span>
-                  {mcpServerReady(server) ? (
+                  {mcpServerConnection(server) === "connected" ? (
                     <Check role="img" aria-label={t`Connected`} className="size-4 text-success" />
-                  ) : noAuth.has(server.id) ? null : (
+                  ) : noAuth.has(server.id) || !mcpServerNeedsSignIn(server) ? null : (
                     <Button
                       size="sm"
                       variant="secondary"
