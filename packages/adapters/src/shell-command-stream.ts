@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import type { ProcessEvent } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import { redactShellStreams } from "./agent-environment.js";
@@ -57,22 +58,48 @@ function keepHeadAndTail(text: string): string {
 }
 
 /**
- * After the turn that first saw a still-running shell, wait for those commands
- * to exit and hand the bot the final output. The turn that received the live
- * output is skipped so the bot can relay a device code before the process ends.
+ * After the turn that first saw a still-running shell, hand the bot the final output of
+ * commands that have exited. The turn that received the live output is skipped so the bot
+ * can relay a device code before the process ends.
+ *
+ * A turn that called tools takes only the commands that already exited: the bot is still
+ * working, and waiting here would also hold back the person's messages until the sandbox
+ * command timeout. A turn that would otherwise end the run waits for the rest. A turn that
+ * ended in a model error or an abort makes no further request, so nothing waits on it.
  */
 export async function deliverFinishedShells(
-  followUp: (text: string) => void,
+  deliver: (text: string) => void,
   pending: Array<Promise<FinishedShellCommand>>,
-  turn: { toolResults: Array<{ toolName?: string; details?: unknown }> },
+  turn: {
+    message?: { stopReason?: string };
+    toolResults: Array<{ toolName?: string; details?: unknown }>;
+  },
   signal?: AbortSignal,
 ): Promise<void> {
   if (pending.length === 0 || turnReturnedRunningShell(turn)) return;
-  const batch = pending.splice(0, pending.length);
+  if (turn.message?.stopReason === "error" || turn.message?.stopReason === "aborted") return;
+  const batch =
+    turn.toolResults.length > 0 ? await takeExited(pending) : pending.splice(0, pending.length);
   const results = await Promise.all(batch.map((completion) => finishOrAbort(completion, signal)));
   const texts = results.filter((result): result is FinishedShellCommand => result !== undefined);
   if (texts.length === 0) return;
-  followUp(texts.map((result) => formatFinishedShellCommand(result)).join("\n\n"));
+  deliver(texts.map((result) => formatFinishedShellCommand(result)).join("\n\n"));
+}
+
+/** Remove and return the commands that already exited, leaving the rest pending. */
+async function takeExited(
+  pending: Array<Promise<FinishedShellCommand>>,
+): Promise<Array<Promise<FinishedShellCommand>>> {
+  const exited = new Set<Promise<FinishedShellCommand>>();
+  for (const completion of pending) {
+    const mark = () => exited.add(completion);
+    void completion.then(mark, mark);
+  }
+  // A settled promise runs its callbacks before the next macrotask; a running one does not.
+  await setImmediate();
+  const taken = pending.filter((completion) => exited.has(completion));
+  pending.splice(0, pending.length, ...pending.filter((completion) => !exited.has(completion)));
+  return taken;
 }
 
 function turnReturnedRunningShell(turn: {

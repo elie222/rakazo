@@ -237,7 +237,7 @@ export async function executeSubagent(
     finishTurn: async (turn, turnSignal) => {
       await deliverFinishedShells(
         (text) => {
-          nested.followUp({
+          nested.steer({
             role: "user",
             content: text,
             timestamp: Date.now(),
