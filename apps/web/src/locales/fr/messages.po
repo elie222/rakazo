@@ -5715,6 +5715,10 @@ msgstr "Rechercher par domaine"
 msgid "Search integrations.sh"
 msgstr "Rechercher sur integrations.sh"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Search MCP servers for “{query}”"
+msgstr "Rechercher « {query} » dans les serveurs MCP"
+
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx

@@ -55,7 +55,15 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { queryOptions, skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
+import {
+  ArrowUpRight,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
@@ -164,6 +172,7 @@ export function PluginsOverlay({
   const [catalogFeedPending, setCatalogFeedPending] = useState(false);
   const [catalogFeedSearched, setCatalogFeedSearched] = useState(false);
   const [view, setView] = useState<OverlayView>("browse");
+  const [publicCatalogQuery, setPublicCatalogQuery] = useState("");
   // Where a source form returns: the domain search that prefilled it, or browse.
   const [sourceBack, setSourceBack] = useState<OverlayView>("browse");
   const [plugin, setPlugin] = useState<PluginSelection | null>(null);
@@ -991,6 +1000,29 @@ export function PluginsOverlay({
     );
   }
 
+  /** Nothing leaves for the public catalog until the person picks this row. */
+  function renderPublicCatalogRow(query: string) {
+    return (
+      <div className={`mt-2 flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 ${ROW_HOVER}`}>
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-3 text-start focus-visible:outline-none"
+          onClick={() => {
+            setPublicCatalogQuery(query);
+            openAddView("browseMcp");
+          }}
+        >
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border/60 bg-favicon-plate text-muted-foreground">
+            <Search className="size-4" />
+          </div>
+          <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-foreground">
+            <Trans>Search MCP servers for “{query}”</Trans>
+          </span>
+        </button>
+      </div>
+    );
+  }
+
   function openAddView(next: OverlayView) {
     setPlugin(null);
     setDetailKey(null);
@@ -1026,7 +1058,12 @@ export function PluginsOverlay({
           <DropdownMenuItem onClick={() => beginSource("executor")}>Executor</DropdownMenuItem>
           <DropdownMenuItem onClick={() => beginSource("treg")}>Treg</DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => openAddView("browseMcp")}>
+          <DropdownMenuItem
+            onClick={() => {
+              setPublicCatalogQuery("");
+              openAddView("browseMcp");
+            }}
+          >
             <Trans>Browse MCP servers</Trans>
           </DropdownMenuItem>
           {catalogFeedEnabled ? (
@@ -1328,6 +1365,7 @@ export function PluginsOverlay({
         {renderViewTitle(<Trans>Browse MCP servers</Trans>, () => setView("browse"))}
         <IntegrationSetup
           botId={activeBotId}
+          initialQuery={publicCatalogQuery || undefined}
           onDone={() => {
             setView("manage");
             void refresh().catch((err: unknown) =>
@@ -1805,6 +1843,9 @@ export function PluginsOverlay({
                       </Button>
                     </div>
                   ) : null}
+                  {query.trim().length >= 2 && !category
+                    ? renderPublicCatalogRow(query.trim())
+                    : null}
                 </>
               )}
               {catalogLoaded && !category ? (
