@@ -20,7 +20,12 @@ import { createRunExecutor } from "./executor.js";
 import { FakeWebProvider } from "./fake-web.js";
 import type * as FleetToolsModule from "./fleet-tools.js";
 import type { HostComputerRequest } from "./host-computer-protocol.js";
-import { catalogEntries, resolveCatalogCall } from "./lazy-tool-catalog.js";
+import {
+  CATALOG_EXECUTE,
+  catalogEntries,
+  lazyCatalogTools,
+  resolveCatalogCall,
+} from "./lazy-tool-catalog.js";
 import type { TurnCheckpoint } from "./turn-checkpoint.js";
 import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
@@ -69,6 +74,7 @@ function fixture({
   name = "demo_get_item",
   route,
   catalog = false,
+  catalogPrefix,
   readOnly = true,
   rules = [] as ActionApprovalRule[],
   confirmationsOverride = false,
@@ -128,6 +134,8 @@ function fixture({
   name?: string;
   route?: ConnectorTool["route"];
   catalog?: boolean;
+  /** Expose this prefix's lazy catalog wrappers instead of the tool itself. */
+  catalogPrefix?: string;
   readOnly?: boolean;
   rules?: ActionApprovalRule[];
   /** The Space has its own confirmations; otherwise `rules` and auto review are the account's. */
@@ -469,7 +477,9 @@ function fixture({
   };
   const transactionalPrisma = Object.assign(prisma, {
     $queryRaw: vi.fn(async () => []),
-    $transaction: async (action: (tx: typeof prisma) => unknown) => action(prisma),
+    $transaction: vi.fn(async (action: (tx: typeof prisma) => unknown, _options?: unknown) =>
+      action(prisma),
+    ),
   });
   const pauseRunForInput = vi.fn(async () => {
     run.status = "waiting_input";
@@ -535,31 +545,38 @@ function fixture({
       discoverTools: async () =>
         builtin
           ? []
-          : catalog
-            ? [
-                {
-                  name: "demo_execute_tool",
-                  description: "Execute a catalog tool",
-                  inputSchema: { type: "object" },
-                  route: { connectorId: "demo", toolName: "__catalog_execute" },
-                },
-              ]
-            : secondResource
+          : catalogPrefix
+            ? lazyCatalogTools(catalogPrefix, catalogPrefix, "app", catalogEntries([tool]))
+            : catalog
               ? [
-                  tool,
                   {
-                    ...tool,
-                    name: "demo_get_other",
-                    route: {
-                      connectorId: "demo",
-                      resourceId: "resource-2",
-                      toolName: "demo_get_other",
-                    },
+                    name: "demo_execute_tool",
+                    description: "Execute a catalog tool",
+                    inputSchema: { type: "object" },
+                    route: { connectorId: "demo", toolName: "__catalog_execute" },
                   },
                 ]
-              : [tool],
-      resolveCall: async (call: ConnectorCall) =>
-        catalog ? resolveCatalogCall(call, catalogEntries([tool])) : undefined,
+              : secondResource
+                ? [
+                    tool,
+                    {
+                      ...tool,
+                      name: "demo_get_other",
+                      route: {
+                        connectorId: "demo",
+                        resourceId: "resource-2",
+                        toolName: "demo_get_other",
+                      },
+                    },
+                  ]
+                : [tool],
+      resolveCall: async (call: ConnectorCall) => {
+        if (catalogPrefix) {
+          if (call.route?.resourceId || call.route?.toolName !== CATALOG_EXECUTE) return undefined;
+          return resolveCatalogCall(call, catalogEntries([tool]));
+        }
+        return catalog ? resolveCatalogCall(call, catalogEntries([tool])) : undefined;
+      },
       execute,
     },
     sandbox: { describe: () => ({ capabilities: { graphical: Boolean(browser) } }) },
@@ -1216,6 +1233,40 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
     });
   });
+
+  it("catalog-load-no-card", async () => {
+    for (const prefix of ["pipedream", "connectors"]) {
+      const load = fixture({ catalogPrefix: prefix, name: "gmail-find-email" });
+      load.setCalls([
+        {
+          name: `${prefix}_load_tool`,
+          args: { id: "gmail-find-email" },
+          executionId: "call-1",
+        },
+      ]);
+      await load.run();
+      expect(load.pauseRunForInput).not.toHaveBeenCalled();
+      expect(load.execute).toHaveBeenCalledOnce();
+      expect(isApprovalPausedResult(load.results[0])).toBe(false);
+
+      const run = fixture({
+        catalogPrefix: prefix,
+        name: "gmail-delete-email",
+        readOnly: false,
+      });
+      run.setCalls([
+        {
+          name: `${prefix}_execute_tool`,
+          args: { id: "gmail-delete-email", arguments: { id: "item-1" } },
+          executionId: "call-1",
+        },
+      ]);
+      await run.run();
+      expect(run.execute).not.toHaveBeenCalled();
+      expect(run.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(isApprovalPausedResult(run.results[0])).toBe(true);
+    }
+  });
 });
 
 describe("Composio batches", () => {
@@ -1469,6 +1520,7 @@ describe("own instructions through update_bot", () => {
     expect(f.instructionState.instructionHistory).toEqual([
       expect.objectContaining({ instructions: "Draft only", reason: "Set in chat" }),
     ]);
+    expect(f.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
   });
   it("sets them after a profile edit earlier in the run", async () => {
     const f = emptyBot({ autoReview: true });
@@ -1600,6 +1652,57 @@ describe("own instructions through update_bot", () => {
     expect(f.results[1]).toEqual({ error: expect.stringContaining("Instructions changed") });
     expect(f.instructionState.instructions).toBe("Imported profile");
     expect(f.instructionState.instructionHistory).toHaveLength(0);
+  });
+  it("reads long instructions in pages the model can follow to the end", async () => {
+    const long = "Keep receipts for every claim. ".repeat(650);
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.instructionState.instructions = long;
+    f.setCalls([
+      { args: {}, executionId: "call-1" },
+      { args: { instructions_offset: 8_000 }, executionId: "call-2" },
+      { args: { instructions_offset: 16_000 }, executionId: "call-3" },
+    ]);
+    await f.run();
+    expect(f.results[0]).toMatchObject({
+      instructions: long.slice(0, 8_000),
+      instructionsLength: long.length,
+      instructionsOffset: 0,
+      instructionsNextOffset: 8_000,
+    });
+    expect(f.results[1]).toMatchObject({
+      instructions: long.slice(8_000, 16_000),
+      instructionsOffset: 8_000,
+      instructionsNextOffset: 16_000,
+    });
+    expect(f.results[2]).toMatchObject({
+      instructions: long.slice(16_000),
+      instructionsOffset: 16_000,
+      instructionsNextOffset: null,
+    });
+    expect(f.results.map((page) => (page as { instructions: string }).instructions).join("")).toBe(
+      long,
+    );
+  });
+  it("rejects an instructions offset that is not a plain read", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    const long = "x".repeat(19_000);
+    f.instructionState.instructions = long;
+    f.setCalls([
+      { args: { instructions_offset: -1 }, executionId: "call-1" },
+      { args: { instructions_offset: 1.5 }, executionId: "call-2" },
+      { args: { instructions_offset: 0, name: "New name" }, executionId: "call-3" },
+      { args: { instructions_offset: 19_000 }, executionId: "call-4" },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([
+      { error: "instructions_offset must be a whole number of 0 or more." },
+      { error: "instructions_offset must be a whole number of 0 or more." },
+      {
+        error: "instructions_offset only works on a read: call update_bot with no other fields.",
+      },
+      { error: "instructions_offset is past the end of your instructions." },
+    ]);
+    expect(f.instructionState.instructions).toBe(long);
   });
   it("applies a second instruction change later in the same run", async () => {
     const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
@@ -2298,6 +2401,57 @@ describe("command watch creation approval", () => {
       expect(reviewMock).not.toHaveBeenCalled();
     },
   );
+
+  it("returns a command watch sent with a schedule as an error without a card", async () => {
+    const f = fixture({
+      name: "schedule_create",
+      builtin: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "schedule_create" }],
+    });
+    const watch = { kind: "command", command: "ls inbox", everyMinutes: 15 };
+    const args = { name: "Inbox check", prompt: "Summarize what changed", watch };
+    f.setCalls([
+      { args: { ...args, every: 15 }, executionId: "call-1" },
+      { args, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(f.results[0]).toEqual({
+      error:
+        "A watch takes no schedule: it checks every watch.everyMinutes minutes (5 to 1440). Call again without every.",
+    });
+    // Only the valid request is recorded and asks, still with no rule or reviewer passing it.
+    expect(f.effects).toHaveLength(1);
+    expect(f.effects[0]).toMatchObject({ request: expect.objectContaining({ watch }) });
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[1])).toBe(true);
+  });
+
+  it("refuses a command watch whose name is taken before asking", async () => {
+    const taken = {
+      id: "routine-1",
+      name: "Inbox check",
+      prompt: "Summarize",
+      threadId: "thread-1",
+    };
+    const f = fixture({ name: "schedule_create", builtin: true, routines: [taken] });
+    f.setCalls([
+      {
+        args: {
+          name: "Inbox check",
+          prompt: "Summarize what changed",
+          watch: { kind: "command", command: "ls inbox" },
+        },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results[0]).toEqual({
+      error:
+        'An active routine named "Inbox check" already exists (routine-1). Update or cancel it instead.',
+    });
+    expect(f.effects).toEqual([]);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
 
   it("saves a command watch in Never ask after outside content", async () => {
     const f = fixture({ name: "schedule_create", builtin: true, skipApprovals: true });

@@ -61,21 +61,24 @@ export function BotLookPicker({
 
   return (
     <div className="space-y-4">
-      <Tabs
-        value={avatarSet}
-        onValueChange={(next) =>
-          onAvatarSetChange?.(resolveBotAvatarSet(next), defaultBotAvatarValue(value))
-        }
-      >
-        <TabsList className="w-full" aria-label={t`Icon set`}>
-          <TabsTrigger value="organic" className="flex-1">
-            <Trans>Original</Trans>
-          </TabsTrigger>
-          <TabsTrigger value="rakazo" className="flex-1">
-            <Trans>Rakazo</Trans>
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* Only one bot's own editor overrides the account's set; a new bot takes the default. */}
+      {onAvatarSetChange ? (
+        <Tabs
+          value={avatarSet}
+          onValueChange={(next) =>
+            onAvatarSetChange(resolveBotAvatarSet(next), defaultBotAvatarValue(value))
+          }
+        >
+          <TabsList className="w-full" aria-label={t`Icon set`}>
+            <TabsTrigger value="organic" className="flex-1">
+              <Trans>Original</Trans>
+            </TabsTrigger>
+            <TabsTrigger value="rakazo" className="flex-1">
+              <Trans>Rakazo</Trans>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      ) : null}
       {avatarSet === "organic" ? (
         <div>
           {organicIdentities ? null : (

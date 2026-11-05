@@ -6,6 +6,7 @@ import { cancelHeaderOptions } from "../components/sheet-header";
 import { rpc, selectSpace } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
+import { refreshOrganizations } from "../lib/organizations";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
@@ -25,6 +26,7 @@ export default function NewSpace() {
     setError(null);
     try {
       const space = await rpc("spaces/create", { name: trimmed });
+      void refreshOrganizations();
       if (!(await selectSpace(space.id))) {
         Alert.alert(t("Space created"), t("It could not be opened. Try again from the sidebar."));
         router.dismissAll();

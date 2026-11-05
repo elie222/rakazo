@@ -11,6 +11,7 @@ export const DE_MESSAGES: Record<string, string> = {
   City: "Stadt",
   Contact: "Kontakt",
   Contacts: "Kontakte",
+  "Could not attach files": "Dateien konnten nicht angehängt werden",
   "Could not remove the item": "Eintrag konnte nicht entfernt werden",
   "Could not show the item": "Eintrag konnte nicht angezeigt werden",
   Country: "Land",
@@ -94,6 +95,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Add a model in Settings to use this.":
     "Füge in den Einstellungen ein Modell hinzu, um dies zu nutzen.",
   "Approval model": "Freigabemodell",
+  "Computer-use model": "Modell für Computernutzung",
+  "Same as main model": "Wie das Hauptmodell",
   "Main model": "Hauptmodell",
   "Add fallback": "Backup-Modell hinzufügen",
   "Manage {provider}": "{provider} verwalten",
@@ -532,6 +535,27 @@ export const DE_MESSAGES: Record<string, string> = {
   "This permanently deletes the routine and its run history.":
     "Die Routine und ihr Ausführungsverlauf werden endgültig gelöscht.",
   "Could not delete routine": "Routine konnte nicht gelöscht werden",
+  "Edit routine": "Routine bearbeiten",
+  "Next run": "Nächste Ausführung",
+  "Add a schedule to run this routine.": "Füge einen Zeitplan für diese Routine hinzu.",
+  "Add schedule": "Zeitplan hinzufügen",
+  "Could not run routine": "Routine konnte nicht ausgeführt werden",
+  "Could not save routine": "Routine konnte nicht gespeichert werden",
+  "Cron expression": "Cron-Ausdruck",
+  "Delete routine": "Routine löschen",
+  "Every month": "Jeden Monat",
+  "Every week": "Jede Woche",
+  "How often": "Wie oft",
+  Instruction: "Anweisung",
+  Interval: "Intervall",
+  "Name this routine.": "Gib der Routine einen Namen.",
+  "New routine": "Neue Routine",
+  "Remove schedule": "Zeitplan entfernen",
+  "Test run": "Testlauf",
+  "Time of day": "Uhrzeit",
+  Unit: "Einheit",
+  "When to run": "Ausführungszeit",
+  "Write what this routine should do.": "Beschreibe, was diese Routine tun soll.",
   "Could not update routine": "Routine konnte nicht aktualisiert werden",
   "Get notified when this Bot finishes or needs input":
     "Benachrichtigung, wenn dieser Bot fertig ist oder Eingabe braucht",
@@ -717,6 +741,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "This device": "Dieses Gerät",
   "Agent messages": "Agent-Nachrichten",
   Appearance: "Erscheinungsbild",
+  "Bot style": "Bot-Stil",
+  "Couldn't update bot style": "Bot-Stil konnte nicht aktualisiert werden",
   Archived: "Archiviert",
   Cancel: "Abbrechen",
   "Could not change language": "Sprache konnte nicht geändert werden",
@@ -1083,6 +1109,15 @@ export const DE_MESSAGES: Record<string, string> = {
   "Start plan": "Plan starten",
   "Switch to yearly": "Zu jährlich wechseln",
   "Switch to yearly?": "Zu jährlich wechseln?",
+  "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
+    "{vcpus} vCPU, {memoryGb} GB, {hours} Computerstunden pro Monat",
+  "Switch to {name}?": "Zu {name} wechseln?",
+  "The unused difference is credited to your next invoice.":
+    "Die ungenutzte Differenz wird deiner nächsten Rechnung gutgeschrieben.",
+  "Your card is charged the prorated difference today.":
+    "Deine Karte wird heute mit der anteiligen Differenz belastet.",
+  "Your plan becomes {price} when your trial ends.":
+    "Nach dem Testzeitraum kostet dein Plan {price}.",
   "Your card is charged {price} today, less the unused part of this month.":
     "Deine Karte wird heute mit {price} belastet, abzüglich des ungenutzten Teils dieses Monats.",
   "Your plan becomes {price} / year when your trial ends.":
@@ -1339,6 +1374,19 @@ export const DE_MESSAGES: Record<string, string> = {
   "{count} bots now use the space default.": "{count} Bots verwenden jetzt den Space-Standard.",
   "Could not switch {failedNames}. Try again.":
     "{failedNames} konnte nicht umgestellt werden. Versuche es erneut.",
+  "Create organization": "Organisation erstellen",
+  Organization: "Organisation",
+  "Delete organization": "Organisation löschen",
+  "Type {name} to confirm": "Gib {name} zur Bestätigung ein",
+  "Could not load memory": "Gedächtnis konnte nicht geladen werden",
+  "Nothing remembered yet": "Noch nichts gemerkt",
+  "This note changed": "Diese Notiz wurde geändert",
+  "Use latest": "Neueste verwenden",
+  "Save mine": "Meine speichern",
+  "This note no longer exists": "Diese Notiz gibt es nicht mehr",
+  "Discard changes?": "Änderungen verwerfen?",
+  Discard: "Verwerfen",
+  "Could not delete note": "Notiz konnte nicht gelöscht werden",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

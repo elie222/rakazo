@@ -30,7 +30,7 @@ import {
   validateConnectedModelChoice,
   validateModelAuthAvailability,
 } from "./model-selection.js";
-import { modelIdSupportsImages } from "./model-vision.js";
+import { compatibleModelSeesImages } from "./model-vision.js";
 import { assertAllowedOpenAiCompatibleUrl } from "./openai-compatible-url.js";
 import { codexLiveModel } from "./pi-codex-catalog.js";
 import { toOAuthCredential } from "./pi-credentials.js";
@@ -305,12 +305,7 @@ async function resolveModelKeyMaterial(
       const acceptsImages =
         credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
         resolved.secret.kind === "openai_compatible"
-          ? modelIdSupportsImages(resolved.secret.visionModelIds, modelId) ||
-            // Legacy secrets have no per-model list, so keep their existing
-            // capability scoped to the model saved in the space preference.
-            (resolved.secret.visionModelIds === undefined &&
-              credential.supportsImages === true &&
-              credential.defaultModel?.trim() === modelId.trim())
+          ? compatibleModelSeesImages(credential, resolved.secret, modelId)
           : liveCodex?.supportsImages;
       const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
       const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
@@ -433,7 +428,7 @@ export async function resolveConnectedModelKey(
     scope,
     provider,
     modelId,
-    { hostedProvider, credentialId },
+    { hostedProvider, credentialId, codexCatalog: deps.codexCatalog },
   );
   if (validationError) throw new Error(validationError);
   const credential = await findConnectedModelCredential(

@@ -471,7 +471,34 @@ describe("Space model overrides", () => {
   });
 });
 
+const visionModel = listPiCatalog().find(
+  (entry) => entry.provider === "openrouter" && !entry.placeholder && entry.images,
+)!;
+const textOnlyModel = listPiCatalog().find(
+  (entry) => entry.provider === "openrouter" && !entry.placeholder && entry.images === false,
+)!;
+
 describe("role-based model settings API", () => {
+  it("saves a computer-use model only when it can see images", async () => {
+    const { call } = setup();
+    const accepted = await call("models/setRole", {
+      role: "computer",
+      primary: { provider: "openrouter", modelId: visionModel.id },
+    });
+    expect(accepted.response.status).toBe(200);
+    const refused = await call("models/setRole", {
+      role: "computer",
+      primary: { provider: "openrouter", modelId: textOnlyModel.id },
+    });
+    expect(refused.response.status).toBe(400);
+  });
+  it("offers only image-capable models for computer use", async () => {
+    const { call } = setup();
+    const { response } = await call("models/forRole", { role: "computer" });
+    const entries: Array<{ id: string; images?: boolean }> = (await response.json()).json;
+    expect(entries.some((entry) => entry.id === visionModel.id)).toBe(true);
+    expect(entries.some((entry) => entry.images === false)).toBe(false);
+  });
   it("accepts a decision model pinned to the provider's only connection", async () => {
     const { call } = setup();
     const primary = {

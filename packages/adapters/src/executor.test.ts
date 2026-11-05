@@ -513,8 +513,8 @@ describe("run tool selection", () => {
     expect(withoutPage).toEqual(expect.arrayContaining(["computer_observe", "computer_act"]));
   });
 
-  it("withholds schedule creation only from routine-triggered runs", () => {
-    expect(toolNames("routine")).not.toContain("schedule_create");
+  it("offers schedule creation to routine-triggered runs", () => {
+    expect(toolNames("routine")).toContain("schedule_create");
     expect(toolNames("routine")).toContain("task_catalog");
     expect(toolNames("routine")).toEqual(
       expect.arrayContaining(["schedule_list", "schedule_cancel"]),
@@ -657,11 +657,11 @@ describe("run tool selection", () => {
     expect(toolNames("user")).toContain("message_bot");
   });
 
-  it("keeps schedule tools in group chats and still blocks create on routines", () => {
+  it("keeps schedule tools in group chats and offers creation to routines", () => {
     expect(toolNames("user", "group-1")).toEqual(
       expect.arrayContaining(["schedule_create", "schedule_list", "schedule_cancel"]),
     );
-    expect(toolNames("routine", "group-1")).not.toContain("schedule_create");
+    expect(toolNames("routine", "group-1")).toContain("schedule_create");
     expect(toolNames("routine", "group-1")).toEqual(
       expect.arrayContaining(["schedule_list", "schedule_cancel"]),
     );
@@ -2120,6 +2120,7 @@ describe("createRunExecutor", () => {
           routine: {
             updateMany,
             findUnique: vi.fn(async () => ({
+              prompt: "say hi",
               modelProvider: null,
               modelId: null,
               thinkingLevel: null,
@@ -2193,6 +2194,7 @@ describe("createRunExecutor", () => {
           routine: {
             updateMany,
             findUnique: vi.fn(async () => ({
+              prompt: "say hi",
               modelProvider: null,
               modelId: null,
               thinkingLevel: null,
@@ -2275,7 +2277,8 @@ describe("createRunExecutor", () => {
           callback({
             routine: {
               updateMany: vi.fn(async () => ({ count: 1 })),
-              findUnique: vi.fn(async () => claimedModel),
+              // The claimed row carries the prompt alongside the model.
+              findUnique: vi.fn(async () => ({ prompt: "say hi", ...claimedModel })),
             },
             task: { create: taskCreate },
             run: {
@@ -2426,6 +2429,7 @@ describe("createRunExecutor", () => {
           routine: {
             updateMany: vi.fn(async () => ({ count: 1 })),
             findUnique: vi.fn(async () => ({
+              prompt: "remind the group",
               modelProvider: null,
               modelId: null,
               thinkingLevel: null,
@@ -2502,6 +2506,7 @@ describe("createRunExecutor", () => {
           routine: {
             updateMany: vi.fn(async () => ({ count: 1 })),
             findUnique: vi.fn(async () => ({
+              prompt: "remind me",
               modelProvider: null,
               modelId: null,
               thinkingLevel: null,
@@ -2595,6 +2600,7 @@ description: Prepare standup notes
           routine: {
             updateMany: vi.fn(async () => ({ count: 1 })),
             findUnique: vi.fn(async () => ({
+              prompt: "Run @Daily standup, then email me",
               modelProvider: null,
               modelId: null,
               thinkingLevel: null,
@@ -2655,6 +2661,7 @@ description: Prepare standup notes
           routine: {
             updateMany,
             findUnique: vi.fn(async () => ({
+              prompt: "say hi",
               modelProvider: null,
               modelId: null,
               thinkingLevel: null,
@@ -2720,6 +2727,7 @@ description: Prepare standup notes
             routine: {
               updateMany: claimUpdateMany,
               findUnique: vi.fn(async () => ({
+                prompt: "say hi",
                 modelProvider: null,
                 modelId: null,
                 thinkingLevel: null,

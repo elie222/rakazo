@@ -1,11 +1,6 @@
 import type { ParsedBotAvatar } from "@rakazo/contracts";
 import { parseBotAvatarValue } from "@rakazo/contracts";
-import {
-  botEyeTone,
-  contrastRatio,
-  resolvePersonaColorDef,
-  shippedBotAvatarShapePath,
-} from "@rakazo/core";
+import { resolvePersonaColorDef, shippedBotAvatarShapePath } from "@rakazo/core";
 
 export type MobileBotAvatarPresentation =
   | Exclude<ParsedBotAvatar, { kind: "shape" }>
@@ -28,15 +23,4 @@ export function mobileBotAvatarPresentation(color: string): MobileBotAvatarPrese
     color: colorDef.hex,
     shapePath: shippedBotAvatarShapePath(parsed.shapeIndex),
   };
-}
-
-/** Eyes are cut-outs in the page color unless the body is nearly white or black. */
-export function botEyeInk(bodyColor: string, page: { background: string; foreground: string }) {
-  const tone = botEyeTone(bodyColor);
-  if (tone === "page") return page.background;
-  const [darker, lighter] =
-    contrastRatio(page.background, "#FFFFFF") > contrastRatio(page.foreground, "#FFFFFF")
-      ? [page.background, page.foreground]
-      : [page.foreground, page.background];
-  return tone === "dark" ? darker : lighter;
 }

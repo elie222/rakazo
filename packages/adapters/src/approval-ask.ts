@@ -215,7 +215,7 @@ function describeApprovalAction(
   if (batch?.actions.length) {
     return [...batch.actions, ...(batch.complete ? [] : ["…"])].join(", ");
   }
-  if (toolName === "delete_bot" || toolName === "archive_bot") {
+  if (toolName === "archive_bot") {
     const name = args.confirm_name ?? args.confirmName;
     return name ? `${toolName.replace("_", " ")} (${String(name)})` : toolName.replace("_", " ");
   }

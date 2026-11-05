@@ -1,6 +1,6 @@
 import { shippedBotAvatarShapePath } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { botEyeInk, mobileBotAvatarPresentation } from "./bot-avatar.js";
+import { mobileBotAvatarPresentation } from "./bot-avatar.js";
 
 describe("mobile bot avatar presentation", () => {
   it("keeps the stored shape path instead of dropping it to a color fill", () => {
@@ -14,14 +14,6 @@ describe("mobile bot avatar presentation", () => {
     expect(presented.kind === "shape" && presented.shapePath).not.toBe(
       shippedBotAvatarShapePath(0),
     );
-  });
-
-  it("cuts the eyes in the page color unless the body is nearly white", () => {
-    const dark = { background: "#121212", foreground: "#F5F5F5" };
-    const light = { background: "#FFFFFF", foreground: "#1C1C1C" };
-    expect(botEyeInk("#FF5EB1", dark)).toBe("#121212");
-    expect(botEyeInk("#FF5EB1", light)).toBe("#FFFFFF");
-    expect(botEyeInk("#FFFFFF", light)).toBe("#1C1C1C");
   });
 
   it("draws a color saved as its earlier value as the current one", () => {

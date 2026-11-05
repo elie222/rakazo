@@ -234,7 +234,7 @@ export const AgentImportCreateInput = z.strictObject({
   name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
   description: z.string().trim().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
   computerMode: ComputerModeSchema.default("team"),
-  /** Portable appearance when supplied by an exported profile; older imports stay organic. */
+  /** Portable appearance when supplied by an exported profile; without it, the owner's set applies. */
   color: BotAvatarValueSchema.optional(),
   avatarSet: BotAvatarSetSchema.optional(),
   selection: AgentImportSelectionSchema,

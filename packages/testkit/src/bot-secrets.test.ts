@@ -106,10 +106,16 @@ describeIntegration("reusable credential lifecycle", () => {
         );
         const approve = async (runId: string, interruptBeforeCard = false) => {
           if (!requireApproval) return;
-          const message = await db.message.findFirstOrThrow({
-            where: { runId, role: "bot" },
-            orderBy: { createdAt: "desc" },
-          });
+          // A just-continued run can still sit requeued while the previous run's
+          // worker releases the computer lease, so the card may land a moment later.
+          const message = await vi.waitFor(
+            async () =>
+              db.message.findFirstOrThrow({
+                where: { runId, role: "bot" },
+                orderBy: { createdAt: "desc" },
+              }),
+            { timeout: 15_000 },
+          );
           expect(message.blocks).toEqual(
             expect.arrayContaining([
               expect.objectContaining({ approvalEffectId: expect.any(String) }),
@@ -276,10 +282,15 @@ describeIntegration("reusable credential lifecycle", () => {
           request,
         ]);
         await approve(useRun);
-        expect(await db.run.findUniqueOrThrow({ where: { id: useRun } })).toMatchObject({
-          status: "completed",
-          error: null,
-        });
+        await vi.waitFor(
+          async () => {
+            expect(await db.run.findUniqueOrThrow({ where: { id: useRun } })).toMatchObject({
+              status: "completed",
+              error: null,
+            });
+          },
+          { timeout: 15_000 },
+        );
         expect(fetch).toHaveBeenCalledTimes(1);
         expect(
           await db.externalEffect.findFirstOrThrow({
@@ -299,9 +310,14 @@ describeIntegration("reusable credential lifecycle", () => {
             args: { label: "API key", purpose: "api_key", credential: destination, replace: true },
           },
         ]);
-        expect(await db.run.findUniqueOrThrow({ where: { id: rotateRun } })).toMatchObject({
-          status: "waiting_input",
-        });
+        await vi.waitFor(
+          async () => {
+            expect(await db.run.findUniqueOrThrow({ where: { id: rotateRun } })).toMatchObject({
+              status: "waiting_input",
+            });
+          },
+          { timeout: 15_000 },
+        );
         await approve(rotateRun, true);
         expect(await db.run.findUniqueOrThrow({ where: { id: rotateRun } })).toMatchObject({
           status: "waiting_input",
@@ -315,12 +331,35 @@ describeIntegration("reusable credential lifecycle", () => {
         expect(
           await db.vaultCredential.findUniqueOrThrow({ where: { id: stored.id } }),
         ).not.toMatchObject({ ciphertext: stored.ciphertext });
-        await nextRun([request]);
+        const rotatedUse = await nextRun([request]);
+        await vi.waitFor(
+          async () => {
+            expect(await db.run.findUniqueOrThrow({ where: { id: rotatedUse } })).toMatchObject({
+              status: "completed",
+              error: null,
+            });
+          },
+          { timeout: 15_000 },
+        );
         expect(new Headers(fetch.mock.calls.at(-1)?.[1]?.headers).get("Authorization")).toBe(
           `Bearer ${key}-rotated`,
         );
         const count = fetch.mock.calls.length;
-        await nextRun([{ name: "forget_secret", args: { name: destination.name } }, request]);
+        const forgotten = await nextRun([
+          { name: "forget_secret", args: { name: destination.name } },
+          request,
+        ]);
+        // The deletion alone does not prove the run finished: the trailing use request and
+        // its writes can still be pending. Wait for the run itself, then assert the effects.
+        await vi.waitFor(
+          async () => {
+            expect(await db.run.findUniqueOrThrow({ where: { id: forgotten } })).toMatchObject({
+              status: "completed",
+              error: null,
+            });
+          },
+          { timeout: 15_000 },
+        );
         expect(await db.vaultCredential.count({ where: { userId: seeded.me.userId } })).toBe(0);
         expect(fetch).toHaveBeenCalledTimes(count);
         const [messages, events, effects, tasks] = await Promise.all([
@@ -420,7 +459,15 @@ describeIntegration("reusable credential lifecycle", () => {
 
       // Another name for the same site gets the saved login's name, without a card.
       const reused = await nextRun(seeded, [requestLogin("my_site_account")]);
-      expect(reused).toMatchObject({ status: "completed", error: null });
+      await vi.waitFor(
+        async () => {
+          expect(await db.run.findUniqueOrThrow({ where: { id: reused.id } })).toMatchObject({
+            status: "completed",
+            error: null,
+          });
+        },
+        { timeout: 15_000 },
+      );
       expect(
         await db.externalEffect.findFirstOrThrow({
           where: { runId: reused.id, kind: "request_secret" },
@@ -430,14 +477,28 @@ describeIntegration("reusable credential lifecycle", () => {
         result: { saved: true, name: "site_login", origin: site, auth: { type: "login" } },
       });
       // The host without www. is another site.
-      expect(
-        await nextRun(seeded, [requestLogin("bare_login", "https://login.example.test")]),
-      ).toMatchObject({ status: "waiting_input" });
+      const bare = await nextRun(seeded, [
+        requestLogin("bare_login", "https://login.example.test"),
+      ]);
+      await vi.waitFor(
+        async () => {
+          expect(await db.run.findUniqueOrThrow({ where: { id: bare.id } })).toMatchObject({
+            status: "waiting_input",
+          });
+        },
+        { timeout: 15_000 },
+      );
       // Another member's vault is not searched.
       const other = await seedRun("site-login-other", "Sign in to the site");
-      expect(await nextRun(other, [requestLogin("my_site_account")])).toMatchObject({
-        status: "waiting_input",
-      });
+      const otherRun = await nextRun(other, [requestLogin("my_site_account")]);
+      await vi.waitFor(
+        async () => {
+          expect(await db.run.findUniqueOrThrow({ where: { id: otherRun.id } })).toMatchObject({
+            status: "waiting_input",
+          });
+        },
+        { timeout: 15_000 },
+      );
       expect(await db.vaultCredential.count({ where: { origin: site } })).toBe(1);
 
       const [messages, events, effects] = await Promise.all([

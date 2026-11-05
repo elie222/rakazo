@@ -14,8 +14,8 @@ on:
         required: false
         type: boolean
         default: false
-      skip:
-        description: Report the checks as skipped because the change cannot affect them
+      changed_areas:
+        description: Skip the suite when the pull request's files cannot affect it
         required: false
         type: boolean
         default: false
@@ -43,37 +43,54 @@ env:
 jobs:
   shard:
     name: Web E2E (${{ matrix.shard }}/${{ inputs.nightly && 4 || 2 }})
-    if: ${{ !inputs.skip }}
     runs-on: incredibuild-ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         shard: ${{ fromJSON(inputs.nightly && '[1, 2, 3, 4]' || '[1, 2]') }}
+    # Checks its own changed areas instead of waiting for ci.yml's Changed areas job, so the shards
+    # start with the first jobs; the steps skip and the combining job reports skipped when the
+    # pull request cannot affect the suite.
+    outputs:
+      e2e: ${{ steps.areas.outputs.e2e }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # The merge commit's first parent is the base, so this diff is exactly what the PR adds.
+          fetch-depth: ${{ inputs.changed_areas && 2 || 1 }}
+      - id: areas
+        if: inputs.changed_areas
+        run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        if: steps.areas.outputs.e2e != 'false'
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.areas.outputs.e2e != 'false'
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: steps.areas.outputs.e2e != 'false'
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: steps.areas.outputs.e2e != 'false'
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Chromium
+        if: steps.areas.outputs.e2e != 'false'
         timeout-minutes: 5
         # Skip --with-deps: GitHub ubuntu-latest already has Chromium's OS libraries,
         # and apt-get against azure.archive.ubuntu.com can stall until the job timeout.
         run: pnpm --filter @rakazo/web exec playwright install chromium
       - name: Install agent-browser
+        if: steps.areas.outputs.e2e != 'false'
         timeout-minutes: 2
         # The page-browser tests run the computer image's helper, which drives Chromium through it.
         run: |
           infra/sandboxes/computer/install-agent-browser.sh "$RUNNER_TEMP/agent-browser"
           echo "RAKAZO_AGENT_BROWSER=$RUNNER_TEMP/agent-browser/agent-browser" >> "$GITHUB_ENV"
       - name: Run Playwright tests
+        if: steps.areas.outputs.e2e != 'false'
         id: playwright_tests
         env:
           SHARD: ${{ matrix.shard }}/${{ inputs.nightly && 4 || 2 }}
@@ -85,7 +102,7 @@ jobs:
         if: matrix.shard == 1 && always() && (steps.playwright_tests.outcome == 'success' || steps.playwright_tests.outcome == 'failure')
         run: pnpm --filter @rakazo/www e2e
       - name: Upload shard results
-        if: always()
+        if: always() && steps.areas.outputs.e2e != 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -101,7 +118,7 @@ jobs:
   playwright:
     name: Web E2E
     needs: shard
-    if: ${{ !cancelled() && !inputs.skip }}
+    if: ${{ !cancelled() && needs.shard.outputs.e2e != 'false' }}
     runs-on: incredibuild-ubuntu-latest
     timeout-minutes: 10
     concurrency:
@@ -109,12 +126,15 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # Only the report publisher needs the workspace; merging the shard reports needs Playwright alone.
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        if: inputs.publish_report
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-          cache: pnpm
+          cache: ${{ inputs.publish_report && 'pnpm' || '' }}
       - run: pnpm install --frozen-lockfile
+        if: inputs.publish_report
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: playwright-shard-*-${{ github.run_id }}-*
@@ -152,10 +172,14 @@ jobs:
           exit "$missing"
       - name: Merge Playwright reports
         if: ${{ !cancelled() && hashFiles('blob-report/*.zip') != '' }}
+        working-directory: apps/web
         env:
           PLAYWRIGHT_HTML_OUTPUT_DIR: ${{ github.workspace }}/playwright-report
           PLAYWRIGHT_HTML_OPEN: never
-        run: pnpm --filter @rakazo/web exec playwright merge-reports --reporter html "$GITHUB_WORKSPACE/blob-report"
+        # The exact version the shards ran, so the blob format matches.
+        run: |
+          version="$(jq -r '.devDependencies["@playwright/test"]' package.json)"
+          npx --yes --package="@playwright/test@$version" playwright merge-reports --reporter html "$GITHUB_WORKSPACE/blob-report"
       - name: Record Playwright result
         if: ${{ !cancelled() && inputs.upload_artifacts }}
         env:

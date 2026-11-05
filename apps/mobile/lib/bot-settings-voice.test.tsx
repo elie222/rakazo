@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   loadBot: vi.fn(),
   back: vi.fn(),
+  push: vi.fn(),
   stopVoicePlayback: vi.fn(),
   stop: vi.fn(),
   speak: vi.fn(),
@@ -118,7 +119,7 @@ vi.mock("expo-notifications", () => ({
 }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ back: mocks.back }),
+  useRouter: () => ({ back: mocks.back, push: mocks.push }),
   useLocalSearchParams: () => ({ botId: "bot-fixture", focus: mocks.focus }),
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
 }));
@@ -655,7 +656,10 @@ describe("bot settings device voice menu", () => {
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="notes/6.md"]')!.click(),
     );
-    expect(mocks.alert).toHaveBeenCalledWith("notes/6.md", "Fixture notes");
+    expect(mocks.push).toHaveBeenCalledWith({
+      pathname: "/memory-note",
+      params: { id: "doc-6", botId: "bot-fixture" },
+    });
   });
 
   it("uses a dialog rather than inline fields on Android", async () => {

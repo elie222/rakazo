@@ -32,12 +32,23 @@ model User {
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
   avatarStyle                 String                       @default("organic")
+  /// The icon set this user's bots wear unless one is pinned to another: "organic" or "rakazo".
+  botAvatarSet                String                       @default("organic")
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
   /// emails then follow the language of the browser that asked for them.
   locale                      String?
   marketingEmailOptOutAt      DateTime?
+  /// When an organization this person owns first subscribed; uses up every trial kind.
+  billingTrialUsedAt          DateTime?
+  /// When an organization this person owns was given free own-key days; uses up only that
+  /// trial, and survives the organization the days belonged to.
+  byokTrialUsedAt             DateTime?
+  /// The organization whose open checkout session holds this owner's one own-key trial,
+  /// and until when that hold lasts. Null once the session is paid, expired, or cancelled.
+  byokTrialCheckoutOrganizationId String?
+  byokTrialCheckoutExpiresAt      DateTime?
   sessions                    Session[]
   accounts                    Account[]
   passkeys                    Passkey[]
@@ -270,6 +281,8 @@ model BillingAccount {
   byokPriceCents      Int?
   /// "month" or "year": how often byokPriceCents bills.
   byokInterval        String?
+  /// "standard", "pro" or "max": the own-key plan's tier; null reads as standard.
+  byokTier            String?
   subscriptionId      String?
   subscriptionItemId  String?
   priceId             String?
@@ -732,6 +745,8 @@ model Bot {
   instructionHistory Json @default("[]")
   color             String
   avatarSet         String            @default("organic")
+  /// True once the owner picks this bot a set other than their default; the default no longer moves it.
+  avatarSetPinned   Boolean           @default(false)
   notifyOnFinish    Boolean           @default(true)
   pinned            Boolean           @default(false)
   position          Int               @default(0)
@@ -977,6 +992,8 @@ model Run {
   // True when these columns are the model the run must keep. A later attempt
   // may record the model it used in the same columns without setting this.
   modelPinned          Boolean           @default(false)
+  // A group message that named nobody reached this member; it may end without a reply.
+  groupReplyOptional   Boolean           @default(false)
   error                String?
   leaseOwner           String?
   leaseFence           Int               @default(0)
@@ -1176,6 +1193,7 @@ model ExternalEffect {
   @@unique([idempotencyKey])
   @@index([runId, status])
   @@index([spaceId, kind, status])
+  @@index([kind, status, updatedAt])
   @@map("external_effects")
 }
 
@@ -1848,6 +1866,9 @@ model MessagingChannel {
   threadId      String              @unique
   name          String?
   introPostedAt DateTime?
+  /// The platform time of the newest roster this channel has processed, so a
+  /// delayed older roster changes no membership.
+  rosterSeenAt  DateTime?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   members       MessagingChannelMember[]

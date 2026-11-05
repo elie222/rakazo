@@ -123,6 +123,7 @@ describe("reconcileStrategicInitiatives", () => {
     expect(tasks[0]?.prompt).toContain("NO_RESPONSE");
     expect(runs[0]).toMatchObject({ trigger: "routine" });
     expect(runs[0]?.clientNonce).toContain("strategic-initiative:bot-1:");
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
     expect(enqueue).toHaveBeenCalledWith({
       name: "run.continue",
       payload: { runId: runs[0]?.id },

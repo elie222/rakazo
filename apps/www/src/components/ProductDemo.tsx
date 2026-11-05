@@ -7,7 +7,7 @@ import { LandingBotAvatar } from "./LandingBotAvatar";
 import type { DemoTrigger } from "./product-demo-when";
 import { defaultTrigger, describeTrigger, displayRoutineWhen, parseWhen, resolveRoutineWhen } from "./product-demo-when";
 
-type DemoTranslator = (source: string, values?: Record<string, string | number>) => string;
+export type DemoTranslator = (source: string, values?: Record<string, string | number>) => string;
 
 const BOT_COLORS = ["#3EC5A8", "#F5A03C", "#6A6BF5", "#9B5CF6", "#3B82F6", "#F2622A", "#D9508A"];
 const FREQS = [
@@ -117,9 +117,9 @@ function previewForBot(bot: LiveBot, extra: ExtraMessages) {
 type DeskWindowId = "list" | "app";
 type DeskPoint = { x: number; y: number };
 /** Window positions in percent of the desktop, plus stacking order (last is on top). */
-type Desk = { pos: Record<DeskWindowId, DeskPoint>; order: DeskWindowId[] };
+export type Desk = { pos: Record<DeskWindowId, DeskPoint>; order: DeskWindowId[] };
 
-const DEFAULT_DESK: Desk = {
+export const DEFAULT_DESK: Desk = {
   pos: { list: { x: 12, y: 8 }, app: { x: 38, y: 22 } },
   order: ["list", "app"],
 };
@@ -133,7 +133,7 @@ function raise(desk: Desk, id: DeskWindowId): Desk {
   return { ...desk, order: [...desk.order.filter((item) => item !== id), id] };
 }
 
-function ComputerDesktop({
+export function ComputerDesktop({
   screen,
   desk,
   text,
@@ -313,7 +313,7 @@ function ComputerDesktop({
   );
 }
 
-function Thread({
+export function Thread({
   messages,
   text,
   screen,

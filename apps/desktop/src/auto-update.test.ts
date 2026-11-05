@@ -9,6 +9,10 @@ import {
   shouldCheck,
   updaterSupport,
 } from "./auto-update.js";
+import { SignatureUnreachableError } from "./linux-update-signature.js";
+import { reportDesktopError } from "./monitoring.js";
+
+vi.mock("./monitoring.js", () => ({ reportDesktopError: vi.fn() }));
 
 const NOW = "2026-08-22T12:00:00.000Z";
 const packaged = { packaged: true, version: "0.1.0" };
@@ -89,6 +93,19 @@ describe("classifyUpdaterFailure", () => {
         kind: "offline",
         message: null,
       });
+    }
+  });
+
+  it("treats an unreachable Linux signature fetch as offline, not a fault", () => {
+    expect(classifyUpdaterFailure(new SignatureUnreachableError())).toEqual({
+      kind: "offline",
+      message: null,
+    });
+  });
+
+  it("keeps an HTTP error from the Linux signature URL a reported fault", () => {
+    for (const status of [403, 410, 500]) {
+      expect(classifyUpdaterFailure(new SignatureUnreachableError({ status })).kind).toBe("other");
     }
   });
 
@@ -598,5 +615,177 @@ describe("DesktopUpdateController", () => {
     await controller.check(true);
     expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(2);
     expect(controller.state()).toMatchObject({ phase: "idle", message: null });
+  });
+
+  describe("with a download verifier", () => {
+    const downloaded = { version: "0.2.0", downloadedFile: "/cache/Rakazo-0.2.0.AppImage" };
+
+    function verifiedUpdater() {
+      let fake: ReturnType<typeof fakeUpdater>;
+      fake = fakeUpdater({
+        checkForUpdates: vi.fn(async () => {
+          fake.emit("checking-for-update");
+          fake.emit("update-available", { version: "0.2.0" });
+        }),
+        downloadUpdate: vi.fn(async () => {
+          fake.emit("update-downloaded", downloaded);
+        }),
+      });
+      return fake;
+    }
+
+    it("offers the update only after the verifier passes it", async () => {
+      const fake = verifiedUpdater();
+      let pass!: () => void;
+      const verify = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            pass = resolve;
+          }),
+      );
+      const controller = new DesktopUpdateController(
+        packaged,
+        async () => fake.updater,
+        clock,
+        undefined,
+        verify,
+      );
+      await controller.check(false);
+      const downloading = controller.download();
+      await vi.waitFor(() => expect(verify).toHaveBeenCalledWith(downloaded));
+      expect(fake.updater.autoInstallOnAppQuit).toBe(false);
+      expect(controller.state().phase).toBe("downloading");
+      expect(await controller.install()).toMatchObject({ phase: "downloading" });
+      controller.installOnQuit();
+      expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
+
+      pass();
+      expect(await downloading).toMatchObject({ phase: "ready", availableVersion: "0.2.0" });
+      controller.installOnQuit();
+      controller.installOnQuit();
+      expect(fake.updater.quitAndInstall).toHaveBeenCalledTimes(1);
+      expect(fake.updater.quitAndInstall).toHaveBeenCalledWith(true, false);
+    });
+
+    it("never installs an update the verifier rejects", async () => {
+      const fake = verifiedUpdater();
+      const verify = vi.fn(async () => {
+        throw new Error("Linux update signature is invalid.");
+      });
+      const controller = new DesktopUpdateController(
+        packaged,
+        async () => fake.updater,
+        clock,
+        undefined,
+        verify,
+      );
+      await controller.check(false);
+      await vi.waitFor(() => expect(controller.state().phase).toBe("error"));
+      expect(controller.state().message).toBe(
+        classifyUpdaterFailure(new Error("signature")).message,
+      );
+      expect(await controller.install()).toMatchObject({ phase: "error" });
+      controller.installOnQuit();
+      expect(fake.updater.autoInstallOnAppQuit).toBe(false);
+      expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
+    });
+
+    it("stays quiet when the signature server cannot be reached", async () => {
+      const fake = verifiedUpdater();
+      const verify = vi.fn(async () => {
+        throw new SignatureUnreachableError();
+      });
+      const controller = new DesktopUpdateController(
+        packaged,
+        async () => fake.updater,
+        clock,
+        undefined,
+        verify,
+      );
+      vi.mocked(reportDesktopError).mockClear();
+
+      await controller.check(false);
+      await vi.waitFor(() => expect(controller.state().phase).toBe("idle"));
+
+      expect(controller.state().message).toBeNull();
+      expect(reportDesktopError).not.toHaveBeenCalled();
+    });
+
+    it("ignores an earlier verification that finishes after a later download", async () => {
+      const fake = verifiedUpdater();
+      const pending: { resolve: () => void; reject: (error: Error) => void }[] = [];
+      const verify = vi.fn(
+        () => new Promise<void>((resolve, reject) => pending.push({ resolve, reject })),
+      );
+      vi.mocked(fake.updater.downloadUpdate).mockImplementation(async () => {
+        fake.emit("update-downloaded", downloaded);
+        fake.emit("update-downloaded", downloaded);
+      });
+      const controller = new DesktopUpdateController(
+        packaged,
+        async () => fake.updater,
+        clock,
+        undefined,
+        verify,
+      );
+      await controller.check(false);
+      await vi.waitFor(() => expect(pending).toHaveLength(2));
+      pending[1]!.reject(new Error("Linux update signature is invalid."));
+      await vi.waitFor(() => expect(controller.state().phase).toBe("error"));
+      pending[0]!.resolve();
+      await Promise.resolve();
+      expect(controller.state().phase).toBe("error");
+      controller.installOnQuit();
+      expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
+    });
+
+    it("stays failed when the updater errors while a verification is pending", async () => {
+      const fake = verifiedUpdater();
+      let pass!: () => void;
+      const verify = vi.fn(() => new Promise<void>((resolve) => (pass = resolve)));
+      const controller = new DesktopUpdateController(
+        packaged,
+        async () => fake.updater,
+        clock,
+        undefined,
+        verify,
+      );
+      await controller.check(false);
+      await vi.waitFor(() => expect(verify).toHaveBeenCalled());
+      fake.emit("error", new Error("download failed"));
+      pass();
+      await Promise.resolve();
+      expect(controller.state().phase).toBe("error");
+      controller.installOnQuit();
+      expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
+    });
+
+    it("rejects a download the updater reports without a file", async () => {
+      const fake = verifiedUpdater();
+      vi.mocked(fake.updater.downloadUpdate).mockImplementation(async () => {
+        fake.emit("update-downloaded", { version: "0.2.0" });
+      });
+      const verify = vi.fn(async () => undefined);
+      const controller = new DesktopUpdateController(
+        packaged,
+        async () => fake.updater,
+        clock,
+        undefined,
+        verify,
+      );
+      await controller.check(false);
+      await vi.waitFor(() => expect(controller.state().phase).toBe("error"));
+      expect(verify).not.toHaveBeenCalled();
+    });
+
+    it("leaves install-on-quit to the updater when nothing needs verifying", async () => {
+      const fake = verifiedUpdater();
+      const controller = new DesktopUpdateController(packaged, async () => fake.updater, clock);
+      await controller.check(false);
+      await vi.waitFor(() => expect(controller.state().phase).toBe("ready"));
+      expect(fake.updater.autoInstallOnAppQuit).toBe(true);
+      controller.installOnQuit();
+      expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
+    });
   });
 });

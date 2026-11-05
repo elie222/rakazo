@@ -405,6 +405,10 @@ msgstr "{title}, сохранится как {savedAs}"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# инструмент} few {# инструмента} many {# инструментов} other {# инструмента}}"
 
+#: src/components/ModelCredits.tsx
+msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
+msgstr "{vcpus} vCPU, {memoryGb} ГБ, {hours} часов компьютера в месяц"
+
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
 msgid "@{0}"
@@ -1026,6 +1030,10 @@ msgstr "Студия аватаров"
 msgid "Back"
 msgstr "Назад"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Back or forward"
+msgstr "Назад или вперёд"
+
 #: src/components/pages/PageNotice.tsx
 msgid "Back to chat"
 msgstr "Вернуться в чат"
@@ -1119,6 +1127,10 @@ msgstr "Экран бота"
 msgid "Bot screen preview"
 msgstr "Предварительный просмотр экрана бота"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Bot style"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
 msgstr "Модель бота"
@@ -1210,6 +1222,7 @@ msgstr "Не может читать изображения"
 #: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -1275,6 +1288,10 @@ msgstr "Сменить модель"
 msgid "Change password"
 msgstr "Изменить пароль"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "Сменить сервер"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "Изменение…"
@@ -1290,6 +1307,10 @@ msgstr ""
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Chat Completions"
 msgstr ""
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Chat details"
+msgstr "Сведения о чате"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1441,6 +1462,7 @@ msgstr "Очистка…"
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/chat-find-bar.tsx
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "Закрыть"
@@ -1550,6 +1572,7 @@ msgid "Command"
 msgstr "Команда"
 
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr ""
 
@@ -1608,6 +1631,10 @@ msgstr "Компьютер спит. Откройте его, чтобы раз�
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "Компьютер остановлен"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "Модель для работы с компьютером"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1684,6 +1711,7 @@ msgstr "Подключить API-ключ"
 
 #: src/components/SidebarFooter.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Connect apps"
 msgstr "Подключить приложения"
 
@@ -2418,6 +2446,10 @@ msgstr "Не удалось загрузить страницу. Попробу�
 msgid "Couldn't load your wallet"
 msgstr ""
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update bot style"
+msgstr ""
+
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "Не удалось обновить настройки обмена сообщениями."
@@ -2434,6 +2466,7 @@ msgstr ""
 msgid "Country"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2454,6 +2487,11 @@ msgstr "Зарегистрироваться"
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "Создать группу"
+
+#: src/components/CreateOrganizationDialog.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Create organization"
+msgstr "Создать организацию"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
@@ -2497,6 +2535,10 @@ msgstr "Учётные данные: {names}"
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "Кредиты"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
@@ -2600,6 +2642,7 @@ msgstr "Область действия по умолчанию"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/archived-chats.tsx
 #: src/pages/shell/dialogs.tsx
@@ -2626,6 +2669,7 @@ msgstr "Удалить {0}"
 #. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "Удалить {0}?"
@@ -2642,6 +2686,10 @@ msgstr "Удалить группу"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "Удалите воспоминания тоже"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Delete organization"
+msgstr "Удалить организацию"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Delete section"
@@ -2662,6 +2710,7 @@ msgstr "удалено"
 
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "Удаление…"
@@ -2712,6 +2761,10 @@ msgstr "Подробности"
 #: src/pages/PluginsOverlay.tsx
 msgid "Developer"
 msgstr ""
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Dictate"
+msgstr "Диктовка"
 
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
@@ -3167,6 +3220,11 @@ msgstr ""
 msgid "Find a page"
 msgstr "Найти страницу"
 
+#: src/pages/shell/chat-find-bar.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Find in chat"
+msgstr "Найти в чате"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Find models"
@@ -3197,6 +3255,10 @@ msgstr "Завершено."
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "Завершение подключения MCP…"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Focus message"
+msgstr "Перейти к сообщению"
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -3282,6 +3344,10 @@ msgstr "Подарите другу {weeks} недели бесплатно"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "На главную"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Go to bot"
+msgstr "Перейти к боту"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Grant"
@@ -3633,6 +3699,11 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "ключ"
+
+#: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Keyboard shortcuts"
+msgstr "Сочетания клавиш"
 
 #: src/components/vault/kinds.tsx
 msgid "Keys"
@@ -4145,6 +4216,7 @@ msgstr "микрофон выключен"
 msgid "My computers"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4152,6 +4224,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4220,6 +4293,7 @@ msgstr "Не спрашивать"
 
 #: src/components/VaultSettings.tsx
 #: src/pages/shell/chat-context.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New"
 msgstr "Новые"
 
@@ -4251,6 +4325,7 @@ msgstr "Новая группа"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New group chat"
 msgstr "Новый групповой чат"
 
@@ -4296,6 +4371,14 @@ msgstr ""
 #: src/components/VaultSettings.tsx
 msgid "New variable"
 msgstr ""
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Next match"
+msgstr "Следующее совпадение"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Next or previous bot"
+msgstr "Следующий или предыдущий бот"
 
 #: src/components/markdown-copy.tsx
 msgid "Next page"
@@ -4650,13 +4733,15 @@ msgid "Or paste an API key"
 msgstr "Или вставьте ключ API"
 
 #: src/components/ComputerProviderSettings.tsx
+#: src/pages/settings-nav.ts
 msgid "Organization"
-msgstr ""
+msgstr "Организация"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "Ключ API организации"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Original"
 msgstr ""
@@ -4863,6 +4948,10 @@ msgstr "Закрепить"
 msgid "Pinned"
 msgstr "Закреплённые"
 
+#: src/components/ModelCredits.tsx
+msgid "Plan"
+msgstr "Тариф"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "Воспроизвести {name}"
@@ -4913,6 +5002,10 @@ msgstr "Предварительный просмотр {0}"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr ""
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Previous match"
+msgstr "Предыдущее совпадение"
 
 #: src/components/markdown-copy.tsx
 msgid "Previous page"
@@ -4968,11 +5061,11 @@ msgstr "Запрос на слияние"
 msgid "Queued"
 msgstr "В очереди"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
@@ -5489,6 +5582,10 @@ msgstr ""
 msgid "Same as {botName}"
 msgstr "Как у {botName}"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Same as main model"
+msgstr "Как у основной модели"
+
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "суббота"
@@ -5604,6 +5701,10 @@ msgstr "Поиск приложений"
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
 msgstr ""
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Search bots"
+msgstr "Поиск ботов"
 
 #: src/pages/shell/command-palette.tsx
 msgid "Search bots, actions, and settings"
@@ -5738,6 +5839,7 @@ msgstr "URL-адрес сервера"
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "Настройки"
@@ -6149,8 +6251,8 @@ msgid "Subscribe for {price} / month"
 msgstr "Подписаться за {price} / месяц"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "Оформить подписку на кредиты Rakazo"
+msgid "Subscribe to credits"
+msgstr "Оформить подписку на кредиты"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"
@@ -6178,6 +6280,10 @@ msgstr "Поддерживает рассуждения"
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "Перейти"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to {tierTargetName}?"
+msgstr "Перейти на {tierTargetName}?"
 
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
@@ -6312,6 +6418,10 @@ msgstr "Выбранный поставщик памяти недоступен 
 msgid "The shared link stops working"
 msgstr "Общая ссылка перестанет работать"
 
+#: src/components/ModelCredits.tsx
+msgid "The unused difference is credited to your next invoice."
+msgstr "Неиспользованная разница будет зачтена в следующий счёт."
+
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
 msgstr ""
@@ -6380,6 +6490,7 @@ msgstr "Этот звонок уже не активен."
 msgid "This can't be undone."
 msgstr "Это действие нельзя отменить."
 
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "Это невозможно отменить."
@@ -6539,6 +6650,10 @@ msgstr "К:"
 msgid "Today"
 msgstr "Сегодня"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Toggle sidebar"
+msgstr "Показать или скрыть боковую панель"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "Токены"
@@ -6605,6 +6720,10 @@ msgstr ""
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "В пробном периоде меньше часов, чтобы предотвратить злоупотребления."
 
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "Доверенные сайты"
@@ -6630,6 +6749,10 @@ msgstr "вторник"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Type"
 msgstr ""
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Type {name} to confirm"
+msgstr "Введите {name} для подтверждения"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"
@@ -7090,6 +7213,10 @@ msgstr "Ваш Anthropic"
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "Сегодня с карты спишется {annualPrice} за вычетом неиспользованной части месяца."
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged the prorated difference today."
+msgstr "Сегодня с вашей карты спишут пропорциональную разницу."
+
 #: src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 msgstr "Диск компьютера почти заполнен. Освободите место, удалив ненужные результаты сборки и кеши."
@@ -7128,6 +7255,10 @@ msgstr "Ваш OpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "После пробного периода план будет стоить {annualPrice} в год."
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {tierTargetLabel} when your trial ends."
+msgstr "После пробного периода тариф будет стоить {tierTargetLabel}."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

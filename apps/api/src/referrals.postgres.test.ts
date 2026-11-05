@@ -1,6 +1,6 @@
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
+import { BYOK_TIERS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -129,9 +129,13 @@ dbTests("referrals", () => {
     const friend = await newOrganization("friend");
     await service.claimReferral(friend, await inviteCode(referrer));
     const friendCustomer = await startTrial(friend);
-    expect(provider.balanceCredits.get(referrerCustomer)).toBe(BYOK_MONTHLY_PRICE_CENTS);
+    expect(provider.balanceCredits.get(referrerCustomer)).toBe(
+      BYOK_TIERS.standard.monthlyPriceCents,
+    );
     await service.sync(friendCustomer);
-    expect(provider.balanceCredits.get(referrerCustomer)).toBe(BYOK_MONTHLY_PRICE_CENTS);
+    expect(provider.balanceCredits.get(referrerCustomer)).toBe(
+      BYOK_TIERS.standard.monthlyPriceCents,
+    );
     await expect(service.status(referrer)).resolves.toMatchObject({
       referral: { rewards: 1 },
     });
@@ -150,7 +154,9 @@ dbTests("referrals", () => {
     const reused = await newOrganization("reused");
     await service.claimReferral(reused, code);
     await startTrial(reused, "reused-card");
-    expect(provider.balanceCredits.get(referrerCustomer)).toBe(BYOK_MONTHLY_PRICE_CENTS);
+    expect(provider.balanceCredits.get(referrerCustomer)).toBe(
+      BYOK_TIERS.standard.monthlyPriceCents,
+    );
     await expect(service.status(referrer)).resolves.toMatchObject({ referral: { rewards: 1 } });
   });
 
@@ -206,7 +212,9 @@ dbTests("referrals", () => {
       data: { rewardedAt: null },
     });
     await service.sync(friendCustomer);
-    expect(provider.balanceCredits.get(referrerCustomer)).toBe(BYOK_MONTHLY_PRICE_CENTS);
+    expect(provider.balanceCredits.get(referrerCustomer)).toBe(
+      BYOK_TIERS.standard.monthlyPriceCents,
+    );
     await expect(service.status(referrer)).resolves.toMatchObject({ referral: { rewards: 1 } });
   });
 
@@ -228,7 +236,9 @@ dbTests("referrals", () => {
       data: { mode: "credits" },
     });
     await service.sync(friendCustomer);
-    expect(provider.balanceCredits.get(referrerCustomer)).toBe(BYOK_MONTHLY_PRICE_CENTS);
+    expect(provider.balanceCredits.get(referrerCustomer)).toBe(
+      BYOK_TIERS.standard.monthlyPriceCents,
+    );
     await expect(service.status(referrer)).resolves.toMatchObject({
       balanceUsd: 0,
       referral: { rewards: 1 },
@@ -269,7 +279,7 @@ dbTests("referrals", () => {
     await service.claimReferral(friend, await inviteCode(referrer));
     await startTrial(friend);
     await expect(service.status(referrer)).resolves.toMatchObject({
-      balanceUsd: before + BYOK_MONTHLY_PRICE_CENTS! / 100,
+      balanceUsd: before + BYOK_TIERS.standard.monthlyPriceCents! / 100,
       referral: { rewards: 1 },
     });
     expect(provider.balanceCredits.get(referrerCustomer)).toBeUndefined();

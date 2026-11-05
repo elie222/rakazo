@@ -233,12 +233,14 @@ export function VoiceSettingsOverlay({
     if (!selected || !canConnect) return;
     setError(null);
     setNotice(null);
+    // What this connect carries; anything typed after this point was not saved.
+    const sentApiKey = apiKey;
     markPending("connect");
     try {
       await rpc.voice.connect({
         scope,
         provider: selected.id,
-        apiKey: apiKey.trim(),
+        apiKey: sentApiKey.trim(),
         // The server drops this voice when the address or speech model really changed.
         voiceId: voiceId || undefined,
         ...(selected.id === "fish-audio" ? { speechModel: speechModel.trim() } : {}),
@@ -250,8 +252,13 @@ export function VoiceSettingsOverlay({
             }
           : {}),
       });
-      setApiKey("");
-      await refresh(selected.id);
+      // A key typed while the connect ran was not saved; keep it for the next try.
+      setApiKey((current) => (current === sentApiKey ? "" : current));
+      // The connect saved the voice the server kept for these values, and the
+      // disabled field cannot hold a newer edit, so the voice follows the saved one.
+      edited.current.delete("voiceId");
+      // The connect saved the values it carried; fields typed meanwhile keep theirs.
+      await refresh(selected.id, { keepForm: true });
       setNotice(t`Connected ${selected.name}.`);
     } catch (err) {
       setError(errorText(err, t`Could not connect this voice provider`));

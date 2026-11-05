@@ -13,6 +13,7 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -288,7 +289,7 @@ export async function messageBot(
           targetEventSeq: inboundEvent.seq,
           senderEventSeq: outboundEvent.seq,
         };
-      }),
+      }, THREAD_LOCK_TRANSACTION_OPTIONS),
     );
   } catch (error) {
     // Two concurrent retries can both miss the in-transaction lookup; the

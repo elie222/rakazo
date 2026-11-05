@@ -405,6 +405,10 @@ msgstr "{title}, opgeslagen als {savedAs}"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# tool} other {# tools}}"
 
+#: src/components/ModelCredits.tsx
+msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
+msgstr "{vcpus} vCPU, {memoryGb} GB, {hours} computeruren per maand"
+
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
 msgid "@{0}"
@@ -1026,6 +1030,10 @@ msgstr "Avatarstudio"
 msgid "Back"
 msgstr "Terug"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Back or forward"
+msgstr "Terug of vooruit"
+
 #: src/components/pages/PageNotice.tsx
 msgid "Back to chat"
 msgstr "Terug naar chat"
@@ -1119,6 +1127,10 @@ msgstr "Bot-scherm"
 msgid "Bot screen preview"
 msgstr "Voorbeeld van het bot-scherm"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Bot style"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
 msgstr "Model van de bot"
@@ -1210,6 +1222,7 @@ msgstr "Kan afbeeldingen niet lezen"
 #: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -1275,6 +1288,10 @@ msgstr "Model wijzigen"
 msgid "Change password"
 msgstr "Wachtwoord wijzigen"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "Server wijzigen"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "Bezig met wijzigen…"
@@ -1290,6 +1307,10 @@ msgstr ""
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Chat Completions"
 msgstr ""
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Chat details"
+msgstr "Chatdetails"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1441,6 +1462,7 @@ msgstr "Bezig met wissen…"
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/chat-find-bar.tsx
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "Sluiten"
@@ -1550,6 +1572,7 @@ msgid "Command"
 msgstr "Commando"
 
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr ""
 
@@ -1608,6 +1631,10 @@ msgstr "De computer is in slaapstand. Open hem om hem te laten ontwaken."
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "De computer is gestopt"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "Model voor computergebruik"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1684,6 +1711,7 @@ msgstr "API-sleutel koppelen"
 
 #: src/components/SidebarFooter.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Connect apps"
 msgstr "Apps verbinden"
 
@@ -2418,6 +2446,10 @@ msgstr "Deze pagina kon niet worden geladen. Probeer het opnieuw."
 msgid "Couldn't load your wallet"
 msgstr ""
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update bot style"
+msgstr ""
+
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "Berichtinstellingen bijwerken mislukt"
@@ -2434,6 +2466,7 @@ msgstr ""
 msgid "Country"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -2454,6 +2487,11 @@ msgstr "Account aanmaken"
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "Groep aanmaken"
+
+#: src/components/CreateOrganizationDialog.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Create organization"
+msgstr "Organisatie maken"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
@@ -2497,6 +2535,10 @@ msgstr "Inloggegevens: {names}"
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "Tegoed"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
@@ -2600,6 +2642,7 @@ msgstr "Standaardbereik"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/archived-chats.tsx
 #: src/pages/shell/dialogs.tsx
@@ -2626,6 +2669,7 @@ msgstr "{0} verwijderen"
 #. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "{0} verwijderen?"
@@ -2642,6 +2686,10 @@ msgstr "Groep verwijderen"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "Herinneringen ook verwijderen"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Delete organization"
+msgstr "Organisatie verwijderen"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Delete section"
@@ -2662,6 +2710,7 @@ msgstr "verwijderd"
 
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "Bezig met verwijderen…"
@@ -2712,6 +2761,10 @@ msgstr "Details"
 #: src/pages/PluginsOverlay.tsx
 msgid "Developer"
 msgstr ""
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Dictate"
+msgstr "Dicteren"
 
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
@@ -3167,6 +3220,11 @@ msgstr ""
 msgid "Find a page"
 msgstr "Pagina zoeken"
 
+#: src/pages/shell/chat-find-bar.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Find in chat"
+msgstr "Zoeken in chat"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Find models"
@@ -3197,6 +3255,10 @@ msgstr "Voltooid."
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "MCP-verbinding afronden…"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Focus message"
+msgstr "Naar bericht"
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -3282,6 +3344,10 @@ msgstr "Geef een vriend {weeks} weken gratis"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "Naar home"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Go to bot"
+msgstr "Naar bot"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Grant"
@@ -3633,6 +3699,11 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "sleutel"
+
+#: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Keyboard shortcuts"
+msgstr "Sneltoetsen"
 
 #: src/components/vault/kinds.tsx
 msgid "Keys"
@@ -4145,6 +4216,7 @@ msgstr "Gedempt"
 msgid "My computers"
 msgstr ""
 
+#: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4152,6 +4224,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4220,6 +4293,7 @@ msgstr "Nooit vragen"
 
 #: src/components/VaultSettings.tsx
 #: src/pages/shell/chat-context.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New"
 msgstr "Nieuw"
 
@@ -4251,6 +4325,7 @@ msgstr "Nieuwe groep"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New group chat"
 msgstr "Nieuwe groepschat"
 
@@ -4296,6 +4371,14 @@ msgstr "Nieuw ticket"
 #: src/components/VaultSettings.tsx
 msgid "New variable"
 msgstr ""
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Next match"
+msgstr "Volgende overeenkomst"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Next or previous bot"
+msgstr "Volgende of vorige bot"
 
 #: src/components/markdown-copy.tsx
 msgid "Next page"
@@ -4650,13 +4733,15 @@ msgid "Or paste an API key"
 msgstr "Of plak een API-sleutel"
 
 #: src/components/ComputerProviderSettings.tsx
+#: src/pages/settings-nav.ts
 msgid "Organization"
-msgstr ""
+msgstr "Organisatie"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "Organisatie-API-sleutel"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Original"
 msgstr ""
@@ -4863,6 +4948,10 @@ msgstr "Vastzetten"
 msgid "Pinned"
 msgstr "Vastgezet"
 
+#: src/components/ModelCredits.tsx
+msgid "Plan"
+msgstr "Abonnement"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "{name} afspelen"
@@ -4913,6 +5002,10 @@ msgstr "{0} bekijken"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "Een voorbeeld is niet beschikbaar voor dit bestandstype — download het om het te bekijken."
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Previous match"
+msgstr "Vorige overeenkomst"
 
 #: src/components/markdown-copy.tsx
 msgid "Previous page"
@@ -4968,11 +5061,11 @@ msgstr "Pull request"
 msgid "Queued"
 msgstr "In wachtrij"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
@@ -5489,6 +5582,10 @@ msgstr ""
 msgid "Same as {botName}"
 msgstr "Zelfde als {botName}"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Same as main model"
+msgstr "Zelfde als hoofdmodel"
+
 #: src/lib/cron.ts
 msgid "Saturday"
 msgstr "zaterdag"
@@ -5604,6 +5701,10 @@ msgstr "Apps zoeken"
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
 msgstr "Artefacten zoeken…"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Search bots"
+msgstr "Bots zoeken"
 
 #: src/pages/shell/command-palette.tsx
 msgid "Search bots, actions, and settings"
@@ -5738,6 +5839,7 @@ msgstr "Server-URL"
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "Instellingen"
@@ -6149,8 +6251,8 @@ msgid "Subscribe for {price} / month"
 msgstr "Abonneren voor {price} / maand"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "Abonneren op Rakazo-tegoed"
+msgid "Subscribe to credits"
+msgstr "Abonneren op tegoed"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"
@@ -6178,6 +6280,10 @@ msgstr "Ondersteunt denken"
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "Overstappen"
+
+#: src/components/ModelCredits.tsx
+msgid "Switch to {tierTargetName}?"
+msgstr "Overstappen naar {tierTargetName}?"
 
 #: src/components/ModelCredits.tsx
 msgid "Switch to yearly"
@@ -6312,6 +6418,10 @@ msgstr "De gekozen geheugenaanbieder is niet beschikbaar in deze build."
 msgid "The shared link stops working"
 msgstr "De gedeelde link werkt dan niet meer"
 
+#: src/components/ModelCredits.tsx
+msgid "The unused difference is credited to your next invoice."
+msgstr "Het ongebruikte verschil wordt verrekend met je volgende factuur."
+
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
 msgstr ""
@@ -6380,6 +6490,7 @@ msgstr "Dit gesprek rinkelt niet meer."
 msgid "This can't be undone."
 msgstr "Dit kan niet ongedaan worden gemaakt."
 
+#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "Dit kan niet ongedaan worden gemaakt."
@@ -6539,6 +6650,10 @@ msgstr "Aan:"
 msgid "Today"
 msgstr "Vandaag"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Toggle sidebar"
+msgstr "Zijbalk tonen/verbergen"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "Tokens"
@@ -6605,6 +6720,10 @@ msgstr "Proefperiode eindigt op {day}"
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "Proefperiodes krijgen minder uren om misbruik te voorkomen."
 
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
+
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "Vertrouwde sites"
@@ -6630,6 +6749,10 @@ msgstr "dinsdag"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Type"
 msgstr "Type"
+
+#: src/pages/OrganizationSettingsPanel.tsx
+msgid "Type {name} to confirm"
+msgstr "Typ {name} om te bevestigen"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"
@@ -7090,6 +7213,10 @@ msgstr "Jouw Anthropic"
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "Je kaart wordt vandaag belast met {annualPrice}, min het ongebruikte deel van deze maand."
 
+#: src/components/ModelCredits.tsx
+msgid "Your card is charged the prorated difference today."
+msgstr "Je kaart wordt vandaag belast met het naar rato berekende verschil."
+
 #: src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 msgstr "De schijf van je computer is bijna vol. Maak ruimte vrij door build-uitvoer en caches te verwijderen die je niet meer nodig hebt."
@@ -7128,6 +7255,10 @@ msgstr "Jouw OpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "Na je proefperiode kost je plan {annualPrice} per jaar."
+
+#: src/components/ModelCredits.tsx
+msgid "Your plan becomes {tierTargetLabel} when your trial ends."
+msgstr "Je abonnement wordt {tierTargetLabel} wanneer je proefperiode eindigt."
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

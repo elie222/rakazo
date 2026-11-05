@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { SpaceMemoryConfig, UsageSummary } from "@rakazo/contracts";
+import type { BotAvatarSet, SpaceMemoryConfig, UsageSummary } from "@rakazo/contracts";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { ChevronLeft, ChevronRight, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -20,6 +20,7 @@ import { BillingSettingsPanel } from "./BillingSettingsPanel";
 import { MemorySettingsOverlay } from "./MemorySettingsOverlay";
 import { MessagingSettingsPanel } from "./MessagingSettingsPanel";
 import { ModelSettingsOverlay } from "./ModelSettingsOverlay";
+import { OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
 import { PaymentWalletSettingsPanel } from "./PaymentWalletSettingsPanel";
 import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
 import { useSettingsNavItems } from "./settings-nav";
@@ -42,6 +43,8 @@ export function SettingsOverlay({
   onNameSaved,
   timezone,
   onTimezoneChange,
+  botAvatarSet,
+  onBotAvatarSetChange,
   onAccountImported,
   onImportAgent,
   billingEnabled = false,
@@ -70,6 +73,8 @@ export function SettingsOverlay({
   onNameSaved?: () => Promise<void>;
   timezone: string | null;
   onTimezoneChange: (timezone: string) => Promise<void>;
+  botAvatarSet?: BotAvatarSet;
+  onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
   onAccountImported?: () => Promise<void>;
   onImportAgent?: () => void;
   billingEnabled?: boolean;
@@ -356,6 +361,8 @@ export function SettingsOverlay({
                         onNameSaved={onNameSaved}
                         timezone={timezone}
                         onTimezoneChange={onTimezoneChange}
+                        botAvatarSet={botAvatarSet}
+                        onBotAvatarSetChange={onBotAvatarSetChange}
                         onAccountImported={onAccountImported}
                         onImportAgent={onImportAgent}
                       />
@@ -392,6 +399,9 @@ export function SettingsOverlay({
                       onClose={requestClose}
                       onBusyChange={setVoiceBusy}
                     />
+                  ) : null}
+                  {section === "organization" ? (
+                    <OrganizationSettingsPanel onBusyChange={setVoiceBusy} />
                   ) : null}
                   {section === "confirmations" ? <ApprovalRulesSettings scope="account" /> : null}
                   {section === "vault" ? <VaultSettings scope="account" /> : null}

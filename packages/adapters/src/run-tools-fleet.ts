@@ -7,6 +7,7 @@ import {
   InvalidSpaceNameError,
   runAsSystem,
   SpaceLimitError,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   writeBotInstructions,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -128,7 +129,7 @@ async function commitOwnInstructions(
       type: "bot.updated",
       payload: { botId, name: bot.name, description: bot.description },
     });
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (committed && "error" in committed) return committed;
   if (committed)
     await deps.events
@@ -292,10 +293,27 @@ export const fleetTools: ToolHandlers = {
         voiceId: true,
       },
     });
-    if (!Object.values(args).some(argumentGiven)) {
+    // `instructions_offset` pages through long instructions on a read; it is not a write field.
+    const instructionsOffsetArg = args.instructions_offset ?? args.instructionsOffset;
+    const writeArgs = { ...args, instructions_offset: undefined, instructionsOffset: undefined };
+    const read = !Object.values(writeArgs).some(argumentGiven);
+    let readOffset = 0;
+    if (argumentGiven(instructionsOffsetArg)) {
+      const parsedOffset = Number(instructionsOffsetArg);
+      if (!read)
+        return call.finish({
+          error: "instructions_offset only works on a read: call update_bot with no other fields.",
+        });
+      if (!Number.isInteger(parsedOffset) || parsedOffset < 0)
+        return call.finish({ error: "instructions_offset must be a whole number of 0 or more." });
+      readOffset = parsedOffset;
+    }
+    if (read) {
       // A read does not rebase the baseline: the text it returns has not shaped a model
       // generation yet, and a truncated read would guard on text the model never saw.
-      return call.finish(await readOwnBotSettings(modelDeps, run, live));
+      if (readOffset > 0 && readOffset >= live.instructions.length)
+        return call.finish({ error: "instructions_offset is past the end of your instructions." });
+      return call.finish(await readOwnBotSettings(modelDeps, run, live, readOffset));
     }
     const settings = await prepareOwnBotSettings(
       modelDeps,
@@ -374,5 +392,4 @@ export const fleetTools: ToolHandlers = {
     });
   },
   archive_bot: archiveBot,
-  delete_bot: archiveBot,
 };

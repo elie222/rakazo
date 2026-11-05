@@ -11,6 +11,7 @@ export const RU_MESSAGES: Record<string, string> = {
   City: "Город",
   Contact: "Контакт",
   Contacts: "Контакты",
+  "Could not attach files": "Не удалось прикрепить файлы",
   "Could not remove the item": "Не удалось удалить запись",
   "Could not show the item": "Не удалось показать запись",
   Country: "Страна",
@@ -91,6 +92,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Block: "Блокировать",
   "Add a model in Settings to use this.": "Добавьте модель в настройках, чтобы использовать это.",
   "Approval model": "Модель проверки действий",
+  "Computer-use model": "Модель для работы с компьютером",
+  "Same as main model": "Как у основной модели",
   "Main model": "Основная модель",
   "Add fallback": "Добавить резервную модель",
   "Manage {provider}": "Управление: {provider}",
@@ -301,6 +304,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Sent: "Отправлено",
   " (unread)": " (непрочитано)",
   Appearance: "Внешний вид",
+  "Bot style": "Стиль ботов",
+  "Couldn't update bot style": "Не удалось изменить стиль ботов",
   Dark: "Тёмная",
   Light: "Светлая",
   System: "Системная",
@@ -472,6 +477,27 @@ export const RU_MESSAGES: Record<string, string> = {
   "This permanently deletes the routine and its run history.":
     "Задача и история её запусков будут удалены безвозвратно.",
   "Could not delete routine": "Не удалось удалить задачу",
+  "Edit routine": "Изменить задачу",
+  "Next run": "Следующий запуск",
+  "Add a schedule to run this routine.": "Добавьте расписание для запуска этой задачи.",
+  "Add schedule": "Добавить расписание",
+  "Could not run routine": "Не удалось запустить задачу",
+  "Could not save routine": "Не удалось сохранить задачу",
+  "Cron expression": "Выражение Cron",
+  "Delete routine": "Удалить задачу",
+  "Every month": "Каждый месяц",
+  "Every week": "Каждую неделю",
+  "How often": "Как часто",
+  Instruction: "Инструкция",
+  Interval: "Интервал",
+  "Name this routine.": "Дайте задаче название.",
+  "New routine": "Новая задача",
+  "Remove schedule": "Удалить расписание",
+  "Test run": "Тестовый запуск",
+  "Time of day": "Время суток",
+  Unit: "Единица",
+  "When to run": "Когда запускать",
+  "Write what this routine should do.": "Опишите, что должна делать эта задача.",
   "Could not update routine": "Не удалось обновить задачу",
   "Get notified when this Bot finishes or needs input":
     "Получать уведомления, когда этот бот завершает работу или ждёт ввода",
@@ -1114,6 +1140,15 @@ export const RU_MESSAGES: Record<string, string> = {
   "Start plan": "Начать тариф",
   "Switch to yearly": "Перейти на годовой план",
   "Switch to yearly?": "Перейти на годовой план?",
+  "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
+    "{vcpus} vCPU, {memoryGb} ГБ, {hours} часов компьютера в месяц",
+  "Switch to {name}?": "Перейти на {name}?",
+  "The unused difference is credited to your next invoice.":
+    "Неиспользованная разница будет зачтена в следующий счёт.",
+  "Your card is charged the prorated difference today.":
+    "Сегодня с вашей карты спишут пропорциональную разницу.",
+  "Your plan becomes {price} when your trial ends.":
+    "После пробного периода тариф будет стоить {price}.",
   "Your card is charged {price} today, less the unused part of this month.":
     "Сегодня с карты спишется {price} за вычетом неиспользованной части месяца.",
   "Your plan becomes {price} / year when your trial ends.":
@@ -1372,6 +1407,19 @@ export const RU_MESSAGES: Record<string, string> = {
     "Ботов переведено на модель пространства по умолчанию: {count}.",
   "Could not switch {failedNames}. Try again.":
     "Не удалось переключить {failedNames}. Попробуйте снова.",
+  "Create organization": "Создать организацию",
+  Organization: "Организация",
+  "Delete organization": "Удалить организацию",
+  "Type {name} to confirm": "Введите {name} для подтверждения",
+  "Could not load memory": "Не удалось загрузить память",
+  "Nothing remembered yet": "Пока ничего не запомнено",
+  "This note changed": "Эта заметка изменилась",
+  "Use latest": "Взять последнюю",
+  "Save mine": "Сохранить мою",
+  "This note no longer exists": "Этой заметки больше нет",
+  "Discard changes?": "Отменить изменения?",
+  Discard: "Не сохранять",
+  "Could not delete note": "Не удалось удалить заметку",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
