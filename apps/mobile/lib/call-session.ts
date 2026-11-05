@@ -26,6 +26,7 @@ import {
   applyMobileThreadEvent,
   blockText,
   captureApiRequestContext,
+  configureSessionEndHangUp,
   rpc,
   subscribeThread,
 } from "./api";
@@ -126,6 +127,8 @@ let callSessionGeneration = 0;
 let callId = "";
 /** Requests for this call that must persist before its server-side hang-up. */
 const callSends = createCallSendTracker();
+/** Hang-ups this session still owes its server; a sign-out waits briefly for them to land. */
+const hangUps = new Set<Promise<void>>();
 /** The run this call's last turn started: replies to anything else are not spoken. */
 let callRunId: string | null = null;
 let deps: CallDeps = productionDeps();
@@ -276,7 +279,11 @@ export function endCall(): void {
     const { botId } = state;
     const closingCallId = callId;
     const closeServerCall = deps.endCall;
-    callSends.closeAfterSends(closingCallId, () => closeServerCall(botId, closingCallId));
+    const closed = callSends.closeAfterSends(closingCallId, () =>
+      closeServerCall(botId, closingCallId),
+    );
+    hangUps.add(closed);
+    void closed.then(() => hangUps.delete(closed));
   }
   if (state) {
     deps.waitSound("release");
@@ -307,6 +314,30 @@ export function endCall(): void {
   state = null;
   emit();
 }
+
+/** How long a sign-out or server switch waits for the hang-up before it continues anyway. */
+export const SIGN_OUT_HANG_UP_MS = 3_000;
+
+/**
+ * Hangs up while the session still exists, waiting at most `SIGN_OUT_HANG_UP_MS` for pending
+ * sends and the hang-up. What follows — a sign-out or a server switch — discards the session,
+ * so a hang-up still queued after that is dropped: by then its request may carry no one's or
+ * another user's token.
+ */
+export async function endCallBeforeSessionEnd(): Promise<void> {
+  endCall();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    Promise.all(hangUps),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, SIGN_OUT_HANG_UP_MS);
+    }),
+  ]);
+  clearTimeout(timer);
+}
+
+// A server switch discards the old server's session; the call hangs up on it first.
+configureSessionEndHangUp(endCallBeforeSessionEnd);
 
 export function toggleMute(): void {
   if (!state) return;

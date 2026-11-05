@@ -4,7 +4,9 @@ import type { CallClip, CallDeps, CallEnded, DictationHandlers } from "./call-se
 import {
   ExpectedTurnFailure,
   endCall,
+  endCallBeforeSessionEnd,
   getSnapshot,
+  SIGN_OUT_HANG_UP_MS,
   setCallProviderTranscribe,
   startCall,
   subscribe,
@@ -79,6 +81,7 @@ vi.mock("./api", () => ({
   applyMobileThreadEvent: vi.fn(),
   blockText: vi.fn(),
   captureApiRequestContext: vi.fn(),
+  configureSessionEndHangUp: vi.fn(),
   rpc: vi.fn(),
   subscribeThread: vi.fn(),
 }));
@@ -194,6 +197,48 @@ describe("mobile call session", () => {
     endCall();
     await flush();
     expect(fake.closeCall).toHaveBeenCalledWith("bot-1", "incoming-1");
+  });
+
+  it("waits for the server hang-up before the sign-out continues", async () => {
+    const fake = fakes();
+    const closed = deferred<undefined>();
+    fake.closeCall.mockImplementation(() => closed.promise);
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    let finished = false;
+    const hangingUp = endCallBeforeSessionEnd().then(() => {
+      finished = true;
+    });
+    await flush();
+    expect(fake.closeCall).toHaveBeenCalledWith("bot-1", expect.any(String));
+    expect(finished).toBe(false);
+    closed.resolve(undefined);
+    await hangingUp;
+    expect(finished).toBe(true);
+  });
+
+  it("stops waiting for the hang-up once the sign-out window passes", async () => {
+    const fake = fakes();
+    const stuck = deferred<undefined>();
+    fake.closeCall.mockImplementation(() => stuck.promise);
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    vi.useFakeTimers();
+    try {
+      const hangingUp = endCallBeforeSessionEnd();
+      let finished = false;
+      void hangingUp.then(() => {
+        finished = true;
+      });
+      await vi.advanceTimersByTimeAsync(SIGN_OUT_HANG_UP_MS - 1);
+      expect(finished).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(finished).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      stuck.resolve(undefined);
+      await flush();
+    }
   });
 
   it("starts listening for the bot on the call", async () => {
@@ -1744,5 +1789,23 @@ describe("mobile call on a session change", () => {
         { requestContext: expect.objectContaining({ sessionGeneration: callGeneration }) },
       ],
     ]);
+  });
+
+  it("sends the hang-up while the session lasts when signing out during a call", async () => {
+    const { rpc } = await import("./api");
+    const fake = fakes();
+    const { send: _send, endCall: _endCall, ...deps } = fake.deps;
+    const callGeneration = currentSessionGeneration();
+    startCall({ botId: "bot-1", botName: "Ada" }, deps);
+    await flush();
+
+    await endCallBeforeSessionEnd();
+    await clearSessionToken();
+
+    expect(rpc).toHaveBeenCalledWith(
+      "threads/endCall",
+      { botId: "bot-1", callId: expect.any(String) },
+      { requestContext: expect.objectContaining({ sessionGeneration: callGeneration }) },
+    );
   });
 });
