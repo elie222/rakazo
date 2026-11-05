@@ -2,7 +2,11 @@ import { generateKeyPairSync } from "node:crypto";
 import { dkimSign } from "mailauth";
 import { describe, expect, it } from "vitest";
 import type { InboundEmailResolver } from "./inbound-email.js";
-import { INBOUND_EMAIL_TEXT_MAX_CHARS, readInboundEmail } from "./inbound-email.js";
+import {
+  INBOUND_EMAIL_MAX_SIGNATURES,
+  INBOUND_EMAIL_TEXT_MAX_CHARS,
+  readInboundEmail,
+} from "./inbound-email.js";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const privatePem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -159,6 +163,23 @@ describe("readInboundEmail", () => {
       resolver,
     });
     expect(human.automated).toBe(false);
+  });
+
+  it("never looks up keys for mail stuffed with signatures", async () => {
+    const lookups: string[] = [];
+    const counting: InboundEmailResolver = async (domain, rrtype) => {
+      lookups.push(domain);
+      return resolver(domain, rrtype);
+    };
+    let raw = await signed(message(plain));
+    for (let index = 0; index < INBOUND_EMAIL_MAX_SIGNATURES; index++) {
+      raw = await signed(raw, `d${index}.other.test`);
+    }
+
+    const email = await readInboundEmail(bytes(raw), { resolver: counting });
+
+    expect(email.authenticated).toBe(false);
+    expect(lookups).toEqual([]);
   });
 
   it("refuses mail with more parts than real mail has", async () => {

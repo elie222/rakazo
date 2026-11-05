@@ -5,6 +5,9 @@ import { htmlToPlainText } from "./keyless-http-web.js";
 /** Largest raw message accepted, the size common mail relays deliver. */
 export const INBOUND_EMAIL_MAX_BYTES = 25 * 1024 * 1024;
 
+/** DKIM signatures checked per message; mail carrying more is never verified. */
+export const INBOUND_EMAIL_MAX_SIGNATURES = 5;
+
 /** Body text handed to the bot; longer mail is cut here. */
 export const INBOUND_EMAIL_TEXT_MAX_CHARS = 20_000;
 
@@ -50,16 +53,19 @@ export async function readInboundEmail(
     import("mailauth"),
   ]);
   const buffer = Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength);
-  const [email, dkim] = await Promise.all([
-    // Far below the parser's own defaults: real mail has a handful of parts, and anything past
-    // these limits is rejected as unreadable instead of costing a worker its time.
-    PostalMime.parse(buffer, {
-      attachmentEncoding: "arraybuffer",
-      maxPartCount: 200,
-      maxNestingDepth: 20,
-    }),
-    dkimVerify(buffer, options.resolver ? { resolver: options.resolver } : {}),
-  ]);
+  // Far below the parser's own defaults: real mail has a handful of parts, and anything past
+  // these limits is rejected as unreadable instead of costing a worker its time.
+  const email = await PostalMime.parse(buffer, {
+    attachmentEncoding: "arraybuffer",
+    maxPartCount: 200,
+    maxNestingDepth: 20,
+  });
+  // Each signature costs a DNS lookup; real mail carries one or two, so more is not verified.
+  const signatures = email.headerLines.filter((line) => line.key === "dkim-signature").length;
+  const dkim =
+    signatures <= INBOUND_EMAIL_MAX_SIGNATURES
+      ? await dkimVerify(buffer, options.resolver ? { resolver: options.resolver } : {})
+      : null;
 
   const fieldCount = (name: string) => email.headerLines.filter((line) => line.key === name).length;
   const values = (name: string) =>
@@ -68,7 +74,7 @@ export async function readInboundEmail(
       .map((line) => line.value.split(";")[0]?.trim().toLowerCase() ?? "");
 
   const fromAddress =
-    dkim.fromFields === 1 && dkim.fromSyntax === "valid" && dkim.headerFrom.length === 1
+    dkim && dkim.fromFields === 1 && dkim.fromSyntax === "valid" && dkim.headerFrom.length === 1
       ? (dkim.headerFrom[0]?.toLowerCase() ?? null)
       : null;
   const to = addresses(email.to);
@@ -79,7 +85,7 @@ export async function readInboundEmail(
   const signature =
     fromAddress === null || !singleFields
       ? undefined
-      : dkim.results.find((result) => {
+      : dkim?.results.find((result) => {
           const status = result.status;
           // Exactly the From domain: a subdomain (often run by a sending service) would align too.
           if (status.result !== "pass" || result.signingDomain?.toLowerCase() !== fromDomain) {
@@ -129,7 +135,7 @@ export async function readInboundEmail(
     temporaryFailure:
       signature === undefined &&
       fromDomain !== undefined &&
-      dkim.results.some(
+      (dkim?.results ?? []).some(
         (result) =>
           result.status.result === "temperror" &&
           result.signingDomain?.toLowerCase() === fromDomain,

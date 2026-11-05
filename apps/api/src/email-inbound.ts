@@ -149,7 +149,8 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   const unavailable: string[] = [];
   for (const [index, file] of email.attachments.entries()) {
     const label = `[file: ${sanitizeMessagingLabel(file.name)} (unavailable)]`;
-    if (!deps.storeAttachment || index >= ATTACHMENT_MAX_COUNT) {
+    // Counts what was kept, so a refused file never takes one of the slots.
+    if (!deps.storeAttachment || artifacts.length >= ATTACHMENT_MAX_COUNT) {
       unavailable.push(label);
       continue;
     }

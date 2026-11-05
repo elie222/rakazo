@@ -296,14 +296,15 @@ describe("inbound email route", () => {
 
     await post();
 
-    expect(storeAttachment).toHaveBeenCalledTimes(4);
+    // The refused .exe does not take a slot: all four allowed files are kept.
+    expect(storeAttachment).toHaveBeenCalledTimes(5);
     expect(storeAttachment.mock.calls[0]?.[0].clientNonce).toMatch(/^email-attachment:bot-1:.+:0$/);
     const sent = sendUserMessage.mock.calls[0]?.[0] as unknown as {
       prompt: string;
       blocks: Array<{ kind: string }>;
     };
-    expect(sent.blocks.filter((block) => block.kind !== "text")).toHaveLength(3);
+    expect(sent.blocks.filter((block) => block.kind !== "text")).toHaveLength(4);
     expect(sent.prompt).toContain("[file: setup.exe (unavailable)]");
-    expect(sent.prompt).toContain("[file: d.png (unavailable)]");
+    expect(sent.prompt).not.toContain("[file: d.png (unavailable)]");
   });
 });
