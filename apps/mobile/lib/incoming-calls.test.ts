@@ -5,6 +5,7 @@ const fake = vi.hoisted(() => ({
   locked: false,
   onAppState: undefined as undefined | ((state: string) => void),
   onEvent: undefined as undefined | ((event: unknown) => void),
+  lastResponse: null as unknown,
   actions: [] as Record<string, string>[],
   native: {
     incomingState: vi.fn(),
@@ -22,7 +23,7 @@ const fake = vi.hoisted(() => ({
 vi.mock("expo-modules-core", () => ({ requireOptionalNativeModule: () => fake.native }));
 vi.mock("expo-notifications", () => ({
   setNotificationCategoryAsync: async () => {},
-  getLastNotificationResponse: () => null,
+  getLastNotificationResponse: () => fake.lastResponse,
   addNotificationResponseReceivedListener: () => ({ remove() {} }),
   addNotificationReceivedListener: () => ({ remove() {} }),
 }));
@@ -95,6 +96,7 @@ beforeEach(() => {
   fake.locked = false;
   fake.onAppState = undefined;
   fake.onEvent = undefined;
+  fake.lastResponse = null;
   fake.call = null;
   vi.clearAllMocks();
   fake.native.incomingState.mockResolvedValue({ token: "", actions: [] });
@@ -168,6 +170,51 @@ describe("mobile incoming calls", () => {
     await vi.waitFor(() => expect(fake.startCall).toHaveBeenCalled());
     expect(endCall).toHaveBeenCalled();
     expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-1", true);
+  });
+  const orgBot = {
+    id: "bot-org-b",
+    spaceId: "space-org-b",
+    name: "Other org caller",
+    color: "",
+    avatarSet: undefined,
+  };
+  const orgAnswerRpc = (callId: string) => [
+    "threads/answerCall",
+    { botId: orgBot.id, callId },
+    {
+      requestContext: expect.objectContaining({
+        headers: expect.objectContaining({ "x-rakazo-space-id": orgBot.spaceId }),
+      }),
+    },
+  ];
+  it("answers a native call from a bot outside the active organization", async () => {
+    stop = startIncomingCalls();
+    await tick();
+    // The account stream knows callers across every organization; spaces/list only the active one.
+    fake.onEvent?.([{ ...orgBot, incomingCall: { ...block(), callId: "call-b" } }]);
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      actions: [
+        { action: "answer", callId: "call-b", botId: orgBot.id, expiresAt: block().expiresAt },
+      ],
+    });
+    fake.onAppState?.("active");
+    await vi.waitFor(() => expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-b")));
+    expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-b", true);
+  });
+  it("answers a notification call from another organization once the stream reports it", async () => {
+    fake.lastResponse = {
+      actionIdentifier: "answer",
+      notification: {
+        request: { content: { data: { ...block(), kind: "incoming_call", botId: orgBot.id } } },
+      },
+    };
+    stop = startIncomingCalls();
+    await tick();
+    // Cold start: the answer waits for the account stream's snapshot instead of failing
+    // on the active organization's roster.
+    fake.onEvent?.([{ ...orgBot, incomingCall: { ...block(), callId: "call-1" } }]);
+    await vi.waitFor(() => expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-1")));
   });
   it("declines through the same backend path as web", async () => {
     await respondToMobileCall(await ring(), "decline");

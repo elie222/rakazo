@@ -58,6 +58,11 @@ let responding = false;
 let activeNativeCall: string | undefined;
 /** Native calls that ended while their answer was still joining. */
 let nativeEnded = new Set<string>();
+/** Resolves when the account stream has delivered its first snapshot, which covers every organization. */
+let streamSnapshot: Promise<void> | undefined;
+let snapshotArrived: (() => void) | undefined;
+/** How long a native or notification answer waits for that snapshot on a cold start. */
+const SNAPSHOT_WAIT_MS = 5_000;
 
 export function subscribeIncomingCalls(listener: () => void) {
   listeners.add(listener);
@@ -116,6 +121,7 @@ async function follow(controller: AbortController) {
   while (!controller.signal.aborted && generation === currentSessionGeneration()) {
     try {
       await subscribeIncomingCallEvents((incoming) => {
+        snapshotArrived?.();
         for (const previous of calls) {
           if (!incoming.some((call) => call.incomingCall.callId === previous.incomingCall.callId))
             update(previous, null);
@@ -143,6 +149,34 @@ async function loadRoster() {
   if (!(await loadSessionToken())) return;
   const navigation = await rpc("spaces/list");
   if (running && generation === currentSessionGeneration()) setIncomingCallRoster(navigation);
+}
+
+/**
+ * Resolves the caller for a native or notification answer. The account stream knows callers
+ * across every organization; the roster covers only the active one. A cold start can answer
+ * before the stream's first snapshot, so wait briefly for it before giving up on the stream.
+ */
+async function callerFor(
+  botId: string,
+  callId: string,
+): Promise<Pick<SpaceBot, "id" | "spaceId" | "name" | "color" | "avatarSet"> | null> {
+  const fromStream = () =>
+    calls.find((entry) => entry.id === botId && entry.incomingCall.callId === callId) ?? null;
+  const streamed = fromStream();
+  if (streamed) return streamed;
+  if (streamSnapshot) {
+    let giveUp: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      streamSnapshot,
+      new Promise<void>((resolve) => {
+        giveUp = setTimeout(resolve, SNAPSHOT_WAIT_MS);
+      }),
+    ]).finally(() => clearTimeout(giveUp));
+    const late = fromStream();
+    if (late) return late;
+  }
+  if (!roster.has(botId)) await loadRoster();
+  return roster.get(botId) ?? null;
 }
 
 export async function respondToMobileCall(call: IncomingBotCall, action: "answer" | "decline") {
@@ -236,8 +270,7 @@ async function drainNative() {
       await native?.finishAnswer(action.callId, false);
       continue;
     }
-    if (!roster.has(action.botId)) await loadRoster();
-    const bot = roster.get(action.botId);
+    const bot = await callerFor(action.botId, action.callId);
     if (!bot) {
       await native?.finishAnswer(action.callId, false);
       continue;
@@ -266,8 +299,7 @@ async function notificationResponse(response: Notifications.NotificationResponse
   if (notificationActions.has(key)) return;
   notificationActions.add(key);
   try {
-    await loadRoster();
-    const bot = roster.get(data.botId);
+    const bot = await callerFor(data.botId, data.callId);
     if (!bot) throw new Error("Unknown caller");
     await respondToMobileCall(
       {
@@ -286,6 +318,8 @@ export function stopIncomingCalls() {
   running = false;
   feed?.abort();
   feed = undefined;
+  streamSnapshot = undefined;
+  snapshotArrived = undefined;
   roster.clear();
   notificationActions.clear();
   calls = [];
@@ -306,6 +340,9 @@ export function startIncomingCalls() {
   running = true;
   const controller = new AbortController();
   feed = controller;
+  streamSnapshot = new Promise((resolve) => {
+    snapshotArrived = resolve;
+  });
   let started = false;
   void Notifications.setNotificationCategoryAsync?.("incoming-call", [
     {
