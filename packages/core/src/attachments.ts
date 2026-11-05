@@ -8,6 +8,7 @@ import {
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
 import { isApprovalAskBlock, isSecretAskBlock } from "./action-approval.js";
+import { escapePromptData } from "./prompt-data.js";
 
 export class AttachmentValidationError extends Error {
   constructor(message: string) {
@@ -189,10 +190,11 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
       if (block.kind === "ask") {
         // A question card keeps its draft in the detail, and a later turn still needs
         // it: approval cards repeat tool arguments the call itself records, and secret
-        // cards keep their detail hidden.
+        // cards keep their detail hidden. The draft is fenced so a line in it cannot
+        // pass for the answer.
         const detail =
           block.detail && !isApprovalAskBlock(block) && !isSecretAskBlock(block)
-            ? `\n${block.detail}`
+            ? `\n<draft>\n${escapePromptData(block.detail)}\n</draft>`
             : "";
         if (block.status !== "answered" || !block.answer) return `${block.text}${detail}`;
         const choice = block.actions?.find((action) => action.id === block.answer);
