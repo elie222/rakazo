@@ -1132,7 +1132,6 @@ export const NL_MESSAGES: Record<string, string> = {
   None: "Geen",
   "Free trial": "Gratis proefperiode",
   "Rakazo credits": "Rakazo-tegoed",
-  Credits: "Tegoed",
   "Free until": "Gratis tot",
   Ends: "Eindigt op",
   Renews: "Verlengt op",

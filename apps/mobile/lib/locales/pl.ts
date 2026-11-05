@@ -1125,7 +1125,6 @@ export const PL_MESSAGES: Record<string, string> = {
   None: "Brak",
   "Free trial": "Bezpłatny okres próbny",
   "Rakazo credits": "Środki Rakazo",
-  Credits: "Środki",
   "Free until": "Bezpłatnie do",
   Ends: "Kończy się",
   Renews: "Odnawia się",
