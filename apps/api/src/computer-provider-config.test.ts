@@ -273,6 +273,9 @@ describe("an account's own computer", () => {
     await expect(
       updateAccountComputerSettings(deps, actor, { provider: "desktop", values: testDesktop }),
     ).rejects.toThrow("This deployment cannot use account computer settings");
+    await expect(
+      updateAccountComputerSettings(deps, actor, { provider: "default", values: {} }),
+    ).resolves.toMatchObject({ provider: "default", providers: [] });
     expect(rows).toEqual([]);
   });
 

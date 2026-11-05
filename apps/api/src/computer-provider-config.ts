@@ -319,7 +319,13 @@ export async function updateAccountComputerSettings(
     replaced.map((row) => deps.secrets.delete(row.ciphertext, row.id).catch(() => undefined)),
   );
   await refreshComputerProvider(deps.sandbox);
-  return view(saved?.provider ?? "default", saved, await deploymentProvider(deps), true);
+  return view(
+    saved?.provider ?? "default",
+    saved,
+    await deploymentProvider(deps),
+    true,
+    Boolean(deps.env.computerSettingsEnabled),
+  );
 }
 
 function deploymentCanChoose(deps: ComputerProviderConfigDeps) {
