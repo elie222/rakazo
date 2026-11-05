@@ -54,6 +54,7 @@ async function prepareSentFiles(
     return { error: "files must be a list of file paths" };
   }
   const paths = [...new Set(raw.map((path: string) => path.trim()))];
+  if (!paths.length) return { files: [], sharedPaths: [] };
   if (paths.length > ATTACHMENT_MAX_COUNT) {
     return { error: `send at most ${ATTACHMENT_MAX_COUNT} files; zip the rest into one file` };
   }
@@ -121,7 +122,12 @@ async function sharedFiles(
   call: ToolCall,
   paths: string[],
 ): Promise<{ error: string } | SentFiles> {
-  const computer = await ctx.computer.get("tool", call.name);
+  let computer: Awaited<ReturnType<typeof ctx.computer.get>>;
+  try {
+    computer = await ctx.computer.get("tool", call.name);
+  } catch {
+    return { error: "could not reach your computer. Nothing was sent." };
+  }
   const sharedPaths: string[] = [];
   for (const path of paths) {
     let stored: string;

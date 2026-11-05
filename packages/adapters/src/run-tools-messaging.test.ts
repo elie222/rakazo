@@ -234,4 +234,26 @@ describe("sending files to another bot", () => {
     });
     expect(mocks.messageBot).not.toHaveBeenCalled();
   });
+
+  it("sends an empty file list as a plain message without touching the computer", async () => {
+    const { ctx, findMany } = context("computer-team");
+    await messagingTools.message_bot!(ctx, callWith("message_bot", { files: [] }));
+    expect(findMany).not.toHaveBeenCalled();
+    expect(ctx.computer.get).not.toHaveBeenCalled();
+    expect(mocks.messageBot).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ message: "deploy this", files: [] }),
+    );
+  });
+
+  it("reports an unreachable computer instead of failing the call", async () => {
+    const { ctx } = context("computer-team");
+    vi.mocked(ctx.computer.get).mockRejectedValueOnce(new Error("boot failed"));
+    await expect(
+      messagingTools.message_bot!(ctx, callWith("message_bot", { files: ["site"] })),
+    ).resolves.toEqual({ error: "could not reach your computer. Nothing was sent." });
+    expect(mocks.messageBot).not.toHaveBeenCalled();
+  });
 });
