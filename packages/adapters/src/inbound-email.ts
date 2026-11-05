@@ -114,9 +114,15 @@ export async function readInboundEmail(
         `sha256:${createHash("sha256").update(buffer).digest("base64url")}`,
     from: fromAddress ? { address: fromAddress, name: fromName } : null,
     authenticated: signature !== undefined,
+    // Only the From domain's own signature decides; another domain's slow DNS changes nothing.
     temporaryFailure:
       signature === undefined &&
-      dkim.results.some((result) => result.status.result === "temperror"),
+      fromDomain !== undefined &&
+      dkim.results.some(
+        (result) =>
+          result.status.result === "temperror" &&
+          result.signingDomain?.toLowerCase() === fromDomain,
+      ),
     to,
     cc,
     subject: email.subject?.trim() ?? "",

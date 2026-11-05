@@ -102,8 +102,15 @@ describe("readInboundEmail", () => {
     const later = await readInboundEmail(raw, { resolver: timeout });
     const missing = await readInboundEmail(bytes(message(plain)), { resolver });
 
+    const elsewhere = await readInboundEmail(bytes(await signed(message(plain), "other.test")), {
+      resolver: async (domain, rrtype) =>
+        domain.endsWith("other.test") ? timeout(domain, rrtype) : resolver(domain, rrtype),
+    });
+
     expect(later).toMatchObject({ authenticated: false, temporaryFailure: true });
     expect(missing).toMatchObject({ authenticated: false, temporaryFailure: false });
+    // Another domain's signature failing for now never holds mail in the relay's queue.
+    expect(elsewhere).toMatchObject({ authenticated: false, temporaryFailure: false });
   });
 
   it("keys a resent copy by its signature, whatever Message-ID it is given", async () => {
@@ -167,7 +174,7 @@ describe("readInboundEmail", () => {
         `--${boundary}`,
         "Content-Type: text/html; charset=utf-8",
         "",
-        `<p>Hello <b>bot</b></p><script>steal()</script><p>${"x".repeat(INBOUND_EMAIL_TEXT_MAX_CHARS)}</p>`,
+        `<p>Hello <b>bot</b> &amp; team: &euro;100 &#8364;5</p><script>steal()</script><p>${"x".repeat(INBOUND_EMAIL_TEXT_MAX_CHARS)}</p>`,
         `--${boundary}`,
         "Content-Type: text/csv",
         'Content-Disposition: attachment; filename="report.csv"',
@@ -181,7 +188,7 @@ describe("readInboundEmail", () => {
 
     const email = await readInboundEmail(bytes(raw), { resolver });
 
-    expect(email.text.startsWith("Hello bot")).toBe(true);
+    expect(email.text.startsWith("Hello bot & team: €100 €5\n")).toBe(true);
     expect(email.text).not.toContain("steal");
     expect(email.text.endsWith("[…]")).toBe(true);
     expect(email.key).toMatch(/^sha256:/);
