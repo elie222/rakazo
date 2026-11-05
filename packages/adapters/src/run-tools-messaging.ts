@@ -34,7 +34,8 @@ import {
 
 const ZIP_HELPS = new Set(["file not found or unreadable", "unsupported attachment type"]);
 
-type SentFiles = { files: AttachmentBlock[]; sharedPaths: string[] };
+/** `recipientId` is the bot the files were prepared for; delivery must go to that same bot. */
+type SentFiles = { files: AttachmentBlock[]; sharedPaths: string[]; recipientId?: string };
 
 /**
  * Files a bot passes by path to another bot. A recipient on the same computer reads them
@@ -65,7 +66,7 @@ async function prepareSentFiles(
     !target.computerSwitching &&
     target.computerId === bot.computerId
   )
-    return sharedFiles(ctx, call, paths);
+    return withRecipient(await sharedFiles(ctx, call, paths), target.id);
   const read: Array<{ path: string; bytes: Uint8Array }> = [];
   for (const path of paths) {
     const file = await readWorkspaceFile(ctx, call, path);
@@ -88,7 +89,11 @@ async function prepareSentFiles(
       return { error: `${file.path}: ${reason}. Nothing was sent.` };
     }
   }
-  return { files, sharedPaths: [] };
+  return { files, sharedPaths: [], recipientId: target.id };
+}
+
+function withRecipient(prepared: { error: string } | SentFiles, recipientId: string) {
+  return "error" in prepared ? prepared : { ...prepared, recipientId };
 }
 
 /** The bot a message or handoff names, among the sender's bots or the group's members. */
@@ -131,6 +136,10 @@ async function sharedFiles(
       .catch(() => []);
     if (!stored || !entries.some((entry) => normalizeWorkspacePath(entry.path) === stored)) {
       return { error: `${path}: not found. Nothing was sent.` };
+    }
+    // A path is shown verbatim, so one that holds a secret is refused rather than shown redacted.
+    if (redactSecrets(stored, ctx.secrets) !== stored) {
+      return { error: "one of the paths can't be shared. Nothing was sent." };
     }
     sharedPaths.push(stored);
   }
@@ -239,8 +248,12 @@ export const messagingTools: ToolHandlers = {
       { ...run, sourceMessageId: run.sourceMessageId },
       { id: bot.id, name: bot.name },
       {
-        bot_id: args.bot_id ? String(args.bot_id) : undefined,
-        confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
+        bot_id: stored.recipientId ?? (args.bot_id ? String(args.bot_id) : undefined),
+        confirm_name: stored.recipientId
+          ? undefined
+          : args.confirm_name
+            ? String(args.confirm_name)
+            : undefined,
         message: withSharedPaths(
           redactSecrets(String(args.message ?? ""), ctx.secrets),
           stored.sharedPaths,
@@ -314,8 +327,12 @@ export const messagingTools: ToolHandlers = {
     });
     if ("error" in stored) return call.finish({ error: stored.error });
     const result = await handoffToGroupBot(deps, run, groupId, {
-      bot_id: args.bot_id ? String(args.bot_id) : undefined,
-      confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
+      bot_id: stored.recipientId ?? (args.bot_id ? String(args.bot_id) : undefined),
+      confirm_name: stored.recipientId
+        ? undefined
+        : args.confirm_name
+          ? String(args.confirm_name)
+          : undefined,
       message: withSharedPaths(
         redactSecrets(String(args.message ?? ""), ctx.secrets),
         stored.sharedPaths,

@@ -1,9 +1,9 @@
-import { crc32 } from "node:zlib";
-import type { EvalCase } from "./cases.js";
+import { strToU8, zipSync } from "fflate";
+import type { Criterion, EvalCase, Evidence } from "./cases.js";
 import type { ToolChoiceExpect } from "./tool-choice.js";
 import { gradeToolChoice } from "./tool-choice.js";
 
-export const BOT_FILES_FIXTURE_VERSION = "bot-files-v4";
+export const BOT_FILES_FIXTURE_VERSION = "bot-files-v5";
 
 /**
  * A line of the site's code. A message that names the code can summarize it; one carrying this
@@ -36,7 +36,10 @@ const SITE = [
   { path: "site/style.css", content: "body { margin: 0; font-family: sans-serif; }\n" },
 ];
 /** A real archive of the site, so a bot that inspects it before sending finds the same files. */
-const SITE_ZIP = { path: "site.zip", content: storedZip(SITE) };
+const SITE_ZIP = {
+  path: "site.zip",
+  content: zipSync(Object.fromEntries(SITE.map((file) => [file.path, strToU8(file.content)]))),
+};
 
 const CODER =
   "You are Coder. You write and edit code for the user's projects on your computer. You have no access to the production server; Servo does.";
@@ -57,7 +60,16 @@ type Scenario = {
   files: NonNullable<EvalCase["computerFiles"]>;
   ask: string;
   expect: ToolChoiceExpect;
+  /**
+   * What must have reached the other bot. Shared paths arrive in the product's own
+   * "Files on our shared computer" list, so matching that list checks a contract, not prose.
+   */
+  delivered?: { id: string; pass: (deliveries: NonNullable<Evidence["deliveries"]>) => boolean };
 };
+
+const SHARED_LIST = "Files on our shared computer:";
+const sharedSite = (d: { text: string }) =>
+  d.text.includes(SHARED_LIST) && /\/site(\/|\s|$)/.test(d.text.slice(d.text.indexOf(SHARED_LIST)));
 
 const SCENARIOS: Scenario[] = [
   {
@@ -71,6 +83,10 @@ const SCENARIOS: Scenario[] = [
       calls: [{ tool: "message_bot", args: { files: "~site" } }],
       callsMustNot: [{ tool: "message_bot", args: { message: `~${CODE_LINE}` } }],
     },
+    delivered: {
+      id: "servo received the site's shared paths",
+      pass: (deliveries) => deliveries.some((d) => d.kind === "message" && sharedSite(d)),
+    },
   },
   {
     id: "send-zip-to-own-computer",
@@ -82,6 +98,10 @@ const SCENARIOS: Scenario[] = [
     expect: {
       calls: [{ tool: "message_bot", args: { files: "~site.zip" } }],
       callsMustNot: [{ tool: "message_bot", args: { message: `~${CODE_LINE}` } }],
+    },
+    delivered: {
+      id: "servo received site.zip",
+      pass: (deliveries) => deliveries.some((d) => d.files.includes("site.zip")),
     },
   },
   {
@@ -95,6 +115,10 @@ const SCENARIOS: Scenario[] = [
       calls: [{ tool: "handoff_to_bot", args: { files: "~site" } }],
       callsMustNot: [{ tool: "handoff_to_bot", args: { message: `~${CODE_LINE}` } }],
     },
+    delivered: {
+      id: "the handoff carries the site's shared paths",
+      pass: (deliveries) => deliveries.some((d) => d.kind === "handoff" && sharedSite(d)),
+    },
   },
   {
     id: "question-sends-no-files",
@@ -105,6 +129,12 @@ const SCENARIOS: Scenario[] = [
     expect: {
       calls: [{ tool: "message_bot" }],
       callsMustNot: [{ tool: "message_bot", args: { files: "~site" } }],
+    },
+    delivered: {
+      id: "servo received the question without files",
+      pass: (deliveries) =>
+        deliveries.length > 0 &&
+        deliveries.every((d) => !d.files.length && !d.text.includes(SHARED_LIST)),
     },
   },
   {
@@ -130,8 +160,12 @@ export const BOT_FILES_EVAL_CASES: EvalCase[] = SCENARIOS.map((scenario) => {
     connections: [],
     pauseEndsTurn: true as const,
     computerFiles: scenario.files,
-    grade: (evidence: Parameters<EvalCase["grade"]>[0]) =>
-      gradeToolChoice(scenario.expect, evidence),
+    grade: (evidence: Evidence): Criterion[] => [
+      ...gradeToolChoice(scenario.expect, evidence),
+      ...(scenario.delivered
+        ? [{ id: scenario.delivered.id, pass: scenario.delivered.pass(evidence.deliveries ?? []) }]
+        : []),
+    ],
   };
   if (setup.kind === "group")
     return {
@@ -167,42 +201,3 @@ export const BOT_FILES_EVAL_CASES: EvalCase[] = SCENARIOS.map((scenario) => {
     steps: [{ ask: scenario.ask }],
   };
 });
-
-/** An uncompressed zip: the eval computer has no shell to build one, and nothing here needs compression. */
-function storedZip(files: Array<{ path: string; content: string }>): Uint8Array {
-  const local: Buffer[] = [];
-  const central: Buffer[] = [];
-  let offset = 0;
-  for (const file of files) {
-    const name = Buffer.from(file.path);
-    const data = Buffer.from(file.content);
-    const crc = crc32(data);
-    const header = Buffer.alloc(30);
-    header.writeUInt32LE(0x04034b50, 0);
-    header.writeUInt16LE(20, 4);
-    header.writeUInt32LE(crc, 14);
-    header.writeUInt32LE(data.length, 18);
-    header.writeUInt32LE(data.length, 22);
-    header.writeUInt16LE(name.length, 26);
-    local.push(header, name, data);
-    const entry = Buffer.alloc(46);
-    entry.writeUInt32LE(0x02014b50, 0);
-    entry.writeUInt16LE(20, 4);
-    entry.writeUInt16LE(20, 6);
-    entry.writeUInt32LE(crc, 16);
-    entry.writeUInt32LE(data.length, 20);
-    entry.writeUInt32LE(data.length, 24);
-    entry.writeUInt16LE(name.length, 28);
-    entry.writeUInt32LE(offset, 42);
-    central.push(entry, name);
-    offset += header.length + name.length + data.length;
-  }
-  const directory = Buffer.concat(central);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(files.length, 8);
-  end.writeUInt16LE(files.length, 10);
-  end.writeUInt32LE(directory.length, 12);
-  end.writeUInt32LE(offset, 16);
-  return new Uint8Array(Buffer.concat([...local, directory, end]));
-}

@@ -29,6 +29,11 @@ export type Evidence = {
   routineRuns?: RoutineEvidence[];
   /** Per fromPeer step: what the peer sent and what came back to it, or null if nothing did. */
   peerExchanges?: Array<{ message: string; reply: string | null }>;
+  /**
+   * What the subject delivered to other bots: messages that reached the peer's chat and handoffs
+   * posted in the group, with the names of the files attached to each.
+   */
+  deliveries?: Array<{ kind: "message" | "handoff"; text: string; files: string[] }>;
   /** For an unaddressed group step: what each member posted afterwards, by name; empty if nothing. */
   memberReplies?: Record<string, string>;
   files: Record<string, string | null>;

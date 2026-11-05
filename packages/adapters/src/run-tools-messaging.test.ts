@@ -206,4 +206,32 @@ describe("sending files to another bot", () => {
       { botId: "bot-coder", groupId: "group-2" },
     );
   });
+
+  it("delivers to the bot the files were prepared for, by id", async () => {
+    const { ctx } = context("computer-team");
+    await messagingTools.message_bot!(
+      ctx,
+      callWith("message_bot", { bot_id: undefined, confirm_name: "servo", files: ["site"] }),
+    );
+    expect(mocks.messageBot).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ bot_id: "bot-servo", confirm_name: undefined }),
+    );
+  });
+
+  it("refuses to share a path that holds a secret", async () => {
+    const { ctx, listFiles } = context("computer-team");
+    listFiles.mockResolvedValueOnce([
+      { path: "bots/bot-coder/sk-live-1234567890", kind: "directory" },
+    ]);
+    (ctx as { secrets: string[] }).secrets = ["sk-live-1234567890"];
+    await expect(
+      messagingTools.message_bot!(ctx, callWith("message_bot", { files: ["sk-live-1234567890"] })),
+    ).resolves.toEqual({
+      error: "one of the paths can't be shared. Nothing was sent.",
+    });
+    expect(mocks.messageBot).not.toHaveBeenCalled();
+  });
 });

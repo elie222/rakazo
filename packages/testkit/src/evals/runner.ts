@@ -933,6 +933,15 @@ export async function runTrial(
       routines.length,
       await prisma.event.count({ where: { botId, type: "routine.created" } }),
     );
+    const deliveries = await deliveredBySubject(prisma, botId, [
+      ...(peer
+        ? [
+            (await prisma.thread.findUnique({ where: { botId: peer.id }, select: { id: true } }))
+              ?.id,
+          ]
+        : []),
+      group?.threadId,
+    ]);
     await captureTools();
     const finalStep = scenario.steps.length;
     const evidence: Evidence = {
@@ -941,6 +950,7 @@ export async function runTrial(
       memberReplies,
       routineRuns,
       peerExchanges,
+      ...(deliveries.length ? { deliveries } : {}),
       files,
       ...(Object.keys(seededAttachments).length ? { seededAttachments } : {}),
       records: services.records,
@@ -1190,6 +1200,39 @@ async function deliverPeerMessage(
     { allowTerminalSource: true },
   );
   if (!sent.ok) throw new EvalFailure("harness", `Peer message was not delivered: ${sent.error}`);
+}
+
+/** Messages and handoffs the subject delivered into these threads, read from what was stored. */
+async function deliveredBySubject(
+  prisma: EvalApp["prisma"],
+  botId: string,
+  threadIds: Array<string | undefined>,
+): Promise<NonNullable<Evidence["deliveries"]>> {
+  const ids = threadIds.filter((id): id is string => Boolean(id));
+  if (!ids.length) return [];
+  const messages = await prisma.message.findMany({
+    where: { threadId: { in: ids } },
+    select: { blocks: true },
+    orderBy: { seq: "asc" },
+  });
+  return messages.flatMap((message) => {
+    const blocks = message.blocks as MessageBlock[];
+    const sent = blocks.find(
+      (block) =>
+        (block.kind === "bot_message_received" || block.kind === "handoff") &&
+        block.fromBotId === botId,
+    );
+    if (!sent || (sent.kind !== "bot_message_received" && sent.kind !== "handoff")) return [];
+    return [
+      {
+        kind: sent.kind === "handoff" ? ("handoff" as const) : ("message" as const),
+        text: sent.text,
+        files: blocks.flatMap((block) =>
+          (block.kind === "file" || block.kind === "image") && block.name ? [block.name] : [],
+        ),
+      },
+    ];
+  });
 }
 
 async function poll<T>(read: () => Promise<T | undefined>, deadline: number): Promise<T> {
