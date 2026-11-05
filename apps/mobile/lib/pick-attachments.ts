@@ -336,6 +336,8 @@ export async function readSharedFiles(
   const attachments: PickedAttachment[] = [];
   const skipped: PickSkip[] = [];
   const failedFiles: typeof files = [];
+  // The source share file of each attachment, so its copy can follow the attachment around.
+  const sources: string[] = [];
   for (const file of files) {
     if (existingCount + attachments.length >= maxCount) {
       skipped.push({ name: file.name, reason: attachmentCountSkipReason(maxCount) });
@@ -361,11 +363,12 @@ export async function readSharedFiles(
         continue;
       }
       attachments.push(...result.attachments);
+      if (result.attachments.length) sources.push(file.uri);
       skipped.push(...result.skipped);
     } catch {
       skipped.push({ name: file.name, reason: "could not read" });
       failedFiles.push(file);
     }
   }
-  return { attachments, skipped, failedFiles };
+  return { attachments, skipped, failedFiles, sources };
 }

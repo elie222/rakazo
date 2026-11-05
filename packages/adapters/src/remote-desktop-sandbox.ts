@@ -52,6 +52,7 @@ interface EntryInfo {
 
 export interface RemoteDesktop {
   readonly sandboxId: string;
+  readonly trafficAccessToken?: string;
   setTimeout(timeoutMs: number): Promise<void>;
   getHost(port: number): string;
   commands: {
@@ -347,10 +348,26 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     request: ScreenRequest,
     context: AdapterContext,
   ): Promise<ScreenSession> {
-    return this.desktops.connectScreen(computer, request, context);
+    return this.withTrafficAccess(
+      computer,
+      await this.desktops.connectScreen(computer, request, context),
+    );
   }
   async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
-    return this.desktops.connectTerminal(computer, request, context);
+    return this.withTrafficAccess(
+      computer,
+      await this.desktops.connectTerminal(computer, request, context),
+    );
+  }
+  /** Restricted E2B sandboxes require this header; a missing token stays off the request. */
+  private withTrafficAccess<T extends { url: string | null }>(
+    computer: ComputerRef,
+    session: T,
+  ): T & { headers?: Record<string, string> } {
+    if (this.config.id !== "e2b") return session;
+    const token = this.boxes.get(sandboxId(computer))?.trafficAccessToken;
+    if (!token) return session;
+    return { ...session, headers: { "e2b-traffic-access-token": token } };
   }
   async setScreenControl(
     computer: ComputerRef,

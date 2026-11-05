@@ -19,6 +19,8 @@ export type PurchaseApproval = {
   amount: string;
   /** Whether the amount is the one the button names or the total the page shows. */
   amountSource: "button" | "page";
+  /** The page's total beside a button that names its own amount, when the page shows one. */
+  total?: string;
 };
 
 // Empty when the check failed and the page is unknown.
@@ -31,7 +33,7 @@ const pageText = (text: string, max: number) =>
 /** A purchase approval as the persisted request holds it, or nothing when it is not one. */
 export function purchaseApprovalOf(value: unknown): PurchaseApproval | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const { steps, site, label, amount, amountSource } = value as Record<string, unknown>;
+  const { steps, site, label, amount, amountSource, total } = value as Record<string, unknown>;
   if (
     !Array.isArray(steps) ||
     !steps.every((step) => Number.isInteger(step) && step >= 0 && step < 24) ||
@@ -47,6 +49,7 @@ export function purchaseApprovalOf(value: unknown): PurchaseApproval | undefined
     label,
     amount,
     amountSource: amountSource === "button" ? "button" : "page",
+    ...(typeof total === "string" && total ? { total } : {}),
   };
 }
 
@@ -68,6 +71,9 @@ export function purchaseCardSummary(purchase: PurchaseApproval): FleetCardSummar
         ? [
             `${purchase.amountSource === "button" ? "Amount on the button" : "Total on the page"}: ${purchase.amount}`,
           ]
+        : []),
+      ...(purchase.total && purchase.total !== purchase.amount
+        ? [`Total on the page: ${purchase.total}`]
         : []),
       "The button label and total are read from the page. The bot has not checked them.",
     ],
@@ -200,5 +206,6 @@ export async function detectPurchase(
     label: shown(found.label, 80),
     amount: shown(found.amount, 40),
     amountSource: found.amountSource === "button" ? "button" : "page",
+    ...(found.total ? { total: shown(found.total, 40) } : {}),
   };
 }

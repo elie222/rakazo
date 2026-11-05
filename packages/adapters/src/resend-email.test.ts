@@ -105,6 +105,17 @@ describe("ResendEmailProvider", () => {
     await expect(provider(request).send(message)).rejects.toThrow("invalid email response");
   });
 
+  it("does not read an oversized success body", async () => {
+    const response = () =>
+      Response.json({ id: "email_1" }, { headers: { "content-length": String(1024 * 1024) } });
+    const responses = [response(), response(), response()];
+    const request = vi.fn<typeof fetch>();
+    for (const sent of responses) request.mockResolvedValueOnce(sent);
+    const cancels = responses.map((sent) => vi.spyOn(sent.body!, "cancel"));
+    await expect(provider(request).send(message)).rejects.toThrow(/^Resend email request failed$/);
+    for (const cancel of cancels) expect(cancel).toHaveBeenCalledOnce();
+  });
+
   it("bounds a stalled response body and drains without accepting new sends", async () => {
     const request = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
       const body = new ReadableStream({

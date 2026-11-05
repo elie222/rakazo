@@ -19,6 +19,7 @@ import {
   recordAuditEvent,
   recordComputerRunEnd,
   releaseOrganizationDeletionClaim,
+  restoreSpaceDeletionClaims,
   runAsSystem,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
   setOrganizationDeletionLease,
@@ -32,8 +33,21 @@ import type { SpaceDeletionDeps } from "./space-deletion.js";
  * each person got their own. Each sandbox is destroyed at its provider before its row goes, so a
  * failure keeps the handle and deleting again resumes from what is left.
  */
-export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: string): Promise<void> {
-  const { claimId, spaceIds } = await claimSpacesLeavingWithAccount(deps.prisma, userId);
+export async function deleteAccountContent(
+  deps: SpaceDeletionDeps & { billing?: Pick<BillingService, "cancelForDeletedUser"> },
+  userId: string,
+): Promise<void> {
+  const { claimId, spaceIds, takenOver } = await claimSpacesLeavingWithAccount(deps.prisma, userId);
+  try {
+    // Cancel under the claims, so a checkout opened while another organization's cancellation
+    // waits is refused by the deletion check instead of outliving the account.
+    await deps.billing?.cancelForDeletedUser(userId);
+  } catch (error) {
+    // Nothing was destroyed yet, so the account stays as it was: give back only what this
+    // attempt claimed, keeping claims an earlier attempt left and other deletions' markers.
+    await restoreSpaceDeletionClaims(deps.prisma, claimId, takenOver);
+    throw error;
+  }
   const leaving = { OR: [{ userId }, { spaceId: { in: spaceIds } }] };
   await deleteClaimedSpaces(deps, {
     userId,

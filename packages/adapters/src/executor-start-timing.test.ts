@@ -52,6 +52,7 @@ function fixture(
     startedAt: options.startedAt ?? null,
   };
   const prisma = {
+    user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => ({ ...run, status: "leased" })),

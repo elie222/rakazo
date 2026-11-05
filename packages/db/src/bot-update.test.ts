@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import type * as Events from "./events.js";
 
-vi.mock("./events.js", () => ({ appendEventInTransaction: vi.fn() }));
+vi.mock("./events.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof Events>()),
+  appendEventInTransaction: vi.fn(),
+}));
 vi.mock("./bot-instructions.js", () => ({ writeBotInstructions: vi.fn() }));
 
 import { writeBotInstructions } from "./bot-instructions.js";

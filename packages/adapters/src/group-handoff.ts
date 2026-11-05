@@ -15,6 +15,7 @@ import {
   createThreadMessageInTransaction,
   IsolationError,
   lockOwnedGroup,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -31,7 +32,14 @@ export async function handoffToGroupBot(
     userId: string;
   },
   groupId: string,
-  input: { bot_id?: string; confirm_name?: string; message: string; deliveryKey?: string },
+  input: {
+    bot_id?: string;
+    confirm_name?: string;
+    message: string;
+    deliveryKey?: string;
+    /** Saved attachments, shown on the handoff and copied to the next bot's computer. */
+    files?: Array<Extract<MessageBlock, { kind: "image" | "file" }>>;
+  },
 ) {
   const text = input.message.trim();
   if (!text || text.length > BOT_MESSAGE_MAX_LENGTH) {
@@ -168,7 +176,7 @@ export async function handoffToGroupBot(
     const message = await createThreadMessageInTransaction(tx, {
       threadId: targetThreadId,
       role: "bot",
-      blocks: [handoffBlock],
+      blocks: [handoffBlock, ...(input.files ?? [])],
       botId: run.botId,
       runId: inGroup ? run.id : undefined,
       clientNonce: deliveryKey,
@@ -220,7 +228,7 @@ export async function handoffToGroupBot(
       inGroup,
       groupName: group.name,
     } as const;
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if ("error" in committed) return committed;
   await deps.events.notify(committed.threadId, committed.eventSeq).catch((error) => {
     getLogger().error("group handoff realtime notification", error);

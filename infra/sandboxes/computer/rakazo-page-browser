@@ -1019,7 +1019,8 @@ class PageBrowser:
         if args.get("desktop") is True and not steps:
             first = self.purchases().desktop(args)
         purchase = {"steps": steps, "label": first.get("label", ""), "amount": first.get("amount", ""),
-                    "amountFrom": first.get("amountFrom", "page"), "reason": first.get("reason")} if first else None
+                    "amountFrom": first.get("amountFrom", "page"), "reason": first.get("reason"),
+                    **({"total": first["total"]} if first and first.get("total") else {})} if first else None
         return {"ok": True, "url": "", "title": "", **self.purchases().where(), "site": site, "purchase": purchase}
 
     # -- commands ---------------------------------------------------------------------------------
@@ -1945,9 +1946,13 @@ PURCHASE_HELPERS = r"""
   const cut = (text, max) => Array.from(text).slice(0, max).join("");
   // What the card shows: the button's text, and the amount the button names or else the page's total.
   // `words`: everything the control says, so an amount only its aria label names is the one shown.
+  // A button that names another amount than the page's total also reports the total, which the spending
+  // limit counts if larger.
   function shownPurchase(reason, label, words = [label]) {
     const named = words.map((word) => moneyIn(word, false)).find(Boolean) || "";
-    return { reason, label: cut(label, 80), amount: named || totalShown(), amountFrom: named ? "button" : "page" };
+    const total = totalShown();
+    return { reason, label: cut(label, 80), amount: named || total, amountFrom: named ? "button" : "page",
+      ...(named && total && total !== named ? { total } : {}) };
   }
   // `frame`: the page shows a payment provider's card frame, which only the caller can vouch for.
   function purchaseOf(el, frame) {
@@ -2269,7 +2274,9 @@ def purchase_refusal(step: dict[str, Any], site: str, buying: dict[str, Any] | N
     if not buying:
         return None
     approved = step.get("approved") is True and step.get("site") == site
-    changed = approved and any(key in step and shown(step[key]) != shown(buying.get(key)) for key in ("label", "amount"))
+    # A total the card showed beside the button (empty when it showed none) must still be the page's.
+    changed = approved and any(key in step and shown(step[key]) != shown(buying.get(key, ""))
+                               for key in ("label", "amount", "total"))
     if approved and not changed:
         return None
     return {"ok": False, "completed": completed, "uncertain": False, "purchase": {**buying, "site": site},
@@ -2344,9 +2351,9 @@ def validate_actions(actions: Any) -> None:
                 step["kind"] != "click" or not isinstance(step.get("approved"), bool)
                 or not isinstance(step.get("site"), str)):
             raise RuntimeError("An approval applies only to click, with the site it was given for")
-        if ("label" in step or "amount" in step) and (
+        if ("label" in step or "amount" in step or "total" in step) and (
                 step["kind"] != "click" or not isinstance(step.get("approved"), bool)
-                or not all(isinstance(step.get(key, ""), str) for key in ("label", "amount"))):
+                or not all(isinstance(step.get(key, ""), str) for key in ("label", "amount", "total"))):
             raise RuntimeError("An approved label and amount apply only to an approved click")
         # A card detail is hidden and checked only on an origin-bound fill.
         if step.get("field") == "card" and not step.get("origin"):

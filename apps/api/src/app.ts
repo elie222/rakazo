@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { hostname } from "node:os";
 import { ORPCError, onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
@@ -105,7 +106,14 @@ import {
   verifyModelServesAgents,
   withSecretPersistence,
 } from "@rakazo/adapters";
-import { createAuth, isBlockedAuthPath, loopbackTwinOrigins } from "@rakazo/auth";
+import type { DirectoryAccountChange } from "@rakazo/auth";
+import {
+  CLIENT_IP_HEADER,
+  createAuth,
+  createDirectory,
+  isBlockedAuthPath,
+  loopbackTwinOrigins,
+} from "@rakazo/auth";
 import type { Actor, AuthCapabilities } from "@rakazo/contracts";
 import {
   isLocalhostOrLoopbackIp,
@@ -150,6 +158,7 @@ import { cors } from "hono/cors";
 import { deleteAccountContent, finishStalledOrganizationDeletions } from "./account-deletion.js";
 import { mountAccountExportRoute } from "./account-export.js";
 import { mountAccountImportRoute } from "./account-import.js";
+import { settleDirectoryChange } from "./account-status.js";
 import { mountAppAssociation, nativePasskeys } from "./app-association.js";
 import { storeInboundAttachment } from "./artifacts.js";
 import { mountAuditExportRoute } from "./audit-export.js";
@@ -545,7 +554,27 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
     devices: userDevices ?? new UserDevices({ prisma, forwardSecret: userDeviceSecret }),
   };
+  // A SCIM request records the accounts it turned off or on; the route settles them after commit.
+  const directoryChanges = new AsyncLocalStorage<DirectoryAccountChange[]>();
+  const directory = env.scimBearerToken
+    ? await createDirectory(prisma, {
+        token: env.scimBearerToken,
+        secret: env.authSecret,
+        baseURL: env.authUrl,
+        ipAddressHeader: CLIENT_IP_HEADER,
+        logger: {
+          level: "error",
+          log: (_level, _message, ...args) =>
+            getLogger().error(
+              "directory.request.failed",
+              args.find((arg) => arg instanceof Error),
+            ),
+        },
+        onAccountChange: (change) => directoryChanges.getStore()?.push(change),
+      })
+    : undefined;
   const auth = createAuth(prisma, {
+    directoryProvisioning: Boolean(directory),
     analytics,
     passwordAuth: env.passwordAuth,
     breachedPasswordCheck: env.breachedPasswordCheck,
@@ -584,8 +613,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     extraOrigins: MOBILE_AUTH_ORIGINS,
     androidAppCertFingerprints: env.passkeyAndroidCertFingerprints,
     beforeDeleteUser: async (userId) => {
-      // First, so a provider failure aborts deletion before anything is destroyed.
-      await billing?.cancelForDeletedUser(userId);
+      // Billing cancels inside, after the account's spaces are claimed and before anything is
+      // destroyed, so a provider failure aborts deletion with the account as it was.
       await deleteAccountContent(
         {
           prisma,
@@ -596,6 +625,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           dataDir: env.dataDir,
           messagingInstallations,
           secrets,
+          billing,
         },
         userId,
       );
@@ -973,6 +1003,42 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ["/api/v1/phone/*", "messaging webhook"],
   ] as const) {
     app.use(path, (_c, next) => runAsSystem(reason, next));
+  }
+  if (directory) {
+    app.on(["GET", "POST", "PUT", "PATCH", "DELETE"], "/api/auth/scim/v2/*", async (c) => {
+      const changes: DirectoryAccountChange[] = [];
+      const response = await directoryChanges.run(changes, () =>
+        directory.handler(withClientIp(c.req.raw, requestClientIp(c))),
+      );
+      // A retried write reports an account again; the last report per account stands.
+      const latest = new Map(changes.map((change) => [change.userId, change]));
+      let unfinished = false;
+      for (const change of latest.values())
+        await settleDirectoryChange(
+          { prisma, pushTokens, devices: deviceSessions, events },
+          change,
+        ).catch((error) => {
+          unfinished = true;
+          // Sign-in and runs are already refused. A retried update finishes the rest; after a
+          // delete, the operator's `account-status.js deactivate` does.
+          getLogger().error("directory.account_change.unfinished", error, {
+            "user.id": change.userId,
+          });
+        });
+      if (unfinished) {
+        // The directory change committed. Failing the request makes the provider retry it.
+        return c.json(
+          {
+            schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"],
+            status: "500",
+            detail: "Could not finish the change; retry it",
+          },
+          500,
+          { "content-type": "application/scim+json" },
+        );
+      }
+      return response;
+    });
   }
   app.on(["GET", "POST"], "/api/auth/*", async (c) => {
     const path = new URL(c.req.url).pathname.replace("/api/auth", "");

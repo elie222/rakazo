@@ -111,10 +111,19 @@ export function useAccountDeletion({
       if (hasPassword) await deleteAccount(value);
       else {
         const current = await fetchAccountSecurity();
+        // A password gained while the dialog was open turns the code field into a
+        // password field; the code must not survive as its value.
+        if (current.hasPassword !== security?.hasPassword) setPassword("");
         setSecurity(current);
         setSsoReauthenticated(current.freshOidcAuth);
         const token = codeSent ? value.trim() : undefined;
-        if (current.hasPassword || (!current.freshOidcAuth && !token)) return;
+        // Nothing can be sent without a password, a fresh sign-in proof, or a code:
+        // an expired proof says so; the switched field asks for the new password.
+        if (current.hasPassword) return;
+        if (!current.freshOidcAuth && !token) {
+          setError(t("Sign in again"));
+          return;
+        }
         await deleteAccount(undefined, token);
       }
       setOpen(false);
