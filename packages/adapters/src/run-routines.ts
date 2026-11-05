@@ -142,15 +142,13 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
   if (await accountDeactivated(deps.prisma, routine.userId)) {
     // A deactivated owner's routine skips this occurrence without running. A recurring or
     // watching one keeps its schedule, so it runs again once the owner is back; a one-time
-    // one is spent.
-    // A watch that no longer parses keeps checking at the default interval, so the normal
-    // path reports it once the owner is back instead of it stopping here unexplained.
-    const watch = routine.watch == null ? null : parseRoutineWatch(routine.watch);
+    // one is spent. A watch that no longer parses keeps the default interval, so the normal
+    // path reports it once the owner is back.
     const nextRunAt =
       routine.watch == null
         ? nextScheduledRunAt(routine, scheduledAt)
         : nextRoutineWatchAt(
-            watch ?? { everyMinutes: ROUTINE_WATCH_DEFAULT_MINUTES },
+            parseRoutineWatch(routine.watch) ?? { everyMinutes: ROUTINE_WATCH_DEFAULT_MINUTES },
             new Date(Math.max(Date.now(), scheduledAt.getTime())),
           );
     const skipped = await deps.prisma.routine.updateMany({
