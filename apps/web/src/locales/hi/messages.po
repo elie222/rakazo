@@ -5178,6 +5178,10 @@ msgstr ""
 msgid "Recent"
 msgstr "हाल के"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "हाल के भुगतान"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
 msgstr ""
@@ -5980,6 +5984,7 @@ msgstr "साझा मेमोरी"
 msgid "Show"
 msgstr "दिखाएँ"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""

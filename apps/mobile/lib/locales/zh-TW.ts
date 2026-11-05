@@ -1386,6 +1386,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Discard changes?": "要捨棄變更嗎？",
   Discard: "捨棄",
   "Could not delete note": "無法刪除筆記",
+  "Recent payments": "最近付款",
   "Spending limit": "支出上限",
   Amount: "金額",
   Currency: "幣別",

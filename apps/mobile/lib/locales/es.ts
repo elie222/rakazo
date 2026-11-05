@@ -1331,6 +1331,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Discard changes?": "¿Descartar los cambios?",
   Discard: "Descartar",
   "Could not delete note": "No se pudo eliminar la nota",
+  "Recent payments": "Pagos recientes",
   "Spending limit": "Límite de gasto",
   Amount: "Importe",
   Currency: "Moneda",
