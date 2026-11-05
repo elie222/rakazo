@@ -52,6 +52,7 @@ const priceSchema = z.object({
 });
 const idSchema = z.object({ id: z.string().min(1) });
 const urlSchema = z.object({ url: z.string().min(1) });
+const checkoutSessionSchema = z.object({ id: z.string().min(1), url: z.string().min(1) });
 const subscriptionSchema = z.object({
   id: z.string(),
   status: z.string(),
@@ -168,14 +169,14 @@ export class StripeBillingProvider implements BillingProvider {
     return { customerId: customer.id };
   }
 
-  async createCheckout(input: BillingCheckoutRequest) {
+  async createCheckout(input: BillingCheckoutRequest, signal?: AbortSignal) {
     if (!this.config.priceId) throw new Error("Legacy subscription price is not configured");
     // An abandoned session has no subscription yet, so the access check still passes.
     // Expire it before opening another; a completed session is not open and stays paid once.
-    await this.expireOpenCheckouts(input.customerId);
+    await this.expireOpenCheckouts(input.customerId, signal);
     // With no open session left, any checkout that completed since the caller's access check,
     // before or during the expiry, has already left its subscription behind.
-    const live = await this.listSubscriptions(input.customerId);
+    const live = await this.listSubscriptions(input.customerId, signal);
     if (live.some((s) => holdsBillingSubscription(mapStripeSubscriptionStatus(s.status))))
       throw new BillingCheckoutCompletedError();
     const body = encodeStripeForm({
@@ -191,57 +192,66 @@ export class StripeBillingProvider implements BillingProvider {
       success_url: input.successUrl,
       cancel_url: input.cancelUrl,
     });
-    const session = urlSchema.parse(await this.request("POST", "/v1/checkout/sessions", body));
-    return { url: session.url };
+    const session = checkoutSessionSchema.parse(
+      await this.request("POST", "/v1/checkout/sessions", body, { signal }),
+    );
+    return { id: session.id, url: session.url };
   }
 
-  async createCreditCheckout(input: BillingCreditCheckoutRequest) {
+  async createCreditCheckout(input: BillingCreditCheckoutRequest, signal?: AbortSignal) {
     if (!creditAmount(String(input.amountCents))) throw new Error("Invalid credit amount");
     if (input.monthly) {
-      await this.expireOpenCheckouts(input.customerId);
+      await this.expireOpenCheckouts(input.customerId, signal);
       // Credits include the own-key plan, which sync ends once credits start.
       if (
-        (await this.listSubscriptions(input.customerId)).some(
+        (await this.listSubscriptions(input.customerId, signal)).some(
           (s) => !isByokPlan(s) && holdsBillingSubscription(mapStripeSubscriptionStatus(s.status)),
         )
       )
         throw new BillingCheckoutCompletedError();
     }
     const metadata = { rakazo_credit_cents: String(input.amountCents) };
-    const session = urlSchema.parse(
-      await this.request("POST", "/v1/checkout/sessions", {
-        customer: input.customerId,
-        mode: input.monthly ? "subscription" : "payment",
-        allowed_payment_method_types: ["card"],
-        adaptive_pricing: { enabled: false },
-        line_items: [
-          input.monthly
-            ? {
-                quantity: 1,
-                price: await this.recurringPrice(
-                  `rakazo_monthly_credits_${input.amountCents}`,
-                  input.amountCents,
-                  "Rakazo monthly model credits",
-                ),
-              }
-            : {
-                quantity: 1,
-                price_data: {
-                  currency: "usd",
-                  unit_amount: input.amountCents,
-                  product_data: { name: "Rakazo model credits" },
+    const session = checkoutSessionSchema.parse(
+      await this.request(
+        "POST",
+        "/v1/checkout/sessions",
+        {
+          customer: input.customerId,
+          mode: input.monthly ? "subscription" : "payment",
+          allowed_payment_method_types: ["card"],
+          adaptive_pricing: { enabled: false },
+          line_items: [
+            input.monthly
+              ? {
+                  quantity: 1,
+                  price: await this.recurringPrice(
+                    `rakazo_monthly_credits_${input.amountCents}`,
+                    input.amountCents,
+                    "Rakazo monthly model credits",
+                    "month",
+                    signal,
+                  ),
+                }
+              : {
+                  quantity: 1,
+                  price_data: {
+                    currency: "usd",
+                    unit_amount: input.amountCents,
+                    product_data: { name: "Rakazo model credits" },
+                  },
                 },
-              },
-        ],
-        metadata,
-        ...(input.monthly
-          ? { subscription_data: { metadata, billing_mode: { type: "classic" } } }
-          : { payment_intent_data: { metadata }, invoice_creation: { enabled: true } }),
-        success_url: input.successUrl,
-        cancel_url: input.cancelUrl,
-      }),
+          ],
+          metadata,
+          ...(input.monthly
+            ? { subscription_data: { metadata, billing_mode: { type: "classic" } } }
+            : { payment_intent_data: { metadata }, invoice_creation: { enabled: true } }),
+          success_url: input.successUrl,
+          cancel_url: input.cancelUrl,
+        },
+        { signal },
+      ),
     );
-    return { url: session.url };
+    return { id: session.id, url: session.url };
   }
 
   async setMonthlyCredits(customerId: string, amountCents: number) {
@@ -274,44 +284,48 @@ export class StripeBillingProvider implements BillingProvider {
     });
   }
 
-  async createByokCheckout(input: BillingByokCheckoutRequest) {
-    await this.expireOpenCheckouts(input.customerId);
+  async createByokCheckout(input: BillingByokCheckoutRequest, signal?: AbortSignal) {
+    await this.expireOpenCheckouts(input.customerId, signal);
     if (
-      (await this.listSubscriptions(input.customerId)).some((s) =>
+      (await this.listSubscriptions(input.customerId, signal)).some((s) =>
         holdsBillingSubscription(mapStripeSubscriptionStatus(s.status)),
       )
     )
       throw new BillingCheckoutCompletedError();
     const metadata = { [BYOK_PLAN_METADATA]: "byok" };
     const interval = input.interval ?? "month";
-    const session = urlSchema.parse(
-      await this.request("POST", "/v1/checkout/sessions", {
-        customer: input.customerId,
-        mode: "subscription",
-        allowed_payment_method_types: ["card"],
-        adaptive_pricing: { enabled: false },
-        allow_promotion_codes: true,
-        line_items: [
-          {
-            quantity: 1,
-            price: await this.byokPrice({
-              tier: input.tier ?? "standard",
-              interval,
-              amountCents: input.amountCents,
-            }),
-          },
-        ],
-        metadata,
-        subscription_data: {
+    const session = checkoutSessionSchema.parse(
+      await this.request(
+        "POST",
+        "/v1/checkout/sessions",
+        {
+          customer: input.customerId,
+          mode: "subscription",
+          allowed_payment_method_types: ["card"],
+          adaptive_pricing: { enabled: false },
+          allow_promotion_codes: true,
+          line_items: [
+            {
+              quantity: 1,
+              price: await this.byokPrice(
+                { tier: input.tier ?? "standard", interval, amountCents: input.amountCents },
+                signal,
+              ),
+            },
+          ],
           metadata,
-          billing_mode: { type: "classic" },
-          ...(input.trialDays === undefined ? {} : { trial_period_days: input.trialDays }),
+          subscription_data: {
+            metadata,
+            billing_mode: { type: "classic" },
+            ...(input.trialDays === undefined ? {} : { trial_period_days: input.trialDays }),
+          },
+          success_url: input.successUrl,
+          cancel_url: input.cancelUrl,
         },
-        success_url: input.successUrl,
-        cancel_url: input.cancelUrl,
-      }),
+        { signal },
+      ),
     );
-    return { url: session.url };
+    return { id: session.id, url: session.url };
   }
 
   async changeByokPlan(
@@ -354,7 +368,7 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   /** The tier lives in the price's lookup key, so a plan changed in the billing portal keeps it. */
-  private byokPrice({ tier, interval, amountCents }: BillingByokPlan) {
+  private byokPrice({ tier, interval, amountCents }: BillingByokPlan, signal?: AbortSignal) {
     const period = interval === "year" ? "yearly" : "monthly";
     // Standard keeps the keys its existing prices were created under.
     return this.recurringPrice(
@@ -366,6 +380,7 @@ export class StripeBillingProvider implements BillingProvider {
         ? "Rakazo own-key plan"
         : `Rakazo own-key plan (${BYOK_TIERS[tier].name})`,
       interval,
+      signal,
     );
   }
 
@@ -393,10 +408,17 @@ export class StripeBillingProvider implements BillingProvider {
     amountCents: number,
     productName: string,
     interval: "month" | "year" = "month",
+    signal?: AbortSignal,
   ): Promise<string> {
     const cached = this.recurringPrices.get(lookupKey);
     if (cached) return cached;
-    const id = await this.findOrCreateRecurringPrice(lookupKey, amountCents, productName, interval);
+    const id = await this.findOrCreateRecurringPrice(
+      lookupKey,
+      amountCents,
+      productName,
+      interval,
+      signal,
+    );
     this.recurringPrices.set(lookupKey, id);
     return id;
   }
@@ -406,6 +428,7 @@ export class StripeBillingProvider implements BillingProvider {
     amountCents: number,
     productName: string,
     interval: "month" | "year",
+    signal?: AbortSignal,
   ): Promise<string> {
     const query = encodeStripeForm({
       active: true,
@@ -420,7 +443,7 @@ export class StripeBillingProvider implements BillingProvider {
           }),
         ),
       })
-      .parse(await this.request("GET", `/v1/prices?${query}`));
+      .parse(await this.request("GET", `/v1/prices?${query}`, undefined, { signal }));
     const existing = prices.data.find(
       (price) =>
         price.product.active &&
@@ -432,14 +455,19 @@ export class StripeBillingProvider implements BillingProvider {
     if (existing) return existing.id;
     // Checkout's inline products are archived automatically; reusable plans need active products.
     return idSchema.parse(
-      await this.request("POST", "/v1/prices", {
-        currency: "usd",
-        unit_amount: amountCents,
-        recurring: { interval },
-        product_data: { name: productName },
-        lookup_key: lookupKey,
-        transfer_lookup_key: true,
-      }),
+      await this.request(
+        "POST",
+        "/v1/prices",
+        {
+          currency: "usd",
+          unit_amount: amountCents,
+          recurring: { interval },
+          product_data: { name: productName },
+          lookup_key: lookupKey,
+          transfer_lookup_key: true,
+        },
+        { signal },
+      ),
     ).id;
   }
 
@@ -700,35 +728,41 @@ export class StripeBillingProvider implements BillingProvider {
         description: "Referral reward",
         metadata: { [BALANCE_REFERENCE_METADATA]: referenceId },
       },
-      `rakazo-balance-${referenceId}`,
+      { idempotencyKey: `rakazo-balance-${referenceId}` },
     );
+  }
+
+  async expireCheckout(id: string, signal?: AbortSignal) {
+    try {
+      await this.request(
+        "POST",
+        `/v1/checkout/sessions/${encodeURIComponent(id)}/expire`,
+        undefined,
+        { signal },
+      );
+    } catch (error) {
+      // No longer open: it expired on its own or was just paid, which the caller rechecks.
+      if (!(error instanceof StripeRequestError && error.type === "invalid_request_error"))
+        throw error;
+    }
   }
 
   parseWebhook(rawBody: string, headers: Headers) {
     return parseStripeWebhook(this.config.webhookSecret, rawBody, headers, this.now());
   }
 
-  private async expireOpenCheckouts(customerId: string): Promise<void> {
+  private async expireOpenCheckouts(customerId: string, signal?: AbortSignal): Promise<void> {
     const seen = new Set<string>();
     for (;;) {
       const query = encodeStripeForm({ customer: customerId, status: "open", limit: 100 });
       const page = checkoutListSchema.parse(
-        await this.request("GET", `/v1/checkout/sessions?${query}`),
+        await this.request("GET", `/v1/checkout/sessions?${query}`, undefined, { signal }),
       );
       const fresh = page.data.filter((session) => !seen.has(session.id));
       if (fresh.length === 0) return;
       for (const session of fresh) {
         seen.add(session.id);
-        try {
-          await this.request(
-            "POST",
-            `/v1/checkout/sessions/${encodeURIComponent(session.id)}/expire`,
-          );
-        } catch (error) {
-          // No longer open: it expired on its own or was just paid, which the caller rechecks.
-          if (!(error instanceof StripeRequestError && error.type === "invalid_request_error"))
-            throw error;
-        }
+        await this.expireCheckout(session.id, signal);
       }
     }
   }
@@ -751,7 +785,10 @@ export class StripeBillingProvider implements BillingProvider {
     });
   }
 
-  private async listSubscriptions(customerId: string): Promise<StripeSubscription[]> {
+  private async listSubscriptions(
+    customerId: string,
+    signal?: AbortSignal,
+  ): Promise<StripeSubscription[]> {
     const all: StripeSubscription[] = [];
     let startingAfter: string | undefined;
     for (;;) {
@@ -763,7 +800,7 @@ export class StripeBillingProvider implements BillingProvider {
         expand: ["data.default_payment_method"],
       });
       const page = subscriptionListSchema.parse(
-        await this.request("GET", `/v1/subscriptions?${query}`),
+        await this.request("GET", `/v1/subscriptions?${query}`, undefined, { signal }),
       );
       all.push(...page.data);
       const last = page.data.at(-1);
@@ -776,17 +813,23 @@ export class StripeBillingProvider implements BillingProvider {
     method: "GET" | "POST" | "DELETE",
     path: string,
     params?: Record<string, unknown> | string,
-    fixedIdempotencyKey?: string,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
   ): Promise<unknown> {
     const body = typeof params === "string" ? params : params && encodeStripeForm(params);
     // One key per call: retries replay the first outcome, a later call starts fresh. Stripe
     // keeps a key's response, even a 500, for 24 hours, so a fixed key would wedge the call.
-    const idempotencyKey = method === "POST" ? (fixedIdempotencyKey ?? randomUUID()) : undefined;
+    const idempotencyKey = method === "POST" ? (options.idempotencyKey ?? randomUUID()) : undefined;
     for (let attempt = 0; ; attempt++) {
+      // A caller past its deadline starts no further request, retries included.
+      options.signal?.throwIfAborted();
+      // A read stops at the deadline mid-flight. A sent write runs to its answer within the
+      // attempt timeout, so a session it creates comes back for the caller to expire.
+      const timeout = AbortSignal.timeout(30_000);
       const response = await this.fetchImpl(`${this.apiBase}${path}`, {
         method,
         redirect: "error",
-        signal: AbortSignal.timeout(30_000),
+        signal:
+          options.signal && method === "GET" ? AbortSignal.any([options.signal, timeout]) : timeout,
         headers: {
           Authorization: `Bearer ${this.config.secretKey}`,
           "Stripe-Version": STRIPE_API_VERSION,

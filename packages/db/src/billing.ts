@@ -321,14 +321,14 @@ export async function renewCheckoutLease(
   return count > 0;
 }
 
-/** Whether the checkout lease is still recorded for this holder. */
+/** Whether this holder still has the checkout lease: recorded for it and not lapsed. */
 export async function checkoutLeaseHeld(
   prisma: PrismaClient,
   organizationId: string,
   leaseId: string,
 ): Promise<boolean> {
   const held = await prisma.billingAccount.findFirst({
-    where: { organizationId, checkoutLeaseId: leaseId },
+    where: { organizationId, checkoutLeaseId: leaseId, checkoutLeaseExpiresAt: { gt: new Date() } },
     select: { organizationId: true },
   });
   return held !== null;

@@ -82,6 +82,73 @@ describe("Stripe billing HTTP boundary", () => {
     expect(wire.sessions.map((session) => session.status)).toEqual(["expired", "open"]);
   });
 
+  it("starts no bulk expiry or session for a checkout past its deadline", async () => {
+    let enter!: () => void, release!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let gated = true;
+    // The first checkout's first read of open sessions answers only after the deadline passed.
+    const { wire, provider } = setup((wire) => async (input, init) => {
+      if (gated && String(input).includes("/v1/checkout/sessions?")) {
+        gated = false;
+        enter();
+        await held;
+      }
+      return wire.fetch(input, init);
+    });
+    const { customerId } = await provider.createCustomer(owner);
+    const deadline = new AbortController();
+    const late = provider.createCheckout({ customerId, seats: 1, ...urls }, deadline.signal);
+    late.catch(() => {});
+    await entered;
+    deadline.abort();
+    await provider.createCheckout({ customerId, seats: 2, ...urls });
+    release();
+    await expect(late).rejects.toThrow();
+    expect(wire.sessions.map((session) => session.status)).toEqual(["open"]);
+    wire.completeCheckout(customerId);
+    expect(await provider.getCustomerSubscription(customerId)).toMatchObject({ seats: 2 });
+  });
+
+  it("returns a session whose create request was sent before the deadline", async () => {
+    let enter!: () => void, release!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The provider accepts the create request, but answers only after the deadline. Like a real
+    // fetch, an abort rejects the caller's promise while the provider's write still lands.
+    const { wire, provider } = setup((wire) => async (input, init) => {
+      if (init?.method !== "POST" || !String(input).endsWith("/v1/checkout/sessions"))
+        return wire.fetch(input, init);
+      enter();
+      const answered = held.then(() => wire.fetch(input, { ...init, signal: null }));
+      const signal = init.signal;
+      if (!signal) return answered;
+      return new Promise<Response>((resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        answered.then(resolve, reject);
+      });
+    });
+    const { customerId } = await provider.createCustomer(owner);
+    const deadline = new AbortController();
+    const late = provider.createCheckout({ customerId, seats: 1, ...urls }, deadline.signal);
+    late.catch(() => {});
+    await entered;
+    deadline.abort();
+    release();
+    // The caller gets the id, so it can expire the session it may no longer hand back.
+    const { id } = await late;
+    await provider.expireCheckout(id);
+    expect(wire.sessions.map((session) => session.status)).toEqual(["expired"]);
+  });
+
   it("expires unfinished checkouts, including past the first page, and leaves a paid one", async () => {
     const { wire, provider } = setup();
     wire.pageSize = 1;

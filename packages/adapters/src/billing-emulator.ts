@@ -46,7 +46,13 @@ export class BillingEmulator implements BillingProvider {
   /** Account credit granted per customer, in cents. */
   readonly balanceCredits = new Map<string, number>();
   private readonly now: () => number;
+  /** Each session's id, with the stored request a later checkout of the customer replaces. */
+  private readonly sessions = new Map<
+    string,
+    { open: Map<string, object>; customerId: string; request: object }
+  >();
   private sequence = 0;
+  private sessionSequence = 0;
   private customerSequence = 0;
   private readonly namespace: string;
 
@@ -81,15 +87,16 @@ export class BillingEmulator implements BillingProvider {
     return { customerId };
   }
 
-  async createCheckout(input: BillingCheckoutRequest) {
+  async createCheckout(input: BillingCheckoutRequest, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     this.requireCustomer(input.customerId);
     if (this.forCustomer(input.customerId).some((s) => holdsBillingSubscription(s.status)))
       throw new BillingCheckoutCompletedError();
-    this.checkouts.set(input.customerId, { ...input });
-    return { url: `https://billing.emulator.invalid/checkout/${input.customerId}` };
+    return this.openSession(this.checkouts, "checkout", input.customerId, { ...input });
   }
 
-  async createCreditCheckout(input: BillingCreditCheckoutRequest) {
+  async createCreditCheckout(input: BillingCreditCheckoutRequest, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     this.requireCustomer(input.customerId);
     if (
       input.monthly &&
@@ -98,16 +105,15 @@ export class BillingEmulator implements BillingProvider {
       )
     )
       throw new BillingCheckoutCompletedError();
-    this.creditCheckouts.set(input.customerId, input);
-    return { url: `https://billing.emulator.invalid/credits/${input.customerId}` };
+    return this.openSession(this.creditCheckouts, "credits", input.customerId, { ...input });
   }
 
-  async createByokCheckout(input: BillingByokCheckoutRequest) {
+  async createByokCheckout(input: BillingByokCheckoutRequest, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     this.requireCustomer(input.customerId);
     if (this.forCustomer(input.customerId).some((s) => holdsBillingSubscription(s.status)))
       throw new BillingCheckoutCompletedError();
-    this.byokCheckouts.set(input.customerId, input);
-    return { url: `https://billing.emulator.invalid/byok/${input.customerId}` };
+    return this.openSession(this.byokCheckouts, "byok", input.customerId, { ...input });
   }
 
   async endTrial(customerId: string) {
@@ -279,6 +285,14 @@ export class BillingEmulator implements BillingProvider {
     this.cancelAll(customerId);
   }
 
+  async expireCheckout(id: string) {
+    const session = this.sessions.get(id);
+    this.sessions.delete(id);
+    // Only while it is still the customer's open session: a newer one stays payable.
+    if (session && session.open.get(session.customerId) === session.request)
+      session.open.delete(session.customerId);
+  }
+
   parseWebhook(rawBody: string, headers: Headers) {
     return parseStripeWebhook(WEBHOOK_SECRET, rawBody, headers, this.now());
   }
@@ -334,6 +348,18 @@ export class BillingEmulator implements BillingProvider {
       "stripe-signature": signStripeWebhook(WEBHOOK_SECRET, body, timestamp),
     });
     return { body, headers };
+  }
+
+  private openSession<T extends object>(
+    open: Map<string, T>,
+    kind: string,
+    customerId: string,
+    request: T,
+  ) {
+    open.set(customerId, request);
+    const id = `cs_${this.namespace}_${++this.sessionSequence}`;
+    this.sessions.set(id, { open, customerId, request });
+    return { id, url: `https://billing.emulator.invalid/${kind}/${customerId}` };
   }
 
   /** Open checkouts go too, so none can start a subscription or purchase afterwards. */

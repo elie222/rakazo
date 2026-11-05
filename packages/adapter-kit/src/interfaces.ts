@@ -493,14 +493,24 @@ export interface TransactionalEmailProvider {
 /**
  * Seat-based subscription billing. Product code owns access rules; adapters own the
  * vendor API. Sync is pull-based: webhooks only say which customer changed.
+ *
+ * A checkout's `signal` ends its work: once it aborts, the call starts no further step, so it
+ * neither expires another session nor creates its own. A session request already sent may
+ * still finish and return the session, which the caller then expires.
  */
 export interface BillingProvider {
   /** Optional prepaid model usage capabilities; product code owns the balance ledger. */
-  createCreditCheckout?(input: BillingCreditCheckoutRequest): Promise<{ url: string }>;
+  createCreditCheckout?(
+    input: BillingCreditCheckoutRequest,
+    signal?: AbortSignal,
+  ): Promise<{ id: string; url: string }>;
   listCreditPurchases?(customerId: string): Promise<BillingCreditPurchase[]>;
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */
-  createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ url: string }>;
+  createByokCheckout?(
+    input: BillingByokCheckoutRequest,
+    signal?: AbortSignal,
+  ): Promise<{ id: string; url: string }>;
   /** Ends the customer's running trial now and bills the first period; a no-op without one. */
   endTrial?(customerId: string): Promise<void>;
   /**
@@ -525,7 +535,12 @@ export interface BillingProvider {
   describe(): AdapterDescriptor<{ trials: boolean; portal: boolean; modelCredits?: boolean }>;
   getPrice(): Promise<BillingPrice>;
   createCustomer(input: { email: string; organizationId: string }): Promise<{ customerId: string }>;
-  createCheckout(input: BillingCheckoutRequest): Promise<{ url: string }>;
+  createCheckout(
+    input: BillingCheckoutRequest,
+    signal?: AbortSignal,
+  ): Promise<{ id: string; url: string }>;
+  /** Expires the checkout session `id` so it cannot be paid; a no-op once it is no longer open. */
+  expireCheckout(id: string): Promise<void>;
   createPortal(input: { customerId: string; returnUrl: string }): Promise<{ url: string }>;
   /** Current subscription for the customer, preferring one that grants access. */
   getCustomerSubscription(customerId: string): Promise<BillingSubscriptionSnapshot | null>;
