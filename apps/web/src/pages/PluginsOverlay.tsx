@@ -22,6 +22,7 @@ import {
   filterConnectionCatalogItems,
   humanizeToolName,
   installedPluginParts,
+  integrationCatalogsReady,
   isCatalogItemConnected,
   isRecommendedPlugin,
   managedAppFor,
@@ -304,11 +305,12 @@ export function PluginsOverlay({
 
   const catalogEntries = pluginCatalog.data?.entries ?? NO_PLUGINS;
   // An empty managed catalog says nothing about plugins that are still loading or unavailable.
-  const catalogsReady =
-    catalogLoaded &&
-    !loadError &&
-    pluginCatalog.isSuccess &&
-    pluginCatalog.data.unavailableRegistries.length === 0;
+  const catalogsReady = integrationCatalogsReady({
+    catalogLoaded,
+    catalogFailed: !!loadError,
+    pluginsLoaded: pluginCatalog.isSuccess,
+    pluginsUnavailable: !!pluginCatalog.data?.unavailableRegistries.length,
+  });
   // One row per brand: a plugin for a managed app lends that app its skills instead of being
   // listed again. Skill packs with nothing to connect belong to Skills, not here.
   const { plugins, pluginForApp } = useMemo(() => {

@@ -494,6 +494,21 @@ it("keeps sources loading when a rename cancels the catalog refresh", async () =
   );
 });
 
+it("keeps loaded plugins out of a loading state when scope lookup fails on refresh", async () => {
+  await render();
+  await act(async () => resolveCatalog([item]));
+  expect(container.querySelector('[role="progressbar"]')).toBeNull();
+  state.focused = false;
+  await render();
+  state.scope.mockRejectedValue(new Error("Scope unavailable"));
+  state.focused = true;
+  await render();
+  expect(container.textContent).toContain("Scope unavailable");
+  expect(container.textContent).toContain("Retry");
+  expect(container.querySelector('[role="progressbar"]')).toBeNull();
+  expect(state.marketplace).toHaveBeenCalledTimes(1);
+});
+
 it.each([true, false])(
   "waits for new plugins after a scope switch with a cached empty catalog (stale scope: %s)",
   async (staleScope) => {
