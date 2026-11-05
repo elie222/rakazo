@@ -298,6 +298,67 @@ describe("read-aloud across session changes", () => {
     expect(utterances.map((spoken) => spoken.text)).toEqual(["First reply."]);
   });
 
+  it("lets a manual selection consume the pending origin, so a retry keeps its playback", async () => {
+    await savedApiBase("https://a.example.test");
+    await saveSessionToken("token-a");
+    await selectSpace("space-a");
+    secureStore.set(DEVICE_VOICE_KEY, "1");
+    const utterances: Array<{ text: string; options: Parameters<typeof Speech.speak>[1] }> = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      utterances.push({ text, options });
+    });
+    let notifications = 0;
+    const unsubscribe = subscribeConfirmedSpaceSwitch(() => {
+      notifications += 1;
+    });
+
+    // The Space write, the clear's write fallback and the recovery record fail once.
+    vi.mocked(SecureStore.setItemAsync)
+      .mockImplementationOnce(async () => {
+        throw new Error("disk full");
+      })
+      .mockImplementationOnce(async () => {
+        throw new Error("disk full");
+      })
+      .mockImplementationOnce(async () => {
+        throw new Error("disk full");
+      });
+    vi.mocked(SecureStore.deleteItemAsync)
+      .mockImplementationOnce(async () => undefined)
+      .mockImplementationOnce(async () => {
+        throw new Error("disk full");
+      });
+    const failed = await adoptDeletedSpaceFallback("space-b");
+    expect(failed).toBe(false);
+    expect(notifications).toBe(0);
+
+    // The user opens B through Search; the confirmed selection consumes the origin.
+    const opened = await selectSpace("space-b");
+    expect(opened).toBe(true);
+    expect(notifications).toBe(1);
+
+    // Read-aloud starts in B.
+    const queued = speakQueue([
+      { text: "First reply.", botId: "bot-b", messageId: "m1" },
+      { text: "Second reply.", botId: "bot-b", messageId: "m2" },
+    ]);
+    await vi.waitFor(() => expect(utterances).toHaveLength(1));
+    expect(getVoicePlaybackState()).toMatchObject({ status: "playing", botId: "bot-b" });
+
+    // The inbox retry persists B; B's own playback continues.
+    const retried = await adoptDeletedSpaceFallback("space-b");
+    unsubscribe();
+
+    expect(retried).toBe(true);
+    expect(notifications).toBe(1);
+    expect(getVoicePlaybackState()).toMatchObject({ status: "playing", botId: "bot-b" });
+    utterances[0]?.options?.onDone?.();
+    await vi.waitFor(() => expect(utterances).toHaveLength(2));
+    utterances[1]?.options?.onDone?.();
+    await expect(queued).resolves.toBe(true);
+    expect(utterances.map((spoken) => spoken.text)).toEqual(["First reply.", "Second reply."]);
+  });
+
   it("stops the on-device queue when another account signs in", async () => {
     secureStore.set(DEVICE_VOICE_KEY, "1");
     await saveSessionToken("token-a");

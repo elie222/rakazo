@@ -255,8 +255,11 @@ export async function selectSpace(id: string) {
     return false;
   }
   // Playback belongs to the conversation being left; the listener in voice.ts
-  // stops it once a switch to another Space is confirmed.
-  if (previousSpaceId !== id) noteConfirmedSpaceSwitch();
+  // stops it once a switch to another Space is confirmed. A fallback that
+  // failed to persist left its origin pending; this confirmed switch consumes
+  // it, so the fallback's retry cannot stop this Space's later playback.
+  if ((pendingFallbackSwitchFrom ?? previousSpaceId) !== id) noteConfirmedSpaceSwitch();
+  pendingFallbackSwitchFrom = null;
   await resumeSelectedSpaceNotifications(id, claimGeneration);
   return true;
 }
