@@ -2,6 +2,9 @@ import type { AdapterContext, JobPublisher, SandboxProvider } from "@rakazo/adap
 import { computerControlExpireJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { hasActiveComputerControl, recordComputerRunEnd } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
+import { toComputerRef } from "./computer-support.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 
 // Who holds a computer's user control is decided in one place, next to the computer rows.
 export {
@@ -10,10 +13,6 @@ export {
   holdsUserControl,
   userControlHeldBy,
 } from "@rakazo/db";
-
-import { getLogger } from "@rakazo/logging";
-import { toComputerRef } from "./computer-support.js";
-import { isSandboxGoneError } from "./sandbox-errors.js";
 
 export const DEFAULT_TAKEOVER_LEASE_MS = 15 * 60 * 1000;
 
