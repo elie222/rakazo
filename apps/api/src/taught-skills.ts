@@ -85,27 +85,29 @@ export async function assertTeachingSendAllowed(
   }
 }
 
+/**
+ * Teaching stops only the teacher's own work on the bot. Another member's run that starts
+ * meanwhile is never cancelled here: the check before taking the screen refuses the lesson.
+ */
 async function cancelActiveRuns(
   deps: TaughtSkillsDeps,
-  _actor: Actor,
+  actor: Actor,
   botId: string,
 ): Promise<void> {
   const activeRuns = await deps.prisma.run.updateManyAndReturn({
-    where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+    where: { botId, userId: actor.userId, status: { in: [...ACTIVE_RUN_STATUSES] } },
     data: { status: "cancelled", completedAt: new Date() },
     select: { id: true },
   });
-  await clearEndedRunState(
-    deps.prisma,
-    activeRuns.map((run) => run.id),
-  );
-  await expireComputerExecutionLeases(deps.prisma, { botId });
+  const runIds = activeRuns.map((run) => run.id);
+  await clearEndedRunState(deps.prisma, runIds);
+  await expireComputerExecutionLeases(deps.prisma, { botId, runId: { in: runIds } });
   await deps.prisma.computer.updateMany({
-    where: { executionBotId: botId },
+    where: { executionBotId: botId, executionRunId: { in: runIds } },
     data: { executionRunId: null, executionBotId: null, executionLeaseExpiresAt: null },
   });
   await deps.prisma.event.deleteMany({
-    where: { type: "thread.progress", runId: { in: activeRuns.map((run) => run.id) } },
+    where: { type: "thread.progress", runId: { in: runIds } },
   });
 }
 

@@ -50,6 +50,10 @@ export function SpaceMembersSettings({
   // Not keyed on `t`: a new one each render must not reload the list.
   useEffect(() => {
     let active = true;
+    // Another space's people, error and link never show while this one loads.
+    setMembers(null);
+    setError(null);
+    setInviteUrl(null);
     rpc.spaces.members
       .list({ spaceId: space.id })
       .then((next) => {
