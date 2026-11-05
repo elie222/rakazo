@@ -3650,6 +3650,47 @@ describe("mobile API authentication", () => {
     },
   );
 
+  it("a sign-out does not wait for a stalled session save and that save cannot sign in again", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    let releaseSave!: () => void;
+    const saveHeld = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.signed-in-before") await saveHeld;
+      store.set(key, value);
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.useFakeTimers();
+    const saving = saveSessionToken("token-b");
+    let signedOut = false;
+    const signingOut = signOut().then(() => {
+      signedOut = true;
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    vi.useRealTimers();
+
+    expect(signedOut).toBe(true);
+    await signingOut;
+    expect(store.has("rakazo.session_token")).toBe(false);
+    await vi.waitFor(() => {
+      const signOuts = fetchMock.mock.calls.filter(([url]) =>
+        String(url).endsWith("/api/auth/sign-out"),
+      );
+      expect(signOuts).toHaveLength(1);
+      const [, init] = signOuts[0] as [string, RequestInit];
+      expect(init.headers).toMatchObject({ authorization: "Bearer token-a" });
+    });
+    // The save finishing late does not store its token after the sign-out cleared the device.
+    releaseSave();
+    await saving;
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(await authHeaders()).not.toHaveProperty("authorization");
+  });
+
   it("records no revocation when switching servers without a session", async () => {
     const store = new Map<string, string>();
     mockSecureStore(store);
