@@ -20,10 +20,11 @@ and remote providers. This stack credential does not replace a remote provider's
 
 ## Settings configuration
 
-Admins can choose **Settings → Computer → New computers run on** and save a supported provider's fields.
+Set `COMPUTER_SETTINGS_ENABLED=true` on the API to turn this on. Admins can then choose
+**Settings → Computer → New computers run on** and save a supported provider's fields.
 The API supplies the provider's field descriptors and validates values server-side. Credentials are encrypted in the secret store and
 never returned; a blank secret field keeps its saved value for the same provider and destination.
-Changing a URL requires credentials again. **Deployment default** uses `SANDBOX_PROVIDER`.
+Changing a URL requires credentials again. **Default** uses `SANDBOX_PROVIDER`.
 Docker, Kubernetes, Incus, desktop, fake, and none remain environment-only. Settings overrides are disabled
 for desktop and fake deployments.
 

@@ -627,6 +627,9 @@ function toolStepDetail(event: RuntimeEvent<"tool">, secrets: string[]): string 
 async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
   const { deps, run, runId, bot, thread, workerId, fence } = ctx;
   const { reply } = ctx.state;
+  // Otherwise the model keeps calling tools while the stop is saved. The run's own signal stays
+  // live, so the save still finishes.
+  ctx.runtimeAbortController.abort();
   ctx.tools.approvedReplays.assertDrained();
   flushPendingTools(reply);
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;

@@ -8,6 +8,7 @@ import {
   attachmentMaxCount,
   attachmentSizeLabel,
   isAttachmentAudioMimeType,
+  MCP_APP_MIME_TYPE,
 } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
@@ -322,6 +323,7 @@ type ArtifactListCursor = {
   createdAt: string;
   id: string;
   botId: string | null;
+  madeByBots: boolean;
   // Freezes the version set for this page sequence.
   asOf: string;
 };
@@ -355,12 +357,20 @@ function decodeArtifactListCursor(value: string): ArtifactListCursor {
     throw new ArtifactListCursorError();
   }
   const botId = cursorBotId(record.botId);
+  const madeByBots = record.madeByBots ?? false;
+  if (typeof madeByBots !== "boolean") throw new ArtifactListCursorError();
   const createdAt = new Date(record.createdAt);
   const asOf = new Date(record.asOf);
   if (Number.isNaN(createdAt.getTime()) || Number.isNaN(asOf.getTime())) {
     throw new ArtifactListCursorError();
   }
-  return { createdAt: createdAt.toISOString(), id: record.id, botId, asOf: asOf.toISOString() };
+  return {
+    createdAt: createdAt.toISOString(),
+    id: record.id,
+    botId,
+    madeByBots,
+    asOf: asOf.toISOString(),
+  };
 }
 
 function cursorBotId(value: unknown): string | null {
@@ -371,18 +381,21 @@ function cursorBotId(value: unknown): string | null {
 export async function listSpaceArtifacts(
   deps: { prisma: Pick<PrismaClient, "artifact" | "$queryRaw"> },
   actor: Actor,
-  input: { botId?: string; cursor?: string; limit?: number },
+  input: { botId?: string; madeByBots?: boolean; cursor?: string; limit?: number },
 ) {
   const take = Math.min(Math.max(input.limit ?? 30, 1), 60);
   const scopeBotId = input.botId ?? null;
   const botFilter = scopeBotId ? Prisma.sql`AND "botId" = ${scopeBotId}` : Prisma.empty;
+  const madeByBots = input.madeByBots ?? false;
+  const madeByBotsFilter = madeByBots ? Prisma.sql`AND latest."runId" IS NOT NULL` : Prisma.empty;
 
   let asOf = new Date();
   let cursorFilter = Prisma.empty;
   if (input.cursor) {
     // Position is stored on the cursor so a deleted row cannot replay the first page.
     const cursor = decodeArtifactListCursor(input.cursor);
-    if (cursor.botId !== scopeBotId) throw new ArtifactListCursorError();
+    if (cursor.botId !== scopeBotId || cursor.madeByBots !== madeByBots)
+      throw new ArtifactListCursorError();
     asOf = new Date(cursor.asOf);
     cursorFilter = Prisma.sql`AND (latest."createdAt", latest.id) < (${new Date(cursor.createdAt)}, ${cursor.id})`;
   }
@@ -391,7 +404,7 @@ export async function listSpaceArtifacts(
     WITH scoped AS (
       SELECT * FROM "artifacts"
       WHERE "spaceId" = ${actor.spaceId} AND "userId" = ${actor.userId} ${botFilter}
-        AND "createdAt" <= ${asOf}
+        AND "createdAt" <= ${asOf} AND "mimeType" <> ${MCP_APP_MIME_TYPE}
     ),
     latest AS (
       SELECT DISTINCT ON (COALESCE("rootArtifactId", id))
@@ -410,7 +423,7 @@ export async function listSpaceArtifacts(
            counts."versionCount"
     FROM latest
     JOIN counts ON counts."familyId" = COALESCE(latest."rootArtifactId", latest.id)
-    WHERE true ${cursorFilter}
+    WHERE true ${madeByBotsFilter} ${cursorFilter}
     ORDER BY latest."createdAt" DESC, latest.id DESC
     LIMIT ${take + 1}
   `);
@@ -440,6 +453,7 @@ export async function listSpaceArtifacts(
             createdAt: last.createdAt.toISOString(),
             id: last.id,
             botId: scopeBotId,
+            madeByBots,
             asOf: asOf.toISOString(),
           })
         : null,

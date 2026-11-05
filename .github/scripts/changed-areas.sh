@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prints which CI areas a pull request's merge commit can affect, as GitHub step outputs.
-# web: anything beyond the mobile app and agent notes. e2e: web, minus the worker, which the E2E
+# web: anything beyond the mobile app and agent notes. e2e: web, minus docs/ and the worker, which the E2E
 # server never loads (it imports the server adapters in-process). server (the Postgres journeys):
 # web, minus www, docs/, and the browser and desktop clients and their UI packages, which no
 # journey loads.
@@ -33,15 +33,16 @@ while IFS= read -r file; do
     *) all_packages=true ;;
   esac
   case "$file" in
-    .github/workflows/ci.yml | .github/scripts/changed-areas.sh | pnpm-lock.yaml | package.json)
+    .github/workflows/ci.yml | .github/workflows/playwright.yml | .github/actions/setup-workspace/* | .github/scripts/changed-areas.sh | .github/scripts/restore-postgres-image.sh | pnpm-lock.yaml | package.json)
       native=true
       compose=true
       ;;
-    apps/desktop/* | scripts/pnpm*.mjs | packages/adapter-kit/* | packages/core/src/node/* | \
+    apps/desktop/* | scripts/pnpm*.mjs | scripts/setup-worktree*.mjs | \
+      packages/adapter-kit/* | packages/core/src/node/* | \
       packages/adapters/src/*computer* | packages/adapters/src/*desktop* | \
       packages/adapters/src/*sandbox* | packages/adapters/src/*host-* | \
       packages/adapters/src/home* | packages/adapters/src/native-shell* | \
-      packages/adapters/src/page-browser*)
+      packages/adapters/src/page-browser* | packages/adapters/src/file-handle-path*)
       native=true
       ;;
     infra/compose/*) compose=true ;;
@@ -49,7 +50,8 @@ while IFS= read -r file; do
   case "$file" in
     apps/*/package.json | packages/*/package.json) ;;
     .agents/* | .claude/* | apps/mobile/*) continue ;;
-    apps/www/* | docs/*) web=true; continue ;;
+    apps/www/*) web=true; e2e=true; continue ;;
+    docs/*) web=true; continue ;;
     apps/web/* | apps/desktop/* | packages/ui-web/* | packages/chat-ui/*)
       web=true
       e2e=true

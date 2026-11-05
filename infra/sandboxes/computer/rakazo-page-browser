@@ -1019,7 +1019,9 @@ class PageBrowser:
         if args.get("desktop") is True and not steps:
             first = self.purchases().desktop(args)
         purchase = {"steps": steps, "label": first.get("label", ""), "amount": first.get("amount", ""),
-                    "amountFrom": first.get("amountFrom", "page"), "reason": first.get("reason")} if first else None
+                    "amountFrom": first.get("amountFrom", "page"), "reason": first.get("reason"),
+                    **({"total": first["total"]} if first and first.get("total") else {}),
+                    **({"items": first["items"]} if first and first.get("items") else {})} if first else None
         return {"ok": True, "url": "", "title": "", **self.purchases().where(), "site": site, "purchase": purchase}
 
     # -- commands ---------------------------------------------------------------------------------
@@ -1441,6 +1443,13 @@ class CdpClient(page_secrets.CdpClient):
         # When the bot clicked links that download (`<a download>`) whose downloads have not begun: the
         # browser makes their requests, so the page has no document for them.
         self.download_links: list[float] = []
+
+    def _skipped_event(self, head: bytes) -> None:
+        super()._skipped_event(head)
+        # A download of a huge data: URL still begins: Chromium sends its guid before the url.
+        begun = re.match(rb'\{"method":"Browser.downloadWillBegin","params":\{"frameId":"[^"]*","guid":"([0-9A-Fa-f-]+)"', head)
+        if begun:
+            self._handle_event({"method": "Browser.downloadWillBegin", "params": {"guid": begun.group(1).decode()}})
 
     def _handle_event(self, message: dict[str, Any]) -> None:
         super()._handle_event(message)
@@ -1943,11 +1952,109 @@ PURCHASE_HELPERS = r"""
   }
   // Page text is cut by characters, not code units, so a cut never leaves half an emoji.
   const cut = (text, max) => Array.from(text).slice(0, max).join("");
+  // An order line ends with its one amount: "Oat milk 1L × 2 $8.40", "Delivery 6,00 €", "Discount -$5.00". A
+  // minus sign right before the amount is kept, so a credit never reads as a charge.
+  const LINE_AMOUNT = new RegExp(`[-−]?(?:${MONEY.source})$`, "i");
+  // Between two parts of a line that end and start with a digit: "2" and "150,00 €" in two cells are not "2 150,00 €".
+  const APART = "\u001f";
+  const ANY_AMOUNT = new RegExp(MONEY.source, "i");
+  const SUBTOTAL = /sub-?\s?total|סכום ביניים/i;
+  // A line that is itself a total says so in whole words: "Totally Oats" is an item.
+  const TOTAL_LINE = new RegExp(`(?<!\\p{L})(?:${TOTAL.source})(?!\\p{L})`, "iu");
+  // What the shopper sees: an element hidden by its own style, or by a transparent or hidden ancestor, is not.
+  const seen = (el) => visible(el) && (el.checkVisibility?.({ opacityProperty: true, visibilityProperty: true }) ?? true);
+  // Text drawn in a transparent color, or at no size, is on the page but not in front of the shopper.
+  const inkless = (el) => {
+    const style = window.getComputedStyle(el);
+    return parseFloat(style.fontSize) === 0 || /^(?:transparent|rgba\([^)]*,\s*0\))$/.test(style.color.trim());
+  };
+  // A choice is not an order line, and nor is an offer to add something: a delivery option or an extra names
+  // its price too. Other controls, such as a quantity picker or Remove, may sit in a line; their words are not read.
+  const CHOICES = "label, input[type=radio], input[type=checkbox], [role=radio], [role=checkbox], [role=switch], "
+    + "[role=option]";
+  const CONTROLS = `input:not([type=hidden]), select, textarea, button, [role=button], [role=spinbutton], [contenteditable], ${CHOICES}`;
+  const OFFER = /^(?:add|select|choose|include|upgrade|הוסף|הוספה|בחר)(?:\s|$)/;
+  const offers = (el) => [...el.querySelectorAll("button, a, [role=button]")]
+    .some((control) => wordsOf(control).some((word) => OFFER.test(phrase(word))));
+  const PAGE_EDGES = "header, nav, footer, [role=banner], [role=navigation], [role=contentinfo]";
+  // What an element shows, with a space between its parts so "6" and "$3.00" in two cells stay apart.
+  function shownText(el) {
+    let text = "";
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(), parts = 0; node && parts < 40; node = walker.nextNode()) {
+      const parent = node.parentElement;
+      const part = tidy(node.data);
+      if (part && parent && !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(parent.tagName) && seen(parent) && !inkless(parent)
+          && !parent.closest(CONTROLS)) {
+        // A price split over tags ("$", "3", ".", "00") is one amount; two numbers side by side are not.
+        const within = (/\d$/.test(text) && /^[.,]/.test(part)) || (/[$€£₪¥.,]$/.test(text) && /^\d/.test(part));
+        text += (!text || within ? "" : /\d$/.test(text) && /^\d/.test(part) ? APART : " ") + part;
+        parts += 1;
+      }
+    }
+    return text;
+  }
+  // The order lines the checkout lists above its total, as the page words them: each a name and the amount
+  // at its end, such as an item with its quantity and price, delivery or tax. Read back from the total no further
+  // than a card field, so a summary beside the card form is not mixed with the page above it. None without a total.
+  // Order lines are a courtesy on the card: past this many milliseconds the page lists none, so a huge page never
+  // slows the purchase check itself.
+  const ITEMS_BUDGET_MS = 200;
+  function orderItems() {
+    const until = performance.now() + ITEMS_BUDGET_MS;
+    const all = [...(document.body?.querySelectorAll("*") || [])];
+    const small = (el, max) => (el.textContent || "").length <= max && !el.closest(CONTROLS) && !el.closest(PAGE_EDGES);
+    // The last totals of the page, found from its end, and the stretch of the page just above them.
+    const totals = [];
+    let last = -1;
+    for (let i = all.length - 1; i >= Math.max(0, all.length - 20000) && totals.length < 5; i--) {
+      if (performance.now() > until) return [];
+      const el = all[i];
+      if (small(el, 200) && TOTAL.test(el.textContent) && !SUBTOTAL.test(el.textContent) && visible(el)) {
+        totals.push(el);
+        if (last < 0) last = i;
+      }
+    }
+    if (!totals.length) return [];
+    const rows = [];
+    for (const el of all.slice(Math.max(0, last - 3000), last + 1).reverse()) {
+      if (rows.length >= 400) break;
+      if (performance.now() > until) return [];
+      if (!small(el, 400) || !ANY_AMOUNT.test(el.textContent) || el.querySelector(CHOICES)
+          || !seen(el) || offers(el)) continue;
+      const text = shownText(el);
+      const amount = text.length <= 160 ? text.match(LINE_AMOUNT)?.[0] : "";
+      const name = amount ? text.slice(0, -amount.length).replaceAll(APART, " ").replace(/[\s:·•–—-]+$/u, "") : "";
+      // A name with an amount of its own may be several lines read as one, which would put one line's price on
+      // another's name: left out. Whole, so the bot's secrets are found and hidden before the card cuts it.
+      if (/\p{L}/u.test(name) && !ANY_AMOUNT.test(name)) rows.unshift({ el, name, amount });
+    }
+    // The line itself, not the list or row group around it.
+    const lines = rows.filter((row) => !rows.some((other) => other !== row && row.el.contains(other.el)));
+    const cards = pageCards();
+    const before = (a, b) => Boolean(b.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_PRECEDING);
+    // The last total first; an earlier one when the last has nothing listed above it.
+    for (const total of totals) {
+      const found = [];
+      for (const line of [...lines].reverse()) {
+        if (!before(line.el, total) || line.el.contains(total)) continue;
+        if (cards.some((card) => before(line.el, card) && before(card, total))) break;
+        if (!TOTAL_LINE.test(line.name) && !SUBTOTAL.test(line.name)) found.unshift({ name: line.name, amount: line.amount });
+      }
+      if (found.length) return found.slice(0, 30);
+    }
+    return [];
+  }
   // What the card shows: the button's text, and the amount the button names or else the page's total.
   // `words`: everything the control says, so an amount only its aria label names is the one shown.
+  // A button that names another amount than the page's total also reports the total, which the spending
+  // limit counts if larger. `items`: the order lines the page lists, when it lists any.
   function shownPurchase(reason, label, words = [label]) {
     const named = words.map((word) => moneyIn(word, false)).find(Boolean) || "";
-    return { reason, label: cut(label, 80), amount: named || totalShown(), amountFrom: named ? "button" : "page" };
+    const total = totalShown();
+    const items = orderItems();
+    return { reason, label: cut(label, 80), amount: named || total, amountFrom: named ? "button" : "page",
+      ...(named && total && total !== named ? { total } : {}), ...(items.length ? { items } : {}) };
   }
   // `frame`: the page shows a payment provider's card frame, which only the caller can vouch for.
   function purchaseOf(el, frame) {
@@ -2269,7 +2376,9 @@ def purchase_refusal(step: dict[str, Any], site: str, buying: dict[str, Any] | N
     if not buying:
         return None
     approved = step.get("approved") is True and step.get("site") == site
-    changed = approved and any(key in step and shown(step[key]) != shown(buying.get(key)) for key in ("label", "amount"))
+    # A total the card showed beside the button (empty when it showed none) must still be the page's.
+    changed = approved and any(key in step and shown(step[key]) != shown(buying.get(key, ""))
+                               for key in ("label", "amount", "total"))
     if approved and not changed:
         return None
     return {"ok": False, "completed": completed, "uncertain": False, "purchase": {**buying, "site": site},
@@ -2344,9 +2453,9 @@ def validate_actions(actions: Any) -> None:
                 step["kind"] != "click" or not isinstance(step.get("approved"), bool)
                 or not isinstance(step.get("site"), str)):
             raise RuntimeError("An approval applies only to click, with the site it was given for")
-        if ("label" in step or "amount" in step) and (
+        if ("label" in step or "amount" in step or "total" in step) and (
                 step["kind"] != "click" or not isinstance(step.get("approved"), bool)
-                or not all(isinstance(step.get(key, ""), str) for key in ("label", "amount"))):
+                or not all(isinstance(step.get(key, ""), str) for key in ("label", "amount", "total"))):
             raise RuntimeError("An approved label and amount apply only to an approved click")
         # A card detail is hidden and checked only on an origin-bound fill.
         if step.get("field") == "card" and not step.get("origin"):

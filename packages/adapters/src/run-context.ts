@@ -275,6 +275,8 @@ export interface RunContext {
   /** Provider context for this run's calls; aborting the run aborts its signal. */
   context: AdapterContext;
   abortController: AbortController;
+  /** Stops the model and its next tool calls; the run's own signal stays live to save and finish. */
+  runtimeAbortController: AbortController;
   fleetRun: FleetRun;
   /** Every value redacted from what this run shows or stores. Grows during the run. */
   secrets: string[];

@@ -20,6 +20,7 @@ import {
 } from "./pi-catalog-availability.js";
 import type { CodexLiveCatalog, CodexLiveReadOptions } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
+import type { CatalogReads } from "./pi-live-catalog.js";
 import { liveCatalogEntry, providerLiveListsModel } from "./pi-live-catalog.js";
 import { listPiCatalog, offeredCatalog, scriptedCatalogEntry } from "./pi-models.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
@@ -42,8 +43,20 @@ async function credentialLiveListsModel(
   provider: string,
   modelId: string,
   codex?: CodexLiveCatalog,
+  reads?: CatalogReads,
 ): Promise<boolean> {
-  if (await providerLiveListsModel(prisma, secrets, userId, secretId, provider, modelId))
+  if (
+    await providerLiveListsModel(
+      prisma,
+      secrets,
+      userId,
+      secretId,
+      provider,
+      modelId,
+      undefined,
+      reads,
+    )
+  )
     return true;
   if (provider !== "openai-codex" || !codex || !liveCatalogEntry(provider, modelId)) return false;
   const secret = await loadModelSecret(prisma, secrets, userId, secretId);
@@ -59,6 +72,7 @@ export async function connectionServesModel(
     prisma: PrismaClient;
     secretStore: Pick<SecretStore, "load">;
     codexCatalog?: CodexLiveCatalog;
+    reads?: CatalogReads;
   },
   userId: string,
   credential: { secretId: string },
@@ -87,6 +101,7 @@ export async function connectionServesModel(
     provider,
     modelId,
     deps.codexCatalog,
+    deps.reads,
   );
 }
 

@@ -41,6 +41,8 @@ export interface AppEnv {
   /** Opt-in Have I Been Pwned check for new passwords. Default off: it calls an outside service. */
   breachedPasswordCheck?: boolean;
   oidc?: OidcConfig;
+  /** Bearer token the identity provider presents to provision accounts over SCIM. */
+  scimBearerToken?: string;
   nodeEnv: string;
   desktopStackToken?: string;
   databaseUrl: string;
@@ -68,6 +70,8 @@ export interface AppEnv {
   ticketBoardEnabled: boolean;
   /** USER_DEVICES_ENABLED=false stops users connecting their own computers. Default on. */
   userDevicesEnabled: boolean;
+  /** COMPUTER_SETTINGS_ENABLED=true lets Settings choose where computers run. Default off. */
+  computerSettingsEnabled: boolean;
   /** Operator menu links that frame a same-origin page (RAKAZO_NAV_LINKS). */
   navLinks?: NavLink[];
   /** Verified accounts that review plugin submissions, add stdio MCP servers, and grant access
@@ -222,6 +226,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
           allowSignupBypass: source.OIDC_ALLOW_SIGNUP_BYPASS === "true",
         }
       : undefined;
+  const scimBearerToken = optional(source.SCIM_BEARER_TOKEN);
+  if (scimBearerToken && (scimBearerToken.length < 32 || /\s/.test(scimBearerToken)))
+    throw new Error("SCIM_BEARER_TOKEN must be at least 32 characters with no spaces");
   const authSecret = resolveAuthSecret(source);
   const webOrigin = resolveWebOrigin(source.WEB_ORIGIN, DEFAULT_WEB_ORIGIN, "WEB_ORIGIN");
   const sandboxProvider = resolveSandboxProvider(source);
@@ -231,6 +238,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     passwordAuth,
     breachedPasswordCheck: source.AUTH_BREACHED_PASSWORD_CHECK_ENABLED === "true",
     oidc,
+    scimBearerToken,
     nodeEnv: source.NODE_ENV ?? "",
     databaseUrl: required(source, "DATABASE_URL"),
     realtimeDatabaseUrl: source.REALTIME_DATABASE_URL ?? required(source, "DATABASE_URL"),
@@ -256,6 +264,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     piSessionRecording: source.PI_SESSION_RECORDING === "true",
     ticketBoardEnabled: source.TICKET_BOARD_ENABLED === "true",
     userDevicesEnabled: source.USER_DEVICES_ENABLED !== "false",
+    computerSettingsEnabled: source.COMPUTER_SETTINGS_ENABLED === "true",
     navLinks: parseNavLinks(source.RAKAZO_NAV_LINKS),
     adminEmails: list(source.RAKAZO_ADMIN_EMAILS).map((email) => email.toLowerCase()),
     ...phoneCallSettings(source),

@@ -113,10 +113,10 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
   const pinned = items.filter((page) => page.pinned);
   const rest = items.filter((page) => !page.pinned);
   const row = (page: PageSummary) => (
-    <li key={page.id} className="flex items-center rounded-[10px] hover:bg-accent">
+    <li key={page.id} className="flex items-center rounded-md hover:bg-accent">
       {renaming?.id === page.id ? (
         <div className="flex min-w-0 flex-1 items-center gap-3 px-2 py-2">
-          <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-muted">
+          <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-muted">
             <PageIcon className="h-5 w-4" />
           </span>
           <input
@@ -135,16 +135,16 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
                 setRenaming(null);
               }
             }}
-            className="h-8 min-w-0 flex-1 rounded-[8px] bg-background px-2 text-[14px] text-foreground ring-1 ring-ring outline-none"
+            className="h-8 min-w-0 flex-1 rounded-sm bg-background px-2 text-[14px] text-foreground ring-1 ring-ring outline-none"
           />
         </div>
       ) : (
         <button
           type="button"
           onClick={() => openPage(page.id)}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-[10px] px-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-muted text-foreground">
+          <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-muted text-foreground">
             <PageIcon className="h-5 w-4" />
           </span>
           <span className="flex min-w-0 flex-1 flex-col">
@@ -200,7 +200,7 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
   return (
     <div data-testid="bot-pages" className="flex flex-col gap-3">
       {searchable ? (
-        <label className="flex h-9 items-center gap-2 rounded-[10px] bg-muted px-2.5 text-muted-foreground focus-within:ring-2 focus-within:ring-ring">
+        <label className="flex h-9 items-center gap-2 rounded-md bg-muted px-2.5 text-muted-foreground focus-within:ring-2 focus-within:ring-ring">
           <Search aria-hidden="true" className="size-4 shrink-0" />
           <input
             type="search"

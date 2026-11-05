@@ -299,6 +299,41 @@ export async function releaseCheckoutLease(
   });
 }
 
+/**
+ * Extends the lease while its holder is still the recorded owner and the lease has not lapsed;
+ * a lapsed lease is left to the next claimant instead of being resurrected.
+ */
+export async function renewCheckoutLease(
+  prisma: PrismaClient,
+  organizationId: string,
+  leaseId: string,
+  ttlMs: number,
+): Promise<boolean> {
+  const now = new Date();
+  const { count } = await prisma.billingAccount.updateMany({
+    where: {
+      organizationId,
+      checkoutLeaseId: leaseId,
+      checkoutLeaseExpiresAt: { gt: now },
+    },
+    data: { checkoutLeaseExpiresAt: new Date(now.getTime() + ttlMs) },
+  });
+  return count > 0;
+}
+
+/** Whether the checkout lease is still recorded for this holder. */
+export async function checkoutLeaseHeld(
+  prisma: PrismaClient,
+  organizationId: string,
+  leaseId: string,
+): Promise<boolean> {
+  const held = await prisma.billingAccount.findFirst({
+    where: { organizationId, checkoutLeaseId: leaseId },
+    select: { organizationId: true },
+  });
+  return held !== null;
+}
+
 /** The subscription exists but has no access until the owner settles it in the billing portal. */
 export function needsBillingPortal(status: string | null): boolean {
   return status === "unpaid" || status === "paused";

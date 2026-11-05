@@ -182,6 +182,10 @@ msgstr "{count} gün"
 msgid "{count} months"
 msgstr "{count} ay"
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "{count} tane daha"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr "{count} hafta"
@@ -363,6 +367,38 @@ msgstr "{remaining} kaldı"
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {# koltuk} other {# koltuk}}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a day"
+msgstr "Günde {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a month"
+msgstr "Ayda {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a week"
+msgstr "Haftada {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} in total"
+msgstr "Toplam {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent"
+msgstr "{shown} harcandı"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this month"
+msgstr "Bu ay {shown} harcandı"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this week"
+msgstr "Bu hafta {shown} harcandı"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent today"
+msgstr "Bugün {shown} harcandı"
 
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
@@ -689,6 +725,10 @@ msgstr "{credit} tutarın tamamı model kullanımına gider."
 msgid "All bots"
 msgstr "Tüm botlar"
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "Tüm dosyalar"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr "Tüm alanlar"
@@ -760,6 +800,10 @@ msgstr "Her zaman izinli"
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
 msgstr "{site} sitesini her zaman aç"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Amount"
+msgstr "Tutar"
 
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
@@ -1168,6 +1212,10 @@ msgstr "MCP sunucularına göz at"
 msgid "Built-in"
 msgstr "Yerleşik"
 
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "“{button}” düğmesi · sayfadan okundu, kontrol edilmedi"
+
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
 msgstr "Ara"
@@ -1212,6 +1260,7 @@ msgstr "Görselleri okuyamaz"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1646,8 +1695,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr "Bilgisayarlar hazır. Devam etmek için sayfayı yenile veya bir bot aç."
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "Bilgisayarlar kapalı. SANDBOX_PROVIDER=docker ve SANDBOX_SUPERVISOR_TOKEN ayarlayın; ya da SANDBOX_PROVIDER değerini e2b, novita, daytona veya boat yapıp API anahtarını ekleyin. .env değişince stacki yeniden oluşturun."
+msgid "Computers are off on this server."
+msgstr "Bu sunucuda bilgisayarlar kapalı."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1830,7 +1879,6 @@ msgstr "{0} ile devam et"
 msgid "Conversations"
 msgstr "Sohbetler"
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1850,10 +1898,6 @@ msgstr "Kopyalandı"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Kopyala"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr ".env örneğini kopyala"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2314,6 +2358,10 @@ msgstr "Kural kaydedilemedi"
 msgid "Could not save skill"
 msgstr "Beceri kaydedilemedi"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Could not save spending limit"
+msgstr "Harcama limiti kaydedilemedi"
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "Could not save that choice"
 msgstr "Bu seçim kaydedilemedi"
@@ -2558,6 +2606,10 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Cron ifadesi"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Currency"
+msgstr "Para birimi"
+
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
@@ -2582,6 +2634,10 @@ msgstr "{label}: özelleştir"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
 msgstr "Bot avatarını özelleştir"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Daily"
+msgstr "Günlük"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
@@ -2615,6 +2671,7 @@ msgstr "gün"
 msgid "Decline"
 msgstr "Reddet"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2732,11 +2789,6 @@ msgstr "Reddedildi"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "Reddet"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr "Dağıtım varsayılanı ({0})"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -2859,10 +2911,6 @@ msgstr "Kapatıldı. MCP ayarlarından istediğin zaman yeniden bağlanabilirsin
 msgid "Docker"
 msgstr "Docker"
 
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr "Docker yapılandırılmış ama bilgisayarlar yanıt vermiyor. Sandbox supervisor'ın çalıştığını doğrula, .env'i değiştirdiysen yığını yeniden oluştur."
-
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker, ek güvenlik için bilgisayarına erişimi sınırlar. {hostLabel} kullanıldığında botlar yerel dosyaların ve araçlarınla çalışabilir."
@@ -2936,6 +2984,7 @@ msgid "Each name can be used once."
 msgstr "Her ad yalnızca bir kez kullanılabilir."
 
 #: src/components/AskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -3218,6 +3267,10 @@ msgstr "Botları filtrele"
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
 msgstr "Tarihe göre filtrele"
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "Oluşturana göre filtrele"
 
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
@@ -3885,6 +3938,10 @@ msgstr "Düşük"
 msgid "Low"
 msgstr "Düşük"
 
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "Botların oluşturdukları"
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
 msgstr "Ana model"
@@ -4176,6 +4233,7 @@ msgid "month"
 msgstr "ay"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Aylık"
@@ -4485,6 +4543,10 @@ msgstr "Uzak MCP sunucusu bulunamadı"
 msgid "No reply"
 msgstr "Yanıt yok"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "No reset"
+msgstr "Sıfırlama yok"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx
@@ -4520,6 +4582,7 @@ msgstr "Henüz talep yok"
 msgid "No trigger"
 msgstr "Tetikleyici yok"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr "Yok"
@@ -4633,6 +4696,10 @@ msgstr "{day} günü saat {time}"
 #: src/lib/cron.ts
 msgid "on the 1st at {0}"
 msgstr "ayın 1'inde saat {0}"
+
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "Düğmede"
 
 #: src/lib/cron.ts
 msgid "One-time"
@@ -5099,6 +5166,10 @@ msgstr "Tepki ver"
 msgid "Reactions"
 msgstr "Tepkiler"
 
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "Sayfadan okundu, kontrol edilmedi"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "Yanıtları sesli oku"
@@ -5131,6 +5202,10 @@ msgstr "Alındı"
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "Son"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "Son ödemeler"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -5268,6 +5343,7 @@ msgstr "Yeniden yükle"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -5438,6 +5514,10 @@ msgstr "Parolayı sıfırla"
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "Parolanızı sıfırlayın"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Resets"
+msgstr "Sıfırlama"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5612,6 +5692,7 @@ msgstr "Cumartesi"
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5853,6 +5934,10 @@ msgstr "Sunucu adı"
 msgid "Server URL"
 msgstr "Sunucu URL'si"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Set"
+msgstr "Ayarla"
+
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5882,6 +5967,7 @@ msgstr "Ayarlar: Kullanım"
 msgid "Setup complete"
 msgstr "Kurulum tamamlandı"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "Kurulum yardımı"
@@ -5924,6 +6010,7 @@ msgstr "Ortak hafıza"
 msgid "Show"
 msgstr "Göster"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr "Tümünü göster"
@@ -6132,6 +6219,10 @@ msgstr "Konuşuyor"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
 msgstr "Konuşma modeli"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Spending limit"
+msgstr "Harcama limiti"
 
 #: src/components/AccountAccess.tsx
 msgid "SSO"
@@ -6474,6 +6565,10 @@ msgid "Thinking: {0}"
 msgstr "Düşünme: {0}"
 
 #: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "Bu hesap devre dışı bırakıldı"
+
+#: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
 msgstr "Bu uygulamanın bağlanması için kendi oturum açma kurulumu gerekiyor."
 
@@ -6698,6 +6793,10 @@ msgstr "Araç adı"
 msgid "Tools"
 msgstr "Araçlar"
 
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "Toplam"
+
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
 msgstr "Yazıya dökülüyor…"
@@ -6740,7 +6839,7 @@ msgstr "Kötüye kullanımı önlemek için denemelerde daha az saat verilir."
 
 #: src/components/ErrorNotice.tsx
 msgid "Troubleshoot"
-msgstr ""
+msgstr "Sorun gider"
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
@@ -7078,6 +7177,10 @@ msgstr "Hafta içi"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "Hafta sonları"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Weekly"
+msgstr "Haftalık"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

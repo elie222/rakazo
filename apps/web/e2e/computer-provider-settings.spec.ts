@@ -11,6 +11,7 @@ async function adminComputers(route: Route) {
   if (me) {
     me.sandboxProvider = "docker";
     me.isAdmin = true;
+    me.computerSettingsEnabled = true;
   }
   await route.fulfill({ response, json: body });
 }

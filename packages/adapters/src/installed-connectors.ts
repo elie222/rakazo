@@ -7,6 +7,7 @@ import type {
   ConnectorTool,
   SecretStore,
 } from "@rakazo/adapter-kit";
+import { cancelResponseBody } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn } from "@rakazo/db";
 import { parse as parseYaml } from "yaml";
@@ -42,6 +43,7 @@ import {
   resolveCatalogCall,
   SELECTED_SCHEMA_MAX_BYTES,
 } from "./lazy-tool-catalog.js";
+import { readMcpApp } from "./mcp-app.js";
 import { localSchemaReference } from "./openai-tool-parameters.js";
 import type { RemoteTransportDependencies, RemoteUrlPolicy } from "./remote-mcp.js";
 import {
@@ -50,6 +52,7 @@ import {
   createSafeRemoteFetch,
   listRemoteMcpTools,
   RemoteMcpSessionCache,
+  readRemoteMcpResource,
 } from "./remote-mcp.js";
 
 const ModelHeaderName = HeaderName.refine(
@@ -226,6 +229,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
             resourceId: install.id,
             toolName: tool.name,
             catalogGroup,
+            appResourceUri: tool.appResourceUri,
           },
         }));
       }
@@ -307,14 +311,15 @@ export class InstalledConnectorProvider implements ConnectorProvider {
       const remote = await this.remoteFor(context);
       if (install.kind === "mcp") {
         const config = McpConfigSchema.parse(install.config);
+        const session = {
+          ...remote,
+          endpoint: install.source,
+          headers: connectorHeaders(config, credential),
+          signal: context.signal,
+          ...this.mcpSessionOptions(context, install),
+        };
         const result = await callRemoteMcpTool(
-          {
-            ...remote,
-            endpoint: install.source,
-            headers: connectorHeaders(config, credential),
-            signal: context.signal,
-            ...this.mcpSessionOptions(context, install),
-          },
+          session,
           call.route?.toolName ?? call.tool,
           call.args,
         );
@@ -322,6 +327,14 @@ export class InstalledConnectorProvider implements ConnectorProvider {
           type: "result",
           data: redactConnectorPayload(result, credential ? [credential] : []),
         };
+        const app = await readMcpApp(
+          install.name,
+          call.withApp ? call.route?.appResourceUri : undefined,
+          result,
+          (uri) => readRemoteMcpResource(session, uri),
+          credential ? [credential] : [],
+        );
+        if (app) yield { type: "app", app };
         return;
       }
       if (install.kind === "graphql") {
@@ -455,9 +468,15 @@ async function loadOpenApiDocument(
       headers,
       signal: combineSignals(signal, AbortSignal.timeout(15_000)),
     });
-    if (!response.ok) throw new Error(`OpenAPI document returned HTTP ${response.status}`);
+    if (!response.ok) {
+      cancelResponseBody(response);
+      throw new Error(`OpenAPI document returned HTTP ${response.status}`);
+    }
     const size = Number(response.headers.get("content-length") ?? 0);
-    if (size > 2_000_000) throw new Error("OpenAPI document is too large");
+    if (size > 2_000_000) {
+      cancelResponseBody(response);
+      throw new Error("OpenAPI document is too large");
+    }
     const { text, truncated } = await readBoundedText(response, 2_000_000);
     if (truncated) throw new Error("OpenAPI document is too large");
     return parseOpenApiText(text);
@@ -550,11 +569,13 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
         (pathValue as Record<string, unknown>).parameters,
         operation.parameters,
       )) {
-        properties[parameter.name] = asRecord(
-          inlineOpenApiSchema(refs, parameter.schema, "string"),
-        ) ?? {
+        const schema = asRecord(inlineOpenApiSchema(refs, parameter.schema, "string")) ?? {
           type: "string",
         };
+        properties[parameter.name] =
+          typeof parameter.description === "string"
+            ? { ...schema, description: parameter.description }
+            : schema;
         if (parameter.in === "query") queryParameters.push(parameter.name);
         if (parameter.in === "header") {
           if (isSensitiveHeader(parameter.name) || isTransportHeader(parameter.name)) {

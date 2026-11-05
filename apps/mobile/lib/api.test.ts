@@ -1398,6 +1398,49 @@ describe("mobile API authentication", () => {
     }
   });
 
+  it("asks about every mentioned routine's recipients before a combined send", async () => {
+    vi.mocked(promptAiConsent).mockClear();
+    vi.mocked(promptAiConsent).mockResolvedValue(false);
+    // A paused routine on another bot is reported only by a check for that routine.
+    const recipient = {
+      key: "routine-model",
+      name: "Example AI",
+      use: "model",
+      detail: "",
+      allowed: false,
+    };
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const query = JSON.parse(String(init?.body)).json;
+      return jsonResponse({
+        json: {
+          scope: "account-space",
+          version: "2026-09-14",
+          recipients: query.routineId === "routine-paused" ? [recipient] : [],
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      rpc("threads/sendWithRoutines", {
+        botId: "bot-1",
+        clientNonce: "nonce-1",
+        text: "private content",
+        routineIds: ["routine-active", "routine-paused"],
+      }),
+    ).rejects.toThrow("AI data sharing");
+    expect(promptAiConsent).toHaveBeenCalledWith(recipient, undefined);
+    expect(fetchMock.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
+      "/rpc/aiConsent/status",
+      "/rpc/aiConsent/status",
+      "/rpc/aiConsent/status",
+    ]);
+    expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).json)).toEqual([
+      { uses: ["model", "memory"], botId: "bot-1" },
+      { uses: ["model", "memory"], routineId: "routine-active" },
+      { uses: ["model", "memory"], routineId: "routine-paused" },
+    ]);
+  });
+
   it.each([true, false])("explains the mobile upgrade requirement with JSON=%s", async (json) => {
     const fetchMock = vi.fn(async () =>
       json
@@ -2272,6 +2315,33 @@ describe("mobile API authentication", () => {
     } finally {
       unsubscribe();
     }
+  });
+
+  it("keeps the unsent queue of a session the server rejects", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "revoked-token"]]);
+    mockSecureStore(store);
+    await loadApiBase();
+    const clear = vi.fn();
+    configureUnsentSends({
+      request: vi.fn(),
+      serverReachable: () => true,
+      passwordChanging: () => false,
+      scope: () => null,
+      disk: { clear, save: vi.fn() } as unknown as UnsentDisk,
+      errorText: String,
+      notDelivered: vi.fn(),
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized")),
+    );
+
+    // The rejection ends the session, but the queue must survive it: the app reports
+    // those messages before a sign-in deletes them.
+    await expect(rpc("bots/list")).rejects.toThrow("Unauthorized");
+
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(clear).not.toHaveBeenCalled();
   });
 
   it("checks Space access before treating a 401 as a rejected session", async () => {

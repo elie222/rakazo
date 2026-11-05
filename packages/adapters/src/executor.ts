@@ -34,7 +34,9 @@ import {
 } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
 import {
+  accountDeactivated,
   availableInSpace,
+  cancelDeactivatedAccountRuns,
   effectiveMemoryScope,
   isPartialReplyClientNonce,
   isTooManyDatabaseConnections,
@@ -322,6 +324,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // connector's own idle bound holds it.
         endRunConnectorState(runId);
         return;
+      }
+      // Every way work reaches a bot ends here, so a deactivated account's run stops before it starts.
+      if (await accountDeactivated(deps.prisma, run.userId)) {
+        // Nothing cancelled: the owner is back (or the run already ended), so carry on.
+        if (await cancelDeactivatedAccountRuns(deps.prisma, deps.events, run.userId, runId)) return;
       }
       let { resumeCheckpoint, heldForTakeover, takeoverResume } = takeoverContinuePlan(run);
 
@@ -1055,6 +1062,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                     callObserver: pinnedComputerModels.main.callObserver,
                     oauth: pinnedComputerModels.main.oauth?.credential,
                     persistOAuth: pinnedComputerModels.main.oauth?.persist,
+                    refreshOAuth: pinnedComputerModels.main.oauth?.refresh,
                     retireOAuth: pinnedComputerModels.main.oauth?.retire,
                     redact: [],
                   }
@@ -1532,6 +1540,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           task,
           context,
           abortController: runAbortController,
+          runtimeAbortController: new AbortController(),
           fleetRun,
           secrets: runSecrets,
           source: {
@@ -2023,7 +2032,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   },
                 ),
             },
-            context,
+            {
+              ...context,
+              signal: AbortSignal.any([context.signal, ctx.runtimeAbortController.signal]),
+            },
           );
           if (await consumeRunEvents(ctx, runtimeEvents)) return;
           if (await interruptedByShutdown()) return;
