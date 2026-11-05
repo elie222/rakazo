@@ -717,7 +717,11 @@ describe("compactHistory", () => {
       id: "claude-sonnet",
       apiKey: "member-model-key",
     }));
-    const harness = compactionHarness({ deploymentModelKey: "deployment-key", resolveModel });
+    const harness = compactionHarness({
+      deploymentModelKey: "deployment-key",
+      resolveModel,
+      nextMessageSeq: 150,
+    });
 
     await compactHistory(harness.deps, "thread-1", "user-2");
 
@@ -726,6 +730,8 @@ describe("compactHistory", () => {
       spaceId: "workspace-1",
       botId: "bot-1",
     });
+    // The rest of the backlog is summarized at the same member's expense.
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(historyCompactJob("thread-1", "user-2"));
 
     const departed = compactionHarness({
       deploymentModelKey: "deployment-key",

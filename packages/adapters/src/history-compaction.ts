@@ -611,6 +611,6 @@ export async function compactHistory(
       COMPACTION_BATCH_SIZE,
     )
   ) {
-    await deps.jobs.enqueue(historyCompactJob(threadId));
+    await deps.jobs.enqueue(historyCompactJob(threadId, requesterId));
   }
 }
