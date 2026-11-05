@@ -33,6 +33,7 @@ import { getLogger } from "@rakazo/logging";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import { secureFetch, validateUrl, withEndpointOriginFallback } from "./mcp-transport.js";
+import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "./refresh-lock.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
 import { deleteSecretBestEffort, holdSecretNotifications } from "./secret-store-factory.js";
@@ -849,16 +850,6 @@ type MaterialSnapshot = {
   secret: { id: string; ciphertext: string } | null;
 };
 
-/**
- * A refresh holds the credential lock across one token request and the write.
- * The lock wait runs inside the transaction, so it gets its own cap. Whatever
- * is left after the wait and the request goes to the secret write: a rotated
- * token that never commits is lost.
- */
-const REFRESH_LOCK_WAIT_MS = 10_000;
-const REFRESH_REQUEST_TIMEOUT_MS = 15_000;
-const REFRESH_TRANSACTION_MS = 60_000;
-
 function lockMaterial(tx: Prisma.TransactionClient, serverId: string): Promise<number> {
   return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${serverId}))`;
 }
@@ -1227,17 +1218,16 @@ export class McpOAuthBroker {
     // the exchange itself went.
     // The secret read can be a remote call, so the lock gets refresh's limits, not the
     // default transaction timeout.
-    const generation = await this.prisma.$transaction(
+    const generation = await withRefreshLock(
+      this.prisma,
+      (tx) => lockMaterial(tx, pending.serverId),
       async (tx) => {
-        await tx.$executeRaw`SELECT set_config('lock_timeout', ${`${REFRESH_LOCK_WAIT_MS}ms`}, true)`;
-        await lockMaterial(tx, pending.serverId);
         const snapshot = await this.snapshot(tx, pending.serverId, input);
         const material = snapshot.secret
           ? await this.read(snapshot.secret.ciphertext, snapshot.secret.id)
           : {};
         return material.oauthGeneration ?? 0;
       },
-      { maxWait: REFRESH_LOCK_WAIT_MS, timeout: REFRESH_TRANSACTION_MS },
     );
     if (generation !== pending.generation)
       throw new Error("MCP OAuth session is invalid or expired");
@@ -1382,10 +1372,10 @@ export class McpOAuthBroker {
         this.secrets,
         undefined,
         () =>
-          this.prisma.$transaction(
+          withRefreshLock(
+            this.prisma,
+            (tx) => lockMaterial(tx, serverId),
             async (tx) => {
-              await tx.$executeRaw`SELECT set_config('lock_timeout', ${`${REFRESH_LOCK_WAIT_MS}ms`}, true)`;
-              await lockMaterial(tx, serverId);
               const snapshot = await this.snapshot(tx, serverId, context, endpoint);
               const material = snapshot.secret
                 ? await this.read(snapshot.secret.ciphertext, snapshot.secret.id)
@@ -1418,7 +1408,6 @@ export class McpOAuthBroker {
                 throw new Error("MCP credentials changed during refresh; retry");
               return { grant, record: { id: stored.id, ref: stored.ciphertext, material } };
             },
-            { maxWait: REFRESH_LOCK_WAIT_MS, timeout: REFRESH_TRANSACTION_MS },
           ),
         (result) => {
           if (result.record) onPersisted?.(result.record);

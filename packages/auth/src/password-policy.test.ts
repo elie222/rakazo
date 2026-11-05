@@ -121,6 +121,21 @@ describe("breached password check", () => {
     expect(f.log).toHaveBeenCalled();
   });
 
+  it("fails open without reading an oversized range response", async () => {
+    const response = new Response(await pwnedRange(strongPassword), {
+      headers: { "content-length": String(1024 * 1024 * 1024) },
+    });
+    const cancel = vi.spyOn(response.body!, "cancel");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response),
+    );
+    const f = fixture({ breachedPasswordCheck: true });
+    expect((await f.signup(strongPassword)).status).toBe(200);
+    expect(f.log).toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
   it("accepts a password the service does not list", async () => {
     vi.stubGlobal(
       "fetch",

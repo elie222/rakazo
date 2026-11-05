@@ -182,6 +182,10 @@ msgstr ""
 msgid "{count} months"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "{count} और"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr ""
@@ -363,6 +367,38 @@ msgstr "{remaining} शेष"
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr ""
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a day"
+msgstr "{shown} प्रति दिन"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a month"
+msgstr "{shown} प्रति माह"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a week"
+msgstr "{shown} प्रति सप्ताह"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} in total"
+msgstr "कुल {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent"
+msgstr "{shown} खर्च हुए"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this month"
+msgstr "इस महीने {shown} खर्च हुए"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this week"
+msgstr "इस सप्ताह {shown} खर्च हुए"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent today"
+msgstr "आज {shown} खर्च हुए"
 
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
@@ -764,6 +800,10 @@ msgstr "हमेशा अनुमत"
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
 msgstr "{site} हमेशा खोलें"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Amount"
+msgstr "राशि"
 
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
@@ -1172,6 +1212,10 @@ msgstr ""
 msgid "Built-in"
 msgstr "अंतर्निहित"
 
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "बटन “{button}” · पेज से पढ़ा गया, जाँचा नहीं गया"
+
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
 msgstr "कॉल करें"
@@ -1216,6 +1260,7 @@ msgstr "तस्वीरें नहीं पढ़ सकता"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1335,7 +1380,7 @@ msgstr "चैट"
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Check again"
-msgstr ""
+msgstr "फिर से जांचें"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Check every"
@@ -1377,7 +1422,7 @@ msgstr "अपना ईमेल देखें"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
-msgstr ""
+msgstr "कंप्यूटर सेटअप जांचा जा रहा है…"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Checking connection…"
@@ -1387,7 +1432,7 @@ msgstr "कनेक्शन जाँचा जा रहा है…"
 #: src/components/DesktopUpdates.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Checking…"
-msgstr ""
+msgstr "जांच हो रही है…"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
@@ -1647,11 +1692,11 @@ msgstr "कंप्यूटर"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Computers are available. Reload or open a bot to continue."
-msgstr ""
+msgstr "कंप्यूटर उपलब्ध हैं। जारी रखने के लिए रीलोड करें या कोई बॉट खोलें।"
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "कंप्यूटर बंद हैं। SANDBOX_PROVIDER=docker और SANDBOX_SUPERVISOR_TOKEN सेट करें, या SANDBOX_PROVIDER को e2b, novita, daytona, या boat पर सेट कर उसका API key दें। .env बदलने के बाद स्टैक फिर बनाएँ।"
+msgid "Computers are off on this server."
+msgstr "इस सर्वर पर कंप्यूटर बंद हैं।"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1834,7 +1879,6 @@ msgstr "{0} के साथ जारी रखें"
 msgid "Conversations"
 msgstr ""
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1852,10 +1896,6 @@ msgstr "कॉपी किया गया"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "कॉपी करें"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr ""
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2316,6 +2356,10 @@ msgstr "नियम सहेजा नहीं जा सका"
 msgid "Could not save skill"
 msgstr "स्किल सहेजी नहीं जा सकी"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Could not save spending limit"
+msgstr "खर्च सीमा सहेजी नहीं जा सकी"
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "Could not save that choice"
 msgstr "वह विकल्प सहेजा नहीं जा सका"
@@ -2420,7 +2464,7 @@ msgstr "डिफ़ॉल्ट मेमोरी स्कोप अपडे
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
-msgstr ""
+msgstr "कंप्यूटर सेटअप की जांच नहीं हो सकी ({failureMessage})। कनेक्शन ठीक करें, फिर से जांचें।"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Couldn't copy. Select the link and copy it."
@@ -2540,6 +2584,10 @@ msgstr "क्रेडेंशियल: {names}"
 msgid "Credit amount"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "क्रेडिट"
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
 msgstr ""
@@ -2551,6 +2599,10 @@ msgstr "Cron"
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron expression"
 msgstr "Cron एक्सप्रेशन"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Currency"
+msgstr "मुद्रा"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2576,6 +2628,10 @@ msgstr "{label} अनुकूलित करें"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
 msgstr "बॉट अवतार अनुकूलित करें"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Daily"
+msgstr "रोज़"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
@@ -2609,6 +2665,7 @@ msgstr "दिन"
 msgid "Decline"
 msgstr "अस्वीकार करें"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2726,11 +2783,6 @@ msgstr "अस्वीकृत"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "अस्वीकार करें"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -2853,10 +2905,6 @@ msgstr "खारिज किया गया। MCP सेटिंग्स �
 msgid "Docker"
 msgstr "Docker"
 
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr ""
-
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker अतिरिक्त सुरक्षा के लिए आपके कंप्यूटर तक पहुँच सीमित करता है। {hostLabel} चुनने पर बॉट्स आपकी स्थानीय फ़ाइलों और टूल्स के साथ काम कर सकते हैं।"
@@ -2930,6 +2978,7 @@ msgid "Each name can be used once."
 msgstr "हर नाम का उपयोग केवल एक बार किया जा सकता है।"
 
 #: src/components/AskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -4171,6 +4220,7 @@ msgid "month"
 msgstr ""
 
 #: src/components/ModelCredits.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "मासिक"
@@ -4476,6 +4526,10 @@ msgstr ""
 msgid "No reply"
 msgstr "कोई जवाब नहीं"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "No reset"
+msgstr "रीसेट नहीं"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx
@@ -4511,6 +4565,7 @@ msgstr ""
 msgid "No trigger"
 msgstr ""
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr ""
@@ -4625,6 +4680,10 @@ msgstr "{day} तारीख को {time} पर"
 msgid "on the 1st at {0}"
 msgstr "1 तारीख को {0} बजे"
 
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "बटन पर"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "एक बार"
@@ -4680,7 +4739,7 @@ msgstr "{0} के साथ चैट खोलें"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Open computer settings"
-msgstr ""
+msgstr "कंप्यूटर सेटिंग्स खोलें"
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Open external link?"
@@ -5074,7 +5133,6 @@ msgstr "कतार में"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
@@ -5090,6 +5148,10 @@ msgstr "प्रतिक्रिया दें"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Reactions"
 msgstr "प्रतिक्रियाएँ"
+
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "पेज से पढ़ा गया, जाँचा नहीं गया"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
@@ -5123,6 +5185,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "हाल के"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "हाल के भुगतान"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -5260,6 +5326,7 @@ msgstr "फिर से लोड करें"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -5430,6 +5497,10 @@ msgstr "पासवर्ड रीसेट करें"
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "अपना पासवर्ड रीसेट करें"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Resets"
+msgstr "रीसेट"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5603,6 +5674,7 @@ msgstr "शनिवार"
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5844,6 +5916,10 @@ msgstr "सर्वर का नाम"
 msgid "Server URL"
 msgstr "सर्वर URL"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Set"
+msgstr "सेट करें"
+
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5873,6 +5949,7 @@ msgstr "सेटिंग्स: उपयोग"
 msgid "Setup complete"
 msgstr "सेटअप पूरा हुआ"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "सेटअप सहायता"
@@ -5915,6 +5992,7 @@ msgstr "साझा मेमोरी"
 msgid "Show"
 msgstr "दिखाएँ"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""
@@ -6124,6 +6202,10 @@ msgstr "बोल रहा है"
 msgid "Speech model"
 msgstr "वाक् मॉडल"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Spending limit"
+msgstr "खर्च सीमा"
+
 #: src/components/AccountAccess.tsx
 msgid "SSO"
 msgstr ""
@@ -6260,8 +6342,8 @@ msgid "Subscribe for {price} / month"
 msgstr "{price} / माह पर सदस्यता लें"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "Rakazo क्रेडिट की सदस्यता लें"
+msgid "Subscribe to credits"
+msgstr "क्रेडिट की सदस्यता लें"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"
@@ -6463,6 +6545,10 @@ msgstr "सोच रहा है"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Thinking: {0}"
 msgstr "सोच: {0}"
+
+#: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "यह खाता निष्क्रिय है"
 
 #: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
@@ -6688,6 +6774,10 @@ msgstr "टूल का नाम"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "कुल"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
@@ -7069,6 +7159,10 @@ msgstr "कार्यदिवस"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "सप्ताहांत"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Weekly"
+msgstr "हर हफ़्ते"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

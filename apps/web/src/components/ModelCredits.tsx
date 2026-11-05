@@ -165,7 +165,11 @@ function ByokTierSelect({
       <SelectTrigger aria-label={t`Plan`} className="min-w-28">
         <SelectValue />
       </SelectTrigger>
-      <SelectContent alignItemWithTrigger={false} align="start">
+      <SelectContent
+        alignItemWithTrigger={false}
+        align="start"
+        className="w-auto min-w-(--anchor-width)"
+      >
         <SelectGroup>
           {offered.map(({ offer, price }) => (
             <SelectItem key={offer.tier} value={offer.tier} className="py-2">
@@ -284,6 +288,8 @@ export function CreditChoice({
       }
     } catch {
       setError(t`Could not open billing`);
+    } finally {
+      // Desktop opens the URL in the system browser and this page stays, so re-enable.
       setPending(false);
     }
   }
@@ -375,7 +381,7 @@ export function CreditChoice({
         <Card>
           <CardHeader>
             <h2 className="text-lg font-medium">
-              <Trans>Rakazo credits</Trans>
+              <Trans>Credits</Trans>
             </h2>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-4">
@@ -396,7 +402,7 @@ export function CreditChoice({
             <Button
               className="w-full"
               disabled={pending || !status.canManage || !status.creditPurchasesEnabled}
-              aria-label={t`Subscribe to Rakazo credits`}
+              aria-label={t`Subscribe to credits`}
               onClick={() => void choose(false)}
             >
               <Trans>Subscribe</Trans>

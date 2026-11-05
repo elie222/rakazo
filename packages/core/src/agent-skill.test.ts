@@ -76,6 +76,36 @@ describe("parseSkillMd", () => {
     expect(String(parsed.frontmatter.literal).endsWith("\n")).toBe(true);
   });
 
+  it("preserves commas in quoted inline array items through save and reload", () => {
+    const cases = [
+      { input: '["sales, marketing", "ops"]', expected: ["sales, marketing", "ops"] },
+      { input: "['sales, marketing', 'ops']", expected: ["sales, marketing", "ops"] },
+      { input: "['we''re, ready', ops]", expected: ["we're, ready", "ops"] },
+      {
+        input: `[${JSON.stringify('say "hi, team"')}, ${JSON.stringify("path\\part, rest")}]`,
+        expected: ['say "hi, team"', "path\\part, rest"],
+      },
+      { input: "[alpha, beta, gamma]", expected: ["alpha", "beta", "gamma"] },
+    ];
+    for (const { input, expected } of cases) {
+      const parsed = parseSkillMd(`---\nname: Example\ndescription: Test\ntags: ${input}\n---\n`);
+      expect("error" in parsed, input).toBe(false);
+      if ("error" in parsed) continue;
+      expect(parsed.frontmatter.tags, input).toEqual(expected);
+      const reloaded = parseSkillMd(buildSkillMd(parsed));
+      expect("error" in reloaded, input).toBe(false);
+      if (!("error" in reloaded)) expect(reloaded.frontmatter.tags, input).toEqual(expected);
+    }
+  });
+
+  it("keeps existing handling of unquoted scalar array items", () => {
+    const parsed = parseSkillMd(
+      "---\nname: Example\ndescription: Test\ntags: [plain, true, 2.5]\n---\n",
+    );
+    expect("error" in parsed).toBe(false);
+    if (!("error" in parsed)) expect(parsed.frontmatter.tags).toEqual(["plain", true, 2.5]);
+  });
+
   it("parses block scalar indicators with chomping and indent hints", () => {
     const doc = `---
 name: Folded

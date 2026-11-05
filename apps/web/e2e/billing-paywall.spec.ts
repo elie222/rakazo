@@ -115,7 +115,7 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
     });
     await route.fulfill({ json: { json: { url: new URL("/app", page.url()).href } } });
   });
-  await page.getByRole("button", { name: "Subscribe to Rakazo credits", exact: true }).click();
+  await page.getByRole("button", { name: "Subscribe to credits", exact: true }).click();
   await expect(page.getByText("Chief").first()).toBeVisible();
   expect(purchase).toEqual({ amountCents: 3000, monthly: true });
   const settings = await openUserSettings(page, "billing");
@@ -397,8 +397,8 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
     {
       tier: "max",
       name: "Max",
-      monthlyPriceCents: 14900,
-      annualPriceCents: 142800,
+      monthlyPriceCents: 9900,
+      annualPriceCents: 94800,
       computerSize: "xlarge",
       computerHours: 200,
     },
@@ -431,7 +431,7 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   const plan = settings.getByTestId("own-key-plan");
   await expect(plan.getByText("4 vCPU, 8 GB, 25 computer hours a month")).toBeVisible();
   await plan.getByRole("combobox", { name: "Plan" }).click();
-  await expect(page.getByRole("option", { name: /Max · \$149 \/ month/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /Max · \$99 \/ month/ })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-own-key-tiers");
   await page.getByRole("option", { name: /Pro · \$49 \/ month/ }).click();
   const confirm = page.getByRole("alertdialog", { name: "Switch to Pro?" });

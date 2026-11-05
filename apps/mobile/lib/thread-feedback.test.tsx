@@ -390,6 +390,81 @@ describe("scoped mobile outbox", () => {
     expect(sends[0]?.[1].artifactIds).toEqual(["artifact-b", "artifact-c"]);
     expect(sends[1]?.[1]).toEqual(sends[0]?.[1]);
   });
+  it("starts mentioned routines only in the message's own replayable send", async () => {
+    const mentions = [
+      { kind: "routine" as const, id: "routine-1", name: "Digest" },
+      { kind: "routine" as const, id: "routine-2", name: "Weekly" },
+    ];
+    const text = "@Digest @Weekly Hello";
+    const sendPayload = {
+      ...payload(text),
+      plan: resolveComposerSendPlan({ text, mentions, hasAttachments: true }),
+    };
+    const attempt = feedback.sendAttempt(sendPayload);
+    const deliver = () => deliverSend(sendPayload, attempt, request as unknown as typeof rpc);
+    request.mockRejectedValueOnce(new Error("Upload failed"));
+    await expect(deliver()).rejects.toThrow("Upload failed");
+    expect(request.mock.calls.map(([proc]) => proc)).toEqual(["artifacts/create"]);
+
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(new Error("Send interrupted"));
+    await expect(deliver()).rejects.toThrow("Send interrupted");
+    request.mockResolvedValueOnce({ routineRunIds: ["run-1", "run-2"], send: { seq: 42 } });
+    expect(await deliver()).toBe(42);
+
+    expect(request.mock.calls.map(([proc]) => proc)).toEqual([
+      "artifacts/create",
+      "artifacts/create",
+      "threads/sendWithRoutines",
+      "threads/sendWithRoutines",
+    ]);
+    const [first, retried] = request.mock.calls.slice(2).map(([, body]) => body);
+    expect(first).toMatchObject({
+      botId: "bot-1",
+      clientNonce: attempt.clientNonce,
+      text: "Hello",
+      artifactIds: ["artifact-a"],
+      routineIds: ["routine-1", "routine-2"],
+    });
+    expect(retried).toEqual(first);
+  });
+  it("sends the message itself when its routines were already started for this nonce", async () => {
+    const mentions = [{ kind: "routine" as const, id: "routine-1", name: "Digest" }];
+    const sendPayload = {
+      ...payload("@Digest Hello"),
+      plan: resolveComposerSendPlan({ text: "@Digest Hello", mentions, hasAttachments: true }),
+    };
+    const attempt = feedback.sendAttempt(sendPayload);
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockResolvedValueOnce({ routineRunIds: ["run-earlier"] })
+      .mockResolvedValueOnce({ seq: 7 });
+    expect(await deliverSend(sendPayload, attempt, request as unknown as typeof rpc)).toBe(7);
+    const [, combined, sent] = request.mock.calls;
+    expect(combined?.[0]).toBe("threads/sendWithRoutines");
+    expect(sent?.[0]).toBe("threads/send");
+    expect({ ...sent?.[1], routineIds: ["routine-1"] }).toEqual(combined?.[1]);
+  });
+  it("starts routine-only mentions through the same replayable send", async () => {
+    const mentions = [{ kind: "routine" as const, id: "routine-1", name: "Digest" }];
+    const sendPayload = {
+      ...payload("@Digest"),
+      attachments: [],
+      plan: resolveComposerSendPlan({ text: "@Digest", mentions, hasAttachments: false }),
+    };
+    const attempt = feedback.sendAttempt(sendPayload);
+    request.mockResolvedValueOnce({ routineRunIds: ["run-1"] });
+    expect(
+      await deliverSend(sendPayload, attempt, request as unknown as typeof rpc),
+    ).toBeUndefined();
+    expect(request.mock.calls).toEqual([
+      [
+        "threads/sendWithRoutines",
+        { botId: "bot-1", clientNonce: attempt.clientNonce, routineIds: ["routine-1"] },
+      ],
+    ]);
+  });
   it("retains an image rejection as retryable and reuses its uploaded artifact", async () => {
     const attempt = feedback.sendAttempt(payload());
     request

@@ -7,6 +7,11 @@ function isPreviewDocument(url: string): boolean {
   return url === "about:blank" || url === "about:blank/";
 }
 
+/** The MCP app shell's own frame loads its app as srcdoc; nothing else may navigate. */
+function isAppShellDocument(url: string): boolean {
+  return isPreviewDocument(url) || url === "about:srcdoc";
+}
+
 // The document's own `postMessage` calls reach the app only through the WebView bridge.
 const FORWARD_WINDOW_MESSAGES = `window.addEventListener("message", function (event) {
   if (event.source !== window) return;
@@ -26,8 +31,14 @@ export function SandboxedHtmlPreview({
   background = "white",
   scrollEnabled,
   onMessage,
+  appShell = false,
 }: {
   html: string;
+  /**
+   * `html` is the MCP app shell (`mcpAppShellDocument`): it carries its own policy, runs its app
+   * one sandboxed frame down, and talks to the app itself, so no window forwarding is added.
+   */
+  appShell?: boolean;
   /** Pages paint their own themed background; plain HTML is written for a white page. */
   background?: string;
   scrollEnabled?: boolean;
@@ -42,10 +53,12 @@ export function SandboxedHtmlPreview({
     <View style={styles.container}>
       <WebView
         ref={view}
-        source={{ html: withSandboxedArtifactCsp(html), baseUrl: "about:blank" }}
+        source={{ html: appShell ? html : withSandboxedArtifactCsp(html), baseUrl: "about:blank" }}
         style={[styles.webview, { backgroundColor: background }]}
         scrollEnabled={scrollEnabled}
-        injectedJavaScriptBeforeContentLoaded={onMessage ? FORWARD_WINDOW_MESSAGES : undefined}
+        injectedJavaScriptBeforeContentLoaded={
+          onMessage && !appShell ? FORWARD_WINDOW_MESSAGES : undefined
+        }
         onMessage={(event) => onMessage?.(event.nativeEvent.data, answer)}
         javaScriptEnabled
         domStorageEnabled={false}
@@ -59,7 +72,12 @@ export function SandboxedHtmlPreview({
         sharedCookiesEnabled={false}
         mixedContentMode="never"
         cacheEnabled={false}
-        onShouldStartLoadWithRequest={({ url }) => isPreviewDocument(url)}
+        // Every request reaches the check below, which allows only the shell and its srcdoc frame.
+        // A URL failing the library's own origin list would be handed to the system instead.
+        originWhitelist={appShell ? ["*"] : undefined}
+        onShouldStartLoadWithRequest={({ url }) =>
+          appShell ? isAppShellDocument(url) : isPreviewDocument(url)
+        }
       />
     </View>
   );
