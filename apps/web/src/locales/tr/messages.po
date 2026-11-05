@@ -2539,6 +2539,10 @@ msgstr "Kimlik bilgileri: {names}"
 msgid "Credit amount"
 msgstr "Kredi tutarı"
 
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "Krediler"
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
 msgstr "Krediler ($)"
@@ -5065,7 +5069,6 @@ msgstr "Kuyrukta"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr "Rakazo kredileri"
@@ -6252,8 +6255,8 @@ msgid "Subscribe for {price} / month"
 msgstr "Aylık {price} ile abone ol"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "Rakazo kredilerine abone ol"
+msgid "Subscribe to credits"
+msgstr "Kredilere abone ol"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"

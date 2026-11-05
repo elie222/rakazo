@@ -106,15 +106,14 @@ export function useThreadAttachments({
       attachmentMaxCount(uploadConfig) -
         attachmentsForThread(pendingAttachmentsRef.current, targetKey).length,
     );
-    const accepted = result.attachments.slice(0, room);
+    const accepted = result.attachments
+      .slice(0, room)
+      .map((attachment) => ({ ...attachment, threadKey: targetKey }));
     if (accepted.length) {
-      setPendingAttachments((current) => [
-        ...current,
-        ...accepted.map((attachment) => ({
-          ...attachment,
-          threadKey: targetKey,
-        })),
-      ]);
+      // The ref moves now, not only at the next render, so another read that settles
+      // before that render sees the room this one has already taken.
+      pendingAttachmentsRef.current = [...pendingAttachmentsRef.current, ...accepted];
+      setPendingAttachments((current) => [...current, ...accepted]);
     }
     const skipped = [
       ...result.skipped,

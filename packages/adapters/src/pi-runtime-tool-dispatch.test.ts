@@ -2733,4 +2733,49 @@ describe("Pi connector tool dispatch", () => {
       { onShellStillRunning: expect.any(Function) },
     );
   });
+
+  it("keeps read_file's positive-integer offset and limit and drops invalid ones", async () => {
+    const readFileTool = builtinAgentTools.find((tool) => tool.name === "read_file");
+    if (!readFileTool) throw new Error("missing read_file");
+    const executeTool = vi.fn(async () => ({ path: "docs/reference.txt", content: "line" }));
+    const runtime = new PiAgentRuntime();
+    const dispatch = async (args: Record<string, unknown>) => {
+      fakeAgentState.invoke = { name: "read_file", args };
+      for await (const _event of runtime.run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "read-file-range",
+          prompt: "read the reference file",
+          instructions: "Use read_file.",
+          history: [],
+          tools: [readFileTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool,
+        },
+        { signal: new AbortController().signal },
+      )) {
+        // Exhaust the runtime event stream so tool dispatch completes.
+      }
+    };
+
+    await dispatch({ path: "docs/reference.txt", offset: 40, limit: 60 });
+    expect(executeTool).toHaveBeenCalledWith(
+      "read_file",
+      { path: "docs/reference.txt", offset: 40, limit: 60 },
+      JSON.stringify(["pi-tool", "main", "call-1"]),
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
+    );
+
+    executeTool.mockClear();
+    await dispatch({ path: "docs/reference.txt", offset: 0, limit: "60" });
+    expect(executeTool).toHaveBeenCalledWith(
+      "read_file",
+      { path: "docs/reference.txt" },
+      JSON.stringify(["pi-tool", "main", "call-1"]),
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
+    );
+  });
 });

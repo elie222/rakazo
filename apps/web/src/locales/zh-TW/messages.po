@@ -2540,6 +2540,10 @@ msgstr "憑證：{names}"
 msgid "Credit amount"
 msgstr "額度金額"
 
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "額度"
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
 msgstr ""
@@ -5066,7 +5070,6 @@ msgstr "排隊中"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr "Rakazo 額度"
@@ -6253,8 +6256,8 @@ msgid "Subscribe for {price} / month"
 msgstr "以每月 {price} 訂閱"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "訂閱 Rakazo 額度"
+msgid "Subscribe to credits"
+msgstr "訂閱額度"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"

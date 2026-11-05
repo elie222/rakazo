@@ -15,6 +15,7 @@ import {
   createThreadMessageInTransaction,
   IsolationError,
   lockOwnedGroup,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -220,7 +221,7 @@ export async function handoffToGroupBot(
       inGroup,
       groupName: group.name,
     } as const;
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if ("error" in committed) return committed;
   await deps.events.notify(committed.threadId, committed.eventSeq).catch((error) => {
     getLogger().error("group handoff realtime notification", error);

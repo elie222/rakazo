@@ -139,55 +139,53 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
     .some((platform) => platform.provider === identity.provider && platform.capabilities.files);
   // One row per platform-sized part, then one per image or file, so a retry
   // re-sends only the parts that failed and never repeats delivered text.
-  // Explicit createdAt keeps the parts in order for the drain.
-  const createdAt = Date.now();
+  // The whole reply takes one explicit, non-overlapping range, like a group
+  // reply, so a concurrent DM mirror cannot interleave its parts.
   const linkedPages = linkedPageIds(messages);
-  const rows = messages
-    .flatMap((message) => {
-      const body = extractText(message.blocks, linkedPages);
-      const parts = body ? splitOutboundBody(identity.provider, body) : [];
-      return [
-        ...parts.map((part, index) => ({
-          idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
-          kind: "dm",
-          identityId: identity.id,
-          body: part,
-          sourceMessageId: message.id,
-        })),
-        ...(sendsFiles ? extractArtifactIds(message.blocks) : []).map((artifactId) => ({
-          idempotencyKey: `msg:${message.id}:file:${artifactId}`,
-          kind: "dm",
-          identityId: identity.id,
-          body: "",
-          sourceMessageId: message.id,
-        })),
-      ];
-    })
-    .map((row, index) => ({ ...row, createdAt: new Date(createdAt + index) }));
+  const rows = messages.flatMap((message) => {
+    const body = extractText(message.blocks, linkedPages);
+    const parts = body ? splitOutboundBody(identity.provider, body) : [];
+    return [
+      ...parts.map((part, index) => ({
+        idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
+        kind: "dm",
+        identityId: identity.id,
+        body: part,
+        sourceMessageId: message.id,
+      })),
+      ...(sendsFiles ? extractArtifactIds(message.blocks) : []).map((artifactId) => ({
+        idempotencyKey: `msg:${message.id}:file:${artifactId}`,
+        kind: "dm",
+        identityId: identity.id,
+        body: "",
+        sourceMessageId: message.id,
+      })),
+    ];
+  });
   if (rows.length === 0) return;
   // Atomic dedupe: a concurrent messaging.deliver for the same run loses on
   // the idempotencyKey unique key instead of throwing P2002.
-  await deps.prisma.messagingOutbound.createMany({ data: rows, skipDuplicates: true });
+  await insertOutboundRows(deps.prisma, { identityId: identity.id }, rows);
 }
 
 /**
- * Inserts outbox rows for one group conversation with a non-overlapping
- * position range: under the channel row lock, every writer of a conversation
+ * Inserts outbox rows for one conversation with a non-overlapping position
+ * range: under the conversation row lock, every writer of a conversation
  * (mirrors, intros) takes timestamps starting past the newest committed row,
  * so no writer's rows interleave with another's — not even on a clock tie or
  * a delayed commit. Only rows are read and written here; sends stay in the
  * drain.
  */
-export async function insertGroupOutboundRows(
+export async function insertOutboundRows(
   prisma: PrismaClient,
-  channel: { id: string; threadId: string },
+  conversation: Conversation,
   rows: Array<Omit<Prisma.MessagingOutboundCreateManyInput, "createdAt">>,
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM messaging_channels WHERE id = ${channel.id} FOR UPDATE`;
+    await lockConversation(tx, conversation);
     const latest = await tx.messagingOutbound.aggregate({
       _max: { createdAt: true },
-      where: { threadId: channel.threadId },
+      where: conversation,
     });
     const base = Math.max(Date.now(), (latest._max.createdAt?.getTime() ?? 0) + 1);
     await tx.messagingOutbound.createMany({
@@ -246,9 +244,9 @@ async function mirrorChannelRun(
   // One row per platform-sized part, like the DM path: the adapter truncates
   // an oversized body instead of failing, which would drop the reply's tail.
   // The whole reply takes one explicit, non-overlapping range.
-  await insertGroupOutboundRows(
+  await insertOutboundRows(
     deps.prisma,
-    channel,
+    { identityId: null, threadId: channel.threadId },
     messages.flatMap(({ message, text }) =>
       splitOutboundBody(identity.provider, `${fromLabel}: ${text}`).map((part, index) => ({
         idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
@@ -487,7 +485,7 @@ function conversationOf(row: MessagingOutboundRow): Conversation | null {
 }
 
 /**
- * Takes the per-conversation lock every group-row writer allocates under:
+ * Takes the per-conversation lock every outbox-row writer allocates under:
  * the channel row for a group, the identity row for a direct message.
  */
 async function lockConversation(tx: Prisma.TransactionClient, conversation: Conversation) {

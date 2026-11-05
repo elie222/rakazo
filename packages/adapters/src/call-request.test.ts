@@ -149,6 +149,7 @@ describe("settleCallRequest", () => {
         }),
       }),
     );
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
   });
 
   it("keeps a committed answer recoverable when notification fails", async () => {

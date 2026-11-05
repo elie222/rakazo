@@ -9,8 +9,9 @@
 # the root manifest and the lockfile count for every area. Any other file, shared packages included, counts
 # for web, e2e and server. all_packages: a change outside the workspace packages (root config, CI,
 # scripts, infra, a package manifest) that typecheck and unit tests cannot trace through the package
-# graph, so they run for every package; docs, agent notes and root markdown do not count. Renames
-# count both paths.
+# graph, so they run for every package; docs, agent notes and root markdown do not count. Every
+# Dockerfile counts too: the host safeguard tests read all of them, so none may skip the gate.
+# Renames count both paths.
 set -euo pipefail
 
 files="$(git diff --no-renames --name-only HEAD^1 HEAD)"
@@ -22,6 +23,7 @@ compose=false
 all_packages=false
 while IFS= read -r file; do
   case "$file" in
+    */Dockerfile*) all_packages=true ;;
     apps/*/package.json | packages/*/package.json | infra/*/package.json) all_packages=true ;;
     apps/*/* | packages/*/* | infra/sandboxes/supervisor/* | infra/updater/*) ;;
     .agents/skills/pr-watch/*) all_packages=true ;;

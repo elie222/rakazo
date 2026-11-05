@@ -169,6 +169,19 @@ describe("composio tool mapping", () => {
     expect(tools[1]?.inputSchema).toMatchObject({ properties: { username: { type: "string" } } });
   });
 
+  it("labels session tools without the vendor name", () => {
+    const tools = asConnectorTools([
+      { slug: "COMPOSIO_SEARCH_TOOLS" },
+      { slug: "COMPOSIO_WAIT_FOR_CONNECTIONS" },
+      { slug: "HACKERNEWS_GET_USER" },
+    ]);
+    expect(tools.map((tool) => tool.label)).toEqual([
+      "Searching your apps",
+      "Wait for connections",
+      undefined,
+    ]);
+  });
+
   it("marks the multi-execute tool as a batch of the actions it names", () => {
     const tools = asConnectorTools([
       { slug: "COMPOSIO_MULTI_EXECUTE_TOOL" },

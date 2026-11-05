@@ -208,6 +208,19 @@ function createDeps(overrides: {
       findFirst: vi.fn(async ({ where }: { where: OutboundRowFilter }) =>
         findOutboundRow(rows, where),
       ),
+      aggregate: vi.fn(
+        async ({ where, _max }: { where?: OutboundRowFilter; _max?: { createdAt?: boolean } }) => {
+          const times = rows
+            .filter((row) => matchesWhere(row, where ?? {}))
+            .map((row) => (row.createdAt as Date | undefined)?.getTime())
+            .filter((time): time is number => time !== undefined);
+          return {
+            _max: {
+              createdAt: _max?.createdAt && times.length ? new Date(Math.max(...times)) : null,
+            },
+          };
+        },
+      ),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         let count = 0;
         for (const item of data) {

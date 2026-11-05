@@ -117,8 +117,15 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
   if (!Number.isFinite(scheduledAt.getTime())) return;
   const routine = await deps.prisma.routine.findUnique({
     where: { id: routineId },
+    include: { space: { select: { deletingAt: true } } },
   });
-  if (!routine?.active || routine.nextRunAt?.getTime() !== scheduledAt.getTime()) return;
+  // A Space being deleted runs nothing; its routines resume if the deletion is called off.
+  if (
+    !routine?.active ||
+    routine.space?.deletingAt ||
+    routine.nextRunAt?.getTime() !== scheduledAt.getTime()
+  )
+    return;
   if (await deferFutureRoutine(deps.jobs, routineId, scheduledAt)) return;
   const bot = await deps.prisma.bot.findUnique({
     where: { id: routine.botId },

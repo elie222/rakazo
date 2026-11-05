@@ -14,6 +14,8 @@ import {
   MAX_ACTIVE_ROUTINES_PER_BOT,
   resolveScheduleTiming,
   SCHEDULE_TOOL_NAMES,
+  scheduleCreateError,
+  scheduleCreateFields,
   updateScheduleFromTool,
 } from "./schedule-tools.js";
 
@@ -945,7 +947,10 @@ describe("schedule_create with a watch", () => {
         ...base,
         schedule: { cron: "0 9 * * *", watch: { kind: "files", paths: ["inbox"] } },
       }),
-    ).toHaveProperty("error");
+    ).toEqual({
+      error:
+        "A watch takes no schedule: it checks every watch.everyMinutes minutes (5 to 1440). Call again without cron.",
+    });
     expect(
       await createScheduleFromTool(d, { ...base, schedule: { watch: { kind: "files" } } }),
     ).toHaveProperty("error");
@@ -993,6 +998,58 @@ describe("cancelScheduleFromTool", () => {
       error: "Schedule not found.",
     });
     expect(cancel).not.toHaveBeenCalled();
+  });
+});
+
+describe("scheduleCreateError", () => {
+  const prisma = {
+    user: { findUnique: vi.fn(async () => ({ timezone: "America/Denver" })) },
+    routine: {
+      findMany: vi.fn(async () => [
+        { id: "routine-1", name: "Daily digest", threadId: "thread-1" },
+      ]),
+    },
+  } as unknown as Parameters<typeof scheduleCreateError>[0];
+  const check = (args: Record<string, unknown>) =>
+    scheduleCreateError(prisma, {
+      spaceId: "space-1",
+      botId: "bot-1",
+      userId: "user-1",
+      threadId: "thread-1",
+      ...scheduleCreateFields(args),
+    });
+  const named = { name: "Inbox check", prompt: "Summarize what changed" };
+  const watch = { kind: "command", command: "ls inbox", everyMinutes: 15 };
+
+  it("names the timing a watch was sent with and where its interval goes", async () => {
+    await expect(check({ ...named, every: 15, watch })).resolves.toBe(
+      "A watch takes no schedule: it checks every watch.everyMinutes minutes (5 to 1440). Call again without every.",
+    );
+    await expect(
+      check({ ...named, every: 1440, unit: "minutes", startAt: "2030-01-01", watch }),
+    ).resolves.toMatch(/Call again without every, unit or startAt\.$/);
+  });
+
+  it("refuses what the handler refuses before it reads or writes a routine", async () => {
+    await expect(check({ ...named, name: " ", watch })).resolves.toBe("name is required.");
+    await expect(check({ ...named, prompt: "", watch })).resolves.toBe("prompt is required.");
+    await expect(check({ ...named, name: "daily digest", watch })).resolves.toBe(
+      'An active routine named "Daily digest" already exists (routine-1). Update or cancel it instead.',
+    );
+    await expect(check({ ...named, timezone: "Mars/Base", watch })).resolves.toBe(
+      "Unknown timezone",
+    );
+    await expect(check({ ...named, watch: "{kind" })).resolves.toMatch(/^watch must be an object/);
+    await expect(check({ ...named, watch: { ...watch, everyMinutes: 1 } })).resolves.toMatch(/5/);
+    await expect(
+      check({ ...named, every: 1, unit: "days", runAt: "2030-01-01T09:00" }),
+    ).resolves.toBe("Provide either a repeating schedule or a one-shot time, not both.");
+  });
+
+  it("accepts a valid watch or schedule, ignoring blank leftovers", async () => {
+    await expect(check({ ...named, watch, every: null, startAt: "" })).resolves.toBeUndefined();
+    await expect(check({ ...named, watch: JSON.stringify(watch) })).resolves.toBeUndefined();
+    await expect(check({ ...named, every: 1, unit: "days" })).resolves.toBeUndefined();
   });
 });
 
@@ -1266,7 +1323,8 @@ describe("updateScheduleFromTool", () => {
       watch: { kind: "files", paths: ["inbox"], everyMinutes: 15 },
     });
     await expect(update({ schedule: { cron: "0 9 * * *" } })).resolves.toEqual({
-      error: "A watch checks on its own interval; cancel it and create a schedule.",
+      error:
+        "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt or active. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.",
     });
     await expect(update({ name: "Inbox" })).resolves.toMatchObject({ ok: true, name: "Inbox" });
   });
