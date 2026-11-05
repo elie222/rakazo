@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { copyFile, lstat, mkdir, readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
-import type { DesktopLocalStackState } from "@rakazo/contracts";
+import type { DesktopLocalStackPhase, DesktopLocalStackState } from "@rakazo/contracts";
 import type { DockerFailureKind, RunDocker, RunDockerResult } from "./docker-cli.js";
 import {
   classifyDockerFailure,
@@ -348,6 +348,14 @@ function defaultSleep(ms: number, signal: AbortSignal) {
   });
 }
 
+/** Phases in which stack containers may be running; early failures launch none. */
+const RUNNING_PHASES: ReadonlySet<DesktopLocalStackPhase> = new Set([
+  "starting",
+  "waiting-healthy",
+  "ready",
+  "failed",
+]);
+
 /**
  * Installs and starts the compose stack under the app's user data. Every docker call
  * uses a fixed argv and an allowlisted environment; the setup window polls `state()`.
@@ -364,6 +372,8 @@ export class LocalStackController {
   private voidBefore = 0;
   /** A reused stack runs while its phase stays idle; only a successful stop clears this. */
   private reusedManagedStack = false;
+  /** Bumped when a stop begins, so a probe started earlier cannot record reuse afterwards. */
+  private stopGeneration = 0;
 
   constructor(private readonly deps: LocalStackDeps) {
     this.current = initialStackState(deps.imageTag);
@@ -379,11 +389,13 @@ export class LocalStackController {
   }
 
   /**
-   * True while a stack this app manages may be running: one it started this session, or one
-   * whose reuse a launch probe confirmed. The desktop's stack off-switch applies to these.
+   * True while a stack this app manages may have containers running: an in-progress start
+   * past the point of launching containers, a failure after containers may have launched,
+   * or a reuse a launch probe confirmed. Early failures such as missing Docker never
+   * started a container, so the desktop's stack off-switch stays hidden for them.
    */
   managedStackRunning(): boolean {
-    return this.current.phase !== "idle" || this.reusedManagedStack;
+    return RUNNING_PHASES.has(this.current.phase) || this.reusedManagedStack;
   }
 
   /** Fast path for launch: only a stack with our private token and desired image may be reused. */
@@ -397,11 +409,13 @@ export class LocalStackController {
     const token = await readStackToken(this.deps.stackDir);
     if (token === null) return false;
     this.currentStackToken = token;
+    const stopGeneration = this.stopGeneration;
     try {
       const matched =
         (await this.deps.probe(url, AbortSignal.timeout(HEALTH_POLL_INTERVAL_MS), token)) ===
         this.deps.imageTag;
-      if (matched) this.reusedManagedStack = true;
+      // A stop that began while the probe was pending may have stopped the stack it saw.
+      if (matched && stopGeneration === this.stopGeneration) this.reusedManagedStack = true;
       return matched;
     } catch {
       return false;
@@ -432,6 +446,7 @@ export class LocalStackController {
   /** Stops the containers (`compose stop`); volumes and images stay for the next start. */
   stop(): Promise<DesktopLocalStackState> {
     this.voidBefore = this.ticket;
+    this.stopGeneration += 1;
     // Join a stop already running unless a start was queued behind it; the latest
     // intent is "stopped", so that start is voided and a fresh stop follows it.
     if (this.stopping !== null && this.running === null) return this.stopping;

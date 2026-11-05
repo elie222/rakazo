@@ -607,6 +607,61 @@ describe("LocalStackController", () => {
     expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]);
   });
 
+  it("does not count an early failure before any container started as a running stack", async () => {
+    const missing = controller({ exists: () => false });
+    expect((await missing.start()).phase).toBe("docker-missing");
+    expect(missing.managedStackRunning()).toBe(false);
+
+    const daemonDown = controller({}, (args) =>
+      args[0] === "info"
+        ? { code: 1, stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" }
+        : ok(args),
+    );
+    expect((await daemonDown.start()).phase).toBe("docker-not-running");
+    expect(daemonDown.managedStackRunning()).toBe(false);
+  });
+
+  it("counts a stack this app started, and a failure after containers may have launched", async () => {
+    const running = controller();
+    await running.start();
+    expect(running.managedStackRunning()).toBe(true);
+    await running.stop();
+    expect(running.managedStackRunning()).toBe(false);
+
+    const failedUp = controller({}, (args) =>
+      args[7] === "up" ? { code: 1, stderr: "service exited" } : ok(args),
+    );
+    expect((await failedUp.start()).phase).toBe("failed");
+    expect(failedUp.managedStackRunning()).toBe(true);
+  });
+
+  it("does not resurrect a stopped stack from a probe that resolves after the stop", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    let markProbeStarted: () => void = () => undefined;
+    const probeStarted = new Promise<void>((resolve) => {
+      markProbeStarted = resolve;
+    });
+    let resolveProbe!: (tag: string | null) => void;
+    const stack = controller({
+      probe: (_url, _signal, supplied) => {
+        if (supplied !== token) return Promise.resolve(null);
+        markProbeStarted();
+        return new Promise((resolve) => {
+          resolveProbe = resolve;
+        });
+      },
+    });
+
+    const reuse = stack.matchesDesiredStack();
+    await probeStarted;
+    await stack.stop();
+    resolveProbe("v1.2.3");
+    await expect(reuse).resolves.toBe(true);
+    expect(stack.managedStackRunning()).toBe(false);
+  });
+
   it("reuses only the privately identified stack on the desired image", async () => {
     const stackPath = path.join(root, "stack");
     await mkdir(stackPath, { recursive: true });
