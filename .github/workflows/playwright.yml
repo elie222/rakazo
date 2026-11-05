@@ -41,17 +41,17 @@ env:
   TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: mirror.gcr.io/
 
 jobs:
-  # Pull-request CI: six shards × four Playwright workers. Nightly: eight shards for the full suite.
-  # Fixed per-shard setup (install, Postgres, Chromium) stays ~40s; more shards cut the ~4 minute
-  # test body that dominates wall clock on a typical web PR.
+  # Pull-request and nightly CI: eight shards × two Playwright workers. Fixed per-shard setup
+  # (install, Postgres, Chromium) stays ~40s; more shards cut the ~4 minute test body that
+  # dominates wall clock on a typical web PR. Two workers avoid starving Chromium on 4-vCPU runners.
   shard:
-    name: Web E2E (${{ matrix.shard }}/${{ inputs.nightly && 8 || 6 }})
+    name: Web E2E (${{ matrix.shard }}/8)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(inputs.nightly && '[1, 2, 3, 4, 5, 6, 7, 8]' || '[1, 2, 3, 4, 5, 6]') }}
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     # Checks its own changed areas instead of waiting for ci.yml's Changed areas job, so the shards
     # start with the first jobs; the steps skip and the combining job reports skipped when the
     # pull request cannot affect the suite.
@@ -96,7 +96,7 @@ jobs:
         if: steps.areas.outputs.e2e != 'false'
         id: playwright_tests
         env:
-          SHARD: ${{ matrix.shard }}/${{ inputs.nightly && 8 || 6 }}
+          SHARD: ${{ matrix.shard }}/8
           E2E_SKIP_NIGHTLY: ${{ !inputs.nightly && '1' || '' }}
         run: pnpm test:e2e -- --shard="$SHARD"
       - name: Upload shard results
@@ -192,7 +192,7 @@ jobs:
         env:
           SHARDS: ${{ runner.temp }}/shards
           WWW: ${{ runner.temp }}/www
-          SHARD_TOTAL: ${{ inputs.nightly && 8 || 6 }}
+          SHARD_TOTAL: 8
         run: |
           set -euo pipefail
           mkdir -p blob-report apps/web/test-results

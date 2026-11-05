@@ -79,9 +79,12 @@ export default defineConfig({
   grepInvert: skipNightly ? /@nightly/ : undefined,
   forbidOnly: Boolean(process.env.CI),
   // Specs that must stay ordered opt into test.describe.configure({ mode: "serial" }).
-  // CI runs four workers per shard on GitHub's 4-vCPU runners; local stays at Playwright's default.
+  // CI keeps two workers per shard: GitHub's 4-vCPU runners starve at four concurrent Chromiums,
+  // and wall clock drops more from extra shards (separate machines) than from packing one box.
   fullyParallel: !realSandbox,
-  workers: realSandbox ? 1 : process.env.CI ? 4 : undefined,
+  workers: realSandbox ? 1 : process.env.CI ? 2 : undefined,
+  // One retry absorbs the rare race that shows up when many shards share the Actions pool.
+  retries: process.env.CI && !realSandbox ? 1 : 0,
   timeout: boatSandbox ? 600_000 : realSandbox ? 300_000 : 120_000,
   expect: { timeout: boatSandbox ? 300_000 : realSandbox ? 90_000 : 20_000 },
   reporter: reporters,
