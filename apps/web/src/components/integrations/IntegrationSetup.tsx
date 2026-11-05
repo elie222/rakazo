@@ -63,7 +63,7 @@ export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId
 
   return (
     <div className="space-y-6">
-      <h1 className="text-[32px] font-medium text-foreground">
+      <h1 className="text-heading1 font-medium text-foreground">
         <Trans>Add MCP server</Trans>
       </h1>
       <form
@@ -103,11 +103,14 @@ export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId
         </div>
       ))}
       {searched && !remoteResults.length ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           <Trans>No remote MCP servers found</Trans>
         </p>
       ) : null}
-      <Disclosure className="text-sm text-muted-foreground" summary={<Trans>Add server URL</Trans>}>
+      <Disclosure
+        className="text-body text-muted-foreground"
+        summary={<Trans>Add server URL</Trans>}
+      >
         <div className="mt-3 space-y-3">
           <Input
             aria-label={t`Server URL`}

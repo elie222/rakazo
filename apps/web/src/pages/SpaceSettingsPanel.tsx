@@ -94,7 +94,7 @@ export function SpaceSettingsPanel({
             }
           >
             {error ? (
-              <p role="alert" className="pt-2 text-[12.5px] text-destructive">
+              <p role="alert" className="pt-2 text-body-sm text-destructive">
                 {error}
               </p>
             ) : null}

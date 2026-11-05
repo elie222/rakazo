@@ -98,7 +98,7 @@ export function PasskeyOffer() {
       className="mx-3 mb-2 rounded-xl border border-border bg-card px-3 py-3 text-card-foreground"
     >
       <div className="flex items-start gap-2">
-        <p className="min-w-0 flex-1 text-[13.5px]">
+        <p className="min-w-0 flex-1 text-body">
           <Trans>Add a passkey for faster sign-in?</Trans>
         </p>
         <Button
@@ -112,7 +112,7 @@ export function PasskeyOffer() {
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="mt-2 text-[12.5px] text-destructive">
+        <p role="alert" className="mt-2 text-body-sm text-destructive">
           {error}
         </p>
       ) : null}

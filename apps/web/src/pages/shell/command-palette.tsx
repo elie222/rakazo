@@ -117,7 +117,7 @@ export function CommandPalette({
               <span className="block truncate font-medium text-foreground" dir="auto">
                 {page.title}
               </span>
-              <span className="mt-0.5 block truncate text-[13px] text-muted-foreground">
+              <span className="mt-0.5 block truncate text-body-sm text-muted-foreground">
                 {formatRelativeTime(page.updatedAt)}
               </span>
             </span>
@@ -193,7 +193,10 @@ export function CommandPalette({
                       {bot.name}
                     </div>
                     {subtitle ? (
-                      <div className="mt-0.5 truncate text-[13px] text-muted-foreground" dir="auto">
+                      <div
+                        className="mt-0.5 truncate text-body-sm text-muted-foreground"
+                        dir="auto"
+                      >
                         {subtitle}
                       </div>
                     ) : null}

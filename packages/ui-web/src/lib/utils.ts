@@ -6,7 +6,9 @@ import { extendTailwindMerge } from "tailwind-merge";
 // keeps both instead of being merged as two text colours.
 const twMerge = extendTailwindMerge({
   extend: {
-    theme: { text: ["caption", "label", "body-sm", "body", "body-lg", "heading3", "heading2", "heading1"] },
+    theme: {
+      text: ["caption", "label", "body-sm", "body", "body-lg", "heading3", "heading2", "heading1"],
+    },
   },
 });
 
