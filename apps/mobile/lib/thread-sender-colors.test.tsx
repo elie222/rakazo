@@ -27,6 +27,7 @@ vi.mock("react-native-reanimated", () => ({
 }));
 
 vi.mock("expo-secure-store", () => ({}));
+vi.mock("expo-clipboard", () => ({ setStringAsync: async () => true }));
 vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));

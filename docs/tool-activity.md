@@ -1,7 +1,7 @@
 # Tool activity
 
-Bot replies in the web app and the Electron desktop app can show a small card listing the
-tools the bot called during the run.
+Bot replies in the web, desktop and mobile apps can show a small card listing the tools the
+bot called during the run.
 
 ## Behavior
 
@@ -47,7 +47,7 @@ API responses are the same with it on or off.
 | --- | --- |
 | Web | Supported |
 | Electron desktop | Supported (hosts the web UI, stores the choice in its own local storage) |
-| Expo mobile | Not included. Mobile keeps hiding tool activity, which is the previous behavior, so nothing changes there. Copied message text lists each step with its detail. |
+| Expo mobile | Supported, behind the same switch under **Settings → Advanced → Show tool activity**, stored on the device. Rows open to the same terminal panel; Copy uses the system clipboard. |
 
 ## Tests
 
@@ -55,7 +55,9 @@ API responses are the same with it on or off.
   `apps/web/src/lib/tool-activity-preference.test.ts`,
   `apps/web/src/lib/tool-activity-view.test.ts`,
   `apps/web/src/lib/tool-call-records.test.ts`,
-  `packages/core/src/tool-call-records.test.ts`, and
+  `packages/core/src/tool-call-records.test.ts`,
+  `apps/mobile/lib/tool-activity-card.test.tsx`,
+  `apps/mobile/lib/message-presentation.test.ts`, and
   `apps/web/src/pages/AccountSettingsOverlay.test.tsx`.
 - UI E2E with fake data and screenshots: `apps/web/e2e/tool-activity.spec.ts` covers the
   `apps/web/e2e/fixtures/tool-activity.html` fixture and one scripted-runtime chat turn in

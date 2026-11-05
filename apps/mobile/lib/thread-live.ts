@@ -12,6 +12,7 @@ import { applyMobileThreadEvent, rpc, subscribeThread } from "./api";
 import { currentSessionGeneration } from "./session";
 import type { ThreadJumpAnchor } from "./thread-jump";
 import type { PinnedThreadWindow } from "./thread-window";
+import { toolCallRecords } from "./tool-call-records";
 import { errorText } from "./user-error";
 
 /**
@@ -127,6 +128,7 @@ export function useThreadLiveSubscription({
                 jumpAnchor.current.release();
                 historyEpoch.current += 1;
               }
+              toolCallRecords.record(event);
               const previous = snapRef.current;
               const reduced = applyMobileThreadEvent(previous, event);
               if (reduced !== previous) commitSnap(reduced);

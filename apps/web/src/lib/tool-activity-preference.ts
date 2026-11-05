@@ -1,6 +1,8 @@
-export type ToolActivityPreference = "on" | "off";
+import type { ToolActivityPreference } from "@rakazo/core";
+import { normalizeToolActivityPreference, TOOL_ACTIVITY_STORAGE_KEY } from "@rakazo/core";
 
-export const TOOL_ACTIVITY_STORAGE_KEY = "rakazo.showToolActivity";
+export type { ToolActivityPreference };
+export { normalizeToolActivityPreference, TOOL_ACTIVITY_STORAGE_KEY };
 
 export type ResolveToolActivityOptions = {
   stored?: string | null;
@@ -29,13 +31,6 @@ function readStored(storage: Pick<Storage, "getItem"> | null | undefined): strin
 
 function notify() {
   for (const listener of listeners) listener();
-}
-
-/** Only a saved "on" shows tool cards. Missing or unreadable storage stays off so chats stay clean. */
-export function normalizeToolActivityPreference(
-  raw: string | null | undefined,
-): ToolActivityPreference {
-  return raw?.trim().toLowerCase() === "on" ? "on" : "off";
 }
 
 export function toolActivityEnabled(preference: ToolActivityPreference = "off"): boolean {

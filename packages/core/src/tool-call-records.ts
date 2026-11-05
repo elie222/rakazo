@@ -75,3 +75,44 @@ function asRecord(value: unknown): Record<string, unknown> {
     ? (value as Record<string, unknown>)
     : {};
 }
+
+/**
+ * What each live tool call did, by run, fed from a thread's realtime events. Calls that
+ * finished before the client connected are not here; the activity view fetches those on demand.
+ */
+export function createToolCallRecordStore() {
+  const byRun = new Map<string, ReadonlyMap<string, ToolCallRecord>>();
+  const listeners = new Set<() => void>();
+  const notify = () => {
+    for (const listener of listeners) listener();
+  };
+  return {
+    /** Applies a thread event; events that say nothing about a call are ignored. */
+    record(event: { type: string; runId?: string | null; payload?: unknown }): void {
+      if (!event.runId || !isToolCallRecordEvent(event)) return;
+      const records = byRun.get(event.runId) ?? new Map<string, ToolCallRecord>();
+      const next = reduceToolCallRecord(records, { type: event.type, payload: event.payload });
+      if (!next) return;
+      byRun.set(event.runId, new Map(records).set(next.executionId, next));
+      notify();
+    },
+    /** Puts records in place of a run's events, for fixtures and tests. */
+    seed(runId: string, records: readonly ToolCallRecord[]): void {
+      byRun.set(runId, new Map(records.map((record) => [record.executionId, record])));
+      notify();
+    },
+    get(runId: string): ReadonlyMap<string, ToolCallRecord> | undefined {
+      return byRun.get(runId);
+    },
+    subscribe(listener: () => void): () => void {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    clear(): void {
+      byRun.clear();
+      notify();
+    },
+  };
+}
