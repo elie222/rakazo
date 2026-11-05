@@ -431,33 +431,78 @@ export function configureSessionEndHangUp(hangUp: (() => Promise<void>) | undefi
   hangUpBeforeCredentialsCleared = hangUp;
 }
 
-/** Clears session + space for an endpoint change. Restores both if either wipe fails. */
-async function clearCredentialsForEndpointChange(): Promise<
+/**
+ * Clears session + space for an endpoint change. Restores both if either wipe fails. The session it
+ * clears is the one it records for revocation: a sign-in during the hang-up is read here, and any
+ * session change after that read stops the switch before it clears anything.
+ */
+async function clearCredentialsForEndpointChange(
+  previous: string,
+  previousHeaders: Record<string, string>,
+): Promise<
   | {
       ok: true;
       previousToken: string;
       previousSpace: string;
+      pendingSignOut: PendingSignOut | undefined;
     }
   | { ok: false; result: EndpointResult }
 > {
   // The old server's session authorizes the call's hang-up; send it while it still exists.
   await hangUpBeforeCredentialsCleared?.().catch(() => undefined);
+  const generation = currentSessionGeneration();
   const previousToken = await snapshotSessionToken();
-  const previousSpace = await snapshotSpace();
-  if (!previousToken.ok || !previousSpace.ok) {
+  // An unreadable session is not an empty one: clearing now could strand a live session
+  // with no record to revoke it, so the switch stops before touching anything.
+  if (!previousToken.ok) {
     return {
       ok: false,
-      result: { ok: false, error: t("Could not clear the previous server session") },
+      result: { ok: false, error: t("Could not save the previous server session") },
     };
   }
+  let pendingSignOut: PendingSignOut | undefined;
+  if (previousToken.value) {
+    // Recorded before the old credentials are discarded, so a process kill cannot lose both —
+    // but provisionally: a retry must not revoke a session a rolled-back switch still uses.
+    pendingSignOut = {
+      apiBase: previous,
+      token: previousToken.value,
+      headers: previousHeaders,
+      recordedAt: Date.now(),
+      provisional: true,
+    };
+    if (!(await savePendingSignOut(pendingSignOut))) {
+      // Without the record the old server keeps its session, so the switch cannot proceed.
+      return {
+        ok: false,
+        result: { ok: false, error: t("Could not save the previous server session") },
+      };
+    }
+  }
+  const failed = async () => {
+    if (pendingSignOut) await removePendingSignOut(pendingSignOut);
+    return {
+      ok: false as const,
+      result: { ok: false as const, error: t("Could not clear the previous server session") },
+    };
+  };
+  // Captured before the read, so a selection made during it cannot pass as the one read.
+  const spaceGeneration = spaceSelectionGeneration;
+  const previousSpace = await snapshotSpace();
+  if (!previousSpace.ok) return failed();
   const rollbackReady = previousSpace.value
     ? await saveSpaceRollback(previousSpace.value)
     : await clearStoredValue(SPACE_ROLLBACK_KEY);
-  if (!rollbackReady) {
-    return {
-      ok: false,
-      result: { ok: false, error: t("Could not clear the previous server session") },
-    };
+  if (!rollbackReady) return failed();
+  // Checked in the same tick as the clear: a session saved after the read has no record.
+  if (generation !== currentSessionGeneration()) {
+    // An earlier failed switch may have left the rollback as the selection's only stored copy.
+    const kept =
+      !previousSpace.value ||
+      spaceSelectionGeneration !== spaceGeneration ||
+      (await writeStoredValue(SPACE_KEY, previousSpace.value));
+    if (kept) await clearStoredValue(SPACE_ROLLBACK_KEY);
+    return failed();
   }
   const sessionCleared = await clearSessionToken();
   cachedSpaceId = "";
@@ -468,14 +513,12 @@ async function clearCredentialsForEndpointChange(): Promise<
       ok: true,
       previousToken: previousToken.value,
       previousSpace: previousSpace.value,
+      pendingSignOut,
     };
   }
 
   await restoreCredentials(previousToken.value, previousSpace.value);
-  return {
-    ok: false,
-    result: { ok: false, error: t("Could not clear the previous server session") },
-  };
+  return failed();
 }
 
 async function restoreCredentials(previousToken: string, previousSpace: string) {
@@ -570,34 +613,10 @@ async function saveApiBaseLocked(
   /** The revocation owed to the previous server, recorded before its credentials are discarded. */
   let pendingPreviousSignOut: PendingSignOut | undefined;
   if (switching) {
-    const tokenSnapshot = await snapshotSessionToken();
-    // An unreadable session is not an empty one: clearing now could strand a live session
-    // with no record to revoke it, so the switch stops before touching anything.
-    if (!tokenSnapshot.ok) {
-      return { ok: false, error: t("Could not save the previous server session") };
-    }
-    const token = tokenSnapshot.value;
-    if (token) {
-      // Recorded before the old credentials are discarded, so a process kill cannot lose both —
-      // but provisionally: a retry must not revoke a session a rolled-back switch still uses.
-      pendingPreviousSignOut = {
-        apiBase: previous,
-        token,
-        headers: previousHeaders,
-        recordedAt: Date.now(),
-        provisional: true,
-      };
-      if (!(await savePendingSignOut(pendingPreviousSignOut))) {
-        // Without the record the old server keeps its session, so the switch cannot proceed.
-        return { ok: false, error: t("Could not save the previous server session") };
-      }
-    }
-    const result = await clearCredentialsForEndpointChange();
-    if (!result.ok) {
-      if (pendingPreviousSignOut) await removePendingSignOut(pendingPreviousSignOut);
-      return result.result;
-    }
+    const result = await clearCredentialsForEndpointChange(previous, previousHeaders);
+    if (!result.ok) return result.result;
     cleared = result;
+    pendingPreviousSignOut = result.pendingSignOut;
   }
   if (!(await saveServerHeaders(parsed.url, headers))) {
     if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
@@ -651,30 +670,10 @@ async function resetApiBaseLocked(
   /** As in saveApiBase: recorded provisionally before the old credentials are discarded. */
   let pendingPreviousSignOut: PendingSignOut | undefined;
   if (switching) {
-    const tokenSnapshot = await snapshotSessionToken();
-    // As in saveApiBase: an unreadable session stops the switch before it clears anything.
-    if (!tokenSnapshot.ok) {
-      return { ok: false, error: t("Could not save the previous server session") };
-    }
-    const token = tokenSnapshot.value;
-    if (token) {
-      pendingPreviousSignOut = {
-        apiBase: previous,
-        token,
-        headers: previousHeaders,
-        recordedAt: Date.now(),
-        provisional: true,
-      };
-      if (!(await savePendingSignOut(pendingPreviousSignOut))) {
-        return { ok: false, error: t("Could not save the previous server session") };
-      }
-    }
-    const result = await clearCredentialsForEndpointChange();
-    if (!result.ok) {
-      if (pendingPreviousSignOut) await removePendingSignOut(pendingPreviousSignOut);
-      return result.result;
-    }
+    const result = await clearCredentialsForEndpointChange(previous, previousHeaders);
+    if (!result.ok) return result.result;
     cleared = result;
+    pendingPreviousSignOut = result.pendingSignOut;
   }
   try {
     await SecureStore.deleteItemAsync(ENDPOINT_KEY);
