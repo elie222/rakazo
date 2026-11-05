@@ -211,26 +211,26 @@ export function IncomingCall({
           </span>
         </span>
         <span className="flex flex-col items-center gap-1 md:items-start">
-          <span className="text-2xl font-semibold text-foreground md:text-lg" dir="auto">
+          <span className="text-heading1 font-semibold text-foreground md:text-heading3" dir="auto">
             {bot.name}
           </span>
         </span>
       </div>
       <p
-        className="my-4 max-w-80 rounded-xl bg-muted px-3 py-2 text-sm text-foreground md:my-0 md:max-w-none"
+        className="my-4 max-w-80 rounded-xl bg-muted px-3 py-2 text-body text-foreground md:my-0 md:max-w-none"
         dir="auto"
       >
         {call.reason}
       </p>
       {error ? (
-        <p role="alert" className="mb-4 text-center text-sm text-destructive md:mb-0">
+        <p role="alert" className="mb-4 text-center text-body text-destructive md:mb-0">
           {error}
         </p>
       ) : null}
       <div className="grid w-full max-w-80 grid-cols-2 gap-3 md:max-w-none">
         <Button
           variant="destructive"
-          className="h-14 text-sm md:h-11"
+          className="h-14 text-body md:h-11"
           disabled={busy}
           onClick={() => void settle()}
         >
@@ -239,7 +239,7 @@ export function IncomingCall({
         </Button>
         <Button
           disabled={busy}
-          className="h-14 bg-success text-sm text-background hover:bg-success/90 md:h-11"
+          className="h-14 bg-success text-body text-background hover:bg-success/90 md:h-11"
           onClick={() => void answer()}
         >
           <Phone className="size-5" aria-hidden="true" />

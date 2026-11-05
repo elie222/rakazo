@@ -51,6 +51,7 @@ export function SettingsOverlay({
   sandboxProvider,
   onSandboxProviderChange,
   canConfigureComputers = false,
+  computerSettingsEnabled = false,
   messagingEnabled = false,
   paymentWalletProvider = null,
   memoryConfig,
@@ -82,6 +83,7 @@ export function SettingsOverlay({
   onSandboxProviderChange?: (sandboxProvider: string) => void;
   /** Admins choose where new computers run. */
   canConfigureComputers?: boolean;
+  computerSettingsEnabled?: boolean;
   messagingEnabled?: boolean;
   /** The wallet this deployment lets bots spend from; none hides Wallet. */
   paymentWalletProvider?: { id: string; name: string } | null;
@@ -100,10 +102,9 @@ export function SettingsOverlay({
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
   const showComputer =
-    canConfigureComputers ||
+    (computerSettingsEnabled && (canConfigureComputers || canChooseOwnComputer(sandboxProvider))) ||
     keepComputerRecovery ||
-    computersAreUnavailable(sandboxProvider) ||
-    canChooseOwnComputer(sandboxProvider);
+    computersAreUnavailable(sandboxProvider);
   const showUpdates = Boolean(desktopBridge()?.update);
   // A section that isn't available yet (billing before its flag loads) shows General until it is.
   const section =
@@ -280,7 +281,7 @@ export function SettingsOverlay({
                     aria-current={active ? "page" : undefined}
                     disabled={panelBusy}
                     onClick={() => onSectionChange(item.id)}
-                    className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-[13.5px] transition-colors disabled:pointer-events-none disabled:opacity-50 ${
+                    className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-body transition-colors disabled:pointer-events-none disabled:opacity-50 ${
                       active
                         ? "bg-accent text-accent-foreground"
                         : "text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -421,6 +422,7 @@ export function SettingsOverlay({
                       }}
                       onRecoveryDismissed={releaseComputerRecovery}
                       canConfigureComputers={canConfigureComputers}
+                      computerSettingsEnabled={computerSettingsEnabled}
                     />
                   ) : null}
                   {section === "billing" && billingEnabled ? <BillingSettingsPanel /> : null}

@@ -64,7 +64,7 @@ function MemberPicker({
   return (
     <div className="mt-5 flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">
+        <span className="text-body text-muted-foreground">
           <Trans>Members ({selected.length})</Trans>
         </span>
         <Button
@@ -86,7 +86,7 @@ function MemberPicker({
             aria-label={t`Filter bots`}
             className="mt-2"
           />
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="mt-2 text-body text-muted-foreground">
             <Trans>
               Pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX}
             </Trans>
@@ -115,7 +115,7 @@ function MemberPicker({
                   size={32}
                   status={bot.status}
                 />
-                <span className="flex-1 text-[15px] text-foreground" dir="auto">
+                <span className="flex-1 text-body-lg text-foreground" dir="auto">
                   {bot.name}
                 </span>
               </button>
@@ -130,7 +130,7 @@ function MemberPicker({
           );
         })}
         {visible.length === 0 ? (
-          <p className="px-2.5 py-2.5 text-sm text-muted-foreground">
+          <p className="px-2.5 py-2.5 text-body text-muted-foreground">
             {expanded ? <Trans>No bots match</Trans> : <Trans>No members yet</Trans>}
           </p>
         ) : null}
@@ -173,7 +173,7 @@ export function CreateGroupForm({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">
+        <span className="text-body text-muted-foreground">
           <Trans>New group</Trans>
         </span>
         <Button
@@ -187,11 +187,11 @@ export function CreateGroupForm({
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="mb-3 text-sm text-destructive">
+        <p role="alert" className="mb-3 text-body text-destructive">
           {error}
         </p>
       ) : null}
-      <label htmlFor={nameId} className="block text-sm text-muted-foreground">
+      <label htmlFor={nameId} className="block text-body text-muted-foreground">
         <Trans>Name</Trans>
         <Input
           id={nameId}
@@ -315,7 +315,7 @@ export function GroupSettings({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">
+        <span className="text-body text-muted-foreground">
           <Trans>Group settings</Trans>
         </span>
         <Button
@@ -329,11 +329,11 @@ export function GroupSettings({
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="mb-3 text-sm text-destructive">
+        <p role="alert" className="mb-3 text-body text-destructive">
           {error}
         </p>
       ) : null}
-      <label htmlFor={nameId} className="block text-sm text-muted-foreground">
+      <label htmlFor={nameId} className="block text-body text-muted-foreground">
         <Trans>Name</Trans>
         <Input
           id={nameId}

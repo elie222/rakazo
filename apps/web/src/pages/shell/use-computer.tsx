@@ -781,7 +781,7 @@ export function useComputerControls({
             ? t`Computer failed to boot`
             : null));
   const computerScreenError = computerFailure ? (
-    <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
+    <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-body">
       {screenFailure ? (
         <p>
           <Trans>Screen not connected</Trans>

@@ -171,6 +171,30 @@ describe("bot management approval cards", () => {
     );
   });
 
+  it("carries a payment's receipt with secrets redacted", () => {
+    const block = buildApprovalAskBlock("effect-1", "browser_act", {}, ["fake-token"], {
+      summary: {
+        onceOnly: true,
+        title: "Pay on shop.test?",
+        lines: ["Socks: $9.00"],
+        receipt: {
+          button: "Pay fake-token",
+          items: [{ name: "Socks fake-token", amount: "$9.00" }],
+          amount: "$9.00",
+          amountSource: "page",
+        },
+      },
+    });
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.receipt).toEqual({
+      button: "Pay [redacted]",
+      items: [{ name: "Socks [redacted]", amount: "$9.00" }],
+      amount: "$9.00",
+      amountSource: "page",
+    });
+    expect(block.detail).toBe("Socks: $9.00");
+  });
+
   it("never offers always allow on a tool that needs explicit approval", () => {
     const block = buildApprovalAskBlock("effect-1", "set_child_bot_model", { bot_id: "bot-a" }, []);
     if (block.kind !== "ask") throw new Error("expected ask block");

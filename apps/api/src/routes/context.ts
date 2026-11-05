@@ -237,6 +237,8 @@ export function createRouterContext(deps: RouterDeps) {
       where: { userId: actor.userId },
       select: { id: true, provider: true, secretId: true },
     });
+    // Every entry checks the same connections, so their rows are read once for the whole list.
+    const requestServingDeps = { ...servingDeps, reads: new Map() };
     const byProvider = new Map<string, typeof connections>();
     for (const connection of connections) {
       const provider = canonicalPiProviderId(connection.provider);
@@ -257,7 +259,13 @@ export function createRouterContext(deps: RouterDeps) {
         const serving: string[] = [];
         for (const owner of owners)
           if (
-            await connectionServesModel(servingDeps, actor.userId, owner, entry.provider, entry.id)
+            await connectionServesModel(
+              requestServingDeps,
+              actor.userId,
+              owner,
+              entry.provider,
+              entry.id,
+            )
           )
             serving.push(owner.id);
         return serving.length === owners.length ? entry : { ...entry, credentialIds: serving };

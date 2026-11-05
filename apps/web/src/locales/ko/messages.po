@@ -182,6 +182,10 @@ msgstr ""
 msgid "{count} months"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "{count}개 더"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr ""
@@ -721,6 +725,10 @@ msgstr "{credit} 전액이 모델 사용에 쓰입니다."
 msgid "All bots"
 msgstr ""
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "모든 파일"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr ""
@@ -1203,6 +1211,10 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "기본 제공"
+
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "버튼 “{button}” · 페이지에서 읽음, 확인 안 됨"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -2653,6 +2665,7 @@ msgstr "일"
 msgid "Decline"
 msgstr "거절"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2770,11 +2783,6 @@ msgstr "거부됨"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "거부"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3247,6 +3255,10 @@ msgstr ""
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
 msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "만든 주체로 필터링"
 
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
@@ -3912,6 +3924,10 @@ msgstr "낮음"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "낮음"
+
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "봇이 만든 파일"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
@@ -4660,6 +4676,10 @@ msgstr "{day}일 {time}"
 msgid "on the 1st at {0}"
 msgstr "1일 {0}에"
 
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "버튼 금액"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "한 번"
@@ -5125,6 +5145,10 @@ msgstr "반응하기"
 msgid "Reactions"
 msgstr "반응"
 
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "페이지에서 읽음, 확인 안 됨"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "답변을 자동으로 읽기"
@@ -5157,6 +5181,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "최근"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "최근 결제"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -5767,6 +5795,10 @@ msgstr ""
 msgid "Search integrations.sh"
 msgstr ""
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Search MCP servers for “{query}”"
+msgstr "MCP 서버에서 “{query}” 검색"
+
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5960,6 +5992,7 @@ msgstr "공유 기억"
 msgid "Show"
 msgstr "보기"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""
@@ -6741,6 +6774,10 @@ msgstr "도구 이름"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "합계"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"

@@ -73,7 +73,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
         <button
           type="button"
           onClick={() => void startDownload()}
-          className="rounded-[20px] bg-card px-4 py-3 text-left text-[14px] text-foreground hover:bg-accent"
+          className="rounded-2xl bg-card px-4 py-3 text-left text-body text-foreground hover:bg-accent"
         >
           <div className="font-medium">{props.name}</div>
           <div className="mt-1 flex gap-2 text-muted-foreground">
@@ -97,7 +97,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
             onClick={() => setPreviewOpen(true)}
             className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-accent"
           >
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-muted text-foreground">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-muted text-foreground">
               {props.mimeType === "text/html" ? (
                 <Code2 size={21} strokeWidth={1.8} />
               ) : (
@@ -105,8 +105,8 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
               )}
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-[14px] font-medium">{props.name}</span>
-              <span className="mt-0.5 block text-[13px] text-muted-foreground">
+              <span className="block truncate text-body font-medium">{props.name}</span>
+              <span className="mt-0.5 block text-body-sm text-muted-foreground">
                 {formatSize(props.size)}
               </span>
             </span>
@@ -189,7 +189,7 @@ function FilePreview({
   return (
     <>
       <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border px-5">
-        <DialogTitle className="min-w-0 flex-1 truncate text-[14px] leading-5 font-medium text-foreground">
+        <DialogTitle className="min-w-0 flex-1 truncate text-body font-medium text-foreground">
           {name}
         </DialogTitle>
         <IconTooltip label={t`Download ${name}`}>
@@ -244,11 +244,11 @@ function FilePreview({
         ) : kind === "pdf" ? (
           <PdfViewer bytes={state.bytes} title={name} />
         ) : state.text !== undefined && kind === "text" ? (
-          <pre className="px-8 py-10 font-mono text-[13px] leading-6 whitespace-pre-wrap break-words text-foreground sm:px-12 sm:py-12">
+          <pre className="px-8 py-10 font-mono text-body-sm leading-6 whitespace-pre-wrap break-words text-foreground sm:px-12 sm:py-12">
             {state.text}
           </pre>
         ) : state.text !== undefined ? (
-          <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-[16px] leading-7 text-foreground sm:px-12 sm:py-12">
+          <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-body-lg leading-7 text-foreground sm:px-12 sm:py-12">
             <ChatMarkdown>{state.text}</ChatMarkdown>
           </article>
         ) : null}
@@ -316,7 +316,7 @@ function AudioArtifactPreview({
             <Play />
           </Button>
         ) : null}
-        <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{name}</span>
+        <span className="min-w-0 flex-1 truncate text-body font-medium">{name}</span>
         <Button
           variant="ghost"
           size="icon-lg"
@@ -328,7 +328,7 @@ function AudioArtifactPreview({
         </Button>
       </div>
       {state.status === "loading" ? (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-body text-muted-foreground">
           <Spinner aria-label={t`Loading preview…`} />
         </span>
       ) : state.status === "error" ? (
@@ -370,7 +370,7 @@ export function VideoPreview({ bytes, name }: { bytes: Uint8Array; name: string 
 
 function DownloadError({ message }: { message: string }) {
   return (
-    <div role="alert" className="mt-2 text-left text-[13px] text-destructive">
+    <div role="alert" className="mt-2 text-left text-body-sm text-destructive">
       {message}
     </div>
   );

@@ -1,4 +1,5 @@
 export const NL_MESSAGES: Record<string, string> = {
+  Haptics: "Haptische feedback",
   "Add rule": "Regel toevoegen",
   "Tool name": "Toolnaam",
   Address: "Adres",
@@ -420,6 +421,9 @@ export const NL_MESSAGES: Record<string, string> = {
   Play: "Afspelen",
   Pause: "Pauzeren",
   "Select text": "Tekst selecteren",
+  "Filter by who made it": "Filteren op maker",
+  "All files": "Alle bestanden",
+  "Made by bots": "Gemaakt door bots",
   "All bots": "Alle bots",
   Artifact: "Artefact",
   Artifacts: "Artefacten",
@@ -1380,6 +1384,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Discard changes?": "Wijzigingen verwerpen?",
   Discard: "Verwerpen",
   "Could not delete note": "Notitie kon niet worden verwijderd",
+  "Recent payments": "Recente betalingen",
   "Spending limit": "Bestedingslimiet",
   Amount: "Bedrag",
   Currency: "Valuta",
@@ -1395,6 +1400,11 @@ export const NL_MESSAGES: Record<string, string> = {
   "{amount} spent this week": "{amount} deze week uitgegeven",
   "{amount} spent this month": "{amount} deze maand uitgegeven",
   "{amount} spent": "{amount} uitgegeven",
+  "Button “{button}” · read from the page, not checked":
+    "Knop ‘{button}’ · van de pagina gelezen, niet gecontroleerd",
+  "On the button": "Op de knop",
+  "Read from the page, not checked": "Van de pagina gelezen, niet gecontroleerd",
+  Total: "Totaal",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

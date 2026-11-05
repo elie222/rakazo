@@ -85,7 +85,7 @@ function ByokIntervalToggle({
 }) {
   const { t } = useLingui();
   const savings = byokYearlySavingsPercent(monthlyCents, annualCents);
-  const segment = "h-7 px-3 text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm";
+  const segment = "h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm";
   return (
     <ToggleGroup
       aria-label={t`Billing period`}
@@ -177,7 +177,7 @@ function ByokTierSelect({
                 <span>
                   {offer.name} · {price}
                 </span>
-                <span className="text-xs text-muted-foreground">{computer(offer)}</span>
+                <span className="text-label text-muted-foreground">{computer(offer)}</span>
               </span>
             </SelectItem>
           ))}
@@ -222,14 +222,14 @@ export function CreditAmountSelect({
     >
       <SelectTrigger
         aria-label={monthly ? t`Monthly credits` : t`Credit amount`}
-        className="w-full rounded-xl pr-3 pl-4 text-base data-[size=default]:h-12"
+        className="w-full rounded-xl pr-3 pl-4 text-body-lg data-[size=default]:h-12"
       >
         <SelectValue />
       </SelectTrigger>
       <SelectContent alignItemWithTrigger={false} align="start">
         <SelectGroup>
           {items.map((item) => (
-            <SelectItem key={item.value} value={item.value} className="py-2 text-base">
+            <SelectItem key={item.value} value={item.value} className="py-2 text-body-lg">
               {item.label}
             </SelectItem>
           ))}
@@ -307,7 +307,7 @@ export function CreditChoice({
       <div className="grid gap-4 min-[480px]:grid-cols-2">
         <Card>
           <CardHeader>
-            <h2 className="text-lg font-medium">
+            <h2 className="text-heading3 font-medium">
               <Trans>Your subscription or API key</Trans>
             </h2>
           </CardHeader>
@@ -315,7 +315,7 @@ export function CreditChoice({
             {status.byokPriceCents && status.byokAnnualPriceCents ? (
               <div className="flex h-12 items-center justify-between gap-3">
                 <p className="flex items-baseline gap-1">
-                  <span className="text-3xl font-medium tracking-tight">
+                  <span className="text-display font-medium tracking-tight">
                     {formatBillingAmount(
                       interval === "year"
                         ? Math.round(status.byokAnnualPriceCents / 12)
@@ -324,7 +324,7 @@ export function CreditChoice({
                       i18n.locale,
                     )}
                   </span>
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-body text-muted-foreground">
                     <Trans>/ month</Trans>
                   </span>
                 </p>
@@ -336,7 +336,7 @@ export function CreditChoice({
                 />
               </div>
             ) : (
-              <p className="flex h-12 items-center text-3xl font-medium tracking-tight">
+              <p className="flex h-12 items-center text-display font-medium tracking-tight">
                 {status.byokPriceCents ? (
                   formatMonthlyUsd(status.byokPriceCents, i18n.locale)
                 ) : (
@@ -344,10 +344,10 @@ export function CreditChoice({
                 )}
               </p>
             )}
-            <p className="text-sm text-muted-foreground">
+            <p className="text-body text-muted-foreground">
               <Trans>Works with your ChatGPT or Claude plan.</Trans>
             </p>
-            <ul className="space-y-3 text-sm">
+            <ul className="space-y-3 text-body">
               {features.map((feature) => (
                 <li key={feature} className="flex gap-2">
                   <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -380,16 +380,16 @@ export function CreditChoice({
         </Card>
         <Card>
           <CardHeader>
-            <h2 className="text-lg font-medium">
+            <h2 className="text-heading3 font-medium">
               <Trans>Credits</Trans>
             </h2>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-4">
             <CreditAmountSelect monthly value={amount} onChange={setAmount} />
-            <p className="text-sm text-muted-foreground">
+            <p className="text-body text-muted-foreground">
               <Trans>All {credit} goes to model usage.</Trans>
             </p>
-            <ul className="space-y-3 text-sm">
+            <ul className="space-y-3 text-body">
               {[...features, t`Models at provider cost`].map((feature) => (
                 <li key={feature} className="flex gap-2">
                   <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -411,7 +411,7 @@ export function CreditChoice({
         </Card>
       </div>
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-body text-destructive">
           {error}
         </p>
       ) : null}
@@ -528,15 +528,15 @@ export function ModelCreditsSettings({
     <div data-testid="model-credits" className="space-y-5">
       {ownKeyPlan ? (
         <div data-testid="own-key-plan" className="rounded-xl border border-border p-5">
-          <h3 className="text-sm text-muted-foreground">
+          <h3 className="text-body text-muted-foreground">
             <Trans>Your subscription or API key</Trans>
           </h3>
-          <p className="mt-2 text-3xl font-medium tabular-nums">{ownKeyPlan.price}</p>
+          <p className="mt-2 text-display font-medium tabular-nums">{ownKeyPlan.price}</p>
           {ownKeyPlan.date ? (
-            <p className="mt-2 text-sm text-muted-foreground">{ownKeyPlan.date}</p>
+            <p className="mt-2 text-body text-muted-foreground">{ownKeyPlan.date}</p>
           ) : null}
           {currentTier ? (
-            <p className="mt-2 text-sm text-muted-foreground">
+            <p className="mt-2 text-body text-muted-foreground">
               {tierChange
                 ? computer(currentTier)
                 : `${currentTier.name} · ${computer(currentTier)}`}
@@ -567,7 +567,7 @@ export function ModelCreditsSettings({
       ) : null}
       <div className="rounded-xl border border-border p-5">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm text-muted-foreground">
+          <h3 className="text-body text-muted-foreground">
             <Trans>Available credits</Trans>
           </h3>
           <Button
@@ -580,8 +580,8 @@ export function ModelCreditsSettings({
             <Trans>Refresh</Trans>
           </Button>
         </div>
-        <p className="mt-2 text-3xl font-medium tabular-nums">{balance}</p>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 text-display font-medium tabular-nums">{balance}</p>
+        <p className="mt-2 text-body text-muted-foreground">
           {status.funding === "byok" && freeUntil ? (
             <Trans>Using your API key. Free plan ends {freeUntil}.</Trans>
           ) : status.funding === "byok" ? (
@@ -640,13 +640,13 @@ export function ModelCreditsSettings({
       </div>
       {status.computerHoursLeft != null ? (
         <div className="rounded-xl border border-border p-5">
-          <h3 className="text-sm text-muted-foreground">
+          <h3 className="text-body text-muted-foreground">
             <Trans>Computer hours left</Trans>
           </h3>
-          <p className="mt-2 text-3xl font-medium tabular-nums">{status.computerHoursLeft}</p>
+          <p className="mt-2 text-display font-medium tabular-nums">{status.computerHoursLeft}</p>
           {status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd ? (
             <>
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p className="mt-2 text-body text-muted-foreground">
                 <Trans>Trials get fewer hours to prevent abuse.</Trans>
               </p>
               <Button
@@ -859,7 +859,7 @@ export function ModelCreditsSettings({
         </Button>
       ) : null}
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-body text-destructive">
           <Trans>Could not update billing</Trans>
         </p>
       ) : null}

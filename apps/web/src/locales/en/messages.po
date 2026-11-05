@@ -182,6 +182,10 @@ msgstr "{count} days"
 msgid "{count} months"
 msgstr "{count} months"
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "{count} more"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr "{count} weeks"
@@ -721,6 +725,10 @@ msgstr "All {credit} goes to model usage."
 msgid "All bots"
 msgstr "All bots"
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "All files"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr "All spaces"
@@ -1203,6 +1211,10 @@ msgstr "Browse MCP servers"
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "Built-in"
+
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "Button “{button}” · read from the page, not checked"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -2653,6 +2665,7 @@ msgstr "days"
 msgid "Decline"
 msgstr "Decline"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2770,11 +2783,6 @@ msgstr "Denied"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "Deny"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr "Deployment default ({0})"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3247,6 +3255,10 @@ msgstr "Filter bots"
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
 msgstr "Filter by date"
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "Filter by who made it"
 
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
@@ -3912,6 +3924,10 @@ msgstr "Low"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "Low"
+
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "Made by bots"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
@@ -4660,6 +4676,10 @@ msgstr "on day {day} at {time}"
 msgid "on the 1st at {0}"
 msgstr "on the 1st at {0}"
 
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "On the button"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "One-time"
@@ -5125,6 +5145,10 @@ msgstr "React"
 msgid "Reactions"
 msgstr "Reactions"
 
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "Read from the page, not checked"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "Read replies aloud"
@@ -5157,6 +5181,10 @@ msgstr "Received"
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "Recent"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "Recent payments"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -5767,6 +5795,10 @@ msgstr "Search by domain"
 msgid "Search integrations.sh"
 msgstr "Search integrations.sh"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Search MCP servers for “{query}”"
+msgstr "Search MCP servers for “{query}”"
+
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5960,6 +5992,7 @@ msgstr "Shared memory"
 msgid "Show"
 msgstr "Show"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr "Show all"
@@ -6741,6 +6774,10 @@ msgstr "Tool name"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "Tools"
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "Total"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"

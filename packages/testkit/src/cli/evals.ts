@@ -7,7 +7,6 @@ import { parseArgs } from "node:util";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { BOT_FILES_EVAL_CASES, BOT_FILES_FIXTURE_VERSION } from "../evals/bot-files.js";
 import type { EvalCase } from "../evals/cases.js";
 import { EVAL_CASES, HISTORY_EVAL_CASES, wakesRoutines } from "../evals/cases.js";
@@ -62,6 +61,7 @@ import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
 import { runApprovalSuite } from "./approval-eval.js";
+import type { DisposablePostgres } from "./postgres.js";
 import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
 async function main() {
@@ -508,7 +508,7 @@ async function main() {
   }
   // This CLI owns a disposable database. Never migrate or evaluate against an inherited database.
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-evals-"));
-  let postgres: StartedPostgreSqlContainer | undefined;
+  let postgres: DisposablePostgres | undefined;
   let stopRequested = false;
   const stop = new AbortController();
   const requestStop = () => {
@@ -518,8 +518,9 @@ async function main() {
   process.on("SIGINT", requestStop);
   process.on("SIGTERM", requestStop);
   try {
-    postgres = await startPostgres(stop.signal);
-    const databaseUrl = postgres.getConnectionUri();
+    const started = await startPostgres(stop.signal);
+    postgres = started;
+    const databaseUrl = started.getConnectionUri();
     Object.assign(process.env, {
       ...disposableDatabaseEnv(databaseUrl),
       WAKEUP_DRIVER: "memory",

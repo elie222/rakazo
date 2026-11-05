@@ -65,12 +65,13 @@ class ChangedAreasTests(unittest.TestCase):
             (".agents/skills/x/SKILL.md", expect()),
             ("CHANGELOG.md", expect()),
             ("docs/getting-started.md", expect("web")),
-            ("apps/www/src/page.astro", expect("web")),
+            ("apps/www/src/page.astro", expect("web", "e2e")),
             ("apps/worker/src/index.ts", expect("web", "server")),
             ("packages/adapters/src/slack.ts", expect("web", "e2e", "server")),
             ("packages/adapters/src/scripted-runtime.ts", expect("web", "e2e", "server")),
             ("packages/adapters/src/host-computer-runner.ts", expect("web", "e2e", "server", "native")),
             ("packages/adapters/src/computer-workspace.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/file-handle-path.ts", expect("web", "e2e", "server", "native")),
             ("packages/core/src/node/desktop-runtime.ts", expect(*EVERY_BROWSER_AREA, "native")),
             (
                 "infra/compose/docker-compose.prod.yml",
@@ -84,11 +85,22 @@ class ChangedAreasTests(unittest.TestCase):
             ("apps/mobile/package.json", expect(*EVERY_BROWSER_AREA, "all_packages")),
             ("tsconfig.base.json", expect(*EVERY_BROWSER_AREA, "all_packages")),
             ("scripts/build-server.mjs", expect(*EVERY_BROWSER_AREA, "all_packages")),
+            (
+                "scripts/setup-worktree.mjs",
+                expect(*EVERY_BROWSER_AREA, "native", "all_packages"),
+            ),
+            (
+                "scripts/setup-worktree.test.mjs",
+                expect(*EVERY_BROWSER_AREA, "native", "all_packages"),
+            ),
             (".agents/skills/pr-watch/pr-digest", expect("all_packages")),
             ("packages/core/README.md", expect(*EVERY_BROWSER_AREA)),
             ("packages/core/src/run-error.ts", expect(*EVERY_BROWSER_AREA)),
             ("pnpm-lock.yaml", expect(*AREAS)),
             (".github/workflows/ci.yml", expect(*AREAS)),
+            (".github/workflows/playwright.yml", expect(*AREAS)),
+            (".github/actions/setup-workspace/action.yml", expect(*AREAS)),
+            (".github/scripts/restore-postgres-image.sh", expect(*AREAS)),
         ]
         for path, expected in cases:
             with self.subTest(path=path):
