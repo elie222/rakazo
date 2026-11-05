@@ -64,6 +64,7 @@ vi.mock("./api", () => ({
   captureApiRequestContext: vi.fn(),
   currentApiBase: vi.fn(() => "https://api.example"),
   rpc: vi.fn(),
+  subscribeConfirmedSpaceSwitch: vi.fn(() => () => {}),
 }));
 
 async function waitFor(predicate: () => boolean, attempts = 50): Promise<void> {

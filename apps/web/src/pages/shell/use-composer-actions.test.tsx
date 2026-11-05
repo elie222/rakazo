@@ -10,15 +10,13 @@ import { createPageSession } from "../../lib/pages";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { useComposerActions } from "./use-composer-actions";
 
-vi.mock("@lingui/react/macro", () => ({
-  useLingui: () => ({
-    t: (parts: TemplateStringsArray, ...values: unknown[]) =>
-      parts.reduce(
-        (text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`,
-        "",
-      ),
-  }),
-}));
+vi.mock("@lingui/react/macro", () => {
+  // One t per module, like the real catalog: a new t per render would recreate
+  // every callback and hide stale-closure bugs.
+  const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
+    parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
+  return { useLingui: () => ({ t }) };
+});
 vi.mock("../../lib/prepare-image", () => ({
   canPrepareImage: () => false,
   prepareImage: async (file: File) => file,
@@ -37,6 +35,20 @@ let root: Root;
 let latest: ReturnType<typeof useComposerActions>;
 let pageSession: PageSession;
 let activeChat: string;
+let activeSnapshot: ThreadSnapshot | null;
+// One stable ref object per value, like the real Shell: a fresh object per
+// render would leave stale closures reading the previous chat. The same goes
+// for the plain functions; a fresh arrow per render would recreate callbacks.
+const activeBotId = ref<string | undefined>(undefined);
+const activeGroupId = ref<string | undefined>(undefined);
+const botsRef = ref<Bot[]>([]);
+const terminalRunReceipts = ref(new Set<string>());
+const computerRef = ref<ComputerStatus | null>(null);
+const refreshBots = async () => undefined;
+const updateSnapshot = () => undefined;
+const commitComputer = () => undefined;
+const clearReadBoundary = () => undefined;
+const flushPendingBrowserNotifications = () => undefined;
 
 function ref<T>(current: T) {
   return { current };
@@ -50,27 +62,28 @@ function Harness({ extras }: { extras?: Record<string, unknown> }) {
     activeId: activeChat,
     inGroup: false,
     groupId: undefined,
-    activeBotId: ref<string | undefined>(activeChat),
-    activeGroupId: ref<string | undefined>(undefined),
-    botsRef: ref<Bot[]>([]),
+    activeBotId,
+    activeGroupId,
+    botsRef,
     bootstrapMe: me,
-    activeSnapshot: null,
+    activeSnapshot,
     navigate: navigate as never,
-    refreshBots: async () => undefined,
+    refreshBots,
     refreshThreadRef: ref(async () => ({}) as ThreadSnapshot),
     refreshGroupThreadRef: ref(async () => ({}) as ThreadSnapshot),
-    updateSnapshot: () => undefined,
-    terminalRunReceipts: ref(new Set<string>()),
-    computerRef: ref<ComputerStatus | null>(null),
-    commitComputer: () => undefined,
-    clearReadBoundary: () => undefined,
-    flushPendingBrowserNotifications: () => undefined,
+    updateSnapshot,
+    terminalRunReceipts,
+    computerRef,
+    commitComputer,
+    clearReadBoundary,
+    flushPendingBrowserNotifications,
   } as Parameters<typeof useComposerActions>[0]);
   return null;
 }
 
 function switchChat(activeId: string) {
   activeChat = activeId;
+  activeBotId.current = activeId;
   act(() => root.render(<Harness />));
 }
 
@@ -85,6 +98,12 @@ beforeEach(() => {
   me = null;
   navigate = vi.fn();
   activeChat = "bot-1";
+  activeSnapshot = null;
+  activeBotId.current = activeChat;
+  activeGroupId.current = undefined;
+  botsRef.current = [];
+  terminalRunReceipts.current = new Set();
+  computerRef.current = null;
   pageSession = createPageSession();
   rpc = {
     routines: { testRun: vi.fn() },
@@ -480,4 +499,43 @@ it("reuses an attachment's upload nonce across send retries", async () => {
   expect(rpc.threads.send).toHaveBeenLastCalledWith(
     expect.objectContaining({ artifactIds: ["artifact-1"] }),
   );
+});
+
+it("clears a reply re-picked as a fresh object after a thread refresh", async () => {
+  act(() => latest.setReplyTarget(replyCandidate("m-1")));
+  // A thread refresh replaces the message objects; picking the same message
+  // again arms a fresh object with the same id and quote.
+  activeSnapshot = { messages: [replyCandidate("m-1")] } as ThreadSnapshot;
+  act(() => root.render(<Harness />));
+  act(() => latest.setReplyTarget(replyCandidate("m-1")));
+  rpc.threads.send.mockResolvedValue({ runId: "run-1", taskId: "task-1" });
+
+  await act(async () => void (await latest.sendMessage("hello", [], "nonce-1")));
+
+  expect(rpc.threads.send).toHaveBeenCalledWith(
+    expect.objectContaining({ replyToMessageId: "m-1" }),
+  );
+  expect(latest.replyTarget).toBeNull();
+});
+
+it("clears a quoted reply re-picked as a fresh object after a thread refresh", async () => {
+  act(() => {
+    latest.setReplyTarget(replyCandidate("m-1"));
+    latest.setReplyQuote("same excerpt");
+  });
+  activeSnapshot = { messages: [replyCandidate("m-1")] } as ThreadSnapshot;
+  act(() => root.render(<Harness />));
+  act(() => {
+    latest.setReplyTarget(replyCandidate("m-1"));
+    latest.setReplyQuote("same excerpt");
+  });
+  rpc.threads.send.mockResolvedValue({ runId: "run-1", taskId: "task-1" });
+
+  await act(async () => void (await latest.sendMessage("hello", [], "nonce-1")));
+
+  expect(rpc.threads.send).toHaveBeenCalledWith(
+    expect.objectContaining({ replyToMessageId: "m-1", replyQuote: "same excerpt" }),
+  );
+  expect(latest.replyTarget).toBeNull();
+  expect(latest.replyQuote).toBeNull();
 });

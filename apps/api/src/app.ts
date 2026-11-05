@@ -147,7 +147,7 @@ import { markExpectedFailure, requestLogging } from "@rakazo/logging/hono";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { deleteAccountContent } from "./account-deletion.js";
+import { deleteAccountContent, finishStalledOrganizationDeletions } from "./account-deletion.js";
 import { mountAccountExportRoute } from "./account-export.js";
 import { mountAccountImportRoute } from "./account-import.js";
 import { mountAppAssociation, nativePasskeys } from "./app-association.js";
@@ -784,6 +784,21 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           (error) => getLogger().error("saved home retention failed", error),
         )
       : undefined;
+
+  const stopOrganizationDeletions = startHourlySweep(
+    finishStalledOrganizationDeletions({
+      prisma,
+      sandbox,
+      home,
+      jobs,
+      artifacts,
+      dataDir: env.dataDir,
+      messagingInstallations,
+      secrets,
+      billing,
+    }),
+    (error) => getLogger().error("stalled organization deletion failed", error),
+  );
 
   const router = createRouter({
     speechSummary:
@@ -1516,6 +1531,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await stopInstalledBridges?.();
       await stopReferralEmails?.();
       await stopHomeRetention?.();
+      await stopOrganizationDeletions();
       await reconciler?.stop();
       await oauthTokenUpgrade;
       await mcpArgsMove;

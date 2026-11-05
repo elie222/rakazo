@@ -477,7 +477,9 @@ function fixture({
   };
   const transactionalPrisma = Object.assign(prisma, {
     $queryRaw: vi.fn(async () => []),
-    $transaction: async (action: (tx: typeof prisma) => unknown) => action(prisma),
+    $transaction: vi.fn(async (action: (tx: typeof prisma) => unknown, _options?: unknown) =>
+      action(prisma),
+    ),
   });
   const pauseRunForInput = vi.fn(async () => {
     run.status = "waiting_input";
@@ -1518,6 +1520,7 @@ describe("own instructions through update_bot", () => {
     expect(f.instructionState.instructionHistory).toEqual([
       expect.objectContaining({ instructions: "Draft only", reason: "Set in chat" }),
     ]);
+    expect(f.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
   });
   it("sets them after a profile edit earlier in the run", async () => {
     const f = emptyBot({ autoReview: true });
@@ -2398,6 +2401,57 @@ describe("command watch creation approval", () => {
       expect(reviewMock).not.toHaveBeenCalled();
     },
   );
+
+  it("returns a command watch sent with a schedule as an error without a card", async () => {
+    const f = fixture({
+      name: "schedule_create",
+      builtin: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "schedule_create" }],
+    });
+    const watch = { kind: "command", command: "ls inbox", everyMinutes: 15 };
+    const args = { name: "Inbox check", prompt: "Summarize what changed", watch };
+    f.setCalls([
+      { args: { ...args, every: 15 }, executionId: "call-1" },
+      { args, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(f.results[0]).toEqual({
+      error:
+        "A watch takes no schedule: it checks every watch.everyMinutes minutes (5 to 1440). Call again without every.",
+    });
+    // Only the valid request is recorded and asks, still with no rule or reviewer passing it.
+    expect(f.effects).toHaveLength(1);
+    expect(f.effects[0]).toMatchObject({ request: expect.objectContaining({ watch }) });
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[1])).toBe(true);
+  });
+
+  it("refuses a command watch whose name is taken before asking", async () => {
+    const taken = {
+      id: "routine-1",
+      name: "Inbox check",
+      prompt: "Summarize",
+      threadId: "thread-1",
+    };
+    const f = fixture({ name: "schedule_create", builtin: true, routines: [taken] });
+    f.setCalls([
+      {
+        args: {
+          name: "Inbox check",
+          prompt: "Summarize what changed",
+          watch: { kind: "command", command: "ls inbox" },
+        },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results[0]).toEqual({
+      error:
+        'An active routine named "Inbox check" already exists (routine-1). Update or cancel it instead.',
+    });
+    expect(f.effects).toEqual([]);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
 
   it("saves a command watch in Never ask after outside content", async () => {
     const f = fixture({ name: "schedule_create", builtin: true, skipApprovals: true });

@@ -156,6 +156,7 @@ export async function runTrial(
     for (const row of usage)
       seenUsage.set(row.id, {
         ...row,
+        modelId: row.model,
         operation:
           row.operationKind === "answer" && row.runId && setupRunIds.has(row.runId)
             ? "setup"
@@ -777,8 +778,26 @@ export async function runTrial(
       if (unaddressedMessageId && group) {
         // Handoffs start more runs after the first one ends; wait until every member is done.
         const memberBotIds = [botId, ...group.memberIds.values()];
+        // The trial budget spans every member's work, not only the first run's turn, and the
+        // drain below runs that work, so it keeps checking while the drain is in flight.
+        const assertToolBudget = async () => {
+          if ((await countCurrentTools()) + clearedToolCount > options.maxToolCalls)
+            throw new EvalFailure("incomplete", "Tool call budget exceeded");
+        };
         const settled = await poll(async () => {
-          if (handles?.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
+          await assertToolBudget();
+          if (handles?.awaitIdle) {
+            const drained = withinDeadline(handles.awaitIdle(), deadline);
+            // A budget failure abandons the drain; its own timeout must not crash the trial.
+            drained.catch(() => undefined);
+            while (
+              !(await Promise.race([
+                drained.then(() => true),
+                new Promise((resolve) => setTimeout(() => resolve(false), 200)),
+              ]))
+            )
+              await assertToolBudget();
+          }
           const runs = await prisma.run.findMany({
             where: { botId: { in: memberBotIds }, createdAt: { gte: new Date(requestStarted) } },
             select: { status: true, error: true },
@@ -993,13 +1012,16 @@ export async function runTrial(
   } finally {
     if (handles) {
       try {
-        if (handles.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
+        // Stopping each bot covers only its own chat; a member's run can still wait in the
+        // group. Stop it before draining, so a failed trial does not pay for the member's
+        // remaining work while the drain waits for it; when the trial ended cleanly every
+        // member is already terminal and the stop changes nothing.
+        if (group) await rpc(handles.app, cookie, "threads/stop", { groupId: group.id });
       } catch {
         result.cleanupFailed = true;
       }
       try {
-        // Stopping each bot covers only its own chat; a member's run can still wait in the group.
-        if (group) await rpc(handles.app, cookie, "threads/stop", { groupId: group.id });
+        if (handles.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
       } catch {
         result.cleanupFailed = true;
       }
@@ -1048,12 +1070,18 @@ export async function runTrial(
       await captureUsage().catch(() => {
         result.cleanupFailed = true;
       });
+      // Explicit pricing covers the eval model only; other models the product called
+      // during the trial are priced at their own reported or catalog-estimated charge.
+      const pricedModel = options.connection.modelId
+        ? { provider: options.connection.provider, modelId: options.connection.modelId }
+        : undefined;
       Object.assign(
         result,
         measureCalls(
           [...seenUsage.values()],
           options.pricing,
           options.connection.cacheCapabilities?.minimumTokens,
+          pricedModel,
         ),
       );
       result.stepAccounting = measureWorkflowSteps(
@@ -1061,6 +1089,7 @@ export async function runTrial(
         runSteps,
         options.pricing,
         options.connection.cacheCapabilities?.minimumTokens,
+        pricedModel,
       );
       result.cacheDecisions = handles.cacheDecisions ? [...handles.cacheDecisions] : [];
       result.historyDiagnostics = handles.historyDiagnostics ? [...handles.historyDiagnostics] : [];
