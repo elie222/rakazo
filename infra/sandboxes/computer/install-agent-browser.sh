@@ -16,8 +16,9 @@ if echo "$sha256  $dest/agent-browser" | sha256sum -c --status 2>/dev/null; then
 mkdir -p "$dest"
 binary="$(mktemp)"
 trap 'rm -f "$binary"' EXIT
-# Release downloads sometimes answer 5xx for a while; curl retries 5xx and timeouts with a
-# doubling wait (about 30 s in all). Plain --retry also works on old curl builds.
+# Release downloads sometimes answer 502/503/504 for a while. --retry repeats curl's transient
+# answers (408, 429, 500, 502, 503, 504) and timeouts with a doubling wait (about 30 s in all),
+# and works on old curl builds.
 curl -fsSL --retry 5 \
   "https://github.com/vercel-labs/agent-browser/releases/download/v${version}/agent-browser-linux-${arch}" -o "$binary"
 echo "$sha256  $binary" | sha256sum -c -
