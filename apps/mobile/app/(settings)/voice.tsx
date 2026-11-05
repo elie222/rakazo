@@ -441,7 +441,8 @@ export default function VoiceSettings() {
     setPending("voice");
     try {
       await rpc("voice/setVoice", { voiceId: nextVoiceId, provider: selected?.id, scope });
-      await load(selected?.id);
+      // Like web: a voice change keeps typed fields, so a typed key stays with its address.
+      await load(selected?.id, { keepForm: true });
     } catch (err) {
       setError(errorText(err, t("Could not save that voice")));
     } finally {

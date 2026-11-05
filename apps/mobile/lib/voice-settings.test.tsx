@@ -498,6 +498,51 @@ it("keeps edits typed while a reconnect runs and shows the saved values for the 
   expect(field("Speech model").value).toBe("newer-tts");
 });
 
+it("keeps a typed transcription key with its address when a voice is chosen", async () => {
+  state.load.mockResolvedValue(false);
+  activeProvider = "openai-compatible";
+  const saved = {
+    id: "self-hosted",
+    provider: "openai-compatible",
+    voiceId: "voice",
+    endpoint: "http://127.0.0.1:8000/v1",
+    sttEndpoint: "http://127.0.0.1:9200/v1",
+  };
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc: string, args?: { provider: string }) => {
+    if (proc === "voice/catalog")
+      return [{ id: "openai-compatible", name: "Self-hosted", transcribe: true }];
+    if (proc === "voice/credentials") return [saved];
+    if (proc === "voice/connect") return { ok: true };
+    // Another device moves transcription while this voice is being saved.
+    if (proc === "voice/setVoice") saved.sttEndpoint = "http://127.0.0.1:9300/v1";
+    return original(proc, args);
+  });
+  await render();
+  const field = (label: string) =>
+    container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  await vi.waitFor(() =>
+    expect(field("Transcription server URL").value).toBe("http://127.0.0.1:9200/v1"),
+  );
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      field("Transcription API key"),
+      "typed-key",
+    );
+    field("Transcription API key").dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await vi.waitFor(() => button("openai-compatible voice"));
+  await click("openai-compatible voice");
+  await vi.waitFor(() =>
+    expect(state.rpc).toHaveBeenCalledWith("voice/setVoice", expect.anything()),
+  );
+  await click("Reconnect");
+  expect(state.rpc).toHaveBeenCalledWith(
+    "voice/connect",
+    expect.objectContaining({ sttBaseUrl: "http://127.0.0.1:9200/v1", sttApiKey: "typed-key" }),
+  );
+});
+
 it("keeps a saved speech model when an opening read started before the save lands after it", async () => {
   state.load.mockResolvedValue(false);
   await render();
