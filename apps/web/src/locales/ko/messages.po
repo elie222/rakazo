@@ -733,6 +733,10 @@ msgstr "{credit} 전액이 모델 사용에 쓰입니다."
 msgid "All bots"
 msgstr ""
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "모든 파일"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr ""
@@ -3302,6 +3306,10 @@ msgid "Filter by date"
 msgstr ""
 
 #: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "만든 주체로 필터링"
+
+#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "필터"
@@ -3994,6 +4002,10 @@ msgstr "낮음"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "낮음"
+
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "봇이 만든 파일"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"

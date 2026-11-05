@@ -970,6 +970,9 @@ export const ZH_MESSAGES: Record<string, string> = {
 
   Artifact: "制品",
   Artifacts: "制品",
+  "Filter by who made it": "按创建者筛选",
+  "All files": "全部文件",
+  "Made by bots": "由 Bot 创建",
   "All bots": "所有 Bot",
   "Search artifacts…": "搜索制品…",
   "No artifacts yet": "暂无制品",

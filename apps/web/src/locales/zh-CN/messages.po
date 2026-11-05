@@ -733,6 +733,10 @@ msgstr "全部 {credit} 都用于模型用量。"
 msgid "All bots"
 msgstr "全部 Bot"
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "全部文件"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr "所有工作区"
@@ -3302,6 +3306,10 @@ msgid "Filter by date"
 msgstr "按日期筛选"
 
 #: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "按创建者筛选"
+
+#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "筛选器"
@@ -3994,6 +4002,10 @@ msgstr "低"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "低"
+
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "由 Bot 创建"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"

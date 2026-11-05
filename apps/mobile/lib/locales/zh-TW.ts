@@ -930,6 +930,9 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
 
   Artifact: "成品",
   Artifacts: "成品",
+  "Filter by who made it": "依建立者篩選",
+  "All files": "所有檔案",
+  "Made by bots": "由機器人建立",
   "All bots": "所有機器人",
   "Search artifacts…": "搜尋成品…",
   "No artifacts yet": "尚無成品",

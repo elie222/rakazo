@@ -988,6 +988,9 @@ export const RU_MESSAGES: Record<string, string> = {
 
   Artifact: "Артефакт",
   Artifacts: "Артефакты",
+  "Filter by who made it": "Фильтр по автору",
+  "All files": "Все файлы",
+  "Made by bots": "Созданные ботами",
   "All bots": "Все боты",
   "Search artifacts…": "Поиск артефактов…",
   "No artifacts yet": "Пока нет артефактов",
