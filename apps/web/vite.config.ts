@@ -33,6 +33,7 @@ import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
 import { apiProxy } from "./src/api-proxy.js";
 import { ASSET_ARCHIVE_DIR, archiveAssets } from "./src/asset-archive.js";
+import { instanceThemeMiddleware } from "./src/instance-theme.js";
 import { missingAssetMiddleware } from "./src/missing-asset.js";
 import {
   collectNovncHtml,
@@ -498,6 +499,10 @@ export default defineConfig(({ command, mode }) => {
   const performanceAssetDelayMs = Number(process.env.RAKAZO_PERFORMANCE_ASSET_DELAY_MS ?? 0);
   const desktopStackToken =
     process.env.RAKAZO_DESKTOP_STACK_TOKEN ?? rootEnv.RAKAZO_DESKTOP_STACK_TOKEN ?? "";
+  const themeFile = process.env.RAKAZO_THEME ?? rootEnv.RAKAZO_THEME;
+  const instanceTheme = instanceThemeMiddleware(themeFile, (reason) =>
+    screenLog.warn("web.instance_theme_ignored", { reason }),
+  );
   const imageTag = process.env.RAKAZO_IMAGE_TAG ?? rootEnv.RAKAZO_IMAGE_TAG ?? "edge";
   // Invalid origins throw here, so the server refuses to start rather than serve a wider policy.
   const appPolicy = appContentSecurityPolicy({
@@ -615,6 +620,15 @@ export default defineConfig(({ command, mode }) => {
           middlewares.use(
             missingAssetMiddleware(assetsDir, `${config.base}${config.build.assetsDir}/`, archive),
           );
+        },
+      },
+      {
+        name: "rakazo-instance-theme",
+        configureServer: (server) => {
+          server.middlewares.use(instanceTheme);
+        },
+        configurePreviewServer: (server) => {
+          server.middlewares.use(instanceTheme);
         },
       },
       {
