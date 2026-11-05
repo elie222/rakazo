@@ -3,13 +3,17 @@ import type {
   BrowserProvider,
   ComputerRef,
   ConnectorTool,
+  DurableMemoryScope,
   MediaGenerationProvider,
   SandboxProvider,
   SemanticMemoryProvider,
+  TurnMemoryLifecycle,
+  TurnMemoryRecall,
+  TurnMemoryRecallRequest,
   WebProvider,
 } from "@rakazo/adapter-kit";
 import type { ComputerMode, MessageBlock } from "@rakazo/contracts";
-import { createStreamingRedactor } from "@rakazo/core";
+import { createStreamingRedactor, isConversationalRun } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
 import { dropRunTurnCheckpoint, saveRunTurnCheckpoint } from "@rakazo/db";
@@ -284,7 +288,11 @@ export interface RunContext {
   trust: RunTrust;
   memory: {
     semantic: SemanticMemoryProvider | null;
+    turnMemory: TurnMemoryLifecycle | null;
     scope: ReturnType<typeof effectiveMemoryScope> | null;
+    captureEligible: boolean;
+    /** Ids actually injected this attempt; echoed to the provider on capture. */
+    injectedIds: string[];
   };
   scripted: boolean;
   script: ReturnType<typeof inferScript> | undefined;
@@ -295,6 +303,44 @@ export interface RunContext {
   state: RunState;
   settleRunningHelpers: () => Promise<void>;
   stopHeartbeatAfterCompletion: () => void;
+}
+
+export function turnMemoryCaptureEligible(options: {
+  hasLifecycle: boolean;
+  memoryScope: DurableMemoryScope | null;
+  includeSemanticRecall: boolean;
+  nonOwnerChatRun: boolean;
+  trigger: string;
+  /** A turn with no user message has nothing to recall from and nothing to teach. */
+  sourceMessageId?: string | null;
+  /** A bot-to-bot handoff is the other bot's turn, not something the user said. */
+  sourceRole?: string | null;
+}): boolean {
+  // Only an owner's own conversation may recall or teach per-turn memory. Triggers that
+  // carry no user message (spawn, cloud_agent, purchase, call_end) would spend a recall
+  // and then be dropped at capture time, so they are excluded here instead.
+  if (!isConversationalRun(options.trigger)) return false;
+  if (!options.sourceMessageId) return false;
+  if (options.sourceRole && options.sourceRole !== "user") return false;
+  return (
+    options.hasLifecycle &&
+    Boolean(options.memoryScope) &&
+    options.includeSemanticRecall &&
+    !options.nonOwnerChatRun
+  );
+}
+
+export async function recallTurnMemory(
+  lifecycle: TurnMemoryLifecycle,
+  request: TurnMemoryRecallRequest,
+  context: AdapterContext,
+): Promise<TurnMemoryRecall | null> {
+  try {
+    return await lifecycle.beforeTurn(request, context);
+  } catch (error) {
+    getLogger().error("turn memory recall failed", error);
+    return null;
+  }
 }
 
 export async function settleRunningHelpers(

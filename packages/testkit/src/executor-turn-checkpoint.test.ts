@@ -323,7 +323,10 @@ function fixture(
     },
     home: { commit: async () => "fixture-revision" },
     memory: { read: async () => ({ documents: [] }) },
-    memoryProviders: { resolve: async () => null },
+    memoryProviders: {
+      resolve: async () => null,
+      resolveTurnMemory: async () => ({ kind: "unconfigured" as const }),
+    },
     events: {
       notify: vi.fn(async () => undefined),
       append: vi.fn(async () => undefined),

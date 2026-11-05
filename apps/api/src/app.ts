@@ -53,6 +53,7 @@ import {
   createMessagingTeamChatSender,
   createModelCreditReconciler,
   createPaymentWalletProvider,
+  createPostgresMemoryCaptureLock,
   createProductAnalytics,
   createRunExecutor,
   createRunSandbox,
@@ -705,6 +706,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const jobHandlers = createBackgroundJobHandlers({
     executor,
     prisma,
+    memoryCaptureLock: createPostgresMemoryCaptureLock(env.databaseUrl),
     sandbox,
     home,
     artifacts,

@@ -603,7 +603,10 @@ function fixture({
       },
       commit,
     },
-    memoryProviders: { resolve: async () => null },
+    memoryProviders: {
+      resolve: async () => null,
+      resolveTurnMemory: async () => ({ kind: "unconfigured" as const }),
+    },
     events: {
       append: vi.fn(async () => undefined),
       notify: vi.fn(async () => undefined),

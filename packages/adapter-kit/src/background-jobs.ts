@@ -23,6 +23,7 @@ const payloadSchemas = {
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
   "call.expire": z.object({ threadId: z.string().min(1), callId: z.string().min(1) }),
   "history.compact": z.object({ threadId: z.string().min(1) }),
+  "memory.capture": z.object({ runId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "messaging.credential-cleanup": z.object({
     installationId: z.string().min(1),
@@ -218,5 +219,23 @@ export function mediaPollJob(jobId: string, availableAt?: Date): BackgroundJob {
     payload: { jobId },
     replaceKey: `media.poll:${jobId}`,
     ...(availableAt ? { availableAt } : {}),
+  };
+}
+
+/** Captures are idempotent at the provider, so a few retries are cheap. */
+export const MEMORY_CAPTURE_MAX_ATTEMPTS = 6;
+
+export function memoryCaptureJobKey(runId: string): string {
+  return `memory.capture:${runId}`;
+}
+
+export function memoryCaptureJob(runId: string): BackgroundJob {
+  return {
+    name: "memory.capture",
+    payload: { runId },
+    replaceKey: memoryCaptureJobKey(runId),
+    // A retrying capture must not be replaced by a duplicate enqueue.
+    keepExisting: true,
+    maxAttempts: MEMORY_CAPTURE_MAX_ATTEMPTS,
   };
 }

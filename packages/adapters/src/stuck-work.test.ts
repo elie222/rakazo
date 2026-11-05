@@ -596,6 +596,7 @@ describe("reconcileStuckWork", () => {
   it("continues the other scans when the stuck query fails", async () => {
     const prisma = {
       run: {
+        updateMany: vi.fn(async () => ({ count: 0 })),
         findMany: vi.fn(async (args: { where?: unknown }) => {
           if (JSON.stringify(args.where).includes("waiting_takeover")) {
             throw new Error("stuck down");

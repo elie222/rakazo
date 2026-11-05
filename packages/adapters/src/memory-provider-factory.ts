@@ -1,5 +1,12 @@
-import type { DurableMemoryScope, SecretStore, SemanticMemoryProvider } from "@rakazo/adapter-kit";
+import type {
+  DurableMemoryScope,
+  SecretStore,
+  SemanticMemoryProvider,
+  TurnMemoryLifecycle,
+} from "@rakazo/adapter-kit";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import { isPoolCheckoutTimeout, isTooManyDatabaseConnections } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
   createHonchoProvider,
@@ -8,6 +15,17 @@ import {
   prepareHonchoConnection,
 } from "./honcho-memory-provider.js";
 import { revalidateLocalServiceSettings } from "./local-service-endpoint.js";
+import {
+  classifyMemmyConnectionSettings,
+  memmyRequiresPrivateEndpoint,
+  revalidateMemmySettings,
+} from "./memmy-connection-trust.js";
+import {
+  createMemmyProvider,
+  createMemmyTurnMemory,
+  MEMMY_PROVIDER_ID,
+  prepareMemmyConnection,
+} from "./memmy-turn-memory.js";
 import {
   classifySerenityConnectionSettings,
   createSerenityProvider,
@@ -43,10 +61,143 @@ export interface PreparedMemoryProviderConnection {
 export interface ConfiguredMemoryProvider {
   provider: SemanticMemoryProvider;
   defaultScope: DurableMemoryScope;
+  /** Per-turn recall/capture for providers that learn from each turn. */
+  lifecycle?: TurnMemoryLifecycle;
 }
+
+/** Pending captures retry only failures that can recover without changing their configuration. */
+export type TurnMemoryAvailability =
+  | {
+      kind: "configured";
+      lifecycle: TurnMemoryLifecycle;
+      defaultScope: DurableMemoryScope;
+    }
+  | { kind: "unconfigured" }
+  | { kind: "unavailable"; reason: string; retryable: boolean };
 
 export interface MemoryProviderResolver {
   resolve(spaceId: string): Promise<ConfiguredMemoryProvider | null>;
+  resolveTurnMemory(spaceId: string): Promise<TurnMemoryAvailability>;
+}
+
+type UnavailableMemoryProvider = Extract<TurnMemoryAvailability, { kind: "unavailable" }>;
+type MemoryProviderResolution =
+  | { kind: "configured"; value: ConfiguredMemoryProvider }
+  | Exclude<TurnMemoryAvailability, { kind: "configured" }>;
+
+type MemoryProviderLoadStage =
+  | "configuration_load"
+  | "endpoint_revalidation"
+  | "credential_load"
+  | "credential_decode"
+  | "provider_creation";
+
+const TRANSIENT_DEPENDENCY_CODES = new Set([
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "EPIPE",
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  // Prisma connection, pool and transaction failures; authentication/schema errors are omitted.
+  "P1001",
+  "P1002",
+  "P1008",
+  "P1017",
+  "P2024",
+  "P2034",
+  "P2037",
+  // Postgres connection loss, contention, capacity and shutdown codes.
+  "08001",
+  "08003",
+  "08006",
+  "40001",
+  "40P01",
+  "53300",
+  "55P03",
+  "57P01",
+  "57P02",
+  "57P03",
+]);
+
+function unavailable(reason: string, retryable = false): UnavailableMemoryProvider {
+  return { kind: "unavailable", reason, retryable };
+}
+
+/** Recognized dependency outages may recover; unknown or invalid configuration errors do not. */
+export function isRetryableMemoryError(error: unknown, depth = 0): boolean {
+  if (!error || typeof error !== "object" || depth > 5) return false;
+  if (error instanceof SecretStoreUnavailableError) {
+    const status = error.status;
+    return (
+      status === undefined || status === 408 || status === 425 || status === 429 || status >= 500
+    );
+  }
+  if (isPoolCheckoutTimeout(error) || isTooManyDatabaseConnections(error)) return true;
+  const failure = error as {
+    code?: unknown;
+    errorCode?: unknown;
+    originalCode?: unknown;
+    cause?: unknown;
+    meta?: { driverAdapterError?: unknown };
+    $fault?: unknown;
+    $retryable?: { throttling?: unknown };
+    $metadata?: { httpStatusCode?: unknown };
+  };
+  // Key-manager SDK errors retain their service classification through unwrap's cause.
+  const httpStatus = failure.$metadata?.httpStatusCode;
+  if (
+    failure.$fault === "server" ||
+    failure.$retryable?.throttling === true ||
+    (typeof httpStatus === "number" &&
+      (httpStatus === 408 || httpStatus === 425 || httpStatus === 429 || httpStatus >= 500)) ||
+    (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"))
+  ) {
+    return true;
+  }
+  if (
+    [failure.code, failure.errorCode, failure.originalCode].some(
+      (code) => typeof code === "string" && TRANSIENT_DEPENDENCY_CODES.has(code),
+    )
+  ) {
+    return true;
+  }
+  if (error instanceof AggregateError) {
+    return error.errors.some((cause) => isRetryableMemoryError(cause, depth + 1));
+  }
+  return (
+    isRetryableMemoryError(failure.cause, depth + 1) ||
+    isRetryableMemoryError(failure.meta?.driverAdapterError, depth + 1)
+  );
+}
+
+function resolutionFailure(
+  error: unknown,
+  stage: MemoryProviderLoadStage,
+): UnavailableMemoryProvider {
+  if (stage === "credential_decode") return unavailable("invalid_credentials");
+  if (stage === "provider_creation") return unavailable("invalid_provider_configuration");
+  if (stage === "credential_load" && error instanceof SecretStoreUnavailableError) {
+    return unavailable("secret_store_unavailable", isRetryableMemoryError(error));
+  }
+  const retryable = isRetryableMemoryError(error);
+  const reason =
+    stage === "configuration_load"
+      ? retryable
+        ? "configuration_unavailable"
+        : "configuration_load_failed"
+      : stage === "endpoint_revalidation"
+        ? retryable
+          ? "endpoint_unavailable"
+          : "endpoint_revalidation_failed"
+        : retryable
+          ? "secret_store_unavailable"
+          : "credential_load_failed";
+  // Exceptions can contain endpoints or plaintext credentials; expose only fixed classifications.
+  return unavailable(reason, retryable);
 }
 
 interface MemoryProviderAdapter {
@@ -64,6 +215,10 @@ interface MemoryProviderAdapter {
     settings: Record<string, string>,
     credentials: Record<string, string>,
   ): SemanticMemoryProvider;
+  createTurnMemory?(
+    settings: Record<string, string>,
+    credentials: Record<string, string>,
+  ): TurnMemoryLifecycle;
   decodeLegacyCredentials?(plaintext: string): Record<string, string> | null;
 }
 
@@ -98,6 +253,18 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
       revalidate: revalidateLocalServiceSettings,
       prepare: prepareHonchoConnection,
       create: createHonchoProvider,
+    },
+  ],
+  [
+    MEMMY_PROVIDER_ID,
+    {
+      requiresPrivateEndpoint: memmyRequiresPrivateEndpoint,
+      classifySettings: (settings: Record<string, string>) =>
+        classifyMemmyConnectionSettings(settings),
+      revalidate: revalidateMemmySettings,
+      prepare: prepareMemmyConnection,
+      create: createMemmyProvider,
+      createTurnMemory: createMemmyTurnMemory,
     },
   ],
 ]);
@@ -174,31 +341,71 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
     private readonly secrets: SecretStore,
   ) {}
 
+  async resolveTurnMemory(spaceId: string): Promise<TurnMemoryAvailability> {
+    const result = await this.loadConfiguredProvider(spaceId, true);
+    if (result.kind !== "configured") return result;
+    const { lifecycle, defaultScope } = result.value;
+    return lifecycle
+      ? { kind: "configured", lifecycle, defaultScope }
+      : unavailable("lifecycle_unsupported");
+  }
+
   async resolve(spaceId: string): Promise<ConfiguredMemoryProvider | null> {
-    const config = await this.prisma.spaceMemoryConfig.findUnique({
-      where: { spaceId },
-      include: { secret: true },
-    });
-    if (!config) return null;
-    const settings = toStringRecord(config.settings);
-    if (memoryProviderRequiresPrivateEndpoint(config.provider, settings)) {
-      // Saved configurations cannot bypass an operator's current network policy.
-      if (process.env.MCP_ALLOW_PRIVATE_ENDPOINT !== "true") return null;
+    const result = await this.loadConfiguredProvider(spaceId, false);
+    if (result.kind === "configured") return result.value;
+    if (result.kind === "unavailable") {
+      getLogger().warn("Semantic memory unavailable", {
+        reason: result.reason,
+        retryable: result.retryable,
+      });
     }
-    const adapter = memoryProviderAdapter(config.provider);
+    return null;
+  }
+
+  /** Both public paths use the same checks; legacy providers need no per-turn lifecycle. */
+  private async loadConfiguredProvider(
+    spaceId: string,
+    requireLifecycle: boolean,
+  ): Promise<MemoryProviderResolution> {
+    let stage: MemoryProviderLoadStage = "configuration_load";
     try {
+      const config = await this.prisma.spaceMemoryConfig.findUnique({
+        where: { spaceId },
+        include: { secret: true },
+      });
+      if (!config) return { kind: "unconfigured" };
+      const adapter = MEMORY_PROVIDER_ADAPTERS.get(config.provider);
+      if (!adapter) return unavailable("unknown_provider");
+      if (requireLifecycle && !adapter.createTurnMemory) {
+        return unavailable("lifecycle_unsupported");
+      }
+      stage = "provider_creation";
+      const settings = toStringRecord(config.settings);
+      if (
+        adapter.requiresPrivateEndpoint(settings) &&
+        process.env.MCP_ALLOW_PRIVATE_ENDPOINT !== "true"
+      ) {
+        return unavailable("private_endpoint_not_authorized");
+      }
+      stage = "endpoint_revalidation";
       await adapter.revalidate?.(settings);
-    } catch {
-      getLogger().warn("Semantic memory disabled: endpoint revalidation failed");
-      return null;
+      stage = "credential_load";
+      const plaintext = await this.secrets.load(config.secret.ciphertext, config.secret.id);
+      stage = "credential_decode";
+      const credentials = decodeCredentials(config.provider, plaintext);
+      stage = "provider_creation";
+      return {
+        kind: "configured",
+        value: {
+          provider: adapter.create(settings, credentials),
+          defaultScope: config.defaultMemoryScope === "shared" ? "shared" : "isolated",
+          ...(adapter.createTurnMemory
+            ? { lifecycle: adapter.createTurnMemory(settings, credentials) }
+            : {}),
+        },
+      };
+    } catch (error) {
+      return resolutionFailure(error, stage);
     }
-    const credentials = decodeCredentials(
-      config.provider,
-      await this.secrets.load(config.secret.ciphertext, config.secret.id),
-    );
-    return {
-      provider: createMemoryProvider(config.provider, settings, credentials),
-      defaultScope: config.defaultMemoryScope === "shared" ? "shared" : "isolated",
-    };
   }
 }

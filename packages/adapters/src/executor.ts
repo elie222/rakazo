@@ -1,4 +1,9 @@
-import type { AgentRunRequest, ComputerRef, SemanticMemoryProvider } from "@rakazo/adapter-kit";
+import type {
+  AgentRunRequest,
+  ComputerRef,
+  SemanticMemoryProvider,
+  TurnMemoryLifecycle,
+} from "@rakazo/adapter-kit";
 import {
   DEFAULT_CONTEXT_STRATEGY,
   isModelCredentialRejected,
@@ -10,6 +15,7 @@ import type { MessageBlock, ModelRoleChoice, RunStatus } from "@rakazo/contracts
 import { disabledBuiltinToolSet } from "@rakazo/contracts";
 import {
   assertTransition,
+  blocksToAgentHistoryText,
   botMessageAllowsSilence,
   expandSkillReferencesInPrompt,
   formatSkillRunPrompt,
@@ -29,6 +35,7 @@ import {
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
+  STEERING_CONTINUATION_PROMPT,
   userRunError,
   userTurnMessageForRun,
 } from "@rakazo/core";
@@ -142,7 +149,12 @@ import type {
   RunningHelper,
   RunState,
 } from "./run-context.js";
-import { restoreTurnCheckpointEffects, settleRunningHelpers } from "./run-context.js";
+import {
+  recallTurnMemory,
+  restoreTurnCheckpointEffects,
+  settleRunningHelpers,
+  turnMemoryCaptureEligible,
+} from "./run-context.js";
 import { APPROVED_EFFECT_REPLAY_ORDER, buildApprovalContinuation } from "./run-effects.js";
 import {
   BOT_DIRECTORY_LIMIT,
@@ -238,6 +250,7 @@ import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
+import { formatTurnMemoryContext } from "./turn-memory-prompt.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 /** Same reach as the MCP connector: usable servers assigned to the bot or shared with every bot. */
@@ -257,6 +270,30 @@ async function verbatimMcpServersForRun(
   });
   if (!servers?.length) return undefined;
   return { ids: servers.map((server) => server.id), slugs: servers.map((server) => server.slug) };
+}
+
+/** The role of the message a run started from, without a second query. */
+function runSourceRole(
+  messages: ReadonlyArray<{ id: string; role: string }>,
+  sourceMessageId: string | null | undefined,
+): string | null {
+  if (!sourceMessageId) return null;
+  return messages.find((message) => message.id === sourceMessageId)?.role ?? null;
+}
+
+/**
+ * A steering continuation carries a fixed placeholder as its task prompt, so the text the
+ * user actually typed has to come from the thread. History arrives newest-first, and the
+ * message that steered this run is the newest user turn, so no extra query is needed.
+ */
+function steeringQueryText(
+  messages: ReadonlyArray<{ role: string; blocks: unknown }>,
+  prompt: string,
+): string {
+  if (!prompt.includes(STEERING_CONTINUATION_PROMPT)) return "";
+  const steering = messages.find((message) => message.role === "user");
+  if (!steering) return "";
+  return blocksToAgentHistoryText(steering.blocks as MessageBlock[]).trim();
 }
 
 export function createRunExecutor(executorDeps: ExecutorDeps) {
@@ -738,6 +775,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ? effectiveMemoryScope(bot.memoryScope, configuredMemory.defaultScope)
           : null;
         const semanticMemory: SemanticMemoryProvider | null = configuredMemory?.provider ?? null;
+        const turnMemory: TurnMemoryLifecycle | null = configuredMemory?.lifecycle ?? null;
 
         await deps.events.append({
           spaceId: run.spaceId,
@@ -794,6 +832,18 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           summary: threadContext.summary,
           historyCompactedUpToSeq: threadContext.historyCompactedUpToSeq,
         });
+        const captureEligible = turnMemoryCaptureEligible({
+          hasLifecycle: Boolean(turnMemory),
+          memoryScope,
+          includeSemanticRecall: threadContext.includeSemanticRecall,
+          nonOwnerChatRun,
+          trigger: run.trigger,
+          sourceMessageId: run.sourceMessageId,
+          sourceRole: runSourceRole(messages, run.sourceMessageId),
+        });
+        // A steering continuation's task prompt is a fixed placeholder, so recall has to
+        // ask about what the user actually typed.
+        const turnMemoryQuery = steeringQueryText(messages, task.prompt) || task.prompt;
         let history = compactedHistory.history.map(({ id, role, content, createdAt, speaker }) => ({
           id,
           createdAt,
@@ -857,11 +907,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? `Update from ${peerMessage.fromBotName}: ${peerMessage.text}`
             : DELEGATED_EMPTY_NOTICE
           : undefined;
-        const recallPromise =
-          threadContext.includeSemanticRecall &&
-          semanticMemory &&
-          memoryScope &&
-          thread.historyCompactedUpToSeq != null
+        const recallPromise = turnMemory
+          ? Promise.resolve(null)
+          : threadContext.includeSemanticRecall &&
+              semanticMemory &&
+              memoryScope &&
+              thread.historyCompactedUpToSeq != null
             ? semanticMemory.recall(
                 {
                   query: task.prompt,
@@ -873,6 +924,20 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 context,
               )
             : Promise.resolve(null);
+        const turnMemoryPromise =
+          captureEligible && turnMemory && memoryScope
+            ? recallTurnMemory(
+                turnMemory,
+                {
+                  query: turnMemoryQuery,
+                  scope: memoryScope,
+                  botId: bot.id,
+                  threadId: thread.id,
+                  runId,
+                },
+                context,
+              )
+            : Promise.resolve(null);
         const [
           discovered,
           currentTurnImages,
@@ -880,6 +945,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           scratchpadContext,
           ticketContext,
           recalled,
+          turnMemoryRecall,
         ] = await Promise.all([
           discoveredPromise,
           loadCurrentTurnImages(deps, turnBlocks, context),
@@ -899,10 +965,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 text: task.prompt,
               }),
           recallPromise,
+          turnMemoryPromise,
         ]);
         const semanticMemoryEnabled = Boolean(semanticMemory) && !nonOwnerChatRun;
         let recalledMemory = "";
         let recallSucceeded = false;
+        let injectedMemoryIds: string[] = [];
         if (recalled) {
           if (recalled.ok && recalled.value.length > 0) {
             recallSucceeded = true;
@@ -911,12 +979,19 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             getLogger().error("semantic memory recall failed", recalled.error);
           }
         }
+        const rendered = turnMemoryRecall ? formatTurnMemoryContext(turnMemoryRecall) : null;
+        const turnMemoryRendered = Boolean(rendered?.text);
+        if (rendered?.text) {
+          recalledMemory = rendered.text;
+          injectedMemoryIds = rendered.injectedIds;
+        }
         if (!compactedHistory.usedLocalSummary) {
           history = history.slice(
             -historyWindowSize({
               semanticMemoryEnabled: semanticMemoryEnabled && !thread.historyCompactionSummary,
               compacted: thread.historyCompactedUpToSeq != null,
-              recallSucceeded,
+              // Per-turn memory does not replace the thread's compacted history.
+              recallSucceeded: recallSucceeded && !turnMemoryRendered,
             }),
           );
         }
@@ -1579,7 +1654,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             approvedReplays: approvedEffectReplays,
           },
           trust: { ...trustLoaders, searchResultUrls },
-          memory: { semantic: semanticMemory, scope: memoryScope },
+          memory: {
+            semantic: semanticMemory,
+            turnMemory,
+            scope: memoryScope,
+            captureEligible,
+            injectedIds: injectedMemoryIds,
+          },
           scripted,
           script,
           allowSilentEmptyRun,

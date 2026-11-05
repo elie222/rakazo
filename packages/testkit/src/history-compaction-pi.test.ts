@@ -64,7 +64,10 @@ describe("history compaction with real Pi", () => {
       modelCreditEntry: { findUnique: async () => null },
       $transaction: async (work: (tx: unknown) => Promise<unknown>) => work(prisma),
     };
-    const memoryProviders = { resolve: vi.fn(async () => null) };
+    const memoryProviders = {
+      resolve: vi.fn(async () => null),
+      resolveTurnMemory: vi.fn(async () => ({ kind: "unconfigured" as const })),
+    };
     const jobs = { enqueue: vi.fn(async () => undefined) };
     const deps = {
       prisma: prisma as unknown as PrismaClient,

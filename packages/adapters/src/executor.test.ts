@@ -1321,7 +1321,10 @@ async function continuePinnedRoutineRun(plaintext: string, modelId: string) {
     plaintext,
     {
       runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
-      memoryProviders: { resolve: vi.fn(async () => null) },
+      memoryProviders: {
+        resolve: vi.fn(async () => null),
+        resolveTurnMemory: async () => ({ kind: "unconfigured" as const }),
+      },
       memory: { read: vi.fn(async () => ({ documents: [] })) },
       events: { append: vi.fn(async () => undefined), finalizeRun },
       jobs: { enqueue },
@@ -3122,7 +3125,10 @@ description: Prepare standup notes
           describe: () => ({ capabilities: { scripted: false } }),
           run: runtimeRun,
         },
-        memoryProviders: { resolve: vi.fn(async () => null) },
+        memoryProviders: {
+          resolve: vi.fn(async () => null),
+          resolveTurnMemory: async () => ({ kind: "unconfigured" as const }),
+        },
         memory: { read: vi.fn(async () => ({ documents: [] })) },
         events: { append: vi.fn(async () => undefined), finalizeRun },
         jobs: { enqueue: vi.fn(async () => undefined) },
@@ -3232,7 +3238,10 @@ description: Prepare standup notes
         describe: () => ({ capabilities: { scripted: false } }),
         run: runtimeRun,
       },
-      memoryProviders: { resolve: vi.fn(async () => null) },
+      memoryProviders: {
+        resolve: vi.fn(async () => null),
+        resolveTurnMemory: async () => ({ kind: "unconfigured" as const }),
+      },
       memory: { read: vi.fn(async () => ({ documents: [] })) },
       events: { append: vi.fn(async () => undefined), finalizeRun },
       jobs: { enqueue: vi.fn(async () => undefined) },
@@ -3351,7 +3360,10 @@ description: Prepare standup notes
         describe: () => ({ capabilities: { scripted: false } }),
         run: runtimeRun,
       },
-      memoryProviders: { resolve: vi.fn(async () => null) },
+      memoryProviders: {
+        resolve: vi.fn(async () => null),
+        resolveTurnMemory: async () => ({ kind: "unconfigured" as const }),
+      },
       memory: { read: vi.fn(async () => ({ documents: [] })) },
       events: { append: vi.fn(async () => undefined), finalizeRun },
       jobs: { enqueue: vi.fn(async () => undefined) },

@@ -395,6 +395,11 @@ function compactionHarness(
     async (): Promise<SemanticMemoryResponse> => ({ ok: true, value: undefined }),
   );
   const memoryProviders = {
+    resolveTurnMemory: vi.fn(async () =>
+      memoryConfig
+        ? { kind: "unavailable" as const, reason: "lifecycle_unsupported", retryable: false }
+        : { kind: "unconfigured" as const },
+    ),
     resolve: vi.fn(async () =>
       memoryConfig
         ? {

@@ -316,7 +316,10 @@ async function runLoop(
     sandbox,
     home: { commit: vi.fn(async () => "fixture-revision") },
     memory: { read: async () => ({ documents: [] }) },
-    memoryProviders: { resolve: async () => null },
+    memoryProviders: {
+      resolve: async () => null,
+      resolveTurnMemory: async () => ({ kind: "unconfigured" as const }),
+    },
     artifacts: { get: vi.fn(async () => new Uint8Array()) },
     events,
     jobs: { enqueue: vi.fn(async () => undefined) },

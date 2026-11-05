@@ -35,6 +35,7 @@ import {
   createMessagingContextLoader,
   createModelCreditReconciler,
   createPaymentWalletProvider,
+  createPostgresMemoryCaptureLock,
   createPostgresReconciliationLeadership,
   createProductAnalytics,
   createReservedGraphileJobWorkerHost,
@@ -343,6 +344,7 @@ async function main() {
   const jobHandlers = createBackgroundJobHandlers({
     executor,
     prisma,
+    memoryCaptureLock: createPostgresMemoryCaptureLock(databaseUrl),
     sandbox,
     home,
     artifacts,

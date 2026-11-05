@@ -1,6 +1,7 @@
 import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
 import { stuckWorkStatusMessages } from "@rakazo/core";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
+import { Prisma } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import type { ReconciliationLeadership } from "./job-reconciler.js";
@@ -17,6 +18,10 @@ function publisher() {
     close: async () => undefined,
   };
   return { jobs, enqueue };
+}
+
+function isMemoryCaptureScan(where: Record<string, unknown> | undefined): boolean {
+  return Boolean(where && where.memoryCapturedAt === null && "memoryCaptureDueAt" in where);
 }
 
 function fakePrisma(
@@ -40,7 +45,12 @@ function fakePrisma(
   return {
     computerExecutionLease: { findMany: vi.fn(async () => []) },
     message: { findMany: vi.fn(async () => []) },
-    run: { findMany: vi.fn(async () => runs) },
+    run: {
+      findMany: vi.fn(async (args?: { where?: Record<string, unknown> }) =>
+        isMemoryCaptureScan(args?.where) ? [] : runs,
+      ),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     routine: { findMany: vi.fn(async () => routines) },
     computer: { findMany: vi.fn(async () => controls) },
     messagingOutbound: { findFirst: vi.fn(async () => null) },
@@ -124,6 +134,138 @@ describe("createJobReconciler", () => {
       payload: { runId: "run-unmirrored" },
       replaceKey: "messaging.deliver:run-unmirrored",
     });
+  });
+
+  it("restores uncaptured completed runs in capture due order with a stable ID tie-break", async () => {
+    const now = Date.now();
+    const candidates = [
+      {
+        id: "run-uncaptured",
+        status: "completed",
+        memoryCaptureDueAt: new Date(now - 60_000),
+        memoryCapturedAt: null as Date | null,
+      },
+    ];
+    const prisma = fakePrisma();
+    vi.mocked(prisma.run.findMany).mockImplementation((async (args?: {
+      where?: Record<string, unknown>;
+    }) => {
+      if (!isMemoryCaptureScan(args?.where)) return [];
+      const dueFilter = args?.where?.memoryCaptureDueAt as { not?: null; gte?: Date } | undefined;
+      return candidates
+        .filter(
+          (row) =>
+            row.status === args?.where?.status &&
+            row.memoryCapturedAt === args?.where?.memoryCapturedAt &&
+            (dueFilter?.not === null ? row.memoryCaptureDueAt !== null : true) &&
+            Boolean(
+              dueFilter?.gte &&
+                row.memoryCaptureDueAt &&
+                row.memoryCaptureDueAt.getTime() >= dueFilter.gte.getTime(),
+            ),
+        )
+        .map(({ id }) => ({ id }));
+    }) as never);
+    const { jobs, enqueue } = publisher();
+
+    await createJobReconciler({ prisma, jobs }).reconcileOnce();
+
+    expect(prisma.run.findMany).toHaveBeenCalledWith({
+      where: {
+        status: "completed",
+        memoryCaptureDueAt: {
+          not: null,
+          gte: expect.any(Date),
+        },
+        memoryCapturedAt: null,
+      },
+      orderBy: [{ memoryCaptureDueAt: "asc" }, { id: "asc" }],
+      take: 100,
+      // One row per conversation, so a stuck thread cannot fill the batch.
+      distinct: ["threadId"],
+      select: { id: true },
+    });
+    expect(enqueue).toHaveBeenCalledWith({
+      name: "memory.capture",
+      payload: { runId: "run-uncaptured" },
+      replaceKey: "memory.capture:run-uncaptured",
+      keepExisting: true,
+      maxAttempts: 6,
+    });
+  });
+
+  it("skips memory capture for runs already captured or due more than seven days ago", async () => {
+    const now = Date.now();
+    const candidates = [
+      {
+        id: "run-already-captured",
+        status: "completed",
+        memoryCaptureDueAt: new Date(now - 60_000),
+        memoryCapturedAt: new Date(now - 30_000),
+      },
+      {
+        id: "run-expired-due",
+        status: "completed",
+        memoryCaptureDueAt: new Date(now - 8 * 24 * 60 * 60 * 1000),
+        memoryCapturedAt: null as Date | null,
+      },
+    ];
+    let capturedCutoff: Date | undefined;
+    const prisma = fakePrisma();
+    vi.mocked(prisma.run.findMany).mockImplementation((async (args?: {
+      where?: Record<string, unknown>;
+    }) => {
+      if (!isMemoryCaptureScan(args?.where)) return [];
+      const dueFilter = args?.where?.memoryCaptureDueAt as { not?: null; gte?: Date } | undefined;
+      capturedCutoff = dueFilter?.gte;
+      return candidates
+        .filter(
+          (row) =>
+            row.status === args?.where?.status &&
+            row.memoryCapturedAt === args?.where?.memoryCapturedAt &&
+            (dueFilter?.not === null ? row.memoryCaptureDueAt !== null : true) &&
+            Boolean(
+              dueFilter?.gte &&
+                row.memoryCaptureDueAt &&
+                row.memoryCaptureDueAt.getTime() >= dueFilter.gte.getTime(),
+            ),
+        )
+        .map(({ id }) => ({ id }));
+    }) as never);
+    const { jobs, enqueue } = publisher();
+
+    await createJobReconciler({ prisma, jobs }).reconcileOnce();
+
+    expect(capturedCutoff).toBeInstanceOf(Date);
+    expect(capturedCutoff!.getTime()).toBeGreaterThanOrEqual(now - 7 * 24 * 60 * 60 * 1000 - 1_000);
+    expect(capturedCutoff!.getTime()).toBeLessThanOrEqual(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("clears handled or older-than-30-day payloads without changing capture state", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-12-10T12:00:00.000Z");
+    vi.setSystemTime(now);
+    try {
+      const prisma = fakePrisma();
+      const { jobs, enqueue } = publisher();
+
+      await createJobReconciler({ prisma, jobs }).reconcileOnce();
+
+      expect(prisma.run.updateMany).toHaveBeenCalledExactlyOnceWith({
+        where: {
+          memoryCapturePayload: { not: Prisma.DbNull },
+          OR: [
+            { memoryCapturedAt: { not: null } },
+            { memoryCaptureDueAt: { lt: new Date("2026-11-10T12:00:00.000Z") } },
+          ],
+        },
+        data: { memoryCapturePayload: Prisma.DbNull },
+      });
+      expect(enqueue).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("restores queued runs and near-due routines with stable replacement keys", async () => {
@@ -386,7 +528,10 @@ describe("createJobReconciler", () => {
         },
       ]);
     const prisma = {
-      run: { findMany: vi.fn(async () => []) },
+      run: {
+        findMany: vi.fn(async () => []),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       routine: { findMany: vi.fn(async () => []) },
       computer: { findMany: computerFindMany },
       messagingOutbound: { findFirst: vi.fn(async () => null) },
@@ -442,6 +587,7 @@ describe("createJobReconciler", () => {
     let runPage = 0;
     const runFindMany = vi.fn(async (args: { where?: Record<string, unknown> } = {}) => {
       if (args.where?.messagingMirroredAt === null) return [];
+      if (isMemoryCaptureScan(args.where)) return [];
       // The stuck-work scan is the only run query that looks at takeover waits.
       if (JSON.stringify(args.where).includes("waiting_takeover")) return [];
       return runPages[runPage++] ?? [];
@@ -453,7 +599,7 @@ describe("createJobReconciler", () => {
       .mockResolvedValueOnce(routines.slice(4));
     const prisma = {
       computerExecutionLease: { findMany: vi.fn(async () => []) },
-      run: { findMany: runFindMany },
+      run: { findMany: runFindMany, updateMany: vi.fn(async () => ({ count: 0 })) },
       routine: { findMany: routineFindMany },
       computer: { findMany: vi.fn(async () => []) },
       messagingOutbound: { findFirst: vi.fn(async () => null) },
@@ -478,7 +624,7 @@ describe("createJobReconciler", () => {
       "run:run-5",
       "routine:routine-5",
     ]);
-    expect(runFindMany.mock.calls[4]?.[0]).toMatchObject({
+    expect(runFindMany.mock.calls[5]?.[0]).toMatchObject({
       orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
       where: {
         AND: [
@@ -528,8 +674,8 @@ describe("createJobReconciler", () => {
     expect(new Set(enqueue.mock.calls.map(([job]) => job.replaceKey)).size).toBe(1_000);
     expect(findMany).toHaveBeenCalledTimes(10);
     expect(prisma.computer.findMany).toHaveBeenCalledOnce();
-    // Stuck-work, legacy-run, and unmirrored-messaging scans run once each.
-    expect(prisma.run.findMany).toHaveBeenCalledTimes(3);
+    // Stuck-work, legacy-run, unmirrored-messaging, and uncaptured-memory scans run once each.
+    expect(prisma.run.findMany).toHaveBeenCalledTimes(4);
     expect(prisma.messagingOutbound.findFirst).toHaveBeenCalledOnce();
     expect(auxiliary).toHaveBeenCalledOnce();
   });
@@ -685,7 +831,7 @@ describe("createJobReconciler", () => {
     await reconciler.reconcileOnce();
 
     expect(runFindMany).toHaveBeenNthCalledWith(
-      4,
+      5,
       expect.objectContaining({
         orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
         where: {

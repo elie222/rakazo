@@ -83,6 +83,10 @@ import type {
   StreamedPortableFile,
   TerminalRequest,
   TransactionalEmail,
+  TurnMemoryCapture,
+  TurnMemoryCaptureResult,
+  TurnMemoryRecall,
+  TurnMemoryRecallRequest,
   VoiceCapabilities,
   VoiceInfo,
   VoiceSynthesizeRequest,
@@ -344,6 +348,26 @@ export interface SemanticMemoryProvider {
     request: SemanticMemoryForgetRequest,
     context: AdapterContext,
   ): Promise<SemanticMemoryResponse<{ id: string; expired: boolean; reason: string | null }>>;
+}
+
+/**
+ * Per-turn recall and capture for providers that learn from individual turns.
+ * Optional: providers without it keep the compacted-history recall path unchanged.
+ */
+export interface TurnMemoryLifecycle {
+  /** Recall for the turn about to run. Never throws; a failure yields null. */
+  beforeTurn(
+    request: TurnMemoryRecallRequest,
+    context: AdapterContext,
+  ): Promise<TurnMemoryRecall | null>;
+  /**
+   * Persist one finished turn. Returns "retryable" rather than throwing when the
+   * failure is transient; throws only on a programming error worth surfacing.
+   */
+  captureTurn(
+    capture: TurnMemoryCapture,
+    context: AdapterContext,
+  ): Promise<TurnMemoryCaptureResult>;
 }
 
 export interface AgentRuntime {

@@ -20,6 +20,7 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { Client } from "pg";
 import { settleCallRequest } from "./call-request.js";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
 import { pollCloudAgent } from "./cloud-agent-poll.js";
@@ -30,6 +31,8 @@ import type { createRunExecutor } from "./executor.js";
 import type { ExpoPushProvider } from "./expo-push.js";
 import { compactHistory } from "./history-compaction.js";
 import { pollMediaVideo } from "./media-video-poll.js";
+import type { MemoryCaptureLock } from "./memory-capture.js";
+import { captureFinishedTurn } from "./memory-capture.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { deliverMessagingOutbound, mirrorMessagingOutbound } from "./messaging-delivery.js";
 import { pollPurchase } from "./purchase-poll.js";
@@ -58,6 +61,70 @@ function asOwner<Key, P extends Key>(
 const OWNER = { spaceId: true, userId: true } as const;
 const CONTROL_EXPIRE_RETRY_MS = 30_000;
 
+interface MemoryCaptureLockClient {
+  connect(): Promise<unknown>;
+  query(
+    sql: string,
+    values: string[],
+  ): Promise<{ rows: Array<{ acquired?: boolean; released?: boolean }> }>;
+  end(): Promise<void>;
+  on(event: "error", listener: (error: Error) => void): unknown;
+  removeListener(event: "error", listener: (error: Error) => void): unknown;
+}
+
+/**
+ * Use one dedicated connection for the session lock. Prisma's pooled queries cannot
+ * pair session locks safely, and capture snapshots must commit before the HTTP send.
+ */
+export function createPostgresMemoryCaptureLock(
+  connectionString: string,
+  createClient: () => MemoryCaptureLockClient = () =>
+    new Client({ connectionString, connectionTimeoutMillis: 10_000, keepAlive: true }),
+): MemoryCaptureLock {
+  return async (key, run) => {
+    const client = createClient();
+    let acquired = false;
+    let disconnected = false;
+    const onError = () => {
+      disconnected = true;
+    };
+    client.on("error", onError);
+    try {
+      try {
+        await client.connect();
+        const result = await client.query(
+          "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS acquired",
+          [key],
+        );
+        acquired = result.rows[0]?.acquired === true;
+      } catch {
+        throw new Error("Turn memory capture lock unavailable");
+      }
+      if (!acquired) return { acquired: false };
+      const value = await run();
+      if (disconnected) throw new Error("Turn memory capture lock connection lost");
+      return { acquired: true, value };
+    } finally {
+      try {
+        if (acquired && !disconnected) {
+          await client.query("SELECT pg_advisory_unlock(hashtextextended($1, 0)) AS released", [
+            key,
+          ]);
+        }
+      } catch {
+        // Closing this dedicated session below releases any uncertain lock as well.
+        getLogger().warn("turn memory capture lock release failed; closing its connection");
+      } finally {
+        try {
+          await client.end();
+        } finally {
+          client.removeListener("error", onError);
+        }
+      }
+    }
+  };
+}
+
 export function createBackgroundJobHandlers(deps: {
   executor: ReturnType<typeof createRunExecutor>;
   prisma: PrismaClient;
@@ -70,6 +137,7 @@ export function createBackgroundJobHandlers(deps: {
   runtime: AgentRuntime;
   secretStore: SecretStore;
   memoryProviders: MemoryProviderResolver;
+  memoryCaptureLock?: MemoryCaptureLock;
   deploymentModelKey?: string;
   deploymentModelConfigured?: boolean;
   messaging?: MessagingSurface;
@@ -247,6 +315,17 @@ export function createBackgroundJobHandlers(deps: {
           ...(deps.executor.resolveModel ? { resolveModel: deps.executor.resolveModel } : {}),
         },
         payload.threadId,
+      );
+    }),
+    "memory.capture": asOwner(run, async (payload) => {
+      await captureFinishedTurn(
+        {
+          prisma: deps.prisma,
+          secretStore: deps.secretStore,
+          memoryProviders: deps.memoryProviders,
+          lock: deps.memoryCaptureLock,
+        },
+        payload.runId,
       );
     }),
   };

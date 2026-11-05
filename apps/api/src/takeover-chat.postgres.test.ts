@@ -459,7 +459,10 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       runtime,
       home: new LocalAgentHomeStore(dataDir),
       memory: new MarkdownMemoryStore(prisma),
-      memoryProviders: { resolve: async () => null },
+      memoryProviders: {
+        resolve: async () => null,
+        resolveTurnMemory: async () => ({ kind: "unconfigured" as const }),
+      },
       secretStore: new EncryptedSecretStore("fake-fixture-encryption-key"),
       secrets: [],
       deploymentModelKey: "fake-fixture-model-key",
@@ -548,7 +551,10 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       runtime,
       home: new LocalAgentHomeStore(dataDir),
       memory: new MarkdownMemoryStore(prisma),
-      memoryProviders: { resolve: async () => null },
+      memoryProviders: {
+        resolve: async () => null,
+        resolveTurnMemory: async () => ({ kind: "unconfigured" as const }),
+      },
       secretStore: new EncryptedSecretStore("fake-fixture-encryption-key"),
       secrets: [],
       deploymentModelKey: "fake-fixture-model-key",

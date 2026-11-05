@@ -186,7 +186,10 @@ async function requestSecretWith(origin: string, extra: Record<string, unknown> 
     secretStore: new EncryptedSecretStore("test-only-encryption-key"),
     home: { commit: vi.fn(async () => "fixture-revision") },
     memory: { read: async () => ({ documents: [] }) },
-    memoryProviders: { resolve: async () => null },
+    memoryProviders: {
+      resolve: async () => null,
+      resolveTurnMemory: async () => ({ kind: "unconfigured" as const }),
+    },
     artifacts: { get: vi.fn() },
     events,
     jobs: { enqueue: vi.fn(async () => undefined) },

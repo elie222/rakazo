@@ -248,7 +248,10 @@ async function failRun(scenario: Scenario) {
     },
     home: { commit: vi.fn(async () => "fixture-revision") },
     memory: { read: async () => ({ documents: [] }) },
-    memoryProviders: { resolve: async () => null },
+    memoryProviders: {
+      resolve: async () => null,
+      resolveTurnMemory: async () => ({ kind: "unconfigured" as const }),
+    },
     artifacts: { get: vi.fn() },
     events: {
       append: vi.fn(async () => undefined),

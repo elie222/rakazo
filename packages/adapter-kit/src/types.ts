@@ -387,6 +387,76 @@ export interface MemoryCapabilities {
 
 export type DurableMemoryScope = "isolated" | "shared";
 
+/**
+ * Layers a turn-memory provider can return, most authoritative first: reusable multi-step
+ * procedures, policies distilled from experience, stable facts about the environment, and raw
+ * episodes from earlier turns.
+ */
+export type TurnMemoryLayer = "procedure" | "policy" | "environment" | "episode";
+
+/** One recall section, already trimmed to the caller's budget. */
+export interface TurnMemorySection {
+  layer: TurnMemoryLayer;
+  /** Stable section id, used for prompt citation. */
+  id: string;
+  /** Underlying memory ids to echo on capture only when this section reaches the prompt. */
+  sourceMemoryIds: string[];
+  content: string;
+}
+
+export interface TurnMemoryRecall {
+  sections: TurnMemorySection[];
+  /** Provider-reported recall sources, before the caller's final prompt budget is applied. */
+  sourceMemoryIds: string[];
+}
+
+export interface TurnMemoryRecallRequest {
+  query: string;
+  scope: DurableMemoryScope;
+  botId: string;
+  threadId: string;
+  runId: string;
+  /** Provider-side token budget for the recalled context. Omit to use the provider's default. */
+  contextBudget?: number;
+}
+
+export interface TurnMemoryToolCall {
+  name: string;
+  /** Redacted, already stringified. */
+  input: string;
+}
+
+export interface TurnMemoryToolResult {
+  name: string;
+  /** Redacted, already stringified and capped. */
+  output: string;
+}
+
+/** Evidence for one finished turn, rebuilt deterministically from stored rows. */
+export interface TurnMemoryCapture {
+  scope: DurableMemoryScope;
+  botId: string;
+  threadId: string;
+  runId: string;
+  /** ISO-8601, copied from the run's stored timestamps. */
+  startedAt: string;
+  completedAt: string;
+  /** 0-based position of the turn's source message inside its thread. */
+  sequence?: number;
+  query: string;
+  answer: string;
+  toolCalls: TurnMemoryToolCall[];
+  toolResults: TurnMemoryToolResult[];
+  sourceMemoryIds: string[];
+}
+
+export type TurnMemoryCaptureStatus = "stored" | "existing" | "retryable" | "terminal";
+
+export interface TurnMemoryCaptureResult {
+  status: TurnMemoryCaptureStatus;
+  reason?: string;
+}
+
 export interface SemanticMemoryCapabilities {
   recall: true;
   save: true;
@@ -773,6 +843,8 @@ export interface BackgroundJobPayloads {
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
   "history.compact": { threadId: string };
+  /** A finished run still owes one turn-memory capture. */
+  "memory.capture": { runId: string };
   "messaging.deliver": { runId?: string };
   "messaging.credential-cleanup": { installationId: string; ref: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */

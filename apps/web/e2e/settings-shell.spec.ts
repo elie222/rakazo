@@ -178,6 +178,32 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await captureScreenshot(page, testInfo, "settings-shell-usage");
 });
 
+test("Memmy memory settings uses a service URL and masked token", async ({ page }, testInfo) => {
+  // A local UI fixture only: never submit a real service token or contact a memory backend.
+  const stamp = Date.now();
+  await signup(page, `memory-service-${stamp}@rakazo.test`, "password12", "Memory settings");
+  await completeOnboarding(page);
+  const settings = await openUserSettings(page, "memory");
+  const memory = settings.getByTestId("memory-settings");
+  await memory.getByRole("button", { name: "Connect memory provider", exact: true }).click();
+  await memory.getByLabel("Provider").selectOption("memmy");
+  const endpoint = memory.getByLabel("Server URL", { exact: true });
+  const token = memory.getByLabel("Bearer token", { exact: true });
+  const connect = memory.getByRole("button", { name: "Connect", exact: true });
+  await expect(endpoint).toHaveValue("");
+  await expect(token).toHaveAttribute("type", "password");
+  await expect(connect).toBeDisabled();
+  await endpoint.fill("https://memory.example.test");
+  await expect(connect).toBeDisabled();
+  await token.fill("example-service-token");
+  await expect(connect).toBeEnabled();
+  await expect(memory.getByLabel("Model", { exact: true })).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await captureScreenshot(page, testInfo, "memory-memmy-connection");
+  await endpoint.fill("");
+  await expect(connect).toBeDisabled();
+});
+
 test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   // These screenshots never submit credentials or contact Honcho.
   const stamp = Date.now();

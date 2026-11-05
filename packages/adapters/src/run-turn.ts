@@ -4,6 +4,7 @@ import {
   historyCompactJob,
   ModelAccountError,
   ModelOutputError,
+  memoryCaptureJob,
   runContinueJob,
   SandboxAllowanceUsedError,
   SandboxRateLimitError,
@@ -880,6 +881,16 @@ export async function completeRun(ctx: RunContext) {
       ? botMessageOutcomeFromMidTurn(text, reply.midTurnUserTexts)
       : null;
   await ctx.settleRunningHelpers();
+  // A handed-off run has no final owner reply; the receiving run owns its evidence.
+  if (ctx.state.handedOff) ctx.memory.captureEligible = false;
+  // A group member that was not addressed and ends silently taught nothing: skip the
+  // capture instead of queueing a job that can only be discarded.
+  if (groupSilentEnd) ctx.memory.captureEligible = false;
+  const captureScope = ctx.memory.scope;
+  const memoryCapture =
+    ctx.memory.captureEligible && captureScope
+      ? { sourceMemoryIds: ctx.memory.injectedIds, scope: captureScope }
+      : null;
   const completed = await deps.events.finalizeRun({
     spaceId: run.spaceId,
     threadId: thread.id,
@@ -894,6 +905,7 @@ export async function completeRun(ctx: RunContext) {
     markUnread:
       !groupSilentEnd &&
       completionMarksUnread(run.trigger, text, ctx.source.peerMessage?.repliesToRequest === true),
+    memoryCapture,
   });
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();
@@ -930,6 +942,11 @@ export async function completeRun(ctx: RunContext) {
       threadId: thread.id,
       runId: run.id,
     });
+  }
+  if (memoryCapture) {
+    await deps.jobs
+      .enqueue(memoryCaptureJob(runId))
+      .catch((error) => getLogger().error("memory.capture enqueue failed", error));
   }
   // Last, and never fatal: the run is already finalized, so a failure here must not reach
   // the failure path, where a second finalizeRun would match no rows and silently

@@ -4,6 +4,9 @@ import {
   HISTORY_COMPACT_MAX_ATTEMPTS,
   historyCompactJob,
   historyCompactJobKey,
+  MEMORY_CAPTURE_MAX_ATTEMPTS,
+  memoryCaptureJob,
+  memoryCaptureJobKey,
   messagingDeliverJob,
   parseBackgroundJob,
   routineRetryJob,
@@ -21,6 +24,7 @@ function handlers(): BackgroundJobHandlers {
     "skill.teaching-expire": vi.fn(async () => undefined),
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
+    "memory.capture": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
@@ -98,6 +102,22 @@ describe("background job contracts", () => {
         leaseId: "",
       }),
     ).toThrow();
+  });
+});
+
+describe("memoryCaptureJob", () => {
+  it("validates and dispatches capture jobs without replacing an existing retry", async () => {
+    const target = handlers();
+    await dispatchBackgroundJob(target, "memory.capture", { runId: "run-1" });
+    expect(target["memory.capture"]).toHaveBeenCalledWith({ runId: "run-1" });
+    expect(() => parseBackgroundJob("memory.capture", { runId: "" })).toThrow();
+    expect(memoryCaptureJob("run-1")).toEqual({
+      name: "memory.capture",
+      payload: { runId: "run-1" },
+      replaceKey: memoryCaptureJobKey("run-1"),
+      keepExisting: true,
+      maxAttempts: MEMORY_CAPTURE_MAX_ATTEMPTS,
+    });
   });
 });
 

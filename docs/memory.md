@@ -34,8 +34,23 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
 - **Supermemory**: its cloud service, or your own instance.
 - **Serenity**: choose **Recall and write**, or **Recall only** to keep it read-only.
 - **Honcho**: reads from an existing Honcho peer and never writes to it.
+- **Memmy**: connect your own Memory service using its **Server URL** and **Bearer token**.
+  Eligible owner conversations are recalled before each turn and captured after successful completion.
+  The service can distil that evidence into procedures for later recall. Choose the summary,
+  evolution and embedding models in Memmy's own settings; Rakazo does not select or replace them.
 
-Once connected, **Default scope** decides what bots share in the provider:
+The Server URL is reached by the Rakazo API and worker, not by the browser. If those run in
+containers, `127.0.0.1` points at that container. Use an endpoint reachable from both services;
+private endpoints require the operator's existing `MCP_ALLOW_PRIVATE_ENDPOINT` permission. Keep
+service tokens out of URLs and use the encrypted credential field.
+
+**Memmy isolation:** its source/profile labels are not an authorization boundary. Bots and spaces
+connected to the same Memmy database can retrieve each other's derived memories, regardless of the
+scope labels sent by Rakazo. Use a separate service/database and token for each private trust domain;
+only connect multiple bots to one instance when sharing is intentional. The scope picker controls
+namespace mapping, not isolation enforced by this adapter.
+
+Once connected, **Default scope** decides what bots share in providers that enforce that scope:
 
 - **Isolated**: each bot recalls only what it saved. This is the default.
 - **Shared**: bots in the space recall from one pool.
@@ -50,4 +65,6 @@ finished. It is in the bot's settings. You can add items for it, or mark them co
 
 ## Memory across spaces
 
-Memory never crosses [spaces](./spaces.md). A bot in one space can't read notes from another.
+Rakazo's memory notes never cross [spaces](./spaces.md). External memory providers must enforce
+that boundary independently. Do not reuse a Memmy service/database between private spaces; see its
+isolation limitation above.

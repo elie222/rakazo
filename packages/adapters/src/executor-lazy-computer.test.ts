@@ -1,4 +1,4 @@
-import type { AgentRunRequest, ComputerRef } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, ComputerRef, TurnMemoryLifecycle } from "@rakazo/adapter-kit";
 import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -46,6 +46,9 @@ async function runRoutine(
     /** User stop already flipped the run to cancelled before the turn ends. */
     cancelRun?: boolean;
     onRunStarted?: () => void;
+    trigger?: "user" | "webhook" | "tickets";
+    sourceMessageId?: string | null;
+    turnMemory?: TurnMemoryLifecycle;
   } = {},
 ) {
   const attachment: Extract<MessageBlock, { kind: "file" | "image" }> = {
@@ -63,8 +66,11 @@ async function runRoutine(
     spaceId: "space-1",
     userId: "user-1",
     status: "queued" as string,
-    trigger: options.attachments && !options.steering ? "user" : "routine",
-    sourceMessageId: options.attachments && !options.steering ? "message-1" : null,
+    trigger: options.trigger ?? (options.attachments && !options.steering ? "user" : "routine"),
+    // A run started by a person always carries the message they sent; only a background
+    // trigger has none, which the eligibility gate now refuses.
+    sourceMessageId:
+      options.sourceMessageId ?? (options.attachments && !options.steering ? "message-1" : null),
     routineId: "routine-1",
     retryOfRunId: null,
     leaseOwner: null as string | null,
@@ -278,8 +284,23 @@ async function runRoutine(
     home: { commit: vi.fn(async () => "fixture-revision") },
     memory: { read: async () => ({ documents: [] }) },
     memoryProviders: {
+      resolveTurnMemory: async () =>
+        options.turnMemory
+          ? {
+              kind: "configured" as const,
+              lifecycle: options.turnMemory,
+              defaultScope: "shared" as const,
+            }
+          : { kind: "unconfigured" as const },
       resolve: async () => {
         if (options.setupError) throw options.setupError;
+        if (options.turnMemory) {
+          return {
+            provider: { recall: async () => ({ ok: true, value: [] }) },
+            defaultScope: "shared",
+            lifecycle: options.turnMemory,
+          };
+        }
         return null;
       },
     },
@@ -348,6 +369,51 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+});
+
+describe("turn memory through the executor", () => {
+  it.each(["webhook", "tickets"] as const)(
+    "completes %s without recalling or scheduling capture",
+    async (trigger) => {
+      const beforeTurn = vi.fn(async () => ({ sections: [], sourceMemoryIds: [] }));
+      const captureTurn = vi.fn(async () => ({ status: "stored" as const }));
+      const { runtimeRun, finalizeRun, enqueue } = await runRoutine([], {
+        trigger,
+        turnMemory: { beforeTurn, captureTurn },
+      });
+
+      expect(runtimeRun).toHaveBeenCalledOnce();
+      expect(beforeTurn).not.toHaveBeenCalled();
+      expect(captureTurn).not.toHaveBeenCalled();
+      expect(finalizeRun).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: "completed", memoryCapture: null }),
+      );
+      expect(enqueue).not.toHaveBeenCalledWith(expect.objectContaining({ name: "memory.capture" }));
+    },
+  );
+
+  it("recalls and finalizes the same scope for an owner's conversation", async () => {
+    const beforeTurn = vi.fn(async () => ({ sections: [], sourceMemoryIds: [] }));
+    const captureTurn = vi.fn(async () => ({ status: "stored" as const }));
+    const { runtimeRun, finalizeRun, enqueue } = await runRoutine([], {
+      trigger: "user",
+      sourceMessageId: "message-1",
+      turnMemory: { beforeTurn, captureTurn },
+    });
+
+    expect(runtimeRun).toHaveBeenCalledOnce();
+    expect(beforeTurn).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ scope: "shared", runId: "run-1" }),
+      expect.any(Object),
+    );
+    expect(finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "completed",
+        memoryCapture: { sourceMemoryIds: [], scope: "shared" },
+      }),
+    );
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "memory.capture" }));
+  });
 });
 
 describe("run computer provisioning", () => {

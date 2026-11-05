@@ -190,6 +190,11 @@ interface FinalizeRunBase {
   attemptId: string;
   leaseOwner: string;
   leaseFence: number;
+  /**
+   * Present when this turn owes a turn-memory capture. Written in the same
+   * transaction as the outcome so a crash between commit and enqueue cannot lose it.
+   */
+  memoryCapture?: { sourceMemoryIds: string[]; scope: "isolated" | "shared" } | null;
 }
 
 export type FinalizeRunInput = FinalizeRunBase &
@@ -1850,6 +1855,17 @@ async function finalizeRunOnce(
       },
     });
     if (terminal.count !== 1) return null;
+    if (input.outcome === "completed" && input.memoryCapture) {
+      await tx.run.update({
+        where: { id: input.runId },
+        data: {
+          memoryCaptureDueAt: now,
+          memoryCapturedAt: null,
+          memoryCaptureScope: input.memoryCapture.scope,
+          memoryRecallIds: input.memoryCapture.sourceMemoryIds,
+        },
+      });
+    }
     await tx.externalEffect.deleteMany({
       where: {
         runId: input.runId,

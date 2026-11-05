@@ -107,8 +107,8 @@ export async function pinLocalServiceHost(
   let addresses: ResolvedAddress[];
   try {
     addresses = await resolve(host);
-  } catch {
-    throw new Error(LOCAL_NETWORK_ERROR);
+  } catch (error) {
+    throw new Error(LOCAL_NETWORK_ERROR, { cause: error });
   }
   try {
     assertPrivateLanAddresses(addresses);

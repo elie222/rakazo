@@ -1010,6 +1010,20 @@ model Run {
   botOutcomeReturnedAt DateTime?
   messagingMirroredAt  DateTime?
   teamChatMirroredAt   DateTime?
+  // Turn-memory capture: set with the outcome in the same transaction, cleared by the
+  // worker once the provider accepted (or terminally rejected) the turn.
+  memoryCaptureDueAt  DateTime?
+  memoryCapturedAt    DateTime?
+  // Freeze the turn's scope so retries do not follow later bot settings changes.
+  memoryCaptureScope  String?
+  // Frozen redacted delivery payload; retries must not re-read mutable evidence or secrets.
+  memoryCapturePayload Json?
+  // Counts send attempts so a turn the provider keeps failing transiently is retired
+  // instead of blocking its conversation inside the drain order.
+  memoryCaptureAttempts Int               @default(0)
+  // Provider ids recalled into this turn; capture echoes them so the provider does not
+  // re-learn its own output.
+  memoryRecallIds     Json?
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
   attempts             Attempt[]
@@ -1023,6 +1037,7 @@ model Run {
   @@index([status, updatedAt, id])
   @@index([trigger, status, messagingMirroredAt, updatedAt])
   @@index([trigger, status, teamChatMirroredAt, updatedAt])
+  @@index([memoryCaptureDueAt, memoryCapturedAt])
   @@index([spaceId, botId])
   @@index([botId, createdAt])
   @@index([taskId])

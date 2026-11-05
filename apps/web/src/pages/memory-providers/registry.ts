@@ -1,6 +1,7 @@
 import type { SpaceMemoryConfig } from "@rakazo/contracts";
 import type { ComponentType } from "react";
 import { HonchoSettingsForm } from "./HonchoSettingsForm";
+import { MemmySettingsForm } from "./MemmySettingsForm";
 import { SerenitySettingsForm } from "./SerenitySettingsForm";
 import { SupermemorySettingsForm } from "./SupermemorySettingsForm";
 
@@ -41,6 +42,13 @@ export const MEMORY_PROVIDER_SETTINGS: readonly MemoryProviderSettingsRegistrati
       const mode = config.settings.allowWrites === "true" ? "read/write" : "recall only";
       return `${label || endpoint}, ${mode}`;
     },
+  },
+  {
+    id: "memmy",
+    name: "Memmy",
+    SettingsForm: MemmySettingsForm,
+    // The provider is self-hosted, so the endpoint is what tells two installs apart.
+    connectedLabel: (config) => config.settings.baseUrl ?? "Memmy",
   },
   {
     id: "honcho",
