@@ -166,6 +166,10 @@ services:
 RAKAZO_THEME=/theme/theme.json
 ```
 
+`install-images.sh` layers that override file automatically. Where you run Compose yourself, as in
+[Production deployment](./self-host-production.md), add `-f docker-compose.override.yml` after the
+base file, or the web service won't find the theme and serves the default look.
+
 ## Menu links
 
 `RAKAZO_NAV_LINKS` adds items to the account menu that open a page from the same domain inside the
