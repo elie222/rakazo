@@ -40,9 +40,9 @@ runs:
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: ${{ runner.temp }}/electron-cache
-        key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-        restore-keys: |
-          electron-${{ runner.os }}-
+        # Exact key only: a partial restore-keys hit can leave an empty cache dir
+        # that still looks like a hit and skips a fresh download.
+        key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
     - name: Cache Playwright browsers
       if: inputs.playwright == 'true'
@@ -67,8 +67,6 @@ runs:
       if: inputs.install == 'true'
       shell: bash
       env:
-        # Prefer the restored content-addressable store over the network.
-        npm_config_prefer_offline: "true"
         SETUP_ELECTRON: ${{ inputs.electron }}
         SETUP_FILTER: ${{ inputs.filter }}
         RUNNER_TEMP: ${{ runner.temp }}
@@ -78,11 +76,34 @@ runs:
         # export it when this job does not need the binary.
         if [[ "${SETUP_ELECTRON}" == "true" ]]; then
           export ELECTRON_CACHE="${RUNNER_TEMP}/electron-cache"
+          mkdir -p "$ELECTRON_CACHE"
         else
           export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+          # Prefer the restored content-addressable store when Electron is unused.
+          export npm_config_prefer_offline=true
         fi
         filter_args=()
         if [[ -n "${SETUP_FILTER}" ]]; then
           filter_args=(--filter "${SETUP_FILTER}")
         fi
         pnpm install --frozen-lockfile "${filter_args[@]}"
+        # pnpm often links electron without running its install script, so the
+        # binary only downloads on first `electron` invoke. Do that here with
+        # retries, and warm ELECTRON_CACHE, before tests hit GitHub releases.
+        if [[ "${SETUP_ELECTRON}" == "true" ]]; then
+          install_js="$(find node_modules -path '*/electron/install.js' | head -n 1 || true)"
+          if [[ -z "$install_js" ]]; then
+            echo "electron/install.js not found after pnpm install" >&2
+            exit 1
+          fi
+          for attempt in 1 2 3 4; do
+            if node "$install_js"; then
+              break
+            fi
+            if [[ "$attempt" -eq 4 ]]; then
+              echo "Electron binary download failed after ${attempt} attempts" >&2
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+        fi
