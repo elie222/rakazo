@@ -168,7 +168,7 @@ function builtinParameters(tool: ConnectorTool) {
   if (tool.name === "create_space") {
     return Type.Object({ name: Type.String({ minLength: 1, maxLength: 60 }) });
   }
-  if (tool.name === "archive_bot" || tool.name === "delete_bot") {
+  if (tool.name === "archive_bot") {
     return Type.Object({
       confirm_name: Type.String(),
       bot_id: Type.Optional(Type.String()),

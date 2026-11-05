@@ -299,6 +299,11 @@ export function attachmentExtensionForMimeType(mimeType: string): string {
   return isAllowedAttachmentMimeType(mimeType) ? MIME_TYPE_EXTENSIONS[mimeType] : "";
 }
 
+/** Where a run copies an attached file in the bot's workspace; history tools report the same path. */
+export function attachmentComputerPath(artifactId: string, mimeType: string): string {
+  return `attachments/${artifactId}${attachmentExtensionForMimeType(mimeType)}`;
+}
+
 export function attachmentsForThread<T extends { threadKey: string }>(
   attachments: readonly T[],
   threadKey: string | undefined,

@@ -97,6 +97,11 @@ export interface MessagingPlatform {
   /** Group roster addresses from the raw inbound payload, excluding our line. */
   participants?: (raw: unknown) => string[];
   /**
+   * When the raw payload says its roster was current, when the platform reports
+   * a time for the event; null when it reports none, so no comparison happens.
+   */
+  rosterAt?: (raw: unknown) => Date | null;
+  /**
    * Member departures one raw payload reports, for platforms that send
    * per-event leave notices instead of a roster (Telegram service messages).
    * `botLeft` marks our own bot leaving the conversation; undefined when the
@@ -486,6 +491,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     const transport = platform.transport?.(message.raw) ?? null;
     const attachments = inboundAttachments(message);
     const departures = isDirect ? undefined : platform.departures?.(message.raw);
+    const rosterAt = isDirect ? undefined : (platform.rosterAt?.(message.raw) ?? undefined);
     const base: MessagingInboundMessage = {
       type: "message",
       provider: platform.provider,
@@ -500,6 +506,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       fromLabel: fromLabel === message.author.userId ? null : fromLabel,
       channelName: isDirect ? null : (platform.channelName?.(message.raw) ?? null),
       participants: isDirect ? [] : (platform.participants?.(message.raw) ?? []),
+      ...(rosterAt ? { rosterAt } : {}),
       content: [
         plainTextWithLinks(message, platform.provider === "lark"),
         ...(attachments.length

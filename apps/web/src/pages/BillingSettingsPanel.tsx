@@ -4,7 +4,7 @@ import { Button, Skeleton } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { ModelCreditsSettings } from "../components/ModelCredits";
 import { billingDateLabel, formatBillingPrice } from "../lib/billing";
-import { rpc } from "../lib/rpc";
+import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
 
 export function BillingSettingsPanel() {
   const { t, i18n } = useLingui();
@@ -12,10 +12,13 @@ export function BillingSettingsPanel() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // Another tab can select another organization while this panel shows this one's
+  // prices, so every billing request stays on the space the panel opened for.
+  const [client] = useState(() => createSpaceRpc(selectedSpaceId()));
 
   useEffect(() => {
     let active = true;
-    rpc.billing
+    client.billing
       .status()
       .then((next) => {
         if (active) setStatus(next);
@@ -33,7 +36,7 @@ export function BillingSettingsPanel() {
     setPending(true);
     setError(null);
     try {
-      const { url } = await rpc.billing.portal();
+      const { url } = await client.billing.portal();
       window.location.assign(url);
     } catch {
       setError(t`Could not open billing`);
@@ -64,7 +67,8 @@ export function BillingSettingsPanel() {
     return (
       <ModelCreditsSettings
         status={status}
-        refresh={async () => setStatus(await rpc.billing.status())}
+        refresh={async () => setStatus(await client.billing.status())}
+        client={client}
       />
     );
 

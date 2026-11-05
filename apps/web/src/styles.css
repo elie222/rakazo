@@ -112,3 +112,12 @@ body,
     display: none;
   }
 }
+
+/* Find in chat (pages/shell/chat-find-bar.tsx) paints its matches without touching the transcript. */
+::highlight(rk-find) {
+  background-color: color-mix(in oklab, var(--foreground) 18%, transparent);
+}
+::highlight(rk-find-current) {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}

@@ -4,8 +4,9 @@ import Header from "../components/Header.astro";
 import PlanCard from "../components/PlanCard.astro";
 import PricingComparison from "../components/PricingComparison.astro";
 import { githubStarsLabel } from "../github";
+import Button from "../components/Button.astro";
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { PRICING_PLANS } from "../pricing";
+import { CREDITS_PLAN, PRICING_PLANS } from "../pricing";
 
 const starsLabel = await githubStarsLabel();
 ---
@@ -26,6 +27,15 @@ const starsLabel = await githubStarsLabel();
           ))
         }
       </div>
+      <section class="pricing__credits" aria-label={CREDITS_PLAN.name}>
+        <p>
+          <strong>{CREDITS_PLAN.name}</strong>
+          {CREDITS_PLAN.price} · {CREDITS_PLAN.note}
+        </p>
+        <Button href={CREDITS_PLAN.action.href} variant="secondary" data-attr="pricing-credits">
+          {CREDITS_PLAN.action.label}
+        </Button>
+      </section>
       <PricingComparison />
     </main>
     <Footer />

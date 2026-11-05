@@ -267,7 +267,8 @@ export function ModelSettingsOverlay({
           <ConnectionNameField
             key={credential.id}
             credential={credential}
-            onRenamed={() => void refresh()}
+            // A rename touches only the label; keep any unsaved form fields.
+            onRenamed={() => void refresh({ keepForm: true })}
           />
         ) : null}
         {connection}

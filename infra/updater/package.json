@@ -11,11 +11,11 @@
     "test": "vitest run --root ../.. infra/updater/src"
   },
   "dependencies": {
-    "@hono/node-server": "2.1.5",
+    "@hono/node-server": "2.1.6",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/logging": "workspace:*",
-    "hono": "4.13.14",
+    "hono": "4.13.16",
     "tsx": "4.23.15"
   },
   "devDependencies": {

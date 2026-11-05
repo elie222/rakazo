@@ -63,6 +63,7 @@ vi.mock("expo-router", () => ({
 vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
 vi.mock("react-native", () => ({
   Alert: { alert: state.alert },
+  Platform: { OS: "ios" },
   Pressable: element("span"),
   ScrollView: element("div"),
   StyleSheet: { create: <T,>(styles: T) => styles },

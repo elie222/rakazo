@@ -7,7 +7,7 @@ import {
   truncatedPlainText,
   truncatePlainText,
 } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { countUnreadInboxChats } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -80,17 +80,7 @@ export async function notifyRun(
     return null;
   });
   if (!notice?.enabled) return;
-  // Open apps alert from this too. Not awaited, so it never holds up the push.
-  void (async () =>
-    deps.events.publishChatAlert?.(run.userId, {
-      kind: message.kind,
-      title: truncatePlainText(message.title, COMPLETION_NOTIFICATION_MAX_CHARS),
-      body: truncatePlainText(message.body, COMPLETION_NOTIFICATION_MAX_CHARS),
-      spaceId: run.spaceId,
-      botId: message.botId,
-      threadId: message.threadId,
-      ...(notice.groupId ? { groupId: notice.groupId } : {}),
-    }))().catch((error) => getLogger().error("chat alert publish", error));
+  publishChatAlert(deps.events, run, message, notice.groupId);
   if (!deps.notifications) return;
   // The icon shows what the inbox shows: unread chats across the user's Spaces. Without a
   // count the push leaves the badge as it is.
@@ -124,6 +114,25 @@ export async function notifyRun(
       if (options.retryOnFailure) throw error;
       getLogger().error("run notification", error);
     });
+}
+
+/** Open apps alert from the same message. Not awaited, so it never holds up the push. */
+export function publishChatAlert(
+  events: Pick<ThreadEvents, "publishChatAlert"> | undefined,
+  run: { spaceId: string; userId: string },
+  message: NotificationMessage,
+  groupId: string | null,
+) {
+  void (async () =>
+    events?.publishChatAlert?.(run.userId, {
+      kind: message.kind,
+      title: truncatePlainText(message.title, COMPLETION_NOTIFICATION_MAX_CHARS),
+      body: truncatePlainText(message.body, COMPLETION_NOTIFICATION_MAX_CHARS),
+      spaceId: run.spaceId,
+      botId: message.botId,
+      threadId: message.threadId,
+      ...(groupId ? { groupId } : {}),
+    }))().catch((error) => getLogger().error("chat alert publish", error));
 }
 
 export function runSendsFinishNotification(trigger: string): boolean {

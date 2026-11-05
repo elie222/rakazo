@@ -50,7 +50,7 @@ it("uses the Expo proxy, validates the session, and saves the existing session s
   expect(callback).toBe("rakazo://sign-in");
   expect(new URL(url).pathname).toBe("/api/auth/expo-authorization-proxy");
   expect(new URL(url).searchParams.get("oauthState")).toBe("encrypted-state");
-  expect(replaceSessionTokenIfCurrent).toHaveBeenCalledWith(1, "new-session");
+  expect(replaceSessionTokenIfCurrent).toHaveBeenCalledWith(1, "new-session", false);
   expect(clearSpace).toHaveBeenCalledOnce();
 });
 it.each([WebBrowserResultType.CANCEL, WebBrowserResultType.DISMISS])(
