@@ -968,6 +968,7 @@ model Bot {
   ticketComments    TicketComment[]   @relation("TicketCommentAuthorBot")
 
   externalConversations ExternalConversation[]
+  emailAddress      BotEmailAddress?
 
   @@unique([spaceId, spawnKey])
   @@index([spaceId, userId, archivedAt, pinned, updatedAt])
@@ -1429,6 +1430,8 @@ model Routine {
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
   messageProvider String?
+  /// Email trigger: whose authenticated mail starts it ("owner" or "domain"); null without one.
+  emailSenders   String?
   modelProvider  String?
   modelId        String?
   thinkingLevel  String?
@@ -1447,6 +1450,16 @@ model Routine {
   @@index([active, nextRunAt])
   @@index([spaceId, botId])
   @@map("routines")
+}
+
+/// A bot's inbound email name. The row outlives its bot, so a name is never handed out twice.
+model BotEmailAddress {
+  localPart String   @id
+  botId     String?  @unique
+  bot       Bot?     @relation(fields: [botId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@map("bot_email_addresses")
 }
 
 model ScratchpadItem {

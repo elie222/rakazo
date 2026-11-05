@@ -1,0 +1,104 @@
+# Bot email addresses
+
+Give each bot its own address, such as `scout@bots.example.com`. Mail you forward or CC to it can
+start the bot's [routines](./routines.md). This is optional and off until you set it up. Rakazo
+receives mail only; bots do not send email from these addresses.
+
+You need a domain (or subdomain) that receives mail for every name on it, and something that
+hands each message to Rakazo. Rakazo does not run a mail server itself: any mail relay that can
+make an HTTPS request works.
+
+## Configure Rakazo
+
+Set both on the API, then restart it:
+
+```bash
+INBOUND_EMAIL_DOMAIN=bots.example.com
+INBOUND_EMAIL_SECRET=$(openssl rand -base64 32)
+```
+
+Use a domain that nothing else receives mail on. Once it is set, **Email** appears under
+**Add trigger** in the routine editor, and each bot's owner picks the bot's name there the first
+time. Names are lowercase, never change, and are never given to another bot, even after the bot
+is deleted.
+
+## Hand mail to Rakazo
+
+The relay posts each message, unchanged, once per recipient:
+
+```http
+POST /api/v1/email/inbound?to=<recipient address>
+Authorization: Bearer <INBOUND_EMAIL_SECRET>
+Content-Type: message/rfc822
+
+<the raw message>
+```
+
+Rakazo answers `200` for every message it accepted, including mail it drops, so the relay never
+retries or bounces it. `401` means the secret is wrong and `413` means the message is over 25 MB.
+Treat any other error as temporary and retry.
+
+### Cloudflare Email Routing
+
+Cloudflare receives mail for every name only on a domain's apex, such as `example-bots.com`, not
+on a subdomain. Add the domain to Cloudflare, turn on **Email Routing**, then deploy this Worker
+with `RAKAZO_URL` set to your public URL and `INBOUND_EMAIL_SECRET` stored as a secret:
+
+```js
+export default {
+  async email(message, env) {
+    const url = `${env.RAKAZO_URL}/api/v1/email/inbound?to=${encodeURIComponent(message.to)}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${env.INBOUND_EMAIL_SECRET}`,
+        "content-type": "message/rfc822",
+      },
+      // Streamed as received; the Worker never holds the whole message.
+      body: message.raw,
+    });
+    if (response.status === 413) message.setReject("Message too large");
+    else if (!response.ok) throw new Error(`Rakazo answered ${response.status}`);
+  },
+};
+```
+
+In **Email Routing → Routing rules**, set the **Catch-all** rule to **Send to a Worker** and pick
+this Worker.
+
+### Postfix
+
+On a host that already runs Postfix with an MX record for the domain, add a pipe transport. In
+`master.cf`:
+
+```text
+rakazo  unix  -  n  n  -  -  pipe
+  flags=Rq user=nobody argv=/usr/local/bin/rakazo-inbound-email ${recipient}
+```
+
+Route the domain to it with `relay_domains = bots.example.com` and a `transport_maps` entry of
+`bots.example.com rakazo:`. The script exits with 75 when Rakazo does not answer, so Postfix keeps
+the message and tries again:
+
+```sh
+#!/bin/sh
+curl -sf --max-time 60 \
+  -H "Authorization: Bearer $(cat /etc/rakazo/inbound-email-secret)" \
+  -H "Content-Type: message/rfc822" \
+  --data-binary @- \
+  "https://rakazo.example.com/api/v1/email/inbound?to=$1" >/dev/null || exit 75
+```
+
+## Who can start work
+
+Rakazo checks each message's DKIM signature itself and does not trust results a relay added. A
+message counts only when it is signed by the domain in its **From** address and that signature
+covers its **To** and **Cc**, which must name the bot. Mail that fails, mail sent BCC, automatic
+replies and mailing-list mail are dropped.
+
+Each email trigger then starts only for its owner's own address, or for anyone at the owner's
+email domain when the routine allows it. The owner's account email must be verified.
+
+The message reaches the bot as outside data, never as instructions, and runs it starts follow the
+stricter [approval](./approvals.md) rules for outside events. Up to four attachments are kept,
+within the usual upload type and size limits; the bot sees the names of any it could not keep.

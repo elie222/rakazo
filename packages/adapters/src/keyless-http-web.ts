@@ -183,6 +183,11 @@ function extractWithReadability(html: string, url: string): { title: string; tex
   }
 }
 
+/** Visible text of an HTML document, without scripts, styles or tags. */
+export function htmlToPlainText(html: string): string {
+  return stripHtmlFallback(html).text;
+}
+
 // These scans give the same result as the obvious regexes (/<title[^>]*>([\s\S]*?)<\/title>/i,
 // /<script[^>]*>[\s\S]*?<\/script>/gi, /<[^>]+>/g), which backtrack quadratically on unclosed tags.
 function stripHtmlFallback(html: string): { title: string; text: string } {
