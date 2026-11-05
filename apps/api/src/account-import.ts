@@ -31,12 +31,13 @@ import {
   InvalidSpaceNameError,
   Prisma,
   parseComputerMode,
-  personalOrganizationIds,
   runAsSystem,
   runAsTenant,
   SpaceLimitError,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { pageViewerCode } from "@rakazo/page-kit/compile";
+import { checkPageSource } from "@rakazo/page-kit/validate";
 import { Unzip, UnzipInflate } from "fflate";
 import type { Hono } from "hono";
 import { cancelBody } from "./http-body.js";
@@ -213,6 +214,25 @@ export async function readArchive(
   if (index === 0 || open) throw unreadable();
 }
 
+/**
+ * Bots name pages inside their words as `[title](page:id)`, which whole-value ids miss. Any
+ * block's text can carry one (a reply, an ask, a message to another bot), so every string is
+ * rewritten.
+ */
+function remapPageLinks(value: unknown, ids: ReadonlyMap<string, string>): unknown {
+  if (typeof value === "string")
+    return value.replace(
+      /\(page:([A-Za-z0-9_-]{1,64})\)/g,
+      (_link, id: string) => `(page:${ids.get(id) ?? id})`,
+    );
+  if (Array.isArray(value)) return value.map((item) => remapPageLinks(item, ids));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, remapPageLinks(item, ids)]),
+    );
+  return value;
+}
+
 /** Replaces every string that is exactly a mapped id; ids are random, so text never collides. */
 export function remapIds(value: unknown, ids: ReadonlyMap<string, string>): unknown {
   if (typeof value === "string") return ids.get(value) ?? value;
@@ -241,6 +261,9 @@ class SpaceImport {
   >();
   readonly groupThreads = new Map<string, string>();
   readonly threadSeqs = new Map<string, number>();
+  /** Each page's newest version so far, which it opens on; 0 until one arrives. */
+  readonly pageVersions = new Map<string, number>();
+  readonly seenPageVersions = new Set<string>();
   readonly artifacts = new Map<string, PendingArtifact>();
   readonly parentLinks: Array<{ botId: string; parentBotId: string }> = [];
   readonly homes = new Map<string, string>();
@@ -298,7 +321,6 @@ class AccountImporter implements ArchiveSink {
   private decoder = new TextDecoder();
   private lineParts: string[] = [];
   private lineLength = 0;
-  private baseSpaceId: string | null = null;
   private readonly repos;
 
   constructor(
@@ -417,7 +439,7 @@ class AccountImporter implements ArchiveSink {
       await rm(space.tempDir, { recursive: true, force: true }).catch(() => undefined);
     }
     for (const created of [...this.created].reverse()) {
-      const owner = { spaceId: this.baseSpaceId ?? this.actor.spaceId, userId: this.actor.userId };
+      const owner = { spaceId: this.actor.spaceId, userId: this.actor.userId };
       await runAsTenant({ spaceId: created.id, userId: this.actor.userId }, () =>
         deleteSpaceWithContent(this.deps, owner, created.id),
       ).catch((error) => getLogger().error("account import rollback failed", error));
@@ -441,10 +463,9 @@ class AccountImporter implements ArchiveSink {
     const { prisma } = this.deps;
     const userId = this.actor.userId;
     const created = await runAsSystem("create a Space for an account import", async () => {
-      this.baseSpaceId ??= await personalBaseSpace(prisma, this.actor);
       try {
         return await createSpaceForMember(prisma, {
-          currentSpaceId: this.baseSpaceId,
+          currentSpaceId: this.actor.spaceId,
           userId,
           name: space.name,
         });
@@ -477,9 +498,17 @@ class AccountImporter implements ArchiveSink {
     const tail = this.takeLine();
     if (tail) await this.recordLine(tail);
     const space = this.current!;
+    // A page without a version could never open.
+    if ([...space.pageVersions.values()].includes(0)) throw missingRecord();
     await this.tenant(async () => {
       await this.writeMessages(space);
       const { prisma } = this.deps;
+      // The page opens on, and its next save follows, the newest version the archive holds.
+      for (const [sourceId, currentVersion] of space.pageVersions)
+        await prisma.page.update({
+          where: { id: space.mapped(sourceId) },
+          data: { currentVersion },
+        });
       for (const link of space.parentLinks) {
         const parentBotId = space.ids.get(link.parentBotId);
         if (parentBotId)
@@ -568,6 +597,47 @@ class AccountImporter implements ArchiveSink {
         // Blocks may name records later in the file (artifacts), so messages wait for every id.
         space.messages ??= createWriteStream(space.messagesPath);
         await writeLine(space.messages, `${JSON.stringify(record)}\n`);
+        return;
+      }
+      case "page":
+        space.pageVersions.set(record.id, 0);
+        await prisma.page.create({
+          data: {
+            id: newId(),
+            spaceId,
+            userId,
+            botId: space.optional(record.botId),
+            groupId: space.optional(record.groupId),
+            title: record.title,
+            pinnedAt: date(record.pinnedAt),
+            currentVersion: record.currentVersion,
+            createdAt: new Date(record.createdAt),
+            updatedAt: new Date(record.updatedAt),
+          },
+        });
+        return;
+      case "page_version": {
+        const newest = space.pageVersions.get(record.pageId);
+        if (newest === undefined) throw missingRecord();
+        const pageId = space.mapped(record.pageId);
+        const key = `${record.pageId}:${record.version}`;
+        if (space.seenPageVersions.has(key)) throw unreadable();
+        space.seenPageVersions.add(key);
+        space.pageVersions.set(record.pageId, Math.max(newest, record.version));
+        // The checker tightens over time and is not the security boundary (the viewer's sandbox
+        // is), so a version an older release saved still imports and opens on its own error.
+        const check = checkPageSource(record.source);
+        await prisma.pageVersion.create({
+          data: {
+            id: newId(),
+            pageId,
+            version: record.version,
+            title: record.title,
+            source: record.source,
+            code: check.ok ? check.code : pageViewerCode(record.source),
+            createdAt: new Date(record.createdAt),
+          },
+        });
         return;
       }
       case "artifact":
@@ -764,6 +834,7 @@ class AccountImporter implements ArchiveSink {
             teamChatAmbientEnabled: record.teamChatAmbientEnabled,
             teamChatRules: record.teamChatRules,
             crossSpaceCommunication: record.crossSpaceCommunication,
+            dailyCheckIns: record.dailyCheckIns,
             createdAt: new Date(record.createdAt),
           },
         });
@@ -818,7 +889,10 @@ class AccountImporter implements ArchiveSink {
         threadId,
         seq: record.seq,
         role: record.role,
-        blocks: remapIds(record.blocks, space.ids) as Prisma.InputJsonValue,
+        blocks: remapPageLinks(
+          remapIds(record.blocks, space.ids),
+          space.ids,
+        ) as Prisma.InputJsonValue,
         botId: space.optional(record.botId),
         replyToMessageId: space.optional(record.replyToMessageId),
         replyQuote: record.replyQuote,
@@ -950,20 +1024,6 @@ function parseManifest(bytes: Uint8Array): AccountExportManifest {
   if (version !== ACCOUNT_EXPORT_VERSION)
     throw new AccountImportError("This export is from a newer version of Rakazo.");
   throw unreadable();
-}
-
-/** New spaces go in the importer's own organization, beside their first space there. */
-async function personalBaseSpace(
-  prisma: AccountImportDeps["prisma"],
-  actor: Actor,
-): Promise<string> {
-  const organizationIds = await personalOrganizationIds(prisma, actor.userId);
-  const membership = await prisma.spaceMember.findFirst({
-    where: { userId: actor.userId, organizationId: { in: organizationIds } },
-    orderBy: { createdAt: "asc" },
-    select: { spaceId: true },
-  });
-  return membership?.spaceId ?? actor.spaceId;
 }
 
 function date(value: string | null): Date | null {

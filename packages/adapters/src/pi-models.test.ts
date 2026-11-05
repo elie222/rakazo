@@ -175,6 +175,8 @@ describe("catalog provider authentication", () => {
   it("bounds a stalled check and lets it through as inconclusive", async () => {
     const deadline = new AbortController();
     const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    // The app gives up on saving a connection after 60 seconds, so key checks ignore the setting.
+    vi.stubEnv("MODEL_CONNECT_TIMEOUT_MS", "90000");
     try {
       const result = verifyCatalogProviderApiKey(
         { provider: "openrouter", apiKey: "fixture-key" },
@@ -189,6 +191,7 @@ describe("catalog provider authentication", () => {
       await assertion;
     } finally {
       timeout.mockRestore();
+      vi.unstubAllEnvs();
     }
   });
 
@@ -226,7 +229,7 @@ describe("Pi model catalog", () => {
       expect.arrayContaining([
         { provider: "openai-codex", id: "gpt-6-luna" },
         { provider: "openai", id: "gpt-6-luna" },
-        { provider: "openrouter", id: "openai/gpt-6-luna" },
+        { provider: "openrouter", id: "anthropic/claude-haiku-5.5" },
         { provider: "anthropic", id: "claude-haiku-5-5" },
       ]),
     );

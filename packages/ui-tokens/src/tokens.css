@@ -3,12 +3,12 @@
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
-  --background: #161616;
-  --dialog: #1f1f1f;
+  --background: #0a0a0a;
+  --dialog: #161616;
   --foreground: #f5f5f5;
-  --card: #1f1f1f;
+  --card: #232323;
   --card-foreground: #f5f5f5;
-  --popover: #1f1f1f;
+  --popover: #232323;
   --popover-foreground: #f5f5f5;
   --glass-fill: #2c2c2e;
   --glass-stroke: #fcfcfc26;
@@ -18,10 +18,10 @@
   --secondary-foreground: #f5f5f5;
   --chat-user: #3e3e3e;
   --chat-user-foreground: #f5f5f5;
-  --muted: #1f1f1f;
+  --muted: #232323;
   --muted-foreground: #f5f5f5a8;
   --faint-foreground: #f5f5f58a;
-  --accent: #f5f5f50f;
+  --accent: #f5f5f51a;
   --accent-foreground: #f5f5f5;
   --destructive: #ff6463;
   --destructive-fill: #cf2b35;
@@ -29,9 +29,9 @@
   --border: #f5f5f51a;
   --input: #f5f5f538;
   --ring: #1884fc;
-  --sidebar: #0e0e0e;
+  --sidebar: #0a0a0a;
   --sidebar-foreground: #f5f5f5;
-  --sidebar-border: #f5f5f51a;
+  --sidebar-border: #f5f5f50f;
   --sidebar-accent: #f5f5f514;
   --sidebar-accent-foreground: #f5f5f5;
   --link: #4d9bff;
@@ -44,6 +44,14 @@
   --overlay: #000000b2;
   --scrollbar: #f5f5f538;
   --scrollbar-hover: #f5f5f580;
+  --page-icon-sheet: #2c2c2e;
+  --page-icon-edge: #363638;
+  --page-icon-fold: #3c3c3e;
+  --page-icon-line: #6f6f71;
+  --page-icon-line-soft: #616163;
+  --page-tile: #343434;
+  --page-tile-edge: #414141;
+  --page-tile-line: #626262;
   --primary-hover: #dbdbdb;
   --primary-disabled: #f5f5f521;
   --radius: 0.75rem;
@@ -92,6 +100,14 @@
   --overlay: #00000080;
   --scrollbar: #1c1c1c3d;
   --scrollbar-hover: #1c1c1c85;
+  --page-icon-sheet: #e8e8ea;
+  --page-icon-edge: #d6d6da;
+  --page-icon-fold: #d0d0d4;
+  --page-icon-line: #8e8e93;
+  --page-icon-line-soft: #a1a1a6;
+  --page-tile: #ececee;
+  --page-tile-edge: #dadadd;
+  --page-tile-line: #a1a1a6;
   --primary-hover: #363636;
   --primary-disabled: #1c1c1c26;
   --radius: 0.75rem;

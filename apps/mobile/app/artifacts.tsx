@@ -1,3 +1,4 @@
+import { artifactTypeLabel } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -21,12 +22,7 @@ import type { MobileBot } from "../lib/api";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactSummary } from "../lib/artifacts";
-import {
-  listSpaceArtifacts,
-  matchesArtifactQuery,
-  mimeBadgeLabel,
-  removeArtifact,
-} from "../lib/artifacts";
+import { listSpaceArtifacts, matchesArtifactQuery, removeArtifact } from "../lib/artifacts";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
@@ -409,7 +405,7 @@ function ArtifactRow({
             {item.name}
           </Text>
           {item.versionCount > 1 ? <Text style={styles.badge}>{`v${item.version}`}</Text> : null}
-          <Text style={styles.badge}>{mimeBadgeLabel(item.mimeType)}</Text>
+          <Text style={styles.badge}>{artifactTypeLabel(item.mimeType)}</Text>
         </View>
         {item.description ? (
           <Text style={styles.rowDescription} numberOfLines={1}>

@@ -7,6 +7,8 @@ import {
   provisionMessagingIdentity,
   runAsSystem,
   runAsTenant,
+  teamChatRunClientNonce,
+  teamChatRunFromOwner,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { MessagingInstallations } from "./messaging-installations.js";
@@ -26,6 +28,7 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
       ok: true,
       access_token: "fake-install-token",
       team: { id: "T-TEST", name: "Example workspace" },
+      authed_user: { id: "U-INSTALLER" },
     }),
   );
   const start = (index: number) =>
@@ -98,6 +101,69 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
       [],
     );
     expect((await manager.get("slack", "T-TEST"))?.credential).toBe("fake-install-token");
+  });
+
+  it("treats only the installer's own messages as the owner's", async () => {
+    const installation = await asSystem(prisma).messagingInstallation.findUniqueOrThrow({
+      where: { provider_workspaceId: { provider: "slack", workspaceId: "T-TEST" } },
+    });
+    expect(installation.ownerAddress).toBe("T-TEST:U-INSTALLER");
+    const conversation = await asSystem(prisma).externalConversation.create({
+      data: {
+        provider: "slack",
+        workspaceId: "T-TEST",
+        externalKey: `${installation.id}:C-GENERAL`,
+        conversationId: `slack~${installation.id}:C-GENERAL`,
+        spaceId: actors[0]!.spaceId,
+        botId: bots[0]!,
+        userId: actors[0]!.userId,
+      },
+    });
+    const message = (eventId: string, senderId: string, extra: object = {}) =>
+      asSystem(prisma).externalMessage.create({
+        data: {
+          externalConversationId: conversation.id,
+          providerEventId: eventId,
+          senderId,
+          senderName: "Fake sender",
+          content: "What do you remember?",
+          ...extra,
+        },
+      });
+    const fromOwner = (eventId: string) =>
+      runAsSystem("check team chat sender", () =>
+        teamChatRunFromOwner(prisma, {
+          externalConversationId: conversation.id,
+          sourceClientNonce: teamChatRunClientNonce("slack", eventId),
+        }),
+      );
+    const owner = await message("E-OWNER", "T-TEST:U-INSTALLER");
+    const coworker = await message("E-COWORKER", "T-TEST:U-COWORKER");
+    await message("E-APP", "T-TEST:U-INSTALLER", { senderIsBot: true });
+    await message("E-MIXED", "T-TEST:U-INSTALLER", {
+      batchContext: JSON.stringify({ prompt: "update", messageIds: [owner.id, coworker.id] }),
+    });
+    expect(await fromOwner("E-OWNER")).toBe(true);
+    expect(await fromOwner("E-COWORKER")).toBe(false);
+    expect(await fromOwner("E-APP")).toBe(false);
+    expect(await fromOwner("E-MIXED")).toBe(false);
+    expect(await fromOwner("E-MISSING")).toBe(false);
+  });
+
+  it("forgets the previous installer when a reconnect names nobody", async () => {
+    fetcher.mockResolvedValueOnce(
+      Response.json({
+        ok: true,
+        access_token: "fake-install-token-2",
+        team: { id: "T-TEST", name: "Example workspace" },
+      }),
+    );
+    const state = await start(0);
+    await manager.complete(actors[0]!, state, "code");
+    const installation = await asSystem(prisma).messagingInstallation.findUniqueOrThrow({
+      where: { provider_workspaceId: { provider: "slack", workspaceId: "T-TEST" } },
+    });
+    expect(installation.ownerAddress).toBeNull();
   });
 
   it("exposes personal link availability only to current space members without exposing installation ownership", async () => {

@@ -137,6 +137,15 @@ async function cacheMobileArtifact(
   return file;
 }
 
+/** An artifact's text, read through the same authenticated, session-scoped cache. */
+export async function textMobileArtifact(
+  target: MobileArtifactTarget,
+  artifactId: string,
+  mimeType: string,
+): Promise<string> {
+  return (await cacheMobileArtifact(target, artifactId, mimeType)).text();
+}
+
 /** Local playback URI using the same authenticated, session-scoped artifact cache. */
 export async function audioArtifactUri(
   target: MobileArtifactTarget,
@@ -144,15 +153,6 @@ export async function audioArtifactUri(
   mimeType: string,
 ): Promise<string> {
   return (await cacheMobileArtifact(target, artifactId, mimeType)).uri;
-}
-
-export async function readMobileArtifactText(
-  target: MobileArtifactTarget,
-  artifactId: string,
-  mimeType: string,
-): Promise<string> {
-  const file = await cacheMobileArtifact(target, artifactId, mimeType);
-  return file.text();
 }
 
 export async function openMobileArtifact(

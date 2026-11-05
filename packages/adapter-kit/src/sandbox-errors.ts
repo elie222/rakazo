@@ -12,6 +12,19 @@ export class SandboxRateLimitError extends Error {
   }
 }
 
+/**
+ * The sandbox supervisor refused a page browser request while parsing it, before anything was
+ * sent to the computer, so nothing ran. It is the only refusal that proves that.
+ */
+export const INVALID_BROWSER_REQUEST = "invalid_browser_request";
+export class SandboxRequestRejectedError extends Error {
+  readonly code = INVALID_BROWSER_REQUEST;
+  constructor() {
+    super("The page browser could not accept this request, so nothing was done.");
+    this.name = "SandboxRequestRejectedError";
+  }
+}
+
 /** The organization spent this month's computer allowance, so no computer that bills starts. */
 export class SandboxAllowanceUsedError extends Error {
   readonly code = "SANDBOX_ALLOWANCE_USED";
@@ -63,5 +76,25 @@ export class SandboxDamagedError extends Error {
   constructor(options?: { cause?: unknown }) {
     super("This computer's system is damaged. Recover the computer to rebuild it.", options);
     this.name = "SandboxDamagedError";
+  }
+}
+
+/**
+ * The provider would not start the computer at the size asked for: the operator's account does
+ * not offer it, or the computer's files would not fit a smaller one. The computer is unchanged.
+ */
+export class SandboxSizeUnavailableError extends Error {
+  readonly code = "SANDBOX_SIZE_UNAVAILABLE";
+  constructor(
+    readonly reason: "not_offered" | "too_small",
+    options?: { cause?: unknown },
+  ) {
+    super(
+      reason === "too_small"
+        ? "The computer's files do not fit a smaller size"
+        : "This computer size is not available",
+      options,
+    );
+    this.name = "SandboxSizeUnavailableError";
   }
 }

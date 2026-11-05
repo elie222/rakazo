@@ -104,14 +104,43 @@ The backend decrypts the value and the page browser types it only if the page is
 
 Logins saved before fields existed read as a visible Username and a hidden Password, and fill exactly as before.
 
-## Managing saved credentials
+## Payment cards
+
+A bot asks for a card with `request_secret` and auth `{ "type": "card" }`, with no origin. The card asks for the number, expiry, security code, name on card and, optionally, a saved contact whose address bills it. The whole card is encrypted like any other value. `list_secrets` shows the bot only its brand, last four digits, expiry, name and billing contact, never the number or security code.
+
+The bot types a saved card with `browser_act` `fill_card`, passing `card` and `site`, the checkout page's HTTPS origin:
+
+```json
+{
+  "actions": [
+    { "kind": "fill_card", "card": "visa-4242", "site": "https://shop.example.test", "field": "number" },
+    { "kind": "fill_card", "card": "visa-4242", "site": "https://shop.example.test", "field": "expiry" },
+    { "kind": "fill_card", "card": "visa-4242", "site": "https://shop.example.test", "field": "cvc" }
+  ]
+}
+```
+
+Every call that types a saved card asks the person first, naming the card and the site ("Pay with Visa ·· 4242 on shop.example.test?"). Allow once is the only way to approve it, and a webhook run, which nobody can answer, is refused. One call types one card on one site, and the page browser types it only while the page is still on that origin, including a payment frame inside it. `postal_code` comes from the billing contact. Approving the card names no amount, so the click that places the order still asks, with the total the page shows; a call that types the card and presses that click asks once, showing both. That click counts against your [spending limit](./approvals.md#spending-limit), if you set one. Every run of the bot hides each saved card number from tool output, in plain, digits-only, spaced and dashed forms. The security code is not hidden, as for a wallet card: at 3 or 4 digits, hiding it would blank every total and order number that contains them.
+
+## Contacts
+
+A contact is a name, address, phone or email, the user's own or someone else's, such as `home`, `mom` or `office`. A bot asks for one with `request_secret` and auth `{ "type": "contact" }`, with no origin. A contact is not secret from the bot: `list_secrets` returns its fields, and the bot types them like any other text. It is still encrypted at rest.
+
+## Managing the vault
 
 Owners can manage what is saved without asking the bot. Open **Settings → Vault** on web, the
-desktop app or mobile. It lists each credential's name, origin and authentication type. From there
-you can show a value, replace it on the same destination, or remove one after confirming. Remove
-deletes the saved value immediately. Asking the bot to `forget_secret` a name only removes it; it
-does not list or replace one.
+desktop app or mobile. It lists every item by its title, which the owner can change (a card without
+one shows as "Visa ·· 4242", a login as its site), with a line from the item: a login's username, a
+card's expiry, a contact's name and city. New adds a login, card, contact, API key or variable.
+Opening an item shows its fields; protected values show only after you confirm it's you. From
+there you can edit an item, add a note on when the bot should use it, which `list_secrets` shows
+the bot, or remove it after confirming. Remove deletes the saved value immediately. Asking the bot
+to `forget_secret` a name only removes it; it does not list or replace one.
 
-A sign-in without a password, such as an ID number and phone number, uses the same login card. Texted or emailed one-time codes, CAPTCHA and passkeys still use `request_takeover`, so a code is typed on the live screen rather than saved, as is any sign-in you prefer to do yourself.
+A sign-in without a password, such as an ID number and phone number, uses the same login card. CAPTCHA and passkeys still use `request_takeover`, as does any sign-in you prefer to do yourself.
+
+### One-time codes
+
+When a site texts or emails you a code, the bot calls `request_secret` with `oneTimeCode: { "origin": "https://www.example.com" }` and shows a card, titled "Code for" that site's host, for the code. Only the person the run belongs to can answer it. The code is 4 to 12 characters, letters and digits in groups joined by single dashes, spaces dropped; anything else is refused. It is kept encrypted for that run only, never saved to the vault, and the bot never sees it: it types it with `browser_act` `fill_code` into one field on the page. Like a login fill, the page browser types it only while the page is on that exact HTTPS origin, and only into a text, email or tel input that looks like a code box (it says so, takes digits, is named or labelled like a code, or holds 4 to 12 characters). The field is drawn as dots, and so is the slot widget around it that shows the digits, and its value stays out of snapshots; slots drawn more than 50 ms late, more than three levels up, or after the page remounted them may still show in a later screenshot, and the masking may also cover a container that shows the same characters elsewhere. Dashes are dropped for a numeric box. A code is used once: it is claimed just before the page is asked, so two fills never both get it, and a fill the page refused gives it back. After a fill the page took, the code is kept only so the run goes on hiding it, in the forms a page might draw it (one digit per line, spaced, or dashed), and it is deleted when the run ends. A wrong or expired code needs a new request, which shows a new card. A code box that refuses the fill, such as one input per digit, a password-type or number-type input, or a field in a frame from another site, falls back to `request_takeover`. The code-box check is broad on purpose: another field on the same site named like a code, such as a promo or postal code, qualifies too. This needs a computer image that includes the code fill; an older image reads the fill as a password and types only into password-type inputs on that origin, so it falls back to `request_takeover` for a code box.
 
 The value is typed into a real browser on the bot's computer. Anything that can read that browser, including the bot's own shell commands through the page or its debugging port, could read a filled field. Keeping the value out of model input stops accidental disclosure, not a bot that sets out to extract it. Save logins only for accounts you would let the bot use unattended.

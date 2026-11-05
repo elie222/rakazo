@@ -1,5 +1,6 @@
 import type {
   BillingCancellationReason,
+  ByokTier,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
   ModelApiProtocol,
@@ -268,8 +269,12 @@ export interface ConnectorTool {
   readOnly?: boolean;
   /** Set when the tool runs other actions named in its arguments; see ToolBatch. */
   batch?: ToolBatch;
+  /** What the person sees for a call, when the name the model uses would read badly. */
+  label?: string;
   /** In-process routing metadata. It is never exposed to the model. */
   route?: ConnectorRoute;
+  /** The `ui://` resource an MCP server shows this tool's result with (MCP Apps). */
+  appResourceUri?: string;
 }
 
 /**
@@ -288,8 +293,12 @@ export interface ConnectorRoute {
   toolName: string;
   resourceId?: string;
   resourceRevision?: string | number;
+  /** Authorized local connection selected by this tool. Never fall back to another account. */
+  connectionId?: string;
   /** Source label for lazy catalog name indexes. Never exposed as a model schema field. */
   catalogGroup?: string;
+  /** The `ui://` resource that shows this tool's result; see ConnectorApp. */
+  appResourceUri?: string;
 }
 
 export interface ConnectorCall {
@@ -298,11 +307,26 @@ export interface ConnectorCall {
   connectionId?: string;
   executionId: string;
   route?: ConnectorRoute;
+  /** Read the tool's app after a successful call. Only a caller that shows it asks. */
+  withApp?: boolean;
+}
+
+/**
+ * An MCP server's app for one successful call (MCP Apps): HTML the client shows sandboxed with
+ * the call's input and result. Declared domains are already narrowed to the ones allowed.
+ */
+export interface ConnectorApp {
+  server: string;
+  html: string;
+  csp: { connectDomains?: string[]; resourceDomains?: string[] };
+  prefersBorder?: boolean;
 }
 
 export type ConnectorEvent =
   | { type: "log"; message: string }
   | { type: "result"; data: unknown }
+  /** Follows the call's `result` when its tool has an app. */
+  | { type: "app"; app: ConnectorApp }
   | { type: "error"; message: string; logIds?: string[] };
 
 export interface ConnectorCapabilities {
@@ -503,6 +527,17 @@ export interface AgentRunModel {
   oauth?: {
     credential: AgentModelOAuthCredential;
     persist?: (credential: AgentModelOAuthCredential) => Promise<void>;
+    /**
+     * Refreshes the stored credential under the lock every refresh of it shares,
+     * calling `refresh` on the stored copy only if no other refresh already rotated it.
+     */
+    refresh?: (
+      held: AgentModelOAuthCredential,
+      refresh: (
+        stored: AgentModelOAuthCredential,
+        signal: AbortSignal,
+      ) => Promise<AgentModelOAuthCredential | undefined>,
+    ) => Promise<AgentModelOAuthCredential>;
     /** Drop the stored credential after a terminal provider rejection. */
     retire?: (
       reason: ModelCredentialRetireReason,
@@ -556,6 +591,8 @@ export interface AgentRunRequest {
   currentTurnImageFileFallback?: boolean;
   tools: ConnectorTool[];
   model: AgentRunModel;
+  /** Optional explicitly authenticated vision target for same-run computer mode. */
+  computerModel?: AgentRunModel;
   /** Ordered, user-selected models eligible after provider unavailability. */
   fallbackModels?: Array<Pick<AgentRunModel, "provider" | "id" | "connectionId">>;
   /** Resolve one configured backup lazily so healthy primary turns do no extra auth work. */
@@ -565,7 +602,8 @@ export interface AgentRunRequest {
     connectionId?: string,
   ) => Promise<AgentRunModel>;
   /** Persist the selected backup against the active run lease before requesting it. */
-  onModelChange?: (provider: string, modelId: string) => Promise<void>;
+  /** `computerMode` is set when the switch enters computer mode rather than changing the run's model. */
+  onModelChange?: (provider: string, modelId: string, computerMode?: boolean) => Promise<void>;
   /** Resolve an explicitly requested helper model within the active user and space scope. */
   resolveModel?: (provider: string, modelId: string) => Promise<AgentRunModel>;
   resumeFromCheckpoint?: string;
@@ -772,6 +810,8 @@ export interface BackgroundJobPayloads {
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
   "purchase.poll": { purchaseId: string };
+  /** Check a submitted video and post it when ready; the ID is the bot-visible job ID. */
+  "media.poll": { jobId: string };
   /** Read an Expo push receipt; the token is identified by its digest, never stored. */
   "push.receipt": { userId: string; ticketId: string; tokenDigest: string };
 }
@@ -833,11 +873,15 @@ export interface ArtifactPut {
 }
 
 export interface NotificationMessage {
+  /** Verified sender metadata. Avatar is a bounded JPEG thumbnail, base64 encoded. */
+  sender?: { botId: string; name: string; avatar?: string };
   kind: "completion" | "failure" | "help" | "takeover";
   title: string;
   body: string;
   botId: string;
   threadId: string;
+  /** The finished run, so a device that also polls for finished work does not alert twice. */
+  runId?: string;
   /** Group chat that owns threadId, so a tap does not open the bot's direct thread. */
   groupId?: string;
   /** Unread chats to show on the app icon, when the sender knows them. */
@@ -914,6 +958,12 @@ export interface MessagingInboundMessage {
   channelName: string | null;
   /** Group roster addresses when the platform reports them; often empty. */
   participants: string[];
+  /**
+   * When the platform says this roster was current, when it reports a time for
+   * the event; a roster older than the newest one already processed for the
+   * channel changes no membership.
+   */
+  rosterAt?: Date;
   /**
    * Member departures this event reports one at a time (Telegram service
    * messages on a platform that sends no roster): addresses that left or were
@@ -1083,6 +1133,8 @@ export interface BrowserNavigateResult {
 export interface BrowserSnapshotRequest {
   /** Words to find controls by anywhere on the page, such as "newsletter signup". */
   query?: string;
+  /** Folder in the computer's home that a PDF the tab shows is saved to; without it, none is saved. */
+  downloads?: string;
   signal?: AbortSignal;
 }
 
@@ -1107,6 +1159,7 @@ export interface BrowserSnapshotResult {
   elements: BrowserSnapshotNode[];
   /** The page was still loading or waiting on its own requests when it was captured. */
   loading?: boolean;
+  downloads?: BrowserDownload[];
   fallback?: "computer_act";
   error?: string;
   /** What the page did that the bot should know, such as an alert that was closed. */
@@ -1120,7 +1173,20 @@ export type BrowserActKind = "click" | "fill" | "type" | "upload";
 export const MAX_BROWSER_UPLOAD_FILES = 10;
 
 export type BrowserActStep =
-  | { kind: "click"; ref: string }
+  /**
+   * `approved`, `site`, `label`, `amount`: the user approved this click, which completes a purchase, on
+   * that site, as the card showed the button and total. The click is refused if either has changed.
+   */
+  | {
+      kind: "click";
+      ref: string;
+      approved?: boolean;
+      site?: string;
+      label?: string;
+      amount?: string;
+      /** The page's total the card showed beside the button, or empty when it showed none. */
+      total?: string;
+    }
   /** Attaches computer files to a file input without opening a native file chooser. */
   | { kind: "upload"; ref: string; paths: string[]; roots?: string[] }
   | {
@@ -1134,7 +1200,7 @@ export type BrowserActStep =
        * field) or visible field ("username"), or an approved purchase's card detail. A card fill
        * always carries `origin`.
        */
-      field?: "username" | "password" | "card";
+      field?: "username" | "password" | "card" | "code";
     }
   | {
       kind: "fill";
@@ -1180,13 +1246,66 @@ export interface BrowserActResult {
   dialog?: string;
 }
 
+/** A purchase step as the page shows it: the label and amount are page text. */
+export interface BrowserPurchase {
+  /** The page's host. An approval holds for this site only. */
+  site: string;
+  label: string;
+  amount: string;
+  /** Whether the amount is the one the button names or the total the page shows. */
+  amountSource?: "button" | "page";
+  /** The total the page shows beside a button that names its own amount; older computers omit it. */
+  total?: string;
+  /** The order lines the page lists above its total, as page text; none when it lists none or is older. */
+  items?: BrowserPurchaseItem[];
+}
+
+/** An order line as the checkout page shows it, such as an item with its quantity, or delivery. */
+export interface BrowserPurchaseItem {
+  name: string;
+  amount: string;
+}
+
+export interface BrowserPurchaseCheckRequest {
+  /** The steps of a browser_act call; only clicks are looked at. */
+  actions?: Array<{ kind: string; ref?: string }>;
+  /**
+   * Ask about clicks or a key on the screen, which name no element. `points` are the clicks' spots in screen
+   * pixels; `enter` is a key that submits or presses the focused control.
+   */
+  desktop?: boolean;
+  enter?: boolean;
+  points?: Array<{ x: number; y: number }>;
+  /** A click whose spot cannot be told (the page may have changed under it): the page decides. */
+  unplaced?: boolean;
+  signal?: AbortSignal;
+}
+
+/** `steps`: the indexes of the clicks that would complete the purchase. */
+export interface BrowserPurchaseCheckResult {
+  purchase: (BrowserPurchase & { steps: number[] }) | null;
+}
+
 /** A sandbox must route these commands through its owned screen, never generic host execution. */
 export type PageBrowserCommand =
   | { command: "navigate"; url: string; downloads?: string }
-  | { command: "snapshot"; query?: string }
-  | { command: "act"; actions: BrowserActStep[]; downloads?: string };
+  | { command: "snapshot"; query?: string; downloads?: string }
+  | { command: "act"; actions: BrowserActStep[]; downloads?: string }
+  | {
+      command: "purchase_check";
+      actions?: BrowserPurchaseCheckRequest["actions"];
+      desktop?: boolean;
+      enter?: boolean;
+      points?: BrowserPurchaseCheckRequest["points"];
+      unplaced?: boolean;
+    };
 
-export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & { ok: boolean };
+export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & {
+  ok: boolean;
+  /** A purchase check: the page's host, and what the purchase is as the page shows it. */
+  site?: string;
+  purchase?: unknown;
+};
 
 export type CloudAgentStatus = "running" | "finished" | "failed" | "cancelled" | "expired";
 
@@ -1314,6 +1433,8 @@ export interface BillingCreditCheckoutRequest {
 export interface BillingByokCheckoutRequest extends Omit<BillingCreditCheckoutRequest, "monthly"> {
   /** How often `amountCents` bills; monthly when omitted. */
   interval?: "month" | "year";
+  /** Standard when omitted. */
+  tier?: ByokTier;
   /** Omitted when the customer has already used its trial. */
   trialDays?: number;
 }
@@ -1338,10 +1459,19 @@ export interface BillingSubscriptionSnapshot {
   byokPriceCents?: number;
   /** The own-key plan's billing period. */
   byokInterval?: "month" | "year";
+  /** The own-key plan's tier, which the provider reports with the plan. */
+  byokTier?: ByokTier;
   /** Stable identity of the subscription's card across customers, when the provider has one. */
   cardFingerprint?: string;
   cancellationReason?: BillingCancellationReason;
   cancellationComment?: string;
+}
+
+/** One own-key plan: its tier, how often it bills, and what it bills each period. */
+export interface BillingByokPlan {
+  tier: ByokTier;
+  interval: "month" | "year";
+  amountCents: number;
 }
 
 export interface BillingCheckoutRequest {

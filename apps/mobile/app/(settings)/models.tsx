@@ -169,14 +169,18 @@ export default function Models() {
         name: entry.providerName ?? entry.provider,
       });
     }
-    const all = popularModelProvidersFirst([...grouped.values()], (group) => group.id);
+    const all = [...grouped.values()];
     if (catalog.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID))
       all.push({
         id: OPENAI_COMPATIBLE_PROVIDER_ID,
         name: t("Ollama Cloud"),
         baseUrl: OLLAMA_CLOUD_BASE_URL,
       });
-    return all;
+    return popularModelProvidersFirst(
+      all,
+      (provider) => provider.id,
+      (provider) => provider.name,
+    );
   }, [catalog, t]);
 
   // Deployment-funded providers stay listed so people can still add their own key.
@@ -289,6 +293,12 @@ export default function Models() {
               modelRole="approval"
               title={t("Approval model")}
               defaultLabel={t("Choose a model")}
+            />
+            <ModelRoleSettings
+              {...shared}
+              modelRole="computer"
+              title={t("Computer-use model")}
+              defaultLabel={t("Same as main model")}
             />
             {/* Connections are the account's in every Space, so a Space's override lists only its models. */}
             {target.scope === "account" ? (

@@ -1,8 +1,10 @@
 import type { ProductAnalytics, RealtimeFanout } from "@rakazo/adapter-kit";
 import type {
   BotSecretDestination,
+  ChatAlert,
   LoginFieldInput,
   MessageBlock,
+  OneTimeCodeTarget,
   ProductEvent,
 } from "@rakazo/contracts";
 import {
@@ -13,6 +15,7 @@ import {
   hasThinkingActivityMarker,
   loginAnswerValue,
   MessageBlock as MessageBlockSchema,
+  normalizeOneTimeCode,
   ThreadActivityPayloadSchema,
 } from "@rakazo/contracts";
 import {
@@ -31,6 +34,7 @@ import {
   QUEUE_HOLDING_RUN_STATUSES,
   releasedTakeoverComputerBlocks,
   resolveAskChoice,
+  SITE_SENDING_TOOLS,
   STEERING_CONTINUATION_PROMPT,
   sanitizeJsonValue,
 } from "@rakazo/core";
@@ -39,6 +43,7 @@ import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { getLogger } from "@rakazo/logging";
 import { saveApprovalRule, storedBatchActions } from "./approval-settings.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
+import { createChatAlerts } from "./chat-alerts.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import { contentEncryptionOf } from "./content-encryption.js";
@@ -60,6 +65,8 @@ import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { recordSecurityEvent } from "./security-events.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
+export const STRATEGIC_INITIATIVE_NONCE_PREFIX = "strategic-initiative";
+
 /** A one-time answer longer than a saved value may be. Nothing is stored or echoed. */
 export class AnswerTooLongError extends Error {
   constructor() {
@@ -71,6 +78,7 @@ export class AnswerTooLongError extends Error {
 const EVENT_BATCH_SIZE = 200;
 const PUSH_CATCH_UP_MS = 30_000;
 const POLL_ONLY_CATCH_UP_MS = 400;
+const INCOMING_CALL_POLL_MS = 3_000;
 
 export interface AppendEventInput {
   spaceId: string;
@@ -97,6 +105,14 @@ export function transientRunEventsWhere(): Prisma.EventWhereInput {
 }
 
 export interface ThreadEvents {
+  notifyIncomingCalls?(userId: string): Promise<void>;
+  followIncomingCalls?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
+  publishChatAlert?(userId: string, alert: ChatAlert): Promise<void>;
+  followChatAlerts?(
+    userId: string,
+    spaceId: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<ChatAlert>;
   answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
@@ -327,6 +343,8 @@ export interface RunSecretWriter {
   store(input: {
     botId: string;
     credential?: BotSecretDestination;
+    /** The site a code card was shown for. */
+    oneTimeCode?: OneTimeCodeTarget;
     /** False for a login card answered with "Save to Vault" off. */
     remember: boolean;
     runId: string;
@@ -346,7 +364,14 @@ export function createThreadEvents(
     analytics?: ProductAnalytics;
   } = {},
 ): ThreadEvents {
+  const chatAlerts = createChatAlerts(realtime);
   return {
+    publishChatAlert: chatAlerts.publish,
+    followChatAlerts: chatAlerts.follow,
+    notifyIncomingCalls: async (userId) => {
+      await realtime?.publish(`incoming-calls:${userId}`, "");
+    },
+    followIncomingCalls: (userId, signal) => followIncomingCallSignals(realtime, userId, signal),
     answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
     append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),
@@ -377,7 +402,7 @@ export async function clearThread(
         ...(input.groupId ? { groupId: input.groupId } : { botId: input.botId }),
       },
       data: { unread: false },
-      select: { nextMessageSeq: true, historyCompactionGeneration: true },
+      select: { nextMessageSeq: true, historyCompactionGeneration: true, userId: true },
     });
     const activeRuns = await tx.run.findMany({
       where: {
@@ -430,11 +455,14 @@ export async function clearThread(
     });
     return {
       event,
+      userId: thread.userId,
       cancelledRunIds: runIds,
       historyCompactionGeneration: thread.historyCompactionGeneration,
     };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   await notifyRealtime(realtime, committed.event.threadId, committed.event.seq);
+  if (!input.groupId && committed.userId)
+    await realtime?.publish(`incoming-calls:${committed.userId}`, "").catch(() => undefined);
   // Legacy execution bindings point at runs of pre-lease releases, which kept writing
   // Computer.executionRunId. Clearing them inside the transaction reaches for the
   // computer row while holding the thread row — the inverted half of a cycle with a
@@ -785,7 +813,7 @@ async function claimSteeringOnce(
               ? ("messaging" as const)
               : ("member" as const),
     }));
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
 }
 
 async function findPendingAsk(
@@ -837,6 +865,7 @@ async function commitAnswerRunInput(
       userId: true,
       checkpoint: true,
       trigger: true,
+      clientNonce: true,
       task: { select: { prompt: true } },
     },
   });
@@ -875,7 +904,18 @@ async function commitAnswerRunInput(
   )
     return null;
   if (secretAsk && !dismissed && !runSecretWriter) return null;
-  if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
+  if (
+    secretAsk &&
+    (pendingAsk.credential || pendingAsk.oneTimeCode) &&
+    run.userId !== input.answeredByUserId
+  )
+    return null;
+  // A code is answered as the page will take it; anything that is not a code is not stored.
+  const code =
+    secretAsk && !dismissed && pendingAsk.oneTimeCode
+      ? normalizeOneTimeCode(input.answer)
+      : undefined;
+  if (secretAsk && !dismissed && pendingAsk.oneTimeCode && !code) return null;
   const loginAsk = secretAsk && !dismissed && pendingAsk.credential?.auth.type === "login";
   const login = loginAsk ? loginAnswerValue(pendingAsk.loginFields, input) : undefined;
   // Login fields belong only to a login card, which cannot be saved without them.
@@ -934,10 +974,13 @@ async function commitAnswerRunInput(
     }
   }
 
-  // Answering the creation intro's question tells the bot what it is for, so it resumes as
-  // the user's turn: with the conversation and every tool, to get going on that answer.
-  const resumedTrigger =
-    run.trigger === "created" && !approvalAsk && !secretAsk ? "user" : run.trigger;
+  // Answering the creation intro's or a daily check-in's question resumes as the user's
+  // turn: with the conversation and every tool, to get going on that answer.
+  const answersOpener =
+    run.trigger === "created" ||
+    (run.trigger === "routine" &&
+      Boolean(run.clientNonce?.startsWith(`${STRATEGIC_INITIATIVE_NONCE_PREFIX}:`)));
+  const resumedTrigger = answersOpener && !approvalAsk && !secretAsk ? "user" : run.trigger;
   const queued = await tx.run.updateMany({
     where: {
       id: input.runId,
@@ -1003,8 +1046,8 @@ async function commitAnswerRunInput(
       where: { id: approvalEffect!.id },
       data: { status: allowed ? "approved" : "denied" },
     });
-    // "Always" on a fetch card allows that site, never every site the tool can reach, and on a
-    // batch allows each action in it, never every action the batch tool can run.
+    // "Always" on a card for a request to a site allows that site, never every site the tool can
+    // reach, and on a batch allows each action in it, never every action the batch tool can run.
     const site = alwaysAllowedSite(approvalEffect!);
     const tools = storedBatchActions(approvalEffect!.batchActions) ?? [approvalEffect!.kind];
     if (input.answer === "always" && (site || approvalEffect!.kind !== "web_fetch")) {
@@ -1033,11 +1076,12 @@ async function commitAnswerRunInput(
     await runSecretWriter!.store({
       botId: run.botId,
       credential: pendingAsk.credential,
+      oneTimeCode: pendingAsk.oneTimeCode,
       remember: input.remember !== false,
       runId: input.runId,
       userId: run.userId,
       spaceId: input.spaceId,
-      plaintext: login ? encodeLoginSecret(login) : input.answer,
+      plaintext: login ? encodeLoginSecret(login) : (code ?? input.answer),
       tx,
     });
     await tx.externalEffect.updateMany({
@@ -1114,8 +1158,9 @@ export async function answerRunInput(
   runSecretWriter?: RunSecretWriter,
 ): Promise<boolean> {
   const commit = (writer = runSecretWriter) =>
-    prisma.$transaction(async (tx: Prisma.TransactionClient) =>
-      commitAnswerRunInput(tx, input, writer),
+    prisma.$transaction(
+      async (tx: Prisma.TransactionClient) => commitAnswerRunInput(tx, input, writer),
+      THREAD_LOCK_TRANSACTION_OPTIONS,
     );
   // Unwrapping space keys can wait on the key manager; keep that wait outside the transaction.
   await contentEncryptionOf(prisma)?.ring.all(input.spaceId);
@@ -1359,7 +1404,7 @@ export async function pauseRunForInput(
       continuationRunId,
       firstResponseRunId: response.firstResponse ? input.runId : undefined,
     };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
 
   if (!committed) return false;
   await notifyCommittedEvent(
@@ -1485,7 +1530,7 @@ export async function pauseRunForTakeover(
       where: { runId: input.runId, ...transientRunEventsWhere() },
     });
     return { threadId: waitingEvent.threadId, seq: waitingEvent.seq, continuationRunId: null };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
 
   if (!committed) return false;
   if (committed.seq !== null) {
@@ -1613,7 +1658,7 @@ export async function finalizeComputerControlRelease(
       },
     });
     return { threadId: event.threadId, seq: event.seq, runId };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
 
   if (!committed) return false;
   if (committed.threadId && committed.seq !== null) {
@@ -1642,7 +1687,7 @@ export async function settleReleasedTakeoverCards(
   const seq = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
     return settleReleasedTakeoverCardsInTransaction(tx, input);
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (seq !== null) await notify?.(input.threadId, seq);
 }
 
@@ -1754,6 +1799,14 @@ export function completedRunBlocks(
       : block,
   );
 }
+
+// Transactions that lock the thread row before writing run state share the body budget: the
+// lock is held up to 15s by snapshot reads, Prisma's 5s default counts that wait, and expiring
+// fails a user stop, clear, send, reaction or card answer, a run's steering claim or takeover
+// handoff, or a run whose work already finished. Only the timeout is shared; an explicit
+// maxWait would override the client's longer connection wait, so a saturated pool that frees
+// a connection late would fail the checkout instead of waiting.
+export const THREAD_LOCK_TRANSACTION_OPTIONS = { timeout: 20_000 };
 
 // The thread lock is shared with snapshot reads that may hold it for up to 15s. Prisma's 5s
 // default counts that wait, and expiring would fail a run whose work already finished.
@@ -1972,8 +2025,10 @@ export async function createPendingSteeringRun(
   });
   if (pending.length === 0) return null;
   // One origin per continuation so a group channel and the owner's private chat are not answered
-  // together. The app and the owner's direct line are one private conversation.
-  const origin = steeringOrigin(pending[0]!);
+  // together. The app and the owner's direct line are one private conversation, answered first.
+  const origin = pending.some((item) => steeringOrigin(item) === "private")
+    ? "private"
+    : steeringOrigin(pending[0]!);
   const batch = pending.filter((item) => steeringOrigin(item) === origin);
   const source = batch.at(-1)!;
   const modelPin = continuationModelPin(batch);
@@ -2226,6 +2281,32 @@ function mapProductEvent(event: {
   };
 }
 
+/** One account stream; signals carry no content, and a periodic re-read covers a missed publish. */
+async function* followIncomingCallSignals(
+  realtime: RealtimeFanout | undefined,
+  userId: string,
+  signal?: AbortSignal,
+): AsyncGenerator<void> {
+  const latch = new ChangeLatch();
+  const unsubscribe = await realtime
+    ?.subscribe(`incoming-calls:${userId}`, () => latch.notify())
+    .catch(() => undefined);
+  // Without fanout each wake re-reads every ringing request, so poll gently.
+  const catchUpMs = unsubscribe ? PUSH_CATCH_UP_MS : INCOMING_CALL_POLL_MS;
+  try {
+    let seen = latch.generation;
+    yield;
+    while (!signal?.aborted) {
+      await latch.waitForChange(seen, catchUpMs, signal);
+      if (signal?.aborted) return;
+      seen = latch.generation;
+      yield;
+    }
+  } finally {
+    await unsubscribe?.();
+  }
+}
+
 class ChangeLatch {
   generation = 0;
   private wake: (() => void) | undefined;
@@ -2308,7 +2389,7 @@ function alwaysAllowedSite(effect: {
   kind: string;
   request: Prisma.JsonValue;
 }): string | undefined {
-  if (effect.kind !== "web_fetch") return undefined;
+  if (!SITE_SENDING_TOOLS.has(effect.kind)) return undefined;
   const request = effect.request as { url?: unknown } | null;
   return typeof request?.url === "string" ? urlSite(request.url) : undefined;
 }

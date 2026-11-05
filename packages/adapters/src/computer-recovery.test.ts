@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdapterContext, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import { SandboxDamagedError } from "@rakazo/adapter-kit";
+import type * as Db from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ComputerBusyError, provisionComputer, replaceComputer } from "./computer-lifecycle.js";
@@ -13,6 +14,12 @@ import { LocalAgentHomeStore } from "./home.js";
 import type { AgentHomeRecords, StoredHome } from "./home-object-store.js";
 import { ObjectAgentHomeStore } from "./home-object-store.js";
 import { MemoryObjectStorage } from "./object-storage.test-support.js";
+
+// The plan's size is read from billing, which these Prisma doubles do not model.
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof Db>()),
+  planComputerSize: vi.fn(async () => "standard"),
+}));
 
 const context = {
   operationId: "recovery",

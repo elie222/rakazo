@@ -19,6 +19,7 @@ import {
   blockText,
   captureApiRequestContext,
   changePassword,
+  clearSpace,
   currentApiBase,
   deleteAccount,
   fetchAccountSecurity,
@@ -46,15 +47,19 @@ import {
   signOut,
   signUp,
   spaceSelectionSeq,
+  subscribeIncomingCallEvents,
   subscribeServerReachable,
   subscribeSessionRejected,
   subscribeThread,
   updateAccountName,
 } from "./api.js";
+import { artifactCacheSession } from "./artifact-cache-session";
 import { resumeLiveNotifications } from "./live-notifications.js";
 import { threadRefreshDelayMs } from "./refresh";
 import {
   clearSessionToken,
+  currentSessionGeneration,
+  replaceSessionTokenIfCurrent,
   restoreSessionToken,
   saveSessionToken,
   snapshotSessionToken,
@@ -216,11 +221,7 @@ describe("mobile API authentication", () => {
       vi.mocked(SecureStore.getItemAsync).mockResolvedValue("fake-session");
       vi.stubGlobal(
         "fetch",
-        vi.fn(async (input) =>
-          String(input).endsWith("/rpc/notifications/unregisterPush")
-            ? jsonResponse({ json: null })
-            : new Response(body, { status }),
-        ),
+        vi.fn(async () => new Response(body, { status })),
       );
 
       await expect(request()).rejects.toThrow(message);
@@ -257,6 +258,7 @@ describe("mobile API authentication", () => {
     configureUnsentSends({
       request: vi.fn(),
       serverReachable: () => true,
+      passwordChanging: () => false,
       scope: () => null,
       disk: { clear, save: vi.fn() } as unknown as UnsentDisk,
       errorText: String,
@@ -448,11 +450,13 @@ describe("mobile API authentication", () => {
   });
 
   it("uses original password change and deletion endpoints after account-security 404", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) =>
+      key === "rakazo.session_token" ? "fake-session" : null,
+    );
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response("Not found", { status: 404 }))
       .mockResolvedValueOnce(jsonResponse({ status: true }))
-      .mockResolvedValueOnce(jsonResponse({}))
       .mockResolvedValueOnce(jsonResponse({ success: true }));
     vi.stubGlobal("fetch", fetchMock);
     await expect(fetchAccountSecurity()).resolves.toEqual({
@@ -466,8 +470,8 @@ describe("mobile API authentication", () => {
     await changePassword("old-password", "new-password");
     await deleteAccount("new-password");
     expect(fetchMock.mock.calls[1]?.[0]).toContain("/api/auth/change-password");
-    expect(fetchMock.mock.calls[3]?.[0]).toContain("/api/auth/delete-user");
-    expect(JSON.parse(fetchMock.mock.calls[3]?.[1]?.body)).toEqual({ password: "new-password" });
+    expect(fetchMock.mock.calls[2]?.[0]).toContain("/api/auth/delete-user");
+    expect(JSON.parse(fetchMock.mock.calls[2]?.[1]?.body)).toEqual({ password: "new-password" });
   });
 
   it.each([401, 500])("does not fall back for account-security HTTP %s", async (status) => {
@@ -552,6 +556,174 @@ describe("mobile API authentication", () => {
     );
   });
 
+  it("keeps the same account's unsent messages and their cache namespace across a password change", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const clear = vi.fn();
+    configureUnsentSends({
+      request: vi.fn(),
+      serverReachable: () => true,
+      passwordChanging: () => false,
+      scope: () => null,
+      disk: { clear, save: vi.fn() } as unknown as UnsentDisk,
+      errorText: String,
+      notDelivered: vi.fn(),
+    });
+    const namespace = await artifactCacheSession("session-token");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ token: "rotated-token", user: { id: "user-1" } })),
+    );
+
+    await changePassword("old-password", "new-password");
+
+    expect(clear).not.toHaveBeenCalled();
+    expect(await artifactCacheSession("rotated-token")).toBe(namespace);
+    // A restart reads the new token and the namespace that names the queue.
+    expect(store.get("rakazo.session_token")).toBe("rotated-token");
+    expect(JSON.parse(store.get("rakazo.artifact-cache-session") ?? "null")).toEqual({
+      token: "rotated-token",
+      namespace,
+      previous: "session-token",
+    });
+  });
+
+  it("finishes a pending session save before it submits another password change", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const namespace = await artifactCacheSession("session-token");
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) =>
+      jsonResponse({
+        token:
+          JSON.parse(String(init.body)).newPassword === "new-password" ? "rotated-1" : "rotated-2",
+        user: { id: "user-1" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const keychainFails = () =>
+      vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(async () => {
+        throw new Error("keychain unavailable");
+      });
+    keychainFails();
+    await expect(changePassword("old-password", "new-password")).rejects.toThrow(
+      "keychain unavailable",
+    );
+    expect(store.get("rakazo.session_token")).toBe("session-token");
+
+    // While the earlier session cannot be saved, nothing new is submitted.
+    keychainFails();
+    await expect(changePassword("new-password", "newer-password")).rejects.toThrow(
+      "keychain unavailable",
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    await changePassword("new-password", "newer-password");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [, retry] = fetchMock.mock.calls[1]!;
+    expect(new Headers(retry.headers).get("authorization")).toBe("Bearer rotated-1");
+    expect(JSON.parse(String(retry.body))).toMatchObject({
+      currentPassword: "new-password",
+      newPassword: "newer-password",
+    });
+    expect(store.get("rakazo.session_token")).toBe("rotated-2");
+    expect(JSON.parse(store.get("rakazo.artifact-cache-session") ?? "null")).toEqual({
+      token: "rotated-2",
+      namespace,
+      previous: "rotated-1",
+    });
+  });
+
+  it("completes a resubmitted password change after its session save failed, without resending it", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    // The server accepted the first change, so the old password no longer matches.
+    const fetchMock = vi.fn(async () =>
+      fetchMock.mock.calls.length === 1
+        ? jsonResponse({ token: "rotated-token", user: { id: "user-1" } })
+        : jsonResponse({ message: "Invalid password" }, { status: 400 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(async () => {
+      throw new Error("keychain unavailable");
+    });
+    await expect(changePassword("old-password", "new-password")).rejects.toThrow(
+      "keychain unavailable",
+    );
+
+    await changePassword("old-password", "new-password");
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(store.get("rakazo.session_token")).toBe("rotated-token");
+    // A different submission is still sent.
+    await expect(changePassword("new-password", "newer-password")).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("rotates the cache namespace from the token the password change was sent with", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const namespace = await artifactCacheSession("session-token");
+    let sessionReads = 0;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      // One transient keychain failure while the password change starts.
+      if (key === "rakazo.session_token" && ++sessionReads === 1)
+        throw new Error("keychain unavailable");
+      return store.get(key) ?? null;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) =>
+        new Headers(init.headers).get("authorization") === "Bearer session-token"
+          ? jsonResponse({ token: "rotated-token", user: { id: "user-1" } })
+          : jsonResponse({ message: "Unauthorized" }, { status: 401 }),
+      ),
+    );
+
+    await changePassword("old-password", "new-password").catch(() => undefined);
+    // Whether or not that change went through, the saved session still names the queue.
+    expect(await artifactCacheSession(store.get("rakazo.session_token") ?? "")).toBe(namespace);
+
+    await changePassword("old-password", "new-password");
+    expect(store.get("rakazo.session_token")).toBe("rotated-token");
+    expect(await artifactCacheSession("rotated-token")).toBe(namespace);
+  });
+
+  it.each([
+    [
+      "an SSO or passkey session",
+      () => replaceSessionTokenIfCurrent(currentSessionGeneration(), "fake-other"),
+    ],
+    ["sign-out", () => signOut()],
+    ["a restored session", () => restoreSessionToken("fake-other")],
+    ["a server change", () => saveApiBase("https://second-server.example")],
+  ])("still deletes unsent messages for %s", async (_change, change) => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({})),
+    );
+    const clear = vi.fn();
+    configureUnsentSends({
+      request: vi.fn(),
+      serverReachable: () => true,
+      passwordChanging: () => false,
+      scope: () => null,
+      disk: { clear, save: vi.fn() } as unknown as UnsentDisk,
+      errorText: String,
+      notDelivered: vi.fn(),
+    });
+    const namespace = await artifactCacheSession("session-token");
+    try {
+      await change();
+      expect(clear).toHaveBeenCalled();
+      expect(await artifactCacheSession("fake-other")).not.toBe(namespace);
+    } finally {
+      await resetApiBase();
+    }
+  });
+
   it("drops a rotated token when sign-out clears the session before the response", async () => {
     const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
     mockSecureStore(store);
@@ -586,6 +758,18 @@ describe("mobile API authentication", () => {
     await pending;
 
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("rakazo.session_token", "rotated-token");
+  });
+
+  it("does not change the password when the session token cannot be read", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockRejectedValue(new Error("keychain locked"));
+    const fetchMock = vi.fn(async () => jsonResponse({ token: "rotated-token" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(changePassword("old-password", "new-password")).rejects.toThrow(
+      "Could not change password",
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("keeps the rotated token in memory and reports a failed keychain write", async () => {
@@ -1045,20 +1229,35 @@ describe("mobile API authentication", () => {
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.space_id");
   });
 
-  it("unregisters push delivery before deleting the account", async () => {
+  it("does not unregister push delivery when deleting the account", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ json: null }))
-      .mockResolvedValueOnce(jsonResponse({}));
+    const fetchMock = vi.fn(async (_url: string | URL | Request) => jsonResponse({}));
     vi.stubGlobal("fetch", fetchMock);
 
     await deleteAccount("correct horse");
 
+    // Deleting the user removes the push rows on the server; unregistering first would
+    // drop this device's notifications whenever the deletion fails.
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
       "http://127.0.0.1:3100/api/auth/delete-user",
     ]);
+  });
+
+  it("keeps push registered when the account deletion fails", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const fetchMock = vi.fn(async (_url: string | URL | Request) =>
+      jsonResponse({ message: "Invalid password" }, { status: 400 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteAccount("wrong horse")).rejects.toThrow("Invalid password");
+
+    // A wrong password must not leave this device without notifications or incoming
+    // calls; the server still knows the registration until the account is gone for real.
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/api/auth/delete-user",
+    ]);
+    expect(SecureStore.deleteItemAsync).not.toHaveBeenCalledWith("rakazo.session_token");
   });
 
   it("sends authenticated RPC input and reports structured RPC errors", async () => {
@@ -1197,6 +1396,49 @@ describe("mobile API authentication", () => {
       expect(String(url)).toContain("/rpc/aiConsent/status");
       expect(init?.body).not.toContain("private content");
     }
+  });
+
+  it("asks about every mentioned routine's recipients before a combined send", async () => {
+    vi.mocked(promptAiConsent).mockClear();
+    vi.mocked(promptAiConsent).mockResolvedValue(false);
+    // A paused routine on another bot is reported only by a check for that routine.
+    const recipient = {
+      key: "routine-model",
+      name: "Example AI",
+      use: "model",
+      detail: "",
+      allowed: false,
+    };
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const query = JSON.parse(String(init?.body)).json;
+      return jsonResponse({
+        json: {
+          scope: "account-space",
+          version: "2026-09-14",
+          recipients: query.routineId === "routine-paused" ? [recipient] : [],
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      rpc("threads/sendWithRoutines", {
+        botId: "bot-1",
+        clientNonce: "nonce-1",
+        text: "private content",
+        routineIds: ["routine-active", "routine-paused"],
+      }),
+    ).rejects.toThrow("AI data sharing");
+    expect(promptAiConsent).toHaveBeenCalledWith(recipient, undefined);
+    expect(fetchMock.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
+      "/rpc/aiConsent/status",
+      "/rpc/aiConsent/status",
+      "/rpc/aiConsent/status",
+    ]);
+    expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).json)).toEqual([
+      { uses: ["model", "memory"], botId: "bot-1" },
+      { uses: ["model", "memory"], routineId: "routine-active" },
+      { uses: ["model", "memory"], routineId: "routine-paused" },
+    ]);
   });
 
   it.each([true, false])("explains the mobile upgrade requirement with JSON=%s", async (json) => {
@@ -1483,6 +1725,17 @@ describe("mobile API authentication", () => {
     );
   });
 
+  it("reports a failed clear when the remembered organization Spaces stay on the device", async () => {
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.org_spaces") throw new Error("device locked");
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.org_spaces") throw new Error("device locked");
+    });
+
+    await expect(clearSpace()).resolves.toBe(false);
+  });
+
   it("restores credentials when the new endpoint cannot be persisted", async () => {
     const previous = currentApiBase();
     vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
@@ -1503,6 +1756,7 @@ describe("mobile API authentication", () => {
       authorization: "Bearer session-token",
       "x-rakazo-space-id": "space-support",
     });
+    expect(SecureStore.deleteItemAsync).not.toHaveBeenCalledWith("rakazo.org_spaces");
   });
 
   it("restores a persisted space when its initial load failed", async () => {
@@ -2061,6 +2315,33 @@ describe("mobile API authentication", () => {
     } finally {
       unsubscribe();
     }
+  });
+
+  it("keeps the unsent queue of a session the server rejects", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "revoked-token"]]);
+    mockSecureStore(store);
+    await loadApiBase();
+    const clear = vi.fn();
+    configureUnsentSends({
+      request: vi.fn(),
+      serverReachable: () => true,
+      passwordChanging: () => false,
+      scope: () => null,
+      disk: { clear, save: vi.fn() } as unknown as UnsentDisk,
+      errorText: String,
+      notDelivered: vi.fn(),
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized")),
+    );
+
+    // The rejection ends the session, but the queue must survive it: the app reports
+    // those messages before a sign-in deletes them.
+    await expect(rpc("bots/list")).rejects.toThrow("Unauthorized");
+
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(clear).not.toHaveBeenCalled();
   });
 
   it("checks Space access before treating a 401 as a rejected session", async () => {
@@ -2649,6 +2930,30 @@ describe("mobile thread subscription", () => {
     vi.restoreAllMocks();
     vi.mocked(SecureStore.getItemAsync).mockReset();
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("");
+  });
+
+  it("shares the bounded SSE transport for one account call stream", async () => {
+    const call = {
+      id: "bot-1",
+      spaceId: "space-1",
+      name: "Caller",
+      color: "",
+      avatarSet: "rakazo",
+      incomingCall: {
+        callId: "call-1",
+        reason: "Review",
+        opening: "Hello",
+        expiresAt: new Date(Date.now() + 45000).toISOString(),
+      },
+    };
+    const frame = `data: ${JSON.stringify({ json: { type: "incoming.calls", payload: { calls: [call] } } })}\n\n`;
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(frame, { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    const onCalls = vi.fn();
+    await subscribeIncomingCallEvents(onCalls, new AbortController().signal);
+    expect(onCalls).toHaveBeenCalledWith([call]);
+    expect(fetch.mock.calls[0]?.[0]).toContain("notifications/subscribeCalls");
+    expect(fetch).toHaveBeenCalledOnce();
   });
 
   it("parses fragmented SSE frames and ignores malformed data and completion markers", async () => {

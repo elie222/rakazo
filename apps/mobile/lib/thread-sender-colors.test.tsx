@@ -1,6 +1,7 @@
 import { resolvePersonaColorDef, shouldShowBotSenderName } from "@rakazo/core";
 import { botColors, darkTokens } from "@rakazo/ui-tokens";
 import type { ComponentProps } from "react";
+import { createContext } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import type { MobileBot, MobileSnapshot } from "./api";
@@ -32,6 +33,7 @@ vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));
 vi.mock("./native", () => ({ native: {}, useResolvedAppearance: () => "dark" }));
 
 vi.mock("@rakazo/chat-ui/native", () => ({
+  MarkdownLongPressContext: createContext(undefined),
   ChatMarkdown: () => null,
   withBlockMentions: <T,>(blocks: T) => blocks,
 }));
@@ -39,6 +41,8 @@ vi.mock("@rakazo/chat-ui/native", () => ({
 vi.mock("../components/message-caption", () => ({
   MessageCaption: ({ text }: { text: string }) => <span>{text}</span>,
 }));
+vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
+vi.mock("../components/thread/mcp-app-card", () => ({ McpAppCard: () => null }));
 vi.mock("../components/ComputerCard", () => ({
   ComputerCard: ({ onOpen }: { onOpen: () => void }) => {
     onOpen();
@@ -75,7 +79,7 @@ function Bubble(props: Partial<BubbleProps> & Pick<BubbleProps, "message">) {
       onAnswer={async () => undefined}
       onOpenBot={() => undefined}
       onOpenComputer={() => undefined}
-      onPreviewMarkdown={() => undefined}
+      onPreviewFile={() => undefined}
       onPreviewImage={() => undefined}
       onOpenPeerChat={() => undefined}
       actionProps={{}}
@@ -119,7 +123,7 @@ it.each(["text", "image"] as const)("keeps per-bot sender colours on %s messages
         actionProps={{}}
       />,
     );
-    const senderColor = resolvePersonaColorDef(id, color).light;
+    const senderColor = resolvePersonaColorDef(id, color).hex;
     expect(html).toContain(`color:${senderColor}`);
     for (const surface of [darkTokens.muted, darkTokens.background]) {
       expect(contrastRatio(senderColor, surface)).toBeGreaterThanOrEqual(3);

@@ -8,6 +8,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
+import { popularModelProvidersFirst } from "@rakazo/core";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -95,31 +96,28 @@ export function ModelSettingsOverlay({
     panelRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [connectionAt]);
 
-  const providers: ConnectableProvider[] = groups
-    .filter((group) => !credentialByProvider.has(group.id))
-    .map((group) => ({ id: group.id, name: group.name }));
-  if (
-    groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID) &&
-    !isOllamaCloudBaseUrl(credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl)
-  )
-    providers.push({
-      id: OPENAI_COMPATIBLE_PROVIDER_ID,
-      name: t`Ollama Cloud`,
-      baseUrl: OLLAMA_CLOUD_BASE_URL,
-    });
   // Adding another account is open to every provider, connected or not.
-  const allProviders: ConnectableProvider[] = [
-    ...groups.map((group) => ({ id: group.id, name: group.name })),
-    ...(groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID)
-      ? [
-          {
-            id: OPENAI_COMPATIBLE_PROVIDER_ID,
-            name: t`Ollama Cloud`,
-            baseUrl: OLLAMA_CLOUD_BASE_URL,
-          },
-        ]
-      : []),
-  ];
+  const allProviders = popularModelProvidersFirst<ConnectableProvider>(
+    [
+      ...groups.map((group) => ({ id: group.id, name: group.name })),
+      ...(groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID)
+        ? [
+            {
+              id: OPENAI_COMPATIBLE_PROVIDER_ID,
+              name: t`Ollama Cloud`,
+              baseUrl: OLLAMA_CLOUD_BASE_URL,
+            },
+          ]
+        : []),
+    ],
+    (entry) => entry.id,
+    (entry) => entry.name,
+  );
+  const providers = allProviders.filter((entry) =>
+    entry.baseUrl
+      ? !isOllamaCloudBaseUrl(credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl)
+      : !credentialByProvider.has(entry.id),
+  );
   const connectionName = (entry: ModelCredential) => {
     const group = groups.find((item) => item.id === entry.provider);
     return connectionDisplayName(
@@ -269,7 +267,8 @@ export function ModelSettingsOverlay({
           <ConnectionNameField
             key={credential.id}
             credential={credential}
-            onRenamed={() => void refresh()}
+            // A rename touches only the label; keep any unsaved form fields.
+            onRenamed={() => void refresh({ keepForm: true })}
           />
         ) : null}
         {connection}
@@ -328,6 +327,22 @@ export function ModelSettingsOverlay({
               openConnection({ id, name: id }, null, credentialId, "approval")
             }
             panel={connectionAt === "approval" ? panelFor(true) : null}
+          />
+          <ModelRoleSettings
+            userId={me.userId}
+            spaceId={me.spaceId}
+            scope={scope}
+            credentials={credentials}
+            modelRole="computer"
+            title={t`Computer-use model`}
+            defaultLabel={t`Same as main model`}
+            providers={providers}
+            providerLabel={providerLabel}
+            onConnect={(next, intent) => openConnection(next, intent, null, "computer")}
+            onManage={(id, credentialId) =>
+              openConnection({ id, name: id }, null, credentialId, "computer")
+            }
+            panel={connectionAt === "computer" ? panelFor(true) : null}
           />
           {scope === "space" ? null : (
             <ProvidersSection

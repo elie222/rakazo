@@ -5,13 +5,13 @@
 [![GitHub stars](https://img.shields.io/github/stars/elie222/rakazo?labelColor=black&style=for-the-badge&color=2563EB)](https://github.com/elie222/rakazo/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?labelColor=black&style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/RWwKa2Sn7h)
 [![Download on the App Store](https://img.shields.io/badge/App%20Store-Download%20for%20iPhone-black?labelColor=black&style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/app/rakazo/id6801531099)
-[![Download the Android APK](https://img.shields.io/badge/Android-Download%20APK-black?labelColor=black&style=for-the-badge&logo=android&logoColor=white)](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk)
+[![Get Android on Google Play](https://img.shields.io/badge/Google%20Play-Get%20the%20app-black?labelColor=black&style=for-the-badge&logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.rakazo.app)
 
 ![Rakazo — AI teammates you actually own](./docs/readme-hero.png)
 
 Rakazo is an open source AI agent for persistent teammates, and a self-hosted AI assistant you
 can run on your own machine. It is available on the web, as an Electron desktop app, and on
-[iPhone](https://apps.apple.com/app/rakazo/id6801531099) and [Android](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk). Bring your own model
+[iPhone](https://apps.apple.com/app/rakazo/id6801531099) and [Android](https://play.google.com/store/apps/details?id=com.rakazo.app). Bring your own model
 and computer provider, or run the complete stack locally.
 
 It is an open source, self-hosted alternative to Grok Bot, Meta Muse, OpenAI Dots, Instinct,
@@ -42,6 +42,7 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 - [CodeRabbit](https://www.coderabbit.ai/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [Greptile](https://www.greptile.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [Snyk](https://snyk.io/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Incredibuild](https://www.incredibuild.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 
 ## Stack
 
@@ -146,6 +147,12 @@ doesn't have gets its own database on the same server, copied from the shared on
 so unmerged schema changes stay out of it. When the default ports are taken, for example by
 another git worktree, it moves to the next free block and prints the URL. Set `WEB_PORT` and
 `API_PORT` to choose ports yourself.
+
+To try a checkout from your phone or another computer, install [Tailscale](https://tailscale.com)
+on each device and set `RAKAZO_DEV_TAILNET=1` in `.env`. `pnpm dev` then serves the web app over
+HTTPS at `https://<machine>.<tailnet>.ts.net:<web port>`, reachable only from devices on your
+tailnet, and stops serving it when you quit. Sign in at that URL on every device, including the
+one running it. The first run may ask you to turn on HTTPS certificates for your tailnet.
 
 To run Postgres from the Compose file instead, start it with the `postgres-host` overlay, which
 publishes loopback `127.0.0.1:5433`, and point `DATABASE_URL` and `DATABASE_MIGRATION_URL` at it:

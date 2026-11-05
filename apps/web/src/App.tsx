@@ -28,6 +28,7 @@ import { markAfterPaint, markOnce } from "./lib/performance";
 import { lazyComponent } from "./lib/preload-recovery";
 import { QueryUserProvider, setQueryUser } from "./lib/query";
 import { getRemoteImagesEnabled, subscribeRemoteImages } from "./lib/remote-images-preference";
+import { hasSignedInBefore, rememberSignedIn } from "./lib/returning-user";
 import { rpc } from "./lib/rpc";
 import {
   holdAnonymousGate,
@@ -41,6 +42,7 @@ import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/sso-flow";
 import { IntegrationCallbackPage } from "./pages/IntegrationCallback";
 import { IntegrationSetupPage } from "./pages/IntegrationSetup";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
+import { SharedPagePage } from "./pages/SharedPage";
 import { ShellPage } from "./pages/Shell";
 import { SlackInstallCallbackPage } from "./pages/SlackInstallCallback";
 
@@ -50,9 +52,6 @@ const PasswordResetPage = lazyComponent(() =>
 );
 const OnboardingPage = lazyComponent(() =>
   import("./pages/Onboarding").then((module) => module.OnboardingPage),
-);
-const WelcomePage = lazyComponent(() =>
-  import("./pages/Welcome").then((module) => module.WelcomePage),
 );
 const NotFoundPage = lazyComponent(() =>
   import("./pages/NotFound").then((module) => module.NotFoundPage),
@@ -155,6 +154,7 @@ function SessionApp() {
     syncWebLogoAvatarIdentity(analyticsUserId ?? null);
     syncCallIdentity(analyticsUserId ?? null);
     syncLogOutFailure(gate === "authenticated");
+    if (gate === "authenticated") rememberSignedIn();
   }, [gate, analyticsUserId]);
   useEffect(() => {
     if (gate === "authenticated" || gate === "anonymous") setQueryUser(analyticsUserId ?? null);
@@ -186,7 +186,15 @@ function SessionApp() {
         <div className="h-full" data-rakazo-app-state="ready">
           <Suspense fallback={<PageLoading />}>
             <Routes>
-              <Route path="/" element={user ? <Navigate to="/app" replace /> : <WelcomePage />} />
+              <Route
+                path="/"
+                element={
+                  <Navigate
+                    to={user ? "/app" : hasSignedInBefore() ? "/sign-in" : "/sign-up"}
+                    replace
+                  />
+                }
+              />
               <Route
                 path="/sign-in"
                 element={
@@ -210,6 +218,7 @@ function SessionApp() {
                 }
               />
               <Route path="/reset-password" element={<PasswordResetPage />} />
+              <Route path="/p/:slugToken" element={<SharedPagePage />} />
               <Route
                 path={MCP_OAUTH_CALLBACK_PATH}
                 element={

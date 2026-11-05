@@ -43,6 +43,7 @@ import {
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
 import { chatModelPickerChoices } from "../lib/chat-model";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
+import { notifyConversationCleared } from "../lib/conversation-cleared";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
 import { afterChatNotifyChange } from "../lib/live-notifications";
@@ -79,6 +80,7 @@ export default function BotSettingsScreen() {
   const [thinkingLevel, setThinkingLevel] = useState("");
   const [notifyOnFinish, setNotifyOnFinish] = useState(true);
   const [autoSpeak, setAutoSpeak] = useState(false);
+  const [dailyCheckIns, setDailyCheckIns] = useState(true);
   const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(true);
   const [fleetManagement, setFleetManagement] = useState(true);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
@@ -102,6 +104,17 @@ export default function BotSettingsScreen() {
           await rpc("bots/update", { botId, crossSpaceCommunication: value });
         },
         onChange: setCrossSpaceCommunication,
+        onError: (err) => setError(errorText(err, t("Could not save bot"))),
+      }),
+    [botId, t],
+  );
+  const dailyCheckInsSave = useMemo(
+    () =>
+      createQueuedSave<boolean>(true, {
+        save: async (value) => {
+          await rpc("bots/update", { botId, dailyCheckIns: value });
+        },
+        onChange: setDailyCheckIns,
         onError: (err) => setError(errorText(err, t("Could not save bot"))),
       }),
     [botId, t],
@@ -180,13 +193,15 @@ export default function BotSettingsScreen() {
         setThinkingLevel(next.thinkingLevel ?? "");
         setAutoSpeak(next.autoSpeak);
         setNotifyOnFinish(next.notifyOnFinish ?? true);
+        setDailyCheckIns(next.dailyCheckIns ?? true);
+        dailyCheckInsSave.reset(next.dailyCheckIns ?? true);
         setCrossSpaceCommunication(next.crossSpaceCommunication ?? true);
         crossSpaceSave.reset(next.crossSpaceCommunication ?? true);
         setFleetManagement(next.fleetManagement);
         fleetSave.reset(next.fleetManagement);
       })
       .catch((err) => setError(errorText(err, t("Could not load bot"))));
-  }, [botId, crossSpaceSave, fleetSave, notifySave, nameSave]);
+  }, [botId, dailyCheckInsSave, crossSpaceSave, fleetSave, notifySave, nameSave]);
 
   useEffect(() => {
     void Promise.all([rpc("me"), rpc("models/list"), rpc("models/credentials")])
@@ -415,6 +430,7 @@ export default function BotSettingsScreen() {
         setBot((prev) => (prev ? { ...prev, ...saved, ...updated } : prev));
       }
       await Promise.all([
+        dailyCheckInsSave.flush(),
         crossSpaceSave.flush(),
         fleetSave.flush(),
         notifySave.flush(),
@@ -651,6 +667,20 @@ export default function BotSettingsScreen() {
             <SettingsGroup label={t("Permissions")}>
               <View style={styles.row}>
                 <Text style={[styles.rowLabel, { color: tokens.foreground }]}>
+                  {t("Daily check-ins on unfinished work")}
+                </Text>
+                <NativeSwitch
+                  accessibilityLabel={t("Daily check-ins on unfinished work")}
+                  value={dailyCheckIns}
+                  onValueChange={(value) => {
+                    if (!botId) return;
+                    setError(null);
+                    dailyCheckInsSave.update(value);
+                  }}
+                />
+              </View>
+              <View style={styles.row}>
+                <Text style={[styles.rowLabel, { color: tokens.foreground }]}>
                   {t("Allow cross-space bot communication")}
                 </Text>
                 <NativeSwitch
@@ -798,6 +828,7 @@ export default function BotSettingsScreen() {
                       style: "destructive",
                       onPress: () => {
                         void rpc("threads/clear", { botId })
+                          .then(() => notifyConversationCleared(botId))
                           .then(() => router.back())
                           .catch((err) => setError(errorText(err)));
                       },

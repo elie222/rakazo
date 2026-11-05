@@ -1,7 +1,7 @@
 {
   "name": "@rakazo/desktop",
   "productName": "Rakazo",
-  "version": "0.4.0",
+  "version": "0.8.0",
   "author": {
     "name": "Rakazo"
   },
@@ -13,7 +13,7 @@
     "build": "node scripts/build.mjs && node scripts/copy-static.mjs && node scripts/build-speech.mjs",
     "pack": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --mac --win --linux",
     "pack:dir": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --dir",
-    "check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.jsdom.json",
+    "check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.jsdom.json && tsc --noEmit -p e2e/tsconfig.json && tsc --noEmit -p scripts/tsconfig.json",
     "test": "vitest run --root ../.. apps/desktop/src",
     "test:e2e": "pnpm build && playwright test --config e2e/playwright.config.ts",
     "release": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --publish never"
@@ -23,14 +23,14 @@
     "@rakazo/logging": "workspace:*",
     "@sentry/electron": "8.3.0",
     "electron-updater": "6.8.11",
-    "koffi": "3.3.4"
+    "koffi": "3.3.6"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "@rakazo/adapters": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
-    "electron": "45.0.0",
+    "electron": "45.2.2",
     "electron-builder": "26.15.3",
     "esbuild": "0.28.2",
     "typescript": "7.0.2",
@@ -83,6 +83,10 @@
         {
           "from": "assets/es.lproj",
           "to": "es.lproj"
+        },
+        {
+          "from": "assets/pl.lproj",
+          "to": "pl.lproj"
         }
       ],
       "target": [

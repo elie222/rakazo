@@ -25,7 +25,10 @@ vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray) => parts.join(""),
 }));
 vi.mock("@lingui/react/macro", () => ({
-  useLingui: () => ({ i18n: { locale: "en" }, t: (parts: TemplateStringsArray) => parts.join("") }),
+  useLingui: () => ({
+    i18n: { locale: "en" },
+    t: (parts: TemplateStringsArray, ...values: unknown[]) => String.raw({ raw: parts }, ...values),
+  }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@rakazo/ui-web", () => ({
@@ -52,6 +55,7 @@ const run: RoutineRun = {
   error: null,
   createdAt: "2026-01-02T12:00:00Z",
   startedAt: "2026-01-02T12:00:00Z",
+  lateSince: null,
   completedAt: "2026-01-02T12:01:22Z",
   messageId: "reply-1",
 };
@@ -213,6 +217,29 @@ it("says when older runs could not load and keeps what is shown", async () => {
     await view.close();
   }
 });
+it("says when a scheduled run started late, and only then", async () => {
+  routines.history.mockResolvedValue(
+    page([
+      { ...run, id: "minutes", lateSince: "2026-01-02T11:20:00Z" },
+      { ...run, id: "hours", lateSince: "2026-01-02T09:30:00Z" },
+      { ...run, id: "days", lateSince: "2025-12-30T12:00:00Z" },
+      { ...run, id: "on-time" },
+    ]),
+  );
+  const view = await mounted();
+  try {
+    await view.settled(() => expect(view.rows()).toHaveLength(4));
+    expect([...view.rows()].map((row) => row.textContent?.match(/Started \S+ late/)?.[0])).toEqual([
+      "Started 40m late",
+      "Started 2h late",
+      "Started 3d late",
+      undefined,
+    ]);
+  } finally {
+    await view.close();
+  }
+});
+
 it("opens a group run in its group thread", async () => {
   routines.history.mockResolvedValue(page([{ ...run, groupId: "group-1" }]));
   const view = await mounted();

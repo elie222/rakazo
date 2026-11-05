@@ -36,8 +36,8 @@ export const PT_BR_MESSAGES: Record<string, string> = {
   "Have any questions? Reply to this email.": "Alguma dúvida? Responda a este e-mail.",
   Unsubscribe: "Cancelar inscrição",
   "Invite a friend": "Convide um amigo",
-  "Invite a friend to Rakazo and earn a free month when they start a qualifying subscription with a new card.":
-    "Convide um amigo para o Rakazo e ganhe um mês grátis quando ele começar uma assinatura qualificada com um cartão novo.",
+  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
+    "Convide um amigo para o Rakazo: ele ganha {weeks} semanas grátis, e você ganha um mês grátis quando ele começar uma assinatura válida com um cartão novo.",
   "Open Rakazo": "Abra o Rakazo",
   "and choose Invite friends for your link.": "e escolha Convidar amigos para obter seu link.",
   "Have any questions? Just reply to this email.": "Alguma dúvida? É só responder a este e-mail.",
@@ -67,4 +67,10 @@ export const PT_BR_MESSAGES: Record<string, string> = {
     "Suas alterações na página {name} foram aprovadas.",
   "We couldn't approve your changes to the {name} page.":
     "Não conseguimos aprovar suas alterações na página {name}.",
+  "Your saved computer files will be deleted":
+    "Os arquivos salvos do seu computador serão excluídos",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "Os arquivos salvos do seu computador serão excluídos em {date}, a menos que você assine novamente.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Os arquivos salvos do seu computador serão excluídos em {date}, a menos que você escolha um plano.",
 };

@@ -3,4 +3,6 @@
   <string name="rakazo_call_channel">通話中</string>
   <string name="rakazo_call_title">Rakazoの通話</string>
   <string name="rakazo_call_text">マイクがオンです</string>
+  <string name="rakazo_call_answer">応答</string>
+  <string name="rakazo_call_decline">拒否</string>
 </resources>

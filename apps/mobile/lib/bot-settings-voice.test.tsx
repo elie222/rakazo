@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   loadBot: vi.fn(),
   back: vi.fn(),
+  push: vi.fn(),
   stopVoicePlayback: vi.fn(),
   stop: vi.fn(),
   speak: vi.fn(),
@@ -118,7 +119,7 @@ vi.mock("expo-notifications", () => ({
 }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ back: mocks.back }),
+  useRouter: () => ({ back: mocks.back, push: mocks.push }),
   useLocalSearchParams: () => ({ botId: "bot-fixture", focus: mocks.focus }),
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
 }));
@@ -394,6 +395,19 @@ describe("bot settings device voice menu", () => {
   };
   const menu = () => container.querySelector('[data-menu="Device voice"]');
 
+  it("defaults daily check-ins on and saves an opt-out", async () => {
+    await render();
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Daily check-ins on unfinished work"]',
+    )!;
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    await act(async () => toggle.click());
+    expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
+      botId: "bot-fixture",
+      dailyCheckIns: false,
+    });
+  });
+
   it.each([false, true])("loads and saves cross-space communication: %s", async (enabled) => {
     mocks.crossSpaceCommunication = enabled;
     await render();
@@ -642,7 +656,10 @@ describe("bot settings device voice menu", () => {
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="notes/6.md"]')!.click(),
     );
-    expect(mocks.alert).toHaveBeenCalledWith("notes/6.md", "Fixture notes");
+    expect(mocks.push).toHaveBeenCalledWith({
+      pathname: "/memory-note",
+      params: { id: "doc-6", botId: "bot-fixture" },
+    });
   });
 
   it("uses a dialog rather than inline fields on Android", async () => {
@@ -728,6 +745,7 @@ describe("bot settings device voice menu", () => {
       model: "Model",
       readAloud: "Read replies aloud",
       voice: "Device voice",
+      dailyCheckIns: "Daily check-ins on unfinished work",
       crossSpaceCommunication: "Allow cross-space bot communication",
       fleetManagement: "Manage other bots",
     };
@@ -749,6 +767,7 @@ describe("bot settings device voice menu", () => {
       "model",
       "readAloud",
       "voice",
+      "dailyCheckIns",
       "crossSpaceCommunication",
       "fleetManagement",
     ]);

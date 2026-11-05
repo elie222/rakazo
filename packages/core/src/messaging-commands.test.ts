@@ -12,6 +12,13 @@ describe("parseMessagingCommand", () => {
     expect(parseMessagingCommand("leave")).toBe("leave");
   });
 
+  it("reads a bare stop or stop now, ignoring case, spacing and closing punctuation", () => {
+    for (const text of ["stop", "Stop now.", "STOP!", "  stop   now ", "stop…"])
+      expect(parseMessagingCommand(text)).toBe("stop");
+    for (const text of ["stop it", "stopper", "don't stop", "/stop", "stop, now"])
+      expect(parseMessagingCommand(text)).toBeNull();
+  });
+
   it("treats everything else as a normal message", () => {
     expect(parseMessagingCommand("yes please")).toBeNull();
     expect(parseMessagingCommand("YES!")).toBeNull();

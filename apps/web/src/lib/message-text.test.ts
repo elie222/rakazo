@@ -19,6 +19,13 @@ describe("copyableMessageText", () => {
     ).toBe("first\nworking\nquestion?");
   });
 
+  it("leaves out a block kind it does not know, as an older client does with a newer server's page", () => {
+    // Clients read blocks without validating them, so a newer kind reaches this code as is.
+    const page = { kind: "page", pageId: "page-1", version: 1, title: "Plan" };
+    const blocks = [{ kind: "text", text: "Here it is" }, page] as ThreadMessage["blocks"];
+    expect(copyableMessageText(message(blocks))).toBe("Here it is");
+  });
+
   it("includes channel messages with their chat attribution", () => {
     expect(
       copyableMessageText(

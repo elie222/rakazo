@@ -167,6 +167,7 @@ describe("scoped mobile outbox", () => {
       request,
       scope: () => scope,
       serverReachable: () => reachable,
+      passwordChanging: () => false,
       disk,
       errorText: (error) => (error instanceof Error ? error.message : String(error)),
       notDelivered,
@@ -389,6 +390,81 @@ describe("scoped mobile outbox", () => {
     expect(sends[0]?.[1].artifactIds).toEqual(["artifact-b", "artifact-c"]);
     expect(sends[1]?.[1]).toEqual(sends[0]?.[1]);
   });
+  it("starts mentioned routines only in the message's own replayable send", async () => {
+    const mentions = [
+      { kind: "routine" as const, id: "routine-1", name: "Digest" },
+      { kind: "routine" as const, id: "routine-2", name: "Weekly" },
+    ];
+    const text = "@Digest @Weekly Hello";
+    const sendPayload = {
+      ...payload(text),
+      plan: resolveComposerSendPlan({ text, mentions, hasAttachments: true }),
+    };
+    const attempt = feedback.sendAttempt(sendPayload);
+    const deliver = () => deliverSend(sendPayload, attempt, request as unknown as typeof rpc);
+    request.mockRejectedValueOnce(new Error("Upload failed"));
+    await expect(deliver()).rejects.toThrow("Upload failed");
+    expect(request.mock.calls.map(([proc]) => proc)).toEqual(["artifacts/create"]);
+
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(new Error("Send interrupted"));
+    await expect(deliver()).rejects.toThrow("Send interrupted");
+    request.mockResolvedValueOnce({ routineRunIds: ["run-1", "run-2"], send: { seq: 42 } });
+    expect(await deliver()).toBe(42);
+
+    expect(request.mock.calls.map(([proc]) => proc)).toEqual([
+      "artifacts/create",
+      "artifacts/create",
+      "threads/sendWithRoutines",
+      "threads/sendWithRoutines",
+    ]);
+    const [first, retried] = request.mock.calls.slice(2).map(([, body]) => body);
+    expect(first).toMatchObject({
+      botId: "bot-1",
+      clientNonce: attempt.clientNonce,
+      text: "Hello",
+      artifactIds: ["artifact-a"],
+      routineIds: ["routine-1", "routine-2"],
+    });
+    expect(retried).toEqual(first);
+  });
+  it("sends the message itself when its routines were already started for this nonce", async () => {
+    const mentions = [{ kind: "routine" as const, id: "routine-1", name: "Digest" }];
+    const sendPayload = {
+      ...payload("@Digest Hello"),
+      plan: resolveComposerSendPlan({ text: "@Digest Hello", mentions, hasAttachments: true }),
+    };
+    const attempt = feedback.sendAttempt(sendPayload);
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockResolvedValueOnce({ routineRunIds: ["run-earlier"] })
+      .mockResolvedValueOnce({ seq: 7 });
+    expect(await deliverSend(sendPayload, attempt, request as unknown as typeof rpc)).toBe(7);
+    const [, combined, sent] = request.mock.calls;
+    expect(combined?.[0]).toBe("threads/sendWithRoutines");
+    expect(sent?.[0]).toBe("threads/send");
+    expect({ ...sent?.[1], routineIds: ["routine-1"] }).toEqual(combined?.[1]);
+  });
+  it("starts routine-only mentions through the same replayable send", async () => {
+    const mentions = [{ kind: "routine" as const, id: "routine-1", name: "Digest" }];
+    const sendPayload = {
+      ...payload("@Digest"),
+      attachments: [],
+      plan: resolveComposerSendPlan({ text: "@Digest", mentions, hasAttachments: false }),
+    };
+    const attempt = feedback.sendAttempt(sendPayload);
+    request.mockResolvedValueOnce({ routineRunIds: ["run-1"] });
+    expect(
+      await deliverSend(sendPayload, attempt, request as unknown as typeof rpc),
+    ).toBeUndefined();
+    expect(request.mock.calls).toEqual([
+      [
+        "threads/sendWithRoutines",
+        { botId: "bot-1", clientNonce: attempt.clientNonce, routineIds: ["routine-1"] },
+      ],
+    ]);
+  });
   it("retains an image rejection as retryable and reuses its uploaded artifact", async () => {
     const attempt = feedback.sendAttempt(payload());
     request
@@ -485,7 +561,7 @@ describe("scoped mobile outbox", () => {
         const [options, choose] = vi
           .mocked(ActionSheetIOS.showActionSheetWithOptions)
           .mock.calls.at(-1)!;
-        expect(options.options).toEqual(["Send as file", "Try Again", "Cancel"]);
+        expect(options.options).toEqual(["Send as file", "Try again", "Cancel"]);
         expect(options.message).toBe(
           `Image input is not configured for this model.\n\n${fileNote}`,
         );
@@ -493,7 +569,7 @@ describe("scoped mobile outbox", () => {
       } else {
         const [, message, buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
         expect(message).toBe(`Image input is not configured for this model.\n\n${fileNote}`);
-        expect(buttons!.map(({ text }) => text)).toEqual(["Send as file", "Try Again", "Cancel"]);
+        expect(buttons!.map(({ text }) => text)).toEqual(["Send as file", "Try again", "Cancel"]);
         act(() => buttons![1]!.onPress?.());
       }
       expect(retry).toHaveBeenCalledOnce();
@@ -537,7 +613,7 @@ describe("scoped mobile outbox", () => {
     expect(disk.clear).toHaveBeenCalled();
   });
   it.each(["ios", "android"])(
-    "offers Add Model instead of Try Again for missing-model failures on %s",
+    "offers Add model instead of Try again for missing-model failures on %s",
     async (os) => {
       Platform.OS = os as typeof Platform.OS;
       const attempt = feedback.sendAttempt(payload());
@@ -561,7 +637,7 @@ describe("scoped mobile outbox", () => {
         const [options, choose] = vi
           .mocked(ActionSheetIOS.showActionSheetWithOptions)
           .mock.calls.at(-1)!;
-        expect(options.options).toEqual(["Add Model", "Delete", "Cancel"]);
+        expect(options.options).toEqual(["Add model", "Delete", "Cancel"]);
         expect(options.message).toBeUndefined();
         expect(options.cancelButtonIndex).toBe(2);
         expect(options.destructiveButtonIndex).toBe(1);
@@ -570,7 +646,7 @@ describe("scoped mobile outbox", () => {
       } else {
         const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
         expect(vi.mocked(Alert.alert).mock.calls.at(-1)![1]).toBeUndefined();
-        expect(buttons.map(({ text }) => text)).toEqual(["Add Model", "Delete", "Cancel"]);
+        expect(buttons.map(({ text }) => text)).toEqual(["Add model", "Delete", "Cancel"]);
         expect(buttons[2]!.style).toBe("cancel");
         act(() => buttons[0]!.onPress?.());
         expect(router.push).toHaveBeenCalledWith("/(settings)/models");
@@ -593,7 +669,7 @@ describe("scoped mobile outbox", () => {
       Platform.OS = "ios";
     },
   );
-  it.each(["ios", "android"])("keeps Try Again for other send failures on %s", async (os) => {
+  it.each(["ios", "android"])("keeps Try again for other send failures on %s", async (os) => {
     Platform.OS = os as typeof Platform.OS;
     const attempt = feedback.sendAttempt(payload());
     request
@@ -612,13 +688,13 @@ describe("scoped mobile outbox", () => {
       const [options, choose] = vi
         .mocked(ActionSheetIOS.showActionSheetWithOptions)
         .mock.calls.at(-1)!;
-      expect(options.options).toEqual(["Try Again", "Delete", "Cancel"]);
+      expect(options.options).toEqual(["Try again", "Delete", "Cancel"]);
       expect(options.cancelButtonIndex).toBe(2);
       expect(options.destructiveButtonIndex).toBe(1);
       act(() => choose(0));
     } else {
       const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
-      expect(buttons.map(({ text }) => text)).toEqual(["Try Again", "Delete", "Cancel"]);
+      expect(buttons.map(({ text }) => text)).toEqual(["Try again", "Delete", "Cancel"]);
       act(() => buttons[0]!.onPress?.());
     }
     expect(retry).toHaveBeenCalledOnce();
@@ -649,7 +725,7 @@ describe("scoped mobile outbox", () => {
     const [options, choose] = vi
       .mocked(ActionSheetIOS.showActionSheetWithOptions)
       .mock.calls.at(-1)!;
-    expect(options.options).toEqual(["Try Again", "Delete", "Cancel"]);
+    expect(options.options).toEqual(["Try again", "Delete", "Cancel"]);
     expect(options.message).toBeUndefined();
     act(() => choose(0));
     expect(retry).toHaveBeenCalledOnce();
@@ -737,6 +813,91 @@ describe("scoped mobile outbox", () => {
     expect(second.state).toBe("queued");
     expect(request).toHaveBeenCalledOnce();
     expect(notDelivered).not.toHaveBeenCalled();
+  });
+  describe("a send in flight while a password change replaces the session", () => {
+    let current: typeof scope | null;
+    let refuse: (() => void) | undefined;
+    let passwordChanging: boolean;
+    beforeEach(() => {
+      current = scope;
+      refuse = undefined;
+      passwordChanging = true;
+      configureUnsentSends({
+        request,
+        scope: () => current,
+        serverReachable: () => reachable,
+        passwordChanging: () => passwordChanging,
+        disk,
+        errorText: (error) => (error instanceof Error ? error.message : String(error)),
+        notDelivered,
+      });
+      request.mockImplementation(async (proc) =>
+        proc === "artifacts/create"
+          ? { id: "artifact-a" }
+          : new Promise((_resolve, reject) => {
+              // The server already revoked the token the send used.
+              refuse = () => reject(Object.assign(new Error("Unauthorized"), { status: 401 }));
+            }),
+      );
+    });
+    async function settleAfter(change: () => void) {
+      const attempt = feedback.sendAttempt(payload());
+      let sending!: Promise<boolean>;
+      act(() => {
+        sending = feedback.send(attempt);
+      });
+      await vi.waitFor(() => expect(refuse).toBeTypeOf("function"));
+      change();
+      request.mockImplementation(async (proc) =>
+        proc === "artifacts/create" ? { id: "artifact-a" } : { seq: 42 },
+      );
+      const saves = disk.save.mock.calls.length;
+      await act(async () => {
+        refuse?.();
+        await sending;
+      });
+      return { attempt, saves };
+    }
+    it("returns it to the saved queue while the session is out of scope", async () => {
+      const { attempt, saves } = await settleAfter(() => {
+        current = null;
+      });
+      expect(attempt.state).toBe("queued");
+      expect(disk.save.mock.calls.length).toBeGreaterThan(saves);
+      expect(disk.save).toHaveBeenLastCalledWith([attempt]);
+      expect(notDelivered).not.toHaveBeenCalled();
+      current = { ...scope };
+      await act(async () => {
+        await sendWaitingMessages();
+      });
+      expect(attempt.acceptedSeq).toBe(42);
+    });
+    it("keeps it queued when the server revokes the token before the new session arrives", async () => {
+      const { attempt } = await settleAfter(() => undefined);
+      expect(attempt.state).toBe("queued");
+      expect(notDelivered).not.toHaveBeenCalled();
+      // The drain stops instead of resending with the revoked token.
+      expect(request.mock.calls.filter(([proc]) => proc !== "artifacts/create")).toHaveLength(1);
+      current = { ...scope };
+      await act(async () => {
+        await sendWaitingMessages();
+      });
+      expect(attempt.acceptedSeq).toBe(42);
+    });
+    it("refuses it as before when no password change is in progress", async () => {
+      passwordChanging = false;
+      const { attempt } = await settleAfter(() => undefined);
+      expect(attempt.state).toBe("refused");
+      expect(notDelivered).toHaveBeenCalledWith(attempt);
+    });
+    it("retries it when the new session is ready before it settles", async () => {
+      const { attempt } = await settleAfter(() => {
+        current = { ...scope };
+      });
+      expect(attempt.state).not.toBe("refused");
+      expect(attempt.acceptedSeq).toBe(42);
+      expect(notDelivered).not.toHaveBeenCalled();
+    });
   });
   it("retries after a reconnect that arrived during an in-flight send", async () => {
     let rejectUpload!: (error: unknown) => void;
@@ -913,6 +1074,7 @@ describe("a send and its echo", () => {
       request,
       scope: () => scope,
       serverReachable: () => reachable,
+      passwordChanging: () => false,
       disk,
       errorText: String,
       notDelivered: () => undefined,

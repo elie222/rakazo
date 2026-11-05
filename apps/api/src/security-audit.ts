@@ -67,6 +67,16 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
     type: "deployment.settings.changed",
     fields: ["signupsEnabled", "computerHost"],
   },
+  "computerProvider.update": {
+    type: "credential.changed",
+    kind: "computer_provider",
+    fields: ["provider"],
+  },
+  "computerProvider.account.update": {
+    type: "credential.changed",
+    kind: "computer_provider",
+    fields: ["provider"],
+  },
   "mcp.assignments.approve": {
     type: "approval.decided",
     kind: "mcp",
@@ -81,6 +91,11 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
   "approvalRules.remove": { type: "approval.policy.changed", fields: ["id"] },
   "models.setRole": { type: "approval.policy.changed", fields: ["role", "scope"] },
   "autoReview.set": { type: "approval.policy.changed", fields: ["enabled", "skipApprovals"] },
+  "spendingLimit.set": {
+    type: "approval.policy.changed",
+    kind: "spending_limit",
+    fields: ["limit.currency", "limit.period"],
+  },
   "spaceSettings.setOverride": {
     type: "approval.policy.changed",
     fields: ["setting", "enabled"],

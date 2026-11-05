@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   listBots: vi.fn(),
   voiceStatus: vi.fn(),
   endCall: vi.fn(),
-  declineCall: vi.fn(),
+  declineIncomingCall: vi.fn(),
 }));
 
 vi.mock("@lingui/core/macro", () => ({ t: (parts: TemplateStringsArray) => parts.join("") }));
@@ -71,7 +71,8 @@ vi.mock("./lib/rpc", () => {
     rpc: {
       ...client,
       analytics: { screen: vi.fn(async () => ({ ok: true })) },
-      threads: { endCall: mocks.endCall, declineCall: mocks.declineCall },
+      threads: { endCall: mocks.endCall },
+      notifications: { declineIncomingCall: mocks.declineIncomingCall },
     },
     rpcForSpace: () => client,
     selectedSpaceId: () => null,
@@ -138,7 +139,7 @@ beforeEach(() => {
   mocks.listBots.mockImplementation(async () => mocks.bots);
   mocks.voiceStatus.mockImplementation(async () => ({ ready: true, transcribe: false }));
   mocks.endCall.mockResolvedValue(undefined);
-  mocks.declineCall.mockResolvedValue(undefined);
+  mocks.declineIncomingCall.mockResolvedValue({ ok: true });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -195,10 +196,6 @@ it("rings for an incoming call on a page outside the shell", async () => {
   );
   await act(async () => decline?.click());
   await settle();
-  expect(mocks.declineCall).toHaveBeenCalledWith({
-    botId: "bot-1",
-    callId: "call-1",
-    outcome: "declined",
-  });
+  expect(mocks.declineIncomingCall).toHaveBeenCalledWith({ callId: "call-1" });
   expect(find('[data-testid="incoming-call"]')).toBeNull();
 });

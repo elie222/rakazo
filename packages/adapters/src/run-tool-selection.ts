@@ -9,7 +9,12 @@ import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { selectMemoryTools } from "./memory-tools.js";
 import { filterImageReturningComputerTools } from "./model-vision.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./run-tools-user-computer.js";
-import { filterBuiltinToolsForRun, filterBuiltinToolsForThread } from "./schedule-tools.js";
+import {
+  filterBuiltinToolsForRun,
+  filterBuiltinToolsForThread,
+  SCHEDULE_TOOL_NAMES,
+} from "./schedule-tools.js";
+import { SKILL_TOOL_NAMES } from "./skill-tools.js";
 
 export const READ_ONLY_AGENT_TOOLS = new Set([
   "computer_observe",
@@ -135,15 +140,17 @@ export function selectBuiltinToolsForRun(options: {
       (options.historyRetrievalEnabled ||
         !["search_history", "read_history"].includes(tool.name)) &&
       (!options.messagingChannelRun ||
-        (![
-          "remember",
-          "save_shared_memory",
-          "save_memory",
-          "recall_memory",
-          "forget_memory",
-          "task_catalog",
-          "board_tickets",
-        ].includes(tool.name) &&
+        (!SCHEDULE_TOOL_NAMES.has(tool.name) &&
+          !SKILL_TOOL_NAMES.has(tool.name) &&
+          ![
+            "remember",
+            "save_shared_memory",
+            "save_memory",
+            "recall_memory",
+            "forget_memory",
+            "task_catalog",
+            "board_tickets",
+          ].includes(tool.name) &&
           !tool.name.startsWith("scratchpad_") &&
           !tool.name.startsWith("ticket_"))),
   );
@@ -166,4 +173,26 @@ export function filterPageBrowserTools<T extends { name: string }>(
 /** The fleet tools this run was offered, the same decision as tool selection. */
 export function offeredFleetTools(tools: readonly { name: string }[]): string[] {
   return tools.map((tool) => tool.name).filter((name) => FLEET_TOOL_NAMES_SET.has(name));
+}
+
+const FOLLOW_UP_TOOL_NAMES = [
+  "scratchpad_add",
+  "scratchpad_complete",
+  "schedule_create",
+  "schedule_cancel",
+];
+
+/**
+ * Whether this run can set its own follow-ups. Only a run the owner started can tell what is
+ * still open with them; routines, webhooks, channels, subagents and hand-offs from other bots
+ * are not, and some of them would need approval for every schedule.
+ */
+export function followUpsOffered(
+  tools: readonly { name: string }[],
+  ownerStartedRun: boolean,
+): boolean {
+  return (
+    ownerStartedRun &&
+    FOLLOW_UP_TOOL_NAMES.every((name) => tools.some((tool) => tool.name === name))
+  );
 }

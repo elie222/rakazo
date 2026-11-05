@@ -14,6 +14,24 @@ import {
 } from "./pi-runtime-tool-parameters.js";
 
 describe("jsonSchemaParameters", () => {
+  it("uses a connected delete_bot schema instead of local archival parameters", () => {
+    const schema = JSON.parse(
+      JSON.stringify(
+        parametersFor({
+          name: "delete_bot",
+          description: "Remote delete",
+          inputSchema: {
+            type: "object",
+            properties: { id: { type: "string" } },
+            required: ["id"],
+          },
+        }),
+      ),
+    );
+    expect(Object.keys(schema.properties)).toEqual(["id"]);
+    expect(schema.required).toEqual(["id"]);
+  });
+
   it("keeps the history query either/or guidance on the provider wire without a root union", () => {
     const tool = builtinAgentTools.find((entry) => entry.name === "search_history")!;
     const wire = JSON.parse(JSON.stringify(parametersFor(tool)));

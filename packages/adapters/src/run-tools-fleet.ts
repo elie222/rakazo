@@ -1,12 +1,13 @@
 import { BotSettingsValuesSchema } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
 import {
+  appendEventInTransaction,
   commitBotUpdate,
   createSpaceForMember,
   InstructionConflictError,
   InvalidSpaceNameError,
   runAsSystem,
   SpaceLimitError,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   writeBotInstructions,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -34,7 +35,7 @@ import {
   OWN_INSTRUCTIONS_CHANGED_ERROR,
 } from "./run-context.js";
 import { mayOpenModelStream } from "./run-lifecycle.js";
-import { persistMessageInTransaction, publishMessage } from "./run-messages.js";
+import { publishMessage } from "./run-messages.js";
 import { fleetPrepareDeps } from "./run-model.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { argumentGiven } from "./update-bot-patch.js";
@@ -78,7 +79,7 @@ async function archiveBot(ctx: RunContext, call: ToolCall) {
   return archived;
 }
 
-/** Writes this bot's instructions and posts the change, with its undo, in the chat. */
+/** Writes this bot's instructions quietly; earlier versions stay restorable in its settings. */
 async function commitOwnInstructions(
   ctx: RunContext,
   input: {
@@ -92,7 +93,8 @@ async function commitOwnInstructions(
   // both rather than guess or overwrite what the rewrite never saw.
   if (ctx.state.ownInstructionsBaseline === undefined || input.previousInstructions === undefined)
     return { error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR };
-  const { deps, run, runId, bot, context } = ctx;
+  const { deps, run, runId, context } = ctx;
+  const botId = ctx.bot.id;
   const previousInstructions = input.previousInstructions;
   const committed = await deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
@@ -104,7 +106,7 @@ async function commitOwnInstructions(
     let undoVersionId: string | null;
     try {
       undoVersionId = await writeBotInstructions(tx, {
-        botId: bot.id,
+        botId,
         instructions: input.instructions,
         reason: input.reason,
         expectedInstructions: previousInstructions,
@@ -115,25 +117,23 @@ async function commitOwnInstructions(
       return { error: OWN_INSTRUCTIONS_CHANGED_ERROR };
     }
     if (!undoVersionId) return null;
-    return persistMessageInTransaction(tx, run, "bot", [
-      {
-        kind: "ask",
-        text: "Instructions updated",
-        status: "answered",
-        instructionUpdate: {
-          botId: bot.id,
-          before: redactSecrets(previousInstructions, ctx.secrets),
-          after: input.instructions,
-          reason: input.reason,
-          undoVersionId,
-        },
-      },
-    ]);
-  });
+    const bot = await tx.bot.findUniqueOrThrow({
+      where: { id: botId },
+      select: { name: true, description: true },
+    });
+    return appendEventInTransaction(tx, {
+      spaceId: run.spaceId,
+      threadId: run.threadId,
+      botId,
+      runId,
+      type: "bot.updated",
+      payload: { botId, name: bot.name, description: bot.description },
+    });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (committed && "error" in committed) return committed;
   if (committed)
     await deps.events
-      .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
+      .notify(run.threadId, committed.seq)
       .catch((error) => getLogger().error("instruction update realtime notification", error));
   ctx.state.ownInstructionsBaseline = input.instructions;
   return { ok: true };
@@ -285,6 +285,7 @@ export const fleetTools: ToolHandlers = {
         instructions: true,
         color: true,
         notifyOnFinish: true,
+        dailyCheckIns: true,
         modelProvider: true,
         modelId: true,
         thinkingLevel: true,
@@ -292,10 +293,27 @@ export const fleetTools: ToolHandlers = {
         voiceId: true,
       },
     });
-    if (!Object.values(args).some(argumentGiven)) {
+    // `instructions_offset` pages through long instructions on a read; it is not a write field.
+    const instructionsOffsetArg = args.instructions_offset ?? args.instructionsOffset;
+    const writeArgs = { ...args, instructions_offset: undefined, instructionsOffset: undefined };
+    const read = !Object.values(writeArgs).some(argumentGiven);
+    let readOffset = 0;
+    if (argumentGiven(instructionsOffsetArg)) {
+      const parsedOffset = Number(instructionsOffsetArg);
+      if (!read)
+        return call.finish({
+          error: "instructions_offset only works on a read: call update_bot with no other fields.",
+        });
+      if (!Number.isInteger(parsedOffset) || parsedOffset < 0)
+        return call.finish({ error: "instructions_offset must be a whole number of 0 or more." });
+      readOffset = parsedOffset;
+    }
+    if (read) {
       // A read does not rebase the baseline: the text it returns has not shaped a model
       // generation yet, and a truncated read would guard on text the model never saw.
-      return call.finish(await readOwnBotSettings(modelDeps, run, live));
+      if (readOffset > 0 && readOffset >= live.instructions.length)
+        return call.finish({ error: "instructions_offset is past the end of your instructions." });
+      return call.finish(await readOwnBotSettings(modelDeps, run, live, readOffset));
     }
     const settings = await prepareOwnBotSettings(
       modelDeps,
@@ -374,5 +392,4 @@ export const fleetTools: ToolHandlers = {
     });
   },
   archive_bot: archiveBot,
-  delete_bot: archiveBot,
 };

@@ -1,7 +1,13 @@
 import * as SecureStore from "expo-secure-store";
-import { invalidateArtifactCacheSession } from "./artifact-cache-session";
+import {
+  invalidateArtifactCacheSession,
+  rotateArtifactCacheSession,
+  rotatedArtifactCacheToken,
+} from "./artifact-cache-session";
 import { stopLiveNotifications } from "./live-notifications";
 import { clearNetworkCache } from "./network-cache";
+import { forgetReferrals } from "./referral";
+import { rememberSignedIn } from "./returning-user";
 import { clearFailedSends } from "./thread-feedback";
 
 const SESSION_KEY = "rakazo.session_token";
@@ -25,25 +31,39 @@ function enqueueScopeWrite<T>(task: () => Promise<T>): Promise<T> {
   return next;
 }
 
-const sessionDiskCaches = new Set<() => void>();
+const sessionDiskCaches = new Set<(sameAccount: boolean) => void | Promise<void>>();
 
-/** Registers a disk cache that every session change (sign-in, sign-out, server switch) deletes. */
-export function registerSessionDiskCache(clear: () => void): void {
+/** Registers a cache wipe; a verified same-account replacement can keep account-scoped data. */
+export function registerSessionDiskCache(
+  clear: (sameAccount: boolean) => void | Promise<void>,
+): void {
   sessionDiskCaches.add(clear);
 }
 
-function invalidateSessionCaches(): Promise<void> {
+/**
+ * `keepUnsent` is for a new token of the same account and server; its unsent messages stay.
+ * `rejectedUnsent` keeps only the queue of a session the server rejected, so the sign-in
+ * warning can still report those messages; it grants no same-account data.
+ */
+function invalidateSessionCaches(
+  keepUnsent = false,
+  sameAccount = keepUnsent,
+  rejectedUnsent = false,
+): Promise<void> {
   scopeInvalidated = true;
-  clearFailedSends();
+  if (!keepUnsent && !rejectedUnsent) clearFailedSends();
   clearNetworkCache();
+  // Another account must never see, or share, the previous owner's invite link.
+  forgetReferrals();
   for (const clear of sessionDiskCaches) {
     try {
-      clear();
+      // Optional caches must never hold up credential writes, even if their storage stalls.
+      void Promise.resolve(clear(sameAccount)).catch(() => undefined);
     } catch {
       // A failed disk wipe must not block the session change or the other wipes.
     }
   }
-  const clearingArtifacts = invalidateArtifactCacheSession();
+  const clearingArtifacts = keepUnsent ? undefined : invalidateArtifactCacheSession();
   return enqueueScopeWrite(async () => {
     await clearingArtifacts;
     try {
@@ -95,10 +115,12 @@ export async function loadVerifiedIntegrationsScope(): Promise<VerifiedIntegrati
   }
 }
 
-export function saveVerifiedIntegrationsScope(
+export async function saveVerifiedIntegrationsScope(
   generation: number,
   scope: VerifiedIntegrationsScope,
 ): Promise<void> {
+  // The launch's first token read queues its recovery write, so it cannot run inside the queue.
+  if (!(await snapshotSessionToken()).ok) return;
   return enqueueScopeWrite(async () => {
     if (generation !== sessionGeneration) return;
     const token = await snapshotSessionToken();
@@ -152,12 +174,15 @@ export async function loadSessionToken() {
   return snapshot.ok ? snapshot.value : "";
 }
 
-export async function saveSessionToken(token: string) {
+/** `sameAccount` requires a verified replacement on the current server. */
+export async function saveSessionToken(token: string, sameAccount = false) {
   const generation = ++sessionGeneration;
   publishSessionGeneration(false);
   sessionInvalidated = true;
   sessionFallback = undefined;
-  const clearingScope = invalidateSessionCaches();
+  const clearingScope = invalidateSessionCaches(false, sameAccount);
+  // Marked before the token lands, so an account deletion that clears it afterwards also clears the mark.
+  await rememberSignedIn();
   await enqueueScopeWrite(() => SecureStore.setItemAsync(SESSION_KEY, token));
   await clearingScope;
   if (generation !== sessionGeneration) return;
@@ -166,13 +191,17 @@ export async function saveSessionToken(token: string) {
   if (generation === sessionGeneration) publishSessionGeneration();
 }
 
-/** Clears the session. Returns false only when SecureStore could neither delete nor overwrite. */
-export async function clearSessionToken(): Promise<boolean> {
+/**
+ * Clears the session. Returns false only when SecureStore could neither delete nor overwrite.
+ * `keepUnsent` leaves the unsent queue in place for a session the server rejected; signing
+ * out and signing in clear the queue themselves.
+ */
+export async function clearSessionToken(options: { keepUnsent?: boolean } = {}): Promise<boolean> {
   const generation = ++sessionGeneration;
   publishSessionGeneration(false);
   sessionInvalidated = true;
   sessionFallback = undefined;
-  const clearingScope = invalidateSessionCaches();
+  const clearingScope = invalidateSessionCaches(false, false, options.keepUnsent);
   const clearingToken = clearStoredSessionToken(generation);
   await stopLiveNotifications(true).catch(() => undefined);
   const tokenCleared = await clearingToken;
@@ -234,10 +263,11 @@ export async function restoreSessionToken(token: string) {
 export async function replaceSessionTokenIfCurrent(
   generation: number,
   token: string,
+  sameAccount = false,
 ): Promise<boolean> {
   if (generation !== sessionGeneration) return false;
   try {
-    await saveSessionToken(token);
+    await saveSessionToken(token, sameAccount);
   } catch (error) {
     // The server already revoked the stored token; keep the replacement in memory unless
     // something else changed the session meanwhile, and still report that it was not saved.
@@ -251,8 +281,106 @@ export async function replaceSessionTokenIfCurrent(
   return true;
 }
 
+/** A password change's token kept only in memory until it is saved with its cache namespace. */
+let unsavedRotation: { generation: number; token: string } | undefined;
+
+/**
+ * Replaces the token the server reissued for the same account after a password change. Unlike
+ * `replaceSessionTokenIfCurrent`, it keeps unsent messages and the cache namespace they live in.
+ * The token is saved only after that namespace, which also records it as the revoked token's
+ * replacement; a restart between the two saves adopts it. If a save fails, the token stays in
+ * memory until `saveRotatedSessionToken`.
+ */
+export async function rotateSessionTokenIfCurrent(
+  generation: number,
+  previous: string,
+  token: string,
+): Promise<boolean> {
+  if (generation !== sessionGeneration) return false;
+  const rotation = ++sessionGeneration;
+  publishSessionGeneration(false);
+  sessionInvalidated = true;
+  sessionFallback = undefined;
+  unsavedRotation = undefined;
+  const clearingScope = invalidateSessionCaches(true);
+  try {
+    await rotateArtifactCacheSession(previous, token);
+    await saveRotatedToken(rotation, token);
+  } catch (error) {
+    if (rotation === sessionGeneration) {
+      sessionInvalidated = false;
+      sessionFallback = token;
+      unsavedRotation = { generation: rotation, token };
+      publishSessionGeneration();
+    }
+    throw error;
+  }
+  await clearingScope;
+  if (rotation === sessionGeneration) {
+    sessionInvalidated = false;
+    publishSessionGeneration();
+  }
+  return true;
+}
+
+/** Retries saving a password change's token kept in memory; true when it saved one. */
+export async function saveRotatedSessionToken(): Promise<boolean> {
+  const pending = unsavedRotation;
+  if (pending?.generation !== sessionGeneration) return false;
+  await rotateArtifactCacheSession(pending.token, pending.token);
+  await saveRotatedToken(pending.generation, pending.token);
+  if (unsavedRotation !== pending || pending.generation !== sessionGeneration) return false;
+  unsavedRotation = undefined;
+  sessionFallback = undefined;
+  return true;
+}
+
+/** Runs before the first token read of a launch; one that could not read runs again. */
+let recovery: Promise<boolean> | undefined;
+
+/**
+ * Adopts the token of a password change that stopped after its namespace was saved. False when
+ * the store could not be read, so it is unknown whether the saved token was revoked.
+ */
+async function recoverRotatedToken(): Promise<boolean> {
+  // A session change in this launch owns the store; nothing is left to recover.
+  if (sessionGeneration !== 0) return true;
+  const generation = sessionGeneration;
+  let token: string | undefined;
+  try {
+    const stored = await SecureStore.getItemAsync(SESSION_KEY);
+    // Only the token the change replaced is swapped; any other session ignores the record.
+    token = stored ? await rotatedArtifactCacheToken(stored) : undefined;
+  } catch {
+    return generation !== sessionGeneration;
+  }
+  if (!token || generation !== sessionGeneration) return true;
+  try {
+    await saveRotatedToken(generation, token);
+  } catch {
+    if (generation !== sessionGeneration) return true;
+    sessionFallback = token;
+    unsavedRotation = { generation, token };
+  }
+  return true;
+}
+
+/** Writes the token unless another session change started; that change then owns the store. */
+function saveRotatedToken(generation: number, token: string): Promise<void> {
+  return enqueueScopeWrite(async () => {
+    if (generation === sessionGeneration) await SecureStore.setItemAsync(SESSION_KEY, token);
+  });
+}
+
 /** Snapshots the active token without treating an unreadable store as an empty session. */
 export async function snapshotSessionToken(): Promise<{ ok: true; value: string } | { ok: false }> {
+  recovery ??= recoverRotatedToken();
+  const attempt = recovery;
+  if (!(await attempt)) {
+    // The saved token may be the revoked one; the next read tries again.
+    if (recovery === attempt) recovery = undefined;
+    return { ok: false };
+  }
   if (sessionFallback !== undefined) return { ok: true, value: sessionFallback };
   if (sessionInvalidated) return { ok: true, value: "" };
   const generation = sessionGeneration;

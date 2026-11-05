@@ -37,6 +37,8 @@ export type SendPayload = {
   attachments: PickedAttachment[];
   replyTargetId?: string;
   replyQuote: string | null;
+  /** A reply to a page's card, sent from the page: it quotes nothing. */
+  fromPage?: true;
 };
 
 export type SendAttempt = {
@@ -64,17 +66,16 @@ export async function deliverSend(
   request: typeof rpc,
 ): Promise<number | undefined> {
   const { plan, groupTarget, botTarget, reroutedToGroup, attachments } = payload;
-  if (plan.shouldRunRoutines) {
-    await Promise.all(
-      plan.routineIds.map((routineId) =>
-        request("routines/testRun", {
-          routineId,
-          clientNonce: `routine-mention:${attempt.clientNonce}:${routineId}`,
-        }),
-      ),
-    );
+  const target = groupTarget ? { groupId: groupTarget } : { botId: botTarget! };
+  if (!plan.shouldSend) {
+    if (plan.shouldRunRoutines)
+      await request("threads/sendWithRoutines", {
+        ...target,
+        clientNonce: attempt.clientNonce,
+        routineIds: plan.routineIds,
+      });
+    return undefined;
   }
-  if (!plan.shouldSend) return undefined;
   const artifactIds: string[] = [];
   for (const [index, pending] of attachments.entries()) {
     let id = attempt.artifactIds.get(pending.id);
@@ -82,7 +83,7 @@ export async function deliverSend(
       const artifact = await request(
         "artifacts/create",
         {
-          ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
+          ...target,
           name: pending.name,
           mimeType: pending.mimeType,
           contentBase64: pending.contentBase64,
@@ -95,8 +96,8 @@ export async function deliverSend(
     }
     artifactIds.push(id);
   }
-  const sent = await request("threads/send", {
-    ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
+  const message = {
+    ...target,
     clientNonce: attempt.clientNonce,
     imageHandling: attempt.imageHandling ?? "confirm",
     text: plan.trimmed || undefined,
@@ -104,8 +105,14 @@ export async function deliverSend(
     artifactIds: artifactIds.length ? artifactIds : undefined,
     replyToMessageId: reroutedToGroup ? undefined : payload.replyTargetId,
     replyQuote: reroutedToGroup ? undefined : (payload.replyQuote ?? undefined),
-  });
-  return sent.seq;
+    fromPage: reroutedToGroup ? undefined : payload.fromPage,
+  } as const;
+  // The routines run in the same server operation as the message: both or neither.
+  const sent = plan.shouldRunRoutines
+    ? (await request("threads/sendWithRoutines", { ...message, routineIds: plan.routineIds })).send
+    : undefined;
+  // Runs already saved for this nonce return no message; the plain send saves or replays it.
+  return (sent ?? (await request("threads/send", message))).seq;
 }
 
 export type OutboxScope = Pick<SendAttempt, "apiBase" | "spaceId" | "userId" | "cacheSession">;
@@ -126,6 +133,8 @@ type Config = {
   ): Promise<unknown>;
   scope(): OutboxScope | null;
   serverReachable(): boolean;
+  /** True while a password change may have revoked the session before replacing it. */
+  passwordChanging(): boolean;
   disk: UnsentDisk;
   errorText(error: unknown): string;
   notDelivered(attempt: SendAttempt): void;
@@ -207,6 +216,15 @@ function inScope(attempt: SendAttempt) {
     attempt.cacheSession === scope.cacheSession
   );
 }
+/**
+ * A send that settled after the session changed. An account change already dropped it; after a
+ * password change it waits, saved, for the drain under the new session.
+ */
+function requeue(attempt: SendAttempt) {
+  if (!unsentSends.includes(attempt)) return;
+  attempt.state = "queued";
+  changed();
+}
 function remove(attempt: SendAttempt) {
   unsentSends = unsentSends.filter((a) => a !== attempt);
   // A saved index may still list the message, so its files go only after the index drops it.
@@ -251,6 +269,9 @@ export function clearUnsentSends() {
   if (clearPending) restored = true;
   changed();
 }
+export function hasUnsentSends() {
+  return unsentSends.length > 0;
+}
 // Alias kept for existing sign-out callers.
 export const clearFailedSends = clearUnsentSends;
 export function confirmEchoes(threadKey: string, seqs: Iterable<number>) {
@@ -286,6 +307,9 @@ export function sendWaitingMessages(force = false): Promise<void> {
         if (!attempt) break;
         attempt.state = "pending";
         changed();
+        // A result from before a session change is stale even once the new scope is ready.
+        const dispatched = config.scope();
+        const stale = () => !inScope(attempt) || config?.scope() !== dispatched;
         try {
           const request = ((proc: RpcPath, body?: unknown, options?: RpcOptions) => {
             if (!inScope(attempt)) throw new Error("Session changed");
@@ -293,7 +317,11 @@ export function sendWaitingMessages(force = false): Promise<void> {
           }) as typeof rpc;
           if (!memoryOnly.has(attempt)) await config.disk.hydrate(attempt);
           const seq = await deliverSend(attempt.payload, attempt, request);
-          if (!inScope(attempt)) continue;
+          // The retry under the new session gets the same seq back for the same nonce.
+          if (stale()) {
+            requeue(attempt);
+            continue;
+          }
           attempt.acceptedSeq = seq;
           for (const listener of deliveredListeners) listener(attempt);
           if (
@@ -305,10 +333,19 @@ export function sendWaitingMessages(force = false): Promise<void> {
             remove(attempt);
           else changed();
         } catch (error) {
-          if (!inScope(attempt)) continue;
+          if (stale()) {
+            requeue(attempt);
+            continue;
+          }
           const detail = error as { status?: number; cause?: { status?: number } } | null;
           const status = detail?.status;
-          const offline = isServerUnreachable(error) || (status ?? detail?.cause?.status) === 429;
+          const sendStatus = status ?? detail?.cause?.status;
+          // A password change revokes the token before its replacement arrives; the send waits
+          // for the new session. Any other 401 is refused as usual.
+          const offline =
+            isServerUnreachable(error) ||
+            sendStatus === 429 ||
+            (sendStatus === 401 && config.passwordChanging());
           attempt.state = offline
             ? "queued"
             : !isModelRequiredSendError(error) &&

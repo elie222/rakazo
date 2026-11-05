@@ -42,7 +42,7 @@ postgres("history retrieval (PostgreSQL)", () => {
         jsonb_build_array(jsonb_build_object('kind','text','text', CASE WHEN n = 100 THEN 'exports use batching' ELSE 'filler exchange ' || n END))
         FROM generate_series(1,10000) n;
       CREATE INDEX synthetic_history_fts ON messages USING GIN (to_tsvector('simple',jsonb_path_query_array(blocks,
-        '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text));
+        '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ')));
       CREATE INDEX synthetic_history_seq ON messages ("threadId",seq);
       ANALYZE messages;
       ALTER TABLE bots ADD COLUMN name text DEFAULT 'History bot';
@@ -290,6 +290,96 @@ postgres("history retrieval (PostgreSQL)", () => {
     );
     expect(offset.messages.map((message) => message.seq)).toEqual([1442, 1441, 1440]);
     expect(offset.nextSearch).toBeNull();
+  });
+  it("finds earlier files by name and lists only files that still belong to the user", async () => {
+    await pool.query(`
+      INSERT INTO messages VALUES
+        ('file-captioned','synthetic-thread',12001,'user',NULL,NULL,now(),
+          '[{"kind":"text","text":"Signed copy attached"},{"kind":"file","artifactId":"art-lease","name":"lisbon-office-lease.md","mimeType":"text/markdown","size":64}]'),
+        ('file-bare','synthetic-thread',12002,'user',NULL,NULL,now(),
+          '[{"kind":"file","artifactId":"art-foreign","name":"porto-warehouse.md","mimeType":"text/markdown","size":64}]');
+      INSERT INTO artifacts VALUES
+        ('art-lease','synthetic-space','synthetic-user','synthetic-bot',NULL,NULL,'lisbon-office-lease.md','text/markdown',64,now()),
+        ('art-foreign','synthetic-space','outsider','synthetic-bot',NULL,NULL,'porto-warehouse.md','text/markdown',64,now());
+    `);
+    const lease = {
+      artifactId: "art-lease",
+      name: "lisbon-office-lease.md",
+      mimeType: "text/markdown",
+      size: 64,
+      path: "attachments/art-lease.md",
+    };
+    const found = await searchHistory(prisma, scope, { query: "lisbon lease" });
+    expect(
+      (await searchHistory(prisma, scope, { query: "lisbon-office-lease.md" })).messages,
+    ).toHaveLength(1);
+    // One word from the caption, one from the file name.
+    expect((await searchHistory(prisma, scope, { query: "signed lease" })).messages).toHaveLength(
+      1,
+    );
+    expect(found.messages).toEqual([
+      expect.objectContaining({
+        messageId: "file-captioned",
+        text: "Signed copy attached",
+        attachments: [lease],
+      }),
+    ]);
+    // A name match on a file someone else owns finds the message but never the file.
+    const foreign = await searchHistory(prisma, scope, {
+      query: "porto",
+      kinds: ["user_messages"],
+    });
+    expect(foreign.messages.map((message) => message.messageId)).toEqual(["file-bare"]);
+    expect(foreign.messages[0]).not.toHaveProperty("attachments");
+    const read = await readHistory(prisma, scope, { messageId: "file-captioned" });
+    expect(read.messages.find((message) => message.messageId === "file-captioned")).toMatchObject({
+      attachments: [lease],
+    });
+    await pool.query("DELETE FROM artifacts WHERE id = 'art-lease'");
+    const afterDelete = await readHistory(prisma, scope, { messageId: "file-captioned" });
+    expect(afterDelete.messages.every((message) => !("attachments" in message))).toBe(true);
+    await pool.query("DELETE FROM messages WHERE id IN ('file-captioned','file-bare')");
+    await pool.query("DELETE FROM artifacts WHERE id = 'art-foreign'");
+  });
+  it("keeps a message with many files within the response budget and pages through them", async () => {
+    // 100 files with long names, as a deployment that raises the per-message limit allows.
+    await pool.query(`
+      INSERT INTO artifacts SELECT 'many-' || n, 'synthetic-space', 'synthetic-user', 'synthetic-bot', NULL, NULL,
+        repeat('n', 200) || n || '.md', 'text/markdown', 1, now() FROM generate_series(1,100) n;
+      INSERT INTO messages VALUES ('many-files-neighbor','synthetic-thread',12099,'bot',NULL,NULL,now(),
+        '[{"kind":"text","text":"Neighbor context keeps every word of this reply."}]');
+      INSERT INTO messages VALUES ('many-files','synthetic-thread',12100,'user',NULL,NULL,now(),
+        (SELECT jsonb_agg(jsonb_build_object('kind','file','artifactId','many-' || n,
+          'name', repeat('n', 200) || n || '.md','mimeType','text/markdown','size',1)) FROM generate_series(1,100) n));
+    `);
+    // Files give way before nearby text does.
+    const around = await readHistory(prisma, scope, { messageId: "many-files", limit: 3 });
+    expect(Buffer.byteLength(JSON.stringify(around))).toBeLessThanOrEqual(10_000);
+    expect(around.messages.find((m) => m.messageId === "many-files-neighbor")?.text).toBe(
+      "Neighbor context keeps every word of this reply.",
+    );
+    type Page = { attachments?: Array<{ artifactId: string }>; nextAttachmentOffset?: number };
+    const seen: string[] = [];
+    let attachmentOffset: number | undefined;
+    for (let page = 0; page < 100; page += 1) {
+      const read = await readHistory(prisma, scope, {
+        messageId: "many-files",
+        limit: 1,
+        ...(attachmentOffset === undefined ? {} : { attachmentOffset }),
+      });
+      expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThanOrEqual(10_000);
+      const [message] = read.messages as Page[];
+      // Never more files than the run copies at once, so every listed path is copied.
+      expect(message!.attachments?.length ?? 0).toBeLessThanOrEqual(20);
+      seen.push(...(message!.attachments ?? []).map((file) => file.artifactId));
+      attachmentOffset = message!.nextAttachmentOffset;
+      if (attachmentOffset === undefined) break;
+    }
+    // Every file is reachable by paging, each listed once.
+    expect(seen.length).toBe(100);
+    expect(new Set(seen).size).toBe(100);
+    await pool.query("DELETE FROM messages WHERE id IN ('many-files','many-files-neighbor')");
+    await pool.query("DELETE FROM artifacts WHERE id LIKE 'many-%'");
   });
   it("does not index credential prompts or tool metadata", async () => {
     await pool.query(`INSERT INTO messages VALUES

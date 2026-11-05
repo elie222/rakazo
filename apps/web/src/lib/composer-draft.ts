@@ -1,5 +1,5 @@
 import type { ComposerMentionBinding } from "@rakazo/core";
-import { validateComposerMentionBindings } from "@rakazo/core";
+import { createKeyedListeners, validateComposerMentionBindings } from "@rakazo/core";
 
 export const COMPOSER_DRAFT_STORAGE_PREFIX = "rakazo.composerDraft.";
 const COMPOSER_BINDINGS_STORAGE_PREFIX = "rakazo.composerBindings.";
@@ -35,19 +35,26 @@ export function settleComposerDraftSubmission(
   for (const listener of acceptedListeners.get(threadKey) ?? []) listener(submission.text);
 }
 
-let unsavedWork = false;
+let sendingWork = false;
+let attachmentWork = false;
 
 /**
  * The shell reports work a reload would lose: a send (typed or spoken) until the server answers,
  * or picked attachments, which live only in memory.
  */
-export function setComposerUnsavedWork(pending: boolean): void {
-  unsavedWork = pending;
+export function setComposerUnsavedWork(work: { sending: boolean; attachments: boolean }): void {
+  sendingWork = work.sending;
+  attachmentWork = work.attachments;
 }
 
 /** A send waiting for its answer, or attachments that only exist in memory. */
 export function composerHoldsUnsavedWork(): boolean {
-  return pendingSubmissions.size > 0 || unsavedWork;
+  return composerHoldsWorkInFlight() || attachmentWork;
+}
+
+/** A send waiting for its answer. Unlike picked attachments, it finishes on its own. */
+export function composerHoldsWorkInFlight(): boolean {
+  return pendingSubmissions.size > 0 || sendingWork;
 }
 
 /** Unsaved composer work, or saved text in any composer that has not been sent. */
@@ -189,3 +196,14 @@ export function writeComposerDraft(
     // Quota or private-mode failures: the draft still lives in memory.
   }
 }
+
+/** The composer key for a chat: one bot's chat or a group's. */
+export function composerDraftKey(target: { botId: string } | { groupId: string }): string {
+  return "botId" in target ? `bot:${target.botId}` : `group:${target.groupId}`;
+}
+
+const composerOffers = createKeyedListeners<string>();
+
+/** Text a card in the chat hands to that chat's composer; the person still sends it. */
+export const offerComposerText = composerOffers.emit;
+export const subscribeComposerOffer = composerOffers.subscribe;

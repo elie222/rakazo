@@ -47,6 +47,8 @@ import {
   lazyCatalogTools,
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
+import { mcpToolAppResourceUri, readMcpApp } from "./mcp-app.js";
+import { closeMcpResource } from "./mcp-close.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import {
   accessTokenExpiresAt,
@@ -349,11 +351,15 @@ function credentialContentSecrets(content: string): string[] {
 
 /** Stop the process, then remove the credential files it was launched with. */
 async function closeEntry(entry: { session: McpSession; credentialDir?: string }): Promise<void> {
-  try {
-    await entry.session.close();
-  } finally {
-    if (entry.credentialDir) await rm(entry.credentialDir, { recursive: true, force: true });
-  }
+  await closeMcpResource(() =>
+    entry.session.close(async () => {
+      if (entry.credentialDir)
+        await rm(entry.credentialDir, { recursive: true, force: true }).catch(() => {
+          // Filesystem errors can include credential paths; report only the failure.
+          getLogger().warn("MCP credential file cleanup failed");
+        });
+    }),
+  );
 }
 
 export class McpConnector implements ConnectorProvider {
@@ -517,6 +523,7 @@ export class McpConnector implements ConnectorProvider {
                 resourceRevision: assignment.server.revision,
                 toolName: tool.name,
                 catalogGroup: assignment.server.slug,
+                appResourceUri: mcpToolAppResourceUri(tool),
               },
             }));
         } catch (error) {
@@ -693,6 +700,17 @@ export class McpConnector implements ConnectorProvider {
       });
       const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
       yield { type: "result", data: redactConnectorPayload(result, secrets) };
+      const app = await readMcpApp(
+        assignment.server.name,
+        call.withApp ? call.route.appResourceUri : undefined,
+        result,
+        (uri) =>
+          this.withSession(assignment.server, context, (session) =>
+            session.readResource(uri, { signal: context.signal }),
+          ),
+        secrets,
+      );
+      if (app) yield { type: "app", app };
     } catch (error) {
       // A thrown call means the transport or auth broke; drop the session so the next call reconnects.
       const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
@@ -1225,7 +1243,7 @@ export class McpConnector implements ConnectorProvider {
         } catch (error) {
           if (!authProvider || !isRejectedTokenError(error)) throw error;
           await authProvider.replaceRejectedToken();
-          await session.close();
+          await closeMcpResource(() => session.close());
           session = new McpSession({ name: `rakazo-${server.slug}` });
           await connect();
         }

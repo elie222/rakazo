@@ -12,6 +12,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
+import { batchActions, humanizeToolName } from "@rakazo/core";
 import {
   isInternalTermination,
   isTerminatingReplyResult,
@@ -21,10 +22,12 @@ import {
   connectionIdArgument,
   credentialArgument,
   loginFieldLabelsArgument,
+  oneTimeCodeArgument,
 } from "./bot-secrets.js";
 import { FIND_TOOL, findTools, partitionTools, USE_TOOL } from "./builtin-tool-bridge.js";
 import { shortenToolResultText } from "./context-selection.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
+import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
 import { clipToolResultContent, clipToolResultText } from "./pi-runtime-limits.js";
 import type { RuntimeModelTarget } from "./pi-runtime-models.js";
@@ -36,6 +39,7 @@ import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
 import { textContentArg } from "./tool-text.js";
 import { isVerbatimMcpResult } from "./verbatim-mcp-result.js";
+import { positiveIntegerArg } from "./workspace-file-tools.js";
 
 export interface ToolCallBudget {
   count: number;
@@ -115,6 +119,15 @@ function useToolAgentTool(
   };
 }
 
+/** Each tool's definition under the name the model calls it, as toAgentTools exposes it. */
+export function agentToolDefinitions(toolDefs: readonly ConnectorTool[]) {
+  const { listed, deferred } = partitionTools(toolDefs);
+  return new Map([
+    ...deferred.map((tool) => [tool.name, tool] as const),
+    ...namedAgentTools(listed).map(({ tool, name }) => [name, tool] as const),
+  ]);
+}
+
 /** Shared canonical mapping for checkpoint validation and runtime exposure. */
 export function namedAgentTools(toolDefs: readonly ConnectorTool[]) {
   // Registration order is incidental. Canonicalize before allocating collision suffixes
@@ -170,10 +183,41 @@ export function normalizeAgentToolName(name: string): string {
 
 const ACTIVITY_DETAIL_LIMIT = 90;
 
+const MAX_STEP_ACTIONS = 3;
+const STEP_ACTION_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+
+/**
+ * What a call's steps show: the actions a batch runs, else the tool's label. Empty when neither
+ * applies, so callers fall back to the tool name.
+ */
+export function connectorStepNames(tool: ConnectorTool | undefined, args: unknown): string[] {
+  const actions = batchStepActions(tool, args);
+  if (actions.length > 0) return actions;
+  return tool?.label ? [tool.label] : [];
+}
+
+/** The model writes these names, so show only a few that look like tool names. */
+function batchStepActions(tool: ConnectorTool | undefined, args: unknown): string[] {
+  if (!tool?.batch) return [];
+  const { actions, complete } = batchActions(tool.batch, args);
+  if (!complete || actions.length > MAX_STEP_ACTIONS) return [];
+  if (!actions.every((action) => STEP_ACTION_NAME.test(action))) return [];
+  return actions.map(humanizeToolName);
+}
+
 /** One human-readable line describing a tool call, shown live in the thread. */
-export function describeToolActivity(toolName: string, args: unknown): string {
+export function describeToolActivity(
+  toolName: string,
+  args: unknown,
+  findTool?: (name: string) => ConnectorTool | undefined,
+): string {
   const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
-  if (toolName === USE_TOOL) return describeToolActivity(String(record.name), record.arguments);
+  if (toolName === USE_TOOL)
+    return describeToolActivity(String(record.name), record.arguments, findTool);
+  const tool = findTool?.(toolName);
+  const actions = batchStepActions(tool, args);
+  if (actions.length > 0) return `Using ${actions.join(", ")}`;
+  if (tool?.label) return tool.label;
   if (toolName === FIND_TOOL) return "Finding a tool";
   const detail = (value: unknown): string => {
     const text = sanitizeSensitiveText(String(value ?? ""))
@@ -192,6 +236,9 @@ export function describeToolActivity(toolName: string, args: unknown): string {
   if (toolName === "attach_file") return `Attaching ${detail(record.path)}`;
   if (toolName === "open_path") return `Opening ${detail(record.path)}`;
   if (toolName === "render_plot") return "Rendering a chart";
+  if (toolName === "save_page") {
+    return record.help === true ? "Reading the page kit reference" : "Writing the page code";
+  }
   if (toolName === "add_mcp_server") return `Connecting MCP server: ${detail(record.name)}`;
   if (toolName === "computer_observe") return "Looking at the screen";
   if (toolName === "browser_navigate")
@@ -299,6 +346,7 @@ export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
     purpose,
     ...(connectionId ? { connectionId } : {}),
     ...(credential !== undefined ? { credential } : {}),
+    ...(raw.oneTimeCode !== undefined ? { oneTimeCode: oneTimeCodeArgument(raw.oneTimeCode) } : {}),
     ...(raw.replace === true ? { replace: true } : {}),
     ...(raw.fields != null ? { fields: loginFieldLabelsArgument(raw.fields) } : {}),
   };
@@ -317,8 +365,11 @@ function toAgentTool(
     // Pi runs a turn's tool calls concurrently by default, so a batch that
     // creates a routine and lists routines can read the list before the row
     // exists. Pi runs the whole batch in order when any call in it is
-    // sequential. Remember also needs this to avoid competing revision writes.
-    ...(SCHEDULE_TOOL_NAMES.has(tool.name) || tool.name === "remember"
+    // sequential. Remember also needs this to avoid competing revision writes, and request_secret
+    // so a sibling request cannot start after one pauses for its card and share its answer.
+    ...(SCHEDULE_TOOL_NAMES.has(tool.name) ||
+    tool.name === "remember" ||
+    tool.name === "request_secret"
       ? { executionMode: "sequential" as const }
       : {}),
     parameters: parametersFor(tool),
@@ -359,7 +410,18 @@ function toAgentTool(
         };
       }
       if (tool.name === "list_files") return { path: String(raw.path ?? "") };
-      if (tool.name === "read_file" || tool.name === "open_path") {
+      if (tool.name === "read_file") {
+        const offset = positiveIntegerArg(raw.offset);
+        const limit = positiveIntegerArg(raw.limit);
+        return {
+          path: String(raw.path ?? ""),
+          // Values that are not positive integers are dropped so one bad
+          // argument cannot fail the read; the executor revalidates.
+          ...(offset !== undefined ? { offset } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+        };
+      }
+      if (tool.name === "open_path") {
         return { path: String(raw.path ?? "") };
       }
       if (tool.name === "launch_app") {
@@ -399,7 +461,7 @@ function toAgentTool(
       if (tool.name === "create_space") {
         return { name: String(raw.name ?? "") };
       }
-      if (tool.name === "archive_bot" || tool.name === "delete_bot") {
+      if (tool.name === "archive_bot") {
         return {
           confirm_name: String(raw.confirm_name ?? raw.confirmName ?? ""),
           bot_id: raw.bot_id ? String(raw.bot_id) : raw.botId ? String(raw.botId) : "",
@@ -415,6 +477,12 @@ function toAgentTool(
         },
         async (span) => {
           host.signal.throwIfAborted();
+          if (
+            host.computerModeAllowed &&
+            COMPUTER_MODE_TOOLS.has(tool.name) &&
+            (host.depth !== 0 || !host.computerModeAllowed())
+          )
+            throw new Error("Enter top-level computer mode before using computer tools");
           const args = (params ?? {}) as Record<string, unknown>;
           const keepToolResultWhole = (name: string, callArgs: Record<string, unknown>) =>
             VERBATIM_TOOL_RESULTS.has(name) ||
@@ -521,7 +589,12 @@ function toAgentTool(
                 };
               }
               if (tool.name === FIND_TOOL) {
-                const found = findTools(deferred, args);
+                // Outside computer mode, screen tools are reached by entering it, not by search.
+                const findable =
+                  host.computerModeAllowed && (host.depth !== 0 || !host.computerModeAllowed())
+                    ? deferred.filter((candidate) => !COMPUTER_MODE_TOOLS.has(candidate.name))
+                    : deferred;
+                const found = findTools(findable, args);
                 return {
                   content: [{ type: "text", text: JSON.stringify(found) }],
                   details: found,
@@ -707,6 +780,7 @@ export interface ToolHost {
   queue: EventQueue;
   request: AgentRunRequest;
   activeModel: RuntimeModelTarget;
+  computerModeAllowed?: () => boolean;
   models: Models;
   model: Model<Api>;
   apiKey: string | undefined;

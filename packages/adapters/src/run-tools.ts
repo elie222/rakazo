@@ -3,6 +3,7 @@ import { toolResultTaintsRun } from "@rakazo/core";
 import { isTerminatingReplyResult } from "./approval-effect.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import type { RunContext } from "./run-context.js";
+import { noteComputerTaskStep } from "./run-progress.js";
 import type { ToolHandler } from "./run-tool-gate.js";
 import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
@@ -14,6 +15,7 @@ import { fleetTools } from "./run-tools-fleet.js";
 import { cloudAgentTool, connectorTool, integrationTools } from "./run-tools-integrations.js";
 import { memoryTools } from "./run-tools-memory.js";
 import { messagingTools } from "./run-tools-messaging.js";
+import { pageTools } from "./run-tools-pages.js";
 import { preferenceTools } from "./run-tools-preferences.js";
 import { purchaseTools } from "./run-tools-purchases.js";
 import { secretTools } from "./run-tools-secrets.js";
@@ -26,11 +28,13 @@ import {
   userComputerObserve,
   userComputerShell,
 } from "./run-tools-user-computer.js";
+import { strategicInitiativeToolAllowed } from "./strategic-initiative.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
 const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(computerTools),
   ...Object.entries(fileTools),
+  ...Object.entries(pageTools),
   ...Object.entries(memoryTools),
   ...Object.entries(integrationTools),
   ...Object.entries(taskTools),
@@ -78,6 +82,9 @@ async function dispatchTool(
   observer: AgentToolExecutionObserver | undefined,
 ) {
   ctx.context.signal.throwIfAborted();
+  if (!strategicInitiativeToolAllowed(name, ctx.run)) {
+    return { error: "Daily check-ins can only ask or message the user." };
+  }
   if (ctx.state.handedOff) {
     return {
       error: "This stage was handed off. End the turn without more tool calls.",
@@ -96,6 +103,7 @@ async function dispatchTool(
   if ("error" in request) return request;
   const refused = await prepareToolRequest(ctx, request);
   if (refused) return refused;
+  noteComputerTaskStep(ctx.state.reply, request.name);
   const gate = await gateToolCall(ctx, request, observer);
   if ("result" in gate) return gate.result;
   if (!gate.call.applied) return toolHandler(gate.call.name)(ctx, gate.call);

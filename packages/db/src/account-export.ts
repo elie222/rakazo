@@ -165,6 +165,7 @@ async function* spaceRecords(
       teamChatAmbientEnabled: bot.teamChatAmbientEnabled,
       teamChatRules: bot.teamChatRules,
       crossSpaceCommunication: bot.crossSpaceCommunication,
+      dailyCheckIns: bot.dailyCheckIns,
       fleetManagement: bot.fleetManagement,
       createdAt: iso(bot.createdAt),
     };
@@ -187,6 +188,42 @@ async function* spaceRecords(
       botIds: group.members.flatMap((member) => (botIds.has(member.botId) ? [member.botId] : [])),
       createdAt: iso(group.createdAt),
     };
+
+  for (let cursor = ""; ; ) {
+    const pages = await prisma.page.findMany({
+      where: { ...tenant, id: { gt: cursor } },
+      orderBy: { id: "asc" },
+      take: PAGE,
+    });
+    for (const page of pages) {
+      yield {
+        type: "page",
+        id: page.id,
+        botId: ownBot(page.botId),
+        groupId: ownGroup(page.groupId),
+        title: page.title,
+        pinnedAt: isoOrNull(page.pinnedAt),
+        currentVersion: page.currentVersion,
+        createdAt: iso(page.createdAt),
+        updatedAt: iso(page.updatedAt),
+      };
+      // A save landing after the page row was read stays out, so the archive matches its header.
+      for (let version = 0; ; ) {
+        const versions = await prisma.pageVersion.findMany({
+          where: { pageId: page.id, version: { gt: version, lte: page.currentVersion } },
+          orderBy: { version: "asc" },
+          take: PAGE,
+          select: { id: true, version: true, title: true, source: true, createdAt: true },
+        });
+        for (const row of versions)
+          yield { type: "page_version", ...row, pageId: page.id, createdAt: iso(row.createdAt) };
+        if (versions.length < PAGE) break;
+        version = versions.at(-1)!.version;
+      }
+    }
+    if (pages.length < PAGE) break;
+    cursor = pages.at(-1)!.id;
+  }
 
   const threadIds = new Set<string>();
   const ownThread = (id: string | null) => (id && threadIds.has(id) ? id : null);

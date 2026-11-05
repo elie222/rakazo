@@ -47,6 +47,6 @@ apps/web/src/locales/**/*.js
 apps/web/scripts/msgids.json
 playwright-report-www
 
-# Wuying Web SDK vendor files; fetch with node scripts/wuying-web-sdk.mjs
-apps/web/public/wuying/WuyingWebSDK.js
-apps/web/public/wuying/sdk/
+# Downloaded embedded computer screen SDK files
+apps/web/public/computer-screen/*.js
+apps/web/public/computer-screen/sdk/

@@ -1,0 +1,93 @@
+---
+import ArticleSections from "../../components/ArticleSections.astro";
+import ArticleText from "../../components/ArticleText.astro";
+import Button from "../../components/Button.astro";
+import ProviderCard from "../../components/ProviderCard.astro";
+import { ProviderScene } from "../../components/ProviderScene";
+import SiteFrame from "../../components/SiteFrame.astro";
+import { ogPublicPath } from "../../og-pages";
+import {
+  INTEGRATIONS_DOCS_PATH,
+  INTEGRATION_PLATFORMS,
+  INTEGRATION_PLATFORMS_HUB,
+  INTEGRATION_PLATFORMS_UPDATED,
+  integrationPlatformLink,
+  integrationPlatformPath,
+} from "../../integration-platforms";
+import { GITHUB_URL } from "../../site";
+---
+
+<SiteFrame
+  title={INTEGRATION_PLATFORMS_HUB.title}
+  description={INTEGRATION_PLATFORMS_HUB.description}
+  faq={INTEGRATION_PLATFORMS_HUB.faq}
+  ogImage={ogPublicPath("integration-platforms")}
+  markdownAlternate="/integration-platforms.md"
+>
+  <h1>{INTEGRATION_PLATFORMS_HUB.h1}</h1>
+  <p class="page-updated">Updated {INTEGRATION_PLATFORMS_UPDATED}.</p>
+  {INTEGRATION_PLATFORMS_HUB.intro.map((paragraph) => <p><ArticleText text={paragraph} /></p>)}
+
+  <ProviderScene {...INTEGRATION_PLATFORMS_HUB.scene} />
+
+  <h2>Compared</h2>
+
+  <div class="alt-table-wrap">
+    <table class="alt-table">
+      <caption class="sr-only">Integration platforms for AI agents compared</caption>
+      <thead>
+        <tr>
+          <th scope="col">Option</th>
+          <th scope="col">Gives bots</th>
+          <th scope="col">App logins</th>
+          <th scope="col">Best for</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          INTEGRATION_PLATFORMS.map((platform) => (
+            <tr>
+              <th scope="row">
+                <a href={integrationPlatformPath(platform.slug)}>{platform.name}</a>
+              </th>
+              <td>{platform.gives}</td>
+              <td>{platform.logins}</td>
+              <td>{platform.bestFor}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <ArticleSections sections={INTEGRATION_PLATFORMS_HUB.sections} />
+
+  <h2>Every option</h2>
+  <ul class="sandbox-cards">
+    {INTEGRATION_PLATFORMS.map((platform) => <ProviderCard link={integrationPlatformLink(platform)} />)}
+  </ul>
+
+  <h2>How to choose</h2>
+  {
+    INTEGRATION_PLATFORMS_HUB.choose.map((item) => (
+      <section>
+        <h3>{item.heading}</h3>
+        <p><ArticleText text={item.text} /></p>
+      </section>
+    ))
+  }
+  <div class="alt-actions">
+    <Button href={INTEGRATIONS_DOCS_PATH}>Tools and integrations guide</Button>
+    <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
+  </div>
+
+  <h2 id="faq">FAQ</h2>
+  {
+    INTEGRATION_PLATFORMS_HUB.faq.map((item, index) => (
+      <section aria-labelledby={`faq-${index}`}>
+        <h3 id={`faq-${index}`}>{item.question}</h3>
+        <p><ArticleText text={item.answer} /></p>
+      </section>
+    ))
+  }
+</SiteFrame>

@@ -35,7 +35,7 @@ export {
   userComputerAppName,
 };
 
-/** Whether the run's owner has their desktop connected, or paired but offline. */
+/** Whether the run's owner has their desktop connected, or could connect one. */
 export type UserComputerState = "connected" | "offline" | undefined;
 
 const USER_COMPUTER_UNAVAILABLE =
