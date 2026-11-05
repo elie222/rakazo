@@ -59,6 +59,8 @@ type RunOptions = {
   trigger?: string;
   taskPrompt?: string;
   taughtSkills?: Array<Record<string, unknown>>;
+  /** The bot is linked to its creator's chat app and may talk to other people's agents. */
+  chatLinkedBotOf?: string;
 };
 
 async function runInSpace(space: Space, options: RunOptions = {}) {
@@ -115,6 +117,9 @@ async function runInSpace(space: Space, options: RunOptions = {}) {
         computerSwitching: false,
         memoryScope: null,
         computer: { id: "computer-1", scope: "dedicated" },
+        ...(options.chatLinkedBotOf
+          ? { userId: options.chatLinkedBotOf, crossSpaceCommunication: true }
+          : {}),
       })),
       findMany: vi.fn(async () => []),
     },
@@ -192,6 +197,7 @@ async function runInSpace(space: Space, options: RunOptions = {}) {
     events: { append: vi.fn(async () => undefined), finalizeRun },
     jobs: { enqueue: vi.fn(async () => undefined) },
     secrets: [],
+    ...(options.chatLinkedBotOf ? { messaging: { hasIdentity: async () => true } } : {}),
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
   await executor.continueRun(run.id, "worker-1");
@@ -297,5 +303,18 @@ describe("skills in a shared space", () => {
     );
 
     expect(request.prompt).toContain("Forward the inbox.");
+  });
+});
+
+describe("agent connections in a shared space", () => {
+  const offered = (request: AgentRunRequest) =>
+    request.tools.some((tool) => tool.name === "connect_agent");
+
+  it("offers them only in runs of the person whose chat app the bot is linked to", async () => {
+    const own = await runInSpace({ members: 2, authors: true }, { chatLinkedBotOf: "user-b" });
+    const other = await runInSpace({ members: 2, authors: true }, { chatLinkedBotOf: "user-a" });
+
+    expect(offered(own.request)).toBe(true);
+    expect(offered(other.request)).toBe(false);
   });
 });

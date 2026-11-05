@@ -1408,8 +1408,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             userComputer: userComputer === "connected",
             userComputerScreen,
           }),
-          // Cross-owner agent connections only exist for chat-linked bots.
+          // Cross-owner agent connections only exist for chat-linked bots. The chat link is its
+          // creator's, and a connected agent's messages run as them, so only their runs may
+          // open, approve or use one.
           ...(hasMessagingIdentity &&
+          run.userId === bot.userId &&
           bot.crossSpaceCommunication === true &&
           !isBackgroundRunTrigger(run.trigger) &&
           run.trigger !== "created"
