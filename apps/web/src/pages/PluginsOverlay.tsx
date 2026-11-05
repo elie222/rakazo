@@ -99,7 +99,7 @@ function ConnectorIcon({ name, logo }: { name: string; logo?: string | null }) {
   );
 }
 
-type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
+type SourceKind = "executor" | "mcp" | "api" | "graphql";
 type OverlayView = "browse" | "manage" | "github" | "source" | "browseMcp" | "domain";
 
 const NO_CATALOG: ConnectionCatalogItem[] = [];
@@ -568,10 +568,10 @@ export function PluginsOverlay({
     setSourceKind(kind);
     setSourceError(null);
     setSourceHint(null);
-    setSourceName(kind === "treg" ? "Treg" : kind === "executor" ? "Executor" : "");
-    setSourceUrl(kind === "treg" ? "https://treg.to/mcp/" : "");
+    setSourceName(kind === "executor" ? "Executor" : "");
+    setSourceUrl("");
     setCredential("");
-    setAuthType(kind === "treg" || kind === "executor" ? "bearer" : "none");
+    setAuthType(kind === "executor" ? "bearer" : "none");
     setAuthName("x-api-key");
   }
 
@@ -620,29 +620,25 @@ export function PluginsOverlay({
         ...(authType === "header" ? { name: authName.trim() } : {}),
       };
       await rpc.capabilities.install({
-        kind: sourceKind === "treg" || sourceKind === "executor" ? "mcp" : sourceKind,
+        kind: sourceKind === "executor" ? "mcp" : sourceKind,
         name:
           sourceName.trim() ||
-          (sourceKind === "treg"
-            ? "Treg"
-            : sourceKind === "executor"
-              ? "Executor"
-              : sourceKind === "graphql"
-                ? "GraphQL"
-                : "Custom connector"),
+          (sourceKind === "executor"
+            ? "Executor"
+            : sourceKind === "graphql"
+              ? "GraphQL"
+              : "Custom connector"),
         source: sourceUrl.trim(),
         credential: credential.trim() || undefined,
         config:
-          sourceKind === "treg"
-            ? { preset: "treg", auth: { type: "bearer" } }
-            : sourceKind === "api"
-              ? { openApi: true, auth }
-              : sourceKind === "graphql"
-                ? { auth }
-                : {
-                    preset: "custom",
-                    auth: sourceKind === "executor" ? { type: "bearer" } : auth,
-                  },
+          sourceKind === "api"
+            ? { openApi: true, auth }
+            : sourceKind === "graphql"
+              ? { auth }
+              : {
+                  preset: "custom",
+                  auth: sourceKind === "executor" ? { type: "bearer" } : auth,
+                },
       });
       setCredential("");
       setSourceKind(null);
@@ -1024,7 +1020,6 @@ export function PluginsOverlay({
           <DropdownMenuItem onClick={() => beginSource("api")}>OpenAPI</DropdownMenuItem>
           <DropdownMenuItem onClick={() => beginSource("graphql")}>GraphQL</DropdownMenuItem>
           <DropdownMenuItem onClick={() => beginSource("executor")}>Executor</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => beginSource("treg")}>Treg</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => openAddView("browseMcp")}>
             <Trans>Browse MCP servers</Trans>
@@ -1102,13 +1097,11 @@ export function PluginsOverlay({
 
   function renderSourceForm() {
     if (!sourceKind) return null;
-    const custom = sourceKind !== "treg" && sourceKind !== "executor";
+    const custom = sourceKind !== "executor";
     return (
       <div data-testid="integrations-source-form" className="max-w-xl space-y-6">
         {renderViewTitle(
-          sourceKind === "treg" ? (
-            "Treg"
-          ) : sourceKind === "executor" ? (
+          sourceKind === "executor" ? (
             "Executor"
           ) : sourceKind === "mcp" ? (
             <Trans>MCP server</Trans>
@@ -1137,25 +1130,23 @@ export function PluginsOverlay({
               autoFocus
             />
           </Field>
-          {sourceKind !== "treg" ? (
-            <Field>
-              <FieldLabel htmlFor="source-url">URL</FieldLabel>
-              <Input
-                id="source-url"
-                value={sourceUrl}
-                onChange={(event) => setSourceUrl(event.target.value)}
-                placeholder={
-                  sourceKind === "mcp"
-                    ? "https://example.com/mcp"
-                    : sourceKind === "executor"
-                      ? "https://executor.example/mcp"
-                      : sourceKind === "graphql"
-                        ? "https://example.com/graphql"
-                        : "https://example.com/openapi.json"
-                }
-              />
-            </Field>
-          ) : null}
+          <Field>
+            <FieldLabel htmlFor="source-url">URL</FieldLabel>
+            <Input
+              id="source-url"
+              value={sourceUrl}
+              onChange={(event) => setSourceUrl(event.target.value)}
+              placeholder={
+                sourceKind === "mcp"
+                  ? "https://example.com/mcp"
+                  : sourceKind === "executor"
+                    ? "https://executor.example/mcp"
+                    : sourceKind === "graphql"
+                      ? "https://example.com/graphql"
+                      : "https://example.com/openapi.json"
+              }
+            />
+          </Field>
           {custom ? (
             <Field>
               <FieldLabel htmlFor="source-auth">
@@ -1194,9 +1185,7 @@ export function PluginsOverlay({
           {!custom || authType !== "none" ? (
             <Field>
               <FieldLabel htmlFor="source-credential">
-                {sourceKind === "treg" ? (
-                  <Trans>Treg token</Trans>
-                ) : sourceKind === "executor" ? (
+                {sourceKind === "executor" ? (
                   <Trans>Executor token</Trans>
                 ) : (
                   <Trans>Credential</Trans>

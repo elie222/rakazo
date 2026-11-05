@@ -221,10 +221,6 @@ export function mcpRoutes(ctx: RouterContext) {
         }
         try {
           if (input.kind === "mcp") {
-            if (config.preset === "treg") {
-              source = "https://treg.to/mcp/";
-              config = { ...config, preset: "treg", auth: { type: "bearer" } };
-            }
             const verified = await verifyMcpInstall({
               source,
               config,

@@ -34,11 +34,14 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "skill_read",
   "web_search",
   "web_fetch",
+  "service_search",
   "browser_snapshot",
   "list_secrets",
   "cloud_agent_status",
   "purchase_status",
 ]);
+
+const PAID_SERVICE_TOOL_NAMES = new Set(["service_search", "service_call"]);
 
 /** Offered only to a user who connected a wallet. */
 const PURCHASE_TOOL_NAMES = new Set(["request_purchase", "purchase_status", "paid_request"]);
@@ -74,6 +77,8 @@ export function selectBuiltinToolsForRun(options: {
   paymentWalletEnabled?: boolean;
   mediaImagesEnabled?: boolean;
   mediaVideoEnabled?: boolean;
+  /** The deployment configured paid data services. */
+  paidServicesEnabled?: boolean;
   messagingChannelRun: boolean;
   /** Hanging up is only offered to a turn the caller spoke on a live call. */
   voiceCall?: boolean;
@@ -115,6 +120,7 @@ export function selectBuiltinToolsForRun(options: {
       (options.paymentWalletEnabled || !PURCHASE_TOOL_NAMES.has(tool.name)) &&
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&
       (options.mediaVideoEnabled || tool.name !== "generate_video") &&
+      (options.paidServicesEnabled || !PAID_SERVICE_TOOL_NAMES.has(tool.name)) &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
       (!isBackgroundRunTrigger(options.trigger) ||

@@ -6792,10 +6792,6 @@ msgstr ""
 msgid "Treat like a person"
 msgstr "視為真人"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "Treg 權杖"
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"
 msgstr "試用"

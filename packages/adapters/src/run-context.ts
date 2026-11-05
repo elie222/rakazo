@@ -4,6 +4,7 @@ import type {
   ComputerRef,
   ConnectorTool,
   MediaGenerationProvider,
+  PaidServiceProvider,
   SandboxProvider,
   SemanticMemoryProvider,
   WebProvider,
@@ -252,6 +253,7 @@ export type RunTrust = ReturnType<typeof createRunTrustLoaders> & {
 export interface RunProviders {
   web: WebProvider;
   mediaGeneration: MediaGenerationProvider | undefined;
+  paidServices: PaidServiceProvider | undefined;
   browser: BrowserProvider;
   cloudAgent: ExecutorDeps["cloudAgent"];
 }

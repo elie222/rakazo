@@ -80,7 +80,7 @@ import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 type SourceAuth = "none" | "bearer" | "header" | "oauth";
-type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
+type SourceKind = "executor" | "mcp" | "api" | "graphql";
 type ConnectionTool = RpcOutput<"connections/tools">[number];
 
 const LOGO_SIZE = 32;
@@ -884,10 +884,10 @@ export default function Integrations() {
     setAdding("source");
     setSourceKind(kind);
     setSourceError(null);
-    setName(kind === "treg" ? "Treg" : kind === "executor" ? "Executor" : "");
-    setUrl(kind === "treg" ? "https://treg.to/mcp/" : "");
+    setName(kind === "executor" ? "Executor" : "");
+    setUrl("");
     setCredential("");
-    setSourceAuth(kind === "treg" || kind === "executor" ? "bearer" : "none");
+    setSourceAuth(kind === "executor" ? "bearer" : "none");
     setAuthHeader("x-api-key");
   }
 
@@ -921,13 +921,11 @@ export default function Integrations() {
     setSourceError(null);
     const displayName =
       name.trim() ||
-      (sourceKind === "treg"
-        ? "Treg"
-        : sourceKind === "executor"
-          ? "Executor"
-          : sourceKind === "graphql"
-            ? "GraphQL"
-            : t("Custom connector"));
+      (sourceKind === "executor"
+        ? "Executor"
+        : sourceKind === "graphql"
+          ? "GraphQL"
+          : t("Custom connector"));
     const auth =
       sourceAuth === "header"
         ? { type: "header", name: authHeader.trim() }
@@ -945,18 +943,16 @@ export default function Integrations() {
         setOauthServerId(created.id);
       } else {
         await rpc("capabilities/install", {
-          kind: sourceKind === "treg" || sourceKind === "executor" ? "mcp" : sourceKind,
+          kind: sourceKind === "executor" ? "mcp" : sourceKind,
           name: displayName,
           source: url.trim(),
           credential: (sourceAuth !== "none" && credential.trim()) || undefined,
           config:
-            sourceKind === "treg"
-              ? { preset: "treg", auth: { type: "bearer" } }
-              : sourceKind === "api"
-                ? { openApi: true, auth }
-                : sourceKind === "graphql"
-                  ? { auth }
-                  : { preset: "custom", auth },
+            sourceKind === "api"
+              ? { openApi: true, auth }
+              : sourceKind === "graphql"
+                ? { auth }
+                : { preset: "custom", auth },
         });
         if (!isCurrent()) return;
       }
@@ -1161,7 +1157,6 @@ export default function Integrations() {
     { id: "api", label: "OpenAPI" },
     { id: "graphql", label: "GraphQL" },
     { id: "executor", label: "Executor" },
-    { id: "treg", label: "Treg" },
   ];
 
   function startAdding(id: "github" | SourceKind) {
@@ -1252,15 +1247,13 @@ export default function Integrations() {
         {adding === "source" && sourceKind ? (
           <View style={styles.card}>
             <Text style={styles.title}>
-              {sourceKind === "treg"
-                ? t("Connect Treg")
-                : sourceKind === "executor"
-                  ? t("Connect Executor")
-                  : sourceKind === "mcp"
-                    ? t("Remote MCP server")
-                    : sourceKind === "graphql"
-                      ? t("GraphQL endpoint")
-                      : t("OpenAPI JSON")}
+              {sourceKind === "executor"
+                ? t("Connect Executor")
+                : sourceKind === "mcp"
+                  ? t("Remote MCP server")
+                  : sourceKind === "graphql"
+                    ? t("GraphQL endpoint")
+                    : t("OpenAPI JSON")}
             </Text>
             <TextInput
               value={name}
@@ -1269,26 +1262,24 @@ export default function Integrations() {
               placeholderTextColor={native.tertiaryLabel}
               style={styles.input}
             />
-            {sourceKind !== "treg" ? (
-              <TextInput
-                value={url}
-                onChangeText={setUrl}
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder={
-                  sourceKind === "mcp"
-                    ? t("https://example.com/mcp")
-                    : sourceKind === "executor"
-                      ? t("https://executor.example/mcp")
-                      : sourceKind === "graphql"
-                        ? t("https://example.com/graphql")
-                        : t("https://example.com/openapi.json")
-                }
-                placeholderTextColor={native.tertiaryLabel}
-                style={styles.input}
-              />
-            ) : null}
-            {sourceKind !== "treg" && sourceKind !== "executor" ? (
+            <TextInput
+              value={url}
+              onChangeText={setUrl}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder={
+                sourceKind === "mcp"
+                  ? t("https://example.com/mcp")
+                  : sourceKind === "executor"
+                    ? t("https://executor.example/mcp")
+                    : sourceKind === "graphql"
+                      ? t("https://example.com/graphql")
+                      : t("https://example.com/openapi.json")
+              }
+              placeholderTextColor={native.tertiaryLabel}
+              style={styles.input}
+            />
+            {sourceKind !== "executor" ? (
               <MenuPicker
                 label={t("Authentication")}
                 plain
@@ -1322,13 +1313,11 @@ export default function Integrations() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 placeholder={
-                  sourceKind === "treg"
-                    ? t("Treg token")
-                    : sourceKind === "executor"
-                      ? t("Executor token")
-                      : sourceAuth === "header"
-                        ? t("API key")
-                        : t("Bearer token")
+                  sourceKind === "executor"
+                    ? t("Executor token")
+                    : sourceAuth === "header"
+                      ? t("API key")
+                      : t("Bearer token")
                 }
                 placeholderTextColor={native.tertiaryLabel}
                 style={styles.input}

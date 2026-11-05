@@ -11,6 +11,7 @@ import type {
   MediaGenerationProvider,
   MemoryStore,
   NotificationProvider,
+  PaidServiceProvider,
   PaymentWalletProvider,
   SandboxProvider,
   SecretStore,
@@ -63,6 +64,7 @@ export interface ExecutorDeps {
   /** Builtin web_search / web_fetch. Defaults to keyless HTTP when omitted. */
   web?: WebProvider;
   mediaGeneration?: MediaGenerationProvider;
+  paidServices?: PaidServiceProvider;
   /** Page browser (DOM refs) on the bot computer. Defaults to the sandbox live browser when supported. */
   browser?: BrowserProvider;
   secretHttp?: RemoteTransportDependencies;

@@ -129,6 +129,7 @@ import {
 } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
 import { usesNativeShell } from "./native-shell.js";
+import { createPaidServiceProvider } from "./paid-services-factory.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { isRetiredModelCredentialError } from "./pi-oauth.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
@@ -265,6 +266,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
   const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
   const web = executorDeps.web ?? createWebProvider();
   const mediaGeneration = executorDeps.mediaGeneration ?? createMediaGenerationProvider();
+  const paidServices = executorDeps.paidServices ?? createPaidServiceProvider();
   const browser =
     executorDeps.browser ?? createBrowserProvider(undefined, { sandbox: executorDeps.sandbox });
   const cloudAgent = executorDeps.cloudAgent;
@@ -1370,6 +1372,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             semanticMemoryForgets: Boolean(semanticMemory?.forget),
             mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
+            paidServicesEnabled: Boolean(paidServices),
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
@@ -1528,7 +1531,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
         const ctx: RunContext = {
           deps,
-          providers: { web, mediaGeneration, browser, cloudAgent },
+          providers: { web, mediaGeneration, paidServices, browser, cloudAgent },
           run,
           runId,
           workerId,

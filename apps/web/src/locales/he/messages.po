@@ -6791,10 +6791,6 @@ msgstr ""
 msgid "Treat like a person"
 msgstr "התייחסות כמו לאדם"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "טוקן Treg"
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"
 msgstr "תקופת ניסיון"

@@ -8,9 +8,11 @@ import { connectApp } from "./connect-app.js";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { mcpAppViewArguments, mcpAppViewResult } from "./mcp-app.js";
 import { addMcpServerFromTool } from "./mcp-server-tool.js";
+import { serviceCallFromTool, serviceSearchFromTool } from "./paid-service-tools.js";
 import type { RunContext } from "./run-context.js";
 import { runScopedToolExecutionId } from "./run-effects.js";
 import { publishMessage } from "./run-messages.js";
+import { modelCreditBillingEnabled } from "./run-model.js";
 import { flushProgress, publishMidTurnNarration, showNarrationStatus } from "./run-progress.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { storeMcpAppHtml } from "./thread-artifacts.js";
@@ -144,6 +146,32 @@ export const integrationTools: ToolHandlers = {
     const { context } = ctx;
     const { args } = call;
     return call.finish(await webFetchFromTool(ctx.providers.web, context, args));
+  },
+  async service_search(ctx, call) {
+    const provider = ctx.providers.paidServices;
+    if (!provider) return call.finish({ error: "Paid services are unavailable." });
+    return call.finish(
+      await serviceSearchFromTool(
+        provider,
+        ctx.context,
+        call.args,
+        await modelCreditBillingEnabled(ctx.deps),
+      ),
+    );
+  },
+  async service_call(ctx, call) {
+    const { deps, run, bot, context } = ctx;
+    const provider = ctx.providers.paidServices;
+    if (!provider) return call.finish({ error: "Paid services are unavailable." });
+    return call.finish(
+      await serviceCallFromTool(
+        { prisma: deps.prisma, provider, billing: await modelCreditBillingEnabled(deps) },
+        { userId: run.userId, spaceId: run.spaceId, runId: run.id, botId: bot.id },
+        call.args,
+        call.effectKey,
+        context,
+      ),
+    );
   },
   async add_mcp_server(ctx, call) {
     const { deps, run, bot } = ctx;
