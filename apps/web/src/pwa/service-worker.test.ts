@@ -132,6 +132,16 @@ describe("service worker", () => {
     await expect(sw.fetch("/instance-theme/font/0.woff2")).rejects.toThrow("offline");
   });
 
+  it("falls back to the previous version's theme on an offline reload after an update", async () => {
+    network = async () => {
+      throw new TypeError("offline");
+    };
+    const sw = setup();
+    const previous = await sw.scope.caches.open("rakazo-shell-20261022100000");
+    await previous.put(`${ORIGIN}/instance-theme.css`, new Response("theme from last build"));
+    expect(await (await sw.fetch("/instance-theme.css"))!.text()).toBe("theme from last build");
+  });
+
   it("caches lazy assets as they load, but not an HTML fallback", async () => {
     network = async (request) =>
       request.url.endsWith("missing.js")

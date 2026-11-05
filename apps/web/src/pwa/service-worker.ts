@@ -107,10 +107,22 @@ export function installServiceWorker(
       }
       return response;
     } catch (error) {
-      const cached = await cache.match(event.request);
+      const cached = await cachedAnywhere(event.request);
       if (cached) return cached;
       throw error;
     }
+  }
+
+  /** The current shell cache first, then the previous one activation keeps for open tabs. */
+  async function cachedAnywhere(request: Request): Promise<Response | undefined> {
+    const cached = await (await scope.caches.open(cacheName)).match(request);
+    if (cached) return cached;
+    for (const name of await scope.caches.keys()) {
+      if (!name.startsWith(CACHE_PREFIX) || name === cacheName) continue;
+      const previous = await (await scope.caches.open(name)).match(request);
+      if (previous) return previous;
+    }
+    return undefined;
   }
 
   async function navigate(request: Request): Promise<Response> {
@@ -145,14 +157,9 @@ export function installServiceWorker(
   }
 
   async function cacheFirst(event: FetchEvent, pathname: string): Promise<Response> {
-    const cache = await scope.caches.open(cacheName);
-    const cached = await cache.match(event.request);
+    const cached = await cachedAnywhere(event.request);
     if (cached) return cached;
-    for (const name of await scope.caches.keys()) {
-      if (!name.startsWith(CACHE_PREFIX) || name === cacheName) continue;
-      const previous = await (await scope.caches.open(name)).match(event.request);
-      if (previous) return previous;
-    }
+    const cache = await scope.caches.open(cacheName);
     const response = await scope.fetch(event.request);
     // A missing chunk can come back as the SPA's HTML; never store that as an asset.
     const html = response.headers.get("content-type")?.includes("text/html") ?? false;
