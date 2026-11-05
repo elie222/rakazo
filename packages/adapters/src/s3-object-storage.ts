@@ -1,4 +1,7 @@
-import type { Readable } from "node:stream";
+import { Agent as HttpAgent } from "node:http";
+import { Agent as HttpsAgent } from "node:https";
+import type { Socket } from "node:net";
+import type { Duplex, Readable } from "node:stream";
 import type * as S3Sdk from "@aws-sdk/client-s3";
 import type { ObjectStorage } from "@rakazo/adapter-kit";
 
@@ -6,12 +9,60 @@ import type { ObjectStorage } from "@rakazo/adapter-kit";
 const PART_BYTES = 16 * 1024 * 1024;
 const DELETE_BATCH = 1000;
 /**
- * The SDK waits forever by default, so a store that accepts a connection and then stops
- * answering would keep each computer's sleep job, and the maintenance slot it holds, waiting
- * for good. The idle limit counts inactivity, not duration: a large upload keeps its socket busy.
+ * The SDK waits forever by default, and its own socket limit stops once response headers arrive,
+ * so a store that stops answering, before or during a body, would keep each computer's sleep job,
+ * and the maintenance slot it holds, waiting for good. Sockets therefore fail after this long
+ * without traffic, from connect to the end of the body. It counts inactivity, not duration: a
+ * large transfer keeps its socket busy.
  */
-const CONNECT_TIMEOUT_MS = 10_000;
 const IDLE_SOCKET_TIMEOUT_MS = 60_000;
+/** The SDK's own default per origin. */
+const MAX_SOCKETS = 50;
+
+function failWhenIdle<T extends Duplex | null | undefined>(socket: T, idleMs: number): T {
+  let waitedOnReader = false;
+  socket?.on("timeout", () => {
+    const tcp = socket as unknown as Socket;
+    // A reader that stopped pulling (backpressure) paused the socket; the store is not stalled.
+    // Once it pulls again, the store gets a full period before silence counts, so a stall is
+    // caught within twice the limit.
+    if (tcp.isPaused() || waitedOnReader) {
+      waitedOnReader = tcp.isPaused();
+      tcp.setTimeout(idleMs);
+      return;
+    }
+    tcp.destroy(
+      Object.assign(new Error(`Object storage sent nothing for ${idleMs} ms`), {
+        code: "ETIMEDOUT",
+      }),
+    );
+  });
+  return socket;
+}
+
+/**
+ * Connection options for the S3 client. The idle limit starts when a socket exists, so a request
+ * waiting for one of the pooled sockets is never failed for the wait, and it also bounds connecting.
+ */
+export function objectStorageRequestHandler(idleMs = IDLE_SOCKET_TIMEOUT_MS) {
+  const options = { keepAlive: true, maxSockets: MAX_SOCKETS, timeout: idleMs };
+  class IdleHttpAgent extends HttpAgent {
+    override createConnection(...args: Parameters<HttpAgent["createConnection"]>) {
+      return failWhenIdle(super.createConnection(...args), idleMs);
+    }
+  }
+  class IdleHttpsAgent extends HttpsAgent {
+    override createConnection(...args: Parameters<HttpsAgent["createConnection"]>) {
+      return failWhenIdle(super.createConnection(...args), idleMs);
+    }
+  }
+  return {
+    httpAgent: new IdleHttpAgent(options),
+    httpsAgent: new IdleHttpsAgent(options),
+    // Left unset, the SDK turns the socket's limit off once a request has waited 3 s for headers.
+    socketTimeout: idleMs,
+  };
+}
 
 export interface S3ObjectStorageConfig {
   bucket: string;
@@ -86,10 +137,7 @@ export class S3ObjectStorage implements ObjectStorage {
           // accepts the newer optional ones.
           requestChecksumCalculation: "WHEN_REQUIRED",
           responseChecksumValidation: "WHEN_REQUIRED",
-          requestHandler: {
-            connectionTimeout: CONNECT_TIMEOUT_MS,
-            socketTimeout: IDLE_SOCKET_TIMEOUT_MS,
-          },
+          requestHandler: objectStorageRequestHandler(),
         }),
     }));
     return this.s3;
