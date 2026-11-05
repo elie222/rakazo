@@ -1090,12 +1090,23 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       token: await invite({ ...leaver, actor: inSpace(leaver.actor, guestsOnly) }, guestsOnly),
     });
 
+    const before = await call(inSpace(leaver.actor, shared), "bots/create", { name: "Planner" });
+    expect(before.status).toBe(200);
+
     await prepareAccountDeletion(prisma, leaver.id);
     await expect(
       system.spaceMember.findUnique({
         where: { spaceId_userId: { spaceId: shared, userId: teammate.id } },
       }),
     ).resolves.toMatchObject({ role: "owner" });
+    // The new owner's bots keep using the Space's one Team Computer.
+    const after = await call(inSpace(teammate.actor, shared), "bots/create", { name: "Shopper" });
+    expect(after.status).toBe(200);
+    const computers = await system.bot.findMany({
+      where: { id: { in: [before.json.id as string, after.json.id as string] } },
+      select: { computerId: true },
+    });
+    expect(new Set(computers.map((bot) => bot.computerId)).size).toBe(1);
     const { spaceIds } = await claimSpacesLeavingWithAccount(prisma, leaver.id);
     expect(spaceIds).toContain(guestsOnly);
     expect(spaceIds).not.toContain(shared);

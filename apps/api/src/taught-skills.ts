@@ -175,6 +175,14 @@ async function grantTakeover(
   until: Date,
 ): Promise<{ bot: typeof bot; leaseId: string }> {
   if (!bot.computer) throw new IsolationError();
+  // The computer was read again after start's check, so someone may have taken it since.
+  if (
+    bot.computer.controlHolder === "user" &&
+    hasActiveComputerControl(bot.computer) &&
+    !holdsUserControl(bot.computer, actor.userId)
+  ) {
+    throw new ORPCError("CONFLICT", { message: "Someone else is using this computer" });
+  }
   if (await extendActiveComputerControl(deps.prisma, deps.jobs, bot.computer, bot.id, until)) {
     const leaseId = bot.computer.controlLeaseId;
     if (!leaseId) throw new IsolationError();
@@ -186,7 +194,15 @@ async function grantTakeover(
     where: {
       id: bot.computer.id,
       state: "running",
-      OR: [{ controlHolder: { not: "user" } }, { controlBotId: bot.id }],
+      // Never another person's live lease, even one taken after the check above.
+      OR: [
+        { controlHolder: { not: "user" } },
+        { controlLeaseExpiresAt: { lte: new Date() } },
+        {
+          controlBotId: bot.id,
+          OR: [{ controlUserId: actor.userId }, { controlUserId: null, userId: actor.userId }],
+        },
+      ],
     },
     data: {
       controlHolder: "user",

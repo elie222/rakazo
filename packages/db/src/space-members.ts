@@ -323,7 +323,11 @@ export async function removeSpaceMember(
   if (input.memberUserId === input.userId || isOwnerRole(target.role)) {
     throw new CannotRemoveSpaceOwnerError();
   }
-  return departSpace(prisma, { spaceId: input.spaceId, userId: input.memberUserId });
+  return departSpace(prisma, {
+    spaceId: input.spaceId,
+    userId: input.memberUserId,
+    removedBy: input.userId,
+  });
 }
 
 /** Members only; an owner deletes the space instead. */
@@ -387,8 +391,11 @@ export async function prepareAccountDeletion(
  * deleted. Their organization membership goes too once no Space there is left.
  * Their unfinished runs there are cancelled: those run with their accounts.
  */
-async function departSpace(prisma: PrismaClient, input: SpaceRef): Promise<SpaceDeparture> {
-  const { spaceId, userId } = input;
+async function departSpace(
+  prisma: PrismaClient,
+  input: SpaceRef & { removedBy?: string },
+): Promise<SpaceDeparture> {
+  const { spaceId, userId, removedBy } = input;
   // Bots, routines and credentials are tenant rows; this moves them between people.
   return runAsSystem("move a departing member's Space content to its owner", () =>
     withTransactionRetry(() =>
@@ -397,7 +404,7 @@ async function departSpace(prisma: PrismaClient, input: SpaceRef): Promise<Space
           await lockSpaceDeletion(tx, spaceId);
           const departing = await tx.spaceMember.findUnique({
             where: { spaceId_userId: { spaceId, userId } },
-            select: { id: true, organizationId: true },
+            select: { id: true, organizationId: true, role: true },
           });
           if (!departing) throw new SpaceMemberNotFoundError();
           const owners = await tx.spaceMember.findMany({
@@ -405,6 +412,12 @@ async function departSpace(prisma: PrismaClient, input: SpaceRef): Promise<Space
             select: { userId: true, role: true },
             orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           });
+          // A removal checks the remover again under the lock: ownership may have moved since.
+          if (removedBy !== undefined) {
+            const remover = owners.find((member) => member.userId === removedBy);
+            if (!remover || !isOwnerRole(remover.role)) throw new SpaceOwnerRequiredError();
+            if (isOwnerRole(departing.role)) throw new CannotRemoveSpaceOwnerError();
+          }
           const ownerId = owners.find((member) => isOwnerRole(member.role))?.userId;
           if (!ownerId) throw new CannotRemoveSpaceOwnerError();
 
@@ -460,17 +473,25 @@ async function departSpace(prisma: PrismaClient, input: SpaceRef): Promise<Space
           await tx.chatGroup.updateMany(reassign);
           // Their computers go with the bots, so the computer limit counts them for the owner.
           await tx.computer.updateMany(reassign);
-          // A team computer is found by its person; retire that key so someone who rejoins
-          // gets a computer of their own. The home key, and with it the files, stays.
+          // A team computer is found by its person. A departing owner's is the Space's one Team
+          // Computer, so it is found by the next owner's key from now on; any other is retired
+          // so someone who rejoins starts fresh. The home key, and with it the files, stays.
           // Dedicated computers are found by their bot, so their key stays as it is.
           const teamComputer = await tx.computer.findUnique({
             where: { scopeKey: computerScopeKey({ mode: "team", spaceId, userId }) },
             select: { id: true },
           });
           if (teamComputer) {
+            const ownerKey = computerScopeKey({ mode: "team", spaceId, userId: ownerId });
+            const keepsSpaceComputer =
+              isOwnerRole(departing.role) &&
+              !(await tx.computer.findUnique({
+                where: { scopeKey: ownerKey },
+                select: { id: true },
+              }));
             await tx.computer.update({
               where: { id: teamComputer.id },
-              data: { scopeKey: `transferred:${teamComputer.id}` },
+              data: { scopeKey: keepsSpaceComputer ? ownerKey : `transferred:${teamComputer.id}` },
             });
           }
           // Paused: the owner's accounts must not start running someone else's prompt unasked.
