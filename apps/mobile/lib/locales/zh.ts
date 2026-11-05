@@ -1,4 +1,5 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  Haptics: "触感反馈",
   "Add rule": "添加规则",
   "Tool name": "工具名称",
   Address: "地址",

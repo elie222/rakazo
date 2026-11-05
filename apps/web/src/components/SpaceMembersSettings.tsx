@@ -202,12 +202,12 @@ export function SpaceMembersSettings({
             ))}
           </ul>
         ) : (
-          <p className="px-4 py-3 text-[13px] text-muted-foreground">
+          <p className="px-4 py-3 text-body-sm text-muted-foreground">
             {error ?? <Trans>Loading…</Trans>}
           </p>
         )}
       </SettingsGroup>
-      {members && error ? <p className="px-1 text-[13px] text-destructive">{error}</p> : null}
+      {members && error ? <p className="px-1 text-body-sm text-destructive">{error}</p> : null}
       {canManage && inviteUrl ? (
         <InputGroup>
           <InputGroupInput
@@ -244,7 +244,7 @@ export function SpaceMembersSettings({
                 )}
               </AlertDialogTitle>
             </AlertDialogHeader>
-            {confirmError ? <p className="text-[13.5px] text-destructive">{confirmError}</p> : null}
+            {confirmError ? <p className="text-body-sm text-destructive">{confirmError}</p> : null}
             <AlertDialogFooter>
               <AlertDialogCancel disabled={confirming}>
                 <Trans>Cancel</Trans>
@@ -273,7 +273,7 @@ function MemberRow({ member, onRemove }: { member: SpaceMember; onRemove?: () =>
     <li className="flex items-center gap-3 px-4 py-3">
       <span
         aria-hidden="true"
-        className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-border bg-muted text-sm font-medium text-foreground"
+        className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-border bg-muted text-body font-medium text-foreground"
       >
         {display.image && failedImage !== display.image ? (
           <img
@@ -288,7 +288,7 @@ function MemberRow({ member, onRemove }: { member: SpaceMember; onRemove?: () =>
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate text-[14px] text-foreground">{display.label}</span>
+          <span className="truncate text-body text-foreground">{display.label}</span>
           {member.role === "owner" ? (
             <Badge variant="secondary">
               <Trans>Owner</Trans>
@@ -296,7 +296,7 @@ function MemberRow({ member, onRemove }: { member: SpaceMember; onRemove?: () =>
           ) : null}
         </div>
         {display.label !== member.email ? (
-          <p className="truncate text-[13px] text-muted-foreground">{member.email}</p>
+          <p className="truncate text-body-sm text-muted-foreground">{member.email}</p>
         ) : null}
       </div>
       {onRemove ? (

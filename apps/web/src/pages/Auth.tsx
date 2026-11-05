@@ -24,9 +24,10 @@ import { WindowChrome } from "./WindowChrome";
 
 type AuthMode = "in" | "up" | "forgot";
 
-const fieldClass = "mt-2 h-12 rounded-xl px-4 text-base md:text-base";
+// off-scale: 16px below md stops iOS Safari zooming into a focused field.
+const fieldClass = "mt-2 h-12 rounded-xl px-4 text-[16px]/6 md:text-body-lg";
 const CODE_LENGTH = 6;
-export const submitClass = "mt-3 h-12 w-full rounded-xl text-base";
+export const submitClass = "mt-3 h-12 w-full rounded-xl text-body-lg";
 
 export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
@@ -267,7 +268,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
             </Button>
           ) : null}
           {error && !reset?.passwordAuth ? (
-            <p role="alert" className="mt-3 text-sm text-destructive">
+            <p role="alert" className="mt-3 text-body text-destructive">
               {error}
             </p>
           ) : null}
@@ -307,7 +308,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                         <InputOTPSlot
                           key={index}
                           index={index}
-                          className="size-12 text-lg first:rounded-l-xl last:rounded-r-xl"
+                          className="size-12 text-heading3 first:rounded-l-xl last:rounded-r-xl"
                         />
                       ))}
                     </InputOTPGroup>
@@ -334,7 +335,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     className={fieldClass}
                   />
                   {emailSuggestion && emailBlurred ? (
-                    <p role="status" className="mt-2 text-sm text-warning">
+                    <p role="status" className="mt-2 text-body text-warning">
                       <Trans>
                         Did you mean{" "}
                         <button
@@ -369,7 +370,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     className={fieldClass}
                   />
                   {mode === "in" && reset?.passwordReset ? (
-                    <div className="mt-2 text-right text-sm">
+                    <div className="mt-2 text-right text-body">
                       <Link to="/forgot-password" className="font-medium text-foreground">
                         <Trans>Forgot password?</Trans>
                       </Link>
@@ -378,7 +379,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                 </div>
               ) : null}
               {error ? (
-                <p role="alert" className="mt-3 w-full text-sm text-destructive">
+                <p role="alert" className="mt-3 w-full text-body text-destructive">
                   {error}
                 </p>
               ) : null}
@@ -502,7 +503,7 @@ export function PasswordResetPage() {
     <AuthFrame onSubmit={submit} title={<Trans>Choose a new password</Trans>}>
       {complete ? (
         <div role="status" className="w-full text-center">
-          <p className="text-lg">
+          <p className="text-heading3">
             <Trans>Password updated</Trans>
           </p>
           <Link to="/sign-in" className="mt-6 inline-block font-medium">
@@ -525,7 +526,7 @@ export function PasswordResetPage() {
             className="mt-4"
           />
           {error ? (
-            <p role="alert" className="mt-3 w-full text-sm text-destructive">
+            <p role="alert" className="mt-3 w-full text-body text-destructive">
               {error}
             </p>
           ) : null}
@@ -587,7 +588,7 @@ export function AuthFrame({
           </div>
           <h1
             aria-live="polite"
-            className="mb-9 mt-7 text-balance text-center text-4xl font-medium tracking-tight"
+            className="mb-9 mt-7 text-balance text-center text-display font-medium tracking-tight"
           >
             {title}
           </h1>

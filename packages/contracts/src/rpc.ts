@@ -70,6 +70,7 @@ import {
   BotSectionSchema,
   ByokIntervalSchema,
   ByokTierSchema,
+  CATALOG_SEARCH_QUERY_MAX_LENGTH,
   CapabilityInstallSchema,
   ChatAlertSchema,
   CONNECTION_LABEL_MAX_LENGTH,
@@ -1054,7 +1055,7 @@ export const appContract = {
     catalogSearch: oc
       .input(
         z.object({
-          query: z.string().trim().max(253).default(""),
+          query: z.string().trim().max(CATALOG_SEARCH_QUERY_MAX_LENGTH).default(""),
           usePublicCatalog: z.boolean().default(false),
         }),
       )

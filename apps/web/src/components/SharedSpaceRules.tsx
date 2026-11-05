@@ -7,7 +7,7 @@ export function SharedSpaceRules({ className }: { className?: string }) {
   return (
     <ul
       className={cn(
-        "w-full space-y-3 rounded-xl border border-border px-4 py-3.5 text-start text-sm text-muted-foreground",
+        "w-full space-y-3 rounded-xl border border-border px-4 py-3.5 text-start text-body text-muted-foreground",
         className,
       )}
     >

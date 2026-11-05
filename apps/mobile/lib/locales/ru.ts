@@ -1,4 +1,5 @@
 export const RU_MESSAGES: Record<string, string> = {
+  Haptics: "Тактильный отклик",
   "Add rule": "Добавить правило",
   "Tool name": "Название инструмента",
   Address: "Адрес",

@@ -1,4 +1,5 @@
 export const DE_MESSAGES: Record<string, string> = {
+  Haptics: "Haptisches Feedback",
   "Add rule": "Regel hinzufügen",
   "Tool name": "Tool-Name",
   Address: "Adresse",

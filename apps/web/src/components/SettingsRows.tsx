@@ -19,7 +19,7 @@ export function SettingsGroup({
     <section data-testid={testId}>
       {title ? (
         <div className="mb-2 flex items-center justify-between gap-3 px-1">
-          <h3 className="text-[14px] font-medium text-foreground">{title}</h3>
+          <h3 className="text-body font-medium text-foreground">{title}</h3>
           {action}
         </div>
       ) : null}
@@ -41,7 +41,7 @@ export function SettingsRow({
   return (
     <div className="px-4 py-3">
       <div className="flex min-h-9 flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0 text-[14px] text-foreground">{label}</div>
+        <div className="min-w-0 text-body text-foreground">{label}</div>
         {control ? (
           <div className="flex max-w-full min-w-0 items-center gap-2">{control}</div>
         ) : null}

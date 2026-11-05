@@ -4,6 +4,8 @@ Run the API, worker, web app, database and bot computers on a machine you contro
 
 The signed-in product is a long-running API, a Graphile Worker, Postgres, and a computer provider (Docker supervisor, E2B, Daytona, CreateOS, or Boat). It is not a static site. The marketing site in `apps/www` can be hosted separately.
 
+English | [简体中文](./zh-CN/self-host.md)
+
 ## What you need
 
 - Docker Engine 26 or newer with the Compose plugin, curl and OpenSSL. Nothing else is needed for

@@ -79,12 +79,12 @@ function LegacyPaywallPage({ status }: { status: BillingStatus }) {
     >
       <div data-testid="billing-paywall" className="flex w-full flex-col items-center">
         {error ? (
-          <p role="alert" className="mb-3 w-full text-sm text-destructive">
+          <p role="alert" className="mb-3 w-full text-body text-destructive">
             {error}
           </p>
         ) : null}
         {status.canManage ? (
-          <ul className="mb-9 flex flex-col gap-3 text-base">
+          <ul className="mb-9 flex flex-col gap-3 text-body-lg">
             {included.map((item) => (
               <li key={item} className="flex items-center gap-3">
                 <Check aria-hidden className="size-4 shrink-0 text-muted-foreground" />

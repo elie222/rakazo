@@ -1,4 +1,5 @@
 export const NL_MESSAGES: Record<string, string> = {
+  Haptics: "Haptische feedback",
   "Add rule": "Regel toevoegen",
   "Tool name": "Toolnaam",
   Address: "Adres",

@@ -115,7 +115,7 @@ export function InvitePage() {
       </p>
       <SharedSpaceRules className="mt-8" />
       {joinError ? (
-        <p role="alert" className="mt-3 text-sm text-destructive">
+        <p role="alert" className="mt-3 text-body-sm text-destructive">
           {joinError}
         </p>
       ) : null}

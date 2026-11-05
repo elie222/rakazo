@@ -368,7 +368,7 @@ it("renders Polish plural categories and interpolated values in every counted me
   }
 });
 
-it.each(["zh-TW", "pl"])(
+it.each(["zh-CN", "zh-TW", "pl"])(
   "keeps source placeholders and JSX markers in %s translations",
   async (locale) => {
     const readCatalog = async (locale: string) => {

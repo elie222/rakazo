@@ -16,6 +16,7 @@ import {
   Alert,
   AppState,
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   Text,
@@ -60,6 +61,7 @@ import type { CreateAction } from "../lib/create-chooser";
 import { createInboxBot } from "../lib/create-inbox-bot";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
+import { hapticImpact, hapticSelection } from "../lib/haptics";
 import { getActiveUiLocale, t, useI18n } from "../lib/i18n";
 import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox-spaces";
@@ -222,6 +224,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   );
 
   const toggleActivityMode = useCallback(() => {
+    hapticSelection();
     setActivityMode((on) => {
       const next = !on;
       void saveActivityMode(next);
@@ -774,6 +777,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         return;
       }
       if (!target) return;
+      if (Platform.OS === "android") hapticImpact();
       setOrganizeTarget(target);
       void loadBots();
     },
