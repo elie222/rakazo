@@ -100,11 +100,12 @@ jobs:
         run: pnpm --filter @rakazo/web exec playwright install chromium
       - name: Install CJK fonts
         if: steps.areas.outputs.e2e != 'false'
-        timeout-minutes: 4
-        # Chromium needs system fallback fonts to render Chinese, Japanese and Korean screenshots.
+        timeout-minutes: 6
+        # Chromium needs CJK fallback fonts; the runner's Azure mirror can stall on this package.
         run: |
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
           sudo timeout 90s apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
-          sudo timeout 90s apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends fonts-noto-cjk
+          sudo timeout 240s apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends fonts-noto-cjk
       - name: Wait for Postgres
         if: steps.areas.outputs.e2e != 'false'
         run: |
