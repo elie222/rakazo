@@ -510,7 +510,29 @@ describe("page browser safety", () => {
     expect(await provider.purchaseCheck(fake, { actions }, baseContext)).toEqual({
       purchase: null,
     });
-    expect(commands).toHaveLength(12);
+    expect(commands).toHaveLength(13);
+  });
+
+  it("retries a timed-out purchase inspection once without performing actions", async () => {
+    const liveDriver = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, error: "Page browser timed out; retry once." })
+      .mockResolvedValueOnce({
+        ok: true,
+        url: "https://example.test/",
+        title: "Home",
+        purchase: null,
+      });
+    const provider = new ComputerBrowserProvider({ liveDriver });
+    const actions = [{ kind: "click", ref: "e1" }];
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+      purchase: null,
+    });
+    expect(liveDriver).toHaveBeenCalledTimes(2);
+    expect(liveDriver.mock.calls.map((call) => call[1])).toEqual([
+      { command: "purchase_check", actions },
+      { command: "purchase_check", actions },
+    ]);
   });
 
   it("keeps the page snapshot a settled refusal sends", async () => {

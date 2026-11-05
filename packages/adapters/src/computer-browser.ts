@@ -243,22 +243,26 @@ export class ComputerBrowserProvider implements BrowserProvider {
     context: AdapterContext,
   ): Promise<BrowserPurchaseCheckResult> {
     if (this.canUseInProcess(computer)) return { purchase: null };
-    const live = await this.runLive(
-      computer,
-      {
-        command: "purchase_check",
-        actions: request.actions,
-        desktop: request.desktop,
-        enter: request.enter,
-        points: request.points,
-        unplaced: request.unplaced,
-      },
-      context,
-    );
+    const probe: PageBrowserCommand = {
+      command: "purchase_check",
+      actions: request.actions,
+      desktop: request.desktop,
+      enter: request.enter,
+      points: request.points,
+      unplaced: request.unplaced,
+    };
+    let live = await this.runLive(computer, probe, context);
+    // Retry only the read-only probe, never the click whose outcome might be uncertain.
+    if (
+      live?.ok !== true &&
+      typeof live?.error === "string" &&
+      live.error.startsWith("Page browser timed out;")
+    )
+      live = await this.runLive(computer, probe, context);
     if (live?.ok !== true) {
       if (!cannotCheck(live?.error)) {
-        // The check started and failed (timed out, killed, a page it could not read): ask.
-        getLogger().warn("purchase check failed, asking", { error: live?.error });
+        // The check failed: return unknown so the executor refuses the unchecked action.
+        getLogger().warn("purchase check failed", { error: live?.error });
         return { purchase: { ...UNCHECKED_PURCHASE, steps: [] } };
       }
       if (!this.purchaseCheckWarned) {

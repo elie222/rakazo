@@ -441,6 +441,12 @@ export async function prepareToolRequest(
         };
     }
     const purchase = approved ?? (await detectPurchase(ctx, name, rest));
+    // An unreadable page is an inspection failure, not evidence of a purchase.
+    if (purchase && !approved && !purchase.site && !purchase.label && !purchase.amount)
+      return {
+        error:
+          "The page could not be verified, so nothing was pressed. Inspect the current page, separate navigation from clicks, and retry only the intended action. If inspection remains unavailable, request takeover instead of payment approval.",
+      };
     // An approval given for something else never covers a purchase: the call is made again and asks.
     if (purchase && !approved && nextApprovedTool === name)
       return {
