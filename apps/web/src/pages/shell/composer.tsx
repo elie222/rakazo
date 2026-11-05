@@ -66,7 +66,7 @@ import { isApplePlatform, isEditableTarget, primaryModifier } from "./shell-shor
 import { useComposerLayout } from "./use-composer-layout";
 
 const ATTACHMENT_ACCEPT = attachmentPickerAccept(navigator.userAgent);
-const COMPOSER_TEXT = "rk-scroll whitespace-pre-wrap break-words px-0.5 py-0.5 text-body1";
+const COMPOSER_TEXT = "rk-scroll whitespace-pre-wrap break-words px-0.5 py-0.5 text-body-lg";
 const ComposerBody = memo(function Composer({
   artifactTarget,
   activeName,
@@ -671,7 +671,7 @@ const ComposerBody = memo(function Composer({
         />
       ) : null}
       {attachmentNotice ? (
-        <div className="mb-3 rounded-[14px] border border-warning/40 bg-warning/10 px-4 py-2 text-[13px] text-warning">
+        <div className="mb-3 rounded-[14px] border border-warning/40 bg-warning/10 px-4 py-2 text-body-sm text-warning">
           {attachmentNotice}
         </div>
       ) : null}
@@ -680,7 +680,7 @@ const ComposerBody = memo(function Composer({
           {pendingAttachments.map((attachment) => (
             <div
               key={attachment.id}
-              className="flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-[13px] text-foreground/75"
+              className="flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-body-sm text-foreground/75"
             >
               {attachment.previewUrl ? (
                 <img
@@ -738,11 +738,11 @@ const ComposerBody = memo(function Composer({
               >
                 <MentionOptionIcon mention={mention} />
                 <span className="min-w-0">
-                  <span dir="auto" className="block text-[14px] text-foreground">
+                  <span dir="auto" className="block text-body text-foreground">
                     @{mention.name}
                   </span>
                   {mention.subtitle ? (
-                    <span dir="auto" className="block truncate text-[12.5px] text-muted-foreground">
+                    <span dir="auto" className="block truncate text-body-sm text-muted-foreground">
                       {mention.subtitle}
                     </span>
                   ) : null}
@@ -767,10 +767,10 @@ const ComposerBody = memo(function Composer({
             >
               <Box size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />
               <span className="min-w-0">
-                <span dir="auto" className="block text-[14px] text-foreground">
+                <span dir="auto" className="block text-body text-foreground">
                   {skill.name}
                 </span>
-                <span dir="auto" className="block truncate text-[12.5px] text-muted-foreground">
+                <span dir="auto" className="block truncate text-body-sm text-muted-foreground">
                   {truncateSlashDescription(skill.description)}
                 </span>
               </span>
@@ -787,7 +787,7 @@ const ComposerBody = memo(function Composer({
                 className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent"
               >
                 <Settings size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />
-                <span className="text-[14px] text-foreground">{label}</span>
+                <span className="text-body text-foreground">{label}</span>
               </button>
             );
           })}

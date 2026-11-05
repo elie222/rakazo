@@ -142,7 +142,7 @@ function DesktopUpdatePrompt({ onLater }: { onLater: (version: string | null) =>
         </Button>
       </div>
       {error || state.message ? (
-        <p role="status" className="mt-2 text-sm">
+        <p role="status" className="mt-2 text-body">
           {error ?? state.message}
         </p>
       ) : null}
@@ -176,7 +176,7 @@ export function DesktopUpdateSection() {
         <Trans>Desktop app</Trans>
       </h3>
       <div className="mt-3 flex items-center justify-between gap-3">
-        <span className="text-sm text-muted-foreground">v{state.currentVersion}</span>
+        <span className="text-body text-muted-foreground">v{state.currentVersion}</span>
         <Button
           variant="outline"
           disabled={busy || downloading || state.phase === "checking"}
@@ -193,7 +193,7 @@ export function DesktopUpdateSection() {
           )}
         </Button>
       </div>
-      <p role="status" className="mt-2 text-sm text-muted-foreground">
+      <p role="status" className="mt-2 text-body text-muted-foreground">
         {error ??
           state.message ??
           (downloading ? (

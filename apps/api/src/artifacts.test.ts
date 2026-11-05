@@ -42,6 +42,7 @@ function cursor(input: { createdAt: string; id: string; botId: string | null; as
       createdAt: input.createdAt,
       id: input.id,
       botId: input.botId,
+      madeByBots: false,
       asOf: input.asOf ?? "2026-09-20T00:00:00.000Z",
     }),
     "utf8",
@@ -213,6 +214,31 @@ describe("listSpaceArtifacts", () => {
       ),
     ).rejects.toBeInstanceOf(ArtifactListCursorError);
     expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("reads a cursor issued before the made-by-bots filter as the full list", async () => {
+    const issuedBefore = `v1.${Buffer.from(
+      JSON.stringify({
+        createdAt: "2026-08-01T00:00:00.000Z",
+        id: "version-b",
+        botId: null,
+        asOf: "2026-09-20T00:00:00.000Z",
+      }),
+      "utf8",
+    ).toString("base64url")}`;
+    const queryRaw = vi.fn().mockResolvedValue([]);
+    const deps = {
+      prisma: { artifact: { findFirst: vi.fn() }, $queryRaw: queryRaw } as unknown as Pick<
+        PrismaClient,
+        "artifact" | "$queryRaw"
+      >,
+    };
+    await listSpaceArtifacts(deps, actor, { cursor: issuedBefore });
+    expect(queryRaw.mock.calls[0]?.[0].values).toContain("version-b");
+    await expect(
+      listSpaceArtifacts(deps, actor, { madeByBots: true, cursor: issuedBefore }),
+    ).rejects.toBeInstanceOf(ArtifactListCursorError);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it("applies a bot-scoped cursor with that bot filter", async () => {

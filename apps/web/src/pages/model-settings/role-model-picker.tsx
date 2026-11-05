@@ -170,7 +170,7 @@ export function RoleModelPicker({
                   }}
                 >
                   <span className="min-w-0 truncate">{defaultOption}</span>
-                  <CommandShortcut className="text-[13px] tracking-normal">
+                  <CommandShortcut className="text-body-sm tracking-normal">
                     <Trans>Default</Trans>
                   </CommandShortcut>
                 </CommandItem>
@@ -205,7 +205,7 @@ export function RoleModelPicker({
                     }}
                   >
                     <span className="min-w-0 truncate">{provider.name}</span>
-                    <CommandShortcut className="text-[13px] tracking-normal">
+                    <CommandShortcut className="text-body-sm tracking-normal">
                       <Trans>Connect</Trans>
                     </CommandShortcut>
                   </CommandItem>

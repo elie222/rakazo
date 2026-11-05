@@ -100,6 +100,7 @@ export function ArtifactsPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [madeByBots, setMadeByBots] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ArtifactSummary | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -117,6 +118,7 @@ export function ArtifactsPage() {
   const listingOptions = queries.artifacts.listSpace.infiniteOptions({
     input: (cursor: string | undefined) => ({
       botId: activeBotId ?? undefined,
+      madeByBots,
       ...(cursor ? { cursor } : {}),
       limit: LIST_PAGE_SIZE,
     }),
@@ -168,7 +170,7 @@ export function ArtifactsPage() {
 
   useEffect(() => {
     autoFetchedCursorRef.current = null;
-  }, [searchQuery, dateFilter, activeBotId]);
+  }, [searchQuery, dateFilter, activeBotId, madeByBots]);
 
   // Search and date filters only see loaded pages, so keep paging until something matches.
   useEffect(() => {
@@ -221,7 +223,7 @@ export function ArtifactsPage() {
             {desktopBridge() ? <WindowChrome /> : null}
             <Link
               to="/app"
-              className="app-no-drag flex shrink-0 items-center gap-0.5 rounded-lg py-1 pe-1.5 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              className="app-no-drag flex shrink-0 items-center gap-0.5 rounded-lg py-1 pe-1.5 text-body-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground"
             >
               <ChevronLeft size={16} strokeWidth={1.9} aria-hidden="true" />
               <Trans>Bots</Trans>
@@ -286,12 +288,12 @@ export function ArtifactsPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder={t`Search artifacts…`}
-                className="w-full rounded-lg border border-border bg-background py-1.5 ps-8 pe-3 text-[13px] outline-none focus:border-ring"
+                className="w-full rounded-lg border border-border bg-background py-1.5 ps-8 pe-3 text-body-sm outline-none focus:border-ring"
               />
             </div>
             <NativeSelect
               aria-label={t`Filter by date`}
-              className="w-auto text-[13px]"
+              className="w-auto text-body-sm"
               value={dateFilter}
               onChange={(event) => setDateFilter(event.target.value as DateFilter)}
             >
@@ -299,6 +301,15 @@ export function ArtifactsPage() {
               <NativeSelectOption value="today">{t`Today`}</NativeSelectOption>
               <NativeSelectOption value="week">{t`This week`}</NativeSelectOption>
               <NativeSelectOption value="month">{t`This month`}</NativeSelectOption>
+            </NativeSelect>
+            <NativeSelect
+              aria-label={t`Filter by who made it`}
+              className="w-auto text-[13px]"
+              value={madeByBots ? "bots" : "all"}
+              onChange={(event) => setMadeByBots(event.target.value === "bots")}
+            >
+              <NativeSelectOption value="all">{t`All files`}</NativeSelectOption>
+              <NativeSelectOption value="bots">{t`Made by bots`}</NativeSelectOption>
             </NativeSelect>
             <FilterChip active={activeBotId === null} onClick={() => setActiveBotId(null)}>
               <Trans>All bots</Trans>
@@ -316,7 +327,7 @@ export function ArtifactsPage() {
       </header>
 
       {refreshError ? (
-        <p role="alert" className="px-6 py-2 text-sm text-destructive">
+        <p role="alert" className="px-6 py-2 text-body text-destructive">
           {refreshError}
         </p>
       ) : null}
@@ -379,7 +390,7 @@ export function ArtifactsPage() {
                 )}
               </AlertDialogDescription>
             </AlertDialogHeader>
-            {deleteError ? <p className="text-[13.5px] text-destructive">{deleteError}</p> : null}
+            {deleteError ? <p className="text-body text-destructive">{deleteError}</p> : null}
             <AlertDialogFooter>
               <AlertDialogCancel disabled={deleteBusy}>
                 <Trans>Cancel</Trans>
@@ -420,7 +431,7 @@ function BrowsingPane({
 }) {
   if (items === null) {
     return (
-      <div className="grid flex-1 place-items-center text-sm text-muted-foreground/80">
+      <div className="grid flex-1 place-items-center text-body text-muted-foreground/80">
         {loadError ?? <Spinner aria-label={t`Loading…`} />}
       </div>
     );
@@ -428,7 +439,7 @@ function BrowsingPane({
   if (items.length === 0) {
     return (
       <EmptyArtifacts
-        className="grid flex-1 place-items-center text-sm text-muted-foreground/80"
+        className="grid flex-1 place-items-center text-body text-muted-foreground/80"
         nextCursor={nextCursor}
         loadingMore={loadingMore}
         onLoadMore={onLoadMore}
@@ -538,12 +549,12 @@ function IndexPane({
   return (
     <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto border-e border-border">
       {items === null ? (
-        <div className="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground/80">
+        <div className="grid flex-1 place-items-center p-6 text-center text-body text-muted-foreground/80">
           {loadError ?? <Spinner aria-label={t`Loading…`} />}
         </div>
       ) : items.length === 0 ? (
         <EmptyArtifacts
-          className="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground/80"
+          className="grid flex-1 place-items-center p-6 text-center text-body text-muted-foreground/80"
           nextCursor={nextCursor}
           loadingMore={loadingMore}
           onLoadMore={onLoadMore}
@@ -652,24 +663,24 @@ function ArtifactCard({
           </span>
           <div className="flex items-center gap-1.5">
             {artifact.versionCount > 1 ? (
-              <span className="rounded-md bg-muted px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+              <span className="rounded-md bg-muted px-2 py-1 text-caption font-semibold text-muted-foreground">
                 {`v${artifact.version}`}
               </span>
             ) : null}
-            <span className="rounded-md bg-muted px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+            <span className="rounded-md bg-muted px-2 py-1 text-caption font-semibold text-muted-foreground">
               {artifactTypeLabel(artifact.mimeType)}
             </span>
           </div>
         </div>
         <div className="min-w-0">
-          <div className="truncate text-[15px] font-semibold">{artifact.name}</div>
+          <div className="truncate text-body-lg font-semibold">{artifact.name}</div>
           {artifact.description ? (
-            <div className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
+            <div className="mt-1 line-clamp-2 text-body-sm leading-relaxed text-muted-foreground">
               {artifact.description}
             </div>
           ) : null}
         </div>
-        <div className="mt-auto flex items-center gap-2 text-[12px] text-muted-foreground">
+        <div className="mt-auto flex items-center gap-2 text-label text-muted-foreground">
           {bot ? (
             <>
               <BotAvatar
@@ -725,19 +736,19 @@ function ArtifactRow({
           <span className="grid h-6 w-6 shrink-0 place-items-center rounded-[7px] bg-accent text-accent-foreground">
             <ArtifactMimeIcon mimeType={artifact.mimeType} small />
           </span>
-          <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{artifact.name}</span>
+          <span className="min-w-0 flex-1 truncate text-body font-medium">{artifact.name}</span>
           {artifact.versionCount > 1 ? (
-            <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10.5px] font-semibold text-muted-foreground">
+            <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-caption font-semibold text-muted-foreground">
               {`v${artifact.version}`}
             </span>
           ) : null}
         </div>
         {artifact.description ? (
-          <div className="ps-8 text-[12.5px] leading-snug text-muted-foreground">
+          <div className="ps-8 text-body-sm leading-snug text-muted-foreground">
             {artifact.description}
           </div>
         ) : null}
-        <div className="flex items-center gap-1.5 ps-8 text-[11.5px] text-muted-foreground">
+        <div className="flex items-center gap-1.5 ps-8 text-label text-muted-foreground">
           {bot ? (
             <>
               <BotAvatar
@@ -847,11 +858,11 @@ function PreviewPane({
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex items-center gap-3 border-b border-border px-6 py-3">
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[16px] font-semibold">
+          <h2 className="truncate text-body-lg font-semibold">
             {state.status === "ready" ? state.artifact.name : null}
           </h2>
           {state.status === "ready" && state.artifact.description ? (
-            <p className="truncate text-[12.5px] text-muted-foreground">
+            <p className="truncate text-body-sm text-muted-foreground">
               {state.artifact.description}
             </p>
           ) : null}
@@ -859,7 +870,7 @@ function PreviewPane({
         {versions && versions.length > 1 && selectedVersionId ? (
           <NativeSelect
             aria-label={t`Version`}
-            className="w-auto shrink-0 text-[13px]"
+            className="w-auto shrink-0 text-body-sm"
             value={selectedVersionId}
             onChange={(event) => setSelectedVersionId(event.target.value)}
           >
@@ -903,7 +914,7 @@ function PreviewPane({
 
       <div className="min-h-0 flex-1 p-5">
         {state.status === "loading" ? (
-          <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
+          <div className="grid h-full place-items-center text-body text-muted-foreground/80">
             <Spinner aria-label={t`Loading…`} />
           </div>
         ) : state.status === "error" ? (
@@ -914,7 +925,7 @@ function PreviewPane({
           <div className="relative h-full overflow-hidden rounded-2xl border border-border">
             <ArtifactPreview artifact={state.artifact} bytes={state.bytes} />
             {state.artifact.mimeType === "text/html" ? (
-              <div className="absolute bottom-3 end-3 flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1.5 text-[11px] text-white">
+              <div className="absolute bottom-3 end-3 flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1.5 text-caption text-white">
                 <Lock size={12} strokeWidth={2} />
                 <span>
                   <Trans>Isolated preview — no access to your account</Trans>
@@ -937,7 +948,7 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
     case "markdown":
       return (
         <div className="h-full overflow-y-auto bg-background">
-          <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-[16px] leading-7 text-foreground">
+          <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-body-lg leading-7 text-foreground">
             <ChatMarkdown>{new TextDecoder("utf-8").decode(bytes)}</ChatMarkdown>
           </article>
         </div>
@@ -945,7 +956,7 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
     case "text":
       return (
         <div className="h-full overflow-auto bg-background">
-          <pre className="px-8 py-10 font-mono text-[13px] leading-6 whitespace-pre-wrap break-words text-foreground">
+          <pre className="px-8 py-10 font-mono text-body-sm leading-6 whitespace-pre-wrap break-words text-foreground">
             {new TextDecoder("utf-8").decode(bytes)}
           </pre>
         </div>
@@ -958,7 +969,7 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
       return <ImagePreview bytes={bytes} mimeType={artifact.mimeType} name={artifact.name} />;
     case "none":
       return (
-        <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80">
+        <div className="grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80">
           <Trans>Preview isn't available for this file type — download it to view it.</Trans>
         </div>
       );

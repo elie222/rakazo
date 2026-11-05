@@ -1,12 +1,14 @@
-import { Stack, useRouter } from "expo-router";
+import { Stack, useNavigation, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, ScrollView, Text, TextInput } from "react-native";
 import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions } from "../components/sheet-header";
 import { rpc, selectSpace } from "../lib/api";
+import { hapticSuccess } from "../lib/haptics";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { refreshOrganizations } from "../lib/organizations";
+import { isSearchInboxSession, searchInboxSession } from "../lib/search-inbox";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
@@ -15,6 +17,7 @@ export default function NewSpace() {
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const router = useRouter();
+  const navigation = useNavigation();
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,8 +27,10 @@ export default function NewSpace() {
     if (!trimmed || pending) return;
     setPending(true);
     setError(null);
+    const askedIn = searchInboxSession();
     try {
       const space = await rpc("spaces/create", { name: trimmed });
+      if (navigation.isFocused() && isSearchInboxSession(askedIn)) hapticSuccess();
       void refreshOrganizations();
       if (!(await selectSpace(space.id))) {
         Alert.alert(t("Space created"), t("It could not be opened. Try again from the sidebar."));

@@ -725,6 +725,10 @@ msgstr "כל {credit} הולכים לשימוש במודלים."
 msgid "All bots"
 msgstr "כל הבוטים"
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "כל הקבצים"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr ""
@@ -3248,6 +3252,10 @@ msgid "Filter by date"
 msgstr "סינון לפי תאריך"
 
 #: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "סינון לפי היוצר"
+
+#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "מסננים"
@@ -3911,6 +3919,10 @@ msgstr "נמוך"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "נמוך"
+
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "נוצרו על ידי בוטים"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
@@ -5779,6 +5791,10 @@ msgstr "חיפוש לפי דומיין"
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Search integrations.sh"
 msgstr "חיפוש ב-integrations.sh"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Search MCP servers for “{query}”"
+msgstr "חיפוש „{query}” בשרתי MCP"
 
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
