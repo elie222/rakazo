@@ -1307,12 +1307,15 @@ async function reconcileProvisionalSignOuts(): Promise<void> {
   await queuePendingSignOutWrite(async () => {
     const read = await readPendingSignOuts();
     if (!read.ok || !read.records.some((record) => record.provisional)) return;
-    if (endpointChanges > 0) return;
+    // A running save reads as no session, so its token would count as inactive; a later pass
+    // resolves the records instead of waiting for the save.
+    if (endpointChanges > 0 || sessionSaveInProgress()) return;
+    const generation = currentSessionGeneration();
     const snapshot = await snapshotSessionToken();
     if (!snapshot.ok) return;
     // Re-read after the snapshot's wait too: nothing between this check and the write awaits,
     // so a switch that starts now queues its own record behind this step.
-    if (endpointChanges > 0) return;
+    if (endpointChanges > 0 || generation !== currentSessionGeneration()) return;
     const activeToken = snapshot.value;
     let resolvedAny = false;
     const resolved: PendingSignOut[] = [];

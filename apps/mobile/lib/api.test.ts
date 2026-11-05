@@ -3777,6 +3777,45 @@ describe("mobile API authentication", () => {
     expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
   });
 
+  it("a flush during a save of a memory-only session does not revoke it", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.api_base") throw new Error("device locked");
+      if (key === "rakazo.session_token") throw new Error("device locked");
+      store.set(key, value);
+    });
+    try {
+      await saveApiBase("https://second-server.example");
+    } finally {
+      mockSecureStore(store);
+    }
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await flushPendingSignOut(true);
+    let releaseSave!: () => void;
+    const saveHeld = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token") await saveHeld;
+      store.set(key, value);
+    });
+    // The same token is saved again; a flush runs while its write is held.
+    const saving = saveSessionToken("token-a");
+    await flushPendingSignOut(true);
+    releaseSave();
+    await saving;
+    mockSecureStore(store);
+    await flushPendingSignOut(true);
+
+    // token-a is in use and now stored, so it is never revoked and its record is dropped.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(store.get("rakazo.session_token")).toBe("token-a");
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
   it("a server switch stops when a session is saved while it clears the old one", async () => {
     const store = new Map<string, string>();
     mockSecureStore(store);
