@@ -23,11 +23,12 @@ export async function claimBotEmailName(
     return "claimed";
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
-    // Either the name is taken, or a concurrent claim for this bot won with this same name.
-    const winner = await prisma.botEmailAddress.findUnique({
-      where: { localPart: name },
-      select: { botId: true },
+    // The name went to another bot, or a concurrent claim for this bot won, with any name.
+    const current = await prisma.botEmailAddress.findUnique({
+      where: { botId },
+      select: { localPart: true },
     });
-    return winner?.botId === botId ? "claimed" : "taken";
+    if (current) return current.localPart === name ? "claimed" : "has-another";
+    return "taken";
   }
 }

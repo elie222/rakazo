@@ -1,8 +1,9 @@
 import type { BotEmailAddress, BotEmailAddresses } from "@rakazo/contracts";
 import { BOT_EMAIL_NAME_TAKEN, BotEmailNameSchema, suggestedEmailName } from "@rakazo/contracts";
 import * as Clipboard from "expo-clipboard";
+import { useFocusEffect } from "expo-router";
 import type { ReactElement } from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Text } from "react-native";
 import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
@@ -24,23 +25,26 @@ export function useBotEmail(botId: string): BotEmail {
   const [address, setAddress] = useState<BotEmailAddress>(null);
   const [ownerDomain, setOwnerDomain] = useState("");
   // Read apart, so a failed profile read never hides the address, only the "Anyone at" choice.
-  useEffect(() => {
-    let current = true;
-    void rpc("bots/emailAddress", { botId })
-      .then((email) => {
-        if (current) setAddress(email);
-      })
-      // Without an answer the screen offers no address; reopening it reads again.
-      .catch(() => undefined);
-    void rpc("me")
-      .then((me) => {
-        if (current) setOwnerDomain(me.email.slice(me.email.lastIndexOf("@") + 1));
-      })
-      .catch(() => undefined);
-    return () => {
-      current = false;
-    };
-  }, [botId]);
+  // Read again on focus: the address may have been claimed on another screen meanwhile.
+  useFocusEffect(
+    useCallback(() => {
+      let current = true;
+      void rpc("bots/emailAddress", { botId })
+        .then((email) => {
+          if (current) setAddress(email);
+        })
+        // Without an answer the screen offers no address; returning to it reads again.
+        .catch(() => undefined);
+      void rpc("me")
+        .then((me) => {
+          if (current) setOwnerDomain(me.email.slice(me.email.lastIndexOf("@") + 1));
+        })
+        .catch(() => undefined);
+      return () => {
+        current = false;
+      };
+    }, [botId]),
+  );
   return {
     address,
     ownerDomain,
@@ -162,17 +166,20 @@ export function BotEmailAddressesGroup() {
   const { t } = useI18n();
   const [email, setEmail] = useState<BotEmailAddresses>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  useEffect(() => {
-    let current = true;
-    void rpc("bots/emailAddresses")
-      .then((next) => {
-        if (current) setEmail(next);
-      })
-      .catch(() => undefined);
-    return () => {
-      current = false;
-    };
-  }, []);
+  // Read on each visit, so an address claimed elsewhere meanwhile shows up.
+  useFocusEffect(
+    useCallback(() => {
+      let current = true;
+      void rpc("bots/emailAddresses")
+        .then((next) => {
+          if (current) setEmail(next);
+        })
+        .catch(() => undefined);
+      return () => {
+        current = false;
+      };
+    }, []),
+  );
   if (!email?.addresses.length) return null;
   return (
     <SettingsGroup label={t("Bot email addresses")}>

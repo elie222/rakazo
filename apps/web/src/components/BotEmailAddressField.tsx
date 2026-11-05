@@ -48,6 +48,8 @@ export function BotEmailAddressField({
         queries.bots.emailAddress.queryKey({ input: { botId: bot.id } }),
         (current) => (current ? { ...current, address: claimed.address } : current),
       );
+      // The Vault lists every bot's address.
+      void queryClient.invalidateQueries({ queryKey: queries.bots.emailAddresses.queryKey() });
     } catch (error) {
       setClaimError(errorText(error, t`That address isn't available`));
     } finally {

@@ -382,7 +382,12 @@ describe("botEmailInstruction", () => {
 
 describe("claim_email_address", () => {
   function claimRun(
-    options: { claimed?: Record<string, string>; domain?: string; runUserId?: string } = {},
+    options: {
+      claimed?: Record<string, string>;
+      domain?: string;
+      runUserId?: string;
+      raceTo?: string;
+    } = {},
   ) {
     // localPart → botId, as bot_email_addresses keeps them.
     const names = new Map(Object.entries(options.claimed ?? {}));
@@ -400,7 +405,8 @@ describe("claim_email_address", () => {
               return entry ? { localPart: entry[0], botId: entry[1] } : null;
             },
             create: async ({ data }: { data: { localPart: string; botId: string } }) => {
-              if (names.has(data.localPart))
+              if (options.raceTo) names.set(options.raceTo, data.botId);
+              if (options.raceTo || names.has(data.localPart))
                 throw Object.assign(new Error("taken"), { code: "P2002" });
               names.set(data.localPart, data.botId);
               return data;
@@ -432,6 +438,16 @@ describe("claim_email_address", () => {
     expect(await call({ name: "other" })).toEqual({
       error: "You already have an address, and it can't change.",
       address: "scout@bots.test",
+    });
+  });
+
+  it("tells a claim that lost a race to another name what the bot got", async () => {
+    // Another claim for this bot, with another name, lands first.
+    const { call } = claimRun({ raceTo: "raced" });
+
+    expect(await call({ name: "scout" })).toEqual({
+      error: "You already have an address, and it can't change.",
+      address: "raced@bots.test",
     });
   });
 
