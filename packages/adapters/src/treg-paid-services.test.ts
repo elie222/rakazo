@@ -33,7 +33,7 @@ const direct = {
   platform: "x",
   cost: { usd: 0.00188, type: "per_call" },
   input: {
-    queryParams: { handle: { type: "string", required: true, example: "levelsio" } },
+    queryParams: { handle: { type: "string", required: true, example: "example_handle" } },
     pathParams: { id: { type: "string", required: true } },
   },
 };
@@ -42,6 +42,7 @@ const blocked = [
   { ...direct, id: "meta-ads.campaigns", scope: "own_account" },
   { ...direct, id: "ads.unlabeled", scope: undefined },
   { ...direct, id: "ads.future", scope: "team_connection" },
+  { ...direct, id: "auto.google.serp.maps" },
   { ...direct, id: "replicate.flux", async: { poll: {} } },
   { ...direct, id: "minimax.image", platform: "image-gen" },
   { ...direct, id: "hunter.recipients.remove", method: "DELETE" },
@@ -106,7 +107,7 @@ describe("TregPaidServiceProvider", () => {
       params: {
         query: {
           id: { type: "string", required: true },
-          handle: { type: "string", required: true, example: "levelsio" },
+          handle: { type: "string", required: true, example: "example_handle" },
         },
       },
     });
