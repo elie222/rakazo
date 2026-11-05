@@ -19,6 +19,7 @@ const ANSWER_MAX_BYTES = 2_000_000;
 const ROUTED_PREFIX = "treg.";
 const PUBLIC_ROUTED_PREFIX = "auto.";
 /** Generation runs as a billed background task; the deployment media tools cover it. */
+const ACCOUNT_ERROR_CODES = new Set(["insufficient_balance", "platform_daily_cap_reached"]);
 const GENERATION_PLATFORMS = new Set(["image-gen", "video-gen", "voice-gen", "music-gen"]);
 
 const paramSpec = z
@@ -136,9 +137,12 @@ function toService(item: Endpoint): PaidService {
   };
 }
 
-function micros(value: string | null): number | undefined {
-  if (value === null || !/^\d+$/.test(value.trim())) return undefined;
-  return Number(value.trim());
+function micros(value: unknown): number | undefined {
+  const parsed =
+    typeof value === "string" && /^\d+$/.test(value.trim()) ? Number(value.trim()) : value;
+  return typeof parsed === "number" && Number.isSafeInteger(parsed) && parsed >= 0
+    ? parsed
+    : undefined;
 }
 
 function parseBody(text: string): unknown {
@@ -176,7 +180,10 @@ export class TregPaidServiceProvider implements PaidServiceProvider {
   ) {
     const url = new URL(options.baseUrl ?? "https://treg.to");
     if (
-      !["https:", "http:"].includes(url.protocol) ||
+      !(
+        url.protocol === "https:" ||
+        (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
+      ) ||
       url.username ||
       url.password ||
       url.search ||
@@ -262,11 +269,15 @@ export class TregPaidServiceProvider implements PaidServiceProvider {
     const providerCallId = response.headers.get("X-Treg-Call-Id") ?? undefined;
     // A routed job still running may finish and charge; the caller keeps its hold.
     if (response.status === 202) throw new Error("Paid service call is still running");
-    if (response.headers.get("X-Treg-Error") === "1") {
+    // Account-level codes are refused even without Treg's error header, so they never reach a bot.
+    if (
+      response.headers.get("X-Treg-Error") === "1" ||
+      (code !== undefined && ACCOUNT_ERROR_CODES.has(code))
+    ) {
       if (response.status === 402 && code === "route_max_cost")
         return { outcome: "refused", reason: "over_max_cost" };
       if (response.status === 502 && code === "route_failed") {
-        const charged = typeof error?.charged_micro === "number" ? error.charged_micro : 0;
+        const charged = micros(error?.charged_micro) ?? 0;
         return {
           outcome: "answered",
           ok: false,

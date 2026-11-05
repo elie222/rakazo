@@ -109,6 +109,30 @@ describe("service_call", () => {
     ]);
   });
 
+  it("never charges more than the ceiling the agent agreed to", async () => {
+    const provider = new FakePaidServiceProvider();
+    provider.call = vi.fn(async () => ({
+      outcome: "answered" as const,
+      ok: true,
+      status: 200,
+      data: {},
+      costUsd: 5,
+    }));
+    const result = await serviceCallFromTool(
+      { prisma, provider, billing: true },
+      scope,
+      { service: "people.email", max_cost_usd: 0.1 },
+      "key",
+      context,
+    );
+    expect(result).toMatchObject({ cost_usd: 0.1 });
+    expect(recordUsage).toHaveBeenCalledWith(
+      prisma,
+      expect.objectContaining({ costUsd: 0.1 }),
+      expect.anything(),
+    );
+  });
+
   it("tells the agent to add credits when the hold is refused", async () => {
     vi.mocked(reserveModelCredits).mockRejectedValue(
       new Error("Not enough model credits. Add credits in Billing or connect your own API key."),
