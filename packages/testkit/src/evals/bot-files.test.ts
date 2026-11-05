@@ -9,6 +9,7 @@ type Deliveries = NonNullable<Evidence["deliveries"]>;
 function evidence(calls: Calls, deliveries: Deliveries = []): Evidence {
   return {
     deliveries,
+    peerHome: "bots/coder",
     text: "",
     files: {},
     records: [],
@@ -115,8 +116,18 @@ describe("bot files eval", () => {
     const receiver = BOT_FILES_EVAL_CASES.find((c) => c.id === "receive-shared-path")!;
     expect(receiver.steps).toEqual([{ fromPeer: expect.stringContaining("{peerHome}/site") }]);
     expect(receiver.computerFiles?.every((file) => file.owner === "peer")).toBe(true);
-    expect(
-      failed("receive-shared-path", [{ name: "list_files", args: { path: "bots/coder/site" } }]),
-    ).toEqual([]);
+  });
+
+  it("needs the receiver to open the site at the peer's exact path", () => {
+    const opened = (name: string, path: string) =>
+      failed("receive-shared-path", [{ name, args: { path } }]);
+    expect(opened("list_files", "bots/coder/site")).toEqual([]);
+    expect(opened("list_files", "/bots/coder/site/")).toEqual([]);
+    expect(opened("read_file", "~/bots/coder/site/app.js")).toEqual([]);
+    const missed = ["opened the site at the peer's path"];
+    // Reading the folder as a file, the subject's own folder, or a look-alike path fails.
+    expect(opened("read_file", "bots/coder/site")).toEqual(missed);
+    expect(opened("list_files", "site")).toEqual(missed);
+    expect(opened("read_file", "bots/coder/website/app.js")).toEqual(missed);
   });
 });

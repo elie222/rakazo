@@ -951,6 +951,7 @@ export async function runTrial(
       routineRuns,
       peerExchanges,
       ...(deliveries.length ? { deliveries } : {}),
+      ...(peer ? { peerHome: `bots/${peer.id}` } : {}),
       files,
       ...(Object.keys(seededAttachments).length ? { seededAttachments } : {}),
       records: services.records,

@@ -244,6 +244,8 @@ export const messagingTools: ToolHandlers = {
   async message_bot(ctx, call) {
     const { deps, run, bot } = ctx;
     const { args, effectKey } = call;
+    // Shared paths are added to the message, so a blank one must be caught before they are.
+    if (!String(args.message ?? "").trim()) return call.finish({ error: "message is required" });
     const stored = await prepareSentFiles(ctx, call, {
       botId: args.bot_id ? String(args.bot_id) : undefined,
       name: args.confirm_name ? String(args.confirm_name) : undefined,
@@ -326,6 +328,8 @@ export const messagingTools: ToolHandlers = {
     const { args, effectKey } = call;
     const groupId = args.group_id ? String(args.group_id).trim() : thread.groupId;
     if (!groupId) return call.finish({ error: "group_id is required outside a group chat" });
+    // Shared paths are added to the message, so a blank one must be caught before they are.
+    if (!String(args.message ?? "").trim()) return call.finish({ error: "message is required" });
     const stored = await prepareSentFiles(ctx, call, {
       botId: args.bot_id ? String(args.bot_id) : undefined,
       name: args.confirm_name ? String(args.confirm_name) : undefined,

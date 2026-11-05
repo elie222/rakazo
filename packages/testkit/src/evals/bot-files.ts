@@ -3,7 +3,7 @@ import type { Criterion, EvalCase, Evidence } from "./cases.js";
 import type { ToolChoiceExpect } from "./tool-choice.js";
 import { gradeToolChoice } from "./tool-choice.js";
 
-export const BOT_FILES_FIXTURE_VERSION = "bot-files-v5";
+export const BOT_FILES_FIXTURE_VERSION = "bot-files-v6";
 
 /**
  * A line of the site's code. A message that names the code can summarize it; one carrying this
@@ -65,7 +65,28 @@ type Scenario = {
    * "Files on our shared computer" list, so matching that list checks a contract, not prose.
    */
   delivered?: { id: string; pass: (deliveries: NonNullable<Evidence["deliveries"]>) => boolean };
+  /** The subject must list the peer's site folder or read one of its files, at their exact paths. */
+  opened?: true;
 };
+
+/**
+ * Whether a call opened the peer's site where it is. The eval computer always serves a seeded path,
+ * so a call at the exact path succeeded; one elsewhere, or reading the folder as a file, did not.
+ */
+function openedPeerSite(evidence: Evidence): boolean {
+  const home = evidence.peerHome;
+  if (!home) return false;
+  const site = `${home}/site`;
+  const files = new Set(SITE.map((file) => `${home}/${file.path}`));
+  return evidence.toolCalls.some((call) => {
+    if (call.step !== evidence.finalStep) return false;
+    const path = String(call.args.path ?? "")
+      .replace(/^(~|\/home\/rakazo)?\/+/, "")
+      .replace(/\/+$/, "");
+    if (call.name === "list_files") return path === site;
+    return call.name === "read_file" && files.has(path);
+  });
+}
 
 const SHARED_LIST = "Files on our shared computer:";
 const sharedSite = (d: { text: string }) =>
@@ -143,12 +164,8 @@ const SCENARIOS: Scenario[] = [
     setup: { kind: "receiver" },
     files: SITE.map((file) => ({ ...file, owner: "peer" as const })),
     ask: "Please deploy the site.\n\nFiles on our shared computer:\n- {peerHome}/site",
-    expect: {
-      anyOf: [
-        { tool: "list_files", args: { path: "~site" } },
-        { tool: "read_file", args: { path: "~site" } },
-      ],
-    },
+    expect: {},
+    opened: true,
   },
 ];
 
@@ -164,6 +181,9 @@ export const BOT_FILES_EVAL_CASES: EvalCase[] = SCENARIOS.map((scenario) => {
       ...gradeToolChoice(scenario.expect, evidence),
       ...(scenario.delivered
         ? [{ id: scenario.delivered.id, pass: scenario.delivered.pass(evidence.deliveries ?? []) }]
+        : []),
+      ...(scenario.opened
+        ? [{ id: "opened the site at the peer's path", pass: openedPeerSite(evidence) }]
         : []),
     ],
   };

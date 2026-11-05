@@ -256,4 +256,16 @@ describe("sending files to another bot", () => {
     ).resolves.toEqual({ error: "could not reach your computer. Nothing was sent." });
     expect(mocks.messageBot).not.toHaveBeenCalled();
   });
+
+  it("refuses a blank message even when shared paths would fill it", async () => {
+    const { ctx, listFiles } = context("computer-team");
+    for (const tool of ["message_bot", "handoff_to_bot"] as const) {
+      await expect(
+        messagingTools[tool]!(ctx, callWith(tool, { message: "  ", files: ["site"] })),
+      ).resolves.toEqual({ error: "message is required" });
+    }
+    expect(listFiles).not.toHaveBeenCalled();
+    expect(mocks.messageBot).not.toHaveBeenCalled();
+    expect(mocks.handoffToGroupBot).not.toHaveBeenCalled();
+  });
 });

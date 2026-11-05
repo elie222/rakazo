@@ -29,6 +29,8 @@ export type Evidence = {
   routineRuns?: RoutineEvidence[];
   /** Per fromPeer step: what the peer sent and what came back to it, or null if nothing did. */
   peerExchanges?: Array<{ message: string; reply: string | null }>;
+  /** The peer's folder on a shared computer, as `bots/<id>`, when the case has a peer. */
+  peerHome?: string;
   /**
    * What the subject delivered to other bots: messages that reached the peer's chat and handoffs
    * posted in the group, with the names of the files attached to each.
