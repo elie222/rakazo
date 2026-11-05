@@ -88,6 +88,7 @@ import {
   saveRotatedSessionToken,
   saveSessionToken,
   saveVerifiedIntegrationsScope,
+  sessionOnlyInMemory,
   sessionSaveInProgress,
   snapshotSessionToken,
   snapshotStoredSessionToken,
@@ -527,6 +528,10 @@ async function clearCredentialsForEndpointChange(
   cachedSpaceId = "";
   bumpSpaceSelectionGeneration();
   const spaceCleared = await clearStoredValue(SPACE_KEY);
+  // The clear is the only session change allowed. A sign-in during it saved a session for the old
+  // server: the switch must not carry it to the new one, and a restore would overwrite it. The
+  // cleared session is gone from the device, so its record stays.
+  if (currentSessionGeneration() !== generation + 1) return failed("");
   if (sessionCleared && spaceCleared) {
     return {
       ok: true,
@@ -1316,8 +1321,13 @@ async function reconcileProvisionalSignOuts(): Promise<void> {
         resolved.push(record);
         continue;
       }
-      resolvedAny = true;
       const stillActive = record.apiBase === currentApiBase() && record.token === activeToken;
+      // A session kept only in memory is gone after a restart; a later reconcile promotes its record.
+      if (stillActive && sessionOnlyInMemory()) {
+        resolved.push(record);
+        continue;
+      }
+      resolvedAny = true;
       if (!stillActive) {
         const { provisional, ...committed } = record;
         resolved.push(committed);

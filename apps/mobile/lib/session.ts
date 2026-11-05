@@ -175,6 +175,11 @@ export function sessionSaveInProgress() {
   return sessionSaves > 0;
 }
 
+/** True while the active token is only in memory after a failed save; a restart loses it. */
+export function sessionOnlyInMemory() {
+  return sessionFallback !== undefined;
+}
+
 export async function loadSessionToken() {
   const snapshot = await snapshotSessionToken();
   return snapshot.ok ? snapshot.value : "";

@@ -56,7 +56,7 @@ import {
   updateAccountName,
 } from "./api.js";
 import { artifactCacheSession } from "./artifact-cache-session";
-import { resumeLiveNotifications } from "./live-notifications.js";
+import { resumeLiveNotifications, stopLiveNotifications } from "./live-notifications.js";
 import { threadRefreshDelayMs } from "./refresh";
 import {
   clearSessionToken,
@@ -3751,6 +3751,58 @@ describe("mobile API authentication", () => {
     expect(result).toMatchObject({ ok: false });
     expect(store.has("rakazo.session_token")).toBe(false);
     expect(await authHeaders(null)).toMatchObject({ authorization: "Bearer token-a" });
+    expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
+  });
+
+  it("a flush keeps the revocation of a rolled-back session kept only in memory", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.api_base") throw new Error("device locked");
+      if (key === "rakazo.session_token") throw new Error("device locked");
+      store.set(key, value);
+    });
+    try {
+      await saveApiBase("https://second-server.example");
+    } finally {
+      mockSecureStore(store);
+    }
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await flushPendingSignOut(true);
+
+    // token-a is still in use, so it is not revoked; a restart loses it, so the record stays.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
+  });
+
+  it("a server switch stops when a session is saved while it clears the old one", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    const previous = currentApiBase();
+    await restoreSessionToken("token-a");
+    let signIn = true;
+    vi.mocked(stopLiveNotifications).mockImplementation(async () => {
+      // A sign-in on the old server saves its token while the clear stops notifications.
+      if (signIn) {
+        signIn = false;
+        await saveSessionToken("token-b");
+      }
+    });
+    let result: Awaited<ReturnType<typeof saveApiBase>>;
+    try {
+      result = await saveApiBase("https://second-server.example");
+    } finally {
+      vi.mocked(stopLiveNotifications).mockImplementation(async () => undefined);
+    }
+
+    // The old server's token is never sent to the new server.
+    expect(result).toEqual({ ok: false, error: "Could not clear the previous server session" });
+    expect(currentApiBase()).toBe(previous);
+    expect(store.get("rakazo.session_token")).toBe("token-b");
+    expect(await authHeaders(null)).toMatchObject({ authorization: "Bearer token-b" });
+    // The cleared session is gone from the device, so its revocation stays.
     expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
   });
 
