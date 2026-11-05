@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
 import type {
   AdapterContext,
   CommandRequest,
@@ -337,17 +338,29 @@ function browserActionCommand(
     if (isChromiumBrowser(action.application)) return command;
     return `cd ${shellQuote(env.workspaceDir)}\n${command}`;
   }
-  const browser =
-    action.kind === "open" && /^https?:\/\//i.test(action.path)
-      ? action.path
-      : action.kind === "launch" && BROWSER_APPLICATIONS.has(action.application.toLowerCase())
-        ? (action.uri ?? "about:blank")
-        : undefined;
-  if (browser !== undefined) {
-    return `nohup ${browserLauncherPath(layout.displayNumber)} ${shellQuote(browser)} </dev/null >/tmp/rakazo/browser-open-${layout.displayNumber}.log 2>&1 &`;
-  }
   const workspace = env.workspaceDir;
-  return `cd ${shellQuote(workspace)}\n${extraDisplayActionCommand(layout, action.kind === "open" ? { ...action, path: workspacePath(workspace, action.path) } : action)}`;
+  const file =
+    action.kind === "open" && !/^https?:\/\//i.test(action.path)
+      ? workspacePath(workspace, action.path)
+      : undefined;
+  const browser =
+    file !== undefined
+      ? pathToFileURL(file, { windows: false }).href
+      : action.kind === "open"
+        ? action.path
+        : action.kind === "launch" && BROWSER_APPLICATIONS.has(action.application.toLowerCase())
+          ? (action.uri ?? "about:blank")
+          : undefined;
+  if (browser !== undefined) {
+    // A workspace file is a tab in this screen's browser, as on Docker computers. xdg-open
+    // ran the image's viewer in the foreground and held the action until the command timeout.
+    const exists =
+      file === undefined
+        ? ""
+        : `[ -e ${shellQuote(file)} ] || { echo ${shellQuote(`file '${file}' does not exist`)} >&2; exit 2; }\n`;
+    return `${exists}nohup ${browserLauncherPath(layout.displayNumber)} ${shellQuote(browser)} </dev/null >/tmp/rakazo/browser-open-${layout.displayNumber}.log 2>&1 &`;
+  }
+  return `cd ${shellQuote(workspace)}\n${extraDisplayActionCommand(layout, action)}`;
 }
 
 // Chrome-family WM_CLASS components. Matched whole, so "xterm" does not raise "uxterm".
