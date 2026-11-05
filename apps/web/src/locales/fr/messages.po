@@ -946,7 +946,6 @@ msgid "Approving…"
 msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
 msgid "Apps"
 msgstr ""
 
@@ -2567,10 +2566,6 @@ msgstr "Création en cours…"
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential"
 msgstr "Identifiant"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Credential saved"
-msgstr "Identifiant enregistré"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
@@ -4320,6 +4315,7 @@ msgstr ""
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
+#: src/pages/PluginsOverlay.tsx
 msgid "Needs an OAuth client ID"
 msgstr "Nécessite un ID client OAuth"
 
@@ -4330,6 +4326,10 @@ msgstr "Requiert votre attention"
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "Nécessite une saisie"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Needs sign-in"
+msgstr "Connexion requise"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4453,10 +4453,6 @@ msgstr "Aucune application ne correspond à votre recherche."
 #: src/pages/Artifacts.tsx
 msgid "No artifacts found."
 msgstr "Aucun artefact trouvé."
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No auth"
-msgstr "Pas d'authentification"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4583,6 +4579,10 @@ msgstr ""
 msgid "Not checked yet"
 msgstr "Pas encore vérifié"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Not connected"
+msgstr "Non connecté"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Not imported"
 msgstr "Non importé"
@@ -4610,6 +4610,7 @@ msgid "Not used by Rakazo"
 msgstr "Non utilisé par Rakazo"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Not working"
 msgstr "Ne fonctionne pas"
 
@@ -4637,17 +4638,9 @@ msgstr "ID client OAuth (optionnel)"
 msgid "OAuth client secret (optional)"
 msgstr "Secret client OAuth (optionnel)"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth connected"
-msgstr "OAuth connecté"
-
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "Échec de la connexion OAuth"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth expired"
-msgstr "OAuth expiré"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
@@ -7311,6 +7304,10 @@ msgstr "Vous avez le contrôle"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "Votre Anthropic"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Your apps"
+msgstr "Vos apps"
 
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."

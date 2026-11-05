@@ -1054,10 +1054,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "The server had a problem": "Auf dem Server ist ein Problem aufgetreten",
   "Could not load MCP servers": "MCP-Server konnten nicht geladen werden",
   Disabled: "Deaktiviert",
-  "OAuth connected": "OAuth verbunden",
-  "OAuth expired": "OAuth abgelaufen",
+  "Needs sign-in": "Anmeldung erforderlich",
+  "Not connected": "Nicht verbunden",
+  "Not working": "Funktioniert nicht",
   "Needs an OAuth client ID": "Benötigt eine OAuth-Client-ID",
-  "Credential saved": "Zugangsdaten gespeichert",
   Authentication: "Authentifizierungsmethode",
   "No auth": "Keine Authentifizierung",
   "The bot couldn't reply because its provider's daily limit was reached.":
@@ -1259,7 +1259,6 @@ export const DE_MESSAGES: Record<string, string> = {
   // Native remote MCP authentication controls.
   "API key header name": "Name des API-Schlüssel-Headers",
   Bearer: "Bearer",
-  "Connect OAuth": "Mit OAuth verbinden",
   "Could not start MCP OAuth": "MCP-OAuth konnte nicht gestartet werden",
   OAuth: "OAuth",
   "Always open {site}": "Immer {site} öffnen",

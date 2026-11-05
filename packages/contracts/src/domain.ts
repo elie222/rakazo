@@ -1200,6 +1200,33 @@ export const McpServerSchema = z.object({
 });
 export type McpServer = z.infer<typeof McpServerSchema>;
 
+export type McpServerConnection =
+  | "disabled"
+  | "needs_client"
+  | "needs_sign_in"
+  | "not_working"
+  | "connected"
+  | "not_connected";
+
+/** The one state every client shows for a saved server. */
+export function mcpServerConnection(
+  server: Pick<McpServer, "enabled" | "health" | "oauthClientId" | "oauthStatus">,
+): McpServerConnection {
+  if (!server.enabled) return "disabled";
+  if (server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId)
+    return "needs_client";
+  if (server.oauthStatus === "reconnect") return "needs_sign_in";
+  if (server.health.status === "error") return "not_working";
+  if (server.oauthStatus === "connected" || server.health.status === "ok") return "connected";
+  return "not_connected";
+}
+
+/** Whether Sign in or Reconnect can help: on, not connected, not signed in (even if failing). */
+export function mcpServerNeedsSignIn(server: Parameters<typeof mcpServerConnection>[0]): boolean {
+  const state = mcpServerConnection(server);
+  return state !== "disabled" && state !== "connected" && server.oauthStatus !== "connected";
+}
+
 export const BotMcpServerSchema = z.object({
   id: Id,
   botId: Id,

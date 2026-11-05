@@ -5,11 +5,15 @@ import type {
   ConnectionCatalogItem,
   IntegrationCatalogResult,
   IntegrationCatalogSurface,
+  McpServer,
+  McpServerConnection,
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
 import {
   CATALOG_SEARCH_QUERY_MAX_LENGTH,
   CONNECTION_LABEL_MAX_LENGTH,
+  mcpServerConnection,
+  mcpServerNeedsSignIn,
   PluginPreviewSchema,
   SUBMIT_PLUGIN_URL,
 } from "@rakazo/contracts";
@@ -59,14 +63,17 @@ import {
 import { queryOptions, skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUpRight,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CircleAlert,
   Plus,
   Search,
+  TriangleAlert,
   X,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
 import type {
@@ -74,7 +81,6 @@ import type {
   PluginSelection,
 } from "../components/integrations/plugin-marketplace";
 import {
-  mcpServerReady,
   PluginDetail,
   PluginLogo,
   PluginRow,
@@ -108,6 +114,50 @@ function ConnectorIcon({ name, logo }: { name: string; logo?: string | null }) {
     <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-body font-semibold text-foreground">
       {name[0]}
     </div>
+  );
+}
+
+function connectionLabel(state: McpServerConnection): ReactElement {
+  switch (state) {
+    case "disabled":
+      return <Trans>Disabled</Trans>;
+    case "needs_client":
+      return <Trans>Needs an OAuth client ID</Trans>;
+    case "needs_sign_in":
+      return <Trans>Needs sign-in</Trans>;
+    case "not_working":
+      return <Trans>Not working</Trans>;
+    case "connected":
+      return <Trans>Connected</Trans>;
+    case "not_connected":
+      return <Trans>Not connected</Trans>;
+  }
+}
+
+function ConnectionStatus({ server }: { server: McpServer }) {
+  const state = mcpServerConnection(server);
+  const warning = state === "needs_sign_in" || state === "needs_client";
+  const Icon =
+    state === "connected"
+      ? Check
+      : warning
+        ? TriangleAlert
+        : state === "not_working"
+          ? CircleAlert
+          : null;
+  const tone =
+    state === "connected"
+      ? "text-success"
+      : warning
+        ? "text-warning"
+        : state === "not_working"
+          ? "text-destructive"
+          : "text-muted-foreground";
+  return (
+    <span className={`flex min-w-0 items-center gap-1 text-body-sm ${tone}`}>
+      {Icon ? <Icon aria-hidden="true" className="size-3.5 shrink-0" /> : null}
+      <span className="truncate">{connectionLabel(state)}</span>
+    </span>
   );
 }
 
@@ -384,15 +434,26 @@ export function PluginsOverlay({
   const connectorInstalls = pluginInstalls.filter((install) =>
     installedPluginParts(install.config).includes("connector"),
   );
-  const connectedCount =
+  const appCount =
     connectedItems.length + standaloneServers.length + sources.length + connectorInstalls.length;
+  const readyInstalls = connectorInstalls.filter((install) => {
+    const servers = pluginServers(install);
+    return (
+      servers.length > 0 && servers.every((server) => mcpServerConnection(server) === "connected")
+    );
+  });
+  const connectedCount =
+    connectedItems.length +
+    standaloneServers.filter((server) => mcpServerConnection(server) === "connected").length +
+    sources.length +
+    readyInstalls.length;
   const connectedMarks = [
     ...connectedItems.map((item) => ({
       key: catalogItemKey(item),
       name: item.name,
       logo: item.logo,
     })),
-    ...connectorInstalls.map((install) => {
+    ...readyInstalls.map((install) => {
       const entry = catalogEntries.find((row) => row.installedSource === install.source);
       return { key: install.id, name: entry?.displayName ?? install.name, logo: entry?.logo };
     }),
@@ -1391,7 +1452,7 @@ export function PluginsOverlay({
     const servers = pluginServers(install);
     const parsed = PluginPreviewSchema.safeParse(install.config);
     const skillCount = parsed.success ? parsed.data.skills.length : 0;
-    const signInNeeded = part === "connector" && !servers.every(mcpServerReady);
+    const signInNeeded = part === "connector" && servers.some(mcpServerNeedsSignIn);
     return (
       <div
         key={`${install.id}:${part}`}
@@ -1423,23 +1484,20 @@ export function PluginsOverlay({
 
   function renderManage() {
     const appPlugins = connectorInstalls;
-    const hasApps = connectedCount > 0 || Boolean(mcpError);
+    const hasApps = appCount > 0 || Boolean(mcpError);
     return (
       <div data-testid="integrations-manage" className="space-y-8">
-        {renderViewTitle(<Trans>Connected</Trans>, () => setView("browse"))}
+        {renderViewTitle(<Trans>Your apps</Trans>, () => setView("browse"))}
 
         {hasApps ? (
           <section data-testid="connected-apps">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <SectionHeading className="px-2.5">
-                <Trans>Apps</Trans>
-              </SectionHeading>
-              {onOpenMcp && standaloneServers.length ? (
+            {onOpenMcp && standaloneServers.length ? (
+              <div className="mb-2 flex justify-end">
                 <Button variant="link" size="xs" onClick={onOpenMcp}>
                   <Trans>Manage MCP servers</Trans>
                 </Button>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
             {mcpError ? (
               <div
                 role="alert"
@@ -1456,7 +1514,7 @@ export function PluginsOverlay({
                 {sourceError}
               </p>
             ) : null}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {connectedItems.map((item) =>
                 renderCatalogTile(item, item.name, item.logo, { tileTestId: false }),
               )}
@@ -1471,19 +1529,7 @@ export function PluginsOverlay({
                     <ConnectorIcon name={server.name} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-body-lg font-medium">{server.name}</span>
-                      <span className="block truncate text-body-sm text-muted-foreground">
-                        {!server.enabled ? (
-                          <Trans>Disabled</Trans>
-                        ) : server.oauthStatus === "reconnect" ? (
-                          <Trans>OAuth expired</Trans>
-                        ) : server.oauthStatus === "connected" ? (
-                          <Trans>OAuth connected</Trans>
-                        ) : server.hasSecret ? (
-                          <Trans>Credential saved</Trans>
-                        ) : (
-                          <Trans>No auth</Trans>
-                        )}
-                      </span>
+                      <ConnectionStatus server={server} />
                     </span>
                     <AvailabilityLabel availability={server.availability} />
                   </div>
@@ -1557,7 +1603,7 @@ export function PluginsOverlay({
             <Trans>Integrations</Trans>
           </DialogTitle>
           <div className="flex items-center gap-2">
-            {browsing && connectedCount > 0 ? (
+            {browsing && appCount > 0 ? (
               <Button
                 variant="ghost"
                 className="-my-1 h-9 gap-2.5 px-2.5 text-body text-muted-foreground"
