@@ -8,6 +8,7 @@ import type {
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
 import {
+  CATALOG_SEARCH_QUERY_MAX_LENGTH,
   CONNECTION_LABEL_MAX_LENGTH,
   PluginPreviewSchema,
   SUBMIT_PLUGIN_URL,
@@ -1843,7 +1844,9 @@ export function PluginsOverlay({
                       </Button>
                     </div>
                   ) : null}
-                  {query.trim().length >= 2 && !category
+                  {query.trim().length >= 2 &&
+                  query.trim().length <= CATALOG_SEARCH_QUERY_MAX_LENGTH &&
+                  !category
                     ? renderPublicCatalogRow(query.trim())
                     : null}
                 </>

@@ -1058,6 +1058,9 @@ export const IntegrationCatalogSurfaceSchema = z.object({
 });
 export type IntegrationCatalogSurface = z.infer<typeof IntegrationCatalogSurfaceSchema>;
 
+/** The longest query the integration catalog search accepts. */
+export const CATALOG_SEARCH_QUERY_MAX_LENGTH = 253;
+
 export const IntegrationCatalogResultSchema = z.object({
   domain: z.string(),
   name: z.string(),
