@@ -10,6 +10,8 @@ const { saved, account } = vi.hoisted(() => ({
     userId: "account-a",
     available: true,
     selectedSpace: "space-a",
+    ownerGate: null as Promise<void> | null,
+    ownerCalls: 0,
   },
 }));
 vi.mock("expo-secure-store", () => ({
@@ -29,10 +31,14 @@ vi.mock("./api", () => ({
     sessionGeneration: session.currentSessionGeneration(),
     headers: { authorization: `Bearer ${await session.loadSessionToken()}` },
   }),
-  fetchMobileJson: async () => ({
-    response: new Response(null, { status: account.available ? 200 : 401 }),
-    body: { user: { id: account.userId } },
-  }),
+  fetchMobileJson: async () => {
+    account.ownerCalls += 1;
+    await account.ownerGate;
+    return {
+      response: new Response(null, { status: account.available ? 200 : 401 }),
+      body: { user: { id: account.userId } },
+    };
+  },
 }));
 vi.mock("./live-notifications", () => ({ stopLiveNotifications: vi.fn(async () => undefined) }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
@@ -55,6 +61,8 @@ beforeEach(async () => {
   account.userId = "account-a";
   account.available = true;
   account.selectedSpace = "space-a";
+  account.ownerGate = null;
+  account.ownerCalls = 0;
   vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
     saved.delete(key);
   });
@@ -100,6 +108,33 @@ describe("last bot ownership", () => {
     expect(await lastBot.loadLastBotId()).toBe("");
     account.selectedSpace = "space-a";
     expect(await lastBot.loadLastBotId()).toBe("researcher");
+  });
+
+  it("drops the target when the selected Space changes during owner verification", async () => {
+    await lastBot.saveLastBotId("researcher", "space-a");
+    const savedWhileWaiting = account.ownerCalls;
+
+    let release!: () => void;
+    account.ownerGate = new Promise<void>((done) => {
+      release = done;
+    });
+    const switched = lastBot.loadLastBotId();
+    await vi.waitFor(() => expect(account.ownerCalls).toBe(savedWhileWaiting + 1));
+    account.selectedSpace = "space-b";
+    release();
+    await expect(switched).resolves.toBe("");
+
+    account.selectedSpace = "space-a";
+    let resolveReturn!: () => void;
+    account.ownerGate = new Promise<void>((done) => {
+      resolveReturn = done;
+    });
+    const returned = lastBot.loadLastBotId();
+    await vi.waitFor(() => expect(account.ownerCalls).toBe(savedWhileWaiting + 2));
+    account.selectedSpace = "space-b";
+    account.selectedSpace = "space-a";
+    resolveReturn();
+    await expect(returned).resolves.toBe("researcher");
   });
 
   it.each(["account", "server"])(

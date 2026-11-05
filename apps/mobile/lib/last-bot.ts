@@ -46,6 +46,11 @@ export async function saveLastBotId(botId: string, spaceId: string | null) {
   });
 }
 
+/** The record belongs to the Space it was saved in; another Space or organization starts without it. */
+function inSelectedSpace(record: { spaceId?: unknown }): boolean {
+  return typeof record.spaceId !== "string" || record.spaceId === selectedSpaceId();
+}
+
 export async function loadLastBotId() {
   const generation = currentSessionGeneration();
   let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -62,13 +67,14 @@ export async function loadLastBotId() {
           !record.userId.trim()
         )
           return "";
-        // The record belongs to the Space it was saved in; another Space or organization starts without it.
-        if (typeof record.spaceId === "string" && record.spaceId !== selectedSpaceId()) return "";
+        if (!inSelectedSpace(record)) return "";
         const owner = await currentOwner();
+        // The selection may have moved to another Space while the owner was verified.
         return owner &&
           generation === currentSessionGeneration() &&
           owner.apiBase === record.apiBase &&
-          owner.userId === record.userId
+          owner.userId === record.userId &&
+          inSelectedSpace(record)
           ? record.botId
           : "";
       }),
