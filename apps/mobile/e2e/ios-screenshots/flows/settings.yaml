@@ -195,3 +195,18 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 20-artifacts
+- openLink: "rakazo:///account"
+- scrollUntilVisible:
+    element: "Haptics"
+    direction: UP
+    timeout: 15000
+    visibilityPercentage: 100
+    centerElement: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 21-haptics
+- tapOn: "Haptics"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 22-haptics-toggled
+- tapOn: "Haptics"
