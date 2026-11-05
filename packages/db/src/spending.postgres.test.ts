@@ -7,6 +7,7 @@ import {
   checkPayment,
   recordPayment,
   releasePayment,
+  releasePendingSpacePayments,
   saveSpendingLimit,
   spendingStatus,
 } from "./spending.js";
@@ -188,6 +189,44 @@ describePostgres("spending limit (PostgreSQL)", () => {
       currency: "usd",
       period: "none",
     });
+  });
+
+  it("stops counting a deleted Space's wallet purchases still waiting on the owner", async () => {
+    const actor = await seedUser();
+    const system = asSystem(db!.prisma);
+    const purchase = (operationKey: string, status: string) =>
+      system.purchase.create({
+        data: {
+          operationKey,
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          botId: "bot",
+          threadId: "thread",
+          threadGeneration: 0,
+          provider: "emulator",
+          remoteId: operationKey,
+          merchantName: "Shop",
+          merchantUrl: "https://shop.example.test",
+          amount: 100,
+          currency: "usd",
+          status,
+        },
+      });
+    const pending = payment(actor, 100);
+    const approved = payment(actor, 200);
+    await purchase(pending.operationKey, "pending_approval");
+    await purchase(approved.operationKey, "approved");
+    await runAsTenant(actor, () => recordPayment(db!.prisma, pending));
+    await runAsTenant(actor, () => recordPayment(db!.prisma, approved));
+    await system.$transaction((tx) => releasePendingSpacePayments(tx, actor.spaceId));
+    const rows = await system.payment.findMany({
+      where: { userId: actor.userId },
+      select: { operationKey: true, releasedAt: true },
+    });
+    expect(
+      rows.find((row) => row.operationKey === pending.operationKey)?.releasedAt,
+    ).toBeInstanceOf(Date);
+    expect(rows.find((row) => row.operationKey === approved.operationKey)?.releasedAt).toBeNull();
   });
 
   it("keeps one user's limit and payments from another", async () => {

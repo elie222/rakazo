@@ -3670,6 +3670,7 @@ describe("a click that completes a purchase on a website", () => {
           site: "shop.example.test",
           label: "Pay $113",
           amount: "$113",
+          total: "",
         },
       ],
     ]);

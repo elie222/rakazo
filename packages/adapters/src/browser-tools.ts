@@ -304,7 +304,14 @@ export async function browserActFromTool(
       const step = actions[index];
       if (step?.kind === "click" && approved) {
         const { site, label, amount } = approved;
-        actions[index] = { ...step, approved: true, site, label, amount };
+        actions[index] = {
+          ...step,
+          approved: true,
+          site,
+          label,
+          amount,
+          total: approved.total ?? "",
+        };
       }
     }
     if (approved) {

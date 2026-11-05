@@ -5,6 +5,7 @@ import { Prisma } from "./client.js";
 import type { PageShareSecret } from "./page-shares.js";
 import { deletePageShareSecrets } from "./page-shares.js";
 import { IsolationError } from "./scope.js";
+import { releasePendingSpacePayments } from "./spending.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Per member, per organization: one person cannot fan out unbounded boundaries. */
@@ -442,6 +443,7 @@ export async function deleteClaimedSpaceForMember(
         // was cut short; a retry finishes it.
         if (remainingBots > 0 || provisioned > 0) throw new SpaceDeletionInProgressError();
         const pageShareSecrets = await deletePageShareSecrets(tx, { spaceId: input.spaceId });
+        await releasePendingSpacePayments(tx, input.spaceId);
         await tx.space.delete({ where: { id: input.spaceId } });
         const removed = {
           artifactKeys: artifacts.map((artifact) => artifact.storageKey),
@@ -585,6 +587,7 @@ export async function deleteClaimedSpace(
           where: { pageShare: { is: { spaceId } } },
           select: { id: true, ciphertext: true },
         });
+        await releasePendingSpacePayments(tx, spaceId);
         const gone = await tx.space.deleteMany({
           where: { id: spaceId, deletionClaimId: claimId },
         });

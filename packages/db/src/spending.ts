@@ -158,6 +158,27 @@ export async function releasePayment(
   });
 }
 
+/**
+ * Stop counting the Space's wallet purchases still waiting on the wallet owner: the Space is about to
+ * be deleted, its purchases with it, so no bot can pay with them and the poller can no longer settle
+ * them. Approved ones keep counting, since their card may have been used. Runs in the deletion's
+ * transaction.
+ */
+export async function releasePendingSpacePayments(
+  tx: Pick<Prisma.TransactionClient, "purchase" | "payment">,
+  spaceId: string,
+): Promise<void> {
+  const pending = await tx.purchase.findMany({
+    where: { spaceId, status: { in: ["pending_approval", "needs_action"] } },
+    select: { operationKey: true },
+  });
+  if (!pending.length) return;
+  await tx.payment.updateMany({
+    where: { operationKey: { in: pending.map((row) => row.operationKey) }, releasedAt: null },
+    data: { releasedAt: new Date() },
+  });
+}
+
 /** The limit and what counts against it now, for Settings. */
 export async function spendingStatus(
   prisma: Pick<
