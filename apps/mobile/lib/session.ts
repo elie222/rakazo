@@ -171,25 +171,8 @@ export function currentSessionGeneration() {
 
 /** Token saves still running; a read during one sees no session until its token lands. */
 let sessionSaves = 0;
-const sessionSavesDone: (() => void)[] = [];
 export function sessionSaveInProgress() {
   return sessionSaves > 0;
-}
-function endSessionSave() {
-  sessionSaves -= 1;
-  if (sessionSaves === 0) for (const done of sessionSavesDone.splice(0)) done();
-}
-/** Resolves once no token save is running, or after `timeoutMs` while one still is. */
-export async function sessionSavesSettled(timeoutMs: number): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timedOut = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, timeoutMs);
-  });
-  const settled = (async () => {
-    while (sessionSaves > 0) await new Promise<void>((done) => sessionSavesDone.push(done));
-  })();
-  await Promise.race([settled, timedOut]);
-  clearTimeout(timer);
 }
 
 export async function loadSessionToken() {
@@ -208,13 +191,10 @@ export async function saveSessionToken(token: string, sameAccount = false) {
     const clearingScope = invalidateSessionCaches(false, sameAccount);
     // Marked before the token lands, so an account deletion that clears it afterwards also clears the mark.
     await rememberSignedIn();
-    // A save that finishes after a later change, such as a sign-out, must not store its token.
-    await enqueueScopeWrite(async () => {
-      if (generation === sessionGeneration) await SecureStore.setItemAsync(SESSION_KEY, token);
-    });
+    await enqueueScopeWrite(() => SecureStore.setItemAsync(SESSION_KEY, token));
     await clearingScope;
   } finally {
-    endSessionSave();
+    sessionSaves -= 1;
   }
   if (generation !== sessionGeneration) return;
   sessionInvalidated = false;
@@ -347,7 +327,7 @@ export async function rotateSessionTokenIfCurrent(
     }
     throw error;
   } finally {
-    endSessionSave();
+    sessionSaves -= 1;
   }
   await clearingScope;
   if (rotation === sessionGeneration) {

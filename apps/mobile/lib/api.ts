@@ -89,7 +89,6 @@ import {
   saveSessionToken,
   saveVerifiedIntegrationsScope,
   sessionSaveInProgress,
-  sessionSavesSettled,
   snapshotSessionToken,
   snapshotStoredSessionToken,
   tokenFromAuthResponse,
@@ -1475,15 +1474,11 @@ export async function flushPendingSignOut(force = false): Promise<void> {
   return flushingPendingSignOut;
 }
 
-/** How long a sign-out waits for a token save still running before it clears without it. */
-const SIGN_OUT_SAVE_WAIT_MS = 3_000;
-
 export async function signOut() {
   const apiBase = currentApiBase();
-  // A save still running reads as no session, and the clear deletes its token once it lands:
-  // wait for it, so the sign-out records the session it clears. A stalled save cannot hold the
-  // sign-out; after the wait it no longer stores its token.
-  await sessionSavesSettled(SIGN_OUT_SAVE_WAIT_MS);
+  // A save still running reads as no session, and the clear would delete its token once it lands
+  // with no record to revoke it: as in a server switch, the sign-out stops and the user retries.
+  if (sessionSaveInProgress()) throw new Error(t("Could not clear the local session"));
   const tokenSnapshot = await snapshotSessionToken();
   if (!tokenSnapshot.ok) throw new Error(t("Could not clear the local session"));
   // A failed save or wipe can leave a token stored that reads as no session; the clear deletes it
