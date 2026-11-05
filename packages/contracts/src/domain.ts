@@ -2030,8 +2030,8 @@ export const BYOK_TIERS: Record<ByokTier, ByokTierTerms> = {
   },
   max: {
     name: "Max",
-    monthlyPriceCents: 14900,
-    annualPriceCents: 142800,
+    monthlyPriceCents: 9900,
+    annualPriceCents: 94800,
     computerAllowanceCents: 4000,
     computerSize: "xlarge",
   },

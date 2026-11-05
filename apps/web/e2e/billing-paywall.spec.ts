@@ -397,8 +397,8 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
     {
       tier: "max",
       name: "Max",
-      monthlyPriceCents: 14900,
-      annualPriceCents: 142800,
+      monthlyPriceCents: 9900,
+      annualPriceCents: 94800,
       computerSize: "xlarge",
       computerHours: 200,
     },
