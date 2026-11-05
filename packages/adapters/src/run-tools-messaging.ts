@@ -1,4 +1,6 @@
+import { messagingDeliverJob } from "@rakazo/adapter-kit";
 import { isBackgroundRunTrigger, redactSecrets } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import {
   connectAgent,
   messageConnectedAgent,
@@ -144,6 +146,10 @@ export const messagingTools: ToolHandlers = {
       return call.finish({ ok: true });
     }
     reply.ownerNotifyCount += 1;
+    // Send it now rather than when the turn ends; the end-of-turn mirror still covers a failure.
+    await deps.jobs
+      .enqueue(messagingDeliverJob(run.id))
+      .catch((error) => getLogger().error("notify_owner delivery enqueue", error));
     return call.finish(
       isProgressMessageTruncated(rawMessage, maxLength)
         ? {

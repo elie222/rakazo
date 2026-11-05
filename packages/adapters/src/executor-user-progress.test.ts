@@ -323,6 +323,7 @@ async function runTurn(
     return appendEventInTransaction(prisma as unknown as Prisma.TransactionClient, event);
   });
   const pauseRunForInput = vi.fn(async () => ({ continuationRunId: null }));
+  const jobs = { enqueue: vi.fn(async (_job: { name: string; payload: unknown }) => undefined) };
   vision.seesImages = options.graphical ?? false;
   const executor = createRunExecutor({
     deploymentModelKey: "fixture-model-key",
@@ -348,7 +349,7 @@ async function runTurn(
     memory: { read: async () => ({ documents: [] }) },
     memoryProviders: { resolve: async () => null },
     events: { append, finalizeRun, pauseRunForInput, notify: vi.fn(async () => undefined) },
-    jobs: { enqueue: vi.fn(async () => undefined) },
+    jobs,
     secrets,
     ...(options.linkedChat ? { messaging: { hasIdentity: async () => true } } : {}),
     ...(options.graphical
@@ -370,7 +371,17 @@ async function runTurn(
   expect(runtimeRun).toHaveBeenCalled();
   if (!options.runtimeFailure)
     expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
-  return { finalizeRun, append, pauseRunForInput, messages, savedEvents, prisma, runtimeRun, run };
+  return {
+    finalizeRun,
+    append,
+    pauseRunForInput,
+    messages,
+    savedEvents,
+    prisma,
+    runtimeRun,
+    run,
+    jobs,
+  };
 }
 
 /** Notes saved on the final reply's steps, in order. */
@@ -781,7 +792,7 @@ describe("notes that can't be posted as messages", () => {
       const results: unknown[] = [];
       let seen: AgentRunRequest | undefined;
       let offered = false;
-      const { messages } = await runTurn("", false, undefined, [], intent, {
+      const { messages, jobs } = await runTurn("", false, undefined, [], intent, {
         trigger,
         linkedChat,
         failMessageOnce,
@@ -803,7 +814,10 @@ describe("notes that can't be posted as messages", () => {
       const notices = (messages as Array<{ blocks: MessageBlock[]; clientNonce?: string }>).filter(
         (message) => message.clientNonce?.startsWith("owner-notify:"),
       );
-      return { results, notices, offered, instructions: seen!.instructions };
+      const deliveries = jobs.enqueue.mock.calls.filter(
+        ([job]) => job.name === "messaging.deliver",
+      ).length;
+      return { results, notices, offered, deliveries, instructions: seen!.instructions };
     };
 
     const max = messageUserMaxLength();
@@ -824,6 +838,8 @@ describe("notes that can't be posted as messages", () => {
     expect(
       delegated.notices.map((notice) => (notice.blocks[0] as { text: string }).text.length),
     ).toEqual(["Approve the deploy?".length, max, max]);
+    // Each notification goes out as it is sent, not when the turn ends.
+    expect(delegated.deliveries).toBe(3);
     expect(delegated.instructions).not.toContain("mirrored to their chat");
 
     expect((await turn("bot_message", true, "question")).offered).toBe(true);
