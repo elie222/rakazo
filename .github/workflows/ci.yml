@@ -290,7 +290,9 @@ jobs:
           electron_config_cache: ${{ runner.temp }}/electron-cache
         run: pnpm install --frozen-lockfile --filter "@rakazo/desktop..."
       # Install scripts can skip the zip when GitHub releases blip; pull it into the shared cache now.
+      # bash on Windows too: the default PowerShell shell rejects the for-loop below.
       - name: Ensure Electron binary
+        shell: bash
         env:
           electron_config_cache: ${{ runner.temp }}/electron-cache
         run: |
