@@ -37,7 +37,8 @@ while IFS= read -r file; do
       native=true
       compose=true
       ;;
-    apps/desktop/* | scripts/pnpm*.mjs | packages/adapter-kit/* | packages/core/src/node/* | \
+    apps/desktop/* | scripts/pnpm*.mjs | scripts/setup-worktree*.mjs | \
+      packages/adapter-kit/* | packages/core/src/node/* | \
       packages/adapters/src/*computer* | packages/adapters/src/*desktop* | \
       packages/adapters/src/*sandbox* | packages/adapters/src/*host-* | \
       packages/adapters/src/home* | packages/adapters/src/native-shell* | \

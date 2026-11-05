@@ -282,6 +282,8 @@ jobs:
       - name: Windows pnpm launcher test
         if: runner.os == 'Windows'
         run: node --test scripts/pnpm.test.mjs
+      - name: Worktree environment setup test
+        run: node --test scripts/setup-worktree.test.mjs
       - name: Install desktop workspace
         env:
           electron_config_cache: ${{ runner.temp }}/electron-cache
