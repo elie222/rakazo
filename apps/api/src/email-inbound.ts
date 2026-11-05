@@ -4,7 +4,11 @@ import type { InboundEmail } from "@rakazo/adapters";
 import { INBOUND_EMAIL_MAX_BYTES, readInboundEmail } from "@rakazo/adapters";
 import type { RoutineEmailSenders } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
-import { hasValidBearerToken, sanitizeMessagingLabel } from "@rakazo/core";
+import {
+  AttachmentValidationError,
+  hasValidBearerToken,
+  sanitizeMessagingLabel,
+} from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
 import { cancelBody, readBoundedBytes } from "./http-body.js";
@@ -164,6 +168,9 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
       });
       artifacts.push({ id, name, mimeType, size });
     } catch (error) {
+      // A storage or database failure is temporary: fail the request so the relay retries.
+      // Files already stored are found again by their nonces, never stored twice.
+      if (!(error instanceof AttachmentValidationError)) throw error;
       getLogger().warn("email attachment was not stored", {
         reason: error instanceof Error ? error.message : String(error),
       });

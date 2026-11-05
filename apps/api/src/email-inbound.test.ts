@@ -1,5 +1,6 @@
 import type { InboundEmail } from "@rakazo/adapters";
 import { INBOUND_EMAIL_MAX_BYTES } from "@rakazo/adapters";
+import { AttachmentValidationError } from "@rakazo/core";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import type { EmailInboundDeps } from "./email-inbound.js";
@@ -247,10 +248,26 @@ describe("inbound email route", () => {
     expect(sendUserMessage).toHaveBeenCalledTimes(1);
   });
 
+  it("fails the request so the relay retries when storage is down", async () => {
+    const { post, sendUserMessage } = setup({
+      storeAttachment: async () => {
+        throw new Error("storage unavailable");
+      },
+      message: email({
+        attachments: [{ name: "a.pdf", mimeType: "application/pdf", bytes: new Uint8Array([1]) }],
+      }),
+    });
+
+    expect((await post()).status).toBe(500);
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
   it("stores attachments and names the ones it could not keep", async () => {
     const storeAttachment = vi.fn<NonNullable<EmailInboundDeps["storeAttachment"]>>(
       async ({ attachment }) => {
-        if (attachment.mimeType === "application/x-msdownload") throw new Error("type not allowed");
+        if (attachment.mimeType === "application/x-msdownload") {
+          throw new AttachmentValidationError("type not allowed");
+        }
         return {
           id: `a-${attachment.name}`,
           name: attachment.name,
