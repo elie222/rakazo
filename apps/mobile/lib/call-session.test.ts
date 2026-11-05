@@ -1876,4 +1876,45 @@ describe("mobile call on a session change", () => {
       { requestContext: expect.objectContaining({ sessionGeneration: callGeneration }) },
     );
   });
+
+  it("keeps a call's turns and hang-up on the Space it started in", async () => {
+    const { captureApiRequestContext, rpc } = await import("./api");
+    // The caller pins the Space at call start; the selection then moves to another
+    // organization's Space, which changes no session generation.
+    vi.mocked(captureApiRequestContext).mockImplementation(async () => ({
+      apiBase: "https://api.example.test",
+      headers: { "x-rakazo-space-id": "space-b" },
+      sessionGeneration: currentSessionGeneration(),
+    }));
+    const fake = fakes();
+    const { send: _send, endCall: _endCall, ...deps } = fake.deps;
+    startCall(
+      {
+        botId: "bot-1",
+        botName: "Ada",
+        requestContext: {
+          apiBase: "https://api.example.test",
+          headers: { "x-rakazo-space-id": "space-a" },
+          sessionGeneration: currentSessionGeneration(),
+        },
+      },
+      deps,
+    );
+    await flush();
+    fake.say("hello");
+    await flush();
+    endCall();
+    await flush();
+
+    const sent = vi
+      .mocked(rpc)
+      .mock.calls.map(([path, , options]) => [
+        path,
+        options?.requestContext?.headers["x-rakazo-space-id"],
+      ]);
+    expect(sent).toEqual([
+      ["threads/send", "space-a"],
+      ["threads/endCall", "space-a"],
+    ]);
+  });
 });
