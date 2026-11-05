@@ -334,8 +334,10 @@ describe("TregPaidServiceProvider", () => {
     const answers = [
       json({ _treg: { outcome: "pending" } }, 202),
       json({ error: "idempotency_outcome_unknown" }, 410, { "X-Treg-Error": "1" }),
+      json({ error: "idempotency_outcome_unknown" }, 410),
     ];
     const { services } = provider(() => answers.shift()!);
+    await expect(services.call(mapsService, {}, callOptions, context)).rejects.toThrow();
     await expect(services.call(mapsService, {}, callOptions, context)).rejects.toThrow();
     await expect(services.call(mapsService, {}, callOptions, context)).rejects.toThrow();
   });
