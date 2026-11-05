@@ -107,8 +107,8 @@ export default function VoiceSettings() {
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const [sttApiKey, setSttApiKey] = useState("");
   // The connection fields as last rendered, read when a connect finishes.
-  const connection = useRef({ speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl });
-  connection.current = { speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl };
+  const connection = useRef({ speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl, sttApiKey });
+  connection.current = { speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl, sttApiKey };
   // Fields typed into since the last load; an opening refresh keeps them.
   const edited = useRef(new Set<VoiceField>());
   // Every load and action bumps this, so an older refresh never lands over a newer choice.
@@ -376,6 +376,8 @@ export default function VoiceSettings() {
       for (const field of CONNECTION_FIELDS) {
         if (connection.current[field] === sent[field]) edited.current.delete(field);
       }
+      // A transcription key typed meanwhile stays pinned to the address it was typed for.
+      if (connection.current.sttApiKey !== sent.sttApiKey) edited.current.add("sttBaseUrl");
       await load(selected.id, { keepForm: true });
     } catch (err) {
       setError(errorText(err, t("Could not connect")));

@@ -462,7 +462,8 @@ it("keeps edits typed while a reconnect runs and shows the saved values for the 
     if (proc === "voice/credentials") return [saved];
     if (proc === "voice/connect") {
       await connectHeld;
-      Object.assign(saved, { sttEndpoint: "http://127.0.0.1:9200/v1", sttModel: "sent-model" });
+      // Another device moves transcription before the refresh that follows this connect.
+      Object.assign(saved, { sttEndpoint: "http://127.0.0.1:9300/v1", sttModel: "sent-model" });
       return { ok: true };
     }
     return original(proc, args);
@@ -490,10 +491,9 @@ it("keeps edits typed while a reconnect runs and shows the saved values for the 
   await type("Transcription API key", "newer-key");
   await type("Speech model", "newer-tts");
   await act(async () => releaseConnect());
-  await vi.waitFor(() =>
-    expect(field("Transcription server URL").value).toBe("http://127.0.0.1:9200/v1"),
-  );
-  expect(field("Transcription model").value).toBe("sent-model");
+  await vi.waitFor(() => expect(field("Transcription model").value).toBe("sent-model"));
+  // The key typed meanwhile stays with the address it was typed for, not the other server.
+  expect(field("Transcription server URL").value).toBe("http://127.0.0.1:9200");
   expect(field("Transcription API key").value).toBe("newer-key");
   expect(field("Speech model").value).toBe("newer-tts");
 });
