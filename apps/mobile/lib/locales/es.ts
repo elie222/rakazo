@@ -1355,6 +1355,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "On the button": "En el botón",
   "Read from the page, not checked": "Leído de la página, sin verificar",
   Total: "Total",
+  "{name} options": "Opciones de {name}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

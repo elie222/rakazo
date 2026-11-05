@@ -1445,6 +1445,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "On the button": "На кнопке",
   "Read from the page, not checked": "Прочитано со страницы, не проверено",
   Total: "Итого",
+  "{name} options": "Опции: {name}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

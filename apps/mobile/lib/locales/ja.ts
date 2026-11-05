@@ -1437,6 +1437,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "On the button": "ボタンの金額",
   "Read from the page, not checked": "ページから読み取り、未確認",
   Total: "合計",
+  "{name} options": "{name}のオプション",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

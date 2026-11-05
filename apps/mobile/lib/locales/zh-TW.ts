@@ -1409,6 +1409,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "On the button": "按鈕上的金額",
   "Read from the page, not checked": "讀取自頁面，未核實",
   Total: "合計",
+  "{name} options": "{name}的選項",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

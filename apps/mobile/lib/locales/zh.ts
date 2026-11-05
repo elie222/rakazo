@@ -1411,6 +1411,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "On the button": "按钮上的金额",
   "Read from the page, not checked": "读取自页面，未核实",
   Total: "合计",
+  "{name} options": "{name}的选项",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

@@ -1404,6 +1404,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "On the button": "Op de knop",
   "Read from the page, not checked": "Van de pagina gelezen, niet gecontroleerd",
   Total: "Totaal",
+  "{name} options": "Opties voor {name}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
