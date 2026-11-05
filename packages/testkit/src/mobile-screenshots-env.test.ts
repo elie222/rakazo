@@ -25,4 +25,15 @@ describe("mobile screenshot environment", () => {
 
     expect(prismaConfig.datasource?.url).toBe(disposableUrl);
   });
+
+  it("replaces a migration URL the shell already exported", async () => {
+    vi.stubEnv("DATABASE_URL", disposableUrl);
+    vi.stubEnv("DATABASE_MIGRATION_URL", developerUrl);
+    const { configureEnvironment } = await import("./cli/mobile-screenshots.js");
+    configureEnvironment();
+
+    const { default: prismaConfig } = await import("../../db/prisma.config.js");
+
+    expect(prismaConfig.datasource?.url).toBe(disposableUrl);
+  });
 });
