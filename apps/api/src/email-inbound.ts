@@ -1,11 +1,7 @@
 import { createHash } from "node:crypto";
 import type { MessagingInboundAttachment } from "@rakazo/adapter-kit";
 import type { InboundEmail } from "@rakazo/adapters";
-import {
-  INBOUND_EMAIL_MAX_BYTES,
-  postRoutineWatchMessage,
-  readInboundEmail,
-} from "@rakazo/adapters";
+import { INBOUND_EMAIL_MAX_BYTES, readInboundEmail } from "@rakazo/adapters";
 import type { RoutineEmailSenders } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import {
@@ -14,6 +10,7 @@ import {
   sanitizeMessagingLabel,
 } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
+import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
 import { cancelBody, readBoundedBytes } from "./http-body.js";
@@ -118,8 +115,12 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     select: { email: true },
   });
   const ownerEmail = owner?.email.trim().toLowerCase() || null;
+  const named = [...email.to, ...email.cc].some(
+    (address) => recipientName(address, deps.domain) === target,
+  );
   if (!email.authenticated) {
-    if (sender === ownerEmail) {
+    // BCC'd mail is dropped whatever its signature, so it never earns a note either.
+    if (sender === ownerEmail && named) {
       await noteUnverifiedOwnerMail(
         deps,
         { id: bot.id, spaceId: bot.spaceId, threadId: bot.thread.id },
@@ -130,9 +131,7 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   }
   if (domainOf(sender) === deps.domain) return ignored("from a bot");
   // A signed message replayed to the bot does not name it; BCC does not either.
-  if (
-    ![...email.to, ...email.cc].some((address) => recipientName(address, deps.domain) === target)
-  ) {
+  if (!named) {
     return ignored("not addressed to this bot");
   }
 
@@ -231,23 +230,35 @@ async function noteUnverifiedOwnerMail(
   localPart: string,
 ) {
   const due = new Date(Date.now() - UNVERIFIED_NOTICE_INTERVAL_MS);
-  // A claim on the row, so instances that receive copies at once post a single note.
-  const claimed = await deps.prisma.botEmailAddress.updateMany({
-    where: {
-      localPart,
+  const blocks = [{ kind: "meta" as const, text: UNVERIFIED_OWNER_MAIL_NOTE }];
+  // The claim and the note commit together: instances receiving copies at once post one note,
+  // and a note that fails to save leaves the day's slot free for the next message.
+  const seq = await deps.prisma.$transaction(async (tx) => {
+    const claimed = await tx.botEmailAddress.updateMany({
+      where: {
+        localPart,
+        botId: bot.id,
+        OR: [{ unverifiedNoticeAt: null }, { unverifiedNoticeAt: { lt: due } }],
+      },
+      data: { unverifiedNoticeAt: new Date() },
+    });
+    if (claimed.count !== 1) return undefined;
+    const message = await createThreadMessageInTransaction(tx, {
+      threadId: bot.threadId,
       botId: bot.id,
-      OR: [{ unverifiedNoticeAt: null }, { unverifiedNoticeAt: { lt: due } }],
-    },
-    data: { unverifiedNoticeAt: new Date() },
+      role: "system",
+      blocks,
+    });
+    const event = await appendEventInTransaction(tx, {
+      spaceId: bot.spaceId,
+      threadId: bot.threadId,
+      botId: bot.id,
+      type: "thread.message.created",
+      payload: { messageId: message.id, role: "system", blocks },
+    });
+    return event.seq;
   });
-  if (claimed.count !== 1) return;
-  await postRoutineWatchMessage(deps, {
-    spaceId: bot.spaceId,
-    threadId: bot.threadId,
-    botId: bot.id,
-    role: "system",
-    text: UNVERIFIED_OWNER_MAIL_NOTE,
-  });
+  if (seq !== undefined) await deps.events.notify(bot.threadId, seq).catch(() => undefined);
 }
 
 export const UNVERIFIED_OWNER_MAIL_NOTE =
