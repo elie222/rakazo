@@ -40,7 +40,9 @@ export function appStoreToken({ keyId, issuerId, privateKey }, now = Date.now())
 
 export function appStoreClient(credentials, fetchImpl = fetch) {
   return async (method, path, data) => {
-    const response = await fetchImpl(`${API}${path}`, {
+    const url = new URL(path, API);
+    if (url.origin !== API) throw new Error("Refusing an App Store pagination URL outside Apple");
+    const response = await fetchImpl(url.href, {
       method,
       headers: {
         Authorization: `Bearer ${appStoreToken(credentials)}`,
@@ -56,6 +58,16 @@ export function appStoreClient(credentials, fetchImpl = fetch) {
     }
     return body;
   };
+}
+
+async function allPages(request, path) {
+  const result = [];
+  while (path) {
+    const page = await request("GET", path);
+    result.push(...page.data);
+    path = page.links?.next;
+  }
+  return result;
 }
 
 async function processedBuild(request, { appId, version, buildNumber, sleep, timeoutMs }) {
@@ -134,25 +146,22 @@ export async function submitForReview(request, options) {
     }
   }
 
-  const drafts = await request("GET", `/v1/apps/${appId}/reviewSubmissions`);
+  const drafts = await allPages(request, `/v1/apps/${appId}/reviewSubmissions`);
   let submission;
   let emptyDraft;
   let attached = false;
-  for (const draft of drafts.data) {
+  for (const draft of drafts) {
     if (draft.attributes.platform !== "IOS" || draft.attributes.state !== "READY_FOR_REVIEW")
       continue;
-    const items = await request(
-      "GET",
+    const items = await allPages(
+      request,
       `/v1/reviewSubmissions/${draft.id}/items?include=appStoreVersion`,
     );
-    if (items.data.length === 0) {
+    if (items.length === 0) {
       emptyDraft ??= draft;
       continue;
     }
-    if (
-      items.data.length === 1 &&
-      items.data[0].relationships?.appStoreVersion?.data?.id === versionId
-    ) {
+    if (items.length === 1 && items[0].relationships?.appStoreVersion?.data?.id === versionId) {
       submission = { data: draft };
       attached = true;
       break;
