@@ -26,7 +26,8 @@ const PERSON_NAME_MAX = 64;
  * as a bot's, so a name cannot fake another speaker's label.
  */
 export function personSpeakerName(name: string): string {
-  return labelText(name).slice(0, PERSON_NAME_MAX) || USER_SPEAKER;
+  // Cut by character, not UTF-16 unit, so an emoji at the limit is never split.
+  return Array.from(labelText(name)).slice(0, PERSON_NAME_MAX).join("").trim() || USER_SPEAKER;
 }
 
 /** One line with no brackets, so a name can never close or fake a `[Name]:` label. */
