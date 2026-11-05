@@ -697,7 +697,7 @@ export async function lockOwnedGroup(
   groupId: string,
   options: { forDelete?: boolean } = {},
 ) {
-  const lock = options.forDelete ? Prisma.sql`FOR UPDATE` : Prisma.sql`FOR NO KEY UPDATE`;
+  const lock = options.forDelete ? Prisma.raw("FOR UPDATE") : Prisma.raw("FOR NO KEY UPDATE");
   const locked = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id
     FROM chat_groups
