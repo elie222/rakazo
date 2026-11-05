@@ -51,8 +51,8 @@ describe("sentry sink", () => {
     expect(createSentrySinkFromEnv("rakazo-api", { SENTRY_DSN: "bad" }).sink).toBeUndefined();
   });
 
-  it("passes the root logger service to the SDK scope", () => {
-    createRootLogger("rakazo-worker", { SENTRY_DSN: DSN });
+  it("passes the root logger service to the SDK scope", async () => {
+    await createRootLogger("rakazo-worker", { SENTRY_DSN: DSN });
     expect(Sentry.getIsolationScope().getScopeData().tags.service).toBe("rakazo-worker");
   });
 
