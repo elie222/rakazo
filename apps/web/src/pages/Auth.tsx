@@ -24,7 +24,7 @@ import { WindowChrome } from "./WindowChrome";
 type AuthMode = "in" | "up" | "forgot";
 
 // off-scale: 16px below md stops iOS Safari zooming into a focused field.
-const fieldClass = "mt-2 h-12 rounded-xl px-4 text-[16px] md:text-body-lg";
+const fieldClass = "mt-2 h-12 rounded-xl px-4 text-[16px]/6 md:text-body-lg";
 const CODE_LENGTH = 6;
 export const submitClass = "mt-3 h-12 w-full rounded-xl text-body-lg";
 
