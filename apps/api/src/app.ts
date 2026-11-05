@@ -597,6 +597,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           dataDir: env.dataDir,
           messagingInstallations,
           secrets,
+          events,
         },
         userId,
       );

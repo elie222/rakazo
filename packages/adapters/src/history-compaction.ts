@@ -236,9 +236,25 @@ export interface CompactHistoryDeps {
   }) => Promise<AgentRunRequest["model"]>;
 }
 
-export async function compactHistory(deps: CompactHistoryDeps, threadId: string): Promise<void> {
+export async function compactHistory(
+  deps: CompactHistoryDeps,
+  threadId: string,
+  requesterId?: string,
+): Promise<void> {
   const thread = await deps.prisma.thread.findUniqueOrThrow({ where: { id: threadId } });
   if (!thread.botId) return;
+  // The member whose turn asked for the summary pays for it, as for the turn. One who has since
+  // left pays nothing: the next member's turn asks again.
+  if (
+    requesterId &&
+    requesterId !== thread.userId &&
+    !(await deps.prisma.spaceMember.findUnique({
+      where: { spaceId_userId: { spaceId: thread.spaceId, userId: requesterId } },
+      select: { id: true },
+    }))
+  ) {
+    return;
+  }
   const previousCursor = thread.historyCompactedUpToSeq;
   const previousGeneration = thread.historyCompactionGeneration;
   const previousSummary = thread.historyCompactionSummary?.trim() || null;
@@ -390,7 +406,8 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   // advance the cursor past messages that are then lost from both stores. Skip instead.
   const deploymentFallback = resolveDeploymentModel();
   // Departure hands a shared thread to the Space's owner, so this is always a member.
-  const { spaceId, botId, userId } = thread;
+  const { spaceId, botId } = thread;
+  const userId = requesterId ?? thread.userId;
   const resolveModel = deps.resolveModel;
   const model = resolveModel
     ? // Their credentials are only readable as them.

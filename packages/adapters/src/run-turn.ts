@@ -951,7 +951,7 @@ export async function completeRun(ctx: RunContext) {
         COMPACTION_BATCH_SIZE,
       )
     ) {
-      await deps.jobs.enqueue(historyCompactJob(thread.id));
+      await deps.jobs.enqueue(historyCompactJob(thread.id, run.userId));
     }
   } catch (error) {
     getLogger().error("history.compact enqueue failed", error);

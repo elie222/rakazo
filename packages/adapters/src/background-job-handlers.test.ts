@@ -101,7 +101,7 @@ describe("createBackgroundJobHandlers", () => {
       deploymentModelConfigured: true,
     });
 
-    await handlers["history.compact"]({ threadId: "thread-1" });
+    await handlers["history.compact"]({ threadId: "thread-1", userId: "user-1" });
 
     expect(compactHistory).toHaveBeenCalledWith(
       {
@@ -114,6 +114,7 @@ describe("createBackgroundJobHandlers", () => {
         resolveModel,
       },
       "thread-1",
+      "user-1",
     );
   });
 

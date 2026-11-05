@@ -1,8 +1,6 @@
 import { ORPCError } from "@orpc/server";
-import { runContinueJob } from "@rakazo/adapter-kit";
-import { expireComputerControl, stopCancelledGroupRuns } from "@rakazo/adapters";
 import type { Actor, SpaceNavigation } from "@rakazo/contracts";
-import type { createGroupRepos, createRepos, PrismaClient, SpaceDeparture } from "@rakazo/db";
+import type { createGroupRepos, createRepos, PrismaClient } from "@rakazo/db";
 import {
   acceptSpaceInvite,
   CannotDeleteDefaultSpaceError,
@@ -39,11 +37,11 @@ import {
   setSpaceSettingOverride,
   spaceSettingOverrides,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import { otherSpaceOfBot } from "../bot-space.js";
 import type { RouterDeps } from "../router.js";
 import { listRoutinesDto } from "../routines.js";
 import { deleteSpaceWithContent } from "../space-deletion.js";
+import { afterSpaceDeparture } from "../space-departure.js";
 import { resolveThreadTarget, threadSnapshot } from "../thread-target.js";
 import type { RouterContext } from "./context.js";
 import { meDto } from "./shared.js";
@@ -67,42 +65,6 @@ function mapSpaceMemberError(error: unknown): never {
     throw new ORPCError("CONFLICT", { message: error.message });
   }
   throw error;
-}
-
-/** Remove and leave share this: stop the departed person's runs and tell clients. */
-async function afterSpaceDeparture(
-  deps: RouterDeps,
-  actor: { spaceId: string; userId: string },
-  departure: SpaceDeparture,
-): Promise<void> {
-  await Promise.all(
-    departure.events.map(({ threadId, seq }) =>
-      deps.events.notify(threadId, seq).catch((error) => {
-        getLogger().error("space departure realtime notification", error);
-      }),
-    ),
-  );
-  // The departure is committed; a teardown failure is logged rather than reported as a failed
-  // leave. Expired leases free the screens anyway.
-  await stopCancelledGroupRuns(deps, actor, departure).catch((error) => {
-    getLogger().error("space departure run teardown", error);
-  });
-  // Their leases already ended; this revokes the screens and tells everyone watching.
-  await Promise.all(
-    departure.heldControls.map(({ computerId, leaseId }) =>
-      expireComputerControl(deps, computerId, leaseId).catch((error) => {
-        getLogger().error("space departure control release", error);
-      }),
-    ),
-  );
-  // The job reconciler retries a failed enqueue: the runs are already queued.
-  await Promise.all(
-    departure.continuationRunIds.map((runId) =>
-      deps.jobs.enqueue(runContinueJob(runId)).catch((error) => {
-        getLogger().error("steering continuation enqueue", error);
-      }),
-    ),
-  );
 }
 
 /**

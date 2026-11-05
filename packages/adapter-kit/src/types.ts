@@ -776,7 +776,7 @@ export interface BackgroundJobPayloads {
   "skill.teaching-expire": { skillId: string };
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
-  "history.compact": { threadId: string };
+  "history.compact": { threadId: string; userId?: string };
   "messaging.deliver": { runId?: string };
   "messaging.credential-cleanup": { installationId: string; ref: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */

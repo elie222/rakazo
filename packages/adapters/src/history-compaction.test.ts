@@ -7,7 +7,6 @@ import type {
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { currentDbContext } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -710,6 +709,33 @@ describe("compactHistory", () => {
       id: "claude-sonnet",
       apiKey: "user-model-key",
     });
+  });
+
+  it("bills the member whose turn asked for the summary, and skips one who has left", async () => {
+    const resolveModel = vi.fn(async () => ({
+      provider: "anthropic",
+      id: "claude-sonnet",
+      apiKey: "member-model-key",
+    }));
+    const harness = compactionHarness({ deploymentModelKey: "deployment-key", resolveModel });
+
+    await compactHistory(harness.deps, "thread-1", "user-2");
+
+    expect(resolveModel).toHaveBeenCalledWith({
+      userId: "user-2",
+      spaceId: "workspace-1",
+      botId: "bot-1",
+    });
+
+    const departed = compactionHarness({
+      deploymentModelKey: "deployment-key",
+      resolveModel,
+      threadCreatorLeft: true,
+    });
+    resolveModel.mockClear();
+    await compactHistory(departed.deps, "thread-1", "user-2");
+    expect(resolveModel).not.toHaveBeenCalled();
+    expect(departed.runtime.run).not.toHaveBeenCalled();
   });
 
   it("rebuilds local coverage without regressing the legacy cursor", async () => {

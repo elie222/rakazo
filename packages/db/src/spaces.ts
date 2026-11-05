@@ -536,7 +536,7 @@ export async function rehomeSharedItems(
     OR: [{ allSpaces: true }, { availableIn: { some: { spaceId: { not: spaceId } } } }],
   };
   const chosen = {
-    where: { spaceId: { not: spaceId } },
+    where: { spaceId: { not: spaceId }, space: { deletingAt: null } },
     select: { spaceId: true },
     orderBy: { spaceId: "asc" as const },
     take: 1,

@@ -1,15 +1,13 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { runContinueJob } from "@rakazo/adapter-kit";
 import {
   destroyBot,
   forgetPageShareSecrets,
   removeAgentHome,
   removeDeletedBotsFromLegacyTeamHome,
-  stopCancelledGroupRuns,
   toComputerRef,
 } from "@rakazo/adapters";
 import { anySignal, requestDeadline, withAbort } from "@rakazo/core";
-import type { Prisma } from "@rakazo/db";
+import type { Prisma, ThreadEvents } from "@rakazo/db";
 import {
   claimOrganizationForDeletion,
   claimSpacesLeavingWithAccount,
@@ -29,29 +27,24 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { BillingService } from "./billing.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
+import { afterSpaceDeparture } from "./space-departure.js";
 
 /**
  * In shared spaces, the account's bot folders also live on the space's Team Computer from before
  * each person got their own. Each sandbox is destroyed at its provider before its row goes, so a
  * failure keeps the handle and deleting again resumes from what is left.
  */
-export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: string): Promise<void> {
+export async function deleteAccountContent(
+  deps: SpaceDeletionDeps & { events: ThreadEvents },
+  userId: string,
+): Promise<void> {
   // Leave other people's Spaces first, so what this account made there passes to their owners
   // instead of being torn down with it.
   const departures = await prepareAccountDeletion(deps.prisma, userId);
-  // As after leaving: stop their cancelled runs' work and start others' waiting follow-ups. The
-  // job reconciler retries a failed enqueue, and expired leases free a screen, so neither blocks.
+  // As after leaving: tell members, stop the cancelled runs' work, free held screens, and start
+  // others' waiting follow-ups.
   for (const departure of departures) {
-    await stopCancelledGroupRuns(deps, { spaceId: departure.spaceId, userId }, departure).catch(
-      (error) => getLogger().error("account deletion run teardown", error),
-    );
-    await Promise.all(
-      departure.continuationRunIds.map((runId) =>
-        deps.jobs.enqueue(runContinueJob(runId)).catch((error) => {
-          getLogger().error("steering continuation enqueue", error);
-        }),
-      ),
-    );
+    await afterSpaceDeparture(deps, { spaceId: departure.spaceId, userId }, departure);
   }
   const { claimId, spaceIds } = await claimSpacesLeavingWithAccount(deps.prisma, userId);
   const leaving = { OR: [{ userId }, { spaceId: { in: spaceIds } }] };
