@@ -69,7 +69,7 @@ you are.
 - Cmd+Shift+M: connect apps.
 - Cmd+Shift+, : open the chat's details.
 - Cmd+I: jump to the message box.
-- Cmd+D in the message box: dictate. Press it again to send.
+- Cmd+D in an empty message box: dictate. Press it again to send.
 - Cmd+1 to Cmd+9 (desktop app): open one of the first nine bots in the sidebar.
 - Ctrl+Tab / Ctrl+Shift+Tab (desktop app): switch to the next or previous bot.
 - Cmd/Ctrl+Shift+Down / Cmd/Ctrl+Shift+Up (browser): switch to the next or previous bot.
