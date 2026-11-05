@@ -1211,7 +1211,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     // The skill is shared, but what its teacher typed is not.
     const listed = await call(asInvitee, "skills/list", { botId: bot.id });
     expect(listed.status).toBe(200);
-    expect((listed.json as Array<{ recording: unknown }>)[0]?.recording).toEqual({
+    expect((listed.json as unknown as Array<{ recording: unknown }>)[0]?.recording).toEqual({
       events: [],
       snapshots: [],
     });
