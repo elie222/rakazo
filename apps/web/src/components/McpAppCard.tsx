@@ -141,7 +141,16 @@ export function McpAppCard({ block, target }: { block: AppBlock; target: Artifac
     };
   }, [host]);
 
-  useEffect(() => host?.updateContext({ theme: hostContext.theme }), [host, hostContext.theme]);
+  // A running view hears about later changes instead of restarting.
+  useEffect(
+    () =>
+      host?.updateContext({
+        theme: hostContext.theme,
+        locale: hostContext.locale,
+        deviceCapabilities: hostContext.deviceCapabilities,
+      }),
+    [host, hostContext],
+  );
 
   useEffect(() => {
     if (!appDocument || started) return;

@@ -126,6 +126,17 @@ describePostgres("artifact upload nonce (PostgreSQL)", () => {
     });
     const listed = await runAsTenant(actor, () => listSpaceArtifacts({ prisma }, actor, { botId }));
     expect(new Set(listed.items.map((item) => item.name))).toEqual(new Set(["notes.txt"]));
+
+    // A file that happens to share the app document's name starts its own history.
+    const sameName = await runAsTenant(actor, () =>
+      createOwnedArtifact({ prisma, artifacts }, actor, {
+        botId,
+        name: "Forecast app.html",
+        mimeType: "text/html",
+        contentBase64: Buffer.from("<p>mine</p>").toString("base64"),
+      }),
+    );
+    expect(sameName.version).toBe(1);
   });
 
   it("refuses a nonce reused for another chat", async () => {

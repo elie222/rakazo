@@ -4,7 +4,7 @@ import { getLogger } from "@rakazo/logging";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
 import { collectLogIds } from "./composio-connector.js";
 import { connectApp } from "./connect-app.js";
-import { sanitizeConnectorError } from "./connector-safety.js";
+import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { mcpAppViewResult } from "./mcp-app.js";
 import { addMcpServerFromTool } from "./mcp-server-tool.js";
 import type { RunContext } from "./run-context.js";
@@ -107,8 +107,9 @@ async function showConnectorApp(
         artifactId,
         server: app.server.slice(0, 200),
         tool: (call.connectorCall.route?.toolName ?? call.name).slice(0, 200),
-        toolArguments: call.args,
-        toolResult: mcpAppViewResult(result),
+        // Secrets revealed earlier in the run stay out of the card, as they do from replies.
+        toolArguments: redactConnectorPayload(call.args, ctx.secrets) as Record<string, unknown>,
+        toolResult: mcpAppViewResult(redactConnectorPayload(result, ctx.secrets)),
         ...(app.csp.connectDomains || app.csp.resourceDomains ? { csp: app.csp } : {}),
         ...(app.prefersBorder !== undefined ? { prefersBorder: app.prefersBorder } : {}),
       },

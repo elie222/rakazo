@@ -53,7 +53,7 @@ export function mcpAppFromResource(
   read: ReadResult,
 ): ConnectorApp | undefined {
   const contents = Array.isArray(read.contents) ? (read.contents as ResourceContent[]) : [];
-  const content = contents.find((item) => item?.uri === uri) ?? contents[0];
+  const content = contents.find((item) => item?.uri === uri);
   if (!content || content.mimeType !== MCP_APP_MIME_TYPE) return undefined;
   const html =
     typeof content.text === "string"

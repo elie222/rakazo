@@ -24,6 +24,8 @@ export async function resolveNextArtifactVersion(
       botId: params.botId,
       groupId: params.groupId ?? null,
       name: { equals: params.name, mode: "insensitive" },
+      // An MCP app's hidden HTML never starts or joins a file's version history.
+      ...LISTED_ARTIFACT,
     },
     orderBy: [{ version: "desc" }, { createdAt: "desc" }],
     select: { id: true, rootArtifactId: true, version: true },

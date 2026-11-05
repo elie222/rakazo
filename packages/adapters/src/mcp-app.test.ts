@@ -74,6 +74,14 @@ describe("MCP app resource", () => {
     ).toBe(APP_HTML);
   });
 
+  it("shows nothing when the read returns another resource's document", () => {
+    expect(
+      mcpAppFromResource("Weather", "ui://weather/app", {
+        contents: [{ uri: "ui://weather/other", mimeType: MCP_APP_MIME_TYPE, text: APP_HTML }],
+      }),
+    ).toBe(undefined);
+  });
+
   it("shows nothing for another type or an oversized document", () => {
     expect(
       mcpAppFromResource("Weather", "ui://weather/app", {

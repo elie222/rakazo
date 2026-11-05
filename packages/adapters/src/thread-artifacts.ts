@@ -434,26 +434,22 @@ export async function storeMcpAppHtml(
     signal: new AbortController().signal,
   };
   const stored = await deps.artifacts.put({ name, mimeType: MCP_APP_MIME_TYPE, bytes }, context);
-  const row = await withResolvedArtifactVersion(
-    deps.prisma,
-    { ...owner, name },
-    (tx, { rootArtifactId, version }) =>
-      tx.artifact.create({
-        data: {
-          ...owner,
-          runId: input.runId,
-          name,
-          mimeType: MCP_APP_MIME_TYPE,
-          size: bytes.byteLength,
-          hash,
-          storageKey: stored.id,
-          rootArtifactId,
-          version,
-        },
-      }),
-  ).catch(async (error) => {
-    await deps.artifacts.remove(stored.id, context).catch(() => undefined);
-    throw error;
-  });
+  // Its own one-version family: a file of the same name never versions it, nor it the file.
+  const row = await deps.prisma.artifact
+    .create({
+      data: {
+        ...owner,
+        runId: input.runId,
+        name,
+        mimeType: MCP_APP_MIME_TYPE,
+        size: bytes.byteLength,
+        hash,
+        storageKey: stored.id,
+      },
+    })
+    .catch(async (error) => {
+      await deps.artifacts.remove(stored.id, context).catch(() => undefined);
+      throw error;
+    });
   return row.id;
 }

@@ -105,7 +105,8 @@ export function McpAppCard({ block, target }: { block: AppBlock; target: MobileA
     // A new session only for a new document; theme changes reach it as context updates.
     [shell],
   );
-  useEffect(() => host.updateContext({ theme }), [host, theme]);
+  // A running view hears about later changes instead of restarting.
+  useEffect(() => host.updateContext({ theme, locale }), [host, theme, locale]);
   useEffect(() => () => host.teardown(), [host]);
 
   if (failed) return null;

@@ -14,7 +14,7 @@ vi.mock("./thread-artifacts.js", () => ({
   storeMcpAppHtml: (...args: unknown[]) => storeMcpAppHtml(...args),
 }));
 
-function setup(events: ConnectorEvent[], artifacts: unknown = {}) {
+function setup(events: ConnectorEvent[], artifacts: unknown = {}, secrets: string[] = []) {
   const ctx = {
     deps: {
       prisma: {},
@@ -30,6 +30,7 @@ function setup(events: ConnectorEvent[], artifacts: unknown = {}) {
     bot: { id: "bot-1" },
     thread: { id: "thread-1", groupId: null },
     context: {},
+    secrets,
   } as unknown as RunContext;
   const call = {
     name: "mcp__weather__get_forecast",
@@ -82,6 +83,25 @@ describe("connector tool with an MCP app", () => {
         csp: app.csp,
       },
     ]);
+  });
+
+  it("keeps secrets revealed in the run out of the card", async () => {
+    const secret = "sk-live-revealed-value";
+    const { ctx, call } = setup(
+      [
+        { type: "result", data: { content: [{ type: "text", text: `token ${secret}` }] } },
+        { type: "app", app },
+      ],
+      {},
+      [secret],
+    );
+    (call as { args: Record<string, unknown> }).args = { city: "Lisbon", key: secret };
+
+    await connectorTool(ctx, call);
+
+    const blocks = publishMessage.mock.calls[0]?.[3];
+    expect(JSON.stringify(blocks)).not.toContain(secret);
+    expect(JSON.stringify(blocks)).toContain("Lisbon");
   });
 
   it("returns the call's result when the card cannot be stored", async () => {
