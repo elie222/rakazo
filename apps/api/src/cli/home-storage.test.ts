@@ -106,4 +106,3 @@ it("rejects invalid arguments", () => {
   assert.equal(result.status, 2);
   assert.match(result.stderr, /Usage: home-storage/);
 });
-

@@ -82,5 +82,3 @@ try {
   await prisma.$disconnect().catch(() => undefined);
   await pool.end().catch(() => undefined);
 }
-
-
