@@ -3607,6 +3607,46 @@ describe("mobile API authentication", () => {
     await resetApiBase();
   });
 
+  it("a reset that cannot store the old server again signs in to the server the next launch opens", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await saveApiBase("https://old-server.example");
+    await restoreSessionToken("token-a");
+    await selectSpace("space-old");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.api_base") throw new Error("device locked");
+      store.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.server_headers") throw new Error("device locked");
+      store.delete(key);
+    });
+    let result: Awaited<ReturnType<typeof resetApiBase>>;
+    try {
+      result = await resetApiBase();
+    } finally {
+      mockSecureStore(store);
+    }
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async (url) =>
+      String(url).endsWith("/api/auth/sign-in/email")
+        ? jsonResponse({ token: "token-c" })
+        : jsonResponse({}),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await signIn("ada@example.com", "correct horse");
+    await loadApiBase();
+
+    // The token comes from the server a restart opens, so it is never sent to another one.
+    expect(result).toMatchObject({ ok: false });
+    const signIns = fetchMock.mock.calls.filter(([url]) =>
+      String(url).endsWith("/api/auth/sign-in/email"),
+    );
+    expect(signIns.map(([url]) => url)).toEqual([`${currentApiBase()}/api/auth/sign-in/email`]);
+    expect(currentApiBase()).toBe("http://127.0.0.1:3100");
+    expect(await authHeaders(null)).toMatchObject({ authorization: "Bearer token-c" });
+    await resetApiBase();
+  });
+
   it("a sign-out during a running session save stops without clearing and records nothing", async () => {
     const store = new Map<string, string>();
     mockSecureStore(store);

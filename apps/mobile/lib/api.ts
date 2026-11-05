@@ -719,8 +719,13 @@ async function resetApiBaseLocked(
     // Without the old server URL stored again, the next launch opens the default server: the old
     // session is not restored, and its record stays for the next retry to revoke it.
     const endpointRestored = await writeStoredValue(ENDPOINT_KEY, previous);
-    if (cleared && endpointRestored) {
-      await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+    if (endpointRestored) {
+      if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+    } else {
+      // This launch follows the default server too, so a later sign-in's token comes from the
+      // server a restart opens and is never sent to another one.
+      setCachedApiBase(url);
+      if (cleared) await clearStoredValue(ORGANIZATION_SPACES_KEY);
     }
     await settleRolledBackSignOut(
       pendingPreviousSignOut,
