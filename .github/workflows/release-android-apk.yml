@@ -8,7 +8,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-android-apk
+  # APK and AAB builds increment the same remote Android version counter.
+  group: release-android
   cancel-in-progress: false
 
 jobs:
