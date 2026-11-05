@@ -241,6 +241,8 @@ async function claimEmailAddress(ctx: RunContext, call: ToolCall) {
 
 /** Emails one bot sends a day at most, so a looping bot cannot spam from the shared domain. */
 export const SEND_EMAIL_DAILY_LIMIT = 50;
+/** Across all of one owner's bots, so more bots never mean more mail from the shared domain. */
+export const SEND_EMAIL_OWNER_DAILY_LIMIT = 200;
 const SEND_RECIPIENTS_MAX = 10;
 const SEND_TEXT_MAX_CHARS = 20_000;
 const SUBJECT_MAX_CHARS = 500;
@@ -280,6 +282,10 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
   const cc = input.cc ?? [];
   if (input.to.length + cc.length > SEND_RECIPIENTS_MAX) {
     return call.finish({ error: `Send to at most ${SEND_RECIPIENTS_MAX} people at once.` });
+  }
+  // An address can carry a secret out as surely as the body, and can't be redacted into another.
+  if ([...input.to, ...cc].some((address) => redactSecrets(address, ctx.secrets) !== address)) {
+    return call.finish({ error: "A recipient's address contains a secret. Don't send it." });
   }
   const name = await deps.prisma.botEmailAddress.findUnique({
     where: { botId: bot.id },
@@ -335,12 +341,14 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
       id: earlier.id,
     });
   }
-  const recent = await deps.prisma.botEmailMessage.count({
-    where: { botId: bot.id, sent: true, receivedAt: { gte: new Date(Date.now() - DAY_MS) } },
-  });
-  if (recent >= SEND_EMAIL_DAILY_LIMIT) {
+  const today = { sent: true, receivedAt: { gte: new Date(Date.now() - DAY_MS) } };
+  const [mine, owners] = await Promise.all([
+    deps.prisma.botEmailMessage.count({ where: { ...today, botId: bot.id } }),
+    deps.prisma.botEmailMessage.count({ where: { ...today, bot: { userId: bot.userId } } }),
+  ]);
+  if (mine >= SEND_EMAIL_DAILY_LIMIT || owners >= SEND_EMAIL_OWNER_DAILY_LIMIT) {
     return call.finish({
-      error: `You've sent ${SEND_EMAIL_DAILY_LIMIT} emails today, the most a bot can. Try again tomorrow.`,
+      error: "You've sent as many emails today as your owner's bots can. Try again tomorrow.",
     });
   }
   // Saved before it goes: a retry after a crash finds it and never sends the email twice.

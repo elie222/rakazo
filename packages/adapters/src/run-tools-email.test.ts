@@ -7,7 +7,11 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { botEmailInstruction } from "./run-instructions.js";
 import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
-import { emailTools, SEND_EMAIL_DAILY_LIMIT } from "./run-tools-email.js";
+import {
+  emailTools,
+  SEND_EMAIL_DAILY_LIMIT,
+  SEND_EMAIL_OWNER_DAILY_LIMIT,
+} from "./run-tools-email.js";
 
 type Row = {
   id: string;
@@ -521,7 +525,12 @@ describe("send_email", () => {
   };
 
   function sendRun(
-    options: { sentToday?: number; fail?: boolean; original?: Record<string, unknown> } = {},
+    options: {
+      sentToday?: number;
+      ownerSentToday?: number;
+      fail?: boolean;
+      original?: Record<string, unknown>;
+    } = {},
   ) {
     const saved: Saved[] = [];
     const send = vi.fn(async (_message: Record<string, unknown>) => {
@@ -538,7 +547,10 @@ describe("send_email", () => {
               where.id === "in-1" ? (options.original ?? null) : null,
             findUnique: async ({ where }: { where: { botId_key: { key: string } } }) =>
               saved.find((row) => row.key === where.botId_key.key) ?? null,
-            count: async () => options.sentToday ?? saved.length,
+            count: async ({ where }: { where: { botId?: string } }) =>
+              where.botId
+                ? (options.sentToday ?? saved.length)
+                : (options.ownerSentToday ?? saved.length),
             create: async ({ data }: { data: Record<string, unknown> }) => {
               const row = {
                 ...data,
@@ -687,6 +699,18 @@ describe("send_email", () => {
     expect((await call({ to: ["a@shop.test"], subject: "Hi", text: "x" })).error).toContain(
       "Try again tomorrow",
     );
+    expect(
+      (
+        await sendRun({ ownerSentToday: SEND_EMAIL_OWNER_DAILY_LIMIT }).call({
+          to: ["a@shop.test"],
+          subject: "Hi",
+          text: "x",
+        })
+      ).error,
+    ).toContain("Try again tomorrow");
+    expect(
+      await sendRun().call({ to: ["hunter2-secret@evil.test"], subject: "Hi", text: "x" }),
+    ).toEqual({ error: "A recipient's address contains a secret. Don't send it." });
     expect(await sendRun().call({ to: many, subject: "Hi", text: "x" })).toEqual({
       error: "Send to at most 10 people at once.",
     });
