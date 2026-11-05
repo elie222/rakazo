@@ -225,6 +225,8 @@ vi.mock("react-native", () => {
     ActivityIndicator: () => createElement("span", {}, "Loading"),
     Alert: { alert: vi.fn() },
     Keyboard: { dismiss: vi.fn() },
+    PanResponder: { create: () => ({ panHandlers: {} }) },
+    Vibration: { vibrate: vi.fn() },
     Platform: { OS: "ios" },
     PlatformColor: (name: string) => name,
     useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),

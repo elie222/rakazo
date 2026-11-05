@@ -889,19 +889,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "sk-…": "sk-…",
   Submitted: "已提交",
   "Teach a task": "教一个任务",
-  "{name} options": "{name}的选项",
-  "The screen link expired.": "屏幕链接已过期。",
-  "Demonstrate the task on the screen": "在屏幕上示范任务",
-  "What result will you demonstrate?": "你要示范什么结果？",
-  "Start recording": "开始录制",
-  "Stop teaching": "停止示范",
-  "Recording: {goal}": "录制中：{goal}",
-  "{remaining} left": "剩余 {remaining}",
-  "Bot is watching, not acting": "Bot 只看不操作",
-  "Could not start teaching": "无法开始教学",
-  "Could not stop teaching": "无法停止教学",
-  "Export this week's list from the CRM and drop it in the shared folder":
-    "从 CRM 导出本周名单并放到共享文件夹",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "这将删除所有消息并停止当前工作。Bot、电脑、记忆和例行任务会保留。",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.":
@@ -1421,6 +1408,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "On the button": "按钮上的金额",
   "Read from the page, not checked": "读取自页面，未核实",
   Total: "合计",
+  "{name} options": "{name}的选项",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

@@ -1205,19 +1205,6 @@ export const JA_MESSAGES: Record<string, string> = {
     "ライブデモの録画には、フルコンピュータービューのあるデスクトップ版またはWeb版が必要です。チャットから保存済みのスキルを実行するようボットに依頼することはできます。",
   Submitted: "送信済み",
   "Teach a task": "タスクを教える",
-  "{name} options": "{name}のオプション",
-  "The screen link expired.": "画面リンクの有効期限が切れました。",
-  "Demonstrate the task on the screen": "画面上でタスクを実演してください",
-  "What result will you demonstrate?": "どんな結果を実演しますか？",
-  "Start recording": "録画を開始",
-  "Stop teaching": "ティーチングを停止",
-  "Recording: {goal}": "録画中: {goal}",
-  "{remaining} left": "残り{remaining}",
-  "Bot is watching, not acting": "ボットは見ているだけで操作しません",
-  "Could not start teaching": "ティーチングを開始できませんでした",
-  "Could not stop teaching": "ティーチングを停止できませんでした",
-  "Export this week's list from the CRM and drop it in the shared folder":
-    "今週のリストをCRMからエクスポートして共有フォルダに入れる",
   "Your phone's built-in voice — free, no account needed":
     "スマートフォン内蔵の音声 — 無料、アカウント不要",
   "Speaks with your phone's own text-to-speech instead of a connected provider.":
@@ -1447,6 +1434,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "On the button": "ボタンの金額",
   "Read from the page, not checked": "ページから読み取り、未確認",
   Total: "合計",
+  "{name} options": "{name}のオプション",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

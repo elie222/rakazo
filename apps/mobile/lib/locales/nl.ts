@@ -830,20 +830,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Updating…": "Bezig met bijwerken…",
   Private: "Privé",
   Team: "Team",
-  "Teach a task": "Een taak aanleren",
-  "{name} options": "Opties voor {name}",
-  "The screen link expired.": "De schermlink is verlopen.",
-  "Demonstrate the task on the screen": "Demonstreer de taak op het scherm",
-  "What result will you demonstrate?": "Welk resultaat ga je aantonen?",
-  "Start recording": "Opname starten",
-  "Stop teaching": "Onderwijs stoppen",
-  "Recording: {goal}": "Opname: {goal}",
-  "{remaining} left": "Nog {remaining} over",
-  "Bot is watching, not acting": "De bot kijkt alleen, handelt niet",
-  "Could not start teaching": "Onderwijs starten mislukt",
-  "Could not stop teaching": "Onderwijs stoppen mislukt",
-  "Export this week's list from the CRM and drop it in the shared folder":
-    "Exporteer de lijst van deze week uit het CRM en zet hem in de gedeelde map",
   "Continue in Background": "Doorgaan op de achtergrond",
   "Could not complete action": "Actie voltooien mislukt",
   Dismiss: "Sluiten",
@@ -1415,6 +1401,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "On the button": "Op de knop",
   "Read from the page, not checked": "Van de pagina gelezen, niet gecontroleerd",
   Total: "Totaal",
+  "{name} options": "Opties voor {name}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

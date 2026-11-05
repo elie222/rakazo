@@ -834,20 +834,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Updating…": "Wird aktualisiert…",
   Private: "Privat",
   Team: "Team",
-  "Teach a task": "Aufgabe anlernen",
-  "{name} options": "{name}: Optionen",
-  "The screen link expired.": "Der Bildschirmlink ist abgelaufen.",
-  "Demonstrate the task on the screen": "Demonstriere die Aufgabe auf dem Bildschirm",
-  "What result will you demonstrate?": "Welches Ergebnis wirst du vorführen?",
-  "Start recording": "Aufnahme starten",
-  "Stop teaching": "Anlernen beenden",
-  "Recording: {goal}": "Aufnahme: {goal}",
-  "{remaining} left": "Noch {remaining}",
-  "Bot is watching, not acting": "Bot beobachtet nur",
-  "Could not start teaching": "Anlernen konnte nicht gestartet werden",
-  "Could not stop teaching": "Anlernen konnte nicht beendet werden",
-  "Export this week's list from the CRM and drop it in the shared folder":
-    "Exportiere die Liste dieser Woche aus dem CRM und lege sie im freigegebenen Ordner ab",
   "Continue in Background": "Im Hintergrund fortfahren",
   "Could not complete action": "Aktion konnte nicht abgeschlossen werden",
   Dismiss: "Schließen",
@@ -1423,6 +1409,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "On the button": "Auf der Schaltfläche",
   "Read from the page, not checked": "Von der Seite gelesen, nicht geprüft",
   Total: "Gesamt",
+  "{name} options": "{name}: Optionen",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

@@ -794,7 +794,6 @@ export const ES_MESSAGES: Record<string, string> = {
   "Update computer": "Actualizar computadora",
   Private: "Privado",
   Team: "Equipo",
-  "{name} options": "Opciones de {name}",
   "Continue in Background": "Continuar en segundo plano",
   "Could not complete action": "No se pudo completar la acción",
   Dismiss: "Descartar",
@@ -1353,6 +1352,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "On the button": "En el botón",
   "Read from the page, not checked": "Leído de la página, sin verificar",
   Total: "Total",
+  "{name} options": "Opciones de {name}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

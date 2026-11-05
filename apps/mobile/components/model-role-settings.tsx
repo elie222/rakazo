@@ -343,15 +343,15 @@ export function ModelRoleSettings({
     }
   }
 
-  // Reordering by long-press and drag, like the web list's handle. The rows sit inside the
-  // screen's ScrollView, so the responder captures moves only after a row is grabbed.
-  const cardLayouts = useRef(new Map<number, { y: number; h: number }>());
+  const cardLayouts = useRef(new Map<string, { y: number; h: number }>());
   const dragRef = useRef<{ index: number; dy: number } | null>(null);
   const [drag, setDrag] = useState<{ index: number; dy: number } | null>(null);
-  const dragGrab = useRef(false);
+  const dragOwned = useRef(false);
+  const dragSettings = useRef(settings);
+  const dragController = useRef(controller);
   const dragOriginY = useRef(0);
-  const latest = useRef({ rows, commit });
-  latest.current = { rows, commit };
+  const latest = useRef({ rows, commit, settings, controller, busy });
+  latest.current = { rows, commit, settings, controller, busy };
   const tokens = useMobileTokens();
 
   function updateDrag(next: { index: number; dy: number } | null) {
@@ -360,12 +360,15 @@ export function ModelRoleSettings({
   }
 
   function dropTarget(index: number, dy: number) {
-    const own = cardLayouts.current.get(index);
+    const currentRows = latest.current.rows;
+    const own =
+      currentRows[index] && cardLayouts.current.get(modelRoleChoiceKey(currentRows[index]));
     if (!own) return index;
     const center = own.y + own.h / 2 + dy;
     let target = index;
-    for (const [i, box] of cardLayouts.current) {
-      if (i === index) continue;
+    for (const [i, choice] of currentRows.entries()) {
+      const box = cardLayouts.current.get(modelRoleChoiceKey(choice));
+      if (i === index || !box) continue;
       const mid = box.y + box.h / 2;
       if (i > index && center > mid) target = Math.max(target, i);
       if (i < index && center < mid) target = Math.min(target, i);
@@ -375,9 +378,16 @@ export function ModelRoleSettings({
 
   function endDrag(save: boolean) {
     const current = dragRef.current;
-    dragGrab.current = false;
+    dragOwned.current = false;
     updateDrag(null);
-    if (!current || !save) return;
+    if (
+      !current ||
+      !save ||
+      latest.current.busy ||
+      latest.current.settings !== dragSettings.current ||
+      latest.current.controller !== dragController.current
+    )
+      return;
     const target = dropTarget(current.index, current.dy);
     if (target === current.index) return;
     const next = [...latest.current.rows];
@@ -390,7 +400,10 @@ export function ModelRoleSettings({
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
         // Capture beats the ScrollView's pan once a long-press has grabbed a row.
-        onMoveShouldSetPanResponderCapture: () => dragGrab.current,
+        onMoveShouldSetPanResponderCapture: () => dragRef.current !== null,
+        onPanResponderGrant: () => {
+          dragOwned.current = true;
+        },
         onPanResponderMove: (event) => {
           const current = dragRef.current;
           if (!current) return;
@@ -399,12 +412,12 @@ export function ModelRoleSettings({
         onPanResponderRelease: () => endDrag(true),
         onPanResponderTerminate: () => endDrag(false),
       }),
-    // The handlers only touch refs kept current on every render.
     [],
   );
 
   function grabRow(index: number, pageY: number) {
-    dragGrab.current = true;
+    dragSettings.current = settings;
+    dragController.current = controller;
     dragOriginY.current = pageY;
     updateDrag({ index, dy: 0 });
     Vibration.vibrate(8);
@@ -414,6 +427,7 @@ export function ModelRoleSettings({
   const offset = primary ? 0 : 1;
   // Order only means something once there is more than one row.
   const ordered = rows.length + offset > 1;
+  const dragTarget = drag ? dropTarget(drag.index, drag.dy) : -1;
   const number = (index: number) => (
     <Text style={styles.number} accessibilityElementsHidden importantForAccessibility="no">
       {index + 1}
@@ -479,9 +493,7 @@ export function ModelRoleSettings({
             ? [t("Thinking: {level}", { level: thinkingLevelLabel(thinking, t) })]
             : []),
         ].join(", ");
-        // While dragging, a primary line marks where the row will land.
         const dragging = drag?.index === index;
-        const dragTarget = drag ? dropTarget(drag.index, drag.dy) : -1;
         const markerBelow = drag !== null && dragTarget > drag.index && index === dragTarget;
         const markerAbove = drag !== null && dragTarget < drag.index && index === dragTarget;
         const marker =
@@ -506,11 +518,15 @@ export function ModelRoleSettings({
           <View
             key={modelRoleChoiceKey(choice)}
             onLayout={(event) =>
-              cardLayouts.current.set(index, {
+              cardLayouts.current.set(modelRoleChoiceKey(choice), {
                 y: event.nativeEvent.layout.y,
                 h: event.nativeEvent.layout.height,
               })
             }
+            onTouchEnd={() => {
+              if (!dragOwned.current) endDrag(false);
+            }}
+            onTouchCancel={() => endDrag(false)}
             {...(draggable ? dragResponder.panHandlers : null)}
             style={
               dragging
@@ -574,8 +590,7 @@ export function ModelRoleSettings({
   );
 }
 
-/** The visible ⋯ at the end of a row; one tap opens the same menu a long-press would. */
-export function RowMenuButton({
+function RowMenuButton({
   title,
   actions,
   onAction,
