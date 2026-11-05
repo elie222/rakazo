@@ -1,5 +1,5 @@
 import * as SecureStore from "expo-secure-store";
-import { captureApiRequestContext, currentApiBase, fetchMobileJson } from "./api";
+import { captureApiRequestContext, currentApiBase, fetchMobileJson, selectedSpaceId } from "./api";
 import { currentSessionGeneration } from "./session";
 
 const LAST_BOT_KEY = "rakazo.last_bot_id";
@@ -62,6 +62,8 @@ export async function loadLastBotId() {
           !record.userId.trim()
         )
           return "";
+        // The record belongs to the Space it was saved in; another Space or organization starts without it.
+        if (typeof record.spaceId === "string" && record.spaceId !== selectedSpaceId()) return "";
         const owner = await currentOwner();
         return owner &&
           generation === currentSessionGeneration() &&

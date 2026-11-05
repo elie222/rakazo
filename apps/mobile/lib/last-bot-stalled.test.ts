@@ -20,6 +20,7 @@ vi.mock("./api", () => ({
     response: Response.json({}),
     body: { user: { id: "account-a" } },
   }),
+  selectedSpaceId: () => "space-a",
 }));
 vi.mock("./live-notifications", () => ({ stopLiveNotifications: vi.fn(async () => undefined) }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));

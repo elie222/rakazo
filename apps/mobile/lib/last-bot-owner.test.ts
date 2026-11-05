@@ -5,7 +5,12 @@ import type * as Session from "./session";
 
 const { saved, account } = vi.hoisted(() => ({
   saved: new Map<string, string>(),
-  account: { apiBase: "https://app.example.test", userId: "account-a", available: true },
+  account: {
+    apiBase: "https://app.example.test",
+    userId: "account-a",
+    available: true,
+    selectedSpace: "space-a",
+  },
 }));
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(async (key: string) => saved.get(key) ?? null),
@@ -18,6 +23,7 @@ vi.mock("expo-secure-store", () => ({
 }));
 vi.mock("./api", () => ({
   currentApiBase: () => account.apiBase,
+  selectedSpaceId: () => account.selectedSpace,
   captureApiRequestContext: async () => ({
     apiBase: account.apiBase,
     sessionGeneration: session.currentSessionGeneration(),
@@ -48,6 +54,7 @@ beforeEach(async () => {
   account.apiBase = "https://app.example.test";
   account.userId = "account-a";
   account.available = true;
+  account.selectedSpace = "space-a";
   vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
     saved.delete(key);
   });
@@ -85,6 +92,14 @@ describe("last bot ownership", () => {
     await lastBot.saveLastBotId("researcher", "space-a");
     account.available = false;
     expect(await lastBot.loadLastBotId()).toBe("");
+  });
+
+  it("ignores a stored target saved in another Space until that Space opens again", async () => {
+    await lastBot.saveLastBotId("researcher", "space-a");
+    account.selectedSpace = "space-b";
+    expect(await lastBot.loadLastBotId()).toBe("");
+    account.selectedSpace = "space-a";
+    expect(await lastBot.loadLastBotId()).toBe("researcher");
   });
 
   it.each(["account", "server"])(
