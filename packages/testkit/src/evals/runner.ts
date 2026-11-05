@@ -777,12 +777,26 @@ export async function runTrial(
       if (unaddressedMessageId && group) {
         // Handoffs start more runs after the first one ends; wait until every member is done.
         const memberBotIds = [botId, ...group.memberIds.values()];
-        const settled = await poll(async () => {
-          // The trial budget spans every member's work, not only the first run's turn.
-          const toolCount = (await countCurrentTools()) + clearedToolCount;
-          if (toolCount > options.maxToolCalls)
+        // The trial budget spans every member's work, not only the first run's turn, and the
+        // drain below runs that work, so it keeps checking while the drain is in flight.
+        const assertToolBudget = async () => {
+          if ((await countCurrentTools()) + clearedToolCount > options.maxToolCalls)
             throw new EvalFailure("incomplete", "Tool call budget exceeded");
-          if (handles?.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
+        };
+        const settled = await poll(async () => {
+          await assertToolBudget();
+          if (handles?.awaitIdle) {
+            const drained = withinDeadline(handles.awaitIdle(), deadline);
+            // A budget failure abandons the drain; its own timeout must not crash the trial.
+            drained.catch(() => undefined);
+            while (
+              !(await Promise.race([
+                drained.then(() => true),
+                new Promise((resolve) => setTimeout(() => resolve(false), 200)),
+              ]))
+            )
+              await assertToolBudget();
+          }
           const runs = await prisma.run.findMany({
             where: { botId: { in: memberBotIds }, createdAt: { gte: new Date(requestStarted) } },
             select: { status: true, error: true },
@@ -997,13 +1011,16 @@ export async function runTrial(
   } finally {
     if (handles) {
       try {
-        if (handles.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
+        // Stopping each bot covers only its own chat; a member's run can still wait in the
+        // group. Stop it before draining, so a failed trial does not pay for the member's
+        // remaining work while the drain waits for it; when the trial ended cleanly every
+        // member is already terminal and the stop changes nothing.
+        if (group) await rpc(handles.app, cookie, "threads/stop", { groupId: group.id });
       } catch {
         result.cleanupFailed = true;
       }
       try {
-        // Stopping each bot covers only its own chat; a member's run can still wait in the group.
-        if (group) await rpc(handles.app, cookie, "threads/stop", { groupId: group.id });
+        if (handles.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
       } catch {
         result.cleanupFailed = true;
       }

@@ -134,20 +134,23 @@ describe.skipIf(!databaseAvailable)("group eval tool budget", () => {
             messagingOpenSignup: false,
             cloudAgentProvider: "none",
             encryptionKey: "offline-group-eval-encryption-key",
-          }).then((app) => {
-            // The group wait must judge member work that continues in later jobs, not
-            // only inside one drained call; the fixture drops the drain so the wait
-            // loop observes run states the way it does between scheduled jobs.
-            app.awaitIdle = undefined;
-            return app;
           });
         },
       });
       expect(result.category).toBe("incomplete");
       expect(result.reason).toBe("Tool call budget exceeded");
-      // The trial stopped before Mika's scripted work ran out.
+      // The trial stopped before Mika's scripted work ran out, and cleanup stopped
+      // the run instead of letting it finish through the drain.
       expect(memberCalls).toBeLessThan(memberTools + 1);
       expect(model.requests.length).toBeLessThan(totalCalls);
+      const mikaBot = await system.bot.findFirst({ where: { name: "Mika" }, select: { id: true } });
+      const mikaRun = mikaBot
+        ? await system.run.findFirst({
+            where: { botId: mikaBot.id, trigger: "user" },
+            select: { status: true },
+          })
+        : null;
+      expect(mikaRun?.status).toBe("cancelled");
     } finally {
       if (previousRunCap === undefined) delete process.env.MAX_TOOL_CALLS_PER_TURN;
       else process.env.MAX_TOOL_CALLS_PER_TURN = previousRunCap;
