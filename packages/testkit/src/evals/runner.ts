@@ -7,7 +7,7 @@ import {
   messageBot,
 } from "@rakazo/adapters";
 import type { MessageBlock, ModelConnectInput, RunStatus } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, isTerminal } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, attachmentComputerPath, isTerminal } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import { createThreadEvents } from "@rakazo/db";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
@@ -63,7 +63,11 @@ export type TrialOptions = {
   createApp: (
     services: EvalServices,
     messaging: MessagingTeamChatEmulator,
-    witnesses: { notifications: CapturingNotificationProvider; realtime: SilenceObserver },
+    witnesses: {
+      notifications: CapturingNotificationProvider;
+      realtime: SilenceObserver;
+      now: () => Date;
+    },
   ) => Promise<EvalApp>;
 };
 const WAITING_STATUSES = ["waiting_input", "waiting_approval", "paused"];
@@ -105,6 +109,7 @@ export async function runTrial(
   // A group case talks to the subject inside a group thread; every other case uses its direct chat.
   let group: { id: string; threadId: string; memberIds: Map<string, string> } | undefined;
   let seededThreadId: string | undefined;
+  const seededPaths: Record<string, string> = {};
   const runIds: string[] = [];
   const runSteps = new Map<string, number>();
   const setupRunIds = new Set<string>();
@@ -151,6 +156,7 @@ export async function runTrial(
     for (const row of usage)
       seenUsage.set(row.id, {
         ...row,
+        modelId: row.model,
         operation:
           row.operationKind === "answer" && row.runId && setupRunIds.has(row.runId)
             ? "setup"
@@ -158,7 +164,10 @@ export async function runTrial(
       });
   };
   try {
-    handles = await options.createApp(services, messaging, { notifications, realtime });
+    // A forced wake runs now; the agent is told it is the routine's due time instead.
+    let clockShiftMs = 0;
+    const now = () => new Date(Date.now() + clockShiftMs);
+    handles = await options.createApp(services, messaging, { notifications, realtime, now });
     const prisma = asSystem(handles.prisma);
     db = prisma;
     realtime.attach(prisma);
@@ -300,6 +309,33 @@ export async function runTrial(
         ? { id: group.threadId }
         : await prisma.thread.findUniqueOrThrow({ where: { botId }, select: { id: true } });
       seededThreadId = thread.id;
+      // Attachments go through the product's upload path so their bytes are stored as uploads are.
+      const files = new Map<
+        number,
+        { kind: "file"; artifactId: string; name: string; mimeType: string; size: number }
+      >();
+      for (const m of scenario.history.messages) {
+        if (!m.file) continue;
+        const artifact = await rpc<{ id: string; name: string; mimeType: string; size: number }>(
+          app,
+          cookie,
+          "artifacts/create",
+          {
+            botId,
+            name: m.file.name,
+            mimeType: m.file.mimeType,
+            contentBase64: Buffer.from(m.file.content).toString("base64"),
+          },
+        );
+        seededPaths[artifact.name] = attachmentComputerPath(artifact.id, artifact.mimeType);
+        files.set(m.seq, {
+          kind: "file",
+          artifactId: artifact.id,
+          name: artifact.name,
+          mimeType: artifact.mimeType,
+          size: artifact.size,
+        });
+      }
       // Direct synthetic fixture setup, never pay a model to author filler.
       for (let offset = 0; offset < scenario.history.messages.length; offset += 500) {
         await prisma.message.createMany({
@@ -308,7 +344,8 @@ export async function runTrial(
             seq: m.seq,
             role: m.role,
             blocks: [
-              { kind: "text", text: m.text },
+              ...(m.text ? [{ kind: "text", text: m.text }] : []),
+              ...(files.has(m.seq) ? [files.get(m.seq)!] : []),
               ...(m.subagentResult
                 ? [
                     {
@@ -451,6 +488,8 @@ export async function runTrial(
     };
     let settingsBefore = EMPTY_SETTINGS;
     for (const [stepIndex, step] of scenario.steps.entries()) {
+      // Each step waits for its run to finish, so a wake's shifted clock ends with its step.
+      clockShiftMs = 0;
       if (Date.now() >= deadline) throw new EvalFailure("incomplete", "Trial time budget exceeded");
       if (stepIndex === scenario.steps.length - 1) settingsBefore = await settingsSnapshot();
       if ("newWorkspace" in step) {
@@ -572,6 +611,7 @@ export async function runTrial(
           timezone: routine.timezone,
           createdAt: routine.createdAt.toISOString(),
         };
+        if (routine.nextRunAt) clockShiftMs = Math.max(0, routine.nextRunAt.getTime() - Date.now());
         const scheduledFor = new Date(Date.now() - 1_000);
         await prisma.routine.update({
           where: { id: routine.id },
@@ -738,8 +778,26 @@ export async function runTrial(
       if (unaddressedMessageId && group) {
         // Handoffs start more runs after the first one ends; wait until every member is done.
         const memberBotIds = [botId, ...group.memberIds.values()];
+        // The trial budget spans every member's work, not only the first run's turn, and the
+        // drain below runs that work, so it keeps checking while the drain is in flight.
+        const assertToolBudget = async () => {
+          if ((await countCurrentTools()) + clearedToolCount > options.maxToolCalls)
+            throw new EvalFailure("incomplete", "Tool call budget exceeded");
+        };
         const settled = await poll(async () => {
-          if (handles?.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
+          await assertToolBudget();
+          if (handles?.awaitIdle) {
+            const drained = withinDeadline(handles.awaitIdle(), deadline);
+            // A budget failure abandons the drain; its own timeout must not crash the trial.
+            drained.catch(() => undefined);
+            while (
+              !(await Promise.race([
+                drained.then(() => true),
+                new Promise((resolve) => setTimeout(() => resolve(false), 200)),
+              ]))
+            )
+              await assertToolBudget();
+          }
           const runs = await prisma.run.findMany({
             where: { botId: { in: memberBotIds }, createdAt: { gte: new Date(requestStarted) } },
             select: { status: true, error: true },
@@ -843,6 +901,17 @@ export async function runTrial(
         files[path] = null;
       }
     }
+    const seededAttachments: NonNullable<Evidence["seededAttachments"]> = {};
+    for (const [name, path] of Object.entries(seededPaths)) {
+      const content = await rpc<{ content: string }>(handles.app, cookie, "computer/readFile", {
+        botId,
+        path,
+      }).then(
+        (file) => file.content,
+        () => null,
+      );
+      seededAttachments[name] = { path, content };
+    }
     const memories = await rpc<Array<{ content: string }>>(handles.app, cookie, "memory/list", {
       botId,
     });
@@ -865,6 +934,7 @@ export async function runTrial(
       routineRuns,
       peerExchanges,
       files,
+      ...(Object.keys(seededAttachments).length ? { seededAttachments } : {}),
       records: services.records,
       notes: services.notes,
       calls: services.calls,
@@ -942,13 +1012,16 @@ export async function runTrial(
   } finally {
     if (handles) {
       try {
-        if (handles.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
+        // Stopping each bot covers only its own chat; a member's run can still wait in the
+        // group. Stop it before draining, so a failed trial does not pay for the member's
+        // remaining work while the drain waits for it; when the trial ended cleanly every
+        // member is already terminal and the stop changes nothing.
+        if (group) await rpc(handles.app, cookie, "threads/stop", { groupId: group.id });
       } catch {
         result.cleanupFailed = true;
       }
       try {
-        // Stopping each bot covers only its own chat; a member's run can still wait in the group.
-        if (group) await rpc(handles.app, cookie, "threads/stop", { groupId: group.id });
+        if (handles.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
       } catch {
         result.cleanupFailed = true;
       }
@@ -997,12 +1070,18 @@ export async function runTrial(
       await captureUsage().catch(() => {
         result.cleanupFailed = true;
       });
+      // Explicit pricing covers the eval model only; other models the product called
+      // during the trial are priced at their own reported or catalog-estimated charge.
+      const pricedModel = options.connection.modelId
+        ? { provider: options.connection.provider, modelId: options.connection.modelId }
+        : undefined;
       Object.assign(
         result,
         measureCalls(
           [...seenUsage.values()],
           options.pricing,
           options.connection.cacheCapabilities?.minimumTokens,
+          pricedModel,
         ),
       );
       result.stepAccounting = measureWorkflowSteps(
@@ -1010,6 +1089,7 @@ export async function runTrial(
         runSteps,
         options.pricing,
         options.connection.cacheCapabilities?.minimumTokens,
+        pricedModel,
       );
       result.cacheDecisions = handles.cacheDecisions ? [...handles.cacheDecisions] : [];
       result.historyDiagnostics = handles.historyDiagnostics ? [...handles.historyDiagnostics] : [];

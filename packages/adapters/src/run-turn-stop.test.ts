@@ -4,13 +4,19 @@ import type { RunContext } from "./run-context.js";
 import { createReplyState } from "./run-progress.js";
 import { consumeRunEvents } from "./run-turn.js";
 
+const requeued = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("./run-lifecycle.js", async (actual) => ({
+  ...(await actual<typeof import("./run-lifecycle.js")>()),
+  requeueComputerRun: requeued,
+}));
+
 // Stop marks the run cancelled in the database, possibly from another server.
 async function context(row: { status: string }) {
   const findUnique = vi.fn(async () => ({
     ...row,
     leaseOwner: "worker-1",
     leaseFence: 1,
-    checkpoint: null,
+    checkpoint: null as string | null,
   }));
   const deps = {
     prisma: {
@@ -167,5 +173,101 @@ describe("consumeRunEvents and Stop", () => {
     const reads = findUnique.mock.calls.length;
     await vi.advanceTimersByTimeAsync(5_000);
     expect(findUnique.mock.calls.length).toBe(reads);
+  });
+  it("ignores a lease read that resolves after the run ended", async () => {
+    const row = { status: "running" };
+    const { ctx, findUnique } = await context(row);
+    let finishRead: (() => void) | undefined;
+    async function* runtime(): AsyncIterable<AgentRuntimeEvent> {
+      yield { type: "thinking", active: true };
+      await quietCall(ctx, 1_500);
+      // The timer's read is now in flight; it answers only after the run has finished.
+      findUnique.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishRead = () =>
+              resolve({
+                status: "cancelled",
+                leaseOwner: "worker-1",
+                leaseFence: 1,
+                checkpoint: null,
+              });
+          }),
+      );
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(finishRead).toBeDefined();
+      yield { type: "done", text: "Done." };
+    }
+    const consumed = consumeRunEvents(ctx, runtime());
+    await vi.advanceTimersByTimeAsync(1_500);
+    await expect(consumed).resolves.toBe(false);
+    // The final screen release runs on this signal after the turn; a late read must not cancel it.
+    finishRead?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ctx.abortController.signal.aborted).toBe(false);
+  });
+  it("ignores a late lease read that finds a released takeover hold", async () => {
+    const { ctx, findUnique } = await context({ status: "running" });
+    (ctx.computer as { heldForTakeover?: boolean }).heldForTakeover = true;
+    requeued.mockClear();
+    let finishRead: (() => void) | undefined;
+    async function* runtime(): AsyncIterable<AgentRuntimeEvent> {
+      yield { type: "thinking", active: true };
+      await quietCall(ctx, 1_500);
+      findUnique.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishRead = () =>
+              resolve({
+                status: "running",
+                leaseOwner: "worker-1",
+                leaseFence: 1,
+                checkpoint: "takeover",
+              });
+          }),
+      );
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(finishRead).toBeDefined();
+      yield { type: "done", text: "Done." };
+    }
+    const consumed = consumeRunEvents(ctx, runtime());
+    await vi.advanceTimersByTimeAsync(1_500);
+    await expect(consumed).resolves.toBe(false);
+    finishRead?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(requeued).not.toHaveBeenCalled();
+    expect(ctx.state.lease.valid).toBe(true);
+    expect(ctx.abortController.signal.aborted).toBe(false);
+  });
+  it("does not abort when a takeover requeue finishes after the turn ended", async () => {
+    const { ctx, findUnique } = await context({ status: "running" });
+    (ctx.computer as { heldForTakeover?: boolean }).heldForTakeover = true;
+    let finishRequeue: (() => void) | undefined;
+    requeued.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRequeue = resolve;
+        }),
+    );
+    async function* runtime(): AsyncIterable<AgentRuntimeEvent> {
+      yield { type: "thinking", active: true };
+      await quietCall(ctx, 1_500);
+      // The read answers while the turn is live; the requeue it starts outlives the turn.
+      findUnique.mockResolvedValueOnce({
+        status: "running",
+        leaseOwner: "worker-1",
+        leaseFence: 1,
+        checkpoint: "takeover",
+      });
+      await quietCall(ctx, 1_000);
+      expect(finishRequeue).toBeDefined();
+      yield { type: "done", text: "Done." };
+    }
+    const consumed = consumeRunEvents(ctx, runtime());
+    await vi.advanceTimersByTimeAsync(2_500);
+    await expect(consumed).resolves.toBe(false);
+    finishRequeue?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ctx.abortController.signal.aborted).toBe(false);
   });
 });

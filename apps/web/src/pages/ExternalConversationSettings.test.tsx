@@ -129,3 +129,43 @@ it("shows the bot's reply mode and rules when inheriting, and saves a room overr
     expect.objectContaining({ teamChatAmbientEnabled: false, teamChatRules: null }),
   );
 });
+
+it("does not claim Saved for a draft edited while the save is in flight", async () => {
+  let finishSave!: () => void;
+  const onSave = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finishSave = resolve;
+      }),
+  );
+  await act(async () =>
+    root.render(
+      <ExternalConversationSettings conversation={conversation} bot={bot} onSave={onSave} />,
+    ),
+  );
+  const rules = document.querySelector("textarea")!;
+  const type = (text: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        rules,
+        text,
+      );
+      rules.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  await type("First take.");
+
+  await act(async () => button("Save").click());
+  await type("Second take.");
+  finishSave();
+  await act(async () => {});
+
+  expect(host.textContent).not.toContain("Saved");
+
+  onSave.mockResolvedValue(undefined);
+  await act(async () => button("Save").click());
+  await act(async () => {});
+  expect(onSave).toHaveBeenLastCalledWith(
+    expect.objectContaining({ teamChatRules: "Second take." }),
+  );
+  expect(host.textContent).toContain("Saved");
+});

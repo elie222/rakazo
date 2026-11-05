@@ -305,15 +305,19 @@ describe("reaction turns", () => {
         },
         options.withoutRelease ? undefined : releaseTakeover,
       );
-    return { tx, enqueue, react, releaseTakeover };
+    return { tx, prisma, enqueue, react, releaseTakeover };
   }
 
   it("treats a thumbs up on a pending takeover as done and hands control back", async () => {
-    const { tx, enqueue, react, releaseTakeover } = fixture({
+    const { tx, prisma, enqueue, react, releaseTakeover } = fixture({
       parent: { role: "bot", botId: "bot-1", runId: "run-takeover" },
       activeRuns: [{ id: "run-takeover", taskId: "task-1", status: "waiting_takeover" }],
     });
     await expect(react()).resolves.toEqual({ eventSeq: 3, runIds: ["run-takeover"] });
+    // The reaction holds the thread row lock like a send; it runs on the same budget.
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
     expect(tx.steeringMessage.create).toHaveBeenCalledWith({
       data: { messageId: "reaction-1", botId: "bot-1", userId: "user-1", runId: "run-takeover" },
     });
@@ -1592,6 +1596,11 @@ describe("sendThreadMessage", () => {
       taskId: "task-1",
       seq: 1,
       runIds: ["run-waiting"],
+    });
+    // Snapshot reads can hold the thread row lock for up to 15s; the send must wait
+    // that out on the explicit budget instead of expiring at the default.
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
     });
     expect(tx.task.updateMany).toHaveBeenCalledWith({
       where: { runs: { some: { id: "run-waiting" } } },
@@ -4378,6 +4387,46 @@ describe("stopThreadRuns", () => {
     expect(transaction.thread.update).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
     expect(transaction.secret.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("runs the stop transaction with the explicit thread-lock budget", async () => {
+    const transaction = {
+      $queryRaw: vi.fn(),
+      run: { updateManyAndReturn: vi.fn().mockResolvedValue([]) },
+      steeringMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    };
+    const $transaction = vi.fn(async (callback: (client: typeof transaction) => unknown) =>
+      callback(transaction),
+    );
+    const prisma = {
+      $transaction,
+      computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    } as unknown as PrismaClient;
+
+    await stopThreadRuns(
+      {
+        prisma,
+        sandbox: {} as SandboxProvider,
+        events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
+      },
+      { spaceId: "workspace-1", userId: "user-1" } as Actor,
+      {
+        kind: "bot",
+        botId: "bot-1",
+        threadId: "thread-1",
+        bot: { computer: null },
+      } as ThreadTarget,
+    );
+
+    // The stop holds the thread row lock, which snapshot reads can hold for up to
+    // 15s; Prisma's 5s default counts that wait and turns a loaded database into
+    // a failed stop. Only the timeout is explicit: an explicit maxWait would
+    // override the client's longer connection wait, so a saturated pool that
+    // frees a connection late would fail the checkout instead of waiting it out.
+    expect($transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
   });
 });
 

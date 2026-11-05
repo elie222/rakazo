@@ -183,6 +183,82 @@ describe("commitBotUpdate", () => {
     expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 
+  it("skips the write, the event and the notify when the default avatar set moved on", async () => {
+    const botUpdate = vi.fn();
+    const tx = {
+      $queryRaw: vi.fn(async (strings: TemplateStringsArray) =>
+        strings.join("").includes("FOR SHARE")
+          ? [{ botAvatarSet: "organic" }]
+          : ([{ id: "thread-1" }] as Array<unknown>),
+      ),
+      bot: { update: botUpdate },
+    };
+    const notify = vi.fn();
+    const appendEvent = vi.fn();
+
+    await expect(
+      commitBotUpdate(
+        {
+          prisma: {
+            $transaction: async (run: (client: typeof tx) => Promise<unknown>) => run(tx),
+          } as never,
+          notify,
+          spaceId: "space-1",
+          threadId: "thread-1",
+          botId: "bot-1",
+          data: { avatarSet: "rakazo" },
+          emitBotUpdated: true,
+          expectedUserAvatarSet: { userId: "user-1", botAvatarSet: "rakazo" },
+        },
+        appendEvent,
+      ),
+    ).resolves.toBeNull();
+
+    expect(botUpdate).not.toHaveBeenCalled();
+    expect(appendEvent).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("writes the bot when the default avatar set still matches under the lock", async () => {
+    const updated = { id: "bot-1", name: "Chief", description: "" };
+    const botUpdate = vi.fn().mockResolvedValue(updated);
+    const tx = {
+      $queryRaw: vi.fn(async (strings: TemplateStringsArray) =>
+        strings.join("").includes("FOR SHARE")
+          ? [{ botAvatarSet: "rakazo" }]
+          : ([{ id: "thread-1" }] as Array<unknown>),
+      ),
+      bot: { update: botUpdate },
+    };
+    const notify = vi.fn().mockResolvedValue(undefined);
+    const appendEvent = vi.fn().mockResolvedValue({ seq: 4 });
+
+    await expect(
+      commitBotUpdate(
+        {
+          prisma: {
+            $transaction: async (run: (client: typeof tx) => Promise<unknown>) => run(tx),
+          } as never,
+          notify,
+          spaceId: "space-1",
+          threadId: "thread-1",
+          botId: "bot-1",
+          data: { avatarSet: "rakazo" },
+          emitBotUpdated: true,
+          expectedUserAvatarSet: { userId: "user-1", botAvatarSet: "rakazo" },
+        },
+        appendEvent,
+      ),
+    ).resolves.toEqual(updated);
+
+    // The default is read before the thread lock and before the bot row.
+    const queries = tx.$queryRaw.mock.calls.map(([strings]) => strings.join(""));
+    expect(queries[0]).toContain("FOR SHARE");
+    expect(queries[1]).toContain("threads");
+    expect(botUpdate).toHaveBeenCalledOnce();
+    expect(notify).toHaveBeenCalledWith("thread-1", 4);
+  });
+
   it("updates without an event when profile labels are unchanged", async () => {
     const update = vi.fn().mockResolvedValue({
       id: "bot-1",
