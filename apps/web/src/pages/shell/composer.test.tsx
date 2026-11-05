@@ -1220,6 +1220,96 @@ it("does not retry a changed payload with a dictation's nonce", async () => {
   }
 });
 
+it.each([
+  ["an attachment pick", "create the task"],
+  ["a skill selection", "/summarize\ncreate the task"],
+])("does not retry a failed dictation with its nonce after %s", async (change, retried) => {
+  const nonces: string[] = [];
+  const onSend = vi.fn(async (_text: string, _mentions: unknown[], clientNonce: string) => {
+    nonces.push(clientNonce);
+    return false;
+  });
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    const textarea = renderComposer(onSend, { phoneCallsEnabled: true });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("create the task"));
+    await act(async () => {});
+    expect(textarea.value).toBe("create the task");
+    if (change === "an attachment pick") {
+      pickAttachment();
+      rerenderComposer({
+        pendingAttachments: [
+          { id: "a-1", threadKey: "bot:bot-1", file: new File(["notes"], "notes.txt") },
+        ],
+      });
+    } else {
+      type(textarea, "/sum");
+      act(() =>
+        container
+          ?.querySelector<HTMLButtonElement>("button[aria-label='Skill summarize']")
+          ?.click(),
+      );
+      type(textarea, "create the task");
+    }
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(2);
+    expect(onSend.mock.calls[1]?.[0]).toBe(retried);
+    expect(nonces[1]).not.toBe(nonces[0]);
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it.each(["a typed draft", "a chosen skill", "a pending attachment"])(
+  "leaves a dictation over %s in the field to review",
+  async (content) => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    let onFinal!: (text: string) => void;
+    const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+      onFinal = options.onFinal;
+    });
+    try {
+      const textarea = renderComposer(onSend, {
+        phoneCallsEnabled: true,
+        pendingAttachments:
+          content === "a pending attachment"
+            ? [{ id: "a-1", threadKey: "bot:bot-1", file: new File(["notes"], "notes.txt") }]
+            : [],
+      });
+      if (content === "a chosen skill") {
+        type(textarea, "/sum");
+        act(() =>
+          container
+            ?.querySelector<HTMLButtonElement>("button[aria-label='Skill summarize']")
+            ?.click(),
+        );
+      }
+      const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+      act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+      // The draft is already there when the words arrive.
+      if (content === "a typed draft") type(textarea, "half typed");
+      act(() => onFinal("dictated words"));
+      await act(async () => {});
+      const expected = content === "a typed draft" ? "half typed dictated words" : "dictated words";
+      expect(onSend).not.toHaveBeenCalled();
+      expect(textarea.value).toBe(expected);
+      expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe(expected);
+      if (content === "a chosen skill")
+        expect(container?.querySelector("[data-testid='skill-chip']")?.textContent).toBe(
+          "summarize",
+        );
+    } finally {
+      listen.mockRestore();
+    }
+  },
+);
+
 it("keeps a reply-linked dictation's words without its nonce", async () => {
   const nonces: string[] = [];
   let fail!: (error: Error) => void;

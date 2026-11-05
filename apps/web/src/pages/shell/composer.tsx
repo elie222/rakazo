@@ -197,8 +197,15 @@ const ComposerBody = memo(function Composer({
     onText: (text) => {
       // Dictation rides the typed-message path: the words land in the draft and
       // the normal send carries them, with its nonce, edit guards and recovery.
-      const clientNonce = newClientId();
+      // Words added to a draft, a skill or attachments wait for the user to review
+      // and send; an armed reply or an open page is context and still sends.
+      const reviewFirst =
+        compositionRef.current.text.trim().length > 0 ||
+        selectedSkill !== null ||
+        pendingAttachments.length > 0;
       appendDictation(text);
+      if (reviewFirst) return;
+      const clientNonce = newClientId();
       retryNonce.current = clientNonce;
       setDictationSendDue(editRevision.current);
     },
