@@ -55,6 +55,8 @@ export interface ExecutorDeps {
   onTicketChange?: TicketChangeNotifier;
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
+  /** The domain bot email addresses are on; absent when this server receives no email. */
+  inboundEmailDomain?: string;
   phoneCallCooldownMinutes?: number;
   phoneCallRingSeconds?: number;
   /** Messaging surface; absent means zero identity queries and no chat prompts. */

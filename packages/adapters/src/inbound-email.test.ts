@@ -63,7 +63,24 @@ describe("readInboundEmail", () => {
       text: "Please summarize the attached report.",
       automated: false,
       attachments: [],
+      messageId: "<weekly-1@example.test>",
+      references: [],
     });
+  });
+
+  it("keeps the thread a reply answers", async () => {
+    const email = await readInboundEmail(
+      bytes(
+        message([
+          ...plain,
+          "In-Reply-To: <weekly-0@example.test>",
+          "References: <kickoff@example.test> <weekly-0@example.test>",
+        ]),
+      ),
+      { resolver },
+    );
+
+    expect(email.references).toEqual(["<kickoff@example.test>", "<weekly-0@example.test>"]);
   });
 
   it("does not authenticate unsigned, tampered or unaligned mail", async () => {
@@ -227,7 +244,8 @@ describe("readInboundEmail", () => {
     const email = await readInboundEmail(bytes(await signed(raw)), { resolver });
     const unsigned = await readInboundEmail(bytes(raw), { resolver });
 
-    expect(unsigned.text).toBe("");
+    // The inbox keeps unverified mail too, so its body is read the same way.
+    expect(unsigned.text).toBe(email.text);
     expect(email.text.startsWith("Hello bot & team: €100 €5\n")).toBe(true);
     expect(email.text).not.toContain("steal");
     expect(email.text.endsWith("[…]")).toBe(true);

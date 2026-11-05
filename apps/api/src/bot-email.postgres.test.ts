@@ -150,6 +150,8 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
       text: "Hi",
       automated: false,
       attachments: [],
+      messageId: `<${suffix}@example.test>`,
+      references: [],
     };
     const result = await runAsSystem("test inbound email", () =>
       receiveBotEmail(
@@ -173,6 +175,8 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     for (const skipped of ["mine", "paused", "scheduled", "elsewhere", "member's"]) {
       expect(prompt).not.toContain(`Run routine "${skipped}"`);
     }
+    const saved = await system.botEmailMessage.findMany({ where: { botId: target.id } });
+    expect(saved).toMatchObject([{ verified: true, subject: "Hello", spaceId: owner.spaceId }]);
   });
 
   it("tells the owner once a day when mail from their address fails the check", async () => {
@@ -202,9 +206,11 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
       cc: [],
       subject: "Hi",
       date: null,
-      text: "",
+      text: "Your code is 123456",
       automated: false,
       attachments: [],
+      messageId: null,
+      references: [],
     });
     const notify = vi.fn(async () => undefined);
     const deliver = (from: string) =>
@@ -233,5 +239,14 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     expect(notes).toHaveLength(1);
     expect(notify).toHaveBeenCalledTimes(1);
     expect(thread.unread).toBe(true);
+    // Both copies of the owner's message are one inbox entry; the stranger's is another.
+    const saved = await system.botEmailMessage.findMany({
+      where: { botId: target.id },
+      orderBy: { fromAddress: "asc" },
+    });
+    expect(saved.map((row) => [row.fromAddress, row.verified, row.text])).toEqual([
+      [email, false, "Your code is 123456"],
+      [`stranger-${suffix}@example.test`, false, "Your code is 123456"],
+    ]);
   });
 });

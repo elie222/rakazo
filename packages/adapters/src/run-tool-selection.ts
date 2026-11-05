@@ -22,6 +22,7 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "list_fleet",
   "read_file",
   "read_history",
+  "read_email",
   "search_history",
   "request_takeover",
   "run_subagent",
@@ -86,6 +87,8 @@ export function selectBuiltinToolsForRun(options: {
   userComputer?: boolean;
   /** That desktop can look at and drive its apps. */
   userComputerScreen?: boolean;
+  /** The bot has an email address and this run is its owner's own, outside any group or channel. */
+  emailInbox?: boolean;
 }) {
   const disabled = disabledBuiltinToolSet(options.disabledBuiltinTools);
   const ownerStartedRun = isOwnerStartedRun(options.trigger, Boolean(options.followUpFromUser));
@@ -127,6 +130,7 @@ export function selectBuiltinToolsForRun(options: {
           "generate_video",
         ].includes(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
+      (options.emailInbox || tool.name !== "read_email") &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
       ((options.userComputer && options.userComputerScreen) ||
         !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&

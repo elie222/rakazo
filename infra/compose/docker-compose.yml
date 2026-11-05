@@ -40,6 +40,8 @@ x-app-environment: &app-environment
   PHONE_CALLS_ENABLED:
   PHONE_CALL_RING_SECONDS:
   PHONE_CALL_COOLDOWN_MINUTES:
+  # The worker names each bot's address to it; the API receives the mail.
+  INBOUND_EMAIL_DOMAIN:
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:
   APNS_VOIP_KEY_ID:
@@ -422,7 +424,6 @@ services:
       SMTP_URL:
       EMAIL_FROM:
       EMAIL_REPLY_TO:
-      INBOUND_EMAIL_DOMAIN:
       INBOUND_EMAIL_SECRET:
       WELCOME_EMAIL_ENABLED:
       STRIPE_SECRET_KEY:

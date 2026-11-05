@@ -63,6 +63,7 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "list_fleet",
   "list_secrets",
   "purchase_status",
+  "read_email",
   "read_file",
   "recall_memory",
   "request_takeover",
