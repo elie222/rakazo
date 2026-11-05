@@ -16,6 +16,8 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OWNER_EMAIL=preview@example.com
 OWNER_PASSWORD=rakazo-preview-demo
 PGDATA="$DATA/postgres"
+IMAGE_ID=$(cat "$ROOT/infra/preview/image-id" 2> /dev/null || true)
+INITIALIZED_IMAGE="$PGDATA/.preview-image"
 
 log() { printf '[preview] %s\n' "$*"; }
 as_postgres() { gosu postgres "$@"; }
@@ -95,18 +97,25 @@ waiting=$!
 
 [[ -f "$PGDATA/PG_VERSION" ]] || init_database
 start_database
-if ! migrate; then
-  # A rewritten branch can leave migrations that no longer apply; a preview's data is disposable.
-  log "Migrations failed; starting over with an empty database"
-  stop_database
-  find "$PGDATA" -mindepth 1 -delete
-  find "$DATA/app" -mindepth 1 -delete
-  init_database
-  start_database
-  migrate
+if [[ -z $IMAGE_ID || $(cat "$INITIALIZED_IMAGE" 2> /dev/null || true) != "$IMAGE_ID" ]]; then
+  rm -f "$INITIALIZED_IMAGE"
+  if ! migrate; then
+    # A rewritten branch can leave migrations that no longer apply; a preview's data is disposable.
+    log "Migrations failed; starting over with an empty database"
+    stop_database
+    find "$PGDATA" -mindepth 1 -delete
+    find "$DATA/app" -mindepth 1 -delete
+    init_database
+    start_database
+    migrate
+  fi
+  OWNER_EMAIL=$OWNER_EMAIL OWNER_PASSWORD=$OWNER_PASSWORD \
+    gosu node bash -c 'cd "$1/apps/api" && node dist/cli/bootstrap-owner.js' _ "$ROOT"
+  if [[ -n $IMAGE_ID ]]; then
+    printf '%s\n' "$IMAGE_ID" > "$INITIALIZED_IMAGE.tmp"
+    mv "$INITIALIZED_IMAGE.tmp" "$INITIALIZED_IMAGE"
+  fi
 fi
-OWNER_EMAIL=$OWNER_EMAIL OWNER_PASSWORD=$OWNER_PASSWORD \
-  gosu node bash -c 'cd "$1/apps/api" && node dist/cli/bootstrap-owner.js' _ "$ROOT"
 
 gosu node bash -c 'cd "$1/apps/api" && exec node --enable-source-maps dist/index.js' _ "$ROOT" &
 gosu node bash -c 'cd "$1/apps/worker" && exec node --enable-source-maps dist/index.js' _ "$ROOT" &
