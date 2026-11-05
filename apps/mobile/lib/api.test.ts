@@ -3221,6 +3221,50 @@ describe("mobile API authentication", () => {
   );
 
   it.each(["save", "reset"])(
+    "a %s stops while a session save started during the hang-up is still running",
+    async (change) => {
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      if (change === "reset") await saveApiBase("https://old-server.example");
+      await restoreSessionToken("token-a");
+      await selectSpace("space-old");
+      let releaseSave!: () => void;
+      const saveHeld = new Promise<void>((resolve) => {
+        releaseSave = resolve;
+      });
+      let saving: Promise<void> | undefined;
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        if (key === "rakazo.session_token" && value === "token-b") await saveHeld;
+        // The save completes while the switch writes the Space rollback.
+        if (key === "rakazo.space_rollback" && value) {
+          releaseSave();
+          await saving;
+        }
+        store.set(key, value);
+      });
+      configureSessionEndHangUp(async () => {
+        saving = saveSessionToken("token-b");
+      });
+      let result: Awaited<ReturnType<typeof saveApiBase>>;
+      try {
+        result = await (change === "save"
+          ? saveApiBase("https://second-server.example")
+          : resetApiBase());
+      } finally {
+        configureSessionEndHangUp(undefined);
+        releaseSave();
+        await saving;
+        mockSecureStore(store);
+      }
+
+      expect(result).toMatchObject({ ok: false });
+      expect(store.get("rakazo.session_token")).toBe("token-b");
+      expect(pendingSignOutRecords(store)).toEqual([]);
+      await resetApiBase();
+    },
+  );
+
+  it.each(["save", "reset"])(
     "a %s stopped by a session change keeps a Space selected while it read the old one",
     async (change) => {
       const store = new Map<string, string>();

@@ -161,6 +161,12 @@ export function currentSessionGeneration() {
   return sessionGeneration;
 }
 
+/** Token saves still running; a read during one sees no session until its token lands. */
+let sessionSaves = 0;
+export function sessionSaveInProgress() {
+  return sessionSaves > 0;
+}
+
 export async function loadSessionToken() {
   const snapshot = await snapshotSessionToken();
   return snapshot.ok ? snapshot.value : "";
@@ -172,11 +178,16 @@ export async function saveSessionToken(token: string, sameAccount = false) {
   publishSessionGeneration(false);
   sessionInvalidated = true;
   sessionFallback = undefined;
-  const clearingScope = invalidateSessionCaches(false, sameAccount);
-  // Marked before the token lands, so an account deletion that clears it afterwards also clears the mark.
-  await rememberSignedIn();
-  await enqueueScopeWrite(() => SecureStore.setItemAsync(SESSION_KEY, token));
-  await clearingScope;
+  sessionSaves += 1;
+  try {
+    const clearingScope = invalidateSessionCaches(false, sameAccount);
+    // Marked before the token lands, so an account deletion that clears it afterwards also clears the mark.
+    await rememberSignedIn();
+    await enqueueScopeWrite(() => SecureStore.setItemAsync(SESSION_KEY, token));
+    await clearingScope;
+  } finally {
+    sessionSaves -= 1;
+  }
   if (generation !== sessionGeneration) return;
   sessionInvalidated = false;
   sessionFallback = undefined;
@@ -291,6 +302,7 @@ export async function rotateSessionTokenIfCurrent(
   sessionFallback = undefined;
   unsavedRotation = undefined;
   const clearingScope = invalidateSessionCaches(true);
+  sessionSaves += 1;
   try {
     await rotateArtifactCacheSession(previous, token);
     await saveRotatedToken(rotation, token);
@@ -302,6 +314,8 @@ export async function rotateSessionTokenIfCurrent(
       publishSessionGeneration();
     }
     throw error;
+  } finally {
+    sessionSaves -= 1;
   }
   await clearingScope;
   if (rotation === sessionGeneration) {

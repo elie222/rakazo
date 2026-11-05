@@ -88,6 +88,7 @@ import {
   saveRotatedSessionToken,
   saveSessionToken,
   saveVerifiedIntegrationsScope,
+  sessionSaveInProgress,
   snapshotSessionToken,
   tokenFromAuthResponse,
 } from "./session";
@@ -451,7 +452,10 @@ async function clearCredentialsForEndpointChange(
   // The old server's session authorizes the call's hang-up; send it while it still exists.
   await hangUpBeforeCredentialsCleared?.().catch(() => undefined);
   const generation = currentSessionGeneration();
-  const previousToken = await snapshotSessionToken();
+  // A save still running reads as no session; its token may land before the clear.
+  const previousToken = sessionSaveInProgress()
+    ? ({ ok: false } as const)
+    : await snapshotSessionToken();
   // An unreadable session is not an empty one: clearing now could strand a live session
   // with no record to revoke it, so the switch stops before touching anything.
   if (!previousToken.ok) {
