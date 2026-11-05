@@ -357,7 +357,6 @@ function decodeArtifactListCursor(value: string): ArtifactListCursor {
     throw new ArtifactListCursorError();
   }
   const botId = cursorBotId(record.botId);
-  // Cursors from before the filter existed listed every file.
   const madeByBots = record.madeByBots ?? false;
   if (typeof madeByBots !== "boolean") throw new ArtifactListCursorError();
   const createdAt = new Date(record.createdAt);
@@ -388,7 +387,6 @@ export async function listSpaceArtifacts(
   const scopeBotId = input.botId ?? null;
   const botFilter = scopeBotId ? Prisma.sql`AND "botId" = ${scopeBotId}` : Prisma.empty;
   const madeByBots = input.madeByBots ?? false;
-  // A run id is set only on files a bot attached; uploads have none.
   const madeByBotsFilter = madeByBots ? Prisma.sql`AND latest."runId" IS NOT NULL` : Prisma.empty;
 
   let asOf = new Date();

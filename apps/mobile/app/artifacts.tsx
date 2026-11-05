@@ -64,7 +64,6 @@ export default function ArtifactsScreen() {
   }
 
   const [items, setItems] = useState<MobileArtifactSummary[] | null>(null);
-  // A cursor only pages the filter it came from.
   const [next, setNext] = useState<{
     cursor: string;
     botId: string | null;
