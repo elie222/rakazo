@@ -9,6 +9,11 @@ import type { PickedAttachment } from "./pick-attachments";
 import { pickDocuments, readSharedFiles } from "./pick-attachments";
 import { useIncomingShareImport, useThreadAttachments } from "./thread-attachments";
 
+const sessionCaches = vi.hoisted(() => [] as Array<() => void>);
+vi.mock("./session", () => ({
+  registerSessionDiskCache: (clear: () => void) => sessionCaches.push(clear),
+}));
+
 vi.mock("./i18n", () => ({
   t: (text: string) => text,
   useI18n: () => ({ t: (text: string) => text }),
@@ -45,11 +50,13 @@ function unmount() {
 function Probe({
   botId,
   draftScope,
+  uploadConfig,
 }: {
   botId: string;
   draftScope?: { apiBase: string; userId: string; threadKey: string };
+  uploadConfig?: { maxUploadSizeBytes?: number; maxAttachmentsPerMessage?: number };
 }) {
-  attachments = useThreadAttachments({ botId, readOnly: false, draftScope });
+  attachments = useThreadAttachments({ botId, readOnly: false, uploadConfig, draftScope });
   return null;
 }
 
@@ -176,5 +183,74 @@ it("keeps the iOS share copy until its attachment is sent or removed", async () 
 
   expect(releaseIncomingShareFiles).toHaveBeenCalledWith([
     { uri: "file:///group/a1.txt", name: "", mimeType: null },
+  ]);
+});
+
+it("restores the destination chat's draft on a warm link to another chat", () => {
+  const scope = (threadKey: string) => ({
+    apiBase: "https://example.test",
+    userId: "user-7",
+    threadKey,
+  });
+  mount(<Probe botId="bot-b" draftScope={scope("bot-b")} />);
+  act(() => attachments.setPendingAttachments([attachment("b1", "bot-b")]));
+  unmount();
+
+  mount(<Probe botId="bot-a" draftScope={scope("bot-a")} />);
+  act(() => attachments.setPendingAttachments([attachment("a1", "bot-a")]));
+  // A warm deep link reuses the mounted screen with the other chat's parameters.
+  act(() => root.render(<Probe botId="bot-b" draftScope={scope("bot-b")} />));
+
+  expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["b1"]);
+});
+
+it("bounds retained drafts for inactive chats, dropping the oldest", () => {
+  const uploadConfig = { maxUploadSizeBytes: 3, maxAttachmentsPerMessage: 1 };
+  const scope = (threadKey: string) => ({
+    apiBase: "https://example.test",
+    userId: "user-9",
+    threadKey,
+  });
+  // "aGk=" carries 3 bytes, so two chats fill the 6-byte budget and the third drops the first.
+  for (const bot of ["bot-x", "bot-y", "bot-z"]) {
+    mount(<Probe botId={bot} draftScope={scope(bot)} uploadConfig={uploadConfig} />);
+    act(() => attachments.setPendingAttachments([attachment(`${bot}-f`, bot)]));
+    unmount();
+  }
+
+  mount(<Probe botId="bot-x" draftScope={scope("bot-x")} uploadConfig={uploadConfig} />);
+  expect(attachments.activePendingAttachments).toEqual([]);
+  unmount();
+  mount(<Probe botId="bot-z" draftScope={scope("bot-z")} uploadConfig={uploadConfig} />);
+  expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["bot-z-f"]);
+});
+
+it("clears retained drafts and share copies on a session change", async () => {
+  const files = [{ uri: "file:///group/s1.txt", name: "s1.txt", mimeType: "text/plain" }];
+  vi.mocked(takeIncomingShare).mockReturnValueOnce({
+    text: "",
+    files,
+    arrivedAt: Date.now(),
+    generation: 1,
+  });
+  vi.mocked(readSharedFiles).mockResolvedValueOnce({
+    attachments: [attachment("s1", "bot-d")],
+    skipped: [],
+    failedFiles: [],
+    sources: [files[0]!.uri],
+  });
+  mount(<ImportProbe botId="bot-d" />);
+  await act(async () => {});
+  unmount();
+  vi.mocked(releaseIncomingShareFiles).mockClear();
+
+  expect(sessionCaches).toHaveLength(1);
+  act(() => sessionCaches[0]!());
+
+  mount(<ImportProbe botId="bot-d" />);
+  await act(async () => {});
+  expect(attachments.activePendingAttachments).toEqual([]);
+  expect(releaseIncomingShareFiles).toHaveBeenCalledWith([
+    { uri: "file:///group/s1.txt", name: "", mimeType: null },
   ]);
 });
