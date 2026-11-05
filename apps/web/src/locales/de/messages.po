@@ -4476,10 +4476,6 @@ msgstr ""
 msgid "No longer active"
 msgstr "Nicht mehr aktiv"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "No managed app catalog is configured on this deployment."
-msgstr "Für diese Bereitstellung ist kein verwalteter App-Katalog konfiguriert."
-
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""

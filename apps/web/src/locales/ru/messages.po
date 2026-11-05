@@ -4476,10 +4476,6 @@ msgstr "Ни один бот не подходит"
 msgid "No longer active"
 msgstr "Больше не активен"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "No managed app catalog is configured on this deployment."
-msgstr "В этом развертывании не настроен каталог управляемых приложений."
-
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""

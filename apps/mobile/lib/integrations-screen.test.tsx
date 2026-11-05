@@ -494,6 +494,54 @@ it("keeps sources loading when a rename cancels the catalog refresh", async () =
   );
 });
 
+it("keeps loaded plugins out of a loading state when scope lookup fails on refresh", async () => {
+  await render();
+  await act(async () => resolveCatalog([item]));
+  expect(container.querySelector('[role="progressbar"]')).toBeNull();
+  state.focused = false;
+  await render();
+  state.scope.mockRejectedValue(new Error("Scope unavailable"));
+  state.focused = true;
+  await render();
+  expect(container.textContent).toContain("Scope unavailable");
+  expect(container.textContent).toContain("Retry");
+  expect(container.querySelector('[role="progressbar"]')).toBeNull();
+  expect(state.marketplace).toHaveBeenCalledTimes(1);
+});
+
+it.each([true, false])(
+  "waits for new plugins after a scope switch with a cached empty catalog (stale scope: %s)",
+  async (staleScope) => {
+    const guidance = "Configure a plugin catalog on the server to connect apps.";
+    await render();
+    await act(async () => resolveCatalog([]));
+    expect(container.textContent).toContain(guidance);
+    state.focused = false;
+    await render();
+    state.current = !staleScope;
+    state.scope.mockImplementation(async () => {
+      state.current = true;
+      return { userId: "user-a", spaceId: "space-b" };
+    });
+    state.read.mockReturnValue({ catalog: [], connections: [] });
+    let finishPlugins!: (value: unknown) => void;
+    state.marketplace.mockReturnValue(
+      new Promise((resolve) => {
+        finishPlugins = resolve;
+      }),
+    );
+    state.rpc.mockResolvedValue([]);
+    state.focused = true;
+    await render();
+    expect(container.querySelector('[data-testid="integrations-loading"]')).toBeNull();
+    expect(container.textContent).not.toContain(guidance);
+    await act(async () =>
+      finishPlugins({ entries: [], unavailableRegistries: [], skippedEntries: 0 }),
+    );
+    expect(container.textContent).toContain(guidance);
+  },
+);
+
 it("refreshes a different space on focus return and rejects the blurred refresh", async () => {
   state.read.mockReturnValue({ catalog: [item], connections: [account] });
   await render();
