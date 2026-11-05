@@ -1163,6 +1163,10 @@ msgstr "Bot"
 msgid "Bot"
 msgstr "Bot"
 
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Bot email addresses"
+msgstr "Bot e-posta adresleri"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Bot is watching, not acting"
 msgstr "Bot yalnızca izliyor"
@@ -1487,7 +1491,7 @@ msgstr "Rakazo'yu nasıl kullanacağını seç"
 msgid "City"
 msgstr "Şehir"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Claim"
 msgstr "Al"
 
@@ -1901,10 +1905,12 @@ msgstr "{0} ile devam et"
 msgid "Conversations"
 msgstr "Sohbetler"
 
+#: src/components/BotEmailAddressField.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
+#: src/components/vault/BotEmailAddresses.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1919,6 +1925,11 @@ msgstr "Kopyalandı"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Kopyala"
+
+#: src/components/BotEmailAddressField.tsx
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Copy {address}"
+msgstr "{address} kopyala"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -3052,7 +3063,7 @@ msgctxt "routine trigger"
 msgid "Email"
 msgstr "E-posta"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Email address"
 msgstr "E-posta adresi"
 
@@ -3444,6 +3455,10 @@ msgstr "Ağ geçidi URL'si"
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "Genel"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Get an email address"
+msgstr "E-posta adresi al"
 
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
@@ -6598,7 +6613,7 @@ msgstr "Test ediliyor"
 msgid "Testing…"
 msgstr "Test ediliyor…"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "That address isn't available"
 msgstr "Bu adres kullanılamıyor"
 
@@ -7139,7 +7154,7 @@ msgstr "{hostLabel} kullan"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "Erişim belirteci için {oauthEnvReference} kullanın."
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Use 2 to 64 characters"
 msgstr "2 ile 64 karakter kullanın"
 
@@ -7164,7 +7179,7 @@ msgstr "{label}: varsayılanlarını kullan"
 msgid "Use in this bot"
 msgstr "Bu botta kullan"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Use letters, numbers, dots, dashes or underscores"
 msgstr "Harf, rakam, nokta, tire veya alt çizgi kullanın"
 

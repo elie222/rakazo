@@ -92,6 +92,8 @@ export function selectBuiltinToolsForRun(options: {
   userComputerScreen?: boolean;
   /** The bot has an email address and this run is its owner's own, outside any group or channel. */
   emailInbox?: boolean;
+  /** This server receives email and the bot has no address yet. */
+  emailClaimable?: boolean;
 }) {
   const disabled = disabledBuiltinToolSet(options.disabledBuiltinTools);
   const ownerStartedRun = isOwnerStartedRun(options.trigger, Boolean(options.followUpFromUser));
@@ -134,6 +136,11 @@ export function selectBuiltinToolsForRun(options: {
         ].includes(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
       (options.emailInbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
+      ((options.emailClaimable &&
+        ownerStartedRun &&
+        !options.groupId &&
+        !options.messagingChannelRun) ||
+        tool.name !== "claim_email_address") &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
       ((options.userComputer && options.userComputerScreen) ||
         !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&

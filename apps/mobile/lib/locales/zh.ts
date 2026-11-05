@@ -605,6 +605,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Only me": "仅我",
   "Anyone at @{domain}": "@{domain} 的任何人",
   "Remove email trigger": "移除邮件触发器",
+  "Get an email address": "获取邮箱地址",
+  "Bot email addresses": "Bot 的邮箱地址",
   "Use 2 to 64 characters": "请使用 2 到 64 个字符",
   "Use letters, numbers, dots, dashes or underscores": "请使用字母、数字、点、短横线或下划线",
   "That address isn't available": "该地址不可用",

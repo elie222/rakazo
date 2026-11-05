@@ -510,6 +510,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Only me": "Solo yo",
   "Anyone at @{domain}": "Cualquiera en @{domain}",
   "Remove email trigger": "Quitar disparador de correo",
+  "Get an email address": "Obtener una dirección de correo",
+  "Bot email addresses": "Direcciones de correo de los bots",
   "Use 2 to 64 characters": "Usa de 2 a 64 caracteres",
   "Use letters, numbers, dots, dashes or underscores":
     "Usa letras, números, puntos, guiones o guiones bajos",

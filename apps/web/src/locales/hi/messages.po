@@ -1163,6 +1163,10 @@ msgstr "बॉट"
 msgid "Bot"
 msgstr "बॉट"
 
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Bot email addresses"
+msgstr "बॉट के ईमेल पते"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Bot is watching, not acting"
 msgstr "बॉट देख रहा है, कार्रवाई नहीं कर रहा"
@@ -1487,7 +1491,7 @@ msgstr ""
 msgid "City"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Claim"
 msgstr "लें"
 
@@ -1901,10 +1905,12 @@ msgstr "{0} के साथ जारी रखें"
 msgid "Conversations"
 msgstr ""
 
+#: src/components/BotEmailAddressField.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
+#: src/components/vault/BotEmailAddresses.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1919,6 +1925,11 @@ msgstr "कॉपी किया गया"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "कॉपी करें"
+
+#: src/components/BotEmailAddressField.tsx
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Copy {address}"
+msgstr "{address} कॉपी करें"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -3052,7 +3063,7 @@ msgctxt "routine trigger"
 msgid "Email"
 msgstr "ईमेल"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Email address"
 msgstr "ईमेल पता"
 
@@ -3444,6 +3455,10 @@ msgstr ""
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "सामान्य"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Get an email address"
+msgstr "ईमेल पता पाएँ"
 
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
@@ -6598,7 +6613,7 @@ msgstr ""
 msgid "Testing…"
 msgstr "परीक्षण हो रहा है…"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "That address isn't available"
 msgstr "यह पता उपलब्ध नहीं है"
 
@@ -7139,7 +7154,7 @@ msgstr "{hostLabel} का उपयोग करें"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "एक्सेस टोकन के लिए {oauthEnvReference} का उपयोग करें।"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Use 2 to 64 characters"
 msgstr "2 से 64 अक्षर इस्तेमाल करें"
 
@@ -7164,7 +7179,7 @@ msgstr "{label} के लिए अपने डिफ़ॉल्ट इस्
 msgid "Use in this bot"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Use letters, numbers, dots, dashes or underscores"
 msgstr "अक्षर, अंक, बिंदु, डैश या अंडरस्कोर इस्तेमाल करें"
 

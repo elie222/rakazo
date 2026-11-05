@@ -1163,6 +1163,10 @@ msgstr "בוט"
 msgid "Bot"
 msgstr "בוט"
 
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Bot email addresses"
+msgstr "כתובות האימייל של הבוטים"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Bot is watching, not acting"
 msgstr "הבוט צופה ולא פועל"
@@ -1487,7 +1491,7 @@ msgstr ""
 msgid "City"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Claim"
 msgstr "תפוס"
 
@@ -1901,10 +1905,12 @@ msgstr "המשך עם {0}"
 msgid "Conversations"
 msgstr ""
 
+#: src/components/BotEmailAddressField.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
+#: src/components/vault/BotEmailAddresses.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1919,6 +1925,11 @@ msgstr "הועתק"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "העתקה"
+
+#: src/components/BotEmailAddressField.tsx
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Copy {address}"
+msgstr "העתקת {address}"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -3052,7 +3063,7 @@ msgctxt "routine trigger"
 msgid "Email"
 msgstr "אימייל"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Email address"
 msgstr "כתובת אימייל"
 
@@ -3444,6 +3455,10 @@ msgstr ""
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "כללי"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Get an email address"
+msgstr "קבלת כתובת אימייל"
 
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
@@ -6598,7 +6613,7 @@ msgstr ""
 msgid "Testing…"
 msgstr "בודק…"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "That address isn't available"
 msgstr "הכתובת הזו לא זמינה"
 
@@ -7139,7 +7154,7 @@ msgstr "שימוש ב{hostLabel}"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "השתמש ב-{oauthEnvReference} עבור אסימון הגישה."
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Use 2 to 64 characters"
 msgstr "השתמשו ב-2 עד 64 תווים"
 
@@ -7164,7 +7179,7 @@ msgstr "שימוש בברירות המחדל עבור {label}"
 msgid "Use in this bot"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Use letters, numbers, dots, dashes or underscores"
 msgstr "השתמשו באותיות, ספרות, נקודות, מקפים או קווים תחתונים"
 

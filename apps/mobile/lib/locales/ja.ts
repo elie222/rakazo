@@ -514,6 +514,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "Only me": "自分のみ",
   "Anyone at @{domain}": "@{domain} の全員",
   "Remove email trigger": "メールトリガーを削除",
+  "Get an email address": "メールアドレスを取得",
+  "Bot email addresses": "ボットのメールアドレス",
   "Use 2 to 64 characters": "2〜64文字で入力してください",
   "Use letters, numbers, dots, dashes or underscores":
     "英字、数字、ピリオド、ハイフン、アンダースコアを使ってください",

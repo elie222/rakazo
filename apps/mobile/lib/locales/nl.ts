@@ -526,6 +526,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Only me": "Alleen ik",
   "Anyone at @{domain}": "Iedereen bij @{domain}",
   "Remove email trigger": "E-mailtrigger verwijderen",
+  "Get an email address": "Een e-mailadres krijgen",
+  "Bot email addresses": "E-mailadressen van bots",
   "Use 2 to 64 characters": "Gebruik 2 tot 64 tekens",
   "Use letters, numbers, dots, dashes or underscores":
     "Gebruik letters, cijfers, punten, streepjes of underscores",

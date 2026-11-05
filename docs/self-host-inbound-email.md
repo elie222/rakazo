@@ -21,10 +21,10 @@ INBOUND_EMAIL_SECRET=$(openssl rand -base64 32)
 ```
 
 Use a domain that nothing else receives mail on, and set exactly the domain the relay receives
-mail for. Once it is set, **Email** appears under
-**Add trigger** in the routine editor, and each bot's owner picks the bot's name there the first
-time. Names are lowercase, never change, and are never given to another bot, even after the bot
-is deleted.
+mail for. Once it is set, a bot's owner can get it an address under its name in the bot's
+settings, by asking the bot in chat, or when adding an **Email** trigger to a routine. Claimed
+addresses are listed in the Vault. Names are lowercase, never change, and are never given to
+another bot, even after the bot is deleted.
 
 ## Hand mail to Rakazo
 

@@ -43,6 +43,15 @@ export const BotEmailAddressSchema = z
   .nullable();
 export type BotEmailAddress = z.infer<typeof BotEmailAddressSchema>;
 
+/** The claimed addresses of the bots in this Space; null when this server receives no email. */
+export const BotEmailAddressesSchema = z
+  .object({
+    domain: z.string(),
+    addresses: z.array(z.object({ botId: z.string(), botName: z.string(), address: z.string() })),
+  })
+  .nullable();
+export type BotEmailAddresses = z.infer<typeof BotEmailAddressesSchema>;
+
 /**
  * A first address suggestion from a bot's name, such as "research-helper". ASCII only: many mail
  * servers still refuse non-ASCII addresses. Empty when nothing in the name can be kept.

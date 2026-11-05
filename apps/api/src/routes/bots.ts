@@ -50,7 +50,11 @@ import { getLogger } from "@rakazo/logging";
 import type { AgentImportServices } from "../agent-import.js";
 import { agentImportSetupState, createImportedBot, previewAgentImport } from "../agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
-import { botEmailAddress, claimBotEmailAddress } from "../bot-email-address.js";
+import {
+  botEmailAddress,
+  botEmailAddresses,
+  claimBotEmailAddress,
+} from "../bot-email-address.js";
 import { changedBotSettings } from "../bot-setting-analytics.js";
 import { requireIdentityConfirmation } from "../identity-confirmation.js";
 import type { RouterDeps } from "../router.js";
@@ -620,6 +624,13 @@ export function botsRoutes(ctx: RouterContext) {
         if (bot.userId !== context.actor.userId) return null;
         return botEmailAddress(deps.prisma, deps.env.inboundEmailDomain, bot.id);
       }),
+      emailAddresses: authed.bots.emailAddresses.handler(async ({ context }) =>
+        botEmailAddresses(
+          deps.prisma,
+          deps.env.inboundEmailDomain,
+          await repos.listBots(context.actor),
+        ),
+      ),
       claimEmailAddress: authed.bots.claimEmailAddress.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");

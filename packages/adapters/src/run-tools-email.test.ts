@@ -1,5 +1,6 @@
 import {
   toolRequiresApproval,
+  toolRequiresExplicitApproval,
   toolResultTaintsRun,
   unattendedTriggerToolRequiresApproval,
 } from "@rakazo/core";
@@ -376,5 +377,99 @@ describe("botEmailInstruction", () => {
     expect(botEmailInstruction("scout@bots.test", { read: false, delete: false })).toBe(
       "Your email address is scout@bots.test.",
     );
+  });
+});
+
+describe("claim_email_address", () => {
+  function claimRun(
+    options: { claimed?: Record<string, string>; domain?: string; runUserId?: string } = {},
+  ) {
+    // localPart → botId, as bot_email_addresses keeps them.
+    const names = new Map(Object.entries(options.claimed ?? {}));
+    const ctx = {
+      deps: {
+        inboundEmailDomain: "domain" in options ? options.domain : "bots.test",
+        prisma: {
+          botEmailAddress: {
+            findUnique: async ({ where }: { where: { botId?: string; localPart?: string } }) => {
+              if (where.localPart) {
+                const botId = names.get(where.localPart);
+                return botId ? { botId, localPart: where.localPart } : null;
+              }
+              const entry = [...names].find(([, botId]) => botId === where.botId);
+              return entry ? { localPart: entry[0], botId: entry[1] } : null;
+            },
+            create: async ({ data }: { data: { localPart: string; botId: string } }) => {
+              if (names.has(data.localPart))
+                throw Object.assign(new Error("taken"), { code: "P2002" });
+              names.set(data.localPart, data.botId);
+              return data;
+            },
+          },
+        },
+      },
+      bot: { id: "bot-1", userId: "owner-1" },
+      run: { userId: options.runUserId ?? "owner-1" },
+    };
+    const call = (args: Record<string, unknown>) =>
+      emailTools.claim_email_address!(
+        ctx as never,
+        {
+          name: "claim_email_address",
+          args,
+          executionId: "c",
+          finish: async (r: unknown) => r,
+        } as never,
+      ) as Promise<Record<string, unknown>>;
+    return { call, names };
+  }
+
+  it("claims the name the owner agreed to, for good", async () => {
+    const { call, names } = claimRun();
+
+    expect(await call({ name: " Scout " })).toEqual({ address: "scout@bots.test" });
+    expect(names.get("scout")).toBe("bot-1");
+    expect(await call({ name: "other" })).toEqual({
+      error: "You already have an address, and it can't change.",
+      address: "scout@bots.test",
+    });
+  });
+
+  it("refuses taken, reserved and malformed names, and anyone but the owner", async () => {
+    const { call } = claimRun({ claimed: { scout: "bot-2" } });
+
+    expect(await call({ name: "scout" })).toEqual({
+      error: "That address isn't available. Ask for another.",
+    });
+    expect((await call({ name: "postmaster" })).error).toBe("That address isn't available");
+    expect((await call({ name: "a" })).error).toEqual(expect.any(String));
+    expect(await claimRun({ runUserId: "visitor-1" }).call({ name: "x1" })).toEqual({
+      error: "Only the bot's owner can do that.",
+    });
+    expect(await claimRun({ domain: undefined }).call({ name: "x1" })).toEqual({
+      error: "This server doesn't receive email.",
+    });
+  });
+
+  it("is offered only to the owner's own chat before the bot has an address, and always asks", () => {
+    const names = (options: { trigger: string; groupId?: string; emailClaimable: boolean }) =>
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: options.groupId ?? null,
+        trigger: options.trigger,
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+        emailClaimable: options.emailClaimable,
+      }).map((tool) => tool.name);
+
+    expect(names({ trigger: "user", emailClaimable: true })).toContain("claim_email_address");
+    expect(names({ trigger: "user", emailClaimable: false })).not.toContain("claim_email_address");
+    expect(names({ trigger: "webhook", emailClaimable: true })).not.toContain(
+      "claim_email_address",
+    );
+    expect(names({ trigger: "user", groupId: "g", emailClaimable: true })).not.toContain(
+      "claim_email_address",
+    );
+    expect(toolRequiresExplicitApproval("claim_email_address")).toBe(true);
   });
 });

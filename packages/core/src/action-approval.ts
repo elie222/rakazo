@@ -51,6 +51,8 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "feedback",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
+  // Permanent: the owner sees the exact address before it is theirs for good.
+  "claim_email_address",
   "respond_agent_connection",
   "create_space",
   "set_child_instructions",

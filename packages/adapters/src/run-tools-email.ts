@@ -1,5 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import { BOT_EMAIL_NAME_TAKEN, BotEmailNameSchema } from "@rakazo/contracts";
 import { attachmentComputerPath, redactSecrets } from "@rakazo/core";
+import { claimBotEmailName } from "@rakazo/db";
 import { z } from "zod";
 import { redactConnectorPayload } from "./connector-safety.js";
 import type { RunContext } from "./run-context.js";
@@ -198,5 +200,35 @@ async function deleteEmail(ctx: RunContext, call: ToolCall) {
   return call.finish({ deleted: count });
 }
 
-/** The bot's own inbox: mail anyone sent to its address. */
-export const emailTools: ToolHandlers = { read_email: readEmail, delete_email: deleteEmail };
+/** The owner gives the bot its permanent address from chat. */
+async function claimEmailAddress(ctx: RunContext, call: ToolCall) {
+  const { deps, bot, run } = ctx;
+  const domain = deps.inboundEmailDomain;
+  if (!domain) return call.finish({ error: "This server doesn't receive email." });
+  if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });
+  const parsed = BotEmailNameSchema.safeParse(call.args.name);
+  if (!parsed.success) {
+    return call.finish({ error: parsed.error.issues[0]?.message ?? "Choose another name." });
+  }
+  const result = await claimBotEmailName(deps.prisma, bot.id, parsed.data);
+  if (result === "taken")
+    return call.finish({ error: `${BOT_EMAIL_NAME_TAKEN}. Ask for another.` });
+  if (result === "has-another") {
+    const current = await deps.prisma.botEmailAddress.findUnique({
+      where: { botId: bot.id },
+      select: { localPart: true },
+    });
+    return call.finish({
+      error: "You already have an address, and it can't change.",
+      address: current ? `${current.localPart}@${domain}` : undefined,
+    });
+  }
+  return call.finish({ address: `${parsed.data}@${domain}` });
+}
+
+/** The bot's own address and inbox: mail anyone sent to it. */
+export const emailTools: ToolHandlers = {
+  read_email: readEmail,
+  delete_email: deleteEmail,
+  claim_email_address: claimEmailAddress,
+};

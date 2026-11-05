@@ -8,13 +8,7 @@ import type {
   RoutineWatch,
   RoutineWatchInput,
 } from "@rakazo/contracts";
-import {
-  BOT_EMAIL_NAME_TAKEN,
-  BotEmailNameSchema,
-  ROUTINE_WATCH_DEFAULT_MINUTES,
-  ROUTINE_WATCH_MIN_MINUTES,
-  suggestedEmailName,
-} from "@rakazo/contracts";
+import { ROUTINE_WATCH_DEFAULT_MINUTES, ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
 import type { CronFreq, CronLabels, CronPreset } from "@rakazo/core";
 import {
   credentialForModel,
@@ -43,7 +37,7 @@ import {
   Switch,
   Textarea,
 } from "@rakazo/ui-web";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   ChevronLeft,
   Clock,
@@ -58,6 +52,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { BotEmailAddressField } from "../components/BotEmailAddressField";
 import { authClient } from "../lib/auth";
 import { cronLabels } from "../lib/cron";
 import {
@@ -68,7 +63,6 @@ import {
 } from "../lib/model-catalog";
 import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
-import { errorText } from "../lib/user-error";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { RoutineSchedule } from "./RoutineSchedule";
 
@@ -1003,44 +997,8 @@ function EmailTriggerCard({
   onRemove: () => void;
 }) {
   const { t } = useLingui();
-  const fieldId = useId();
-  const queries = useSpaceQueries();
-  const queryClient = useQueryClient();
   const ownerEmail = authClient.useSession().data?.user.email ?? "";
   const ownerDomain = ownerEmail.slice(ownerEmail.lastIndexOf("@") + 1);
-  const [name, setName] = useState(() => suggestedEmailName(bot.name));
-  const [claiming, setClaiming] = useState(false);
-  const [claimError, setClaimError] = useState<string | null>(null);
-  const cellClass =
-    "break-all rounded-lg bg-muted px-2.5 py-1.5 font-mono text-label text-foreground/75";
-
-  async function claim() {
-    const parsed = BotEmailNameSchema.safeParse(name);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      setClaimError(
-        issue?.code === "too_small" || issue?.code === "too_big"
-          ? t`Use 2 to 64 characters`
-          : issue?.message === BOT_EMAIL_NAME_TAKEN
-            ? t`That address isn't available`
-            : t`Use letters, numbers, dots, dashes or underscores`,
-      );
-      return;
-    }
-    setClaiming(true);
-    setClaimError(null);
-    try {
-      const claimed = await rpc.bots.claimEmailAddress({ botId: bot.id, name: parsed.data });
-      queryClient.setQueryData(
-        queries.bots.emailAddress.queryKey({ input: { botId: bot.id } }),
-        (current) => (current ? { ...current, address: claimed.address } : current),
-      );
-    } catch (error) {
-      setClaimError(errorText(error, t`That address isn't available`));
-    } finally {
-      setClaiming(false);
-    }
-  }
 
   return (
     <div className="rounded-xl border border-border p-3">
@@ -1061,41 +1019,7 @@ function EmailTriggerCard({
       </div>
       {domain ? (
         <div className="mt-2.5 space-y-2.5 text-body">
-          {address ? (
-            <div className={cellClass}>{address}</div>
-          ) : (
-            <form
-              className="flex items-center gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void claim();
-              }}
-            >
-              <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                <Input
-                  id={`${fieldId}-name`}
-                  aria-label={t`Email address`}
-                  value={name}
-                  onChange={(event) => {
-                    setName(event.target.value);
-                    setClaimError(null);
-                  }}
-                  className="min-w-0 flex-1 font-mono text-label"
-                />
-                <span className="shrink-0 font-mono text-label text-muted-foreground">
-                  @{domain}
-                </span>
-              </div>
-              <Button type="submit" variant="secondary" size="sm" disabled={claiming || !name}>
-                <Trans>Claim</Trans>
-              </Button>
-            </form>
-          )}
-          {claimError ? (
-            <p role="alert" className="text-body-sm text-destructive">
-              {claimError}
-            </p>
-          ) : null}
+          <BotEmailAddressField bot={bot} domain={domain} address={address} />
           {ownerDomain ? (
             <NativeSelect
               aria-label={t`Who can start it`}

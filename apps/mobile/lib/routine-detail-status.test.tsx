@@ -42,9 +42,10 @@ vi.mock("../components/settings-group", () => ({
   SettingsSwitch: () => null,
 }));
 vi.mock("../components/growing-text-input", () => ({ GrowingTextInput: () => null }));
-vi.mock("../components/routine-email-trigger", () => ({
-  RoutineEmailTrigger: () => null,
+vi.mock("../components/routine-email-trigger", () => ({ RoutineEmailTrigger: () => null }));
+vi.mock("../components/bot-email", () => ({
   useBotEmail: () => ({ address: null, ownerDomain: "", setAddress: () => undefined }),
+  useBotEmailRows: () => [],
 }));
 vi.mock("../components/routine-schedule-editor", () => ({ RoutineScheduleEditor: () => null }));
 vi.mock("../components/glass-icon-button", () => ({ GlassIconButton: () => null }));

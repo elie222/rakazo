@@ -3,10 +3,11 @@ import { defaultCronPreset } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, BackHandler, ScrollView, Text, View } from "react-native";
+import { useBotEmail } from "../components/bot-email";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { GrowingTextInput } from "../components/growing-text-input";
 import { NativeActionButton } from "../components/native-action-button";
-import { RoutineEmailTrigger, useBotEmail } from "../components/routine-email-trigger";
+import { RoutineEmailTrigger } from "../components/routine-email-trigger";
 import { RoutineScheduleEditor } from "../components/routine-schedule-editor";
 import {
   SettingsGroup,
