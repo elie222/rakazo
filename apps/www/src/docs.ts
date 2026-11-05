@@ -11,6 +11,7 @@ export const DOCS_NAV = [
     title: "Get started",
     pages: [
       { slug: "getting-started", label: "Getting started" },
+      { slug: "troubleshooting", label: "Troubleshooting" },
       { slug: "bots-and-chats", label: "Bots and chats" },
       { slug: "import-an-agent", label: "Import an agent" },
     ],

@@ -103,15 +103,12 @@ function Study() {
   const send = (sample: Sample) => {
     setSignals((previous) =>
       reduceLogoAvatarSignals(previous, {
-        id: `event-${previous.cursor + 1}`,
-        spaceId: "demo-space",
         threadId: "demo-thread",
         botId: "prototype-bot",
         runId: "demo-run",
         seq: previous.cursor + 1,
         type: sample.type,
         payload: sample.payload ?? {},
-        createdAt: "2026-10-27T12:00:00.000Z",
       }),
     );
     setEventName(sample.type);

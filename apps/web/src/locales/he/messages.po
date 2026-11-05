@@ -1288,6 +1288,10 @@ msgstr "החלפת מודל"
 msgid "Change password"
 msgstr "שינוי סיסמה"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "החלפת שרת"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "משנה…"
@@ -6712,6 +6716,10 @@ msgstr "תקופת הניסיון מסתיימת {day}"
 #: src/components/ModelCredits.tsx
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "בתקופת ניסיון יש פחות שעות כדי למנוע ניצול לרעה."
+
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
