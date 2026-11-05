@@ -3570,6 +3570,43 @@ describe("mobile API authentication", () => {
     },
   );
 
+  it("a reset that cannot store the old server again keeps its session revoked, not restored", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await saveApiBase("https://old-server.example");
+    await restoreSessionToken("token-a");
+    await selectSpace("space-old");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.api_base") throw new Error("device locked");
+      store.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.server_headers") throw new Error("device locked");
+      store.delete(key);
+    });
+    let result: Awaited<ReturnType<typeof resetApiBase>>;
+    try {
+      result = await resetApiBase();
+    } finally {
+      mockSecureStore(store);
+    }
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await flushPendingSignOut(true);
+
+    // The next launch opens the default server, so the old session is revoked, not restored.
+    expect(result).toMatchObject({ ok: false });
+    expect(store.has("rakazo.api_base")).toBe(false);
+    expect(store.has("rakazo.session_token")).toBe(false);
+    const signOuts = fetchMock.mock.calls.filter(([url]) =>
+      String(url).endsWith("/api/auth/sign-out"),
+    );
+    expect(signOuts.map(([url]) => url)).toEqual(["https://old-server.example/api/auth/sign-out"]);
+    const [, init] = signOuts[0] as [string, RequestInit];
+    expect(init.headers).toMatchObject({ authorization: "Bearer token-a" });
+    await resetApiBase();
+  });
+
   it("records no revocation when switching servers without a session", async () => {
     const store = new Map<string, string>();
     mockSecureStore(store);

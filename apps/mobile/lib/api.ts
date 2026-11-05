@@ -716,9 +716,16 @@ async function resetApiBaseLocked(
     }
   }
   if (!(await saveServerHeaders(url, {}))) {
-    await SecureStore.setItemAsync(ENDPOINT_KEY, previous).catch(() => undefined);
-    if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
-    await settleRolledBackSignOut(pendingPreviousSignOut, cleared?.previousToken);
+    // Without the old server URL stored again, the next launch opens the default server: the old
+    // session is not restored, and its record stays for the next retry to revoke it.
+    const endpointRestored = await writeStoredValue(ENDPOINT_KEY, previous);
+    if (cleared && endpointRestored) {
+      await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+    }
+    await settleRolledBackSignOut(
+      pendingPreviousSignOut,
+      endpointRestored ? cleared?.previousToken : undefined,
+    );
     return { ok: false, error: t("Could not clear the custom server URL") };
   }
   setCachedApiBase(url);
