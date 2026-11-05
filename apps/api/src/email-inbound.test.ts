@@ -65,10 +65,12 @@ function setup(
   }));
   const enqueue = vi.fn(async () => undefined);
   const findAddress = vi.fn(async () => (bot ? { bot } : null));
+  // Another instance already posted today's note, so these tests never write a message.
+  const claimNotice = vi.fn(async (_args: unknown) => ({ count: 0 }));
   const readEmail = vi.fn(async () => options.message ?? email());
   const deps: EmailInboundDeps = {
     prisma: {
-      botEmailAddress: { findUnique: findAddress },
+      botEmailAddress: { findUnique: findAddress, updateMany: claimNotice },
       routine: {
         findFirst: vi.fn(async () => (routines.length ? { id: "any" } : null)),
         findMany: vi.fn(async ({ where }: { where: { emailSenders: { in: string[] } } }) =>
@@ -81,7 +83,7 @@ function setup(
         findUnique: vi.fn(async () => options.owner ?? { email: "Owner@Example.test" }),
       },
     } as unknown as EmailInboundDeps["prisma"],
-    events: { sendUserMessage },
+    events: { sendUserMessage, notify: vi.fn(async () => undefined) },
     jobs: { enqueue } as unknown as EmailInboundDeps["jobs"],
     domain: DOMAIN,
     secret: SECRET,
@@ -97,7 +99,7 @@ function setup(
       body: "raw message",
       ...init,
     });
-  return { post, sendUserMessage, enqueue, findAddress, readEmail };
+  return { post, sendUserMessage, enqueue, findAddress, readEmail, claimNotice };
 }
 
 describe("inbound email route", () => {
@@ -199,6 +201,19 @@ describe("inbound email route", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, ignored: reason });
     expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("tells the owner, not a stranger, when mail from their address fails the check", async () => {
+    const owner = setup({ message: email({ authenticated: false }) });
+    const stranger = setup({
+      message: email({ authenticated: false, from: { address: "x@example.test", name: "" } }),
+    });
+
+    await owner.post();
+    await stranger.post();
+
+    expect(owner.claimNotice).toHaveBeenCalledTimes(1);
+    expect(stranger.claimNotice).not.toHaveBeenCalled();
   });
 
   it("lets a colleague at the owner's domain start only domain routines", async () => {

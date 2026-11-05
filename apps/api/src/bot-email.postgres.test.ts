@@ -155,7 +155,7 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
       receiveBotEmail(
         {
           prisma,
-          events: { sendUserMessage },
+          events: { sendUserMessage, notify: vi.fn(async () => undefined) },
           jobs: { enqueue: vi.fn(async () => undefined) },
           domain: DOMAIN,
           secret: "unused",
@@ -173,5 +173,64 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     for (const skipped of ["mine", "paused", "scheduled", "elsewhere", "member's"]) {
       expect(prompt).not.toContain(`Run routine "${skipped}"`);
     }
+  });
+
+  it("tells the owner once a day when mail from their address fails the check", async () => {
+    const email = `linus-${suffix}@example.test`;
+    const owner = await signup(email);
+    const target = await bot(owner);
+    const helper = name("notice");
+    await claimBotEmailAddress(system, DOMAIN, target.id, helper);
+    await system.routine.create({
+      data: {
+        spaceId: owner.spaceId,
+        botId: target.id,
+        userId: owner.userId,
+        name: "inbox",
+        prompt: "Do inbox.",
+        crons: [],
+        active: true,
+        emailSenders: "owner",
+      },
+    });
+    const unverified = (from: string): InboundEmail => ({
+      key: `<${from}-${suffix}>`,
+      from: { address: from, name: "" },
+      authenticated: false,
+      temporaryFailure: false,
+      to: [`${helper}@${DOMAIN}`],
+      cc: [],
+      subject: "Hi",
+      date: null,
+      text: "",
+      automated: false,
+      attachments: [],
+    });
+    const notify = vi.fn(async () => undefined);
+    const deliver = (from: string) =>
+      runAsSystem("test inbound email", () =>
+        receiveBotEmail(
+          {
+            prisma,
+            events: { sendUserMessage: vi.fn(), notify },
+            jobs: { enqueue: vi.fn(async () => undefined) },
+            domain: DOMAIN,
+            secret: "unused",
+            readEmail: async () => unverified(from),
+          },
+          `${helper}@${DOMAIN}`,
+          new Uint8Array(),
+        ),
+      );
+
+    await Promise.all([deliver(email), deliver(email)]);
+    await deliver(`stranger-${suffix}@example.test`);
+
+    const thread = await system.thread.findUniqueOrThrow({ where: { botId: target.id } });
+    const notes = await system.message.findMany({
+      where: { threadId: thread.id, role: "system" },
+    });
+    expect(notes).toHaveLength(1);
+    expect(notify).toHaveBeenCalledTimes(1);
   });
 });

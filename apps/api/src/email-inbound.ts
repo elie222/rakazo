@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import type { MessagingInboundAttachment } from "@rakazo/adapter-kit";
 import type { InboundEmail } from "@rakazo/adapters";
-import { INBOUND_EMAIL_MAX_BYTES, readInboundEmail } from "@rakazo/adapters";
+import {
+  INBOUND_EMAIL_MAX_BYTES,
+  postRoutineWatchMessage,
+  readInboundEmail,
+} from "@rakazo/adapters";
 import type { RoutineEmailSenders } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import {
@@ -9,6 +13,7 @@ import {
   hasValidBearerToken,
   sanitizeMessagingLabel,
 } from "@rakazo/core";
+import type { ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
 import { cancelBody, readBoundedBytes } from "./http-body.js";
@@ -17,7 +22,8 @@ import { deliverWebhookEvent, formatUntrustedDeliveryPayload } from "./webhook-i
 
 export const INBOUND_EMAIL_PATH = "/api/v1/email/inbound";
 
-export type EmailInboundDeps = Pick<WebhookDeps, "prisma" | "events" | "jobs"> & {
+export type EmailInboundDeps = Pick<WebhookDeps, "prisma" | "jobs"> & {
+  events: WebhookDeps["events"] & Pick<ThreadEvents, "notify">;
   domain: string;
   secret: string;
   storeAttachment?: (input: {
@@ -103,8 +109,25 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     getLogger().warn("inbound email signature could not be checked yet", dropped);
     return { retry: true as const };
   }
-  if (!email.from || !email.authenticated) return ignored("unauthenticated");
+  if (!email.from) return ignored("unauthenticated");
   const sender = email.from.address;
+  // The rule only decides who may start the owner's own bot, so an address the owner never
+  // verified can expose nothing but that owner's account; servers without email verify no one.
+  const owner = await deps.prisma.user.findUnique({
+    where: { id: bot.userId },
+    select: { email: true },
+  });
+  const ownerEmail = owner?.email.trim().toLowerCase() || null;
+  if (!email.authenticated) {
+    if (sender === ownerEmail) {
+      await noteUnverifiedOwnerMail(
+        deps,
+        { id: bot.id, spaceId: bot.spaceId, threadId: bot.thread.id },
+        target,
+      );
+    }
+    return ignored("unauthenticated");
+  }
   if (domainOf(sender) === deps.domain) return ignored("from a bot");
   // A signed message replayed to the bot does not name it; BCC does not either.
   if (
@@ -113,13 +136,6 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     return ignored("not addressed to this bot");
   }
 
-  // The rule only decides who may start the owner's own bot, so an address the owner never
-  // verified can expose nothing but that owner's account; servers without email verify no one.
-  const owner = await deps.prisma.user.findUnique({
-    where: { id: bot.userId },
-    select: { email: true },
-  });
-  const ownerEmail = owner?.email.trim().toLowerCase() || null;
   const allowed: RoutineEmailSenders[] =
     ownerEmail === null
       ? []
@@ -200,6 +216,42 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     { prompt, artifacts, routines: matched, source: "email", idempotencyKey: email.key },
   );
 }
+
+/** How often the owner hears that their own mail could not be verified. */
+const UNVERIFIED_NOTICE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Mail that claims the owner's address but fails the signature check is usually the owner's own,
+ * from a mail domain that does not sign as itself. Say so in the bot's chat, at most once a day,
+ * without any of the message: it may be forged.
+ */
+async function noteUnverifiedOwnerMail(
+  deps: EmailInboundDeps,
+  bot: { id: string; spaceId: string; threadId: string },
+  localPart: string,
+) {
+  const due = new Date(Date.now() - UNVERIFIED_NOTICE_INTERVAL_MS);
+  // A claim on the row, so instances that receive copies at once post a single note.
+  const claimed = await deps.prisma.botEmailAddress.updateMany({
+    where: {
+      localPart,
+      botId: bot.id,
+      OR: [{ unverifiedNoticeAt: null }, { unverifiedNoticeAt: { lt: due } }],
+    },
+    data: { unverifiedNoticeAt: new Date() },
+  });
+  if (claimed.count !== 1) return;
+  await postRoutineWatchMessage(deps, {
+    spaceId: bot.spaceId,
+    threadId: bot.threadId,
+    botId: bot.id,
+    role: "system",
+    text: UNVERIFIED_OWNER_MAIL_NOTE,
+  });
+}
+
+export const UNVERIFIED_OWNER_MAIL_NOTE =
+  "An email from your address couldn't be verified, so no routine ran.";
 
 /** Longest subject or sender name the bot sees; only the body has its own, larger cap. */
 const HEADER_MAX_CHARS = 500;
