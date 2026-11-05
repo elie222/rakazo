@@ -1139,6 +1139,9 @@ importers:
       '@testcontainers/postgresql':
         specifier: 12.2.1
         version: 12.2.1
+      fflate:
+        specifier: 0.8.3
+        version: 0.8.3
       pngjs:
         specifier: 7.0.0
         version: 7.0.0
