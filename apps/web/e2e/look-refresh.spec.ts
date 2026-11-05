@@ -162,7 +162,10 @@ test("every interface language keeps the layout intact, in a font that covers it
       document.fonts.check('14px "Onest"', "Thinking"),
     );
     expect(usesBundledFont).toBe(true);
-    await captureScreenshot(page, testInfo, `look-locale-${locale}`);
+    // CI runners carry no CJK or Devanagari fonts, so those screenshots would only show empty
+    // boxes; their layout is still checked above, and people's systems supply the glyphs.
+    if (!["hi", "ja", "ko", "zh-CN", "zh-TW"].includes(locale))
+      await captureScreenshot(page, testInfo, `look-locale-${locale}`);
   }
   expect(errors).toEqual([]);
 });
