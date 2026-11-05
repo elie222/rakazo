@@ -2,7 +2,8 @@ import type { Actor, Group, GroupMember, SpaceGroup } from "@rakazo/contracts";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, resolveBotAvatarSet } from "@rakazo/contracts";
 import { displayName } from "@rakazo/core";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
-import type { Prisma, PrismaClient } from "./client.js";
+import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 import { expireComputerExecutionLeases, restoreBotUnderComputerQuota } from "./computers.js";
 import { transientRunEventsWhere } from "./events.js";
 import { deletePageShareSecrets } from "./page-shares.js";
@@ -696,23 +697,15 @@ export async function lockOwnedGroup(
   groupId: string,
   options: { forDelete?: boolean } = {},
 ) {
-  const locked = options.forDelete
-    ? await prisma.$queryRaw<Array<{ id: string }>>`
-        SELECT id
-        FROM chat_groups
-        WHERE id = ${groupId}
-          AND "spaceId" = ${actor.spaceId}
-          AND "userId" = ${actor.userId}
-        FOR UPDATE
-      `
-    : await prisma.$queryRaw<Array<{ id: string }>>`
-        SELECT id
-        FROM chat_groups
-        WHERE id = ${groupId}
-          AND "spaceId" = ${actor.spaceId}
-          AND "userId" = ${actor.userId}
-        FOR NO KEY UPDATE
-      `;
+  const lock = options.forDelete ? Prisma.sql`FOR UPDATE` : Prisma.sql`FOR NO KEY UPDATE`;
+  const locked = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id
+    FROM chat_groups
+    WHERE id = ${groupId}
+      AND "spaceId" = ${actor.spaceId}
+      AND "userId" = ${actor.userId}
+    ${lock}
+  `;
   if (locked.length !== 1) throw new IsolationError();
 }
 
