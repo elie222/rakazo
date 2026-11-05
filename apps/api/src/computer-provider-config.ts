@@ -24,7 +24,7 @@ export interface ComputerProviderConfigDeps {
   prisma: PrismaClient;
   secrets: Pick<SecretStore, "put" | "load" | "delete">;
   sandbox: SandboxProvider;
-  env: Pick<RouterDeps["env"], "sandboxProvider" | "adminEmails">;
+  env: Pick<RouterDeps["env"], "sandboxProvider" | "adminEmails" | "computerSettingsEnabled">;
   resolveHostname?: ResolveHostname;
   /** Test seam: confirm the desktop answers before saving. */
   verifyConnection?: (settings: StoredComputerSettings, signal: AbortSignal) => Promise<void>;
@@ -142,7 +142,7 @@ export async function getComputerProviderSettings(
     selection.settings,
     deps.env.sandboxProvider,
     false,
-    routesBySettings(deps.env.sandboxProvider),
+    deploymentCanChoose(deps),
   );
 }
 
@@ -152,7 +152,7 @@ export async function updateComputerProviderSettings(
   input: ComputerProviderUpdate,
 ): Promise<ComputerProviderSettings> {
   await requireAdmin(deps, actor.userId);
-  if (input.provider !== "default" && !routesBySettings(deps.env.sandboxProvider))
+  if (input.provider !== "default" && !deploymentCanChoose(deps))
     throw new ORPCError("BAD_REQUEST", { message: "This deployment cannot use computer settings" });
   const existing = await loadComputerProviderSelection(deps.prisma, deps.secrets);
   if (input.provider === "default") {
@@ -176,13 +176,7 @@ export async function updateComputerProviderSettings(
         .delete(removed, DEPLOYMENT_COMPUTER_PROVIDER_RECORD)
         .catch(() => undefined);
     await refreshComputerProvider(deps.sandbox);
-    return view(
-      "default",
-      null,
-      deps.env.sandboxProvider,
-      false,
-      routesBySettings(deps.env.sandboxProvider),
-    );
+    return view("default", null, deps.env.sandboxProvider, false, deploymentCanChoose(deps));
   }
   // Blank secrets keep the saved ones, so an admin never has to see them again.
   const settings = await checkedSettings(deps, actor, input, existing.settings);
@@ -252,7 +246,8 @@ export async function getAccountComputerSettings(
     defaultProvider,
     true,
     // An account with saved keys still sees the form, so it can go back to the default.
-    accountCanChoose(defaultProvider) || Boolean(saved),
+    Boolean(deps.env.computerSettingsEnabled) &&
+      (accountCanChoose(defaultProvider) || Boolean(saved)),
   );
 }
 
@@ -264,7 +259,10 @@ export async function updateAccountComputerSettings(
   // Those deployments run every computer on their own provider, never one chosen in Settings,
   // and one without computers has none for an account's private computers to fall back on.
   // Going back to the default stays open, so an account can always remove its saved keys.
-  if (input.provider !== "default" && !accountCanChoose(await deploymentProvider(deps)))
+  if (
+    input.provider !== "default" &&
+    (!deps.env.computerSettingsEnabled || !accountCanChoose(await deploymentProvider(deps)))
+  )
     throw new ORPCError("BAD_REQUEST", {
       message: "This deployment cannot use account computer settings",
     });
@@ -321,7 +319,17 @@ export async function updateAccountComputerSettings(
     replaced.map((row) => deps.secrets.delete(row.ciphertext, row.id).catch(() => undefined)),
   );
   await refreshComputerProvider(deps.sandbox);
-  return view(saved?.provider ?? "default", saved, await deploymentProvider(deps), true);
+  return view(
+    saved?.provider ?? "default",
+    saved,
+    await deploymentProvider(deps),
+    true,
+    Boolean(deps.env.computerSettingsEnabled),
+  );
+}
+
+function deploymentCanChoose(deps: ComputerProviderConfigDeps) {
+  return Boolean(deps.env.computerSettingsEnabled) && routesBySettings(deps.env.sandboxProvider);
 }
 
 /** Whether computers on this deployment can run where Settings says. */
