@@ -356,9 +356,13 @@ describeMessaging("messaging surface journeys", () => {
       where: { runId: delegated!.id, role: "bot" },
       orderBy: { seq: "asc" },
     });
-    expect(replies.map((m: { blocks: Array<{ text?: string }> }) => m.blocks[0]?.text)).toEqual(
-      expect.arrayContaining([notice, chatter]),
-    );
+    // The plain reply leads with its steps block, so read each message's text block.
+    expect(
+      replies.map(
+        (m: { blocks: Array<{ kind: string; text?: string }> }) =>
+          m.blocks.find((block) => block.kind === "text")?.text,
+      ),
+    ).toEqual(expect.arrayContaining([notice, chatter]));
     expect(
       replies.find((m: { clientNonce: string | null }) =>
         m.clientNonce?.startsWith("owner-notify:"),
