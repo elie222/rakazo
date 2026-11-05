@@ -169,7 +169,7 @@ export * from "./realtime.js";
 export * from "./release-watch.js";
 export * from "./remote-mcp.js";
 export * from "./resend-email.js";
-export { clearRoutineBackoff } from "./routine-backoff.js";
+export { finishRoutineHandover } from "./routine-handover.js";
 export * from "./routine-watch.js";
 export * from "./run-secret.js";
 export * from "./run-wakeup.js";

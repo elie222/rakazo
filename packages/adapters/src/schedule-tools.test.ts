@@ -1083,7 +1083,10 @@ describe("updateScheduleFromTool", () => {
     const cancel = vi.fn(async () => undefined);
     const append = vi.fn(async () => undefined);
     const deps = {
-      prisma: { routine: { findFirst, updateMany, count: vi.fn(async () => 0) } },
+      prisma: {
+        routine: { findFirst, updateMany, count: vi.fn(async () => 0) },
+        run: { updateManyAndReturn: vi.fn(async () => []) },
+      },
       events: { append },
       jobs: { enqueue, cancel },
     } as unknown as Parameters<typeof updateScheduleFromTool>[0];

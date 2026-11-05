@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
+import { finishRoutineHandover } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -17,6 +18,7 @@ import {
   personalOrganizationIds,
   prepareAccountDeletion,
   recordAuditEvent,
+  runAsTenant,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { handleRpcError } from "./app.js";
@@ -967,6 +969,70 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(
       system.computer.findUniqueOrThrow({ where: { id: computer.id } }),
     ).resolves.toMatchObject({ controlHolder: "none", controlUserId: null, controlLeaseId: null });
+  });
+
+  it("runs a taken-over routine's queued occurrence with the new owner's accounts", async () => {
+    const owner = await person("owner");
+    const invitee = await person("invitee");
+    const home = await sharedSpace(owner, "Home");
+    await call(invitee.actor, "spaces/invites/accept", { token: await invite(owner, home) });
+    const bot = await system.bot.create({
+      data: { spaceId: home, userId: owner.id, name: "Shopper", color: "test" },
+    });
+    const thread = await system.thread.create({
+      data: { spaceId: home, botId: bot.id, userId: owner.id },
+    });
+    const routine = await system.routine.create({
+      data: {
+        spaceId: home,
+        botId: bot.id,
+        userId: invitee.id,
+        name: "Groceries",
+        prompt: "List groceries",
+        crons: ["0 9 * * 1"],
+      },
+    });
+    const queued = async (status: string) => {
+      const task = await system.task.create({
+        data: {
+          spaceId: home,
+          botId: bot.id,
+          threadId: thread.id,
+          userId: invitee.id,
+          prompt: "Go",
+          status,
+        },
+      });
+      return system.run.create({
+        data: {
+          spaceId: home,
+          botId: bot.id,
+          threadId: thread.id,
+          taskId: task.id,
+          userId: invitee.id,
+          routineId: routine.id,
+          status,
+          trigger: "routine",
+        },
+      });
+    };
+    const waiting = await queued("queued");
+    const started = await queued("running");
+
+    await runAsTenant({ spaceId: home, userId: owner.id }, () =>
+      finishRoutineHandover(
+        { prisma, jobs: { enqueue: enqueueJob, cancel: cancelJob } as never },
+        { id: routine.id, previousUserId: invitee.id, userId: owner.id },
+      ),
+    );
+
+    await expect(
+      system.run.findUniqueOrThrow({ where: { id: waiting.id }, include: { task: true } }),
+    ).resolves.toMatchObject({ userId: owner.id, task: { userId: owner.id } });
+    // One already under way finishes as the person who started it.
+    await expect(
+      system.run.findUniqueOrThrow({ where: { id: started.id } }),
+    ).resolves.toMatchObject({ userId: invitee.id });
   });
 
   it("gives a shared space one team computer, whoever creates the bot", async () => {

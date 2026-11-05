@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import { routineJobKey, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import {
-  clearRoutineBackoff,
+  finishRoutineHandover,
   parseRoutineWatch,
   stableStringify,
   validateRoutineWatch,
@@ -288,8 +288,13 @@ export function routinesRoutes(ctx: RouterContext) {
             }
             throw error;
           });
-        // Backoff earned on the previous owner's accounts does not hold the new owner back.
-        if (existing.userId !== context.actor.userId) await clearRoutineBackoff(deps, row.id);
+        if (existing.userId !== context.actor.userId) {
+          await finishRoutineHandover(deps, {
+            id: row.id,
+            previousUserId: existing.userId,
+            userId: context.actor.userId,
+          });
+        }
         if (bot.thread) {
           await deps.events.append({
             spaceId: context.actor.spaceId,

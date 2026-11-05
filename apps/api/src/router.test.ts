@@ -7372,6 +7372,7 @@ describe("routine live Codex model validation", () => {
               update: save,
               count: vi.fn(async () => 0),
             },
+            run: { updateManyAndReturn: vi.fn(async () => []) },
             userModelPreference: { findMany: vi.fn(async () => []) },
             userModelCredential: {
               findMany: vi.fn(async () => [
@@ -7538,6 +7539,7 @@ describe("routines.update", () => {
     );
     const enqueue = vi.fn(async () => undefined);
     const cancel = vi.fn(async () => undefined);
+    const moveQueued = vi.fn(async (_args: unknown) => [] as Array<{ taskId: string }>);
     const prisma = {
       secret: { findFirst: vi.fn(async () => null) },
       userModelPreference: {
@@ -7561,6 +7563,7 @@ describe("routines.update", () => {
         update,
         count: vi.fn(async () => 0),
       },
+      run: { updateManyAndReturn: moveQueued },
       bot: {
         findFirst: vi.fn(async () =>
           botArchived ? null : { id: "bot-1", thread: { id: "thread-1" }, computer: null },
@@ -7592,7 +7595,7 @@ describe("routines.update", () => {
         }),
         { prefix: "/rpc", context: { actor } },
       );
-    return { update, enqueue, cancel, call, findFirst: prisma.routine.findFirst };
+    return { update, enqueue, cancel, call, moveQueued, findFirst: prisma.routine.findFirst };
   }
 
   it("refuses to re-arm a routine on an archived bot without writing", async () => {
@@ -7625,11 +7628,18 @@ describe("routines.update", () => {
   });
 
   it("takes over a routine and restarts its watch baseline when someone else edits it", async () => {
-    const { call, update } = fixture(false, false, { userId: "user-2" });
+    const { call, update, moveQueued } = fixture(false, false, { userId: "user-2" });
     expect((await call({ name: "Renamed" })).status).toBe(200);
     const data = update.mock.calls[0]![0].data;
     expect(data.userId).toBe("user-1");
     expect(data).toHaveProperty("watchState", Prisma.DbNull);
+    // An occurrence already queued runs with the new owner's accounts.
+    expect(moveQueued).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { routineId: routine.id, userId: "user-2", status: "queued" },
+        data: { userId: "user-1" },
+      }),
+    );
   });
 
   it("keeps its watch baseline when the owner edits it", async () => {
