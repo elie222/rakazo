@@ -19,6 +19,7 @@ import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 import { localDateTime } from "./current-time.js";
+import { clearRoutineBackoff } from "./routine-backoff.js";
 import { validateRoutineWatch } from "./routine-watch.js";
 
 export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
@@ -918,6 +919,8 @@ export async function updateScheduleFromTool(
     if (active && nextRunAt) await deps.jobs.enqueue(routineWakeupJob(existing.id, nextRunAt));
     else if (existing.active) await deps.jobs.cancel(routineJobKey(existing.id));
   }
+  // Backoff earned on the previous owner's accounts does not hold the new owner back.
+  if (existing.userId !== input.userId) await clearRoutineBackoff(deps, existing.id);
 
   try {
     await deps.events.append({

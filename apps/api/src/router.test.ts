@@ -7357,7 +7357,12 @@ describe("routine live Codex model validation", () => {
         createRouter({
           prisma: {
             bot: { findFirst: vi.fn(async () => ({ id: "bot-1", computer: null })) },
-            routine: { findFirst: vi.fn(async () => row), create: save, update: save },
+            routine: {
+              findFirst: vi.fn(async () => row),
+              create: save,
+              update: save,
+              count: vi.fn(async () => 0),
+            },
             userModelPreference: { findMany: vi.fn(async () => []) },
             userModelCredential: {
               findMany: vi.fn(async () => [
@@ -7545,6 +7550,7 @@ describe("routines.update", () => {
           botArchived && args.where.bot?.archivedAt === null ? null : savedRoutine,
         ),
         update,
+        count: vi.fn(async () => 0),
       },
       bot: {
         findFirst: vi.fn(async () =>
