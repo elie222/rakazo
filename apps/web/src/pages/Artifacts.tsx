@@ -304,7 +304,7 @@ export function ArtifactsPage() {
             </NativeSelect>
             <NativeSelect
               aria-label={t`Filter by who made it`}
-              className="w-auto text-body-sm"
+              className="w-auto"
               value={madeByBots ? "bots" : "all"}
               onChange={(event) => setMadeByBots(event.target.value === "bots")}
             >
