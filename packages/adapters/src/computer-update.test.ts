@@ -19,6 +19,8 @@ afterEach(() => {
   vi.useRealTimers();
   installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
 });
+type Match = { status: string; updatedAt?: { lt: Date } };
+type Where = Match | { OR: Match[] };
 function fixture(status = "queued") {
   const row = {
     id: "update-1",
@@ -37,6 +39,7 @@ function fixture(status = "queued") {
       bots: [{ id: "bot-1", name: "Writer" }],
     },
   };
+  const rows = [row];
   const computer = {
     updateMany: vi.fn(async () => ({ count: 1 })),
     findUniqueOrThrow: vi.fn(async () => row.computer),
@@ -44,26 +47,32 @@ function fixture(status = "queued") {
   const computerUpdate = {
     create: vi.fn(async () => row),
     findUniqueOrThrow: vi.fn(async () => row),
-    findMany: vi.fn(
-      async ({ where }: { where: { OR: { status: string; updatedAt?: { lt: Date } }[] } }) =>
-        where.OR.some(
-          (match) =>
-            match.status === row.status && (!match.updatedAt || row.updatedAt < match.updatedAt.lt),
+    findMany: vi.fn(async ({ where, take }: { where: Where; take: number }) =>
+      rows
+        .filter((each) =>
+          ("OR" in where ? where.OR : [where]).some(
+            (match) =>
+              match.status === each.status &&
+              (!match.updatedAt || each.updatedAt < match.updatedAt.lt),
+          ),
         )
-          ? [{ ...row }]
-          : [],
+        .sort((a, b) => a.updatedAt.getTime() - b.updatedAt.getTime())
+        .slice(0, take)
+        .map((each) => ({ ...each })),
     ),
     updateMany: vi.fn(async ({ where, data }) => {
+      const target = where.id ? rows.find((each) => each.id === where.id) : row;
+      if (!target) return { count: 0 };
       if (
         where.status &&
         (typeof where.status === "string"
-          ? where.status !== row.status
-          : !where.status.in.includes(row.status))
+          ? where.status !== target.status
+          : !where.status.in.includes(target.status))
       )
         return { count: 0 };
-      if (where.updatedAt && where.updatedAt.getTime() !== row.updatedAt.getTime())
+      if (where.updatedAt && where.updatedAt.getTime() !== target.updatedAt.getTime())
         return { count: 0 };
-      Object.assign(row, data);
+      Object.assign(target, data);
       return { count: 1 };
     }),
   };
@@ -76,7 +85,7 @@ function fixture(status = "queued") {
   };
   const jobs = { enqueue: vi.fn(async () => {}) };
   const deps = { prisma, jobs } as unknown as Parameters<typeof performComputerUpdate>[0];
-  return { row, computer, computerUpdate, deps, jobs };
+  return { row, rows, computer, computerUpdate, deps, jobs };
 }
 describe("background computer maintenance", () => {
   it("persists stages and releases its reservation only after completion; redelivery is harmless", async () => {
@@ -187,16 +196,33 @@ describe("background computer maintenance", () => {
     const { row, deps, computer, computerUpdate, jobs } = fixture("interrupted");
     row.updatedAt = new Date(Date.now() - 61 * 60_000);
     const select = computerUpdate.findMany.getMockImplementation();
-    computerUpdate.findMany.mockImplementationOnce(async (args) => {
+    let selected = 0;
+    computerUpdate.findMany.mockImplementation(async (args) => {
       const found = (await select?.(args)) ?? [];
-      Object.assign(row, { status: "completed", updatedAt: new Date() });
+      selected += found.length;
+      if (found.length) Object.assign(row, { status: "completed", updatedAt: new Date() });
       return found;
     });
     await reconcileComputerUpdates(deps);
-    expect(await computerUpdate.findMany.mock.results[0]?.value).toHaveLength(1);
+    expect(selected).toBe(1);
     expect(row.status).toBe("completed");
     expect(computer.updateMany).not.toHaveBeenCalled();
     expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("reaches stale and abandoned updates behind a backlog of queued ones", async () => {
+    const { row, rows, deps, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 61 * 60_000);
+    const reserving = { ...row, id: "update-2", status: "reserving", updatedAt: new Date(1) };
+    rows.push(reserving);
+    for (let i = 0; i < 101; i++)
+      rows.push({ ...row, id: `queued-${i}`, status: "queued", updatedAt: new Date(0) });
+    await reconcileComputerUpdates(deps);
+    expect(row.status).toBe("failed");
+    expect(reserving.status).toBe("failed");
+    expect(jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "computer.update", payload: { updateId: "queued-0" } }),
+    );
   });
 
   it("rejects a busy computer before publishing an operation", async () => {
