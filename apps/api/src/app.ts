@@ -47,6 +47,7 @@ import {
   createConnectorStack,
   createIdleComputerSweeper,
   createJobReconciler,
+  createMediaGenerationProvider,
   createMessagingContextLoader,
   createMessagingTeamChatHistory,
   createMessagingTeamChatSender,
@@ -87,6 +88,7 @@ import {
   RunStarter,
   reconcileCloudAgents,
   reconcileComputerUpdates,
+  reconcileMediaVideos,
   reconcilePurchases,
   removePiUserSessions,
   resolveDeploymentModel,
@@ -145,7 +147,7 @@ import { markExpectedFailure, requestLogging } from "@rakazo/logging/hono";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { deleteAccountContent } from "./account-deletion.js";
+import { deleteAccountContent, finishStalledOrganizationDeletions } from "./account-deletion.js";
 import { mountAccountExportRoute } from "./account-export.js";
 import { mountAccountImportRoute } from "./account-import.js";
 import { mountAppAssociation, nativePasskeys } from "./app-association.js";
@@ -265,6 +267,8 @@ type CreateAppOverrides = Partial<AppEnv> & {
   contextStrategy?: AgentContextStrategy;
   /** Test-only stand-in for desktops connected to this server. */
   userDevices?: UserDeviceGateway;
+  /** Test-only present moment the agent is told. */
+  now?: () => Date;
 };
 
 async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
@@ -287,6 +291,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     runtime: runtimeOverride,
     contextStrategy,
     userDevices: userDevicesOverride,
+    now,
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
@@ -640,9 +645,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   // One cache serves models.list, selection validation, and run-time model
   // resolution alike, so a list call warms the run path in this process.
   const codexCatalog = new CodexCatalogCache();
+  // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
+  const mediaGeneration = createMediaGenerationProvider();
   const executor = createRunExecutor({
     billingEnabled: modelCreditsEnabled,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
+    mediaGeneration,
     contextStrategy,
     prisma,
     runtime,
@@ -691,6 +699,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     userDevices: userDevicesOverride ?? userDevices,
     paymentWallet,
     shutdownSignal: shutdown.signal,
+    now,
   });
 
   const jobHandlers = createBackgroundJobHandlers({
@@ -712,6 +721,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     messaging,
     cloudAgent,
     paymentWallet,
+    mediaGeneration,
+    maxUploadSizeBytes: env.maxUploadSizeBytes,
   });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
@@ -729,6 +740,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         }),
         reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
         reconcilePurchases: () => reconcilePurchases({ prisma, jobs, paymentWallet }),
+        reconcileMediaVideos: () => reconcileMediaVideos({ prisma, jobs, mediaGeneration }),
         reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
         reconcileStrategicInitiatives: createStrategicInitiativeReconciler({
           prisma,
@@ -772,6 +784,21 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           (error) => getLogger().error("saved home retention failed", error),
         )
       : undefined;
+
+  const stopOrganizationDeletions = startHourlySweep(
+    finishStalledOrganizationDeletions({
+      prisma,
+      sandbox,
+      home,
+      jobs,
+      artifacts,
+      dataDir: env.dataDir,
+      messagingInstallations,
+      secrets,
+      billing,
+    }),
+    (error) => getLogger().error("stalled organization deletion failed", error),
+  );
 
   const router = createRouter({
     speechSummary:
@@ -1504,6 +1531,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await stopInstalledBridges?.();
       await stopReferralEmails?.();
       await stopHomeRetention?.();
+      await stopOrganizationDeletions();
       await reconciler?.stop();
       await oauthTokenUpgrade;
       await mcpArgsMove;

@@ -49,7 +49,7 @@ class FixtureRepository:
     """A git history that reproduces the risky sequence: a version bump, then a native
     change, then a JavaScript-only change, plus a commit that never reached main."""
 
-    def __init__(self, path, lockfile=False, native_change=True, merged_native=False):
+    def __init__(self, path, lockfile=False, native_change=True, merged_native=False, entry_change=False):
         self.path = path
         self.git("init", "--quiet", "-b", "main")
         self.git("config", "user.email", "ota-base-test@example.com")
@@ -69,9 +69,12 @@ class FixtureRepository:
             )
         else:
             self.native = self.bump
-        self.head = self.commit(
-            "change JavaScript only", {"apps/mobile/lib/other.ts": "export const other = 2;\n"}
+        head_files = (
+            {"apps/mobile/index.ts": "require(\"expo-router/entry\");\n"}
+            if entry_change
+            else {"apps/mobile/lib/other.ts": "export const other = 2;\n"}
         )
+        self.head = self.commit("change JavaScript only", head_files)
         self.git("checkout", "--quiet", "-b", "side", self.bump)
         self.off_history = self.commit(
             "change JavaScript off main", {"apps/mobile/lib/side.ts": "export const side = 3;\n"}
@@ -355,6 +358,13 @@ class OtaBaseStepTests(OtaBaseTestCase):
         self.assertIn("Could not determine the last published update", summary)
 
     def test_publishes_a_javascript_only_change_after_a_published_update(self):
+        publish, _ = self.run_step(updates_response(update(self.repo.native, RUNTIME)))
+        self.assertEqual(publish, "publish=true")
+
+    def test_publishes_a_change_to_the_bundle_entry(self):
+        # apps/mobile/index.ts is the entry the manifest's "main" names; a change
+        # to it alone must not block every later update for the runtime.
+        self.build_repository(lockfile=True, entry_change=True)
         publish, _ = self.run_step(updates_response(update(self.repo.native, RUNTIME)))
         self.assertEqual(publish, "publish=true")
 

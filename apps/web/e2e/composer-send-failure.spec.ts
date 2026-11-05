@@ -172,3 +172,47 @@ test("separate picks with matching file metadata upload their own bytes", {
     Buffer.from("other").toString("base64"),
   ]);
 });
+
+test("a retried send after an edit reuses the attachment's uploaded artifact", {
+  tag: "@nightly",
+}, async ({ page }) => {
+  const composer = await openComposer(page, "attachment-retry");
+  const botId = activeBotId(page);
+  const uploadNonces: string[] = [];
+  await page.route("**/rpc/artifacts/create", async (route) => {
+    uploadNonces.push(route.request().postDataJSON().json.clientNonce);
+    await route.continue();
+  });
+  await page.locator('input[type="file"]').evaluate((element) => {
+    const input = element as HTMLInputElement;
+    const file = new File(["retry-me"], "notes.txt", { type: "text/plain" });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await composer.fill("process the file");
+  let sends = 0;
+  await page.route("**/rpc/threads/send", async (route) => {
+    sends += 1;
+    if (sends === 1) await route.abort("internetdisconnected");
+    else await route.continue();
+  });
+  await composer.press("Enter");
+  await expect(page.getByTestId("composer-error")).toBeVisible();
+  // Editing the draft gives the retry a new send nonce; the file is unchanged,
+  // so its upload must replay the artifact the first attempt already stored.
+  await composer.fill("process the file now");
+  await composer.press("Enter");
+  await expect(
+    page.getByTestId("transcript").getByText("process the file now", { exact: true }),
+  ).toBeVisible();
+
+  expect(uploadNonces).toHaveLength(2);
+  expect(uploadNonces[1]).toBe(uploadNonces[0]);
+  const artifacts = await rpc<{ items: Array<{ name: string }> }>(page, "artifacts/listSpace", {
+    botId,
+    limit: 60,
+  });
+  expect(artifacts.items.filter((artifact) => artifact.name === "notes.txt")).toHaveLength(1);
+});

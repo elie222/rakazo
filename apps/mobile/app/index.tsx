@@ -529,8 +529,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     right: embedded ? 0 : insets.right,
   });
   // Liquid Glass uses the native bar: glass bar items and a native menu.
-  // The list beside a chat has no navigation bar of its own.
-  const nativeHeader = iosAtLeast(26) && !embedded;
+  // The list beside a chat and the share picker have no navigation bar of their own.
+  const nativeHeader = iosAtLeast(26) && !embedded && !onShareSelect;
   const headerHeight = useHeaderHeightIfAny();
   const listRef = useRef<FlatList<InboxItem>>(null);
   const jumpSignals = useSyncExternalStore(

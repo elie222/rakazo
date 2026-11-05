@@ -50,9 +50,12 @@ export type SignatureFetch = (url: string, signal: AbortSignal) => Promise<Respo
 
 /** The release could not be reached; the download is kept so a later check can verify it. */
 export class SignatureUnreachableError extends Error {
-  constructor(options?: ErrorOptions) {
+  /** The HTTP status the server answered with; absent when the server was not reached at all. */
+  readonly status?: number;
+  constructor(options?: ErrorOptions & { status?: number }) {
     super("Could not reach the update server.", options);
     this.name = "SignatureUnreachableError";
+    this.status = options?.status;
   }
 }
 
@@ -79,7 +82,7 @@ export async function fetchLinuxUpdateSignature(
   }
   if (!response.ok || response.body === null) {
     await response.body?.cancel();
-    throw new SignatureUnreachableError();
+    throw new SignatureUnreachableError({ status: response.status });
   }
   if (Number(response.headers.get("content-length") ?? 0) > MAX_SIGNATURE_BYTES) {
     await response.body.cancel();

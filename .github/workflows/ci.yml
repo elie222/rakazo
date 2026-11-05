@@ -416,7 +416,9 @@ jobs:
 
             eligible=false
             case "$file" in
-              apps/mobile/app/*|apps/mobile/components/*|apps/mobile/lib/*)
+              # index.ts is the bundle entry the manifest's "main" names; the other
+              # top-level scripts (app config, metro) shape the native build.
+              apps/mobile/app/*|apps/mobile/components/*|apps/mobile/lib/*|apps/mobile/index.ts)
                 case "$file" in
                   *.ts|*.tsx) eligible=true ;;
                 esac

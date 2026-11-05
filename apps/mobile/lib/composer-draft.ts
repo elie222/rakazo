@@ -26,24 +26,50 @@ export function composerDraftScope(
   }
 }
 
-// App-private cache storage, like the outbox: excluded from device backups.
+// The OS may evict the cache when storage runs low, so an unsent draft lives next to
+// the outbox in documents, like a message waiting to be sent.
+function root() {
+  return new Directory(Paths.document, "composer-drafts-v1");
+}
+/** Where earlier builds kept drafts. */
+function legacyRoot() {
+  return new Directory(Paths.cache, "composer-drafts-v1");
+}
+/** Exists while the earlier drafts are still in the cache but must not be copied again. */
+function legacyDone() {
+  return new File(Paths.document, "composer-drafts-legacy-done");
+}
 function draftFolder(scope: ComposerDraftScope): Directory {
   return new Directory(
-    Paths.cache,
-    "composer-drafts-v1",
+    root(),
     encodeURIComponent(scope.apiBase),
     `user-${encodeURIComponent(scope.userId)}`,
   );
 }
 
+function draftName(scope: ComposerDraftScope): string {
+  return `${encodeURIComponent(scope.threadKey)}.json`;
+}
+
 function draftFile(scope: ComposerDraftScope): File {
-  return new File(draftFolder(scope), `${encodeURIComponent(scope.threadKey)}.json`);
+  return new File(draftFolder(scope), draftName(scope));
 }
 
 // The next draft is written here first. Native replacement deletes the saved file before
 // moving this one in, so after an interrupted move this file holds the newest draft.
 function nextDraftFile(scope: ComposerDraftScope): File {
-  return new File(draftFolder(scope), `${encodeURIComponent(scope.threadKey)}.json.tmp`);
+  return new File(draftFolder(scope), `${draftName(scope)}.tmp`);
+}
+
+function legacyDraftFile(scope: ComposerDraftScope, suffix: string): File {
+  return new File(
+    new Directory(
+      legacyRoot(),
+      encodeURIComponent(scope.apiBase),
+      `user-${encodeURIComponent(scope.userId)}`,
+    ),
+    `${draftName(scope)}${suffix}`,
+  );
 }
 
 function readDraftRecord(file: File): ComposerDraft | undefined {
@@ -60,6 +86,38 @@ function readDraftRecord(file: File): ComposerDraft | undefined {
   }
 }
 
+/** Leftovers are retried on the next draft read or write; a failed delete must not block them. */
+function deleteLeftover(entry: File | Directory): void {
+  try {
+    entry.delete();
+  } catch {}
+}
+
+// Android can move a directory by copying and stop halfway, so copy the earlier cache
+// drafts instead, keeping the source until a marker records a full copy (as the outbox
+// does). The marker is written before any draft on a clean launch too, and stays forever:
+// a cache copy that reappears later, after a downgrade, is never trusted over drafts
+// saved since.
+function migrateLegacyDrafts(): void {
+  if (!legacyRoot().exists) {
+    if (!legacyDone().exists) {
+      legacyDone().create();
+      // iOS can fail to create a file without an error; without the marker, a cache copy a
+      // downgrade later leaves behind would replace drafts saved in the meantime.
+      if (!legacyDone().exists) throw new Error("DRAFT_STORAGE_UNAVAILABLE");
+    }
+    return;
+  }
+  if (!legacyDone().exists) {
+    if (root().exists) root().delete();
+    legacyRoot().copySync(root());
+    legacyDone().create();
+    // iOS can fail to create a file without an error; the source must stay until the marker exists.
+    if (!legacyDone().exists) throw new Error("DRAFT_STORAGE_UNAVAILABLE");
+  }
+  deleteLeftover(legacyRoot());
+}
+
 // Moves a draft recovered from an interrupted move back to the saved name, so the next save
 // writes a fresh next file instead of truncating the only copy. Throws when the move fails.
 function promoteRecoveredDraft(scope: ComposerDraftScope): void {
@@ -69,9 +127,29 @@ function promoteRecoveredDraft(scope: ComposerDraftScope): void {
   }
 }
 
+/** The draft as the earlier build saved it, read while its copy cannot move over. */
+function readLegacyDraft(scope: ComposerDraftScope): ComposerDraft {
+  try {
+    return (
+      readDraftRecord(legacyDraftFile(scope, "")) ??
+      readDraftRecord(legacyDraftFile(scope, ".tmp")) ?? { text: "", bindings: [] }
+    );
+  } catch {
+    return { text: "", bindings: [] };
+  }
+}
+
 /** Same record as the web binding record; bindings that no longer match the text are dropped. */
 export function readComposerDraft(scope: ComposerDraftScope | undefined): ComposerDraft {
   if (!scope) return { text: "", bindings: [] };
+  try {
+    migrateLegacyDrafts();
+  } catch {
+    // The copy retries on the next read or write. Until it works, the draft still lives
+    // where the earlier build left it; reading it there keeps the composer from starting
+    // empty and saving that emptiness over the draft.
+    return readLegacyDraft(scope);
+  }
   try {
     try {
       promoteRecoveredDraft(scope);
@@ -95,6 +173,7 @@ export function writeComposerDraft(
   bindings: readonly ComposerMentionBinding[],
 ): boolean {
   try {
+    migrateLegacyDrafts();
     const file = draftFile(scope);
     const next = nextDraftFile(scope);
     if (!text) {

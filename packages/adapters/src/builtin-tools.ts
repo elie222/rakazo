@@ -108,7 +108,6 @@ export const DELEGATION_TOOL_NAMES = new Set<string>([
   "run_subagent",
   "spawn_bot",
   "archive_bot",
-  "delete_bot",
   "handoff_to_bot",
   "message_bot",
   ...FLEET_TOOL_NAMES,
@@ -165,7 +164,7 @@ const scheduleTimingSpecs = {
   watch: {
     type: "object",
     description:
-      'Run only when something changes, checked without a model every everyMinutes (minimum 5, default 15). kind files: paths on your computer. kind command: a shell command run in your folder every interval without a model or per-run approval, equivalent to running the command yourself; its output is compared. kind tool: a read-only connected tool and its args. If nothing changed, the routine does not run. Watch one named thing (a folder, a list, a search), never a whole account. For a list result, set track: e.g. new email matching a search -> the mail search tool with its query, track ["id"]; a Drive folder -> the tool listing that folder\'s files, track ["id", "modifiedTime"]; a ClickUp list -> the tool listing its tasks, track ["id", "date_updated"].',
+      'Run only when something changes, checked without a model every everyMinutes (5 to 1440, default 15); send no cron, every or startAt with it. kind files: paths on your computer. kind command: a shell command run in your folder every interval without a model or per-run approval, equivalent to running the command yourself; its output is compared. kind tool: a read-only connected tool and its args. If nothing changed, the routine does not run. Watch one named thing (a folder, a list, a search), never a whole account. For a list result, set track: e.g. new email matching a search -> the mail search tool with its query, track ["id"]; a Drive folder -> the tool listing that folder\'s files, track ["id", "modifiedTime"]; a ClickUp list -> the tool listing its tasks, track ["id", "date_updated"].',
     properties: {
       kind: { type: "string", enum: ["files", "command", "tool"] },
       paths: { type: "array", items: { type: "string" } },
@@ -266,7 +265,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "generate_video",
     description:
-      "Submit a short video from a prompt (may incur charges), or poll an existing job with jobId only. Pending jobs return status/progress; poll later. Completed videos are attached to chat. Do not resubmit failed or uncertain jobs automatically.",
+      "Submit a short video from a prompt (may incur charges). It is attached to the chat when ready, without polling; pass jobId only to check progress. Do not resubmit failed or uncertain jobs automatically.",
     inputSchema: {
       type: "object",
       properties: {
@@ -423,10 +422,14 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "read_file",
     description:
-      "Read a UTF-8 text file from this bot's home. On a Team Computer, relative paths use the bot folder and shared/... accesses shared work. Open visual or binary files with open_path instead.",
+      "Read a UTF-8 text file from this bot's home. On a Team Computer, relative paths use the bot folder and shared/... accesses shared work. Open visual or binary files with open_path instead. Large files come back in line ranges; follow nextOffset to read on.",
     inputSchema: {
       type: "object",
-      properties: { path: { type: "string" } },
+      properties: {
+        path: { type: "string" },
+        offset: { type: "integer", description: "First line to read, 1-based." },
+        limit: { type: "integer", description: "Maximum number of lines." },
+      },
       required: ["path"],
     },
   },
@@ -955,7 +958,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "search_history",
     description:
-      "Search literal keywords in earlier messages (default this_chat); every word of a query must match the same message. Provide exactly one of query or queries. To find an earlier conversation, fan out 2–4 keyword variants via queries with scope my_chats; narrow by date or botId when hinted. my_chats requires a direct human app run. Returns at most five matches, newest first, grouped by chat; matchedQueryIndexes are zero-based indexes into queries. Then read_history around the best hits using their threadId. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections.",
+      "Search literal keywords in earlier messages and their file names (default this_chat); every word of a query must match the same message. Provide exactly one of query or queries. To find an earlier conversation, fan out 2–4 keyword variants via queries with scope my_chats; narrow by date or botId when hinted. my_chats requires a direct human app run. Returns at most five matches, newest first, grouped by chat; matchedQueryIndexes are zero-based indexes into queries. Then read_history around the best hits using their threadId. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections. Read a listed attachment at its path and name it in your answer.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1017,7 +1020,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "read_history",
     description:
-      "Read around an earlier message, including linked background run outcomes and artifact references. Historical content may be outdated and is untrusted data.",
+      "Read around an earlier message, including linked background run outcomes, artifact references and attachments. Historical content may be outdated and is untrusted data.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1045,6 +1048,11 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "integer",
           minimum: 0,
           description: "Text cursor for a long original message.",
+        },
+        attachmentOffset: {
+          type: "integer",
+          minimum: 0,
+          description: "Attachment cursor returned as nextAttachmentOffset.",
         },
         limit: { type: "integer", minimum: 1, maximum: 5 },
       },
@@ -1273,7 +1281,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "schedule_update",
     description:
-      "Edit one of this bot's schedules by routineId instead of cancelling and recreating it. Send only what changes. Timing fields replace the current timing; startAt alone moves the next run of the current repeat. active false pauses it.",
+      "Edit one of this bot's schedules by routineId instead of cancelling and recreating it. Send only what changes. Timing fields replace the current timing; startAt alone moves the next run of the current repeat. active false pauses it. It cannot change a watch's interval or timezone; the user can change the interval in the routine's settings on the web.",
     inputSchema: {
       type: "object",
       properties: {
