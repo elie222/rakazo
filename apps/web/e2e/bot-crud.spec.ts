@@ -1,3 +1,4 @@
+import type { Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   captureScreenshot,
@@ -11,6 +12,8 @@ import {
 
 test("bot creation, editing, and deletion persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
+  // Installed before the shell starts its roster poll, so the focus check below can hold it.
+  await page.clock.install();
   await signup(page, `bot-crud-${stamp}@rakazo.test`, "password12", "Bot CRUD");
   await completeOnboarding(page);
   await page.goto("/app");
@@ -59,8 +62,37 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(botList.getByRole("button", { name: /^New Bot/ })).toBeVisible();
   await page.waitForURL(/\/app\/[^/]+$/);
   const deletedBotPath = new URL(page.url()).pathname;
+  // A focus refresh that no longer knows the current bot redirects away from it; wait for
+  // that refresh's roster response, not a fixed delay an overloaded runner can beat. The
+  // request wait is armed before the event, so an in-flight overlapping poll cannot match
+  // it, and only the response of the matched request releases the wait. The paused clock
+  // fires every pending timer now, so the 3 s poll is not due while the 50 ms focus
+  // debounce runs and cannot start the request the wait matches. A fixed date makes the
+  // pause target the clock's current time, so a stalled runner cannot overshoot it.
+  const pausedAt = Date.now();
+  await page.clock.setFixedTime(pausedAt);
+  await page.clock.pauseAt(pausedAt);
+  await page.clock.setSystemTime(pausedAt);
+  await page.clock.fastForward(3_000);
+  let focusRequest: Request | undefined;
+  const focusResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("/rpc/spaces/list") &&
+      focusRequest !== undefined &&
+      response.request() === focusRequest,
+  );
+  const nextListRequest = page.waitForRequest((request) =>
+    request.url().includes("/rpc/spaces/list"),
+  );
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await page.waitForTimeout(500);
+  await page.clock.runFor(50);
+  focusRequest = await nextListRequest;
+  // The response resolves on headers; the roster applies only once the body has arrived.
+  await (await focusResponse).finished();
+  await page.clock.resume();
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
   expect(new URL(page.url()).pathname).toBe(deletedBotPath);
   await captureScreenshot(page, testInfo, "27-created-bot");
 
