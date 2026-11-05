@@ -38,8 +38,15 @@ export function buildApprovalAskBlock(
   toolName: string,
   args: Record<string, unknown>,
   secrets: string[],
-  options?: { reviewReason?: string; summary?: FleetCardSummary; batch?: ToolBatch },
+  options?: {
+    reviewReason?: string;
+    summary?: FleetCardSummary;
+    batch?: ToolBatch;
+    /** The approval asks every time, so the card never offers Always allow. */
+    onceOnly?: boolean;
+  },
 ): MessageBlock {
+  const onceOnly = toolRequiresExplicitApproval(toolName) || Boolean(options?.onceOnly);
   if (options?.summary) {
     // Built from what was resolved before the effect was recorded, not from what the model typed.
     return {
@@ -53,7 +60,7 @@ export function buildApprovalAskBlock(
       detailFormat: toolName === "set_child_instructions" ? "code" : "text",
       status: "pending",
       actions:
-        toolRequiresExplicitApproval(toolName) || options.summary.onceOnly
+        onceOnly || options.summary.onceOnly
           ? [
               { id: "allow", label: "Allow once" },
               { id: "deny", label: "Deny" },
@@ -183,7 +190,7 @@ export function buildApprovalAskBlock(
             { id: "allow", label: "Create space", outcome: "created" },
             { id: "deny", label: "Cancel", outcome: "cancelled" },
           ]
-        : toolRequiresExplicitApproval(toolName)
+        : onceOnly
           ? [
               { id: "allow", label: "Allow once" },
               { id: "deny", label: "Deny" },

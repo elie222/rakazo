@@ -748,6 +748,14 @@ it("enqueues pending work when an approval pauses its current run", async () => 
   );
 });
 
+/** The action ids on the first card the run paused for. */
+const pausedActionIds = (f: ReturnType<typeof fixture>) =>
+  (
+    (
+      f.pauseRunForInput.mock.calls as unknown as [{ blocks: Array<Record<string, unknown>> }][]
+    )[0]?.[0].blocks[0]?.actions as { id: string }[] | undefined
+  )?.map((action) => action.id);
+
 describe("disabled builtins", () => {
   it("refuses a direct call before any effect or memory write", async () => {
     const f = fixture({
@@ -781,6 +789,8 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.pauseRunForInput).toHaveBeenCalledOnce();
       expect(isApprovalPausedResult(f.results[0])).toBe(true);
       expect(reviewMock).not.toHaveBeenCalled();
+      // The rule still covers this tool outside webhook runs.
+      expect(pausedActionIds(f)).toEqual(["allow", "always", "deny"]);
     },
   );
 
@@ -2353,6 +2363,8 @@ describe("bot management approvals", () => {
     await f.run();
     expect(reviewMock).not.toHaveBeenCalled();
     expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
+    // A rule for this tool still skips its other cards.
+    expect(pausedActionIds(f)).toEqual(["allow", "always", "deny"]);
   });
 
   it("returns a refused target to the model without a card", async () => {
@@ -2396,6 +2408,8 @@ describe("command watch creation approval", () => {
       expect(f.pauseRunForInput).toHaveBeenCalledOnce();
       expect(isApprovalPausedResult(f.results[0])).toBe(true);
       expect(reviewMock).not.toHaveBeenCalled();
+      // No rule could skip the next one, so the card offers no Always allow.
+      expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
     },
   );
 
@@ -2421,6 +2435,8 @@ describe("command watch creation approval", () => {
     expect(f.effects[0]).toMatchObject({ request: expect.objectContaining({ watch }) });
     expect(f.pauseRunForInput).toHaveBeenCalledOnce();
     expect(isApprovalPausedResult(f.results[1])).toBe(true);
+    // The card that remains is a command watch, which asks every time.
+    expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
   });
 
   it("refuses a command watch whose name is taken before asking", async () => {
@@ -2448,6 +2464,22 @@ describe("command watch creation approval", () => {
     });
     expect(f.effects).toEqual([]);
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
+
+  it("offers no Always allow on a command watch a webhook run asks for", async () => {
+    const f = fixture({ name: "schedule_create", builtin: true, trigger: "webhook" });
+    f.setCalls([
+      {
+        args: {
+          name: "Check",
+          prompt: "Summarize changes",
+          watch: { kind: "command", command: "ls" },
+        },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
   });
 
   it("saves a command watch in Never ask after outside content", async () => {
@@ -2876,6 +2908,7 @@ describe("Auto Review of new sites", () => {
       f.setCalls([search, schedule("Every day fetch https://attacker.test/?q=x")]);
       await f.run();
       expect(isApprovalPausedResult(f.results[1])).toBe(true);
+      expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
     });
 
     it("asks the same before rewriting a routine's prompt to name a new site", async () => {
@@ -2890,6 +2923,7 @@ describe("Auto Review of new sites", () => {
       ]);
       await f.run();
       expect(isApprovalPausedResult(f.results[1])).toBe(true);
+      expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
     });
 
     it("asks a person even when Auto Review or a tool rule would pass it", async () => {

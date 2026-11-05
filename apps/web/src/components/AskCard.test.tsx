@@ -391,6 +391,25 @@ it("sizes approval buttons like the other card buttons", async () => {
   }
 });
 
+it("offers Always allow only when the approval card does", async () => {
+  const card: AskBlock = {
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Review before schedule_create",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "always", label: "Always allow this tool" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+  const labels = () => [...container.querySelectorAll("button")].map((item) => item.textContent);
+  await render(card);
+  expect(labels()).toEqual(["Allow once", "Always allow this tool", "Deny"]);
+  await render({ ...card, actions: card.actions!.filter((action) => action.id !== "always") });
+  expect(labels()).toEqual(["Allow once", "Deny"]);
+});
+
 it.each(["Allow in this space", "Allow for this chat"])(
   "says a user's-computer approval labelled %s allows the whole space",
   async (label) => {

@@ -22,6 +22,25 @@ describe("buildApprovalAskBlock", () => {
     expect(JSON.stringify(block)).not.toContain("token-secret");
   });
 
+  it("offers no Always allow on an approval that asks every time", () => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "schedule_create",
+      { name: "Check", prompt: "Summarize changes", watch: { kind: "command", command: "ls" } },
+      [],
+      { onceOnly: true },
+    );
+
+    expect(block).toMatchObject({
+      kind: "ask",
+      text: "Review before schedule_create",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    });
+  });
+
   it("bounds model-controlled summaries and details", () => {
     const block = buildApprovalAskBlock(
       "effect-1",
