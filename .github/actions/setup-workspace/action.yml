@@ -67,15 +67,22 @@ runs:
       if: inputs.install == 'true'
       shell: bash
       env:
-        # Jobs that never launch Electron skip the multi-hundred-MB download.
-        ELECTRON_SKIP_BINARY_DOWNLOAD: ${{ inputs.electron == 'true' && '0' || '1' }}
-        ELECTRON_CACHE: ${{ inputs.electron == 'true' && format('{0}/electron-cache', runner.temp) || '' }}
         # Prefer the restored content-addressable store over the network.
         npm_config_prefer_offline: "true"
+        SETUP_ELECTRON: ${{ inputs.electron }}
+        SETUP_FILTER: ${{ inputs.filter }}
+        RUNNER_TEMP: ${{ runner.temp }}
       run: |
         set -euo pipefail
+        # Electron treats any set ELECTRON_SKIP_BINARY_DOWNLOAD as skip, so only
+        # export it when this job does not need the binary.
+        if [[ "${SETUP_ELECTRON}" == "true" ]]; then
+          export ELECTRON_CACHE="${RUNNER_TEMP}/electron-cache"
+        else
+          export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+        fi
         filter_args=()
-        if [[ -n "${{ inputs.filter }}" ]]; then
-          filter_args=(--filter "${{ inputs.filter }}")
+        if [[ -n "${SETUP_FILTER}" ]]; then
+          filter_args=(--filter "${SETUP_FILTER}")
         fi
         pnpm install --frozen-lockfile "${filter_args[@]}"
