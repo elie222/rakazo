@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import type { ResolvedAppearance, WebColorTokens } from "@rakazo/ui-tokens";
@@ -68,8 +68,18 @@ function readFontFiles(value: unknown, themeDir: string): FontFile[] {
     if (weight !== undefined && (typeof weight !== "string" || !WEIGHT.test(weight))) {
       throw new Error(`${where}.weight must look like "400" or "100 900"`);
     }
-    return { family, file: path.resolve(themeDir, file), weight };
+    const resolved = path.resolve(themeDir, file);
+    if (path.isAbsolute(file) || !inside(themeDir, resolved)) {
+      throw new Error(`${where}.file must be inside the theme's folder`);
+    }
+    return { family, file: resolved, weight };
   });
+}
+
+function inside(dir: string, file: string): boolean {
+  const relative = path.relative(dir, file);
+  const escapes = relative === ".." || relative.startsWith(`..${path.sep}`);
+  return relative !== "" && !escapes && !path.isAbsolute(relative);
 }
 
 export function parseInstanceTheme(source: string, themeDir: string): InstanceTheme {
@@ -181,7 +191,11 @@ export function instanceThemeMiddleware(themeFile: string, warn: (reason: string
     try {
       const font = loadTheme(themeFile).fonts.files[index];
       if (!font) return next();
-      const body = readFileSync(font.file);
+      // A symlink in the theme folder must not reach outside it either.
+      const themeDir = realpathSync(path.dirname(path.resolve(themeFile)));
+      const real = realpathSync(font.file);
+      if (!inside(themeDir, real)) throw new Error(`${font.file} is outside the theme's folder`);
+      const body = readFileSync(real);
       res.setHeader("content-type", FONT_TYPES[path.extname(font.file).toLowerCase()]?.mime ?? "");
       res.setHeader("cache-control", "no-cache");
       res.end(body);

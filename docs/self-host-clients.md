@@ -126,9 +126,10 @@ for it to find the origins to add.
 
 ## Colors and fonts
 
-`RAKAZO_THEME` points the web service at a JSON file that overrides the web and desktop app's
-colors and fonts. Leave it unset to keep the default look. The mobile apps keep the default look
-either way.
+`RAKAZO_THEME` points the web service at a JSON file that overrides the web app's colors and fonts,
+including in desktop apps connected to the instance as an **Existing instance**. Leave it unset to
+keep the default look. The mobile apps, and the desktop app's **This computer** server, keep the
+default look either way.
 
 ```json
 {
@@ -148,7 +149,8 @@ either way.
 font-family lists. A font that isn't installed on every device needs its file listed under `files`
 (`.woff2`, `.woff`, `.ttf` or `.otf`, relative to the theme file); the web service serves it from
 your own domain. The web service re-reads the file on each page load, so a reload shows your edits.
-A file it can't use is skipped with a `web.instance_theme_ignored` warning naming the problem.
+Font files must sit inside the theme's folder. A file it can't use is skipped with a
+`web.instance_theme_ignored` warning naming the problem.
 
 With Docker Compose, mount the folder into the web service:
 
@@ -163,6 +165,10 @@ services:
 ```bash
 RAKAZO_THEME=/theme/theme.json
 ```
+
+`install-images.sh` layers that override file automatically. Where you run Compose yourself, as in
+[Production deployment](./self-host-production.md), add `-f docker-compose.override.yml` after the
+base file, or the web service won't find the theme and serves the default look.
 
 ## Menu links
 
