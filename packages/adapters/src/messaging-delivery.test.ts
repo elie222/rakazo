@@ -37,35 +37,54 @@ const messagingRun = {
   sourceMessage: { blocks: [{ kind: "text", text: "hi" }] },
 };
 
-type OutboundRowFilter = {
-  status?: string;
-  createdAt?: { lt: Date };
-  identityId?: string | null;
-  threadId?: string;
-  OR?: Array<{ status: string; updatedAt?: { gt: Date } }>;
-};
+type OutboundRowFilter = Record<string, unknown>;
+
+/** The drains' send order: createdAt, then id to break remaining ties. */
+function bySendOrder(a: Record<string, unknown>, b: Record<string, unknown>) {
+  const byTime = (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime();
+  return byTime || String(a.id).localeCompare(String(b.id));
+}
+
+function compareBound(cell: unknown, bound: unknown, after: boolean): boolean {
+  if (cell instanceof Date && bound instanceof Date) {
+    return after ? cell.getTime() > bound.getTime() : cell.getTime() < bound.getTime();
+  }
+  if (typeof cell === "string" && typeof bound === "string") {
+    return after ? cell > bound : cell < bound;
+  }
+  return false;
+}
+
+/** The where shapes the drain queries use: field equality, lt/gt bounds, OR/AND. */
+function matchesWhere(row: Record<string, unknown>, where: OutboundRowFilter): boolean {
+  return Object.entries(where).every(([key, value]) => {
+    if (key === "OR")
+      return (value as OutboundRowFilter[]).some((condition) => matchesWhere(row, condition));
+    if (key === "AND")
+      return (value as OutboundRowFilter[]).every((condition) => matchesWhere(row, condition));
+    if (value instanceof Date)
+      return row[key] instanceof Date && (row[key] as Date).getTime() === value.getTime();
+    // The mocks do not emulate @updatedAt: an unset one counts as "just now".
+    if (key === "updatedAt" && row[key] === undefined)
+      return compareBound(new Date(), (value as { gt: unknown }).gt, true);
+    if (value !== null && typeof value === "object") {
+      const bound = value as { lt?: unknown; gt?: unknown };
+      if (bound.lt !== undefined) return compareBound(row[key], bound.lt, false);
+      if (bound.gt !== undefined) return compareBound(row[key], bound.gt, true);
+      return false;
+    }
+    // Prisma's null means IS NULL; a mock row without the field counts too.
+    if (value === null) return row[key] == null;
+    return row[key] === value;
+  });
+}
 
 /** A lane's next pending row, or an earlier row still pending or in flight. */
 function findOutboundRow(rows: Array<Record<string, unknown>>, where: OutboundRowFilter) {
   const ordered = rows.every((row) => row.createdAt instanceof Date)
-    ? [...rows].sort((a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime())
+    ? [...rows].sort(bySendOrder)
     : rows;
-  return (
-    ordered.find((row) => {
-      if (where.status && row.status !== where.status) return false;
-      if (where.identityId && row.identityId !== where.identityId) return false;
-      if (where.threadId !== undefined && row.threadId !== where.threadId) return false;
-      if (where.createdAt && !((row.createdAt as Date) < where.createdAt.lt)) return false;
-      if (!where.OR) return true;
-      return where.OR.some((condition) =>
-        condition.status === "pending"
-          ? row.status === "pending"
-          : row.status === "sent" &&
-            row.providerHandle == null &&
-            ((row.updatedAt as Date | undefined) ?? new Date()) > condition.updatedAt!.gt,
-      );
-    }) ?? null
-  );
+  return ordered.find((row) => matchesWhere(row, where)) ?? null;
 }
 
 function createFakeSurface(sendError?: Error) {
@@ -180,9 +199,9 @@ function createDeps(overrides: {
           const nextMs = next instanceof Date ? next.getTime() : new Date(String(next)).getTime();
           return nextMs <= now;
         });
-        // The drain reads in send order (orderBy createdAt).
+        // The drain reads in send order (createdAt, then id).
         const ordered = found.every((row) => row.createdAt instanceof Date)
-          ? found.sort((a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime())
+          ? found.sort(bySendOrder)
           : found;
         return ordered;
       }),
@@ -660,9 +679,17 @@ describe("deliverMessagingOutbound", () => {
         },
       ],
     });
-    (deps.prisma as unknown as { $transaction: unknown }).$transaction = vi.fn(async () => {
-      throw new Error("Transaction API error: Transaction already closed");
-    });
+    let claimTransaction = true;
+    (deps.prisma as unknown as { $transaction: unknown }).$transaction = vi.fn(
+      async (fn: (tx: unknown) => Promise<unknown>) => {
+        // The claim's transaction succeeds; the invite delivery times out.
+        if (claimTransaction) {
+          claimTransaction = false;
+          return fn(deps.prisma);
+        }
+        throw new Error("Transaction API error: Transaction already closed");
+      },
+    );
     await deliverMessagingOutbound(deps, {}, context);
 
     expect(deps.sendToThread).not.toHaveBeenCalled();
@@ -714,6 +741,8 @@ function createChannelDeps(
     peerBotName?: string | null;
     blockedBot?: string;
     messages?: unknown[];
+    posterProvider?: string;
+    runs?: Array<{ id: string; messages: unknown[] }>;
   } = {},
 ) {
   const text = overrides.text ?? "found it";
@@ -738,7 +767,7 @@ function createChannelDeps(
   };
   const posterIdentity = {
     id: "mi-1",
-    provider: "sendblue",
+    provider: overrides.posterProvider ?? "sendblue",
     address: "+15551111111",
     dmThreadId: "sendblue:dm-1",
     userId: "user-1",
@@ -782,12 +811,18 @@ function createChannelDeps(
   };
   const prisma = {
     run: {
-      findUnique: vi.fn(async () => channelRun),
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+        if (!overrides.runs) return channelRun;
+        const entry = overrides.runs.find((run) => run.id === where.id);
+        return entry ? { ...channelRun, id: entry.id } : null;
+      }),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     message: {
-      findMany: vi.fn(
-        async () => overrides.messages ?? [{ id: "m-1", blocks: [{ kind: "text", text }] }],
+      findMany: vi.fn(async ({ where }: { where?: { runId?: string } } = {}) =>
+        overrides.runs
+          ? (overrides.runs.find((run) => run.id === where?.runId)?.messages ?? [])
+          : (overrides.messages ?? [{ id: "m-1", blocks: [{ kind: "text", text }] }]),
       ),
       findUnique: vi.fn(async () => null),
     },
@@ -822,7 +857,7 @@ function createChannelDeps(
     messagingOutbound: {
       findMany: vi.fn(async ({ where }: { where?: { status?: string; OR?: unknown[] } } = {}) => {
         const now = Date.now();
-        return rows.filter((row) => {
+        const found = rows.filter((row) => {
           if (where?.status && row.status !== where.status) return false;
           if (!where?.OR) return row.status === "pending";
           const next = row.nextAttemptAt;
@@ -830,9 +865,27 @@ function createChannelDeps(
           const nextMs = next instanceof Date ? next.getTime() : new Date(String(next)).getTime();
           return nextMs <= now;
         });
+        // The drain reads in send order (createdAt, then id).
+        const ordered = found.every((row) => row.createdAt instanceof Date)
+          ? found.sort(bySendOrder)
+          : found;
+        return ordered;
       }),
       findFirst: vi.fn(async ({ where }: { where: OutboundRowFilter }) =>
         findOutboundRow(rows, where),
+      ),
+      aggregate: vi.fn(
+        async ({ where, _max }: { where?: OutboundRowFilter; _max?: { createdAt?: boolean } }) => {
+          const times = rows
+            .filter((row) => matchesWhere(row, where ?? {}))
+            .map((row) => (row.createdAt as Date | undefined)?.getTime())
+            .filter((time): time is number => time !== undefined);
+          return {
+            _max: {
+              createdAt: _max?.createdAt && times.length ? new Date(Math.max(...times)) : null,
+            },
+          };
+        },
       ),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         for (const item of data)
@@ -877,7 +930,7 @@ function createChannelDeps(
     },
     thread: { findFirst: vi.fn(async () => ({ id: "thread-2" })) },
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-      fn({ ...txMock, $queryRaw: prisma.$queryRaw }),
+      fn({ ...txMock, messagingOutbound: prisma.messagingOutbound, $queryRaw: prisma.$queryRaw }),
     ),
   };
   return {
@@ -966,6 +1019,79 @@ describe("deliverMessagingOutbound channel runs", () => {
     ]);
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
     expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("splits a long group reply into platform-sized parts that keep the tail", async () => {
+    const text = `${"x".repeat(4_200)} TAIL-MARK`;
+    const deps = createChannelDeps({
+      posterProvider: "telegram",
+      messages: [{ id: "m-1", blocks: [{ kind: "text", text }] }],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-1:2"]);
+    expect(deps.rows.every((row) => (row.body as string).length <= 4_096)).toBe(true);
+    expect((deps.rows[0]!.body as string).startsWith("Alice's agent: ")).toBe(true);
+    expect(deps.rows.map((row) => row.body).join("")).toContain("TAIL-MARK");
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual(
+      deps.rows.map((row) => ({ threadId: "sendblue:grp-1", body: row.body })),
+    );
+  });
+
+  it("gives group rows a strictly ordered createdAt across messages", async () => {
+    const deps = createChannelDeps({
+      messages: [
+        { id: "m-1", blocks: [{ kind: "text", text: "checking" }] },
+        { id: "m-2", blocks: [{ kind: "text", text: "here is the answer" }] },
+      ],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.rows.map((row) => [row.idempotencyKey, row.body])).toEqual([
+      ["msg:m-1", "Alice's agent: checking"],
+      ["msg:m-2", "Alice's agent: here is the answer"],
+    ]);
+    expect((deps.rows[1]!.createdAt as Date).getTime()).toBeGreaterThan(
+      (deps.rows[0]!.createdAt as Date).getTime(),
+    );
+  });
+
+  it("keeps a later group reply's whole range after an earlier reply's", async () => {
+    // The same millisecond for both mirrors: wall-clock ties must not let
+    // one reply's parts sort into the middle of the other's.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    try {
+      const reply = (marker: string) => `${marker}${marker.repeat(4_100)}`;
+      const deps = createChannelDeps({
+        posterProvider: "telegram",
+        runs: [
+          { id: "run-1", messages: [{ id: "m-1", blocks: [{ kind: "text", text: reply("1") }] }] },
+          { id: "run-2", messages: [{ id: "m-2", blocks: [{ kind: "text", text: reply("2") }] }] },
+        ],
+      });
+      await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+      await deliverMessagingOutbound(deps, { runId: "run-2" }, context);
+
+      const timesOf = (messageId: string) =>
+        deps.rows
+          .filter((row) => (row.idempotencyKey as string).startsWith(`msg:${messageId}`))
+          .map((row) => (row.createdAt as Date).getTime());
+      expect(Math.min(...timesOf("m-2"))).toBeGreaterThan(Math.max(...timesOf("m-1")));
+
+      const bodies = deps.sendToThread.mock.calls.map(
+        (call) => ((call as unknown[])[0] as { body: string }).body,
+      );
+      const lastA = Math.max(
+        ...bodies.flatMap((body, index) => (body.includes("1") ? [index] : [])),
+      );
+      const firstB = Math.min(
+        ...bodies.flatMap((body, index) => (body.includes("2") ? [index] : [])),
+      );
+      expect(firstB).toBeGreaterThan(lastA);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("preserves source transport on peer fan-out blocks", async () => {
@@ -1537,8 +1663,9 @@ describe("deliverMessagingOutbound attachments", () => {
     });
     deps.sendToThread.mockRejectedValueOnce(new Error("Telegram 500"));
     await deliverMessagingOutbound(deps, {}, context);
-    // The failure and its notice are saved together.
-    expect(deps.prisma.$transaction).toHaveBeenCalledTimes(1);
+    // One transaction claims the row for sending; the failure and its notice
+    // are then saved together in a second one.
+    expect(deps.prisma.$transaction).toHaveBeenCalledTimes(2);
 
     await deliverMessagingOutbound(deps, {}, context);
     expect(sentBodies(deps)).toEqual([
@@ -1755,6 +1882,106 @@ describe("drain lanes", () => {
     expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
       { threadId: "t-a", body: "a-1" },
       { threadId: "t-a", body: "a-2" },
+    ]);
+  });
+
+  it("waits behind an equal-createdAt row that another drain is sending", async () => {
+    const createdAt = new Date(1_000);
+    const deps = createDeps({
+      run: null,
+      outboundRows: [
+        { ...groupRow("z-2", "t-a", 0), createdAt },
+        { ...groupRow("a-1", "t-a", 0), createdAt },
+      ],
+    });
+    let releaseFirst = () => {};
+    const firstSend = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      await firstSend;
+      return { handle: "h-1" };
+    });
+
+    const firstDrain = deliverMessagingOutbound(deps, {}, context);
+    // The head is a-1: the tie-break on id orders rows of equal createdAt.
+    await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(1));
+
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
+    expect(deps.rows.map((row) => row.status)).toEqual(["pending", "sent"]);
+
+    releaseFirst();
+    await firstDrain;
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "t-a", body: "a-1" },
+      { threadId: "t-a", body: "z-2" },
+    ]);
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
+  });
+
+  it("does not claim beside a row that committed between the check and the claim", async () => {
+    const deps = createDeps({ run: null, outboundRows: [groupRow("r-1", "t-a", 10)] });
+    let releaseIntroSend = () => {};
+    const introSend = new Promise<void>((resolve) => {
+      releaseIntroSend = resolve;
+    });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      await introSend;
+      return { handle: "h-intro" };
+    });
+
+    // Between the first drain's blocker check and its claim, an unlocked
+    // writer commits an earlier row and a second drain picks it up and goes
+    // in flight — the first drain must see it before claiming.
+    let drainB: Promise<void> | null = null;
+    let injected = false;
+    const inject = async () => {
+      if (injected) return;
+      injected = true;
+      deps.rows.push(groupRow("intro", "t-a", 0));
+      drainB = deliverMessagingOutbound(deps, {}, context);
+      await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(1));
+    };
+    const prisma = deps.prisma as unknown as {
+      $transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown>;
+      messagingOutbound: {
+        updateMany: {
+          getMockImplementation: () => (args: never) => unknown;
+          mockImplementationOnce: (impl: (args: never) => unknown) => unknown;
+        };
+      };
+    };
+    const realTransaction = prisma.$transaction.bind(prisma);
+    prisma.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
+      await inject();
+      return realTransaction(fn);
+    };
+    const realUpdateMany = prisma.messagingOutbound.updateMany.getMockImplementation()!;
+    prisma.messagingOutbound.updateMany.mockImplementationOnce(
+      async (args: Parameters<typeof realUpdateMany>[0]) => {
+        await inject();
+        return realUpdateMany(args);
+      },
+    );
+
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
+    expect(deps.rows.map((row) => [row.body, row.status])).toEqual([
+      ["r-1", "pending"],
+      ["intro", "sent"],
+    ]);
+
+    releaseIntroSend();
+    await drainB;
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(deps.rows.map((row) => [row.body, row.status])).toEqual([
+      ["r-1", "sent"],
+      ["intro", "sent"],
+    ]);
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "t-a", body: "intro" },
+      { threadId: "t-a", body: "r-1" },
     ]);
   });
 

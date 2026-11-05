@@ -5,6 +5,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
+import { insertGroupOutboundRows } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { MessagingCommand } from "@rakazo/core";
@@ -845,17 +846,16 @@ async function handleChannelEvent(
   }
 
   if (hasUnlinked && !channel.introPostedAt) {
-    await deps.prisma.messagingOutbound.createMany({
-      data: [
-        {
-          idempotencyKey: `intro:${channel.id}`,
-          kind: "intro",
-          threadId: channel.threadId,
-          body: "Hi. This line hosts Rakazo personal agents. Some people in this group haven't messaged it yet; send any message to this line first if you want your own agent here.",
-        },
-      ],
-      skipDuplicates: true,
-    });
+    // Under the channel lock, so the intro never takes a position inside a
+    // mirrored reply's range and the drain's claim stays serialised with it.
+    await insertGroupOutboundRows(deps.prisma, channel, [
+      {
+        idempotencyKey: `intro:${channel.id}`,
+        kind: "intro",
+        threadId: channel.threadId,
+        body: "Hi. This line hosts Rakazo personal agents. Some people in this group haven't messaged it yet; send any message to this line first if you want your own agent here.",
+      },
+    ]);
     await deps.prisma.messagingChannel.update({
       where: { id: channel.id },
       data: { introPostedAt: new Date() },
