@@ -57,6 +57,7 @@ export { looksLikeCredential } from "./credentials.js";
 export { AGENT_IMPORT_PROMPT } from "./document.js";
 export { bundledSkillNames } from "./hermes.js";
 export type { AgentImportReader, SkillFiles } from "./shared.js";
+export { renameSkillMd } from "./shared.js";
 
 export const AGENT_IMPORT_NOT_FOUND = "No OpenClaw, Hermes or agent document found.";
 

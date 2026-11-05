@@ -328,6 +328,8 @@ export type ImportedBotRequest = Pick<
   build: () => Promise<Built>;
   /** Posted before the checklist, such as cards for apps the bot works with. */
   cards?: MessageBlock[];
+  /** Runs first in the create's transaction. */
+  beforeWrite?: (tx: Prisma.TransactionClient) => Promise<void>;
 };
 
 /** `created` is false when the key's earlier create is returned instead. */
@@ -471,6 +473,7 @@ export async function writeImportedBot<PreparedKey>(
     for (const list of [record.mcpServers, credentials, routineRows, setup, added]) {
       list.length = 0;
     }
+    await input.beforeWrite?.(tx);
     for (const prepared of preparedKeys) {
       const credential = await services.writeModelKey(tx, actor, prepared);
       if (credential) credentials.push(credential);

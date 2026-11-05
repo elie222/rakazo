@@ -134,6 +134,14 @@ describeIntegration("bot templates", () => {
     await rpc(app, cookie, "bots/archive", { botId: again.bot.id });
     const listed = await rpc<BotTemplateListing[]>(app, cookie, "bots/templates");
     expect(listed.find((item) => item.id === triage.id)?.botId).toBeNull();
+    // A refused create keeps the archived bot's record, so restoring it brings it back as Open.
+    expect(
+      (await raw(app, cookie, "bots/createFromTemplate", { ...input, version: 999 })).status,
+    ).toBe(412);
+    await rpc(app, cookie, "bots/restore", { botId: again.bot.id });
+    const restored = await rpc<BotTemplateListing[]>(app, cookie, "bots/templates");
+    expect(restored.find((item) => item.id === triage.id)?.botId).toBe(again.bot.id);
+    await rpc(app, cookie, "bots/archive", { botId: again.bot.id });
     const replacement = await rpc<Created>(app, cookie, "bots/createFromTemplate", input);
     expect(replacement.created).toBe(true);
     expect(replacement.bot.id).not.toBe(again.bot.id);
@@ -168,6 +176,17 @@ describeIntegration("bot templates", () => {
     expect(skills[0]!.content).toBe(existing);
     const routine = await db.routine.findFirstOrThrow({ where: { botId: bot.id } });
     expect(routine.prompt).toBe("Triage my new email with @inbox-triage-2.");
+
+    // Made again after the first copy goes, it reuses the renamed, unchanged skill.
+    await rpc(app, cookie, "bots/remove", { botId: bot.id });
+    const again = await rpc<Created>(app, cookie, "bots/createFromTemplate", {
+      templateId: triage.id,
+      version: triage.version,
+    });
+    const after = await db.agentSkill.findMany({ where: owner, orderBy: { name: "asc" } });
+    expect(after.map((row) => row.name)).toEqual(["inbox-triage", "inbox-triage-2"]);
+    const next = await db.routine.findFirstOrThrow({ where: { botId: again.bot.id } });
+    expect(next.prompt).toBe("Triage my new email with @inbox-triage-2.");
   });
 
   it("writes nothing when the last write fails", async () => {

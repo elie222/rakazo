@@ -19,6 +19,8 @@ import {
   botTemplateApps,
   buildSkillMd,
   findBotTemplate,
+  renameRoutineSkillMentions,
+  renameSkillMd,
 } from "@rakazo/core";
 import { availableInSpace } from "@rakazo/db";
 import type { AgentImportServices, Built } from "./agent-import.js";
@@ -162,32 +164,53 @@ export async function createBotFromTemplate<PreparedKey>(
       }
       request.cards = templateAppCards(template, template.apps.length ? await appCatalog() : []);
       const built = templatePlan(template, await savedTimeZone(services.prisma, actor));
-      // A skill an earlier copy of this bot added, still unchanged, is reused rather than
-      // added again under a new name; the routine's mention already points at it.
+      // A skill an earlier copy of this bot added, still unchanged (perhaps renamed on a clash),
+      // is reused rather than added again; the routines' mentions are pointed at it.
       const kept = await services.prisma.agentSkill.findMany({
-        where: { ...availableInSpace(actor), name: { in: template.skills.map((s) => s.name) } },
+        where: {
+          AND: [
+            availableInSpace(actor),
+            {
+              OR: template.skills.map((skill) => ({
+                name: { startsWith: skill.name, mode: "insensitive" as const },
+              })),
+            },
+          ],
+        },
         select: { name: true, content: true },
+        orderBy: { createdAt: "asc" },
       });
-      const reused = new Set(
-        template.skills
-          .filter((skill) =>
-            kept.some((row) => row.name === skill.name && row.content === buildSkillMd(skill)),
-          )
-          .map((skill) => skill.name),
-      );
+      const reused = new Map<string, string>();
+      for (const skill of template.skills) {
+        const copy = new RegExp(`^${skill.name}(?:-\\d+)?$`, "i");
+        const row = kept.find(
+          (item) =>
+            copy.test(item.name) && item.content === renameSkillMd(buildSkillMd(skill), item.name),
+        );
+        if (row) reused.set(skill.name, row.name);
+      }
       built.plan.skills = built.plan.skills.filter((skill) => !reused.has(skill.id));
       request.selection.skills = built.plan.skills.map((skill) => skill.id);
+      for (const [id, routine] of built.routineInputs) {
+        built.routineInputs.set(id, {
+          ...routine,
+          prompt: renameRoutineSkillMentions(routine.prompt, reused),
+        });
+      }
       return built;
     },
-  };
-  // An archived bot no longer counts as the template's bot: its record makes way for a new one.
-  await services.prisma.agentImport.deleteMany({
-    where: {
-      spaceId: actor.spaceId,
-      userId: actor.userId,
-      importKey: request.importKey,
-      bot: { archivedAt: { not: null } },
+    // An archived bot no longer counts as the template's bot: its record makes way for the new
+    // one, in the same transaction, so a failed create leaves the archived bot's record in place.
+    beforeWrite: async (tx) => {
+      await tx.agentImport.deleteMany({
+        where: {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          importKey: importKey(template.id),
+          bot: { archivedAt: { not: null } },
+        },
+      });
     },
-  });
+  };
   return writeImportedBot(services, actor, request, signal);
 }
