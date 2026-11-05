@@ -6448,6 +6448,10 @@ msgid "Thinking: {0}"
 msgstr "사고: {0}"
 
 #: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "이 계정은 비활성화되었습니다"
+
+#: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
 msgstr "이 앱을 연결하려면 자체 로그인 설정이 필요합니다."
 

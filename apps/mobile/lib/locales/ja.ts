@@ -992,6 +992,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Email verification required": "メールアドレスの確認が必要です",
   "Link SSO": "SSOを連携",
   "Registration is closed": "新規登録は受け付けていません",
+  "This account is deactivated": "このアカウントは無効化されています",
   Retry: "再試行",
   "Send deletion code": "削除コードを送信",
   "Sign in to your existing account to link SSO":
