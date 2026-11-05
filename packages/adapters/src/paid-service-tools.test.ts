@@ -50,6 +50,20 @@ describe("service_search", () => {
       { services: [{ id: "people.email" }] },
     );
   });
+
+  it("fills its ten results from affordable services further down the list", async () => {
+    const provider = new FakePaidServiceProvider();
+    const [email] = await provider.search("email");
+    const expensive = Array.from({ length: 10 }, (_, i) => ({
+      ...email!,
+      id: `pricey.${i}`,
+      priceUsd: 5,
+    }));
+    vi.spyOn(provider, "search").mockResolvedValue([...expensive, email!]);
+    expect(await serviceSearchFromTool(provider, context, { query: "email" }, true)).toMatchObject({
+      services: [{ id: "people.email" }],
+    });
+  });
 });
 
 describe("service_call", () => {

@@ -25,6 +25,7 @@ const MIN_DEFAULT_CEILING_USD = 0.05;
 const RESULT_MAX_CHARS = 50_000;
 const BODY_MAX_CHARS = 20_000;
 const QUERY_MAX_CHARS = 4_000;
+const SEARCH_RESULTS = 10;
 
 const searchArgs = z.object({ query: z.string().trim().min(1).max(200) });
 const callArgs = z.object({
@@ -70,6 +71,7 @@ export async function serviceSearchFromTool(
             service.priceUsd === null ||
             service.priceUsd * factor(billing) <= MAX_PAID_SERVICE_CALL_USD,
         )
+        .slice(0, SEARCH_RESULTS)
         .map((service) => shownService(service, billing)),
     };
   } catch (error) {
@@ -224,7 +226,7 @@ export async function serviceCallFromTool(
         },
       );
     } catch (error) {
-      // The receipt stays on the hold, so the credit reconciler can still settle it.
+      // With billing on, the receipt stays on the hold for the reconciler; otherwise usage is informational.
       getLogger().error("paid_services.usage_unrecorded", {
         service: service.id,
         error: error instanceof Error ? error.message : String(error),

@@ -111,6 +111,15 @@ describe("TregPaidServiceProvider", () => {
     expect(JSON.stringify(found)).not.toMatch(/treg/i);
   });
 
+  it("leaves out services whose id it could not look up again", async () => {
+    const { services } = provider(() =>
+      json({ results: [{ ...direct, id: "service/name" }, direct] }),
+    );
+    expect((await services.search("profile", context)).map((service) => service.id)).toEqual([
+      direct.id,
+    ]);
+  });
+
   it("describes a routed service by its public id and refuses ones it cannot call", async () => {
     const { services, fetchMock } = provider((url) =>
       url.endsWith("/treg.google.serp.maps")

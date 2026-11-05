@@ -835,7 +835,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "service_call",
     description:
-      "Call a service from service_search. Charges about its listed price; a failed call is free. Put each param where its params list it: query or body. Don't repeat a call that answered; found emails and phone numbers are best matches, not confirmed.",
+      "Call a service from service_search. Charges what the service bills, about its listed price. Put each param where its params list it: query or body. Don't repeat a call that answered; found emails and phone numbers are best matches, not confirmed.",
     inputSchema: {
       type: "object",
       properties: {
