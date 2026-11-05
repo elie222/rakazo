@@ -813,7 +813,7 @@ async function claimSteeringOnce(
               ? ("messaging" as const)
               : ("member" as const),
     }));
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
 }
 
 async function findPendingAsk(
@@ -1530,7 +1530,7 @@ export async function pauseRunForTakeover(
       where: { runId: input.runId, ...transientRunEventsWhere() },
     });
     return { threadId: waitingEvent.threadId, seq: waitingEvent.seq, continuationRunId: null };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
 
   if (!committed) return false;
   if (committed.seq !== null) {
@@ -1658,7 +1658,7 @@ export async function finalizeComputerControlRelease(
       },
     });
     return { threadId: event.threadId, seq: event.seq, runId };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
 
   if (!committed) return false;
   if (committed.threadId && committed.seq !== null) {
@@ -1687,7 +1687,7 @@ export async function settleReleasedTakeoverCards(
   const seq = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
     return settleReleasedTakeoverCardsInTransaction(tx, input);
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (seq !== null) await notify?.(input.threadId, seq);
 }
 
@@ -1802,9 +1802,10 @@ export function completedRunBlocks(
 
 // Transactions that lock the thread row before writing run state share the body budget: the
 // lock is held up to 15s by snapshot reads, Prisma's 5s default counts that wait, and expiring
-// fails a user stop, clear or card answer, or a run whose work already finished. Only the
-// timeout is shared; an explicit maxWait would override the client's longer connection wait,
-// so a saturated pool that frees a connection late would fail the checkout instead of waiting.
+// fails a user stop, clear, send, reaction or card answer, a run's steering claim or takeover
+// handoff, or a run whose work already finished. Only the timeout is shared; an explicit
+// maxWait would override the client's longer connection wait, so a saturated pool that frees
+// a connection late would fail the checkout instead of waiting.
 export const THREAD_LOCK_TRANSACTION_OPTIONS = { timeout: 20_000 };
 
 // The thread lock is shared with snapshot reads that may hold it for up to 15s. Prisma's 5s

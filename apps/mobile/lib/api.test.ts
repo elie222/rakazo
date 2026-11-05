@@ -221,11 +221,7 @@ describe("mobile API authentication", () => {
       vi.mocked(SecureStore.getItemAsync).mockResolvedValue("fake-session");
       vi.stubGlobal(
         "fetch",
-        vi.fn(async (input) =>
-          String(input).endsWith("/rpc/notifications/unregisterPush")
-            ? jsonResponse({ json: null })
-            : new Response(body, { status }),
-        ),
+        vi.fn(async () => new Response(body, { status })),
       );
 
       await expect(request()).rejects.toThrow(message);
@@ -461,7 +457,6 @@ describe("mobile API authentication", () => {
       .fn()
       .mockResolvedValueOnce(new Response("Not found", { status: 404 }))
       .mockResolvedValueOnce(jsonResponse({ status: true }))
-      .mockResolvedValueOnce(jsonResponse({}))
       .mockResolvedValueOnce(jsonResponse({ success: true }));
     vi.stubGlobal("fetch", fetchMock);
     await expect(fetchAccountSecurity()).resolves.toEqual({
@@ -475,8 +470,8 @@ describe("mobile API authentication", () => {
     await changePassword("old-password", "new-password");
     await deleteAccount("new-password");
     expect(fetchMock.mock.calls[1]?.[0]).toContain("/api/auth/change-password");
-    expect(fetchMock.mock.calls[3]?.[0]).toContain("/api/auth/delete-user");
-    expect(JSON.parse(fetchMock.mock.calls[3]?.[1]?.body)).toEqual({ password: "new-password" });
+    expect(fetchMock.mock.calls[2]?.[0]).toContain("/api/auth/delete-user");
+    expect(JSON.parse(fetchMock.mock.calls[2]?.[1]?.body)).toEqual({ password: "new-password" });
   });
 
   it.each([401, 500])("does not fall back for account-security HTTP %s", async (status) => {
@@ -1234,20 +1229,35 @@ describe("mobile API authentication", () => {
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.space_id");
   });
 
-  it("unregisters push delivery before deleting the account", async () => {
+  it("does not unregister push delivery when deleting the account", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ json: null }))
-      .mockResolvedValueOnce(jsonResponse({}));
+    const fetchMock = vi.fn(async (_url: string | URL | Request) => jsonResponse({}));
     vi.stubGlobal("fetch", fetchMock);
 
     await deleteAccount("correct horse");
 
+    // Deleting the user removes the push rows on the server; unregistering first would
+    // drop this device's notifications whenever the deletion fails.
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
       "http://127.0.0.1:3100/api/auth/delete-user",
     ]);
+  });
+
+  it("keeps push registered when the account deletion fails", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const fetchMock = vi.fn(async (_url: string | URL | Request) =>
+      jsonResponse({ message: "Invalid password" }, { status: 400 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteAccount("wrong horse")).rejects.toThrow("Invalid password");
+
+    // A wrong password must not leave this device without notifications or incoming
+    // calls; the server still knows the registration until the account is gone for real.
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/api/auth/delete-user",
+    ]);
+    expect(SecureStore.deleteItemAsync).not.toHaveBeenCalledWith("rakazo.session_token");
   });
 
   it("sends authenticated RPC input and reports structured RPC errors", async () => {

@@ -98,4 +98,47 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     expect(task.prompt).toContain("CORRECTED");
     expect(run).toMatchObject({ modelProvider: "prov-b", modelId: "model-B", modelPinned: true });
   });
+
+  it("runs no routine in a Space that is being deleted", async () => {
+    const dueAt = new Date(Date.now() - 60_000);
+    const routine = await system.routine.create({
+      data: {
+        ...identity,
+        name: "report",
+        prompt: "report",
+        crons: ["* * * * *"],
+        active: true,
+        nextRunAt: dueAt,
+      },
+    });
+    const executor = createRunExecutor({
+      prisma: system,
+      jobs: {
+        enqueue: async () => undefined,
+        cancel: async () => undefined,
+        close: async () => undefined,
+      },
+      events: {
+        append: (input: Parameters<typeof appendEvent>[1]) => appendEvent(system, input),
+        notify: async () => undefined,
+      },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+    await system.space.update({
+      where: { id: identity.spaceId },
+      data: {
+        deletingAt: new Date(),
+        deletionClaimId: `organization-deletion:${identity.spaceId}`,
+      },
+    });
+    try {
+      await executor.wakeRoutine(routine.id, dueAt.toISOString());
+    } finally {
+      await system.space.update({
+        where: { id: identity.spaceId },
+        data: { deletingAt: null, deletionClaimId: null },
+      });
+    }
+
+    await expect(system.run.count({ where: { routineId: routine.id } })).resolves.toBe(0);
+  });
 });
