@@ -19,16 +19,24 @@ const IDLE_SOCKET_TIMEOUT_MS = 60_000;
 /** The SDK's own default per origin. */
 const MAX_SOCKETS = 50;
 
+/**
+ * Makes this the only owner of the socket's inactivity timer. The SDK and Node's agent call
+ * `setTimeout` on sockets to re-arm the timer, turn it off, or attach a callback that destroys the
+ * socket even while its reader has paused it; those calls do nothing here, and the timeout event
+ * reaches only this handler.
+ */
 function failWhenIdle<T extends Duplex | null | undefined>(socket: T, idleMs: number): T {
+  if (!socket) return socket;
+  const tcp = socket as unknown as Socket;
+  const arm = tcp.setTimeout.bind(tcp);
   let waitedOnReader = false;
-  socket?.on("timeout", () => {
-    const tcp = socket as unknown as Socket;
+  const onIdle = () => {
     // A reader that stopped pulling (backpressure) paused the socket; the store is not stalled.
     // Once it pulls again, the store gets a full period before silence counts, so a stall is
     // caught within twice the limit.
     if (tcp.isPaused() || waitedOnReader) {
       waitedOnReader = tcp.isPaused();
-      tcp.setTimeout(idleMs);
+      arm(idleMs);
       return;
     }
     tcp.destroy(
@@ -36,7 +44,15 @@ function failWhenIdle<T extends Duplex | null | undefined>(socket: T, idleMs: nu
         code: "ETIMEDOUT",
       }),
     );
-  });
+  };
+  arm(idleMs);
+  tcp.setTimeout = () => tcp;
+  const emit = tcp.emit.bind(tcp);
+  tcp.emit = ((event: string | symbol, ...args: unknown[]) => {
+    if (event !== "timeout") return emit(event, ...args);
+    onIdle();
+    return true;
+  }) as typeof tcp.emit;
   return socket;
 }
 
@@ -45,7 +61,7 @@ function failWhenIdle<T extends Duplex | null | undefined>(socket: T, idleMs: nu
  * waiting for one of the pooled sockets is never failed for the wait, and it also bounds connecting.
  */
 export function objectStorageRequestHandler(idleMs = IDLE_SOCKET_TIMEOUT_MS) {
-  const options = { keepAlive: true, maxSockets: MAX_SOCKETS, timeout: idleMs };
+  const options = { keepAlive: true, maxSockets: MAX_SOCKETS };
   class IdleHttpAgent extends HttpAgent {
     override createConnection(...args: Parameters<HttpAgent["createConnection"]>) {
       return failWhenIdle(super.createConnection(...args), idleMs);
@@ -56,12 +72,7 @@ export function objectStorageRequestHandler(idleMs = IDLE_SOCKET_TIMEOUT_MS) {
       return failWhenIdle(super.createConnection(...args), idleMs);
     }
   }
-  return {
-    httpAgent: new IdleHttpAgent(options),
-    httpsAgent: new IdleHttpsAgent(options),
-    // Left unset, the SDK turns the socket's limit off once a request has waited 3 s for headers.
-    socketTimeout: idleMs,
-  };
+  return { httpAgent: new IdleHttpAgent(options), httpsAgent: new IdleHttpsAgent(options) };
 }
 
 export interface S3ObjectStorageConfig {

@@ -1,4 +1,5 @@
-import { createServer } from "node:http";
+import { createServer, Agent as HttpAgent } from "node:http";
+import { Agent as HttpsAgent } from "node:https";
 import type { AddressInfo } from "node:net";
 import type * as S3Sdk from "@aws-sdk/client-s3";
 import { S3Client } from "@aws-sdk/client-s3";
@@ -254,9 +255,15 @@ describe("S3ObjectStorage timeouts", () => {
       res.write(Buffer.alloc(100));
       return;
     }
-    if (key === "large") {
-      res.writeHead(200, { "content-length": String(LARGE_BYTES) });
-      res.end(Buffer.alloc(LARGE_BYTES, 1));
+    if (key === "large" || key === "late-headers") {
+      // The SDK arms its own socket timeout when headers take longer than 3 s.
+      setTimeout(
+        () => {
+          res.writeHead(200, { "content-length": String(LARGE_BYTES) });
+          res.end(Buffer.alloc(LARGE_BYTES, 1));
+        },
+        key === "large" ? 0 : 3_500,
+      );
       return;
     }
     // Busy but healthy: a byte every 100 ms, longer than the idle limit in total.
@@ -274,17 +281,15 @@ describe("S3ObjectStorage timeouts", () => {
   const LARGE_BYTES = 8 * 1024 * 1024;
   let slowStorage: S3ObjectStorage;
 
-  beforeAll(async () => {
-    await new Promise<void>((resolve) => slow.listen(0, "127.0.0.1", resolve));
+  function slowClient(requestHandler: NonNullable<S3Sdk.S3ClientConfig["requestHandler"]>) {
     const client = new S3Client({
       region: "us-east-1",
       endpoint: `http://127.0.0.1:${(slow.address() as AddressInfo).port}`,
       forcePathStyle: true,
       credentials: { accessKeyId: "fake-access-key", secretAccessKey: "fake-secret-key" },
-      // A short idle limit on the sockets; the SDK's own layer keeps the production value.
-      requestHandler: { ...objectStorageRequestHandler(IDLE_MS), socketTimeout: 60_000 },
+      requestHandler,
     });
-    slowStorage = new S3ObjectStorage(
+    return new S3ObjectStorage(
       {
         bucket: "slow-bucket",
         region: "us-east-1",
@@ -295,6 +300,12 @@ describe("S3ObjectStorage timeouts", () => {
       },
       client,
     );
+  }
+
+  beforeAll(async () => {
+    await new Promise<void>((resolve) => slow.listen(0, "127.0.0.1", resolve));
+    // A short idle limit on the sockets; the SDK's own layer keeps the production value.
+    slowStorage = slowClient({ ...objectStorageRequestHandler(IDLE_MS), socketTimeout: 60_000 });
   });
 
   afterAll(async () => {
@@ -302,9 +313,9 @@ describe("S3ObjectStorage timeouts", () => {
     await new Promise((resolve) => slow.close(resolve));
   });
 
-  async function read(key: string, pauseMs = 0) {
+  async function read(key: string, pauseMs = 0, from = slowStorage) {
     let bytes = 0;
-    for await (const chunk of slowStorage.get(key)) {
+    for await (const chunk of from.get(key)) {
       if (bytes === 0 && pauseMs) await new Promise((resolve) => setTimeout(resolve, pauseMs));
       bytes += chunk.length;
     }
@@ -316,11 +327,12 @@ describe("S3ObjectStorage timeouts", () => {
     for await (const _ of storage(`timeouts-${++run}/`).list("")) {
       // Listing creates the client.
     }
-    const [config] = clientConfigs as Array<{
-      requestHandler?: { httpAgent?: { options: { timeout?: number } }; socketTimeout?: number };
-    }>;
-    expect(config?.requestHandler?.httpAgent?.options.timeout).toBe(60_000);
-    expect(config?.requestHandler?.socketTimeout).toBe(60_000);
+    const [config] = clientConfigs as Array<{ requestHandler?: unknown }>;
+    // The agents own every socket's inactivity limit; the SDK gets no timeout of its own.
+    expect(config?.requestHandler).toEqual({
+      httpAgent: expect.any(HttpAgent),
+      httpsAgent: expect.any(HttpsAgent),
+    });
   });
 
   it("fails a listing whose body stops after the headers", async () => {
@@ -340,6 +352,13 @@ describe("S3ObjectStorage timeouts", () => {
   it("keeps a read whose reader pauses longer than the idle limit", async () => {
     await expect(read("large", IDLE_MS * 2.5)).resolves.toBe(LARGE_BYTES);
   });
+
+  it("keeps a read whose headers were slow and whose reader then pauses", async () => {
+    // Headers after 3.5 s make the SDK arm a socket timeout of its own (here 6 s, armed for the
+    // 3 s left); the idle limit is longer than the wait for headers and shorter than the pause.
+    const late = slowClient({ ...objectStorageRequestHandler(4_000), socketTimeout: 6_000 });
+    await expect(read("late-headers", 5_000, late)).resolves.toBe(LARGE_BYTES);
+  }, 20_000);
 
   it("does not fail a request for waiting on a busy socket pool", async () => {
     // Fifty reads take every pooled socket for 3.5 s, over three idle periods; the next waits.
