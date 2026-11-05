@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -78,6 +78,14 @@ describe("instance theme", () => {
     ],
     [{ fonts: { files: [{ family: "Onest", file: "Onest.svg" }] } }, "fonts.files[0].file must be"],
     [{ radius: "0" }, "radius is not a theme field"],
+    [
+      { fonts: { files: [{ family: "Onest", file: "/etc/Onest.ttf" }] } },
+      "inside the theme's folder",
+    ],
+    [
+      { fonts: { files: [{ family: "Onest", file: "../Onest.ttf" }] } },
+      "inside the theme's folder",
+    ],
   ])("rejects %j", (theme, message) => {
     expect(() => parseInstanceTheme(JSON.stringify(theme), dir)).toThrow(message);
   });
@@ -120,6 +128,17 @@ describe("instance theme", () => {
     expect(serve(file, "/instance-theme/font/1.ttf").next).toHaveBeenCalled();
     expect(serve(file, "/instance-theme/font/..%2Ftheme.json").next).toHaveBeenCalled();
     expect(serve(file, "/").next).toHaveBeenCalled();
+  });
+
+  it("refuses a font symlink that points outside the theme's folder", () => {
+    const secret = path.join(mkdtempSync(path.join(tmpdir(), "rakazo-secret-")), "secret.txt");
+    writeFileSync(secret, "not a font");
+    const file = themeFolder({ fonts: { files: [{ family: "Onest", file: "Onest.ttf" }] } });
+    symlinkSync(secret, path.join(path.dirname(file), "Onest.ttf"));
+    const { res, next, warn } = serve(file, "/instance-theme/font/0.ttf");
+    expect(res.end).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("outside the theme's folder"));
   });
 
   it("logs a broken theme and serves nothing rather than failing the page", () => {

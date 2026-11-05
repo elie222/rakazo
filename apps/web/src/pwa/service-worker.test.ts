@@ -119,6 +119,19 @@ describe("service worker", () => {
     expect(await (await sw.fetch("/t/1", "navigate"))!.text()).toBe("next deploy");
   });
 
+  it("fetches an instance theme fresh and keeps the last copy for offline reloads", async () => {
+    network = async () => new Response("theme v1");
+    const sw = setup();
+    expect(await (await sw.fetch("/instance-theme.css"))!.text()).toBe("theme v1");
+    network = async () => new Response("theme v2");
+    expect(await (await sw.fetch("/instance-theme.css"))!.text()).toBe("theme v2");
+    network = async () => {
+      throw new TypeError("offline");
+    };
+    expect(await (await sw.fetch("/instance-theme.css"))!.text()).toBe("theme v2");
+    await expect(sw.fetch("/instance-theme/font/0.woff2")).rejects.toThrow("offline");
+  });
+
   it("caches lazy assets as they load, but not an HTML fallback", async () => {
     network = async (request) =>
       request.url.endsWith("missing.js")
