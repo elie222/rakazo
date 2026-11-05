@@ -625,17 +625,42 @@ describe("send_email", () => {
     );
   });
 
-  it("sends a retried call once, and frees the slot of one that failed", async () => {
+  it("never sends an interrupted call again, and frees the slot of one that failed", async () => {
     const retried = sendRun();
     await retried.call({ to: ["a@shop.test"], subject: "Hi", text: "Hello" });
-    await retried.call({ to: ["a@shop.test"], subject: "Hi", text: "Hello" });
+    // Only an attempt that never finished reaches the tool again; the gate replays the rest.
+    expect(
+      (await retried.call({ to: ["a@shop.test"], subject: "Hi", text: "Hello" })).error,
+    ).toContain("may or may not have gone out");
     expect(retried.send).toHaveBeenCalledTimes(1);
 
     const failing = sendRun({ fail: true });
     expect(await failing.call({ to: ["a@shop.test"], subject: "Hi", text: "Hello" })).toEqual({
-      error: "The email wasn't sent: domain not verified",
+      error: "Sending failed (domain not verified). It most likely did not go out.",
     });
     expect(failing.saved).toEqual([]);
+  });
+
+  it("keeps a follow-up to the bot's own email in that thread", async () => {
+    const { call, send } = sendRun({
+      original: {
+        subject: "Re: Your ticket",
+        messageId: null,
+        references: ["<t-1@shop.test>", "<t-2@shop.test>"],
+      },
+    });
+
+    await call({ to: ["support@shop.test"], text: "Any news?", inReplyTo: "in-1" });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: "Re: Your ticket",
+        headers: {
+          "In-Reply-To": "<t-2@shop.test>",
+          References: "<t-1@shop.test> <t-2@shop.test>",
+        },
+      }),
+    );
   });
 
   it("refuses past the daily limit, too many people, or no subject", async () => {

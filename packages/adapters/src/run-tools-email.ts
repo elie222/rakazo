@@ -308,11 +308,13 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
     ctx.secrets,
   );
   if (!subject) return call.finish({ error: "Give the email a subject." });
-  // Saved secrets never leave in an email, whatever the bot was asked to write.
+  // Secrets this run has used never leave in an email, whatever the bot was asked to write.
   const text = redactSecrets(input.text, ctx.secrets);
+  // A reply to mail the bot sent answers what that one answered: its own ID is the provider's.
+  const parent = original?.messageId ?? original?.references.at(-1);
   const references = original?.messageId
     ? [...original.references, original.messageId].slice(-MAX_REFERENCES)
-    : [];
+    : (original?.references ?? []);
 
   const key = `sent:${call.effectKey}`;
   const done = (id: string) =>
@@ -328,7 +330,14 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
     where: { botId_key: { botId: bot.id, key } },
     select: { id: true },
   });
-  if (earlier) return done(earlier.id);
+  // A finished send is replayed by the gate, so a row found here is an attempt cut off midway.
+  if (earlier) {
+    return call.finish({
+      error:
+        "An earlier attempt to send this email was interrupted and may or may not have gone out. Tell your owner instead of sending it again.",
+      id: earlier.id,
+    });
+  }
   const recent = await deps.prisma.botEmailMessage.count({
     where: { botId: bot.id, sent: true, receivedAt: { gte: new Date(Date.now() - DAY_MS) } },
   });
@@ -363,14 +372,13 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
       ...(cc.length ? { cc } : {}),
       subject,
       text,
-      ...(original?.messageId
-        ? { headers: { "In-Reply-To": original.messageId, References: references.join(" ") } }
-        : {}),
+      ...(parent ? { headers: { "In-Reply-To": parent, References: references.join(" ") } } : {}),
     });
   } catch (error) {
     await deps.prisma.botEmailMessage.delete({ where: { id: row.id } }).catch(() => undefined);
+    // Most failures are refusals, but one can come after the provider took the email.
     return call.finish({
-      error: `The email wasn't sent: ${error instanceof Error ? error.message : String(error)}`,
+      error: `Sending failed (${error instanceof Error ? error.message : String(error)}). It most likely did not go out.`,
     });
   }
   return done(row.id);
