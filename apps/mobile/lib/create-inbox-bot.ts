@@ -61,6 +61,6 @@ export async function createInboxBot({
       .then(() => true)
       .catch(() => false);
     if (!started) return;
-    scheduleFocusPrompt(bot.id, isFirstBot);
+    scheduleFocusPrompt(bot.id, isFirstBot, options?.requestContext);
   })();
 }

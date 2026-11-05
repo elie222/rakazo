@@ -9,6 +9,7 @@ import { useInboxRenderItem } from "../components/inbox-render-item";
 import { BotRow } from "../components/inbox-rows";
 import type { MobileBot } from "./api";
 import { createInboxBot } from "./create-inbox-bot";
+import { scheduleFocusPrompt } from "./focus-prompt";
 import { formatThreadTime } from "./inbox";
 import { retainInboxValue } from "./inbox-retention";
 import type { InboxItem, InboxSpace } from "./inbox-spaces";
@@ -677,6 +678,11 @@ it("pins a bot made for a space to that space while another is selected", async 
     ["bots/create", "space-work"],
     ["onboarding/start", "space-work"],
   ]);
+  await vi.waitFor(() =>
+    expect(scheduleFocusPrompt).toHaveBeenLastCalledWith(bot.id, true, {
+      headers: { "x-rakazo-space-id": "space-work" },
+    }),
+  );
   // The Create menu's bot sends no pin, so it follows the selected space as before.
   ui.rpc.mockClear();
   await createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() });
