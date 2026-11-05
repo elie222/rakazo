@@ -43,7 +43,7 @@ test("live page helper preserves identity, masks passwords, and reports partial 
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     async function command(name: string, args: Record<string, unknown> = {}) {
@@ -211,7 +211,7 @@ test("live page helper waits for a site's sign-in check, or says the page is sti
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     const snapshot = async () => {
@@ -269,7 +269,7 @@ test("live page helper reaches a form past the control limit by query or by scro
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     async function command(name: string, args: Record<string, unknown> = {}) {
@@ -511,7 +511,7 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     async function command(name: string, args: Record<string, unknown> = {}) {
@@ -821,7 +821,7 @@ test("live page helper types a purchase's card into a payment provider's frame o
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     async function command(name: string, args: Record<string, unknown> = {}) {

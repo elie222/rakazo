@@ -38,7 +38,11 @@ import { ActiveBotGlyph } from "../../components/ai/CollaborationMarker";
 import { VoiceChatCard } from "../../components/call/VoiceChatCard";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { projectPageCards } from "../../lib/page-cards";
-import { lastSelectedText, quoteDraftForSelection } from "../../lib/quote-selection";
+import {
+  isDetachedRange,
+  lastSelectedText,
+  quoteDraftForSelection,
+} from "../../lib/quote-selection";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { messageHasVisibleBlocks } from "../../lib/tool-activity-view";
 import { TRANSCRIPT_CONTENT_PADDING } from "../../lib/transcript-layout";
@@ -233,8 +237,21 @@ export const Transcript = memo(function Transcript({
     message: ThreadMessage;
     text: string;
     range: Range;
+    /** The range's text when armed: a rewrite that removes one endpoint moves it without collapsing. */
+    rangeText: string;
   } | null>(null);
   const selectingWithMouse = useRef(false);
+
+  // A streaming edit can replace the selected nodes without firing selectionchange: replacing
+  // both endpoints collapses the range, replacing one moves it; the pill must not keep its
+  // stale placement either way.
+  useLayoutEffect(() => {
+    setQuoteDraft((prev) =>
+      prev && (isDetachedRange(prev.range) || prev.range.toString() !== prev.rangeText)
+        ? null
+        : prev,
+    );
+  }, [messages]);
 
   const evaluateSelection = useCallback(() => {
     const selection = window.getSelection();
@@ -274,7 +291,7 @@ export const Transcript = memo(function Transcript({
       ) {
         return prev;
       }
-      return { ...draft, range };
+      return { ...draft, range, rangeText: range.toString() };
     });
   }, [messageById]);
 

@@ -602,3 +602,64 @@ describe("screen setup reuse", () => {
     expect(commands()).toEqual(["helper", "setup", "helper"]);
   });
 });
+
+describe("a helper that refuses the command (exit 2)", () => {
+  function helperExits(code: number, stdout: string) {
+    mock.exec.mockImplementation(async (options: { Cmd: string[] }) => {
+      // Screen setup succeeds; only the page helper refuses.
+      const helper = options.Cmd.includes("/usr/local/bin/rakazo-page-browser");
+      return {
+        start: async () =>
+          Duplex.from({
+            readable: Readable.from([Buffer.from(helper ? stdout : "")]),
+            writable: new Writable({ write: (_chunk, _encoding, callback) => callback() }),
+          }),
+        inspect: async () => ({ ExitCode: helper ? code : 0 }),
+      };
+    });
+  }
+  const purchaseCheck = (id: string) =>
+    supervisorApp.request(`/computers/${id}/browser`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "content-type": "application/json",
+        "x-rakazo-bot-id": "home",
+        "x-rakazo-space-id": "space",
+        "x-rakazo-screen-id": "first",
+        "x-rakazo-screen-lease-id": "run:1",
+      },
+      body: JSON.stringify({
+        command: "purchase_check",
+        desktop: true,
+        enter: false,
+        points: [{ x: 10, y: 10 }],
+        unplaced: false,
+      }),
+    });
+
+  it("passes on an older computer image's refusal of an unknown command", async () => {
+    // What rakazo-page-browser on an image from before purchase_check prints.
+    helperExits(
+      2,
+      JSON.stringify({
+        ok: false,
+        error: "unknown command: purchase_check",
+        fallback: "computer_act",
+      }),
+    );
+    expect(await (await purchaseCheck("computer-refusal")).json()).toEqual({
+      ok: false,
+      error: "unknown command: purchase_check",
+      fallback: "computer_act",
+    });
+  });
+
+  it("still reports an exit 2 without a refusal as unavailable", async () => {
+    helperExits(2, "Traceback (most recent call last):");
+    expect(await (await purchaseCheck("computer-refusal-garbled")).json()).toMatchObject({
+      ok: false,
+      error: "Page browser unavailable or interrupted. Inspect the screen before continuing.",
+    });
+  });
+});

@@ -3,10 +3,13 @@ import { isDesktopMenuCommand } from "@rakazo/contracts";
 import { useEffect, useRef } from "react";
 import { desktopBridge } from "../../lib/desktop";
 
-export type ShellShortcut = { type: DesktopMenuCommand } | { type: "bot"; index: number };
+export type ShellShortcut =
+  | { type: DesktopMenuCommand }
+  | { type: "focus-composer" }
+  | { type: "bot"; index: number };
 
 /**
- * Browsers keep Cmd+F, Cmd+1–9 and their history chords, so those only reach the desktop app.
+ * Browsers keep Cmd+F (their own find already covers the chat), Cmd+1–9 and their history chords, so those only reach the desktop app.
  * Apple keyboards use Cmd alone for the newer chords, since Ctrl+B and Ctrl+F move the caret there.
  */
 export type ShortcutHost = { desktop: boolean; apple: boolean };
@@ -27,6 +30,11 @@ export function isEditableTarget(target: EventTarget | null) {
   );
 }
 
+/** Cmd on Apple keyboards and Ctrl elsewhere, held without the other. */
+export function primaryModifier(event: Pick<KeyboardEvent, "metaKey" | "ctrlKey">, apple: boolean) {
+  return apple ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+}
+
 /**
  * The shell shortcut a key press asks for. Next and previous bot are Ctrl-Tab in the desktop app and
  * Cmd/Ctrl-Shift-ArrowDown/Up in a browser, which owns Ctrl-Tab; arrows rather than brackets because
@@ -39,14 +47,25 @@ export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellSh
     if (key === "k") return { type: "command-menu" };
     if (key === "n") return { type: "new" };
   }
-  const primary = host.apple ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+  const primary = primaryModifier(event, host.apple);
+  // Some layouts need Shift for the slash, so Shift does not matter here.
+  if (primary && !event.altKey && event.key === "/") return { type: "shortcuts" };
   if (primary && !event.altKey && !event.shiftKey) {
     if (key === "b") return { type: "toggle-sidebar" };
-    if (host.desktop && key === "f") return { type: "search" };
+    if (key === "i") return { type: "focus-composer" };
+    if (host.desktop && key === "f") return { type: "find" };
     if (host.desktop && /^[1-9]$/.test(key)) return { type: "bot", index: Number(key) - 1 };
     if (host.desktop && host.apple && (key === "[" || key === "]")) {
       return { type: key === "[" ? "back" : "forward" };
     }
+  }
+  if (primary && event.shiftKey && !event.altKey) {
+    // Browsers open a private window on this chord before the page sees it.
+    if (host.desktop && key === "n") return { type: "new-group" };
+    if (host.desktop && key === "f") return { type: "search" };
+    if (key === "m") return { type: "integrations" };
+    // The code, because Shift turns the comma into another character on most layouts.
+    if (event.code === "Comma") return { type: "chat-panel" };
   }
   if (event.key === "Tab" && event.ctrlKey && !event.metaKey && !event.altKey) {
     return { type: event.shiftKey ? "previous-bot" : "next-bot" };

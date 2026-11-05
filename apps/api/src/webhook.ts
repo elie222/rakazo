@@ -59,9 +59,6 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
       return unauthorized();
     }
 
-    const payload = parseWebhookPayload(raw, c.req.header("content-type"));
-    const eventPrompt = formatWebhookPrompt(payload);
-
     const webhookRoutines = await deps.prisma.routine.findMany({
       where: {
         botId: target.bot.id,
@@ -80,6 +77,12 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
       orderBy: { updatedAt: "desc" },
       take: 5,
     });
+    if (webhookRoutines.length === 0) {
+      return c.json({ ok: true, ignored: true });
+    }
+
+    const payload = parseWebhookPayload(raw, c.req.header("content-type"));
+    const eventPrompt = formatWebhookPrompt(payload);
 
     // A payload id often names the resource, not the delivery, so only byte-identical retries collapse.
     const idempotencyKey =

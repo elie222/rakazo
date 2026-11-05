@@ -27,6 +27,7 @@ import {
   speechUploadName,
   voiceDeadline,
   voiceHttpError,
+  voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
 
@@ -397,8 +398,8 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     form.set("model", secret.sttModel);
     // mlx-audio streams NDJSON unless asked for the OpenAI shape.
     form.set("response_format", "json");
-    const language = request.language?.split("-")[0]?.toLowerCase();
-    if (language && /^[a-z]{2,3}$/.test(language)) form.set("language", language);
+    const language = voiceLanguageHint(request.language);
+    if (language) form.set("language", language);
     form.set(
       "file",
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),

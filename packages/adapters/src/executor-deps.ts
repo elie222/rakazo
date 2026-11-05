@@ -25,6 +25,8 @@ import type { TicketChangeNotifier } from "./ticket-changes.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
 
 export interface ExecutorDeps {
+  /** The present moment the agent is told; evals move it to a follow-up's due time. */
+  now?: () => Date;
   maxUploadSizeBytes?: number;
   contextStrategy?: AgentContextStrategy;
   prisma: PrismaClient;

@@ -209,6 +209,8 @@ export interface RunComputerContext {
   lazy: ReturnType<typeof lazyRunComputer>;
   /** Starts the computer on first use and copies the turn's files before each tool. */
   get: (reason: "tool" | "takeover" | "script", tool?: string) => Promise<ComputerRef>;
+  /** Queue files from earlier messages; `get` copies them before the next computer tool. */
+  copyEarlierFiles: (files: Array<Extract<MessageBlock, { kind: "file" | "image" }>>) => void;
   checkpoint: ReturnType<typeof createRunWorkspaceCheckpoint>;
   hostEnvironment: Awaited<ReturnType<NonNullable<SandboxProvider["environment"]>>> | undefined;
   graphical: boolean;
@@ -287,6 +289,8 @@ export interface RunContext {
   scripted: boolean;
   script: ReturnType<typeof inferScript> | undefined;
   allowSilentEmptyRun: boolean;
+  /** A group message that named no member: this member may end without replying. */
+  groupReplyOptional: boolean;
   emptyResponseText: string | undefined;
   state: RunState;
   settleRunningHelpers: () => Promise<void>;

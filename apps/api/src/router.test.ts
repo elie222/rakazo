@@ -2789,6 +2789,42 @@ describe("MCP server health", () => {
       expect(listed?.health).toMatchObject({ status: "error", code: MCP_OAUTH_CLIENT_REQUIRED });
     });
 
+    it.each([
+      "http://localhost:5173/mcp/oauth/callback",
+      "http://127.0.0.1:5180/mcp/oauth/callback",
+      "https://127.0.0.1:5173/mcp/oauth/callback",
+      "http://127.0.0.1:5173/other-callback",
+    ])("rejects an unregistered callback before starting OAuth: %s", async (redirectUri) => {
+      const h = harness({
+        row: baseRow({
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.test/mcp",
+        }),
+      });
+      const begin = vi.fn();
+      Object.assign(h.deps, {
+        mcpOAuth: { ...(h.deps.mcpOAuth as object), begin },
+      });
+      const client = createRouterClient(createRouter(h.deps), {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "owner-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        } as never,
+      });
+
+      await expect(
+        client.mcp.oauth.begin({ serverId: "server-1", redirectUri }),
+      ).rejects.toMatchObject({
+        code: "MCP_OAUTH_REDIRECT_MISMATCH",
+        status: 400,
+      });
+      expect(begin).not.toHaveBeenCalled();
+    });
+
     it("uses the registered web callback when a native client omits the redirect", async () => {
       const h = harness({
         row: baseRow({ transport: "streamable_http", endpoint: "https://mcp.example.test/mcp" }),

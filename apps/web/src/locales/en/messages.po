@@ -1029,6 +1029,10 @@ msgstr "Avatar Studio"
 msgid "Back"
 msgstr "Back"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Back or forward"
+msgstr "Back or forward"
+
 #: src/components/pages/PageNotice.tsx
 msgid "Back to chat"
 msgstr "Back to chat"
@@ -1283,6 +1287,10 @@ msgstr "Change model"
 msgid "Change password"
 msgstr "Change password"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "Change server"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "Changing…"
@@ -1298,6 +1306,10 @@ msgstr "Chat"
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Chat Completions"
 msgstr "Chat Completions"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Chat details"
+msgstr "Chat details"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1449,6 +1461,7 @@ msgstr "Clearing…"
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/chat-find-bar.tsx
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "Close"
@@ -1558,6 +1571,7 @@ msgid "Command"
 msgstr "Command"
 
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr "Command menu"
 
@@ -1696,6 +1710,7 @@ msgstr "Connect API key"
 
 #: src/components/SidebarFooter.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Connect apps"
 msgstr "Connect apps"
 
@@ -2738,6 +2753,10 @@ msgstr "Details"
 msgid "Developer"
 msgstr "Developer"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Dictate"
+msgstr "Dictate"
+
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
 msgstr "Dictation ended unexpectedly."
@@ -3192,6 +3211,11 @@ msgstr "Finance"
 msgid "Find a page"
 msgstr "Find a page"
 
+#: src/pages/shell/chat-find-bar.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Find in chat"
+msgstr "Find in chat"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Find models"
@@ -3222,6 +3246,10 @@ msgstr "Finished."
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "Finishing MCP connection…"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Focus message"
+msgstr "Focus message"
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -3307,6 +3335,10 @@ msgstr "Give a friend {weeks} weeks free"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "Go home"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Go to bot"
+msgstr "Go to bot"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Grant"
@@ -3658,6 +3690,11 @@ msgstr "Keep tool results whole"
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "key"
+
+#: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Keyboard shortcuts"
+msgstr "Keyboard shortcuts"
 
 #: src/components/vault/kinds.tsx
 msgid "Keys"
@@ -4252,6 +4289,7 @@ msgstr "Never ask"
 
 #: src/components/VaultSettings.tsx
 #: src/pages/shell/chat-context.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New"
 msgstr "New"
 
@@ -4283,6 +4321,7 @@ msgstr "New group"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New group chat"
 msgstr "New group chat"
 
@@ -4328,6 +4367,14 @@ msgstr "New ticket"
 #: src/components/VaultSettings.tsx
 msgid "New variable"
 msgstr "New variable"
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Next match"
+msgstr "Next match"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Next or previous bot"
+msgstr "Next or previous bot"
 
 #: src/components/markdown-copy.tsx
 msgid "Next page"
@@ -4944,6 +4991,10 @@ msgstr "Preview {0}"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "Preview isn't available for this file type — download it to view it."
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Previous match"
+msgstr "Previous match"
 
 #: src/components/markdown-copy.tsx
 msgid "Previous page"
@@ -5641,6 +5692,10 @@ msgstr "Search apps"
 msgid "Search artifacts…"
 msgstr "Search artifacts…"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Search bots"
+msgstr "Search bots"
+
 #: src/pages/shell/command-palette.tsx
 msgid "Search bots, actions, and settings"
 msgstr "Search bots, actions, and settings"
@@ -5774,6 +5829,7 @@ msgstr "Server URL"
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "Settings"
@@ -6584,6 +6640,10 @@ msgstr "To:"
 msgid "Today"
 msgstr "Today"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Toggle sidebar"
+msgstr "Toggle sidebar"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "Tokens"
@@ -6649,6 +6709,10 @@ msgstr "Trial ends {day}"
 #: src/components/ModelCredits.tsx
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "Trials get fewer hours to prevent abuse."
+
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr "Troubleshoot"
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"

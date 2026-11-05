@@ -1029,6 +1029,10 @@ msgstr "头像工作室"
 msgid "Back"
 msgstr "返回"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Back or forward"
+msgstr "后退或前进"
+
 #: src/components/pages/PageNotice.tsx
 msgid "Back to chat"
 msgstr "返回聊天"
@@ -1283,6 +1287,10 @@ msgstr "更换模型"
 msgid "Change password"
 msgstr "修改密码"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "更换服务器"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "正在修改…"
@@ -1298,6 +1306,10 @@ msgstr ""
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Chat Completions"
 msgstr ""
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Chat details"
+msgstr "聊天详情"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1449,6 +1461,7 @@ msgstr "正在清空…"
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/chat-find-bar.tsx
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "关闭"
@@ -1558,6 +1571,7 @@ msgid "Command"
 msgstr "命令"
 
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr ""
 
@@ -1696,6 +1710,7 @@ msgstr "连接 API 密钥"
 
 #: src/components/SidebarFooter.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Connect apps"
 msgstr "连接应用"
 
@@ -2738,6 +2753,10 @@ msgstr "详情"
 msgid "Developer"
 msgstr "开发"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Dictate"
+msgstr "听写"
+
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
 msgstr ""
@@ -3192,6 +3211,11 @@ msgstr "财务"
 msgid "Find a page"
 msgstr "查找页面"
 
+#: src/pages/shell/chat-find-bar.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Find in chat"
+msgstr "在聊天中查找"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Find models"
@@ -3222,6 +3246,10 @@ msgstr "已完成。"
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "正在完成 MCP 连接…"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Focus message"
+msgstr "聚焦消息框"
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -3307,6 +3335,10 @@ msgstr "送朋友 {weeks} 周免费"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "返回首页"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Go to bot"
+msgstr "前往 Bot"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Grant"
@@ -3658,6 +3690,11 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "密钥"
+
+#: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Keyboard shortcuts"
+msgstr "键盘快捷键"
 
 #: src/components/vault/kinds.tsx
 msgid "Keys"
@@ -4252,6 +4289,7 @@ msgstr "从不询问"
 
 #: src/components/VaultSettings.tsx
 #: src/pages/shell/chat-context.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New"
 msgstr "新消息"
 
@@ -4283,6 +4321,7 @@ msgstr "新建群组"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New group chat"
 msgstr "新建群聊"
 
@@ -4328,6 +4367,14 @@ msgstr "新建工单"
 #: src/components/VaultSettings.tsx
 msgid "New variable"
 msgstr ""
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Next match"
+msgstr "下一个匹配项"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Next or previous bot"
+msgstr "下一个或上一个 Bot"
 
 #: src/components/markdown-copy.tsx
 msgid "Next page"
@@ -4944,6 +4991,10 @@ msgstr "预览 {0}"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "这种文件无法预览，请下载后查看。"
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Previous match"
+msgstr "上一个匹配项"
 
 #: src/components/markdown-copy.tsx
 msgid "Previous page"
@@ -5641,6 +5692,10 @@ msgstr "搜索应用"
 msgid "Search artifacts…"
 msgstr "搜索产物…"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Search bots"
+msgstr "搜索 Bot"
+
 #: src/pages/shell/command-palette.tsx
 msgid "Search bots, actions, and settings"
 msgstr ""
@@ -5774,6 +5829,7 @@ msgstr "服务器 URL"
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "设置"
@@ -6584,6 +6640,10 @@ msgstr "至:"
 msgid "Today"
 msgstr "今天"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Toggle sidebar"
+msgstr "显示或隐藏侧边栏"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "Token"
@@ -6649,6 +6709,10 @@ msgstr "试用将于 {day} 结束"
 #: src/components/ModelCredits.tsx
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "为防止滥用，试用期的时长较少。"
+
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"

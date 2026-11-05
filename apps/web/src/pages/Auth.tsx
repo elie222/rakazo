@@ -7,12 +7,15 @@ import {
   suggestEmailCorrection,
 } from "@rakazo/core";
 import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@rakazo/ui-web";
+import { Server } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { IconTooltip } from "../components/IconTooltip";
 import { PasskeySignIn } from "../components/PasskeySignIn";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
+import { desktopBridge } from "../lib/desktop";
 import { clearSpaceSelection } from "../lib/rpc";
 import { runSsoFlow } from "../lib/sso-flow";
 import { authErrorText, credentialIssueText } from "../lib/user-error";
@@ -550,13 +553,29 @@ export function AuthFrame({
   onSubmit: (event: React.FormEvent) => void;
   children: React.ReactNode;
 }) {
+  const { t } = useLingui();
+  const server = desktopBridge()?.server;
   return (
     <div
       className="flex min-h-full flex-col bg-background text-foreground"
       data-rakazo-surface="auth"
     >
-      <div className="app-drag flex gap-2 px-5 py-[18px]">
+      <div className="app-drag flex items-center gap-2 px-5 py-[18px]">
         <WindowChrome />
+        {server ? (
+          <IconTooltip label={t`Change server`}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t`Change server`}
+              className="app-no-drag ml-auto text-muted-foreground"
+              onClick={() => void server.change()}
+            >
+              <Server />
+            </Button>
+          </IconTooltip>
+        ) : null}
       </div>
       <div className="flex flex-1 items-center justify-center px-6 pb-16">
         <form onSubmit={onSubmit} className="flex w-full max-w-[460px] flex-col items-center">
