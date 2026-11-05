@@ -47,7 +47,8 @@ with `RAKAZO_URL` set to your public URL and `INBOUND_EMAIL_SECRET` stored as a 
 ```js
 export default {
   async email(message, env) {
-    const url = `${env.RAKAZO_URL}/api/v1/email/inbound?to=${encodeURIComponent(message.to)}`;
+    const url = new URL("/api/v1/email/inbound", env.RAKAZO_URL);
+    url.searchParams.set("to", message.to);
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -84,7 +85,15 @@ transport_maps = hash:/etc/postfix/transport
 rakazo_destination_recipient_limit = 1
 ```
 
-with `bots.example.com rakazo:` in `/etc/postfix/transport` (run `postmap` on it). The script
+with `bots.example.com rakazo:` in `/etc/postfix/transport` (run `postmap` on it). Save the same
+`INBOUND_EMAIL_SECRET` where the pipe's user can read it and no one else can:
+
+```sh
+sudo install -d -m 755 /etc/rakazo
+printf %s "$INBOUND_EMAIL_SECRET" | sudo install -m 400 -o nobody /dev/stdin /etc/rakazo/inbound-email-secret
+```
+
+The script
 bounces a message that is too large and exits with 75 for anything else that fails, so Postfix
 keeps the message and tries again:
 

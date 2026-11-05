@@ -186,12 +186,14 @@ describe("readInboundEmail", () => {
       ].join("\r\n"),
     );
 
-    const email = await readInboundEmail(bytes(raw), { resolver });
+    const email = await readInboundEmail(bytes(await signed(raw)), { resolver });
+    const unsigned = await readInboundEmail(bytes(raw), { resolver });
 
+    expect(unsigned.text).toBe("");
     expect(email.text.startsWith("Hello bot & team: €100 €5\n")).toBe(true);
     expect(email.text).not.toContain("steal");
     expect(email.text.endsWith("[…]")).toBe(true);
-    expect(email.key).toMatch(/^sha256:/);
+    expect(unsigned.key).toMatch(/^sha256:/);
     expect(email.attachments).toHaveLength(1);
     expect(email.attachments[0]).toMatchObject({ name: "report.csv", mimeType: "text/csv" });
     expect(new TextDecoder().decode(email.attachments[0]?.bytes)).toBe("a,b\n1,2\n");

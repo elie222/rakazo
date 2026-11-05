@@ -97,7 +97,12 @@ export async function readInboundEmail(
     values("precedence").some((value) => ["bulk", "junk", "list"].includes(value)) ||
     fieldCount("list-id") > 0;
 
-  const body = email.text?.trim() || (email.html ? htmlToPlainText(email.html) : "");
+  // Unauthenticated mail is dropped unread, so its body is never converted. A huge HTML part is
+  // cut first: the bot only ever sees the first INBOUND_EMAIL_TEXT_MAX_CHARS of its text.
+  const body = !signature
+    ? ""
+    : email.text?.trim() ||
+      (email.html ? htmlToPlainText(email.html.slice(0, INBOUND_EMAIL_TEXT_MAX_CHARS * 10)) : "");
   const text =
     body.length > INBOUND_EMAIL_TEXT_MAX_CHARS
       ? `${body.slice(0, INBOUND_EMAIL_TEXT_MAX_CHARS)}\n[…]`
