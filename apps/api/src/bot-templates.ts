@@ -12,9 +12,9 @@ import { BOT_TEMPLATE_CHANGED, CreateRoutineInput } from "@rakazo/contracts";
 import {
   appConnectCard,
   BOT_TEMPLATES,
+  botTemplateApps,
   buildSkillMd,
   findBotTemplate,
-  matchConnectedAppCatalog,
 } from "@rakazo/core";
 import type { AgentImportServices, Built } from "./agent-import.js";
 import { requestDigest, savedTimeZone, writeImportedBot } from "./agent-import.js";
@@ -113,10 +113,9 @@ export function templateAppCards(
   template: BotTemplate,
   catalog: ConnectionCatalogItem[],
 ): MessageBlock[] {
-  return template.apps.flatMap((app) => {
-    const entry = matchConnectedAppCatalog(catalog, app);
-    return entry && !entry.connected ? [appConnectCard(entry)] : [];
-  });
+  return botTemplateApps(template, catalog)
+    .filter((entry) => !entry.connected)
+    .map(appConnectCard);
 }
 
 /**

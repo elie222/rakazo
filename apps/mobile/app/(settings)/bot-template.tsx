@@ -1,7 +1,7 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { Bot, BotTemplateListing } from "@rakazo/contracts";
 import { isBotTemplateChanged } from "@rakazo/contracts";
-import { formatCron, matchConnectedAppCatalog } from "@rakazo/core";
+import { botTemplateApps, formatCron } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { ReactNode } from "react";
@@ -83,10 +83,7 @@ function TemplateDetail({
     { ...rpcQuery("connections/catalog", {}), enabled: template.apps.length > 0 },
     queryClient,
   );
-  const apps = template.apps.flatMap((slug) => {
-    const entry = matchConnectedAppCatalog(catalog.data ?? [], slug);
-    return entry ? [entry] : [];
-  });
+  const apps = botTemplateApps(template, catalog.data ?? []);
   const labels = cronLabels(locale);
   const rows: AddedRow[] = [
     {

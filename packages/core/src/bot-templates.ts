@@ -1,4 +1,5 @@
-import type { BotTemplate } from "@rakazo/contracts";
+import type { BotTemplate, ConnectionCatalogItem } from "@rakazo/contracts";
+import { matchConnectedAppCatalog } from "./app-connect.js";
 
 /**
  * Reviewed, ready-made bots. Bump a template's `version` whenever any of its content changes:
@@ -221,4 +222,15 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
 
 export function findBotTemplate(id: string): BotTemplate | undefined {
   return BOT_TEMPLATES.find((template) => template.id === id);
+}
+
+/** The template's apps this server offers, preferring an entry some provider has connected. */
+export function botTemplateApps(
+  template: Pick<BotTemplate, "apps">,
+  catalog: ConnectionCatalogItem[],
+): ConnectionCatalogItem[] {
+  return template.apps.flatMap((app) => {
+    const entry = matchConnectedAppCatalog(catalog, app);
+    return entry ? [entry] : [];
+  });
 }
