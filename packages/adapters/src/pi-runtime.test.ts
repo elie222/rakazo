@@ -29,6 +29,11 @@ describe("connector tool labels", () => {
     expect(connectorStepNames(search, {})).toEqual(["Finding tools"]);
     expect(connectorStepNames(batch, args)).toEqual(["Postiz list posts"]);
     expect(connectorStepNames(batch, {})).toEqual(["Running tools"]);
+    const many = { tools: ["A", "B", "C", "D"].map((tool_slug) => ({ tool_slug })) };
+    expect(connectorStepNames(batch, many)).toEqual(["Running tools"]);
+    const odd = { tools: [{ tool_slug: "list posts --token=abc" }] };
+    expect(connectorStepNames(batch, odd)).toEqual(["Running tools"]);
+    expect(describeToolActivity(batch.name, odd, (name) => tools.get(name))).toBe("Running tools");
     expect(connectorStepNames(undefined, {})).toEqual([]);
   });
 });

@@ -173,14 +173,26 @@ export function normalizeAgentToolName(name: string): string {
 
 const ACTIVITY_DETAIL_LIMIT = 90;
 
+const MAX_STEP_ACTIONS = 3;
+const STEP_ACTION_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+
 /**
  * What a call's steps show: the actions a batch runs, else the tool's label. Empty when neither
  * applies, so callers fall back to the tool name.
  */
 export function connectorStepNames(tool: ConnectorTool | undefined, args: unknown): string[] {
-  const actions = tool?.batch ? batchActions(tool.batch, args).actions : [];
-  if (actions.length > 0) return actions.map(humanizeToolName);
+  const actions = batchStepActions(tool, args);
+  if (actions.length > 0) return actions;
   return tool?.label ? [tool.label] : [];
+}
+
+/** The model writes these names, so show only a few that look like tool names. */
+function batchStepActions(tool: ConnectorTool | undefined, args: unknown): string[] {
+  if (!tool?.batch) return [];
+  const { actions } = batchActions(tool.batch, args);
+  if (actions.length > MAX_STEP_ACTIONS) return [];
+  if (!actions.every((action) => STEP_ACTION_NAME.test(action))) return [];
+  return actions.map(humanizeToolName);
 }
 
 /** One human-readable line describing a tool call, shown live in the thread. */
@@ -193,8 +205,8 @@ export function describeToolActivity(
   if (toolName === USE_TOOL)
     return describeToolActivity(String(record.name), record.arguments, findTool);
   const tool = findTool?.(toolName);
-  const actions = tool?.batch ? batchActions(tool.batch, args).actions : [];
-  if (actions.length > 0) return `Using ${actions.map(humanizeToolName).join(", ")}`;
+  const actions = batchStepActions(tool, args);
+  if (actions.length > 0) return `Using ${actions.join(", ")}`;
   if (tool?.label) return tool.label;
   if (toolName === FIND_TOOL) return "Finding a tool";
   const detail = (value: unknown): string => {
