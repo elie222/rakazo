@@ -432,6 +432,7 @@ services:
       AUTH_BREACHED_PASSWORD_CHECK_ENABLED: ${AUTH_BREACHED_PASSWORD_CHECK_ENABLED:-false}
       PASSKEY_APPLE_APP_IDS:
       PASSKEY_ANDROID_CERT_SHA256:
+      COMPUTER_SETTINGS_ENABLED:
       # Proxies whose X-Forwarded-For is believed. Unset trusts this stack's own networks: the web
       # proxy and a reverse proxy on the host. See docs/self-host-production.md#client-addresses.
       TRUSTED_PROXIES:

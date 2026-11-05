@@ -451,6 +451,7 @@ services:
       AUTH_BREACHED_PASSWORD_CHECK_ENABLED: ${AUTH_BREACHED_PASSWORD_CHECK_ENABLED:-false}
       PASSKEY_APPLE_APP_IDS:
       PASSKEY_ANDROID_CERT_SHA256:
+      COMPUTER_SETTINGS_ENABLED:
       # The hop in front of the API whose X-Forwarded-For is believed; see docs/self-host-production.md#client-addresses.
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-caddy}
       CLIENT_IP_HEADER:
