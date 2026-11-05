@@ -205,8 +205,12 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 21-haptics
-- tapOn: "Haptics"
+- tapOn:
+    text: "Haptics"
+    index: 1
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 22-haptics-toggled
-- tapOn: "Haptics"
+- tapOn:
+    text: "Haptics"
+    index: 1
