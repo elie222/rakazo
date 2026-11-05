@@ -1331,6 +1331,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Discard changes?": "¿Descartar los cambios?",
   Discard: "Descartar",
   "Could not delete note": "No se pudo eliminar la nota",
+  "Recent payments": "Pagos recientes",
   "Spending limit": "Límite de gasto",
   Amount: "Importe",
   Currency: "Moneda",
@@ -1346,6 +1347,11 @@ export const ES_MESSAGES: Record<string, string> = {
   "{amount} spent this week": "{amount} gastados esta semana",
   "{amount} spent this month": "{amount} gastados este mes",
   "{amount} spent": "{amount} gastados",
+  "Button “{button}” · read from the page, not checked":
+    "Botón «{button}» · leído de la página, sin verificar",
+  "On the button": "En el botón",
+  "Read from the page, not checked": "Leído de la página, sin verificar",
+  Total: "Total",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

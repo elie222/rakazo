@@ -75,8 +75,8 @@ runs:
         # Electron treats any set ELECTRON_SKIP_BINARY_DOWNLOAD as skip, so only
         # export it when this job does not need the binary.
         if [[ "${SETUP_ELECTRON}" == "true" ]]; then
-          export ELECTRON_CACHE="${RUNNER_TEMP}/electron-cache"
-          mkdir -p "$ELECTRON_CACHE"
+          export electron_config_cache="${RUNNER_TEMP}/electron-cache"
+          mkdir -p "$electron_config_cache"
         else
           export ELECTRON_SKIP_BINARY_DOWNLOAD=1
           # Prefer the restored content-addressable store when Electron is unused.
@@ -89,9 +89,9 @@ runs:
         pnpm install --frozen-lockfile "${filter_args[@]}"
         # pnpm often links electron without running its install script, so the
         # binary only downloads on first `electron` invoke. Do that here with
-        # retries, and warm ELECTRON_CACHE, before tests hit GitHub releases.
+        # retries, and warm electron_config_cache, before tests hit GitHub releases.
         if [[ "${SETUP_ELECTRON}" == "true" ]]; then
-          install_js="$(find node_modules -path '*/electron/install.js' | head -n 1 || true)"
+          install_js="$(pnpm --filter @rakazo/desktop exec node -p "require('path').join(require('path').dirname(require.resolve('electron/package.json')), 'install.js')")"
           if [[ -z "$install_js" ]]; then
             echo "electron/install.js not found after pnpm install" >&2
             exit 1

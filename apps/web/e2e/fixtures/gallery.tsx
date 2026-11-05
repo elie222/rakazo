@@ -211,6 +211,38 @@ const approvals: Scenario = {
     ]),
     bot([
       {
+        // As the adapters' purchase card words a pay click, with the order lines the page lists.
+        kind: "ask",
+        approvalEffectId: "effect-6",
+        text: "Pay on freshcart.test?",
+        detail: [
+          'Button: "Place order"',
+          "Bananas × 6: $3.00",
+          "Oat milk 1L × 2: $8.40",
+          "Delivery: $6.00",
+          "Total on the page: $17.40",
+          "The button label, items and total are read from the page. The bot has not checked them.",
+        ].join("\n"),
+        detailFormat: "text",
+        receipt: {
+          button: "Place order",
+          items: [
+            { name: "Bananas × 6", amount: "$3.00" },
+            { name: "Oat milk 1L × 2", amount: "$8.40" },
+            { name: "Delivery", amount: "$6.00" },
+          ],
+          amount: "$17.40",
+          amountSource: "page",
+        },
+        status: "pending",
+        actions: [
+          { id: "allow", label: "Allow once" },
+          { id: "deny", label: "Deny" },
+        ],
+      },
+    ]),
+    bot([
+      {
         kind: "ask",
         approvalEffectId: "effect-3",
         text: "Create the space Marketing?",
