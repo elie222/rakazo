@@ -460,3 +460,24 @@ it("keeps a newer excerpt of the same message picked while its older send is in 
   expect(latest.replyTarget).toBe(message);
   expect(latest.replyQuote).toBe("second excerpt");
 });
+
+it("reuses an attachment's upload nonce across send retries", async () => {
+  const file = new File(["a"], "a.txt", { type: "text/plain" });
+  rpc.artifacts.create.mockResolvedValue({ id: "artifact-1" });
+  rpc.threads.send.mockRejectedValueOnce(new Error("offline"));
+  act(() => void latest.onAttachmentPick([file]));
+
+  await act(async () => void (await latest.sendMessage("hello", [], "nonce-1")));
+  // The failed send keeps its attachment; an edited draft retries under a new
+  // send nonce and must still reach the artifact the first upload created.
+  expect(await latest.sendMessage("hello again", [], "nonce-2")).toBe(true);
+
+  expect(rpc.artifacts.create).toHaveBeenCalledTimes(2);
+  const firstCall = rpc.artifacts.create.mock.calls[0]![0] as { clientNonce?: string };
+  const retryCall = rpc.artifacts.create.mock.calls[1]![0] as { clientNonce?: string };
+  expect(firstCall.clientNonce).toBe(retryCall.clientNonce);
+  expect(firstCall.clientNonce).toContain("bot-1");
+  expect(rpc.threads.send).toHaveBeenLastCalledWith(
+    expect.objectContaining({ artifactIds: ["artifact-1"] }),
+  );
+});
