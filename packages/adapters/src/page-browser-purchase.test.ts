@@ -634,6 +634,13 @@ describe("a key on the screen", () => {
     ]);
   });
 
+  it("never reads several products as one line with the last one's price", () => {
+    const { intent } = page(`
+      <div><span>Bananas</span> <span>$3.00</span> <span>Oat milk</span> <span>$8.40</span></div>
+      <p>Total: $11.40</p><button>Place order</button>`);
+    expect(intent("Place order")).not.toHaveProperty("items");
+  });
+
   it("finds the order summary at the end of a long page", () => {
     const { intent, win } = page(`<div>${"<span>Item</span>".repeat(8000)}</div>
       <p><span>Bananas × 6</span> <span>$3.00</span></p>

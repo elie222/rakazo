@@ -2013,8 +2013,9 @@ PURCHASE_HELPERS = r"""
       const text = shownText(el);
       const amount = text.length <= 160 ? text.match(LINE_AMOUNT)?.[0] : "";
       const name = amount ? text.slice(0, -amount.length).replaceAll(APART, " ").replace(/[\s:·•–—-]+$/u, "") : "";
-      // Whole, so the bot's secrets are found and hidden before the card cuts the name short.
-      if (/\p{L}/u.test(name)) rows.unshift({ el, name, amount });
+      // A name with an amount of its own may be several lines read as one, which would put one line's price on
+      // another's name: left out. Whole, so the bot's secrets are found and hidden before the card cuts it.
+      if (/\p{L}/u.test(name) && !ANY_AMOUNT.test(name)) rows.unshift({ el, name, amount });
     }
     // The line itself, not the list or row group around it.
     const lines = rows.filter((row) => !rows.some((other) => other !== row && row.el.contains(other.el)));
