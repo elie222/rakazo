@@ -1,7 +1,7 @@
 name: release-mobile
 
 # Ships the app version in apps/mobile/app.json: iOS goes to App Store review and is released
-# when Apple approves it; Android replaces the rolling APK release.
+# when Apple approves it; Android goes to Google Play review and refreshes the rolling APK.
 on:
   workflow_dispatch:
     inputs:
@@ -100,4 +100,9 @@ jobs:
     uses: ./.github/workflows/release-android-apk.yml
     permissions:
       contents: write
+    secrets: inherit
+
+  google-play:
+    name: Google Play
+    uses: ./.github/workflows/release-google-play.yml
     secrets: inherit
