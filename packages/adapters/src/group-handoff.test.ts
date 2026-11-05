@@ -98,6 +98,9 @@ describe("group handoff ownership", () => {
     expect(runCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ trigger: "follow_up" }) }),
     );
+    expect(deps.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
   });
 
   it("does not hand off from an attempt a newer claim superseded", async () => {
