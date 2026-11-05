@@ -364,6 +364,38 @@ msgstr "Quedan {remaining}"
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {# puesto} other {# puestos}}"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a day"
+msgstr "{shown} al día"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a month"
+msgstr "{shown} al mes"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a week"
+msgstr "{shown} a la semana"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} in total"
+msgstr "{shown} en total"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent"
+msgstr "{shown} gastados"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this month"
+msgstr "{shown} gastados este mes"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this week"
+msgstr "{shown} gastados esta semana"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent today"
+msgstr "{shown} gastados hoy"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
 msgstr "{size} B"
@@ -760,6 +792,10 @@ msgstr "Siempre permitido"
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
 msgstr "Abrir siempre {site}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Amount"
+msgstr "Importe"
 
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
@@ -1212,6 +1248,7 @@ msgstr "No puede leer imágenes"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1646,8 +1683,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr "Las computadoras están disponibles. Recarga o abre un bot para continuar."
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "Las computadoras están apagadas. Configura SANDBOX_PROVIDER=docker con SANDBOX_SUPERVISOR_TOKEN, o establece SANDBOX_PROVIDER en e2b, novita, daytona o boat con su clave de API. Recrea el stack después de cambiar .env."
+msgid "Computers are off on this server."
+msgstr "Las computadoras están apagadas en este servidor."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1830,7 +1867,6 @@ msgstr "Continuar con {0}"
 msgid "Conversations"
 msgstr "Conversaciones"
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1848,10 +1884,6 @@ msgstr "Copiado"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Copiar"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr "Copiar ejemplo de .env"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2312,6 +2344,10 @@ msgstr "No se pudo guardar la regla"
 msgid "Could not save skill"
 msgstr "No se pudo guardar la habilidad"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Could not save spending limit"
+msgstr "No se pudo guardar el límite de gasto"
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "Could not save that choice"
 msgstr "No se pudo guardar esa opción"
@@ -2536,6 +2572,10 @@ msgstr "Credenciales: {names}"
 msgid "Credit amount"
 msgstr "Cantidad de créditos"
 
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "Créditos"
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
 msgstr ""
@@ -2547,6 +2587,10 @@ msgstr "Cron"
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron expression"
 msgstr "Expresión cron"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Currency"
+msgstr "Moneda"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2572,6 +2616,10 @@ msgstr "Personalizar {label}"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
 msgstr "Personalizar avatar del bot"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Daily"
+msgstr "Diario"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
@@ -2849,10 +2897,6 @@ msgstr "Descartado: puedes volver a conectar cuando quieras desde la configuraci
 msgid "Docker"
 msgstr "Docker"
 
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr "Docker está configurado, pero las computadoras no responden. Confirma que el supervisor del sandbox esté en funcionamiento y recrea el stack después de cambiar .env."
-
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker limita el acceso a tu computadora para mayor seguridad. Usar {hostLabel} permite que los bots trabajen con tus archivos y herramientas locales."
@@ -2926,6 +2970,7 @@ msgid "Each name can be used once."
 msgstr "Cada nombre solo se puede usar una vez."
 
 #: src/components/AskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -4159,6 +4204,7 @@ msgid "month"
 msgstr "mes"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Mensual"
@@ -4464,6 +4510,10 @@ msgstr "No se encontraron servidores MCP remotos"
 msgid "No reply"
 msgstr "Sin respuesta"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "No reset"
+msgstr "Sin reinicio"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx
@@ -4499,6 +4549,7 @@ msgstr "Aún no hay tickets"
 msgid "No trigger"
 msgstr "Sin disparador"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr ""
@@ -5062,7 +5113,6 @@ msgstr "En cola"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr "Créditos de Rakazo"
@@ -5248,6 +5298,7 @@ msgstr "Recargar"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -5418,6 +5469,10 @@ msgstr "Restablecer contraseña"
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "Restablece tu contraseña"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Resets"
+msgstr "Se reinicia"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5591,6 +5646,7 @@ msgstr "sábado"
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5832,6 +5888,10 @@ msgstr "Nombre del servidor"
 msgid "Server URL"
 msgstr "URL del servidor"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Set"
+msgstr "Establecer"
+
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5861,6 +5921,7 @@ msgstr "Configuración: Uso"
 msgid "Setup complete"
 msgstr "Configuración completa"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "Ayuda de configuración"
@@ -6112,6 +6173,10 @@ msgstr "Hablando"
 msgid "Speech model"
 msgstr "Modelo de habla"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Spending limit"
+msgstr "Límite de gasto"
+
 #: src/components/AccountAccess.tsx
 msgid "SSO"
 msgstr ""
@@ -6248,8 +6313,8 @@ msgid "Subscribe for {price} / month"
 msgstr "Suscribirse por {price} / mes"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "Suscribirse a créditos de Rakazo"
+msgid "Subscribe to credits"
+msgstr "Suscribirse a créditos"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"
@@ -6451,6 +6516,10 @@ msgstr "Pensando"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Thinking: {0}"
 msgstr "Razonamiento: {0}"
+
+#: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "Esta cuenta está desactivada"
 
 #: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
@@ -7065,6 +7134,10 @@ msgstr "Días laborables"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "Fines de semana"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Weekly"
+msgstr "Semanal"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

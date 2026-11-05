@@ -12,7 +12,7 @@ import { createRootLogger } from "@rakazo/logging/axiom";
 import { createApp } from "./app.js";
 import { loadEnv } from "./env.js";
 
-const logger = createRootLogger(SERVICE_NAMES.api);
+const logger = await createRootLogger(SERVICE_NAMES.api);
 
 try {
   const env = loadEnv();
