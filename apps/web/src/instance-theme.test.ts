@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
+  instanceThemeIndexMiddleware,
   instanceThemeMiddleware,
   parseInstanceTheme,
   renderInstanceThemeCss,
@@ -18,7 +19,7 @@ function themeFolder(theme: unknown, files: Record<string, string> = {}) {
   return path.join(folder, "theme.json");
 }
 
-function serve(themeFile: string | undefined, url: string) {
+function serve(themeFile: string, url: string) {
   const res = { setHeader: vi.fn(), end: vi.fn() };
   const next = vi.fn();
   const warn = vi.fn();
@@ -81,10 +82,25 @@ describe("instance theme", () => {
     expect(() => parseInstanceTheme(JSON.stringify(theme), dir)).toThrow(message);
   });
 
-  it("serves an empty stylesheet when no theme is set", () => {
-    const { res, next } = serve(undefined, "/instance-theme.css");
-    expect(res.end).toHaveBeenCalledWith("");
-    expect(next).not.toHaveBeenCalled();
+  it("links the theme only on the pages the SPA fallback resolves to the app", () => {
+    const folder = mkdtempSync(path.join(tmpdir(), "rakazo-dist-"));
+    writeFileSync(path.join(folder, "index.html"), "<html><head><title>x</title></head></html>");
+    const middleware = instanceThemeIndexMiddleware(folder);
+    const page = (url: string, headers: Record<string, string> = {}) => {
+      const res = { setHeader: vi.fn(), end: vi.fn() };
+      const next = vi.fn();
+      middleware(
+        { url, method: "GET", headers } as unknown as IncomingMessage,
+        res as unknown as ServerResponse,
+        next,
+      );
+      return { res, next };
+    };
+    expect(page("/index.html").res.end.mock.calls[0]?.[0]).toBe(
+      '<html><head><title>x</title>  <link rel="stylesheet" href="/instance-theme.css" />\n  </head></html>',
+    );
+    expect(page("/html-viewer.html").next).toHaveBeenCalled();
+    expect(page("/index.html", { "sec-fetch-dest": "script" }).next).toHaveBeenCalled();
   });
 
   it("serves the theme's stylesheet and fonts, and passes other paths on", () => {

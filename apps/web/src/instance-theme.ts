@@ -128,6 +128,30 @@ export function renderInstanceThemeCss(theme: InstanceTheme): string {
     .join("\n\n");
 }
 
+/** Links the theme after the app's own head, so instances without one make no extra request. */
+export function withInstanceThemeLink(html: string): string {
+  return html.replace(
+    "</head>",
+    `  <link rel="stylesheet" href="${INSTANCE_THEME_PATH}" />\n  </head>`,
+  );
+}
+
+/**
+ * The built page with the theme linked, for `vite preview`. Runs after Vite's SPA fallback has
+ * rewritten the request to `/index.html`, so it answers exactly the requests that get the app.
+ */
+export function instanceThemeIndexMiddleware(outDir: string) {
+  const html = withInstanceThemeLink(readFileSync(path.join(outDir, "index.html"), "utf8"));
+  return (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    if (req.url?.split("?", 1)[0] !== "/index.html" || req.headers["sec-fetch-dest"] === "script") {
+      return next();
+    }
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    res.setHeader("cache-control", "no-cache");
+    res.end(req.method === "HEAD" ? undefined : html);
+  };
+}
+
 function loadTheme(file: string): InstanceTheme {
   return parseInstanceTheme(readFileSync(file, "utf8"), path.dirname(path.resolve(file)));
 }
@@ -136,27 +160,22 @@ function loadTheme(file: string): InstanceTheme {
  * Serves `RAKAZO_THEME`'s stylesheet and font files. The file is re-read per request so a
  * self-hoster sees edits on reload; a bad file is logged and serves nothing.
  */
-export function instanceThemeMiddleware(
-  themeFile: string | undefined,
-  warn: (reason: string) => void,
-) {
+export function instanceThemeMiddleware(themeFile: string, warn: (reason: string) => void) {
   return (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const pathname = req.url?.split("?", 1)[0] ?? "";
     if (pathname === INSTANCE_THEME_PATH) {
       res.setHeader("content-type", "text/css; charset=utf-8");
       res.setHeader("cache-control", "no-cache");
       let css = "";
-      if (themeFile) {
-        try {
-          css = renderInstanceThemeCss(loadTheme(themeFile));
-        } catch (error) {
-          warn(error instanceof Error ? error.message : String(error));
-        }
+      try {
+        css = renderInstanceThemeCss(loadTheme(themeFile));
+      } catch (error) {
+        warn(error instanceof Error ? error.message : String(error));
       }
       res.end(css);
       return;
     }
-    if (!themeFile || !pathname.startsWith(FONT_PATH)) return next();
+    if (!pathname.startsWith(FONT_PATH)) return next();
     // Only indexes into the theme's own list are served, never a path from the URL.
     const index = Number.parseInt(pathname.slice(FONT_PATH.length), 10);
     try {

@@ -33,7 +33,11 @@ import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
 import { apiProxy } from "./src/api-proxy.js";
 import { ASSET_ARCHIVE_DIR, archiveAssets } from "./src/asset-archive.js";
-import { instanceThemeMiddleware } from "./src/instance-theme.js";
+import {
+  instanceThemeIndexMiddleware,
+  instanceThemeMiddleware,
+  withInstanceThemeLink,
+} from "./src/instance-theme.js";
 import { missingAssetMiddleware } from "./src/missing-asset.js";
 import {
   collectNovncHtml,
@@ -500,9 +504,11 @@ export default defineConfig(({ command, mode }) => {
   const desktopStackToken =
     process.env.RAKAZO_DESKTOP_STACK_TOKEN ?? rootEnv.RAKAZO_DESKTOP_STACK_TOKEN ?? "";
   const themeFile = process.env.RAKAZO_THEME ?? rootEnv.RAKAZO_THEME;
-  const instanceTheme = instanceThemeMiddleware(themeFile, (reason) =>
-    screenLog.warn("web.instance_theme_ignored", { reason }),
-  );
+  const instanceTheme =
+    themeFile &&
+    instanceThemeMiddleware(themeFile, (reason) =>
+      screenLog.warn("web.instance_theme_ignored", { reason }),
+    );
   const imageTag = process.env.RAKAZO_IMAGE_TAG ?? rootEnv.RAKAZO_IMAGE_TAG ?? "edge";
   // Invalid origins throw here, so the server refuses to start rather than serve a wider policy.
   const appPolicy = appContentSecurityPolicy({
@@ -623,12 +629,19 @@ export default defineConfig(({ command, mode }) => {
         },
       },
       {
+        // Without RAKAZO_THEME the page never links the theme, so the default deploy is unchanged.
         name: "rakazo-instance-theme",
+        transformIndexHtml: (html) =>
+          command === "serve" && instanceTheme ? withInstanceThemeLink(html) : html,
         configureServer: (server) => {
-          server.middlewares.use(instanceTheme);
+          if (instanceTheme) server.middlewares.use(instanceTheme);
         },
-        configurePreviewServer: (server) => {
-          server.middlewares.use(instanceTheme);
+        configurePreviewServer: ({ config, middlewares }) => {
+          if (!instanceTheme) return;
+          middlewares.use(instanceTheme);
+          const outDir = path.resolve(config.root, config.build.outDir);
+          // A post hook, so it runs after Vite's SPA fallback has resolved the page.
+          return () => middlewares.use(instanceThemeIndexMiddleware(outDir));
         },
       },
       {
