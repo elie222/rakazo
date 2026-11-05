@@ -95,12 +95,12 @@ printf %s "$INBOUND_EMAIL_SECRET" | sudo install -m 400 -o nobody /dev/stdin /et
 ```
 
 The script
-bounces a message that is too large and exits with 75 for anything else that fails, so Postfix
+needs `curl` and `jq`. It bounces a message that is too large and exits with 75 for anything else that fails, so Postfix
 keeps the message and tries again:
 
 ```sh
 #!/bin/sh
-recipient=$(printf %s "$1" | jq -sRr @uri)
+recipient=$(printf %s "$1" | jq -sRr @uri) && [ -n "$recipient" ] || exit 75
 status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 \
   -H "Authorization: Bearer $(cat /etc/rakazo/inbound-email-secret)" \
   -H "Content-Type: message/rfc822" \
