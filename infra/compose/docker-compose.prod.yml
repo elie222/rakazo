@@ -330,9 +330,9 @@ services:
   # encrypted copies over its own `backup` network. infra/compose/pitr.sh enable turns it on.
   pitr:
     profiles: [pitr]
-    # Tagged with a hash of Dockerfile.pitr and pitr-agent.sh, so a deploy builds it once per change
-    # instead of on every run (compose-service.test.ts checks the hash).
-    image: rakazo-pitr:aa7cf1bde2aa8051
+    # Tagged with a hash of Dockerfile.pitr, pitr-agent.sh, and apt-security.sh, so a deploy
+    # builds it once per change instead of on every run (compose-service.test.ts checks the hash).
+    image: rakazo-pitr:01b2ca5aac855fdd
     build:
       context: .
       dockerfile: Dockerfile.pitr

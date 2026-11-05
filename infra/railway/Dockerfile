@@ -3,8 +3,7 @@ COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh \
   && apt-get update \
   && apt-get install -y --no-install-recommends gosu tini \
-  && /tmp/apt-security.sh --check \
-  && rm -rf /var/lib/apt/lists/* /tmp/apt-security.sh
+  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 WORKDIR /app
 COPY --chmod=755 . .
@@ -13,6 +12,7 @@ RUN pnpm --filter @rakazo/db generate
 RUN pnpm --filter @rakazo/api --filter @rakazo/worker build
 RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
 RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp
+RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 ENV NODE_ENV=production
 ENV RAKAZO_ALLOWED_HOSTS=healthcheck.railway.app
 EXPOSE 5173

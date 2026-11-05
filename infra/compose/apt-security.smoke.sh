@@ -43,4 +43,22 @@ expect_unknown forky
 expect_unknown ""
 expect_vulnerable bookworm ""
 
+expect_selected() {
+  apt_security_package_selected "$1" || fail "expected package $1 to be checked"
+}
+expect_ignored() {
+  if apt_security_package_selected "$1"; then
+    fail "expected package $1 to be ignored"
+  fi
+}
+expect_selected apt
+expect_selected apt-utils
+expect_selected libapt-pkg6.0
+expect_selected libapt-pkg7.0
+expect_selected libapt-pkg6.0t64
+expect_selected "libapt-pkg7.0t64:arm64"
+expect_ignored aptitude
+expect_ignored libapt-pkg-dev
+expect_ignored bash
+
 echo "apt-security smoke passed"

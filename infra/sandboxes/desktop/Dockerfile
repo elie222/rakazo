@@ -3,9 +3,9 @@ COPY apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh \
   && apt-get update && apt-get install -y --no-install-recommends \
     bash ca-certificates curl git python3 python3-pip xvfb x11vnc fluxbox procps \
-  && /tmp/apt-security.sh --check \
-  && rm -rf /var/lib/apt/lists/* /tmp/apt-security.sh
-RUN useradd -m -s /bin/bash rakazo
+  && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -s /bin/bash rakazo \
+  && /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 WORKDIR /home/rakazo
 USER rakazo
 ENV DISPLAY=:1

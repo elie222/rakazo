@@ -23,9 +23,19 @@ apt_security_version_ok() {
   dpkg --compare-versions "$2" ge "$floor"
 }
 
+# t64 is the time_t ABI suffix. A name like libapt-pkg6.0t64 is still the apt library.
+apt_security_package_re='^(apt|apt-utils|libapt-pkg[0-9.]+(t64)?)(:[a-zA-Z0-9]+)?$'
+
+apt_security_package_selected() {
+  [[ "$1" =~ $apt_security_package_re ]]
+}
+
 apt_security_installed_packages() {
-  dpkg-query -W -f '${Package}\n' 2>/dev/null \
-    | grep -E '^(apt|apt-utils|libapt-pkg[0-9.]+)(:[a-zA-Z0-9]+)?$' || true
+  local pkg
+  while read -r pkg; do
+    [[ -n "$pkg" ]] || continue
+    apt_security_package_selected "$pkg" && printf '%s\n' "$pkg"
+  done < <(dpkg-query -W -f '${Package}\n' 2>/dev/null || true)
 }
 
 apt_security_codename() {

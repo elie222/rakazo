@@ -32,11 +32,12 @@ RUN set -eux; \
 
 FROM ${POSTGRES_IMAGE}
 COPY apt-security.sh /tmp/apt-security.sh
-RUN /tmp/apt-security.sh && rm -f /tmp/apt-security.sh
+RUN /tmp/apt-security.sh
 COPY --from=tools /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=tools /usr/local/bin/age /usr/local/bin/age-keygen /usr/local/bin/rclone /usr/local/bin/
 COPY --chmod=755 pitr-agent.sh /usr/local/bin/rakazo-pitr
-RUN install -d -o postgres -g postgres -m 700 /var/lib/rakazo-pitr
+RUN install -d -o postgres -g postgres -m 700 /var/lib/rakazo-pitr \
+  && /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 ENV RCLONE_CONFIG=/dev/null
 ENTRYPOINT ["rakazo-pitr"]
 CMD ["run"]
