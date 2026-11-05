@@ -1415,6 +1415,40 @@ it("does not auto-send a draft typed over a dictation queued behind an earlier s
   }
 });
 
+it("does not auto-send a queued dictation when a reply arms as the earlier send settles", async () => {
+  let finish!: (accepted: boolean) => void;
+  const onSend = vi.fn(
+    (_text: string) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    renderComposer(onSend, { phoneCallsEnabled: true });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("first words"));
+    await act(async () => {});
+    rerenderComposer({ sending: true });
+    act(() => onFinal("second words"));
+    await act(async () => {});
+    await act(async () => finish(true));
+    // The reply and the end of the earlier send land in one commit.
+    rerenderComposer({
+      sending: false,
+      replyTarget: { id: "m-9", blocks: [] } as unknown as ThreadMessage,
+    });
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+  } finally {
+    listen.mockRestore();
+  }
+});
+
 it("does not keep the nonce when a reopened chat rebinds the same mention text", async () => {
   const nonces: string[] = [];
   let fail!: (error: Error) => void;

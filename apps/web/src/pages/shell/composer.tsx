@@ -202,17 +202,6 @@ const ComposerBody = memo(function Composer({
       setDictationSendDue(editRevision.current);
     },
   });
-  // The words must reach the committed draft before send() reads it, so the
-  // send waits one render for the state appendDictation just queued.
-  // The due send holds the edit revision the dictation left.
-  const [dictationSendDue, setDictationSendDue] = useState<number | null>(null);
-  // A dictation that finishes while an earlier send is in flight waits for it;
-  // any edit in the meantime cancels the automatic send.
-  useEffect(() => {
-    if (dictationSendDue === null || sending) return;
-    setDictationSendDue(null);
-    if (editRevision.current === dictationSendDue) void send();
-  }, [dictationSendDue, sending]);
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const editRevision = useRef(0);
   useEffect(
@@ -253,6 +242,18 @@ const ComposerBody = memo(function Composer({
       previousReply.current = { id: replyId, quote };
     }
   }, [replyId, quote, onDraftEdited]);
+  // The words must reach the committed draft before send() reads it, so the
+  // send waits one render for the state appendDictation just queued.
+  // The due send holds the edit revision the dictation left.
+  const [dictationSendDue, setDictationSendDue] = useState<number | null>(null);
+  // A dictation that finishes while an earlier send is in flight waits for it;
+  // any edit in the meantime cancels the automatic send. It runs after the
+  // reply effect above, so a reply armed in the same commit counts as an edit.
+  useEffect(() => {
+    if (dictationSendDue === null || sending) return;
+    setDictationSendDue(null);
+    if (editRevision.current === dictationSendDue) void send();
+  }, [dictationSendDue, sending]);
   const {
     textareaRef,
     mirrorRef,
