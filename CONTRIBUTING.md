@@ -7,6 +7,19 @@ Thanks for helping improve Rakazo. Keep changes focused and testable.
 Follow the [source checkout setup](README.md#local-development-source-checkout) for prerequisites,
 required secrets, and startup commands.
 
+For a new Git worktree, run `pnpm setup:worktree`. It copies the main checkout's local
+`.env` if one exists and keeps any `.env` already in the worktree.
+The main checkout is the original clone, located through `git worktree list` rather than
+a fixed directory or branch name.
+Settings such as `RAKAZO_DEV_TAILNET=1` are inherited only when you enabled them locally;
+the setup command does not enable sharing or change any settings. If the main checkout
+has no `.env`, development uses its usual defaults.
+
+In T3 Code, add `pnpm setup:worktree` as a project setup action that runs on worktree
+creation, with setup completing before the agent starts. Existing worktrees keep their
+own settings; later changes to the main `.env` are not copied automatically.
+Run `pnpm install --frozen-lockfile` when you need to run or test the worktree.
+
 ## Checks before you open a PR
 
 | Command | When to run |
