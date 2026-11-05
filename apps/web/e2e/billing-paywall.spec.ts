@@ -1,10 +1,11 @@
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import type { BillingStatus } from "@rakazo/contracts";
 import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
 
-const price = { amount: 1200, currency: "usd", interval: "month", intervalCount: 1 };
+const price = { amount: 1200, currency: "usd", interval: "month", intervalCount: 1 } as const;
 
-function billingStatus(overrides: Record<string, unknown>) {
+function billingStatus(overrides: Partial<BillingStatus>): BillingStatus {
   return {
     access: false,
     canManage: true,
@@ -81,6 +82,17 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   await page.getByRole("button", { name: "Account", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: "Log out" })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-account-menu");
+  // A log out the server rejects reports the log-out failure, not a billing error.
+  await page.route("**/api/auth/sign-out", (route) => route.fulfill({ status: 500, body: "" }), {
+    times: 1,
+  });
+  await page.getByRole("menuitem", { name: "Log out" }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Could not log out. Try again." }),
+  ).toBeVisible();
+  await page.unroute("**/api/auth/sign-out");
+  // The failed log out reloaded the page; reopen the menu to reach deletion.
+  await page.getByRole("button", { name: "Account", exact: true }).click();
   await page.getByRole("menuitem", { name: "Delete account" }).click();
   const deletion = page.getByRole("dialog", { name: "Delete account" });
   await expect(deletion.getByLabel("Current password")).toBeVisible();
@@ -103,7 +115,7 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
     });
     await route.fulfill({ json: { json: { url: new URL("/app", page.url()).href } } });
   });
-  await page.getByRole("button", { name: "Subscribe to Rakazo credits", exact: true }).click();
+  await page.getByRole("button", { name: "Subscribe to credits", exact: true }).click();
   await expect(page.getByText("Chief").first()).toBeVisible();
   expect(purchase).toEqual({ amountCents: 3000, monthly: true });
   const settings = await openUserSettings(page, "billing");
@@ -365,18 +377,32 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   });
   await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
   await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
-  const tiers = [
-    ["standard", "Standard", 1500, 14400, "standard", 25],
-    ["pro", "Pro", 4900, 46800, "large", 100],
-    ["max", "Max", 14900, 142800, "xlarge", 200],
-  ].map(([tier, name, monthlyPriceCents, annualPriceCents, computerSize, computerHours]) => ({
-    tier,
-    name,
-    monthlyPriceCents,
-    annualPriceCents,
-    computerSize,
-    computerHours,
-  }));
+  const tiers: NonNullable<BillingStatus["byokTiers"]> = [
+    {
+      tier: "standard",
+      name: "Standard",
+      monthlyPriceCents: 1500,
+      annualPriceCents: 14400,
+      computerSize: "standard",
+      computerHours: 25,
+    },
+    {
+      tier: "pro",
+      name: "Pro",
+      monthlyPriceCents: 4900,
+      annualPriceCents: 46800,
+      computerSize: "large",
+      computerHours: 100,
+    },
+    {
+      tier: "max",
+      name: "Max",
+      monthlyPriceCents: 14900,
+      annualPriceCents: 142800,
+      computerSize: "xlarge",
+      computerHours: 200,
+    },
+  ];
   let status = billingStatus({
     access: true,
     trialAvailable: false,

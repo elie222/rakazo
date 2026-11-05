@@ -49,7 +49,12 @@ function pendingTimerFixture(reuse = true) {
     computer: { findMany: vi.fn(async () => []) },
     routine: {
       updateMany: vi.fn(async () => ({ count: 1 })),
-      findUnique: vi.fn(async () => ({ modelProvider: null, modelId: null, thinkingLevel: null })),
+      findUnique: vi.fn(async () => ({
+        prompt: "check current work",
+        modelProvider: null,
+        modelId: null,
+        thinkingLevel: null,
+      })),
     },
     run: {
       findMany: vi.fn(async () => (reuse ? [pending] : [])),

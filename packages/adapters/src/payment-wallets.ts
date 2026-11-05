@@ -8,6 +8,7 @@ import { PaymentWalletDisconnected, SecretStoreUnavailableError } from "@rakazo/
 import type { PaymentWalletStatus } from "@rakazo/contracts";
 import type { PaymentWallet, Prisma, PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { withRefreshLock } from "./refresh-lock.js";
 import { deleteSecretBestEffort, holdSecretNotifications } from "./secret-store-factory.js";
 
 export interface PaymentWalletDeps {
@@ -29,8 +30,6 @@ const PROVIDER_TIMEOUT_MS = 30_000;
 const POLL_CLAIM_MS = PROVIDER_TIMEOUT_MS + 5_000;
 /** RFC 8628: each slow_down adds five seconds to the polling interval. */
 const SLOW_DOWN_STEP_MS = 5_000;
-const REFRESH_LOCK_WAIT_MS = 10_000;
-const REFRESH_TRANSACTION_MS = 60_000;
 
 const DISCONNECTED: PaymentWalletStatus = { status: "disconnected" };
 
@@ -347,10 +346,10 @@ async function refreshCredential(
   let written: string | undefined;
   let result: Refreshed;
   try {
-    result = await deps.prisma.$transaction(
+    result = await withRefreshLock(
+      deps.prisma,
+      (tx) => lockWallet(tx, actor.userId),
       async (tx): Promise<Refreshed> => {
-        await tx.$executeRaw`SELECT set_config('lock_timeout', ${`${REFRESH_LOCK_WAIT_MS}ms`}, true)`;
-        await lockWallet(tx, actor.userId);
         const row = await tx.paymentWallet.findUnique({ where: { userId: actor.userId } });
         if (row?.status !== "connected" || row.provider !== provider.describe().id)
           return { gone: true };
@@ -373,7 +372,6 @@ async function refreshCredential(
         });
         return { credential: next, row: updated, replaced: row.ciphertext };
       },
-      { maxWait: REFRESH_LOCK_WAIT_MS, timeout: REFRESH_TRANSACTION_MS },
     );
   } catch (error) {
     if (written) await dropSecret(deps, actor.userId, written);

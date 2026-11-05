@@ -1030,6 +1030,10 @@ msgstr "Studio awatara"
 msgid "Back"
 msgstr "Wstecz"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Back or forward"
+msgstr "Wstecz lub dalej"
+
 #: src/components/pages/PageNotice.tsx
 msgid "Back to chat"
 msgstr "Wróć do czatu"
@@ -1284,6 +1288,10 @@ msgstr "Zmień model"
 msgid "Change password"
 msgstr "Zmień hasło"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "Zmień serwer"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "Zmienianie…"
@@ -1299,6 +1307,10 @@ msgstr "Czat"
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Chat Completions"
 msgstr "Chat Completions"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Chat details"
+msgstr "Szczegóły czatu"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1450,6 +1462,7 @@ msgstr "Czyszczenie…"
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/chat-find-bar.tsx
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "Zamknij"
@@ -1559,6 +1572,7 @@ msgid "Command"
 msgstr "Polecenie"
 
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr "Menu poleceń"
 
@@ -1632,8 +1646,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr "Komputery są dostępne. Odśwież stronę lub otwórz bota, aby kontynuować."
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "Komputery są wyłączone. Ustaw SANDBOX_PROVIDER=docker z SANDBOX_SUPERVISOR_TOKEN lub ustaw SANDBOX_PROVIDER na e2b, novita, daytona albo boat z odpowiednim kluczem API. Po zmianie .env odtwórz środowisko."
+msgid "Computers are off on this server."
+msgstr "Komputery są wyłączone na tym serwerze."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1697,6 +1711,7 @@ msgstr "Połącz klucz API"
 
 #: src/components/SidebarFooter.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Connect apps"
 msgstr "Połącz aplikacje"
 
@@ -1815,7 +1830,6 @@ msgstr "Kontynuuj z {0}"
 msgid "Conversations"
 msgstr "Rozmowy"
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1834,10 +1848,6 @@ msgstr "Skopiowano"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Kopiuj"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr "Kopiuj przykład .env"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2522,6 +2532,10 @@ msgstr "Dane uwierzytelniające: {names}"
 msgid "Credit amount"
 msgstr "Kwota doładowania"
 
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "Środki"
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
 msgstr "Środki ($)"
@@ -2744,6 +2758,10 @@ msgstr "Szczegóły"
 msgid "Developer"
 msgstr "Programista"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Dictate"
+msgstr "Dyktuj"
+
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
 msgstr "Dyktowanie niespodziewanie się zakończyło."
@@ -2830,10 +2848,6 @@ msgstr "Odrzucono. Możesz połączyć się ponownie w ustawieniach MCP."
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
 msgstr "Docker"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr "Docker jest skonfigurowany, ale komputery nie odpowiadają. Sprawdź, czy nadzorca piaskownicy działa. Po zmianie .env odtwórz środowisko."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
@@ -3198,6 +3212,11 @@ msgstr "Finanse"
 msgid "Find a page"
 msgstr "Znajdź stronę"
 
+#: src/pages/shell/chat-find-bar.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Find in chat"
+msgstr "Znajdź w czacie"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Find models"
@@ -3228,6 +3247,10 @@ msgstr "Ukończono."
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "Kończenie połączenia MCP…"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Focus message"
+msgstr "Przejdź do wiadomości"
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -3313,6 +3336,10 @@ msgstr "Podaruj znajomemu {weeks} tyg. za darmo"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "Przejdź do strony głównej"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Go to bot"
+msgstr "Przejdź do bota"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Grant"
@@ -3664,6 +3691,11 @@ msgstr "Zachowuj pełne wyniki narzędzi"
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "klucz"
+
+#: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Keyboard shortcuts"
+msgstr "Skróty klawiszowe"
 
 #: src/components/vault/kinds.tsx
 msgid "Keys"
@@ -4253,6 +4285,7 @@ msgstr "Nigdy nie pytaj"
 
 #: src/components/VaultSettings.tsx
 #: src/pages/shell/chat-context.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New"
 msgstr "Nowe"
 
@@ -4284,6 +4317,7 @@ msgstr "Nowa grupa"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New group chat"
 msgstr "Nowy czat grupowy"
 
@@ -4329,6 +4363,14 @@ msgstr "Nowe zgłoszenie"
 #: src/components/VaultSettings.tsx
 msgid "New variable"
 msgstr "Nowa zmienna"
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Next match"
+msgstr "Następne dopasowanie"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Next or previous bot"
+msgstr "Następny lub poprzedni bot"
 
 #: src/components/markdown-copy.tsx
 msgid "Next page"
@@ -4953,6 +4995,10 @@ msgstr "Podgląd {0}"
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "Podgląd tego typu pliku jest niedostępny. Pobierz plik, aby go obejrzeć."
 
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Previous match"
+msgstr "Poprzednie dopasowanie"
+
 #: src/components/markdown-copy.tsx
 msgid "Previous page"
 msgstr "Poprzednia strona"
@@ -5012,7 +5058,6 @@ msgstr "W kolejce"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr "Środki Rakazo"
@@ -5649,6 +5694,10 @@ msgstr "Szukaj aplikacji"
 msgid "Search artifacts…"
 msgstr "Szukaj artefaktów…"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Search bots"
+msgstr "Szukaj botów"
+
 #: src/pages/shell/command-palette.tsx
 msgid "Search bots, actions, and settings"
 msgstr "Szukaj botów, działań i ustawień"
@@ -5782,6 +5831,7 @@ msgstr "Adres URL serwera"
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "Ustawienia"
@@ -5806,6 +5856,7 @@ msgstr "Ustawienia: Użycie"
 msgid "Setup complete"
 msgstr "Konfiguracja zakończona"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "Pomoc w konfiguracji"
@@ -6193,8 +6244,8 @@ msgid "Subscribe for {price} / month"
 msgstr "Subskrybuj za {price} / miesiąc"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "Subskrybuj środki Rakazo"
+msgid "Subscribe to credits"
+msgstr "Subskrybuj środki"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"
@@ -6592,6 +6643,10 @@ msgstr "Do:"
 msgid "Today"
 msgstr "Dzisiaj"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Toggle sidebar"
+msgstr "Pokaż lub ukryj pasek boczny"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "Tokeny"
@@ -6657,6 +6712,10 @@ msgstr "Okres próbny kończy się {day}"
 #: src/components/ModelCredits.tsx
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "Okres próbny ma mniej godzin, aby zapobiegać nadużyciom."
+
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr "Rozwiązywanie problemów"
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"

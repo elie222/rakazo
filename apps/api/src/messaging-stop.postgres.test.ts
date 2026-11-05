@@ -23,6 +23,7 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
   let close: () => Promise<void>;
   let identity: Awaited<ReturnType<typeof provisionMessagingIdentity>>;
   let handle: (event: MessagingInboundMessage) => Promise<void>;
+  let transaction: ReturnType<typeof vi.fn>;
   const sandbox = {
     execute: vi.fn(async function* () {
       yield { type: "exit", code: 0 };
@@ -47,8 +48,11 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
         { signupsEnabled: undefined, signupAllowlist: undefined },
       ),
     );
+    transaction = vi.fn((...args: unknown[]) => Reflect.apply(prisma.$transaction, prisma, args));
     const inbound = createMessagingInboundHandler({
-      prisma,
+      prisma: new Proxy(prisma, {
+        get: (target, key) => (key === "$transaction" ? transaction : Reflect.get(target, key)),
+      }),
       events: createThreadEvents(prisma),
       jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
       sandbox: sandbox as never,
@@ -120,6 +124,8 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
     await text("stop", "h-stop");
     expect(await status(running.id)).toBe("cancelled");
     expect([await replies(), await notes()]).toEqual([[STOPPED_BY_MESSAGE_NOTE], 1]);
+    // The stop locks the thread row, which snapshot reads hold for up to 15s.
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
   });
 
   it("tears down the stopped run's computer work, as Stop does", async () => {

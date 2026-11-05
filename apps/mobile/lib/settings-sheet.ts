@@ -16,6 +16,8 @@ const settingsScreens = new Set([
   "integrations",
   "messaging",
   "language",
+  "memory",
+  "memory-note",
   "models",
   "organization",
   "plugin",

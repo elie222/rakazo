@@ -202,6 +202,12 @@ export const PL_MESSAGES: Record<string, string> = {
   "Previous Bot": "Poprzedni bot",
   "Command Menu…": "Menu poleceń…",
   "Toggle Sidebar": "Pokaż lub ukryj pasek boczny",
-  "Search…": "Szukaj…",
+  "Find…": "Znajdź…",
+  "Search Bots…": "Szukaj botów…",
   "The window closed before the app loaded.": "Okno zamknęło się przed wczytaniem aplikacji.",
+  "New Group Chat": "Nowy czat grupowy",
+  "Connect Apps…": "Połącz aplikacje…",
+  "Chat Details": "Szczegóły czatu",
+  Help: "Pomoc",
+  "Keyboard Shortcuts": "Skróty klawiszowe",
 };

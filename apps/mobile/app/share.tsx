@@ -1,6 +1,6 @@
 import { useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
-import { Image, Platform, Text, View } from "react-native";
+import { Image, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeSymbol } from "../components/native-symbol";
@@ -71,7 +71,7 @@ export default function ShareRoute() {
       style={{
         flex: 1,
         backgroundColor: tokens.background,
-        paddingTop: Platform.OS === "ios" ? 16 : insets.top + 8,
+        paddingTop: insets.top + 8,
       }}
     >
       <View
