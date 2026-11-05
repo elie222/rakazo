@@ -6,6 +6,7 @@ import type {
   IntegrationCatalogResult,
   IntegrationCatalogSurface,
   McpServer,
+  McpServerConnection,
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
 import {
@@ -61,11 +62,14 @@ import {
 import { queryOptions, skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUpRight,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CircleAlert,
   Plus,
   Search,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
@@ -112,8 +116,8 @@ function ConnectorIcon({ name, logo }: { name: string; logo?: string | null }) {
   );
 }
 
-function connectionLabel(server: McpServer): ReactElement {
-  switch (mcpServerConnection(server)) {
+function connectionLabel(state: McpServerConnection): ReactElement {
+  switch (state) {
     case "disabled":
       return <Trans>Disabled</Trans>;
     case "needs_client":
@@ -127,6 +131,33 @@ function connectionLabel(server: McpServer): ReactElement {
     case "not_connected":
       return <Trans>Not connected</Trans>;
   }
+}
+
+function ConnectionStatus({ server }: { server: McpServer }) {
+  const state = mcpServerConnection(server);
+  const warning = state === "needs_sign_in" || state === "needs_client";
+  const Icon =
+    state === "connected"
+      ? Check
+      : warning
+        ? TriangleAlert
+        : state === "not_working"
+          ? CircleAlert
+          : null;
+  const tone =
+    state === "connected"
+      ? "text-success"
+      : warning
+        ? "text-warning"
+        : state === "not_working"
+          ? "text-destructive"
+          : "text-muted-foreground";
+  return (
+    <span className={`flex min-w-0 items-center gap-1 text-body-sm ${tone}`}>
+      {Icon ? <Icon aria-hidden="true" className="size-3.5 shrink-0" /> : null}
+      <span className="truncate">{connectionLabel(state)}</span>
+    </span>
+  );
 }
 
 type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
@@ -1475,7 +1506,7 @@ export function PluginsOverlay({
                 {sourceError}
               </p>
             ) : null}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {connectedItems.map((item) =>
                 renderCatalogTile(item, item.name, item.logo, { tileTestId: false }),
               )}
@@ -1490,9 +1521,7 @@ export function PluginsOverlay({
                     <ConnectorIcon name={server.name} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-body-lg font-medium">{server.name}</span>
-                      <span className="block truncate text-body-sm text-muted-foreground">
-                        {connectionLabel(server)}
-                      </span>
+                      <ConnectionStatus server={server} />
                     </span>
                     <AvailabilityLabel availability={server.availability} />
                   </div>

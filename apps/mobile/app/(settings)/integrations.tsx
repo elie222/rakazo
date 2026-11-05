@@ -573,13 +573,42 @@ export default function Integrations() {
   /** What this account already has: apps it can reach, then skills it follows. */
   function renderSavedServer(server: McpServer) {
     const state = mcpServerConnection(server);
+    const tokens = mobileTokens();
+    const warning = state === "needs_sign_in" || state === "needs_client";
+    const color =
+      state === "connected"
+        ? tokens.success
+        : warning
+          ? tokens.warning
+          : state === "not_working"
+            ? tokens.destructive
+            : native.secondaryLabel;
+    const symbol =
+      state === "connected"
+        ? { ios: "checkmark", android: "checkmark" as const }
+        : warning
+          ? { ios: "exclamationmark.triangle", android: "warning-outline" as const }
+          : state === "not_working"
+            ? { ios: "exclamationmark.circle", android: "alert-circle-outline" as const }
+            : null;
     return (
       <View key={server.id} testID="registered-mcp-server" style={styles.row}>
         <ConnectorIcon name={server.name} size={LOGO_SIZE} />
         <Text numberOfLines={1} style={[styles.title, styles.grow]}>
           {server.name}
         </Text>
-        <Text style={styles.secondary}>{serverStatus(state)}</Text>
+        <View style={styles.connectionStatus}>
+          {symbol ? (
+            <View
+              accessible={false}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
+              <NativeSymbol {...symbol} size={14} color={color} />
+            </View>
+          ) : null}
+          <Text style={[styles.secondary, { color }]}>{serverStatus(state)}</Text>
+        </View>
         {server.enabled &&
         state !== "connected" &&
         state !== "needs_client" &&
@@ -1539,6 +1568,7 @@ export default function Integrations() {
 function createIntegrationsStyles() {
   const destructive = mobileTokens().destructive;
   return StyleSheet.create({
+    connectionStatus: { flexDirection: "row", alignItems: "center", gap: 4 },
     screen: { flex: 1, backgroundColor: native.page },
     content: { padding: 20, gap: 14 },
     explanation: { color: native.secondaryLabel, fontSize: 14, lineHeight: 20 },

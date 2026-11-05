@@ -48,7 +48,9 @@ vi.mock("./integrations-cache", () => ({
   writeIntegrationsCache: state.write,
 }));
 vi.mock("./last-bot", () => ({ loadLastBotId: async () => "" }));
-vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
+vi.mock("./appearance", () => ({
+  mobileTokens: () => ({ destructive: "red", success: "green", warning: "orange" }),
+}));
 vi.mock("./native", () => ({
   native: {},
   useResolvedAppearance: () => "light",
@@ -79,7 +81,11 @@ vi.mock("@expo/ui/community/menu", () => ({
     </div>
   ),
 }));
-vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/native-symbol", () => ({
+  NativeSymbol: ({ ios, color }: { ios: string; color: string }) => (
+    <span data-symbol={ios} data-color={color} />
+  ),
+}));
 vi.mock("./i18n", () => ({
   t: (text: string) => text,
   useI18n: () => ({ t: (text: string) => text }),
@@ -669,6 +675,19 @@ it("shows registered MCP servers with connector initials and sentence case statu
     "EExpired serverNeeds sign-inReconnect",
   ]);
   for (const row of [...rows].slice(0, 4)) expect(row.querySelector("button")).toBeNull();
+  expect(rows[0]?.querySelector('[data-symbol="checkmark"]')?.getAttribute("data-color")).toBe(
+    "green",
+  );
+  expect(rows[1]?.querySelector("[data-symbol]")).toBeNull();
+  expect(
+    rows[2]?.querySelector('[data-symbol="exclamationmark.triangle"]')?.getAttribute("data-color"),
+  ).toBe("orange");
+  expect(
+    rows[3]?.querySelector('[data-symbol="exclamationmark.circle"]')?.getAttribute("data-color"),
+  ).toBe("red");
+  expect(
+    rows[4]?.querySelector('[data-symbol="exclamationmark.triangle"]')?.getAttribute("data-color"),
+  ).toBe("orange");
 
   const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
   await act(async () => {
