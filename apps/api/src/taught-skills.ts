@@ -349,6 +349,14 @@ export async function stopTeachingSession(
  * A skill is shared with the space, but its raw recording (keystrokes, clipboard text) stays with
  * the person who taught it; everyone else gets the playbook.
  */
+/**
+ * A skill another member takes over keeps its playbook but not its teacher's raw recording,
+ * which nothing reads once the playbook is drafted.
+ */
+function handedOver(skill: TaughtSkillRow, actor: Actor) {
+  return skill.userId === actor.userId ? {} : { recording: emptyRecording() as never };
+}
+
 function skillFor(actor: Actor, row: TaughtSkillRow): TaughtSkill {
   const skill = mapTaughtSkill(row);
   return row.userId === actor.userId
@@ -500,6 +508,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         // The editor owns the playbook now, so routines run it only on the editor's accounts.
         data: {
           userId: actor.userId,
+          ...handedOver(skill, actor),
           name: input.name ?? skill.name,
           playbook: input.playbook as never,
           status: skill.status === "saved" ? "saved" : "draft",
@@ -522,6 +531,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         where: { id: skill.id },
         data: {
           userId: actor.userId,
+          ...handedOver(skill, actor),
           status: "saved",
           name: name ?? (skill.name || skill.goal.slice(0, 80)),
         },

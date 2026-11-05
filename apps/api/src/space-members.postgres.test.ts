@@ -1217,6 +1217,32 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     });
     const own = await call(inSpace(owner.actor, home), "skills/get", { skillId: recording.id });
     expect((own.json as { recording: { events: unknown[] } }).recording.events).toHaveLength(1);
+    // Taking a drafted skill over by editing it keeps the playbook but not its teacher's input.
+    const draft = await system.taughtSkill.create({
+      data: {
+        spaceId: home,
+        botId: bot.id,
+        userId: owner.id,
+        goal: "Order groceries",
+        status: "draft",
+        recording: typed,
+      },
+    });
+    const playbook = {
+      whenToUse: "Weekly shop",
+      inputs: [],
+      steps: ["Open the store"],
+      howToCheck: "Order placed",
+      whatToReturn: "Total",
+      approvalBoundaries: "Ask before paying",
+      failureHandling: "Stop and report",
+    };
+    const edited = await call(asInvitee, "skills/updateDraft", { skillId: draft.id, playbook });
+    expect(edited.status).toBe(200);
+    expect((edited.json as { recording: { events: unknown[] } }).recording.events).toEqual([]);
+    await expect(
+      system.taughtSkill.findUniqueOrThrow({ where: { id: draft.id } }),
+    ).resolves.toMatchObject({ userId: invitee.id, recording: { events: [], snapshots: [] } });
     await expect(call(asInvitee, "skills/stop", { skillId: recording.id })).resolves.toMatchObject({
       status: 404,
     });
