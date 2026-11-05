@@ -281,6 +281,21 @@ describe("TregPaidServiceProvider", () => {
     });
   });
 
+  it("reports an answer too large to read as a failure", async () => {
+    const { services } = provider(
+      () =>
+        new Response("x".repeat(3_000_000), {
+          status: 200,
+          headers: { "X-Treg-Cost-Micro": "500" },
+        }),
+    );
+    expect(await services.call(mapsService, {}, callOptions, context)).toMatchObject({
+      outcome: "answered",
+      ok: false,
+      costUsd: 0.0005,
+    });
+  });
+
   it("bills a refusal that carries a charge", async () => {
     const answers = [
       json({ error: "invalid_identity" }, 422, { "X-Treg-Error": "1", "X-Treg-Cost-Micro": "400" }),

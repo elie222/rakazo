@@ -60,7 +60,11 @@ dbTests("paid service billing", () => {
     const f = await fixture(100);
     const provider = new FakePaidServiceProvider();
     const deps = { prisma, provider, billing: true };
-    const args = { service: "people.email", query: { full_name: "Ada", domain: "example.test" } };
+    const args = {
+      service: "people.email",
+      query: { full_name: "Ada", domain: "example.test" },
+      max_cost_usd: 0.05,
+    };
     await serviceCallFromTool(deps, f.scope, args, "effect-1", context);
     await serviceCallFromTool(deps, f.scope, args, "effect-1", context);
     expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(1_000_000n - 6_000n);
@@ -80,7 +84,7 @@ dbTests("paid service billing", () => {
     const result = await serviceCallFromTool(
       { prisma, provider, billing: true },
       f.scope,
-      { service: "people.email" },
+      { service: "people.email", max_cost_usd: 0.05 },
       "effect-2",
       context,
     );
