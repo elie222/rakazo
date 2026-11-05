@@ -77,7 +77,21 @@ jobs:
           key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
         env:
-          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+          electron_config_cache: ${{ runner.temp }}/electron-cache
+      - name: Ensure Electron binary
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
+        run: |
+          set -euo pipefail
+          install_js="$(pnpm --filter @rakazo/desktop exec node -p "require('path').join(require('path').dirname(require.resolve('electron/package.json')), 'install.js')")"
+          for attempt in 1 2 3; do
+            if node "$install_js"; then
+              exit 0
+            fi
+            echo "Electron download attempt $attempt failed; retrying…" >&2
+            sleep $((attempt * 5))
+          done
+          exit 1
       - run: pnpm build
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
@@ -92,7 +106,7 @@ jobs:
           key: turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
       - name: Electron smoke
         env:
-          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+          electron_config_cache: ${{ runner.temp }}/electron-cache
         run: xvfb-run --auto-servernum pnpm --filter @rakazo/desktop exec playwright test --config e2e/playwright.config.ts
       - name: Upload desktop setup screenshots
         if: always()
@@ -273,14 +287,29 @@ jobs:
         run: node --test scripts/pnpm.test.mjs
       - name: Install desktop workspace
         env:
-          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+          electron_config_cache: ${{ runner.temp }}/electron-cache
         run: pnpm install --frozen-lockfile --filter "@rakazo/desktop..."
+      # Install scripts can skip the zip when GitHub releases blip; pull it into the shared cache now.
+      - name: Ensure Electron binary
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
+        run: |
+          set -euo pipefail
+          install_js="$(pnpm --filter @rakazo/desktop exec node -p "require('path').join(require('path').dirname(require.resolve('electron/package.json')), 'install.js')")"
+          for attempt in 1 2 3; do
+            if node "$install_js"; then
+              exit 0
+            fi
+            echo "Electron download attempt $attempt failed; retrying…" >&2
+            sleep $((attempt * 5))
+          done
+          exit 1
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - run: pnpm --filter @rakazo/desktop build
         env:
-          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+          electron_config_cache: ${{ runner.temp }}/electron-cache
       - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/host-computer.test.ts
       - name: Screen control on a real Windows desktop
         if: runner.os == 'Windows'
@@ -289,7 +318,7 @@ jobs:
         run: pnpm --filter @rakazo/desktop exec electron ../../node_modules/vitest/vitest.mjs run --root ../.. packages/adapters/src/host-computer.test.ts apps/desktop/src/host-computer.test.ts
         env:
           ELECTRON_RUN_AS_NODE: "1"
-          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+          electron_config_cache: ${{ runner.temp }}/electron-cache
 
   # Checks its own changed areas instead of needing `changes`: a deploy needs this job, and on main
   # it must reach its lock in push order so an older revision cannot replace a newer waiting one.
