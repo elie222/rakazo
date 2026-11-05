@@ -349,6 +349,7 @@ function LayoutContent() {
 
   useEffect(() => {
     markMobileStartupMounted();
+    void loadHapticsPreference();
     void Promise.all([
       Promise.all([
         trackMobileStartup("server", loadApiBase()),
@@ -357,7 +358,6 @@ function LayoutContent() {
         ),
         trackMobileStartup("streaming", loadResponseStreamingPreference()),
         trackMobileStartup("images", loadRemoteImagesPreference()),
-        trackMobileStartup("haptics", loadHapticsPreference()),
         trackMobileStartup("inbox", loadInboxWidth()),
       ]).catch(() => undefined),
       trackMobileStartup("language", bootstrapI18n()).catch(() => undefined),
