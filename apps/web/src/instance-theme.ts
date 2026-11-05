@@ -12,6 +12,7 @@ const COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const FONT_STACK = /^[\w\s"',-]+$/;
 const FAMILY = /^[\w -]+$/;
 const WEIGHT = /^\d{3}(?: \d{3})?$/;
+const LENGTH = /^\d+(?:\.\d+)?(?:px|rem)$/;
 const FONT_TYPES: Record<string, { format: string; mime: string }> = {
   ".woff2": { format: "woff2", mime: "font/woff2" },
   ".woff": { format: "woff", mime: "font/woff" },
@@ -28,6 +29,8 @@ export type InstanceTheme = {
   dark: Overlay;
   light: Overlay;
   fonts: { sans?: string; mono?: string; files: FontFile[] };
+  /** The base corner size; the `rounded-sm` to `rounded-2xl` scale is derived from it. */
+  radius?: string;
 };
 
 function readOverlay(value: unknown, where: string): Overlay {
@@ -85,10 +88,13 @@ function inside(dir: string, file: string): boolean {
 export function parseInstanceTheme(source: string, themeDir: string): InstanceTheme {
   const raw: unknown = JSON.parse(source);
   if (!raw || typeof raw !== "object") throw new Error("theme must be an object");
-  const { dark, light, fonts, ...rest } = raw as Record<string, unknown>;
+  const { dark, light, fonts, radius, ...rest } = raw as Record<string, unknown>;
   const unknownKey = Object.keys(rest)[0];
   if (unknownKey) throw new Error(`${unknownKey} is not a theme field`);
   const fontObject = (fonts ?? {}) as Record<string, unknown>;
+  if (radius !== undefined && (typeof radius !== "string" || !LENGTH.test(radius))) {
+    throw new Error('radius must look like "12px" or "0.5rem"');
+  }
   return {
     dark: readOverlay(dark, "dark"),
     light: readOverlay(light, "light"),
@@ -97,6 +103,7 @@ export function parseInstanceTheme(source: string, themeDir: string): InstanceTh
       mono: readFont(fontObject.mono, "fonts.mono"),
       files: readFontFiles(fontObject.files, themeDir),
     },
+    radius,
   };
 }
 
@@ -123,13 +130,14 @@ function fontFace(font: FontFile, index: number): string {
 /** Loaded after the app stylesheet; `html[...]` outranks the token blocks' `:root, [data-theme]`. */
 export function renderInstanceThemeCss(theme: InstanceTheme): string {
   const appearances: ResolvedAppearance[] = ["dark", "light"];
-  const fonts = [
+  const root = [
     theme.fonts.sans && `  --font-sans: ${theme.fonts.sans};`,
     theme.fonts.mono && `  --font-mono: ${theme.fonts.mono};`,
+    theme.radius && `  --radius: ${theme.radius};`,
   ].filter((line): line is string => Boolean(line));
   return [
     ...theme.fonts.files.map(fontFace),
-    block("html:root", fonts),
+    block("html:root", root),
     ...appearances.map((appearance) =>
       block(`html[data-theme="${appearance}"]`, colorLines(theme[appearance])),
     ),

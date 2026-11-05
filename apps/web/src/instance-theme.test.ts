@@ -39,6 +39,7 @@ describe("instance theme", () => {
           dark: { background: "#101418", cardForeground: "#EEEEEE" },
           light: { primary: "#8A4B12" },
           fonts: { sans: "Inter, system-ui, sans-serif" },
+          radius: "0.5rem",
         }),
         dir,
       ),
@@ -47,7 +48,9 @@ describe("instance theme", () => {
       'html[data-theme="dark"] {\n  --background: #101418;\n  --card-foreground: #EEEEEE;\n}',
     );
     expect(css).toContain('html[data-theme="light"] {\n  --primary: #8A4B12;\n}');
-    expect(css).toContain("html:root {\n  --font-sans: Inter, system-ui, sans-serif;\n}");
+    expect(css).toContain(
+      "html:root {\n  --font-sans: Inter, system-ui, sans-serif;\n  --radius: 0.5rem;\n}",
+    );
   });
 
   it("serves font files from the instance by their place in the list", () => {
@@ -82,7 +85,8 @@ describe("instance theme", () => {
       "fonts.sans must be a font-family list",
     ],
     [{ fonts: { files: [{ family: "Onest", file: "Onest.svg" }] } }, "fonts.files[0].file must be"],
-    [{ radius: "0" }, "radius is not a theme field"],
+    [{ spacing: "0" }, "spacing is not a theme field"],
+    [{ radius: "4px; } body { display: none" }, "radius must look like"],
     [
       { fonts: { files: [{ family: "Onest", file: "/etc/Onest.ttf" }] } },
       "inside the theme's folder",

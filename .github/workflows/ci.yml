@@ -231,11 +231,18 @@ jobs:
           affected="$(pnpm exec turbo ls --affected --output=json | jq -r '.packages.items[].path + "/"')"
           mapfile -t packages < <(printf "%s" "$affected")
           # These read other packages' files without importing them, so the package graph misses them.
-          pnpm exec vitest run "${packages[@]}" \
+          targets=("${packages[@]}" \
             infra/updater/src/compose-env.test.ts \
             packages/adapters/src/lark-lazy-loading.test.ts \
-            packages/testkit/src/ios-screenshot-catalog.test.ts \
-            --shard=${{ matrix.shard }}/6
+            packages/testkit/src/ios-screenshot-catalog.test.ts)
+          # Vitest rejects more shards than test files, so a small set runs whole on the first shard.
+          files="$(pnpm exec vitest list --filesOnly "${targets[@]}" | grep -c '\.test\.' || true)"
+          if (( files < 6 )); then
+            (( ${{ matrix.shard }} == 1 )) || exit 0
+            pnpm exec vitest run "${targets[@]}"
+          else
+            pnpm exec vitest run "${targets[@]}" --shard=${{ matrix.shard }}/6
+          fi
 
   # The required check and the deploy gate, under one stable name.
   checks:
@@ -267,6 +274,8 @@ jobs:
       - name: Windows pnpm launcher test
         if: runner.os == 'Windows'
         run: node --test scripts/pnpm.test.mjs
+      - name: Worktree environment setup test
+        run: node --test scripts/setup-worktree.test.mjs
       - uses: ./.github/actions/setup-workspace
         with:
           electron: "true"
