@@ -1,4 +1,4 @@
-import type { MenuAction } from "@expo/ui/community/menu";
+import type { MenuAction, MenuComponentRef } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
 import type {
   ModelCatalogEntry,
@@ -24,8 +24,8 @@ import {
 import { createModelRoleSettings, modelRoleListPatch } from "@rakazo/core";
 import type { Href } from "expo-router";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { AccessibilityInfo, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { AccessibilityInfo, Platform, StyleSheet, Text, View } from "react-native";
 import type { RpcArgs } from "../lib/api";
 import { captureApiRequestContext, currentApiBase, rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
@@ -474,6 +474,7 @@ function RowMenuButton({
   onAction: (id: string) => void;
   disabled?: boolean;
 }) {
+  const menu = useRef<MenuComponentRef>(null);
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const colorScheme = useResolvedAppearance();
@@ -483,6 +484,16 @@ function RowMenuButton({
       accessibilityRole="button"
       accessibilityLabel={t("{name} options", { name: withConnectionName(title, connection) })}
       accessibilityState={{ disabled }}
+      accessibilityActions={
+        Platform.OS === "android" && !disabled ? [{ name: "activate" }] : undefined
+      }
+      onAccessibilityAction={
+        Platform.OS === "android"
+          ? ({ nativeEvent }) => {
+              if (!disabled && nativeEvent.actionName === "activate") menu.current?.show();
+            }
+          : undefined
+      }
       style={rowMenuStyles.buttonInner}
     >
       <NativeSymbol
@@ -497,6 +508,7 @@ function RowMenuButton({
     <View style={rowMenuStyles.button}>{button}</View>
   ) : (
     <MenuView
+      ref={menu}
       colorScheme={colorScheme}
       title={title}
       actions={actions}
