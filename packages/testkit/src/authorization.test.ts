@@ -448,6 +448,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ],
       ["notifications/registerPush", { token: "ExponentPushToken[not-real]" }],
       ["notifications/unregisterPush"],
+      ["notifications/registerDesktopPush", { token: "0".repeat(64) }],
       ["search/query", { q: "anything" }],
       ["voice/catalog"],
       ["voice/status"],
