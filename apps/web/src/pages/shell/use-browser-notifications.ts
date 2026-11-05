@@ -6,6 +6,7 @@ import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/browser-notifications";
+import { desktopBridge } from "../../lib/desktop";
 import { notificationIcon, prepareNotificationIcons } from "../../lib/notification-icon";
 import type { RpcClient } from "../../lib/rpc";
 
@@ -20,7 +21,7 @@ type ChatAlertOptions = {
   rpc: Pick<RpcClient, "notifications">;
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
-  openChat: (alert: ChatAlert) => void;
+  openChat: (chat: Pick<ChatAlert, "botId" | "groupId">) => void;
 };
 
 /**
@@ -106,6 +107,23 @@ export function useBrowserNotifications(
       controller?.abort();
       cancelRetry?.();
       for (const notification of shown) notification.close();
+    };
+  }, [rpc]);
+  // Notifications while the desktop app is closed: register its token, and open the chat a
+  // click launched it for. A server that cannot send them answers NOT_FOUND.
+  useEffect(() => {
+    const push = desktopBridge()?.push;
+    if (!push) return;
+    let active = true;
+    void (async () => {
+      const token = await push.token().catch(() => null);
+      if (token && active)
+        await rpc.notifications.registerDesktopPush({ token }).catch(() => undefined);
+      const opened = await push.takeOpened().catch(() => null);
+      if (opened && active) openChatRef.current(opened);
+    })();
+    return () => {
+      active = false;
     };
   }, [rpc]);
   const notifiedBrowserEvents = useRef(new Set<string>());

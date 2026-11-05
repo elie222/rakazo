@@ -40,6 +40,7 @@ import {
   ComposioConnector,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
+  createApnsDesktopProvider,
   createApnsVoipProvider,
   createArtifactStore,
   createAuditLogReconciler,
@@ -542,6 +543,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       jobs,
       accessToken: env.expoAccessToken,
       voip: await createApnsVoipProvider(env.apnsVoip),
+      desktop: await createApnsDesktopProvider(env.apnsDesktop),
     });
   const userDeviceSecret = userDeviceForwardSecret(env.encryptionKey);
   const userDeviceHub = env.userDevicesEnabled
@@ -889,6 +891,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     },
     env: {
       phoneCallsEnabled: env.phoneCallsEnabled,
+      desktopPushEnabled: Boolean(env.apnsDesktop),
       phoneCallRingSeconds: env.phoneCallRingSeconds,
       ticketBoardEnabled,
       navLinks: env.navLinks,

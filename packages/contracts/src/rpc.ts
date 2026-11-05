@@ -1422,6 +1422,11 @@ export const appContract = {
       )
       .output(z.object({ ok: z.literal(true) })),
     unregisterPush: oc.output(z.object({ ok: z.literal(true) })),
+    /** The desktop app's token for notifications while it is closed. NOT_FOUND when the server
+     * cannot send them. */
+    registerDesktopPush: oc
+      .input(z.object({ token: z.string().regex(/^[a-fA-F0-9]{64,200}$/) }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   search: {
     query: oc.input(z.object({ q: z.string().max(200) })).output(SearchQueryOutputSchema),

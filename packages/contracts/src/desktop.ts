@@ -113,6 +113,18 @@ export interface RakazoDesktop {
     /** Relying parties this build is associated with for system passkeys (macOS); others fail. */
     rpIds: () => Promise<string[]>;
   };
+  /** macOS builds that can get notifications while closed. Absent elsewhere and on older releases. */
+  push?: {
+    /** The token for this app's server to push to; null when this build cannot get one. */
+    token: () => Promise<string | null>;
+    /** The chat a notification click opened the app for, once. */
+    takeOpened: () => Promise<{
+      botId: string;
+      threadId: string;
+      spaceId?: string;
+      groupId?: string;
+    } | null>;
+  };
   /** Absent on older desktop releases. */
   server?: {
     /** Opens the desktop setup window to pick another Rakazo server. */

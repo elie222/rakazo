@@ -61,6 +61,9 @@ import {
 import type { RouterContext } from "./context.js";
 import { HEARTBEAT_MS, meDto, SESSION_RECHECK_MS } from "./shared.js";
 
+/** Three missed heartbeats, so a desktop app that quit or crashed gets pushes within a minute. */
+const DESKTOP_LIVE_MS = 3 * HEARTBEAT_MS;
+
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed } = ctx;
   return {
@@ -342,7 +345,20 @@ export function accountRoutes(ctx: RouterContext) {
         const alerts = deps.events.followChatAlerts(userId, spaceId, signal);
         let pending: Promise<IteratorResult<ChatAlert>> | undefined;
         let authorizedAt = Date.now();
+        // A desktop app on this stream shows the Space's alerts, so it gets no push for them.
+        const sessionId = deps.env?.desktopPushEnabled ? context.sessionId : undefined;
+        const markLive = (live: boolean) =>
+          sessionId
+            ? deps.pushTokens
+                .markDesktopLive?.(
+                  userId,
+                  sessionId,
+                  live ? { spaceId, until: new Date(Date.now() + DESKTOP_LIVE_MS) } : null,
+                )
+                .catch((error) => getLogger().warn("desktop live mark failed", { error }))
+            : undefined;
         try {
+          await markLive(true);
           while (!context.signal?.aborted) {
             pending ??= alerts.next();
             let timer: ReturnType<typeof setTimeout> | undefined;
@@ -357,6 +373,7 @@ export function accountRoutes(ctx: RouterContext) {
               authorizedAt = Date.now();
             }
             if (next === "heartbeat") {
+              await markLive(true);
               yield { type: "heartbeat" as const };
               continue;
             }
@@ -367,6 +384,7 @@ export function accountRoutes(ctx: RouterContext) {
           }
         } finally {
           controller.abort();
+          await markLive(false);
           await alerts.return(undefined);
         }
       }),
@@ -470,6 +488,20 @@ export function accountRoutes(ctx: RouterContext) {
         }
         return { ok: true as const };
       }),
+      registerDesktopPush: authed.notifications.registerDesktopPush.handler(
+        async ({ context, input }) => {
+          if (!deps.env?.desktopPushEnabled || !deps.pushTokens.saveDesktop)
+            throw new ORPCError("NOT_FOUND");
+          if (!context.sessionId) throw new ORPCError("UNAUTHORIZED");
+          try {
+            await deps.pushTokens.saveDesktop(context.actor.userId, input.token, context.sessionId);
+          } catch (error) {
+            if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
+            throw error;
+          }
+          return { ok: true as const };
+        },
+      ),
       unregisterPush: authed.notifications.unregisterPush.handler(async ({ context }) => {
         if (context.sessionId)
           await deps.pushTokens.endSession(context.actor.userId, context.sessionId);

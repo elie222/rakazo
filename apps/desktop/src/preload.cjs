@@ -48,6 +48,15 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
   passkeys: {
     rpIds: () => ipcRenderer.invoke("desktop.passkeys.rpIds"),
   },
+  // Only macOS builds can be woken by a push while closed.
+  ...(process.platform === "darwin"
+    ? {
+        push: {
+          token: () => ipcRenderer.invoke("desktop.push.token"),
+          takeOpened: () => ipcRenderer.invoke("desktop.push.takeOpened"),
+        },
+      }
+    : {}),
   // Only macOS ships a system recognizer helper; elsewhere dictation keeps its provider path.
   ...(process.platform === "darwin"
     ? {

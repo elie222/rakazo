@@ -29,7 +29,7 @@ let streams: Array<{ push: (frame: Frame) => void; fail: (error: unknown) => voi
 let signals: AbortSignal[];
 let focused: boolean;
 let visible: boolean;
-let openChat: ReturnType<typeof vi.fn<(alert: ChatAlert) => void>>;
+let openChat: ReturnType<typeof vi.fn<(chat: Pick<ChatAlert, "botId" | "groupId">) => void>>;
 let root: Root;
 
 function stream(): AsyncIterable<Frame> {
@@ -63,8 +63,11 @@ function stream(): AsyncIterable<Frame> {
   };
 }
 
+const registerDesktopPush = vi.fn(async (_input: { token: string }) => ({ ok: true as const }));
+
 const rpc = {
   notifications: {
+    registerDesktopPush: (input: { token: string }) => registerDesktopPush(input),
     subscribe: (_input: undefined, options: { signal: AbortSignal }) => {
       signals.push(options.signal);
       return Promise.resolve(stream());
@@ -126,7 +129,7 @@ beforeEach(() => {
   signals = [];
   focused = true;
   visible = true;
-  openChat = vi.fn<(alert: ChatAlert) => void>();
+  openChat = vi.fn<(chat: Pick<ChatAlert, "botId" | "groupId">) => void>();
   vi.spyOn(document, "visibilityState", "get").mockImplementation(() =>
     visible ? "visible" : "hidden",
   );
@@ -223,5 +226,30 @@ describe("useBrowserNotifications chat alerts", () => {
     act(() => root.unmount());
     expect(signals[0]!.aborted).toBe(true);
     root = createRoot(document.createElement("div"));
+  });
+});
+
+describe("useBrowserNotifications desktop push", () => {
+  it("registers the desktop app's token and opens the chat a notification launched it for", async () => {
+    registerDesktopPush.mockClear();
+    vi.stubGlobal("rakazoDesktop", {
+      push: {
+        token: async () => "d".repeat(64),
+        takeOpened: async () => ({ botId: "bot-b", threadId: "thread-b" }),
+      },
+    });
+    await open({ botId: "bot-a" });
+    expect(registerDesktopPush).toHaveBeenCalledWith({ token: "d".repeat(64) });
+    expect(openChat).toHaveBeenCalledWith({ botId: "bot-b", threadId: "thread-b" });
+  });
+
+  it("registers nothing for a desktop build without push", async () => {
+    registerDesktopPush.mockClear();
+    vi.stubGlobal("rakazoDesktop", {
+      push: { token: async () => null, takeOpened: async () => null },
+    });
+    await open({ botId: "bot-a" });
+    expect(registerDesktopPush).not.toHaveBeenCalled();
+    expect(openChat).not.toHaveBeenCalled();
   });
 });
