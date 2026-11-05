@@ -30,6 +30,7 @@ import {
   crossSpaceCommunicationAllowed,
   normalizeMessagingLinkCode,
   redeemMessagingLinkCode,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { MessagingReceipts } from "./messaging-receipts.js";
@@ -576,7 +577,7 @@ async function stopOwnerWork(
       });
     }
     return stop;
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   await enqueueDeliverJob(deps);
   if (stop?.runIds.length) await finishThreadStop(deps, identity, target, stop);
 }
