@@ -17,7 +17,7 @@ import type { ReplyState, RunContext } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
 import { runAllowsSilentEmpty, runPromotesMidTurnNarration } from "./run-replies.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
-import { isExactNoResponse } from "./silent-reply.js";
+import { couldBecomeNoResponse, isExactNoResponse, isPlaceholderText } from "./silent-reply.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";
 import {
   clampUserProgressMessage,
@@ -152,6 +152,21 @@ export function tryFlushPendingTools(reply: ReplyState) {
     flushPendingTools(reply);
 }
 
+/**
+ * A member a group message named nobody for may answer with the silence sentinel, so what it
+ * has written stays unseen while that is still possible. Once the text turns into a reply it
+ * all shows.
+ */
+export function progressHeldForSilence(ctx: RunContext) {
+  const { reply } = ctx.state;
+  return !reply.hasStreamedText && mayBeSilentEnding(ctx, reply.pendingProgress);
+}
+
+/** Text a member a group message named nobody for may still turn into its silent ending. */
+export function mayBeSilentEnding(ctx: Pick<RunContext, "groupReplyOptional">, text: string) {
+  return ctx.groupReplyOptional && (couldBecomeNoResponse(text) || isPlaceholderText(text));
+}
+
 export async function flushProgress(ctx: RunContext) {
   const { deps, run, runId, bot, thread } = ctx;
   const { reply } = ctx.state;
@@ -161,7 +176,8 @@ export async function flushProgress(ctx: RunContext) {
     ctx.scripted ||
     !reply.pendingProgress ||
     run.trigger === "routine" ||
-    isBackgroundRunTrigger(run.trigger)
+    isBackgroundRunTrigger(run.trigger) ||
+    progressHeldForSilence(ctx)
   )
     return;
   await deps.events.append({

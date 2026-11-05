@@ -1,20 +1,13 @@
 ---
-import ArticleText from "../../components/ArticleText.astro";
-import Button from "../../components/Button.astro";
-import CaptionedImage from "../../components/CaptionedImage.astro";
-import SandboxCard from "../../components/SandboxCard.astro";
-import { SandboxScene } from "../../components/SandboxScene";
-import SiteFrame from "../../components/SiteFrame.astro";
-import { ogPublicPath } from "../../og-pages";
+import ProviderArticle from "../../components/ProviderArticle.astro";
 import type { Sandbox } from "../../sandboxes";
 import {
-  COMPUTER_PROVIDERS_DOCS_PATH,
   SANDBOXES,
-  SANDBOXES_PATH,
+  SANDBOXES_ARTICLE_HUB,
   SANDBOXES_UPDATED,
+  otherSandboxes,
   sandboxPath,
 } from "../../sandboxes";
-import { GITHUB_URL } from "../../site";
 
 interface Props {
   sandbox: Sandbox;
@@ -28,97 +21,13 @@ export function getStaticPaths() {
 }
 
 const { sandbox } = Astro.props;
-const others = SANDBOXES.filter((other) => other.slug !== sandbox.slug);
 ---
 
-<SiteFrame
-  title={sandbox.title}
-  description={sandbox.description}
-  faq={sandbox.faq}
-  ogImage={ogPublicPath(`sandbox-${sandbox.slug}`)}
-  markdownAlternate={`${sandboxPath(sandbox.slug).slice(0, -1)}.md`}
->
-  <p class="alt-crumb"><a href={SANDBOXES_PATH}>Sandboxes for AI agents</a></p>
-  <h1>{sandbox.h1}</h1>
-  <p class="page-updated">Updated {SANDBOXES_UPDATED}.</p>
-  {sandbox.intro.map((paragraph) => <p><ArticleText text={paragraph} /></p>)}
-
-  <SandboxScene {...sandbox.scene} />
-
-  {
-    sandbox.sections.map((section) => (
-      <section class="sandbox-section">
-        <h2>{section.heading}</h2>
-        {section.paragraphs?.map((paragraph) => (
-          <p>
-            <ArticleText text={paragraph} />
-          </p>
-        ))}
-        {section.bullets && (
-          <ul>
-            {section.bullets.map((item) => (
-              <li>
-                <ArticleText text={item} />
-              </li>
-            ))}
-          </ul>
-        )}
-        {section.steps && (
-          <ol class="sandbox-steps">
-            {section.steps.map((step) => (
-              <li>
-                <ArticleText text={step} />
-              </li>
-            ))}
-          </ol>
-        )}
-        {section.image && (
-          <CaptionedImage
-            src={sandbox.image.webp}
-            avif={sandbox.image.avif}
-            alt={sandbox.image.alt}
-            caption={sandbox.image.caption}
-            width={sandbox.image.width}
-            height={sandbox.image.height}
-          />
-        )}
-      </section>
-    ))
-  }
-
-  <div class="alt-actions">
-    <Button href={COMPUTER_PROVIDERS_DOCS_PATH}>Computer providers guide</Button>
-    <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
-  </div>
-
-  <h2 id="faq">FAQ</h2>
-  {
-    sandbox.faq.map((item, index) => (
-      <section aria-labelledby={`faq-${index}`}>
-        <h3 id={`faq-${index}`}>{item.question}</h3>
-        <p>
-          <ArticleText text={item.answer} />
-        </p>
-      </section>
-    ))
-  }
-
-  <h2>More sandboxes for AI agents</h2>
-  <ul class="sandbox-cards">
-    {others.map((other) => <SandboxCard sandbox={other} />)}
-  </ul>
-  <p class="sandbox-all"><a href={SANDBOXES_PATH}>Compare all sandboxes</a></p>
-
-  <h2>Sources</h2>
-  <ul class="source-list">
-    {
-      sandbox.sources.map((source) => (
-        <li>
-          <a href={source.href} target="_blank" rel="noreferrer">
-            {source.label}
-          </a>
-        </li>
-      ))
-    }
-  </ul>
-</SiteFrame>
+<ProviderArticle
+  article={sandbox}
+  hub={SANDBOXES_ARTICLE_HUB}
+  others={otherSandboxes(sandbox)}
+  updated={SANDBOXES_UPDATED}
+  ogId={`sandbox-${sandbox.slug}`}
+  markdownPath={`${sandboxPath(sandbox.slug).slice(0, -1)}.md`}
+/>

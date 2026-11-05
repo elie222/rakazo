@@ -44,6 +44,7 @@ import {
 } from "./run-effects.js";
 import { fleetPrepareDeps } from "./run-model.js";
 import { BUILTIN_AGENT_TOOL_NAMES, FLEET_WRITE_TOOL_NAMES_SET } from "./run-tool-selection.js";
+import { scheduleCreateRefusal } from "./run-tools-tasks.js";
 import { USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "./skill-tools.js";
@@ -325,6 +326,12 @@ export async function prepareToolRequest(
     if (isSubagentToolExecution(executionId))
       return { error: "Helpers cannot use the user's computer." };
   }
+  // Before the gate, so a routine that cannot be saved shows no approval card. An approved
+  // replay goes on to the handler, which checks again.
+  if (name === "schedule_create" && nextApprovedTool !== name) {
+    const refused = await scheduleCreateRefusal(ctx, args);
+    if (refused) return refused;
+  }
   const fleetWrite =
     FLEET_WRITE_TOOL_NAMES_SET.has(name) ||
     name === "archive_bot" ||
@@ -426,7 +433,8 @@ export async function prepareToolRequest(
         !now ||
         now.site !== approved.site ||
         now.label !== approved.label ||
-        now.amount !== approved.amount
+        now.amount !== approved.amount ||
+        (now.total ?? "") !== (approved.total ?? "")
       )
         return {
           error:

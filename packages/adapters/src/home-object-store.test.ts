@@ -1052,6 +1052,25 @@ describe("the local cache of object-backed homes", () => {
     expect(await store.readFile("remote-idle", "a.txt", context)).toBe("remote-idle");
   });
 
+  it("evicts a downloaded copy once retention has cleared the stored home", async () => {
+    const { root, rows, store } = await setup(["retention-cleared"]);
+    await store.commit("retention-cleared", await staged({ "a.txt": "secret" }), context);
+    await store.hydrate("retention-cleared");
+    // Retention deleted the stored home: the record names no revision, so only this
+    // host's downloaded copy is left, and nobody will read it again to clear it.
+    Object.assign(rows[0]!, {
+      homeStorageId: null,
+      homeStorageKey: null,
+      homeStorageRevision: null,
+    });
+    const now = Date.now();
+    const hoursAgo = new Date(now - 2 * 60 * 60_000);
+    await utimes(path.join(root, "home-revisions", "retention-cleared.txt"), hoursAgo, hoursAgo);
+
+    expect(await store.evictIdleCaches(now)).toBe(1);
+    expect(await entries(path.join(root, "homes"))).toEqual([]);
+  });
+
   it("saves a large file streamed to disk and storage one chunk at a time", async () => {
     const { root, rows } = await setup();
     const storage = new CountingStorage();

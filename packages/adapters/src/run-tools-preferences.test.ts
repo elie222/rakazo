@@ -17,17 +17,18 @@ function fakeAccount(ownerStartedRun = true, tainted = false, nextApprovedTool?:
         ? (value.in as unknown[]).includes(row[key])
         : row[key] === value,
     );
+  const userUpdate = vi.fn(async ({ where, data }: { where: { id: Id }; data: object }) => {
+    const defined = Object.entries(data).filter(([, value]) => value !== undefined);
+    Object.assign(users[where.id], Object.fromEntries(defined));
+    return { ...users[where.id] };
+  });
   const prisma = {
     user: {
       findUnique: async ({ where }: { where: { id: Id } }) => ({
         timezone: users[where.id].timezone,
       }),
       findUniqueOrThrow: async ({ where }: { where: { id: Id } }) => ({ ...users[where.id] }),
-      update: async ({ where, data }: { where: { id: Id }; data: object }) => {
-        const defined = Object.entries(data).filter(([, value]) => value !== undefined);
-        Object.assign(users[where.id], Object.fromEntries(defined));
-        return { ...users[where.id] };
-      },
+      update: userUpdate,
     },
     routine: {
       findMany: async ({ where }: { where: Record<string, unknown> }) =>
@@ -82,7 +83,7 @@ function fakeAccount(ownerStartedRun = true, tainted = false, nextApprovedTool?:
         finish: async (result: unknown) => result,
       } as never,
     );
-  return { users, routines, enqueue, call };
+  return { users, routines, enqueue, userUpdate, call };
 }
 
 describe("update_preferences", () => {
@@ -103,6 +104,20 @@ describe("update_preferences", () => {
       timezone: "Europe/Berlin",
       marketingEmails: true,
     });
+  });
+
+  it("saves the timezone and the email preference in one write", async () => {
+    const { users, userUpdate, call } = fakeAccount();
+    await expect(call({ timezone: "Europe/Berlin", marketingEmails: false })).resolves.toEqual({
+      timezone: "Europe/Berlin",
+      marketingEmails: false,
+    });
+    expect(userUpdate).toHaveBeenCalledTimes(1);
+    expect(userUpdate).toHaveBeenCalledWith({
+      where: { id: "starter" },
+      data: { timezone: "Europe/Berlin", marketingEmailOptOutAt: expect.any(Date) },
+    });
+    expect(users.other).toEqual({ timezone: "UTC", marketingEmailOptOutAt: null });
   });
 
   it("moves routines that took the account zone to the new one", async () => {

@@ -361,6 +361,41 @@ describe("serenity SSRF fetch path", () => {
     }
   });
 
+  it("releases a large private-hostname rate-limit response before closing its dispatcher", async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(429, { "retry-after": "30" });
+      response.end("x".repeat(1_000_000));
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const address = server.address();
+    if (address == null || typeof address === "string") {
+      throw new Error("Missing test server address");
+    }
+    const safeFetch = createSerenityPrivateLanFetch(undefined, async () => [
+      { address: "127.0.0.1", family: 4 as const },
+    ]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const outcome = await Promise.race([
+        safeFetch(`http://serenity.example.test:${address.port}/mcp`).then(
+          (response) => response.status,
+        ),
+        new Promise<string>((resolve) => {
+          timer = setTimeout(() => resolve("still waiting"), 2_000);
+        }),
+      ]);
+      expect(outcome).toBe(429);
+    } finally {
+      clearTimeout(timer);
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
   it("refuses a private-hostname redirect without waiting on its body", async () => {
     // Larger than undici buffers, so an unread body holds the per-request Agent open.
     const server = createServer((_request, response) => {
@@ -561,6 +596,34 @@ describe("serenity verbs", () => {
     expect(remembered.ok).toBe(true);
     expect(JSON.stringify(remembered)).not.toContain(TOKEN);
   });
+
+  it.each([
+    ["loopback", "http://127.0.0.1:8787/mcp", undefined, "127.0.0.1"],
+    ["public DNS", "https://serenity.example.test/mcp", "public", "93.184.216.34"],
+    ["private DNS", "https://serenity.internal/mcp", "private", "10.1.2.3"],
+  ] as const)(
+    "cancels a rate-limited response on %s",
+    async (_name, endpoint, endpointTrust, address) => {
+      let cancels = 0;
+      const body = new ReadableStream({
+        cancel() {
+          cancels += 1;
+        },
+      });
+      const fetch = vi.fn(
+        async () => new Response(body, { status: 429, headers: { "retry-after": "30" } }),
+      );
+      const result = await probeSerenity({ endpoint, token: TOKEN, endpointTrust }, undefined, {
+        fetch,
+        resolveHostname: async () => [{ address, family: 4 as const }],
+      });
+      expect(result).toEqual({
+        ok: false,
+        error: "Serenity is unreachable: Serenity rate limit reached; retry after 30s.",
+      });
+      expect(cancels).toBe(1);
+    },
+  );
 
   it("reports gateway rate limits with the retry delay", async () => {
     const fetch = vi.fn(

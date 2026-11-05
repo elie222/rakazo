@@ -6,6 +6,76 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-04
+
+### Added
+
+- On iPhone and iPad, an image pasted into a chat's message field is added as an attachment, as on web. Text copied with it still goes into the field. This needs the new app build.
+- On iPhone and iPad, Rakazo appears in the share sheet. Share a link, text, photos or files from any app, pick a bot, and it lands in that bot's message field as a draft. This needs the new app build.
+- More keyboard shortcuts on web and desktop: start a group chat, connect apps, open the chat's details panel, jump to the message box and dictate. Cmd/Ctrl+/ lists every shortcut, as do **Keyboard shortcuts** in the command menu and **Help** in the desktop app.
+- Cmd/Ctrl+F in the desktop app finds text in the open chat, highlighting every match and stepping through them. Searching bots moves to Cmd/Ctrl+Shift+F.
+- The web app is fully translated into Turkish. Before, large parts of it fell back to English.
+- When the desktop app runs its own local server, **Settings** now shows the **Let bots use this computer** switch, as it does when connected to another server.
+- Self-hosters can make DeepSeek the deployment's default model with `PI_DEFAULT_PROVIDER=deepseek` and `DEEPSEEK_API_KEY` ([self-hosted models](docs/self-host-models.md)).
+- The long-wait "still needs an answer" reminder, and the notice that a waiting chat was stopped, now show as browser and desktop alerts, not only on phones.
+
+### Changed
+
+- A group message that names no bot now reaches every bot in the group, instead of only the first ([groups](docs/groups.md)). Each bot decides whether the message is for it, and a bot with nothing to add stays quiet. Replying to a bot's message or tagging a bot still sends to that bot alone. An untagged message can now start a run for each bot in the group, up to ten.
+
+### Fixed
+
+- Pressing Stop ends a quiet model call or a long-running tool within about a second. Before, it could keep running, and billing, for up to a minute.
+- Connector and category approval rules now apply to tools named with a hyphen, like `<app>-<action>`, and loading a connected app's tool description no longer asks for approval.
+- Switching to another chat on web no longer deletes attachments you picked but hadn't sent, and archiving a chat keeps them for when it's restored.
+- Renaming a model connection no longer resets unsaved edits in the same form.
+- Voice calls that use provider transcription now send a server's configured extra headers, so servers behind a gateway that needs them can transcribe calls.
+- On Linux, a brief network drop while checking a downloaded desktop update no longer shows an update error. The update is kept and verified on the next check.
+- On self-hosted Docker setups, a computer still running an older image no longer asks for payment approval on every browser click.
+
+## [0.7.0] - 2026-11-04
+
+### Security
+
+- Updated Better Auth to 1.7.16 for its November security fixes. The most serious one was in mobile sign-in, where the authorization proxy could sign values it did not issue. The others fix OAuth sign-in treating an unverified provider email as verified, email codes whose attempt limit could be raced, email-change links that stayed valid after the address changed hands, and passkey checks that skipped origin and user verification.
+- Signing out, signing in to another account, or switching server on mobile now stops read-aloud and clears the replies still waiting to be read. Before, the phone kept reading the previous account's bot replies over the sign-in screen.
+- Disconnecting an MCP server's OAuth stays in effect even when a sign-in was still finishing, including the first sign-in to a server. A late token no longer marks the server as connected again, and a sign-in the disconnect ended can't be completed.
+- A connected tool named `delete_bot` now runs on its own service. Before, it was sent to Rakazo's built-in bot archiving instead.
+- After signing in as another account on mobile, the call card no longer shows the previous account's initial.
+- The Android app limits how much a notification check can download in the background, so a faulty server or proxy can't make it use unbounded memory.
+- When a computer's saved files are deleted after the retention period, a copy cached on a computer host is deleted too.
+- Two computer pairings that arrive at the same moment can no longer both get past the limit of ten computers per account.
+- On Incus, stopping or deleting a computer checks that the instance belongs to it, so a wrong stored reference can't tear down another bot's computer.
+
+### Added
+
+- One login can own several organizations, such as "Personal" and "Work", each with its own billing. Create one in **Settings → Organization** and switch between them from the account menu.
+- Rakazo is available in Polish on web, desktop and mobile, including account emails.
+- The own-model plan comes in three tiers. Standard is the existing plan. **Pro** and **Max** give bigger cloud computers and more computer hours each month. Choose a tier when you subscribe, and move between tiers from **Billing** on web and mobile.
+- Bots can hand screen and browser work to a second model. Set a **Computer-use model** in **Settings → Models** and a bot on a text-only or self-hosted model passes visual tasks to it in the middle of a reply, then answers you. When it's left empty, nothing changes.
+- The web and desktop app notifies you when an agent in another chat finishes a reply, asks you something, asks you to take over its screen, or fails. Clicking the notification opens that chat, and muted chats stay quiet. Web and desktop notifications now show the agent's avatar.
+- Self-hosters can run bot computers as Incus application containers with `SANDBOX_PROVIDER=incus`, without Docker or Kubernetes on the host ([computer providers](docs/self-host-sandbox-providers.md)).
+
+### Changed
+
+- Changing your account timezone now moves your routines with it, so a Monday 09:00 routine still runs at 09:00 local time. Routines pinned to a specific timezone stay where they are.
+- A bot's notification picture on the phone now matches its avatar in the app.
+- Long bot instructions no longer stretch the settings panel. The box grows up to a set height, then scrolls.
+- Android release builds are smaller and faster, because unused code is now removed when the app is built.
+
+### Fixed
+
+- A computer still running an older image no longer asks "Complete a payment on this page?" on every click after a server upgrade.
+- During a voice call, a silent turn no longer leaves the microphone off for the rest of the call.
+- On a self-hosted server opened over plain HTTP on a local network, importing an agent, the disk **Clean up** button and desktop single sign-on work again.
+- Tapping **Add custom** on Integrations does something again on Android.
+- Wide tables and code blocks in chat scroll sideways on Android.
+- When many new visitors arrive at once, readers opening a shared page are no longer rate limited from their first request.
+- A bot reading its own settings gets them in one piece whenever they fit, even with long instructions.
+- iOS builds that self-hosters make with `expo prebuild` open in Xcode and install on a phone again.
+- Removing one of two attached files that share a name, size and date no longer removes both.
+- Signing in with a model subscription now notices when the sign-in tab opened, instead of always showing the steps for a blocked popup.
+
 ## [0.6.0] - 2026-11-04
 
 ### Security

@@ -1,7 +1,7 @@
 import type { ConnectorProvider, JobPublisher } from "@rakazo/adapter-kit";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import type { RoutineWatch } from "@rakazo/contracts";
-import { RoutineWatchSchema, TimeZoneSchema } from "@rakazo/contracts";
+import { ROUTINE_WATCH_MIN_MINUTES, RoutineWatchSchema, TimeZoneSchema } from "@rakazo/contracts";
 import {
   cronFromPreset,
   formatCron,
@@ -16,6 +16,7 @@ import {
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { runAsSystemInTransaction } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 
 import { localDateTime } from "./current-time.js";
 import { validateRoutineWatch } from "./routine-watch.js";
@@ -283,12 +284,18 @@ async function sharedAccountZone(tx: Prisma.TransactionClient, userId: string): 
  * as a schedule_update zone change keeps it. A routine pinned to another zone stays, and so
  * does one stored while the account had no zone, which may be pinned to UTC on purpose.
  * Clearing the zone (`null`) only clears the account: a routine cannot hold no zone.
- * `timezone` is the already-validated zone the caller wants saved.
+ * `timezone` is the already-validated zone the caller wants saved; `other` holds the
+ * preference fields that came in the same save, so they commit with it or not at all.
  */
 export async function changeUserTimezone(
   deps: Pick<ScheduleToolDeps, "prisma" | "jobs">,
   userId: string,
   timezone: string | null,
+  other?: {
+    locale?: string;
+    botAvatarSet?: string;
+    marketingEmailOptOutAt?: Date | null;
+  },
 ): Promise<void> {
   const woken: { id: string; nextRunAt: Date }[] = [];
   await deps.prisma.$transaction(async (tx) => {
@@ -299,9 +306,9 @@ export async function changeUserTimezone(
       // after the last save committed, so no routine keeps an intermediate zone.
       await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${userId} FOR UPDATE`;
       const user = await tx.user.findUnique({ where: { id: userId }, select: { timezone: true } });
-      if (!user || user.timezone === timezone) return;
-      await tx.user.update({ where: { id: userId }, data: { timezone } });
-      if (!timezone || !user.timezone) return;
+      if (!user || (user.timezone === timezone && !other)) return;
+      await tx.user.update({ where: { id: userId }, data: { timezone, ...other } });
+      if (user.timezone === timezone || !timezone || !user.timezone) return;
       // Lock the rows about to move, so a run firing meanwhile cannot advance one between
       // the read and the write: its claim lands after the commit and re-derives from the
       // moved schedule. The read takes only the locked ids: a routine inserted after the
@@ -312,10 +319,24 @@ export async function changeUserTimezone(
       >`SELECT id FROM "routines" WHERE "userId" = ${userId} AND timezone = ${user.timezone} FOR UPDATE`;
       const routines = await tx.routine.findMany({
         where: { id: { in: locked.map((row) => row.id) }, userId, timezone: user.timezone },
+        select: {
+          id: true,
+          crons: true,
+          timezone: true,
+          nextRunAt: true,
+          active: true,
+          watch: true,
+        },
       });
+      // Rows whose next run keeps its instant move their zone label in one write; only
+      // the retimed ones need their own fenced update.
+      const relabeled: string[] = [];
       for (const routine of routines) {
         const nextRunAt = nextRunAtAfterTimezoneMove(routine, timezone);
-        const movedNext = nextRunAt?.getTime() !== routine.nextRunAt?.getTime();
+        if (nextRunAt?.getTime() === routine.nextRunAt?.getTime()) {
+          relabeled.push(routine.id);
+          continue;
+        }
         // The zone and the timing it was computed from are part of the write, so a change
         // that slipped through anyway keeps its advance and the routine its old zone.
         const { count } = await tx.routine.updateMany({
@@ -323,19 +344,31 @@ export async function changeUserTimezone(
             id: routine.id,
             userId,
             timezone: user.timezone,
-            ...(movedNext ? { nextRunAt: routine.nextRunAt } : {}),
+            nextRunAt: routine.nextRunAt,
           },
-          data: { timezone, ...(movedNext ? { nextRunAt } : {}) },
+          data: { timezone, nextRunAt },
         });
-        if (count === 1 && movedNext && routine.active && nextRunAt) {
+        if (count === 1 && routine.active && nextRunAt) {
           woken.push({ id: routine.id, nextRunAt });
         }
       }
+      if (relabeled.length) {
+        await tx.routine.updateMany({
+          where: { id: { in: relabeled }, userId, timezone: user.timezone },
+          data: { timezone },
+        });
+      }
     });
   });
-  // Enqueue after the commit, like every routine write; the reconciler repairs a miss.
+  // Enqueue after the commit, like every routine write. The save is committed by now, so
+  // a failing enqueue is logged instead of thrown: the reconciler repairs the missed
+  // wake, and the caller keeps the successful save. Every wakeup is attempted.
   for (const routine of woken) {
-    await deps.jobs.enqueue(routineWakeupJob(routine.id, routine.nextRunAt));
+    await deps.jobs
+      .enqueue(routineWakeupJob(routine.id, routine.nextRunAt))
+      .catch((error: unknown) => {
+        getLogger().error("timezone move wakeup enqueue", error);
+      });
   }
 }
 
@@ -398,6 +431,29 @@ function nextRunAtAfterTimezoneMove(
 /** Each routine is an unattended model run, so a looping bot must not stack them. */
 export const MAX_ACTIVE_ROUTINES_PER_BOT = 50;
 
+/** Why the bot's active routines leave no room for one named `name`. */
+async function activeRoutineConflict(
+  prisma: PrismaClient,
+  input: { spaceId: string; botId: string; threadId: string; name: string },
+): Promise<string | undefined> {
+  const active = await prisma.routine.findMany({
+    where: { spaceId: input.spaceId, botId: input.botId, active: true },
+    select: { id: true, name: true, threadId: true },
+  });
+  // Match per thread: schedule_update in a group only reaches this thread's routines.
+  const sameName = active.find(
+    (row) =>
+      row.threadId === input.threadId && row.name.trim().toLowerCase() === input.name.toLowerCase(),
+  );
+  if (sameName) {
+    return `An active routine named "${sameName.name}" already exists (${sameName.id}). Update or cancel it instead.`;
+  }
+  if (active.length >= MAX_ACTIVE_ROUTINES_PER_BOT) {
+    return `This bot already has ${MAX_ACTIVE_ROUTINES_PER_BOT} active routines. Cancel one before adding another.`;
+  }
+  return undefined;
+}
+
 /** Persist and enqueue a bot routine that wakes in the originating thread. */
 export async function createScheduleFromTool(
   deps: ScheduleToolDeps,
@@ -420,25 +476,13 @@ export async function createScheduleFromTool(
   if (!name) return { error: "name is required." };
   if (!prompt) return { error: "prompt is required." };
 
-  const active = await deps.prisma.routine.findMany({
-    where: { spaceId: input.spaceId, botId: routineBotId, active: true },
-    select: { id: true, name: true, threadId: true },
+  const conflict = await activeRoutineConflict(deps.prisma, {
+    spaceId: input.spaceId,
+    botId: routineBotId,
+    threadId: routineThreadId,
+    name,
   });
-  // Match per thread: schedule_update in a group only reaches this thread's routines.
-  const sameName = active.find(
-    (row) =>
-      row.threadId === routineThreadId && row.name.trim().toLowerCase() === name.toLowerCase(),
-  );
-  if (sameName) {
-    return {
-      error: `An active routine named "${sameName.name}" already exists (${sameName.id}). Update or cancel it instead.`,
-    };
-  }
-  if (active.length >= MAX_ACTIVE_ROUTINES_PER_BOT) {
-    return {
-      error: `This bot already has ${MAX_ACTIVE_ROUTINES_PER_BOT} active routines. Cancel one before adding another.`,
-    };
-  }
+  if (conflict) return { error: conflict };
 
   if (input.timezone !== undefined) {
     const parsedTimezone = TimeZoneSchema.safeParse(input.timezone);
@@ -519,6 +563,90 @@ export async function createScheduleFromTool(
   };
 }
 
+/** `schedule_create` tool arguments as createScheduleFromTool takes them. */
+export function scheduleCreateFields(args: Record<string, unknown>) {
+  return {
+    name: String(args.name ?? ""),
+    prompt: String(args.prompt ?? ""),
+    timezone: args.timezone ? String(args.timezone) : undefined,
+    schedule: compactScheduleInput({
+      cron: args.cron,
+      every: args.every,
+      unit: args.unit,
+      runAt: args.runAt,
+      delayMinutes: args.delayMinutes,
+      delaySeconds: args.delaySeconds,
+      startAt: args.startAt,
+      watch: args.watch,
+    }),
+  };
+}
+
+/**
+ * What createScheduleFromTool refuses before it writes anything, apart from the watch checks
+ * that need the bot's computer or tools. Checked before the approval gate as well, so a
+ * routine that cannot be saved shows no approval card.
+ */
+export async function scheduleCreateError(
+  prisma: PrismaClient,
+  input: { spaceId: string; botId: string; userId: string; threadId: string } & ReturnType<
+    typeof scheduleCreateFields
+  >,
+): Promise<string | undefined> {
+  const name = input.name.trim();
+  if (!name) return "name is required.";
+  if (!input.prompt.trim()) return "prompt is required.";
+  const conflict = await activeRoutineConflict(prisma, { ...input, name });
+  if (conflict) return conflict;
+  if (input.timezone !== undefined) {
+    const parsedTimezone = TimeZoneSchema.safeParse(input.timezone);
+    if (!parsedTimezone.success) {
+      return parsedTimezone.error.issues.map((issue) => issue.message).join("; ");
+    }
+  }
+  if (input.schedule.watch !== undefined) {
+    const parsed = scheduleWatch(input.schedule);
+    return parsed.success ? undefined : parsed.error;
+  }
+  const resolved = resolveScheduleTiming(
+    input.schedule,
+    input.timezone ?? (await userTimeZone(prisma, input.userId)),
+  );
+  return resolved.ok ? undefined : resolved.error;
+}
+
+/** The watch of a `schedule_create` call, which takes no other timing. */
+function scheduleWatch(
+  schedule: Record<string, unknown>,
+): { success: true; data: RoutineWatch } | { success: false; error: string } {
+  const others = Object.keys(schedule).filter((key) => key !== "watch");
+  if (others.length) {
+    const named =
+      others.length > 1 ? `${others.slice(0, -1).join(", ")} or ${others.at(-1)}` : others[0];
+    return {
+      success: false,
+      error: `A watch takes no schedule: it checks every watch.everyMinutes minutes (${ROUTINE_WATCH_MIN_MINUTES} to 1440). Call again without ${named}.`,
+    };
+  }
+  // Some models send the object as JSON text; take it either way.
+  let raw = schedule.watch;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return {
+        success: false,
+        error: 'watch must be an object like {"kind":"files","paths":["inbox/"]}.',
+      };
+    }
+  }
+  const parsed = RoutineWatchSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues.map((issue) => issue.message).join("; ") };
+  }
+  return { success: true, data: parsed.data };
+}
+
 /** A routine that runs when something changes, from `schedule_create` with `watch`. */
 async function createWatchFromTool(
   deps: ScheduleToolDeps,
@@ -533,23 +661,8 @@ async function createWatchFromTool(
     schedule: Record<string, unknown>;
   },
 ) {
-  const others = Object.keys(input.schedule).filter((key) => key !== "watch");
-  if (others.length) {
-    return { error: "A watch checks on its own interval; do not combine it with a schedule." };
-  }
-  // Some models send the object as JSON text; take it either way.
-  let raw = input.schedule.watch;
-  if (typeof raw === "string") {
-    try {
-      raw = JSON.parse(raw);
-    } catch {
-      return { error: 'watch must be an object like {"kind":"files","paths":["inbox/"]}.' };
-    }
-  }
-  const parsed = RoutineWatchSchema.safeParse(raw);
-  if (!parsed.success) {
-    return { error: parsed.error.issues.map((issue) => issue.message).join("; ") };
-  }
+  const parsed = scheduleWatch(input.schedule);
+  if (!parsed.success) return { error: parsed.error };
   try {
     // Match routine editing's owner/space boundary before creating unattended work.
     const bot = await deps.prisma.bot.findFirst({
@@ -669,6 +782,10 @@ function carriedRunAtForTimezone(
   return { carried: null, startAt: due.toISOString() };
 }
 
+/** Steers away from cancel and recreate: a new command watch asks the user again. */
+const WATCH_RETIME_ERROR =
+  "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt or active. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.";
+
 /**
  * Edit one of this bot's routines in place: name, prompt, timing (with startAt), or active.
  * Scoped like cancel, so another bot's or another thread's routine reads as not found.
@@ -724,7 +841,7 @@ export async function updateScheduleFromTool(
     return { error: "Nothing to update." };
   }
   if (retime && existing.watch != null) {
-    return { error: "A watch checks on its own interval; cancel it and create a schedule." };
+    return { error: WATCH_RETIME_ERROR };
   }
 
   const active = input.active ?? existing.active;

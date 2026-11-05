@@ -21,6 +21,7 @@ import {
   callIdFromClientNonce,
   isConversationalRun,
   MODEL_REQUIRED_SEND_ERROR,
+  mentionedGroupBotIds,
   messageBypassesTakeoverWait,
   messageReaction,
   parseMessagingCommand,
@@ -45,6 +46,7 @@ import {
   lockOwnedGroup,
   primaryActiveRun,
   retireWaitingQuestionInTransaction,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
   transientRunEventsWhere,
 } from "@rakazo/db";
@@ -314,19 +316,65 @@ async function lockAndLoadGroupMembers(
   }));
 }
 
-/** The bots a send wakes: the bot itself, or the group members it names (else the first). */
+/**
+ * The members a group send wakes. A message that names nobody and replies to a member's message
+ * goes to that member alone; one that names nobody and replies to no member reaches everyone,
+ * and `namesNobody` then lets each member stay silent.
+ */
+function groupSendTargets(
+  members: Array<{ botId: string; name: string }>,
+  input: { text?: string; mentions?: MentionTargetInput[] },
+  replied: string | undefined,
+) {
+  const targeting = {
+    text: input.text ?? "",
+    members: members.map((member) => ({ id: member.botId, name: member.name })),
+    explicitMentions: splitMentionTargets(input.mentions).botMentionIds,
+  };
+  const named = mentionedGroupBotIds(targeting).length > 0;
+  if (!named && replied && members.some((member) => member.botId === replied)) {
+    return { botIds: [replied], namesNobody: false };
+  }
+  return { botIds: resolveGroupTargetBotIds(targeting), namesNobody: !named };
+}
+
+export function latestWaitingRun<T extends { id: string; status: string; updatedAt: Date }>(
+  runs: T[],
+) {
+  const later = (a: T, b: T) =>
+    a.updatedAt.getTime() - b.updatedAt.getTime() || a.id.localeCompare(b.id);
+  return runs
+    .filter((run) => run.status === "waiting_input")
+    .reduce<T | undefined>(
+      (latest, run) => (!latest || later(run, latest) > 0 ? run : latest),
+      undefined,
+    );
+}
+
+/** The bot whose message a send replies to, if any. */
+export async function replyParentBotId(
+  prisma: Pick<PrismaClient, "message">,
+  target: { threadId: string },
+  input: { replyToMessageId?: string },
+): Promise<string | undefined> {
+  if (!input.replyToMessageId) return undefined;
+  const reply = await prisma.message.findFirst({
+    where: { id: input.replyToMessageId, threadId: target.threadId, role: "bot" },
+    select: { botId: true },
+  });
+  return reply?.botId ?? undefined;
+}
+
+/** The bots a send wakes: the bot itself, or the group members it names (else every member). */
 export function sendTargetBotIds(
   target:
     | { kind: "bot"; botId: string }
     | { kind: "group"; members: Array<{ botId: string; name: string }> },
   input: { text?: string; mentions?: MentionTargetInput[] },
+  replied?: string,
 ): string[] {
   if (target.kind === "bot") return [target.botId];
-  return resolveGroupTargetBotIds({
-    text: input.text ?? "",
-    members: target.members.map((member) => ({ id: member.botId, name: member.name })),
-    explicitMentions: splitMentionTargets(input.mentions).botMentionIds,
-  });
+  return groupSendTargets(target.members, input, replied).botIds;
 }
 
 export async function resolveThreadTarget(
@@ -773,6 +821,7 @@ export async function sendThreadMessage(
       let replyToMessageId: string | undefined;
       let replyQuote: string | undefined;
       let replyPreview: ReplyPreview | null | undefined;
+      let repliedBotId: string | undefined;
       if (input.replyToMessageId) {
         const reply = await tx.message.findFirst({
           where: { id: input.replyToMessageId, threadId: target.threadId },
@@ -785,6 +834,7 @@ export async function sendThreadMessage(
           replyPreview = null;
         } else {
           replyToMessageId = input.replyToMessageId;
+          if (reply.role === "bot" && reply.botId) repliedBotId = reply.botId;
           const parsed = MessageBlockSchema.array().safeParse(reply.blocks);
           replyPreview = null;
           if (parsed.success) {
@@ -1030,7 +1080,7 @@ export async function sendThreadMessage(
       const members = await lockAndLoadGroupMembers(tx, actor, target);
       const memberBotIds = members.map((member) => member.botId);
       const mentionTargets = splitMentionTargets(input.mentions);
-      const targetBotIds = sendTargetBotIds({ kind: "group", members }, input);
+      let { botIds: targetBotIds, namesNobody } = groupSendTargets(members, input, repliedBotId);
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
         { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
         actor,
@@ -1046,7 +1096,7 @@ export async function sendThreadMessage(
       // Group ownership is locked first, then the thread, as in the normal write path.
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
       routineRuns = (await startRoutines?.(tx)) ?? [];
-      const activeRuns = await tx.run.findMany({
+      let activeRuns = await tx.run.findMany({
         where: {
           threadId: target.threadId,
           botId: { in: targetBotIds },
@@ -1062,8 +1112,16 @@ export async function sendThreadMessage(
           modelId: true,
           modelPinned: true,
           thinkingLevel: true,
+          updatedAt: true,
         },
       });
+      // A plain message while members wait on the user answers the latest question only.
+      const asking = namesNobody ? latestWaitingRun(activeRuns) : undefined;
+      if (asking) {
+        targetBotIds = [asking.botId];
+        namesNobody = false;
+        activeRuns = activeRuns.filter((run) => run.botId === asking.botId);
+      }
       if (input.imageHandling === "confirm") {
         for (const botId of targetBotIds) {
           await assertImageRecipients(tx, actor, target, input.text, attachmentBlocks, {
@@ -1130,11 +1188,20 @@ export async function sendThreadMessage(
               data: { messageId: message.id, botId, userId: actor.userId, runId: run.id },
             });
           }
+          // A person who answered the member's question is talking to it.
+          await tx.run.updateMany({
+            where: { id: { in: answered.map((run) => run.id) } },
+            data: { groupReplyOptional: false },
+          });
           runs.push(...answered);
           continue;
         }
         const active = activeByBotId.get(botId);
         if (active) {
+          // Naming a member that is still working on an unnamed message makes its reply required.
+          if (!namesNobody && steersUserMessage(active)) {
+            await tx.run.update({ where: { id: active.id }, data: { groupReplyOptional: false } });
+          }
           await tx.steeringMessage.create({
             data: {
               messageId: message.id,
@@ -1165,6 +1232,7 @@ export async function sendThreadMessage(
             userId: actor.userId,
             status: "queued",
             trigger: "user",
+            groupReplyOptional: namesNobody,
             clientNonce: sendRunClientNonce(input.clientNonce, message.id, botId),
             sourceMessageId: message.id,
           },
@@ -1207,7 +1275,7 @@ export async function sendThreadMessage(
         },
       });
       return { message, runs, routineRuns, eventSeq: event.seq };
-    });
+    }, THREAD_LOCK_TRANSACTION_OPTIONS);
 
   const committed = await withSerializableRetry(commit).catch(async (error) => {
     const winner = await replayExistingSend(
@@ -1330,7 +1398,7 @@ export async function reactToThreadMessage(
       },
     });
     return { eventSeq: event.seq, runs };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (releaseTakeover) {
     for (const run of committed.runs) {
       if (run.status === "waiting_takeover") await releaseTakeover(run.id);
@@ -1480,7 +1548,10 @@ export async function stopThreadRuns(
   actor: Actor,
   target: ThreadTarget,
 ) {
-  const stop = await deps.prisma.$transaction(cancelThreadRuns(actor, target));
+  const stop = await deps.prisma.$transaction(
+    cancelThreadRuns(actor, target),
+    THREAD_LOCK_TRANSACTION_OPTIONS,
+  );
   await finishThreadStop(deps, actor, target, stop);
 }
 
@@ -1717,7 +1788,7 @@ export async function markThreadRead(
     });
     if (result.count > 1) throw new IsolationError();
     return dividerSeq(thread, latestSeq);
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
 }
 
 /** A chat only gets a divider when its unread dot was on, so replies seen live never do. */

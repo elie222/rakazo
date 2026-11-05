@@ -1,7 +1,7 @@
-import { Type } from "@earendil-works/pi-ai";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, ThinkingLevelSchema } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
+import { Type } from "typebox";
 import {
   normalizeOpenAiToolParameters,
   openAiToolParametersNeedNormalization,
@@ -168,7 +168,7 @@ function builtinParameters(tool: ConnectorTool) {
   if (tool.name === "create_space") {
     return Type.Object({ name: Type.String({ minLength: 1, maxLength: 60 }) });
   }
-  if (tool.name === "archive_bot" || tool.name === "delete_bot") {
+  if (tool.name === "archive_bot") {
     return Type.Object({
       confirm_name: Type.String(),
       bot_id: Type.Optional(Type.String()),

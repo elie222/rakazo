@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { IOSConfig, withInfoPlist, withXcodeProject } = require("expo/config-plugins");
+const { addPbxGroupWithOwnFiles } = require("./pbx-group");
 
 const INTENTS = path.join(__dirname, "..", "ios-intents");
 const WIDGETS = path.join(__dirname, "..", "ios-widgets");
@@ -62,7 +63,8 @@ function addWidgetTarget(config, project) {
   objects.PBXContainerItemProxy ??= {};
   const bundleId = `${config.ios?.bundleIdentifier}.widgets`;
   const target = project.addTarget(WIDGET_TARGET, "app_extension", WIDGET_TARGET, bundleId);
-  const group = project.addPbxGroup(
+  const group = addPbxGroupWithOwnFiles(
+    project,
     [...WIDGET_FILES, "Assets.xcassets", "Info.plist"],
     WIDGET_TARGET,
     WIDGET_TARGET,

@@ -34,7 +34,9 @@ import {
 } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
 import {
+  accountDeactivated,
   availableInSpace,
+  cancelDeactivatedAccountRuns,
   effectiveMemoryScope,
   isPartialReplyClientNonce,
   isTooManyDatabaseConnections,
@@ -78,6 +80,12 @@ import {
   renewComputerExecutionLease,
   screenLeaseIdForRun,
 } from "./computer-lifecycle.js";
+import {
+  computerCheckpointResolver,
+  isLostPinnedModel,
+  PINNED_COMPUTER_MODEL_LOST_RUN_ERROR,
+  resolveComputerRunModel,
+} from "./computer-model-settings.js";
 import { teamBotWorkspaceDirectory } from "./computer-support.js";
 import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
 import {
@@ -123,6 +131,7 @@ import { modelAcceptsImageInput } from "./model-vision.js";
 import { usesNativeShell } from "./native-shell.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { isRetiredModelCredentialError } from "./pi-oauth.js";
+import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
@@ -172,7 +181,12 @@ import {
   runtimeFallbackModel,
 } from "./run-model.js";
 import { createReplyState } from "./run-progress.js";
-import { DELEGATED_EMPTY_NOTICE, runAllowsSilentEmpty, runReplyGuidance } from "./run-replies.js";
+import {
+  DELEGATED_EMPTY_NOTICE,
+  GROUP_UNADDRESSED_REPLY_GUIDANCE,
+  runAllowsSilentEmpty,
+  runReplyGuidance,
+} from "./run-replies.js";
 import {
   notifyRoutineRetryAttemptsExhausted,
   retryRoutineRun,
@@ -189,7 +203,7 @@ import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import type { UserComputerState } from "./run-tools-user-computer.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "./run-tools-user-computer.js";
 import { createRunTrustLoaders } from "./run-trust.js";
-import { completeRun, consumeRunEvents, failRun } from "./run-turn.js";
+import { completeRun, consumeRunEvents, failRun, handoffEndedTurn } from "./run-turn.js";
 import {
   claimRunSteering,
   loadCurrentTurnImages,
@@ -213,16 +227,19 @@ import {
 import { TASK_CATALOG_GUIDANCE } from "./task-catalog.js";
 import { parsePlaybook } from "./teaching-session.js";
 import {
+  createEarlierFileQueue,
   currentTurnFilesInstruction,
   listCurrentTurnFiles,
   listRecentThreadFiles,
   materializeCurrentTurnFiles,
+  materializeEarlierFiles,
   materializeRecentThreadFiles,
   recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
+import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 /** Same reach as the MCP connector: usable servers assigned to the bot or shared with every bot. */
@@ -306,6 +323,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // connector's own idle bound holds it.
         endRunConnectorState(runId);
         return;
+      }
+      // Every way work reaches a bot ends here, so a deactivated account's run stops before it starts.
+      if (await accountDeactivated(deps.prisma, run.userId)) {
+        // Nothing cancelled: the owner is back (or the run already ended), so carry on.
+        if (await cancelDeactivatedAccountRuns(deps.prisma, deps.events, run.userId, runId)) return;
       }
       let { resumeCheckpoint, heldForTakeover, takeoverResume } = takeoverContinuePlan(run);
 
@@ -519,6 +541,55 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // integration and computer setup must not occupy a queue dispatch slot.
         onRunStarted?.();
         dispatchHandedOff = Boolean(onRunStarted);
+        // A saved computer turn owns both identities. Resolve them before consulting
+        // today's main selection, whose connection may have changed while paused.
+        let turnCheckpoint: string | undefined;
+        let checkpointLoadError: Error | undefined;
+        try {
+          turnCheckpoint = await loadRunTurnCheckpoint(deps.prisma, run);
+        } catch (error) {
+          checkpointLoadError =
+            error instanceof Error ? error : new Error("Unsupported turn checkpoint");
+        }
+        const storedTurnCheckpoint = Boolean(turnCheckpoint);
+        const resolveCheckpointModel = (
+          provider: string,
+          id: string,
+          connectionId?: string,
+          effort?: string,
+        ) =>
+          resolveConnectedModel(
+            run,
+            provider,
+            id,
+            (values) => runSecrets.push(...values),
+            true,
+            effort ?? null,
+            connectionId,
+          );
+        const checkpointIdentity = { provider: run.modelProvider ?? "", id: run.modelId ?? "" };
+        const checkpointModelResolver = computerCheckpointResolver(
+          turnCheckpoint,
+          checkpointIdentity,
+          resolveCheckpointModel,
+        );
+        const savedComputerMode = checkpointModelResolver
+          ? restoreTurnCheckpoint(turnCheckpoint!, checkpointIdentity).computerMode
+          : undefined;
+        let pinnedComputerModels: Awaited<ReturnType<typeof restoreComputerModels>> | undefined;
+        let pinnedComputerFailure: string | undefined;
+        if (savedComputerMode) {
+          try {
+            pinnedComputerModels = await restoreComputerModels(
+              { resolveFallbackModel: checkpointModelResolver },
+              savedComputerMode,
+            );
+          } catch (error) {
+            // A paused turn whose model or account is gone cannot resume; retrying will not help.
+            if (!isLostPinnedModel(error)) throw error;
+            pinnedComputerFailure = PINNED_COMPUTER_MODEL_LOST_RUN_ERROR;
+          }
+        }
         const messagingSource =
           run.trigger === "messaging" && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
@@ -568,7 +639,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               status: true,
             },
           }),
-          resolveMemberMainModel(deps, run),
+          pinnedComputerModels ? Promise.resolve(null) : resolveMemberMainModel(deps, run),
           deps.prisma.deploymentSettings.findUnique({
             where: { id: "default" },
           }),
@@ -625,7 +696,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const modelChoice = runModelChoice(run, bot);
         const hasModelOverride = Boolean(modelChoice.modelProvider && modelChoice.modelId);
         const overrideCredential =
-          hasModelOverride && modelChoice.modelProvider
+          !pinnedComputerModels && hasModelOverride && modelChoice.modelProvider
             ? await findConnectedModelCredential(
                 deps.prisma,
                 deps.secretStore,
@@ -775,6 +846,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ),
         );
         const currentRunRequiresImageInput = confirmedRunImages.length > 0;
+        // The send decided whether the message named this member; one it named nobody for
+        // reached every member, and each may end its turn without a reply.
+        const groupReplyOptional =
+          Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
@@ -855,6 +930,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
         const pinError =
+          !pinnedComputerModels &&
           run.modelPinned &&
           !(
             (await modelCreditBillingEnabled(deps)) &&
@@ -862,15 +938,22 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           )
             ? pinnedModelCredentialError(modelChoice, overrideCredential)
             : undefined;
-        const selected = selectConfiguredModel({
-          override: modelChoice,
-          overrideCredential,
-          main,
-          hostedProvider: (await modelCreditBillingEnabled(deps))
-            ? resolveDeploymentModel().provider
-            : undefined,
-          defaults: { settings, deployment: runDeployment },
-        });
+        const selected = pinnedComputerModels
+          ? {
+              provider: pinnedComputerModels.main.provider,
+              id: pinnedComputerModels.main.id,
+              thinkingLevel: pinnedComputerModels.main.thinkingLevel,
+              credential: null,
+            }
+          : selectConfiguredModel({
+              override: modelChoice,
+              overrideCredential,
+              main,
+              hostedProvider: (await modelCreditBillingEnabled(deps))
+                ? resolveDeploymentModel().provider
+                : undefined,
+              defaults: { settings, deployment: runDeployment },
+            });
         const selectedProvider = selected.provider ?? runtimeFallback?.provider;
         const selectedModelId = selected.id ?? runtimeFallback?.id;
         // A missing or refused connection of the user's own fails every scheduled run alike.
@@ -886,11 +969,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             await backOffRoutineAfterAccountError(deps, run.routineId);
           }
         };
+        if (pinnedComputerFailure) {
+          await failRunBeforeModel(pinnedComputerFailure, true);
+          return;
+        }
         if (pinError) {
           await failRunBeforeModel(pinError, pinError === PINNED_PROVIDER_NOT_CONNECTED);
           return;
         }
         if (
+          !pinnedComputerModels &&
           run.modelPinned &&
           (selected.provider !== modelChoice.modelProvider || selected.id !== modelChoice.modelId)
         ) {
@@ -966,15 +1054,26 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               id: selectedModelId,
               credential: selected.credential,
               thinkingLevel: selected.thinkingLevel,
-              resolved: await resolveModelKey(
-                deps,
-                run.userId,
-                run.spaceId,
-                selected.credential,
-                selectedProvider,
-                selectedModelId,
-                (values) => runSecrets.push(...values),
-              ),
+              resolved: pinnedComputerModels
+                ? {
+                    ...pinnedComputerModels.main,
+                    apiKey: pinnedComputerModels.main.apiKey,
+                    callObserver: pinnedComputerModels.main.callObserver,
+                    oauth: pinnedComputerModels.main.oauth?.credential,
+                    persistOAuth: pinnedComputerModels.main.oauth?.persist,
+                    refreshOAuth: pinnedComputerModels.main.oauth?.refresh,
+                    retireOAuth: pinnedComputerModels.main.oauth?.retire,
+                    redact: [],
+                  }
+                : await resolveModelKey(
+                    deps,
+                    run.userId,
+                    run.spaceId,
+                    selected.credential,
+                    selectedProvider,
+                    selectedModelId,
+                    (values) => runSecrets.push(...values),
+                  ),
             };
           } catch (error) {
             // An incompatible saved model or a dead (already retired) credential is a
@@ -1026,10 +1125,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           skipMessageId: currentTurnMessage?.id,
           maxTurns: RECENT_TURN_IMAGE_TURNS,
         };
+        // Files from earlier messages that history tools surfaced this run.
+        const earlierFiles = createEarlierFileQueue();
         const runComputer = lazyRunComputer(
           async () => {
             getLogger().info("computer.requested");
             const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
+            earlierFiles.computerStarted();
             computerUse.screenRelease = { computer, context, keepWarm: false };
             recordComputerDisk(deps, storedComputer.id, computer, context);
             scheduleComputerSleep(deps.jobs, storedComputer.id);
@@ -1090,6 +1192,19 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                     workspaceCheckpoint.markFiles(files);
                     pendingTurnFiles.shift();
                   }
+                  const earlier = earlierFiles.take();
+                  if (artifacts && earlier.length) {
+                    earlierFiles.copiedTo(
+                      earlier,
+                      // Saved with the run's checkpoint, so a resumed attempt still has them.
+                      await materializeEarlierFiles({ ...deps, artifacts }, earlier, {
+                        context,
+                        computer: async () => computer,
+                        computerMode,
+                        markWorkspaceDirty: workspaceCheckpoint.markDirty,
+                      }),
+                    );
+                  }
                 });
               await copyingTurnFiles;
               return computer;
@@ -1127,7 +1242,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           runModelId,
           resolved.acceptsImages,
         );
-        const acceptsImages = deps.runtime.describe().capabilities.scripted || modelSeesImages;
+
         const groupContext = thread.groupId
           ? await loadGroupContext(deps.prisma, thread.groupId, {
               id: bot.id,
@@ -1167,6 +1282,37 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ));
           }
         }
+        const mainRunModel: AgentRunRequest["model"] = pinnedComputerModels?.main ?? {
+          provider: runModelProvider,
+          id: runModelId,
+          ...(credential ? { connectionId: credential.id } : {}),
+          ...resolvedModelRunFields(resolved),
+          thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
+        };
+        // Saved identities win on resume, including when the setting was cleared meanwhile.
+        const computerModel =
+          pinnedComputerModels?.computer ??
+          // A paused turn resumes with the models it started with, even one saved before this setting.
+          (scripted || storedTurnCheckpoint || !graphical
+            ? undefined
+            : await resolveComputerRunModel(
+                {
+                  prisma: deps.prisma,
+                  resolve: resolveCheckpointModel,
+                  connectionFor: async (provider, modelId) =>
+                    (
+                      await findConnectedModelCredential(
+                        deps.prisma,
+                        deps.secretStore,
+                        run,
+                        provider,
+                        modelId,
+                      )
+                    )?.id,
+                },
+                { userId: run.userId, spaceId: run.spaceId },
+                mainRunModel,
+              ));
         const sourceMessage =
           (run.trigger === "user" || run.trigger === "follow_up") && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
@@ -1182,6 +1328,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const callEndRun = run.trigger === "call_end";
         const callClientNonceForRun = callEndRun ? run.clientNonce : sourceClientNonce;
         const voiceCall = callEndRun || isCallClientNonce(sourceClientNonce);
+        const acceptsImages =
+          deps.runtime.describe().capabilities.scripted ||
+          modelSeesImages ||
+          Boolean(computerModel || checkpointModelResolver);
         const graphicalToolsAllowed = graphical && acceptsImages && !heldForTakeover;
         const pageBrowserAllowed =
           graphical && browser.describe().capabilities.page && !heldForTakeover;
@@ -1224,7 +1374,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
             voiceCall,
-            disabledBuiltinTools: bot.disabledBuiltinTools,
+            // Every member already got a message that names nobody, so a handoff only repeats it.
+            disabledBuiltinTools: groupReplyOptional
+              ? [...(bot.disabledBuiltinTools ?? []), "handoff_to_bot"]
+              : bot.disabledBuiltinTools,
             fleetManagement: bot.fleetManagement,
             followUpFromUser: sourceMessage?.role === "user",
             userComputer: userComputer === "connected",
@@ -1265,15 +1418,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // Outbound destinations this run may reach without asking. See outboundSiteGate and
         // connectorReadRequiresApproval; approvals from earlier attempts are read back from effects.
         const searchResultUrls = new Set<string>();
-        let turnCheckpoint: string | undefined;
-        let checkpointLoadError: Error | undefined;
-        try {
-          turnCheckpoint = await loadRunTurnCheckpoint(deps.prisma, run);
-        } catch (error) {
-          checkpointLoadError =
-            error instanceof Error ? error : new Error("Unsupported turn checkpoint");
-        }
-        const storedTurnCheckpoint = Boolean(turnCheckpoint);
         const initiallyTainted =
           !ownerStartedRun || Boolean(turnCheckpoint) || Boolean(checkpointLoadError);
         // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),
@@ -1395,6 +1539,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           task,
           context,
           abortController: runAbortController,
+          runtimeAbortController: new AbortController(),
           fleetRun,
           secrets: runSecrets,
           source: {
@@ -1425,6 +1570,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             lease: computerLease,
             lazy: runComputer,
             get: getRunComputer,
+            copyEarlierFiles: earlierFiles.add,
             checkpoint: workspaceCheckpoint,
             hostEnvironment,
             graphical,
@@ -1446,6 +1592,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           scripted,
           script,
           allowSilentEmptyRun,
+          groupReplyOptional,
           emptyResponseText,
           state,
           settleRunningHelpers: settleHelpers,
@@ -1489,10 +1636,19 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             )}\n\n${taskPrompt}`
           : taskPrompt;
         if (turnCheckpoint) {
-          turnCheckpoint = restoreTurnCheckpointEffects(ctx, turnCheckpoint, {
-            provider: runModelProvider,
-            id: runModelId,
-          });
+          turnCheckpoint = restoreTurnCheckpointEffects(
+            ctx,
+            turnCheckpoint,
+            {
+              provider: runModelProvider,
+              id: runModelId,
+            },
+            savedComputerMode?.mode,
+          );
+          if (checkpointModelResolver && !turnCheckpoint)
+            throw new Error(
+              "Pinned computer mode checkpoint cannot resume with the available tools",
+            );
         }
         const approvalContinuation = turnCheckpoint
           ? undefined
@@ -1539,7 +1695,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           // A hang-up turn is read, not heard: no spoken-reply constraint.
           voiceCall && !callEndRun ? voiceCallInstruction(disabledBuiltinTools) : undefined,
           // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
-          formatCurrentTimeInstruction(new Date(), userTimeZone),
+          formatCurrentTimeInstruction(deps.now?.() ?? new Date(), userTimeZone),
           lateRoutineNote,
         ]
           .filter(Boolean)
@@ -1638,7 +1794,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             !backupsUnavailable.has(candidate) &&
             (candidate.provider !== runModelProvider ||
               candidate.modelId !== runModelId ||
-              (candidate.credentialId !== undefined && candidate.credentialId !== credential?.id)),
+              (candidate.credentialId !== undefined &&
+                candidate.credentialId !== mainRunModel.connectionId)),
         );
         const fallbackKey = (provider: string, modelId: string, credentialId?: string | null) =>
           JSON.stringify([provider, modelId, credentialId ?? null]);
@@ -1693,7 +1850,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               contextStrategy: deps.contextStrategy,
               instructions: userTurnInstructions({
                 botInstructions: runIdentityInstruction(bot, run.trigger),
-                groupContext,
+                groupContext: groupReplyOptional
+                  ? [groupContext, GROUP_UNADDRESSED_REPLY_GUIDANCE].filter(Boolean).join("\n")
+                  : groupContext,
                 messagingContext,
                 redactedMemoryContext: memoryContext
                   ? redactSecrets(memoryContext, runSecrets)
@@ -1740,56 +1899,61 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   ),
               ),
               tools,
-              model: {
-                provider: runModelProvider,
-                id: runModelId,
-                ...(credential ? { connectionId: credential.id } : {}),
-                ...resolvedModelRunFields(resolved),
-                thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
-              },
+              model: mainRunModel,
+              computerModel,
               fallbackModels: fallbackModels.map(({ provider, modelId, credentialId }) => ({
                 provider,
                 id: modelId,
                 ...(credentialId ? { connectionId: credentialId } : {}),
               })),
-              resolveFallbackModel: fallbackModelKeys.size
-                ? async (provider, modelId, connectionId) => {
-                    const key = fallbackKey(provider, modelId, connectionId);
-                    if (!fallbackModelKeys.has(key))
-                      throw new Error("Backup model is not selected");
-                    return resolveConnectedModel(
-                      { userId: run.userId, spaceId: run.spaceId },
-                      provider,
-                      modelId,
-                      (values) => runSecrets.push(...values),
-                      true,
-                      fallbackModels.find(
-                        (candidate) =>
-                          fallbackKey(
-                            candidate.provider,
-                            candidate.modelId,
-                            candidate.credentialId,
-                          ) === key,
-                      )?.thinkingLevel ?? null,
-                      connectionId,
-                    );
-                  }
-                : undefined,
-              onModelChange: async (provider, modelId) => {
-                if (!fallbackModelIds.has(fallbackKey(provider, modelId))) {
-                  throw new Error("Backup model is not selected");
+              resolveFallbackModel:
+                checkpointModelResolver || fallbackModelKeys.size
+                  ? async (provider, modelId, connectionId) => {
+                      if (checkpointModelResolver?.has(provider, modelId, connectionId))
+                        return checkpointModelResolver(provider, modelId, connectionId);
+                      const key = fallbackKey(provider, modelId, connectionId);
+                      if (!fallbackModelKeys.has(key))
+                        throw new Error("Backup model is not selected");
+                      return resolveConnectedModel(
+                        { userId: run.userId, spaceId: run.spaceId },
+                        provider,
+                        modelId,
+                        (values) => runSecrets.push(...values),
+                        true,
+                        fallbackModels.find(
+                          (candidate) =>
+                            fallbackKey(
+                              candidate.provider,
+                              candidate.modelId,
+                              candidate.credentialId,
+                            ) === key,
+                        )?.thinkingLevel ?? null,
+                        connectionId,
+                      );
+                    }
+                  : undefined,
+              onModelChange: async (provider, modelId, computerMode) => {
+                const roleModel =
+                  [mainRunModel, computerModel].some(
+                    (model) => model?.provider === provider && model.id === modelId,
+                  ) || checkpointModelResolver?.hasModel(provider, modelId);
+                if (!roleModel && !fallbackModelIds.has(fallbackKey(provider, modelId))) {
+                  throw new Error("Model is not selected");
                 }
-                const updated = await deps.prisma.run.updateMany({
-                  where: {
-                    id: runId,
-                    status: "running",
-                    leaseOwner: workerId,
-                    leaseFence: fence,
-                  },
-                  data: { modelProvider: provider, modelId },
-                });
-                if (updated.count !== 1) {
-                  throw new Error("Run lease was lost before the backup model could be used");
+                // The run's model is what retries and pins rerun; computer mode is a detour from it.
+                if (!computerMode) {
+                  const updated = await deps.prisma.run.updateMany({
+                    where: {
+                      id: runId,
+                      status: "running",
+                      leaseOwner: workerId,
+                      leaseFence: fence,
+                    },
+                    data: { modelProvider: provider, modelId },
+                  });
+                  if (updated.count !== 1) {
+                    throw new Error("Run lease was lost before the backup model could be used");
+                  }
                 }
                 activeModel["model.provider"] = provider;
                 activeModel["model.id"] = modelId;
@@ -1856,13 +2020,25 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   },
                 ),
             },
-            context,
+            {
+              ...context,
+              signal: AbortSignal.any([context.signal, ctx.runtimeAbortController.signal]),
+            },
           );
           if (await consumeRunEvents(ctx, runtimeEvents)) return;
           if (await interruptedByShutdown()) return;
           await completeRun(ctx);
-        } catch (caughtError) {
+        } catch (turnError) {
           if (await interruptedByShutdown()) return;
+          let caughtError = turnError;
+          if (handoffEndedTurn(state, caughtError)) {
+            try {
+              await completeRun(ctx);
+              return;
+            } catch (completionError) {
+              caughtError = completionError;
+            }
+          }
           await failRun(ctx, caughtError, {
             ownCredential: resolved.ownCredential,
             active: activeModel,

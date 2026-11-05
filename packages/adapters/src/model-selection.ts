@@ -10,6 +10,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { chooseModelCredential, findModelCredential, findModelCredentialById } from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { modelCredentialDto } from "./model-connect.js";
+import { compatibleModelSeesImages, modelAcceptsImageInput } from "./model-vision.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {
   catalogModelAvailableForAuth,
@@ -19,6 +20,7 @@ import {
 } from "./pi-catalog-availability.js";
 import type { CodexLiveCatalog, CodexLiveReadOptions } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
+import type { CatalogReads } from "./pi-live-catalog.js";
 import { liveCatalogEntry, providerLiveListsModel } from "./pi-live-catalog.js";
 import { listPiCatalog, offeredCatalog, scriptedCatalogEntry } from "./pi-models.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
@@ -41,8 +43,20 @@ async function credentialLiveListsModel(
   provider: string,
   modelId: string,
   codex?: CodexLiveCatalog,
+  reads?: CatalogReads,
 ): Promise<boolean> {
-  if (await providerLiveListsModel(prisma, secrets, userId, secretId, provider, modelId))
+  if (
+    await providerLiveListsModel(
+      prisma,
+      secrets,
+      userId,
+      secretId,
+      provider,
+      modelId,
+      undefined,
+      reads,
+    )
+  )
     return true;
   if (provider !== "openai-codex" || !codex || !liveCatalogEntry(provider, modelId)) return false;
   const secret = await loadModelSecret(prisma, secrets, userId, secretId);
@@ -58,6 +72,7 @@ export async function connectionServesModel(
     prisma: PrismaClient;
     secretStore: Pick<SecretStore, "load">;
     codexCatalog?: CodexLiveCatalog;
+    reads?: CatalogReads;
   },
   userId: string,
   credential: { secretId: string },
@@ -86,6 +101,7 @@ export async function connectionServesModel(
     provider,
     modelId,
     deps.codexCatalog,
+    deps.reads,
   );
 }
 
@@ -334,6 +350,35 @@ export type LoadedModelSecret =
   | { status: "missing" }
   | { status: "unreadable"; ciphertext: string }
   | { status: "loaded"; ciphertext: string; plaintext: string };
+
+/** Whether a model on a member's connection accepts image input, as that connection declares it. */
+export async function connectedModelSeesImages(
+  deps: { prisma: Pick<PrismaClient, "secret">; secretStore: Pick<SecretStore, "load"> },
+  userId: string,
+  provider: string,
+  modelId: string,
+  credential: ModelCredential,
+  catalogImages?: boolean,
+): Promise<boolean> {
+  if (canonicalPiProviderId(provider) !== OPENAI_COMPATIBLE_PROVIDER_ID)
+    return modelAcceptsImageInput(provider, modelId, catalogImages);
+  if (!credential) return false;
+  const stored = await loadStoredModelSecret(
+    deps.prisma,
+    deps.secretStore,
+    userId,
+    credential.secretId,
+  );
+  if (stored.status !== "loaded") return false;
+  try {
+    const secret = parseModelSecret(stored.plaintext);
+    return (
+      secret.kind === "openai_compatible" && compatibleModelSeesImages(credential, secret, modelId)
+    );
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Read a user's account-wide model secret. A missing row or an undecryptable ciphertext is

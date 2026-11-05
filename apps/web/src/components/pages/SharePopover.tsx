@@ -14,7 +14,7 @@ import { ArrowUpRight, Check, Globe, Lock, Share } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCopyText } from "../../lib/copy-text";
 
-const TILE = "grid size-8 shrink-0 place-items-center rounded-[8px] bg-foreground/[0.04]";
+const TILE = "grid size-8 shrink-0 place-items-center rounded-sm bg-foreground/[0.04]";
 const LINK_PILL =
   "flex h-8 min-w-0 flex-1 items-center justify-center gap-2 rounded-full ring-[0.5px] ring-border px-3 text-[14px] leading-5 font-normal text-foreground outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -122,7 +122,7 @@ export function SharePopover({
         align="end"
         sideOffset={7.5}
         data-testid="page-share"
-        className="w-[360px] max-w-[calc(100vw-32px)] gap-3 rounded-[16px] ring-[0.5px] ring-border px-0 pt-[17px] pb-4 shadow-lg"
+        className="w-[360px] max-w-[calc(100vw-32px)] gap-3 rounded-xl ring-[0.5px] ring-border px-0 pt-[17px] pb-4 shadow-lg"
       >
         <PopoverTitle className="truncate px-4 text-[16px] leading-[22px] font-medium tracking-[-0.44px]">
           <Trans>Share “{title}”</Trans>
@@ -150,7 +150,7 @@ export function SharePopover({
               // biome-ignore lint/a11y/noLabelWithoutControl: the radio inside is the control.
               <label
                 key={option.value}
-                className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-[10px] px-1.5 py-[5px] hover:bg-foreground/[0.04] has-data-checked:bg-foreground/[0.06] has-disabled:cursor-default"
+                className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-[5px] hover:bg-foreground/[0.04] has-data-checked:bg-foreground/[0.06] has-disabled:cursor-default"
               >
                 <span className={TILE}>{option.icon}</span>
                 <span className="flex min-w-0 flex-1 flex-col">
@@ -219,7 +219,7 @@ export function ManualCopy({ url }: { url: string }) {
         // biome-ignore lint/a11y/noAutofocus: shown only once copying failed, to copy by hand
         autoFocus
         onFocus={(event) => event.currentTarget.select()}
-        className="h-8 w-full min-w-0 rounded-[8px] bg-foreground/[0.04] px-2.5 text-[13px] text-foreground ring-[0.5px] ring-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-8 w-full min-w-0 rounded-sm bg-foreground/[0.04] px-2.5 text-[13px] text-foreground ring-[0.5px] ring-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
     </label>
   );

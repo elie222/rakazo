@@ -202,6 +202,7 @@ function verbErrorMessage(payload: unknown, fallback: string): string {
 /** Surface hosted gateway rate limits plainly instead of as an opaque transport error. */
 function assertNotRateLimited(response: Response): Response {
   if (response.status !== 429) return response;
+  cancelResponseBody(response);
   const retryAfter = response.headers.get("retry-after")?.trim();
   // Retry-After is either delta-seconds or an HTTP date.
   const when = !retryAfter ? null : /^\d+$/.test(retryAfter) ? `${retryAfter}s` : retryAfter;
@@ -275,6 +276,8 @@ export function createSerenityPrivateLanFetch(
         cancelResponseBody(response);
         throw new Error("Serenity MCP redirects are not permitted; configure the final URL.");
       }
+      // The dispatcher must be able to close before the caller can inspect the response.
+      if (response.status === 429) cancelResponseBody(response);
       return response;
     } catch (error) {
       throw new Error(

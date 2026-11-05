@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
@@ -16,7 +17,6 @@ describe("RakazoIntents", () => {
       ["lib/server-config.ts", "API_BASE_STORAGE_KEY"],
       ["lib/api.ts", "SPACE_KEY"],
       ["lib/last-bot.ts", "LAST_BOT_KEY"],
-      ["lib/last-bot.ts", "LAST_BOT_SPACE_KEY"],
       ["lib/server-headers.ts", "SERVER_HEADERS_KEY"],
     ]) {
       const key = constant(file, name);
@@ -70,6 +70,7 @@ describe("withAppIntents prebuild", () => {
             cpSync: (...args) => copied.push(args.slice(0, 2)),
           };
         if (name === "node:path") return { join };
+        if (name === "./pbx-group") return createRequire(import.meta.url)("./pbx-group.js");
         if (name === "expo/config-plugins")
           return {
             withInfoPlist: (value, mod) => {

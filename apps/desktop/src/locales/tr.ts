@@ -184,6 +184,12 @@ export const TR_MESSAGES: Record<string, string> = {
   "Previous Bot": "Önceki Bot",
   "Command Menu…": "Komut Menüsü…",
   "Toggle Sidebar": "Kenar Çubuğunu Aç/Kapat",
-  "Search…": "Ara…",
+  "Find…": "Bul…",
+  "Search Bots…": "Bot Ara…",
   "The window closed before the app loaded.": "Pencere, uygulama yüklenmeden kapandı.",
+  "New Group Chat": "Yeni Grup Sohbeti",
+  "Connect Apps…": "Uygulamaları Bağla…",
+  "Chat Details": "Sohbet Ayrıntıları",
+  Help: "Yardım",
+  "Keyboard Shortcuts": "Klavye Kısayolları",
 };

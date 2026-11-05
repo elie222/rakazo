@@ -31,7 +31,6 @@ import {
   InvalidSpaceNameError,
   Prisma,
   parseComputerMode,
-  personalOrganizationIds,
   runAsSystem,
   runAsTenant,
   SpaceLimitError,
@@ -322,7 +321,6 @@ class AccountImporter implements ArchiveSink {
   private decoder = new TextDecoder();
   private lineParts: string[] = [];
   private lineLength = 0;
-  private baseSpaceId: string | null = null;
   private readonly repos;
 
   constructor(
@@ -441,7 +439,7 @@ class AccountImporter implements ArchiveSink {
       await rm(space.tempDir, { recursive: true, force: true }).catch(() => undefined);
     }
     for (const created of [...this.created].reverse()) {
-      const owner = { spaceId: this.baseSpaceId ?? this.actor.spaceId, userId: this.actor.userId };
+      const owner = { spaceId: this.actor.spaceId, userId: this.actor.userId };
       await runAsTenant({ spaceId: created.id, userId: this.actor.userId }, () =>
         deleteSpaceWithContent(this.deps, owner, created.id),
       ).catch((error) => getLogger().error("account import rollback failed", error));
@@ -465,10 +463,9 @@ class AccountImporter implements ArchiveSink {
     const { prisma } = this.deps;
     const userId = this.actor.userId;
     const created = await runAsSystem("create a Space for an account import", async () => {
-      this.baseSpaceId ??= await personalBaseSpace(prisma, this.actor);
       try {
         return await createSpaceForMember(prisma, {
-          currentSpaceId: this.baseSpaceId,
+          currentSpaceId: this.actor.spaceId,
           userId,
           name: space.name,
         });
@@ -1027,20 +1024,6 @@ function parseManifest(bytes: Uint8Array): AccountExportManifest {
   if (version !== ACCOUNT_EXPORT_VERSION)
     throw new AccountImportError("This export is from a newer version of Rakazo.");
   throw unreadable();
-}
-
-/** New spaces go in the importer's own organization, beside their first space there. */
-async function personalBaseSpace(
-  prisma: AccountImportDeps["prisma"],
-  actor: Actor,
-): Promise<string> {
-  const organizationIds = await personalOrganizationIds(prisma, actor.userId);
-  const membership = await prisma.spaceMember.findFirst({
-    where: { userId: actor.userId, organizationId: { in: organizationIds } },
-    orderBy: { createdAt: "asc" },
-    select: { spaceId: true },
-  });
-  return membership?.spaceId ?? actor.spaceId;
 }
 
 function date(value: string | null): Date | null {

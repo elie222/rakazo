@@ -69,6 +69,7 @@ import {
   BotSectionName,
   BotSectionSchema,
   ByokIntervalSchema,
+  ByokTierSchema,
   CapabilityInstallSchema,
   ChatAlertSchema,
   CONNECTION_LABEL_MAX_LENGTH,
@@ -167,7 +168,12 @@ import {
   PageTitleSchema,
   PageVisibilitySchema,
 } from "./pages.js";
-import { PaymentWalletStatusSchema } from "./payments.js";
+import {
+  PaymentWalletStatusSchema,
+  SpendingLimitSchema,
+  SpendingPaymentSchema,
+  SpendingStatusSchema,
+} from "./payments.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
 import {
@@ -256,6 +262,22 @@ const threadSendWithRoutinesInput = threadSendFields.safeExtend({
 });
 
 const spaceName = z.string().trim().min(1).max(60);
+const organizationName = spaceName;
+/** Every organization the signed-in user belongs to, and which one the current Space belongs to. */
+export const OrganizationListSchema = z.object({
+  activeOrganizationId: Id,
+  organizations: z.array(
+    z.object({
+      id: Id,
+      name: z.string(),
+      defaultSpaceId: Id,
+      spaceIds: z.array(Id),
+      /** Whether the user owns it, so can rename or delete it. */
+      canManage: z.boolean(),
+    }),
+  ),
+});
+export type OrganizationList = z.infer<typeof OrganizationListSchema>;
 
 export const appContract = {
   analytics: { screen: oc.input(AnalyticsScreenInput).output(z.object({ ok: z.literal(true) })) },
@@ -309,7 +331,12 @@ export const appContract = {
     checkout: oc
       .input(
         z
-          .object({ client: BillingClientSchema, interval: ByokIntervalSchema.optional() })
+          .object({
+            client: BillingClientSchema,
+            interval: ByokIntervalSchema.optional(),
+            /** The own-key plan's tier; Standard when omitted. */
+            tier: ByokTierSchema.optional(),
+          })
           .optional(),
       )
       .output(z.object({ url: z.string().url() })),
@@ -320,6 +347,8 @@ export const appContract = {
     endTrial: oc.output(BillingStatusSchema),
     /** Owners only: moves a monthly own-key plan to yearly, charging the difference now. */
     switchToYearly: oc.output(BillingStatusSchema),
+    /** Owners only: moves the own-key plan to another tier at the same interval, billing the difference now. */
+    changeTier: oc.input(z.object({ tier: ByokTierSchema })).output(BillingStatusSchema),
     /** Records who invited this organization; ignored once it has subscribed. */
     claimReferral: oc
       .input(z.object({ code: z.string().min(1).max(64) }))
@@ -364,6 +393,18 @@ export const appContract = {
       .output(z.object({ id: Id, name: z.string() })),
     remove: oc
       .input(z.object({ spaceId: Id }))
+      .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
+  },
+  organizations: {
+    list: oc.output(OrganizationListSchema),
+    create: oc
+      .input(z.object({ name: organizationName }))
+      .output(z.object({ id: Id, name: z.string(), defaultSpaceId: Id })),
+    rename: oc
+      .input(z.object({ organizationId: Id, name: organizationName }))
+      .output(z.object({ id: Id, name: z.string() })),
+    remove: oc
+      .input(z.object({ organizationId: Id }))
       .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
   },
   bootstrap: oc.input(z.object({ botId: Id.optional() })).output(AppBootstrapSchema),
@@ -1398,6 +1439,16 @@ export const appContract = {
   },
   runs: {
     list: oc.input(z.object({ filter: z.enum(["active", "recent"]) })).output(RunsListOutputSchema),
+  },
+  /** The account's spending limit for payments its bots make. */
+  spendingLimit: {
+    get: oc.output(SpendingStatusSchema),
+    /** `null` removes the limit. */
+    set: oc
+      .input(z.object({ limit: SpendingLimitSchema.nullable() }).strict())
+      .output(SpendingStatusSchema),
+    /** The latest payments that count, newest first. */
+    payments: oc.output(z.array(SpendingPaymentSchema)),
   },
   /** The signed-in user's wallet; absent when the deployment offers none. */
   paymentWallet: {

@@ -6,7 +6,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
-import type { ModelRoleSettings } from "@rakazo/contracts";
+import type { ModelRoleSettings, SpendingLimit } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import { inboundRoutineBlock } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
@@ -17,10 +17,16 @@ import { DENIED_ACTION_ERROR, isApprovalPausedResult } from "./approval-effect.j
 import { MAX_SHARED_MEMORY_CHARS } from "./builtin-tools.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
+import { fakeSpendingPrisma } from "./fake-spending.js";
 import { FakeWebProvider } from "./fake-web.js";
 import type * as FleetToolsModule from "./fleet-tools.js";
 import type { HostComputerRequest } from "./host-computer-protocol.js";
-import { catalogEntries, resolveCatalogCall } from "./lazy-tool-catalog.js";
+import {
+  CATALOG_EXECUTE,
+  catalogEntries,
+  lazyCatalogTools,
+  resolveCatalogCall,
+} from "./lazy-tool-catalog.js";
 import type { TurnCheckpoint } from "./turn-checkpoint.js";
 import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
@@ -69,6 +75,7 @@ function fixture({
   name = "demo_get_item",
   route,
   catalog = false,
+  catalogPrefix,
   readOnly = true,
   rules = [] as ActionApprovalRule[],
   confirmationsOverride = false,
@@ -101,9 +108,12 @@ function fixture({
   botUserId = "user-1",
   batch,
   browser,
+  spendingLimit = null,
 }: {
   /** A page browser on a graphical computer, so browser_act and computer_act are offered. */
   browser?: BrowserProvider;
+  /** The user's spending limit for payments. */
+  spendingLimit?: SpendingLimit | null;
 
   /** The tool runs the actions its arguments name; see ConnectorTool.batch. */
   batch?: ConnectorTool["batch"];
@@ -128,6 +138,8 @@ function fixture({
   name?: string;
   route?: ConnectorTool["route"];
   catalog?: boolean;
+  /** Expose this prefix's lazy catalog wrappers instead of the tool itself. */
+  catalogPrefix?: string;
   readOnly?: boolean;
   rules?: ActionApprovalRule[];
   /** The Space has its own confirmations; otherwise `rules` and auto review are the account's. */
@@ -307,7 +319,10 @@ function fixture({
   let checkpointCapture:
     | { executionId: string; checkpoint: Omit<TurnCheckpoint, "provider" | "model"> }
     | undefined;
+  const spending = fakeSpendingPrisma(spendingLimit);
   const prisma = {
+    spendingLimit: spending.client.spendingLimit,
+    payment: spending.client.payment,
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findFirst: vi.fn(
@@ -469,7 +484,9 @@ function fixture({
   };
   const transactionalPrisma = Object.assign(prisma, {
     $queryRaw: vi.fn(async () => []),
-    $transaction: async (action: (tx: typeof prisma) => unknown) => action(prisma),
+    $transaction: vi.fn(async (action: (tx: typeof prisma) => unknown, _options?: unknown) =>
+      action(prisma),
+    ),
   });
   const pauseRunForInput = vi.fn(async () => {
     run.status = "waiting_input";
@@ -535,31 +552,38 @@ function fixture({
       discoverTools: async () =>
         builtin
           ? []
-          : catalog
-            ? [
-                {
-                  name: "demo_execute_tool",
-                  description: "Execute a catalog tool",
-                  inputSchema: { type: "object" },
-                  route: { connectorId: "demo", toolName: "__catalog_execute" },
-                },
-              ]
-            : secondResource
+          : catalogPrefix
+            ? lazyCatalogTools(catalogPrefix, catalogPrefix, "app", catalogEntries([tool]))
+            : catalog
               ? [
-                  tool,
                   {
-                    ...tool,
-                    name: "demo_get_other",
-                    route: {
-                      connectorId: "demo",
-                      resourceId: "resource-2",
-                      toolName: "demo_get_other",
-                    },
+                    name: "demo_execute_tool",
+                    description: "Execute a catalog tool",
+                    inputSchema: { type: "object" },
+                    route: { connectorId: "demo", toolName: "__catalog_execute" },
                   },
                 ]
-              : [tool],
-      resolveCall: async (call: ConnectorCall) =>
-        catalog ? resolveCatalogCall(call, catalogEntries([tool])) : undefined,
+              : secondResource
+                ? [
+                    tool,
+                    {
+                      ...tool,
+                      name: "demo_get_other",
+                      route: {
+                        connectorId: "demo",
+                        resourceId: "resource-2",
+                        toolName: "demo_get_other",
+                      },
+                    },
+                  ]
+                : [tool],
+      resolveCall: async (call: ConnectorCall) => {
+        if (catalogPrefix) {
+          if (call.route?.resourceId || call.route?.toolName !== CATALOG_EXECUTE) return undefined;
+          return resolveCatalogCall(call, catalogEntries([tool]));
+        }
+        return catalog ? resolveCatalogCall(call, catalogEntries([tool])) : undefined;
+      },
       execute,
     },
     sandbox: { describe: () => ({ capabilities: { graphical: Boolean(browser) } }) },
@@ -606,6 +630,7 @@ function fixture({
   return {
     prisma: transactionalPrisma,
     effects,
+    spending: spending.state,
     web,
     fetchedUrls,
     fleetBots,
@@ -1216,6 +1241,40 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
     });
   });
+
+  it("catalog-load-no-card", async () => {
+    for (const prefix of ["pipedream", "connectors"]) {
+      const load = fixture({ catalogPrefix: prefix, name: "gmail-find-email" });
+      load.setCalls([
+        {
+          name: `${prefix}_load_tool`,
+          args: { id: "gmail-find-email" },
+          executionId: "call-1",
+        },
+      ]);
+      await load.run();
+      expect(load.pauseRunForInput).not.toHaveBeenCalled();
+      expect(load.execute).toHaveBeenCalledOnce();
+      expect(isApprovalPausedResult(load.results[0])).toBe(false);
+
+      const run = fixture({
+        catalogPrefix: prefix,
+        name: "gmail-delete-email",
+        readOnly: false,
+      });
+      run.setCalls([
+        {
+          name: `${prefix}_execute_tool`,
+          args: { id: "gmail-delete-email", arguments: { id: "item-1" } },
+          executionId: "call-1",
+        },
+      ]);
+      await run.run();
+      expect(run.execute).not.toHaveBeenCalled();
+      expect(run.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(isApprovalPausedResult(run.results[0])).toBe(true);
+    }
+  });
 });
 
 describe("Composio batches", () => {
@@ -1469,6 +1528,7 @@ describe("own instructions through update_bot", () => {
     expect(f.instructionState.instructionHistory).toEqual([
       expect.objectContaining({ instructions: "Draft only", reason: "Set in chat" }),
     ]);
+    expect(f.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
   });
   it("sets them after a profile edit earlier in the run", async () => {
     const f = emptyBot({ autoReview: true });
@@ -2349,6 +2409,57 @@ describe("command watch creation approval", () => {
       expect(reviewMock).not.toHaveBeenCalled();
     },
   );
+
+  it("returns a command watch sent with a schedule as an error without a card", async () => {
+    const f = fixture({
+      name: "schedule_create",
+      builtin: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "schedule_create" }],
+    });
+    const watch = { kind: "command", command: "ls inbox", everyMinutes: 15 };
+    const args = { name: "Inbox check", prompt: "Summarize what changed", watch };
+    f.setCalls([
+      { args: { ...args, every: 15 }, executionId: "call-1" },
+      { args, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(f.results[0]).toEqual({
+      error:
+        "A watch takes no schedule: it checks every watch.everyMinutes minutes (5 to 1440). Call again without every.",
+    });
+    // Only the valid request is recorded and asks, still with no rule or reviewer passing it.
+    expect(f.effects).toHaveLength(1);
+    expect(f.effects[0]).toMatchObject({ request: expect.objectContaining({ watch }) });
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[1])).toBe(true);
+  });
+
+  it("refuses a command watch whose name is taken before asking", async () => {
+    const taken = {
+      id: "routine-1",
+      name: "Inbox check",
+      prompt: "Summarize",
+      threadId: "thread-1",
+    };
+    const f = fixture({ name: "schedule_create", builtin: true, routines: [taken] });
+    f.setCalls([
+      {
+        args: {
+          name: "Inbox check",
+          prompt: "Summarize what changed",
+          watch: { kind: "command", command: "ls inbox" },
+        },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results[0]).toEqual({
+      error:
+        'An active routine named "Inbox check" already exists (routine-1). Update or cancel it instead.',
+    });
+    expect(f.effects).toEqual([]);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
 
   it("saves a command watch in Never ask after outside content", async () => {
     const f = fixture({ name: "schedule_create", builtin: true, skipApprovals: true });
@@ -3525,7 +3636,7 @@ describe("a click that completes a purchase on a website", () => {
   ];
 
   /** A page browser whose check says what the page would do, and which records what it pressed. */
-  function pageBrowser(found: typeof purchase | null = purchase) {
+  function pageBrowser(found: (typeof purchase & { total?: string }) | null = purchase) {
     const acts: unknown[][] = [];
     const checks: unknown[] = [];
     const provider = {
@@ -3613,6 +3724,7 @@ describe("a click that completes a purchase on a website", () => {
           site: "shop.example.test",
           label: "Pay $113",
           amount: "$113",
+          total: "",
         },
       ],
     ]);
@@ -3753,5 +3865,154 @@ describe("a click that completes a purchase on a website", () => {
     await f.run();
     expect(page.acts).toEqual([]);
     expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  describe("with a spending limit", () => {
+    const limit = { amount: 20_000, currency: "usd", period: "month" } as const;
+    const over =
+      "This would go over the user's spending limit of $200.00 a month ($100.00 spent), so nothing was paid. Don't retry; tell the user.";
+
+    it("counts a payment once it is approved and pressed, and only then", async () => {
+      const page = pageBrowser();
+      const f = fixture({ builtin: true, browser: page.provider, spendingLimit: limit });
+      f.setCalls([payCall()]);
+      await f.run();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(f.spending.payments).toEqual([]);
+      f.effects[0]!.status = "approved";
+      f.setCalls([payCall(undefined, "call-2")]);
+      await f.run();
+      expect(page.acts).toHaveLength(1);
+      expect(f.spending.payments).toEqual([
+        expect.objectContaining({
+          site: "shop.example.test",
+          amount: 11_300,
+          currency: "usd",
+          releasedAt: null,
+        }),
+      ]);
+    });
+
+    it("refuses a payment that would go over before asking", async () => {
+      const page = pageBrowser();
+      const f = fixture({ builtin: true, browser: page.provider, spendingLimit: limit });
+      f.spending.payments.push({
+        operationKey: "earlier",
+        userId: "user-1",
+        site: "other.example.test",
+        amount: 10_000,
+        currency: "usd",
+        releasedAt: null,
+        createdAt: new Date(),
+      });
+      f.setCalls([payCall()]);
+      await f.run();
+      expect(f.results).toEqual([{ error: over }]);
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(page.acts).toEqual([]);
+    });
+
+    it("counts the page's total when the button names less", async () => {
+      const page = pageBrowser({ ...purchase, label: "Pay $5", amount: "$5", total: "$250" });
+      const f = fixture({ builtin: true, browser: page.provider, spendingLimit: limit });
+      f.setCalls([payCall()]);
+      await f.run();
+      expect(f.results).toEqual([
+        {
+          error:
+            "This would go over the user's spending limit of $200.00 a month ($0.00 spent), so nothing was paid. Don't retry; tell the user.",
+        },
+      ]);
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    });
+
+    it("refuses an approved payment when another used the room while the card waited", async () => {
+      const page = pageBrowser();
+      const f = fixture({ builtin: true, browser: page.provider, spendingLimit: limit });
+      f.setCalls([payCall()]);
+      await f.run();
+      f.spending.payments.push({
+        operationKey: "meanwhile",
+        userId: "user-1",
+        site: "other.example.test",
+        amount: 10_000,
+        currency: "usd",
+        releasedAt: null,
+        createdAt: new Date(),
+      });
+      f.effects[0]!.status = "approved";
+      f.setCalls([payCall(undefined, "call-2")]);
+      await f.run();
+      expect(f.results.at(-1)).toMatchObject({ error: over, uncertain: false });
+      expect(page.acts).toEqual([]);
+      expect(f.spending.payments).toHaveLength(1);
+    });
+
+    it("presses nothing when the limit can't be checked", async () => {
+      const page = pageBrowser();
+      const f = fixture({ builtin: true, browser: page.provider, spendingLimit: limit });
+      f.setCalls([payCall()]);
+      await f.run();
+      f.effects[0]!.status = "approved";
+      f.prisma.payment.upsert = async () => {
+        throw new Error("connection lost");
+      };
+      f.setCalls([payCall(undefined, "call-2")]);
+      await f.run();
+      expect(f.results.at(-1)).toMatchObject({
+        error: "The user's spending limit couldn't be checked, so nothing was paid. Try again.",
+      });
+      expect(page.acts).toEqual([]);
+    });
+
+    it.each([
+      ["no total", ""],
+      ["a total in another currency", "€113"],
+      ["a total in an ambiguous currency", "¥113"],
+    ])("refuses a page with %s before asking", async (_case, amount) => {
+      const page = pageBrowser({ ...purchase, amount });
+      const f = fixture({ builtin: true, browser: page.provider, spendingLimit: limit });
+      f.setCalls([payCall()]);
+      await f.run();
+      expect(f.results).toEqual([
+        {
+          error:
+            "The total couldn't be read in USD, the currency of the user's spending limit, so it can't be counted against it and nothing was paid. Don't retry; tell the user.",
+        },
+      ]);
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    });
+
+    it("stops counting a payment the page refused to press", async () => {
+      const page = pageBrowser();
+      page.provider.act = vi.fn(async () => ({
+        ok: false,
+        completed: 1,
+        uncertain: false,
+        url: "https://shop.example.test/pay",
+        title: "Pay",
+        error: "The page changed since the user approved this purchase.",
+      }));
+      const f = fixture({ builtin: true, browser: page.provider, spendingLimit: limit });
+      f.setCalls([payCall()]);
+      await f.run();
+      f.effects[0]!.status = "approved";
+      f.setCalls([payCall(undefined, "call-2")]);
+      await f.run();
+      expect(f.spending.payments).toEqual([
+        expect.objectContaining({ amount: 11_300, releasedAt: expect.any(Date) }),
+      ]);
+    });
+  });
+
+  it("records a payment without a limit, so a limit set later counts it", async () => {
+    const page = pageBrowser();
+    const f = fixture({ builtin: true, browser: page.provider });
+    f.setCalls([payCall()]);
+    await f.run();
+    f.effects[0]!.status = "approved";
+    f.setCalls([payCall(undefined, "call-2")]);
+    await f.run();
+    expect(f.spending.payments).toEqual([expect.objectContaining({ amount: 11_300 })]);
   });
 });

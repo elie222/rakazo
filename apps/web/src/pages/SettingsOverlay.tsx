@@ -20,6 +20,7 @@ import { BillingSettingsPanel } from "./BillingSettingsPanel";
 import { MemorySettingsOverlay } from "./MemorySettingsOverlay";
 import { MessagingSettingsPanel } from "./MessagingSettingsPanel";
 import { ModelSettingsOverlay } from "./ModelSettingsOverlay";
+import { OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
 import { PaymentWalletSettingsPanel } from "./PaymentWalletSettingsPanel";
 import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
 import { useSettingsNavItems } from "./settings-nav";
@@ -50,6 +51,7 @@ export function SettingsOverlay({
   sandboxProvider,
   onSandboxProviderChange,
   canConfigureComputers = false,
+  computerSettingsEnabled = false,
   messagingEnabled = false,
   paymentWalletProvider = null,
   memoryConfig,
@@ -81,6 +83,7 @@ export function SettingsOverlay({
   onSandboxProviderChange?: (sandboxProvider: string) => void;
   /** Admins choose where new computers run. */
   canConfigureComputers?: boolean;
+  computerSettingsEnabled?: boolean;
   messagingEnabled?: boolean;
   /** The wallet this deployment lets bots spend from; none hides Wallet. */
   paymentWalletProvider?: { id: string; name: string } | null;
@@ -99,10 +102,9 @@ export function SettingsOverlay({
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
   const showComputer =
-    canConfigureComputers ||
+    (computerSettingsEnabled && (canConfigureComputers || canChooseOwnComputer(sandboxProvider))) ||
     keepComputerRecovery ||
-    computersAreUnavailable(sandboxProvider) ||
-    canChooseOwnComputer(sandboxProvider);
+    computersAreUnavailable(sandboxProvider);
   const showUpdates = Boolean(desktopBridge()?.update);
   // A section that isn't available yet (billing before its flag loads) shows General until it is.
   const section =
@@ -399,6 +401,9 @@ export function SettingsOverlay({
                       onBusyChange={setVoiceBusy}
                     />
                   ) : null}
+                  {section === "organization" ? (
+                    <OrganizationSettingsPanel onBusyChange={setVoiceBusy} />
+                  ) : null}
                   {section === "confirmations" ? <ApprovalRulesSettings scope="account" /> : null}
                   {section === "vault" ? <VaultSettings scope="account" /> : null}
                   {section === "messaging" && messagingEnabled ? <MessagingSettingsPanel /> : null}
@@ -417,6 +422,7 @@ export function SettingsOverlay({
                       }}
                       onRecoveryDismissed={releaseComputerRecovery}
                       canConfigureComputers={canConfigureComputers}
+                      computerSettingsEnabled={computerSettingsEnabled}
                     />
                   ) : null}
                   {section === "billing" && billingEnabled ? <BillingSettingsPanel /> : null}
