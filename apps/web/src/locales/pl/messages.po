@@ -1647,7 +1647,7 @@ msgstr "Komputery są dostępne. Odśwież stronę lub otwórz bota, aby kontynu
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Computers are off on this server."
-msgstr ""
+msgstr "Komputery są wyłączone na tym serwerze."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
