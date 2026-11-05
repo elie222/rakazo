@@ -67,4 +67,9 @@ export const KO_MESSAGES: Record<string, string> = {
   "Your changes to the {name} page are approved.": "{name} 페이지 변경 사항이 승인되었습니다.",
   "We couldn't approve your changes to the {name} page.":
     "{name} 페이지 변경 사항을 승인하지 못했습니다.",
+  "Your saved computer files will be deleted": "저장된 컴퓨터 파일이 삭제됩니다",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "다시 구독하지 않으면 저장된 컴퓨터 파일이 {date}에 삭제됩니다.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "플랜을 선택하지 않으면 저장된 컴퓨터 파일이 {date}에 삭제됩니다.",
 };

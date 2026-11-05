@@ -73,9 +73,14 @@ function oauthPrisma() {
     userVoiceCredential: {
       count: vi.fn(async () => 0),
     },
+    $executeRaw: vi.fn(async () => 0),
     secret: {
       findFirst: vi.fn(
         async (args: { where: { id: string }; select?: Record<string, boolean> }) =>
+          state.secrets.find((row) => row.id === args.where.id) ?? null,
+      ),
+      findUnique: vi.fn(
+        async (args: { where: { id: string } }) =>
           state.secrets.find((row) => row.id === args.where.id) ?? null,
       ),
       deleteMany: vi.fn(async (args: { where: { id: string } }) => {
@@ -254,8 +259,9 @@ describe("OAuth credential retirement on terminal refresh rejection", () => {
   });
 
   it("keeps a credential a concurrent refresh already rewrote", async () => {
-    // The refresh raced a sibling run that persisted rotated tokens into the
-    // same secret row; the stale failure must not delete the newer material.
+    // A writer outside the refresh lock (a run persisting its own refresh) rotated
+    // the tokens while this refresh was failing; the stale failure must not delete
+    // the newer material.
     const fetchMock = vi.fn(
       async () =>
         new Response(JSON.stringify({ error: "invalid_grant", error_description: "gone" }), {
@@ -266,6 +272,7 @@ describe("OAuth credential retirement on terminal refresh rejection", () => {
     const { prisma, state } = oauthPrisma();
     const load = vi
       .fn()
+      .mockImplementationOnce(() => expiredOAuthPlaintext())
       .mockImplementationOnce(() => expiredOAuthPlaintext())
       .mockImplementation(() => rotatedOAuthPlaintext());
     const { executor, secretStore } = oauthExecutor(prisma, load);

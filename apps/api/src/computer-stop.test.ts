@@ -4,10 +4,17 @@ import path from "node:path";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { FakeSandboxProvider, LocalAgentHomeStore, provisionComputer } from "@rakazo/adapters";
+import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
+
+// The plan's size is read from billing, which these Prisma doubles do not model.
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof Db>()),
+  planComputerSize: vi.fn(async () => "standard"),
+}));
 
 function deferred() {
   let resolve!: () => void;

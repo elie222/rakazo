@@ -123,6 +123,7 @@ describe("reconcileStrategicInitiatives", () => {
     expect(tasks[0]?.prompt).toContain("NO_RESPONSE");
     expect(runs[0]).toMatchObject({ trigger: "routine" });
     expect(runs[0]?.clientNonce).toContain("strategic-initiative:bot-1:");
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
     expect(enqueue).toHaveBeenCalledWith({
       name: "run.continue",
       payload: { runId: runs[0]?.id },
@@ -182,6 +183,29 @@ describe("reconcileStrategicInitiatives", () => {
               ],
             },
             select: { id: true },
+          },
+        }),
+      }),
+    );
+  });
+
+  it("waits a week after a failed check-in before trying that bot again", async () => {
+    const now = new Date("2026-11-02T12:00:00.000Z");
+    const { prisma } = strategicPrisma({ bots: [] });
+    await reconcileStrategicInitiatives({ prisma, jobs: publisher().jobs, now, pageSize: 10 });
+    expect(prisma.bot.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          runs: {
+            none: {
+              OR: expect.arrayContaining([
+                {
+                  clientNonce: { startsWith: "strategic-initiative:" },
+                  status: "failed",
+                  createdAt: { gt: new Date("2026-10-26T12:00:00.000Z") },
+                },
+              ]),
+            },
           },
         }),
       }),

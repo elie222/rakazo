@@ -54,15 +54,30 @@ describe("unavailable space", () => {
       expect(new Headers(init?.headers).has("x-rakazo-space-id")).toBe(false);
       return Response.json({
         json: {
-          current: {
-            id: "home",
-            name: "Home",
-            bots: [],
-            groups: [],
-            externalConversations: [],
-            botSections: [],
-          },
-          spaces: spaces.map((id) => ({ id })),
+          activeOrganizationId: "personal",
+          organizations: [
+            {
+              id: "personal",
+              name: "Personal",
+              defaultSpaceId: "home",
+              spaceIds: spaces,
+              canManage: true,
+            },
+            {
+              id: "work",
+              name: "Work",
+              defaultSpaceId: "work-home",
+              spaceIds: ["work-home"],
+              canManage: true,
+            },
+            {
+              id: "team",
+              name: "Team",
+              defaultSpaceId: "team-home",
+              spaceIds: ["team-home"],
+              canManage: false,
+            },
+          ],
         },
       });
     });
@@ -72,8 +87,10 @@ describe("unavailable space", () => {
 
   it("drops a space the user is no longer in and reloads", async () => {
     const { items, reload } = browser("space-gone", ["home"]);
+    items.set("rakazo:org-spaces", JSON.stringify({ work: "work-home" }));
     await leaveUnavailableSpace("space-gone");
     expect(items.has("rakazo:space-id")).toBe(false);
+    expect(items.get("rakazo:org-spaces")).toBe(JSON.stringify({ work: "work-home" }));
     expect(reload).toHaveBeenCalledOnce();
   });
 
@@ -98,6 +115,20 @@ describe("unavailable space", () => {
       expect(items.get("rakazo:space-id")).toBe("space-a");
       expect(reload).not.toHaveBeenCalled();
     }
+  });
+
+  it("keeps a space in an organization the user is only a member of", async () => {
+    const { items, reload } = browser("team-home", ["home"]);
+    await leaveUnavailableSpace("team-home");
+    expect(items.get("rakazo:space-id")).toBe("team-home");
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("keeps a space that belongs to another of the user's organizations", async () => {
+    const { items, reload } = browser("work-home", ["home"]);
+    await leaveUnavailableSpace("work-home");
+    expect(items.get("rakazo:space-id")).toBe("work-home");
+    expect(reload).not.toHaveBeenCalled();
   });
 });
 

@@ -583,6 +583,58 @@ describe("OpenAPI connector import", () => {
     ]);
   });
 
+  it("prefers parameter descriptions while preserving schema descriptions as a fallback", () => {
+    const imported = importOpenApiDocument({
+      openapi: "3.1.0",
+      servers: [{ url: "https://api.example.test" }],
+      components: {
+        schemas: { Value: { type: "string", description: "Shared value" } },
+        parameters: {
+          Referenced: {
+            name: "referenced",
+            in: "query",
+            description: "Referenced parameter",
+            schema: { $ref: "#/components/schemas/Value" },
+          },
+        },
+      },
+      paths: {
+        "/items": {
+          get: {
+            operationId: "listItems",
+            parameters: [
+              {
+                name: "direct",
+                in: "query",
+                description: "Direct parameter",
+                schema: { $ref: "#/components/schemas/Value" },
+              },
+              { $ref: "#/components/parameters/Referenced" },
+              { name: "schemaOnly", in: "query", schema: { $ref: "#/components/schemas/Value" } },
+              {
+                name: "empty",
+                in: "query",
+                description: "",
+                schema: { $ref: "#/components/schemas/Value" },
+              },
+              { name: "plain", in: "query", schema: { type: "number" } },
+              { name: "fallback", in: "query", description: "Fallback parameter" },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(imported.operations[0]?.inputSchema.properties).toEqual({
+      direct: { type: "string", description: "Direct parameter" },
+      referenced: { type: "string", description: "Referenced parameter" },
+      schemaOnly: { type: "string", description: "Shared value" },
+      empty: { type: "string", description: "" },
+      plain: { type: "number" },
+      fallback: { type: "string", description: "Fallback parameter" },
+    });
+  });
+
   it("refuses ambiguous specs without stable operation ids", () => {
     expect(() =>
       importOpenApiDocument({

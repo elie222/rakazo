@@ -4,7 +4,7 @@ import { ModelBackupChoiceSchema, modelChoiceListSchema } from "./domain.js";
 import { Id, ThinkingLevelSchema } from "./ids.js";
 
 /** Add purposes here; connections, persistence, pickers and backups stay shared. */
-export const ModelRoleSchema = z.enum(["main", "approval"]);
+export const ModelRoleSchema = z.enum(["main", "approval", "computer"]);
 export type ModelRole = z.infer<typeof ModelRoleSchema>;
 export const ModelRoleChoiceSchema = ModelBackupChoiceSchema.extend({
   thinkingLevel: ThinkingLevelSchema.nullable().optional(),
@@ -25,5 +25,6 @@ export const ModelRoleViewSchema = ModelRoleSettingsSchema.extend({
 export type ModelRoleView = z.infer<typeof ModelRoleViewSchema>;
 
 export function modelSupportsRole(entry: ModelCatalogEntry, role: ModelRole): boolean {
-  return role === "approval" || entry.protocol !== "decisions";
+  if (role === "approval") return true;
+  return entry.protocol !== "decisions" && (role !== "computer" || entry.images !== false);
 }

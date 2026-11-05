@@ -16,6 +16,7 @@ import { ArtifactFileCard } from "../../components/ArtifactFileCard";
 import { AskCard } from "../../components/AskCard";
 import { CollaborationMarker } from "../../components/ai/CollaborationMarker";
 import { CloudAgentCard } from "../../components/CloudAgentCard";
+import { McpAppCard } from "../../components/McpAppCard";
 import { PageBlockCard } from "../../components/pages/PageBlockCard";
 import { SubagentCard } from "../../components/SubagentCard";
 import {
@@ -30,6 +31,7 @@ import type { ArtifactTarget } from "../../lib/artifact-open";
 import { messageProviderLabel } from "../../lib/messaging";
 import type { PageBlock } from "../../lib/page-cards";
 import { useOpenPage } from "../../lib/pages";
+import type { createSpaceRpc } from "../../lib/rpc";
 import {
   isToolOnlyNarration,
   renderableMessageBlocks,
@@ -74,6 +76,7 @@ export const MessageView = memo(function MessageView({
   onSpeak,
   onOpenComputer,
   onOpenImportSetup,
+  rpc,
   showToolActivity,
   onReply,
   onMarkUnread,
@@ -117,6 +120,7 @@ export const MessageView = memo(function MessageView({
   onOpenComputer: (botId?: string) => void;
   /** Opens where an imported item's setup is finished. */
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
+  rpc: ReturnType<typeof createSpaceRpc>;
   showToolActivity: boolean;
   onReply: (message: ThreadMessage) => void;
   onMarkUnread: (message: ThreadMessage) => void;
@@ -184,7 +188,7 @@ export const MessageView = memo(function MessageView({
         <div
           className="mb-1.5 flex items-center gap-2 text-[13px] font-semibold tracking-tight"
           dir="auto"
-          style={{ color: speakerColorDef.light }}
+          style={{ color: speakerColorDef.hex }}
         >
           <BotAvatar
             color={speakerBot?.color ?? FALLBACK_BOT_COLOR}
@@ -471,6 +475,13 @@ export const MessageView = memo(function MessageView({
               </div>
             );
           }
+          if (block.kind === "app") {
+            return (
+              <div key={i} className="flex justify-start">
+                <McpAppCard block={block} target={artifactTarget} />
+              </div>
+            );
+          }
           if (block.kind === "import_setup") {
             return (
               <div key={i} className="flex justify-start">
@@ -601,6 +612,7 @@ export const MessageView = memo(function MessageView({
                     onAnswer(message, text, fields, undefined, remember)
                   }
                   onDismiss={() => onAnswer(message, "", undefined, true)}
+                  rpc={rpc}
                 />
                 {i === hoverAnchorIndex ? hoverActions : null}
               </div>
@@ -683,7 +695,7 @@ function BotMention({
     <span
       dir="auto"
       className="font-medium"
-      style={live ? { color: resolvePersonaColorDef(block.botId, color).light } : undefined}
+      style={live ? { color: resolvePersonaColorDef(block.botId, color).hex } : undefined}
     >
       {block.name}
     </span>

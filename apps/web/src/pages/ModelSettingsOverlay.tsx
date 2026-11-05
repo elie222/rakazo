@@ -267,7 +267,8 @@ export function ModelSettingsOverlay({
           <ConnectionNameField
             key={credential.id}
             credential={credential}
-            onRenamed={() => void refresh()}
+            // A rename touches only the label; keep any unsaved form fields.
+            onRenamed={() => void refresh({ keepForm: true })}
           />
         ) : null}
         {connection}
@@ -326,6 +327,22 @@ export function ModelSettingsOverlay({
               openConnection({ id, name: id }, null, credentialId, "approval")
             }
             panel={connectionAt === "approval" ? panelFor(true) : null}
+          />
+          <ModelRoleSettings
+            userId={me.userId}
+            spaceId={me.spaceId}
+            scope={scope}
+            credentials={credentials}
+            modelRole="computer"
+            title={t`Computer-use model`}
+            defaultLabel={t`Same as main model`}
+            providers={providers}
+            providerLabel={providerLabel}
+            onConnect={(next, intent) => openConnection(next, intent, null, "computer")}
+            onManage={(id, credentialId) =>
+              openConnection({ id, name: id }, null, credentialId, "computer")
+            }
+            panel={connectionAt === "computer" ? panelFor(true) : null}
           />
           {scope === "space" ? null : (
             <ProvidersSection

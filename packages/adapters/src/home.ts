@@ -271,6 +271,23 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     await removeTree(`${dir}.previous`);
     await removeTree(dir);
     await rm(this.revisionFile(botId), { force: true });
+    await rm(this.downloadedFile(botId), { force: true });
+  }
+
+  /**
+   * Records that this host's copy came from object storage. A file beside the revision marker,
+   * rather than a change to its contents, so a previous release reading the marker keeps working.
+   */
+  protected async markDownloaded(botId: string) {
+    await mkdir(path.join(this.root, "home-downloads"), { recursive: true });
+    await writeFile(this.downloadedFile(botId), "");
+  }
+
+  protected async isDownloaded(botId: string): Promise<boolean> {
+    return stat(this.downloadedFile(botId)).then(
+      () => true,
+      () => false,
+    );
   }
 
   protected async touchRevision(botId: string) {
@@ -305,6 +322,10 @@ export class LocalAgentHomeStore implements AgentHomeStore {
       if (isMissing(error)) return undefined;
       throw error;
     });
+  }
+
+  private downloadedFile(botId: string) {
+    return path.join(this.root, "home-downloads", path.basename(this.botDir(botId)));
   }
 
   private revisionFile(botId: string) {

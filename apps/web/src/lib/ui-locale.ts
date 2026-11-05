@@ -22,6 +22,7 @@ export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
   he: "עברית",
   nl: "Nederlands",
   ja: "日本語",
+  pl: "Polski",
 };
 
 /** Normalize BCP-47 tags (`de-DE`, `ko-KR`, `pt-BR`, `zh-CN`, `es-ES`) to a supported UI locale, else `en`. */

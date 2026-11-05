@@ -601,8 +601,34 @@ const calls: Scenario = {
   ],
 };
 
+// Every markdown style a reply can use, so type and weight changes can be judged in one place.
+const textStyles: Scenario = {
+  id: "text-styles",
+  label: "Text styles",
+  messages: [
+    user("Show me the text styles you can use."),
+    say(
+      [
+        "# Heading 1",
+        "## Heading 2",
+        "### Heading 3",
+        "A plain paragraph that runs long enough to wrap, so line height and measure show the way a real answer reads.",
+        "**Bold**, *italic*, ***bold italic***, ~~strikethrough~~, `inline code` and a [link](https://example.test).",
+        "> A blockquote that also runs long enough to wrap onto a second line.",
+        "- A bullet\n- Another bullet\n  - A nested bullet",
+        "1. **A bold lead-in:** then the rest of the item, long enough to wrap.\n2. A second item",
+        "| Plan | Price |\n| --- | --- |\n| Free | $0 |\n| Pro | $20 |",
+        '```\nconst greeting = "hello";\n```',
+        "---",
+        "A closing paragraph after a rule.",
+      ].join("\n\n"),
+    ),
+  ],
+};
+
 const SCENARIOS: Scenario[] = [
   conversation,
+  textStyles,
   questions,
   approvals,
   secrets,

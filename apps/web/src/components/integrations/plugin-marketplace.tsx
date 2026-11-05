@@ -14,7 +14,9 @@ import { ArrowUpRight, Check, ChevronLeft, FileText, Plug } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { connectMcpOauth } from "../../lib/mcp-connect";
 import { rpc } from "../../lib/rpc";
-import { errorText } from "../../lib/user-error";
+import type { ErrorDetails } from "../../lib/user-error";
+import { errorDetails } from "../../lib/user-error";
+import { ErrorNotice } from "../ErrorNotice";
 import { AvailabilityControl, reachesOtherSpaces, useOwnSpaces } from "./space-availability";
 
 export type PluginSelection = {
@@ -175,7 +177,7 @@ export function PluginDetail({
   const [preview, setPreview] = useState<PluginPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorDetails | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [recipe, setRecipe] = useState<{ name: string; content: string | null } | null>(null);
   const [allSkills, setAllSkills] = useState(false);
@@ -217,7 +219,7 @@ export function PluginDetail({
         if (!cancelled) setPreview(result);
       })
       .catch((err) => {
-        if (!cancelled) setError(errorText(err, t`Could not preview plugin`));
+        if (!cancelled) setError(errorDetails(err, t`Could not preview plugin`));
       })
       .finally(() => {
         if (!cancelled) setPreviewLoading(false);
@@ -233,7 +235,7 @@ export function PluginDetail({
     try {
       await action();
     } catch (err) {
-      if (live.current) setError(errorText(err, failure));
+      if (live.current) setError(errorDetails(err, failure));
     } finally {
       if (live.current) setPending(null);
     }
@@ -272,7 +274,7 @@ export function PluginDetail({
         if (!live.current) return;
         if (result === "authorization_not_requested")
           setNoAuth((current) => new Set([...current, server.id]));
-        if (result === "cancelled") setError(t`Sign-in cancelled. Try again.`);
+        if (result === "cancelled") setError(errorDetails(t`Sign-in cancelled. Try again.`));
         await onChanged();
       },
       t`Could not sign in`,
@@ -306,7 +308,7 @@ export function PluginDetail({
     } catch (err) {
       if (live.current) {
         setRecipe(null);
-        setError(errorText(err, t`Could not load skill`));
+        setError(errorDetails(err, t`Could not load skill`));
       }
     }
   }
@@ -453,14 +455,13 @@ export function PluginDetail({
       ) : null}
 
       {error ? (
-        <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
-          {error}
+        <ErrorNotice error={error}>
           {!installed && !preview && !previewLoading ? (
             <Button variant="outline" size="sm" onClick={() => setAttempt((value) => value + 1)}>
               <Trans>Retry</Trans>
             </Button>
           ) : null}
-        </div>
+        </ErrorNotice>
       ) : null}
 
       {previewLoading ? (

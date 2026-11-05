@@ -104,13 +104,38 @@ The backend decrypts the value and the page browser types it only if the page is
 
 Logins saved before fields existed read as a visible Username and a hidden Password, and fill exactly as before.
 
-## Managing saved credentials
+## Payment cards
+
+A bot asks for a card with `request_secret` and auth `{ "type": "card" }`, with no origin. The card asks for the number, expiry, security code, name on card and, optionally, a saved contact whose address bills it. The whole card is encrypted like any other value. `list_secrets` shows the bot only its brand, last four digits, expiry, name and billing contact, never the number or security code.
+
+The bot types a saved card with `browser_act` `fill_card`, passing `card` and `site`, the checkout page's HTTPS origin:
+
+```json
+{
+  "actions": [
+    { "kind": "fill_card", "card": "visa-4242", "site": "https://shop.example.test", "field": "number" },
+    { "kind": "fill_card", "card": "visa-4242", "site": "https://shop.example.test", "field": "expiry" },
+    { "kind": "fill_card", "card": "visa-4242", "site": "https://shop.example.test", "field": "cvc" }
+  ]
+}
+```
+
+Every call that types a saved card asks the person first, naming the card and the site ("Pay with Visa ·· 4242 on shop.example.test?"). Allow once is the only way to approve it, and a webhook run, which nobody can answer, is refused. One call types one card on one site, and the page browser types it only while the page is still on that origin, including a payment frame inside it. `postal_code` comes from the billing contact. Approving the card names no amount, so the click that places the order still asks, with the total the page shows; a call that types the card and presses that click asks once, showing both. That click counts against your [spending limit](./approvals.md#spending-limit), if you set one. Every run of the bot hides each saved card number from tool output, in plain, digits-only, spaced and dashed forms. The security code is not hidden, as for a wallet card: at 3 or 4 digits, hiding it would blank every total and order number that contains them.
+
+## Contacts
+
+A contact is a name, address, phone or email, the user's own or someone else's, such as `home`, `mom` or `office`. A bot asks for one with `request_secret` and auth `{ "type": "contact" }`, with no origin. A contact is not secret from the bot: `list_secrets` returns its fields, and the bot types them like any other text. It is still encrypted at rest.
+
+## Managing the vault
 
 Owners can manage what is saved without asking the bot. Open **Settings → Vault** on web, the
-desktop app or mobile. It lists each credential's name, origin and authentication type. From there
-you can show a value, replace it on the same destination, or remove one after confirming. Remove
-deletes the saved value immediately. Asking the bot to `forget_secret` a name only removes it; it
-does not list or replace one.
+desktop app or mobile. It lists every item by its title, which the owner can change (a card without
+one shows as "Visa ·· 4242", a login as its site), with a line from the item: a login's username, a
+card's expiry, a contact's name and city. New adds a login, card, contact, API key or variable.
+Opening an item shows its fields; protected values show only after you confirm it's you. From
+there you can edit an item, add a note on when the bot should use it, which `list_secrets` shows
+the bot, or remove it after confirming. Remove deletes the saved value immediately. Asking the bot
+to `forget_secret` a name only removes it; it does not list or replace one.
 
 A sign-in without a password, such as an ID number and phone number, uses the same login card. CAPTCHA and passkeys still use `request_takeover`, as does any sign-in you prefer to do yourself.
 

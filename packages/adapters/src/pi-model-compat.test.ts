@@ -8,7 +8,7 @@ it.each([
   ["groq", "openai/gpt-oss-20b"],
   ["groq", "openai/gpt-oss-120b"],
   ["groq", "qwen/qwen3.6-27b"],
-  ["xiaomi", "mimo-v2.5"],
+  ["xiaomi", "mimo-v2.6-flash"],
 ])("sends system instructions to the %s %s chat template", async (provider, id) => {
   const models = applyPiModelCompatibility(builtinModels());
   const model = models.getModel(provider, id);

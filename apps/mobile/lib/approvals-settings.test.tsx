@@ -19,6 +19,8 @@ const state = vi.hoisted(() => ({
   spaceId: undefined as string | undefined,
   settings: { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: false },
   rules: [] as Rule[],
+  headerItems: [] as { label: string; onPress: () => void }[],
+  prompt: vi.fn(),
 }));
 const { element } = vi.hoisted(() => ({
   element:
@@ -46,8 +48,17 @@ vi.mock("./api", () => ({
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => undefined | (() => void)) => useEffect(effect, [effect]),
   useLocalSearchParams: () => ({ spaceId: state.spaceId }),
+  useNavigation: () => ({
+    setOptions: (options: { unstable_headerRightItems: () => typeof state.headerItems }) => {
+      state.headerItems = options.unstable_headerRightItems();
+    },
+  }),
 }));
+vi.mock("./native-controls", () => ({ iosAtLeast: () => true }));
+vi.mock("../components/name-dialog", () => ({ TextFieldDialog: () => null }));
 vi.mock("react-native", () => ({
+  Alert: { prompt: state.prompt },
+  Platform: { OS: "ios" },
   ScrollView: element("div"),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: element("p"),
@@ -146,6 +157,8 @@ beforeEach(() => {
   state.spaceId = undefined;
   state.settings = { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: false };
   state.rules = [];
+  state.headerItems = [];
+  state.prompt.mockReset();
   state.rpc
     .mockReset()
     .mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
@@ -233,4 +246,43 @@ it("offers a retry when the first load fails, then shows the rules", async () =>
   expect(rows()).toEqual(["Send email: Allow"]);
   expect(retry()).toBeUndefined();
   expect(container.textContent).not.toContain("Something went wrong. Try again.");
+});
+
+it("switches a tool rule back to Ask", async () => {
+  state.rules = [
+    {
+      id: "tool",
+      effect: "always_allow",
+      matchKind: "tool",
+      matchValue: "write_file",
+      createdAt: "2026-10-25T00:00:00.000Z",
+    },
+  ];
+  await render();
+  await act(async () => menuButton("Write file", "Ask")!.click());
+  expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
+    scope: "account",
+    effect: "require_approval",
+    matchKind: "tool",
+    matchValue: "write_file",
+  });
+  expect(menuButton("Write file", "Ask")!.getAttribute("aria-pressed")).toBe("true");
+});
+
+it("adds a tool rule from the header prompt", async () => {
+  await render();
+  await act(async () => state.headerItems.find((item) => item.label === "Add rule")!.onPress());
+  const [, , buttons] = state.prompt.mock.calls[0] as [
+    string,
+    undefined,
+    { text: string; onPress?: (value?: string) => void }[],
+  ];
+  await act(async () => buttons.find((button) => button.text === "Save")!.onPress!(" write_file "));
+  expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
+    scope: "account",
+    effect: "require_approval",
+    matchKind: "tool",
+    matchValue: "write_file",
+  });
+  expect(rows()).toEqual(["Write file: Ask"]);
 });

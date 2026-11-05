@@ -791,7 +791,7 @@ export function BotSettings({
                 onBlur={() => void enqueueSave()}
                 placeholder={t`What this bot is for`}
                 rows={2}
-                className="min-h-16 resize-none field-sizing-content"
+                className="min-h-16 max-h-96 resize-none field-sizing-content"
               />
             </SettingsGroup>
             <SettingsGroup label={t`Tools`} plain>

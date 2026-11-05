@@ -6,6 +6,7 @@ import { EncryptedSecretStore } from "./secrets.js";
 export interface PushRecord {
   token: string;
   sessionId?: string;
+  presentation?: "android_sender";
 }
 
 export type CallPushRegistration = {
@@ -31,7 +32,12 @@ export interface PushTokenStore {
     transport?: "voip" | "expo",
   ): Promise<void>;
   load(userId: string): Promise<PushRecord | undefined>;
-  save(userId: string, token: string, sessionId: string): Promise<void>;
+  save(
+    userId: string,
+    token: string,
+    sessionId: string,
+    presentation?: "android_sender",
+  ): Promise<void>;
   /** Import only when neither the account nor the device is registered already. */
   importLegacy(userId: string, token: string, sessionId: string): Promise<boolean>;
   remove(userId: string, tokenDigest?: string): Promise<void>;
@@ -198,12 +204,20 @@ export class PrismaPushTokenStore implements PushTokenStore {
       return {
         token: await this.encryption.load(row.ciphertext, `push-token:${userId}`),
         sessionId: row.sessionId,
+        ...(row.presentation === "android_sender"
+          ? { presentation: "android_sender" as const }
+          : {}),
       };
     });
   }
 
-  async save(userId: string, token: string, sessionId: string): Promise<void> {
-    await this.register(userId, token, sessionId, "register");
+  async save(
+    userId: string,
+    token: string,
+    sessionId: string,
+    presentation?: "android_sender",
+  ): Promise<void> {
+    await this.register(userId, token, sessionId, "register", presentation);
   }
 
   importLegacy(userId: string, token: string, sessionId: string): Promise<boolean> {
@@ -215,6 +229,7 @@ export class PrismaPushTokenStore implements PushTokenStore {
     token: string,
     sessionId: string,
     mode: "register" | "import",
+    presentation?: "android_sender",
   ): Promise<boolean> {
     const value = token.trim();
     if (!value) throw new Error("Push token is empty");
@@ -253,7 +268,12 @@ export class PrismaPushTokenStore implements PushTokenStore {
           SELECT id FROM "session" WHERE id = ${sessionId} AND "userId" = ${userId}
           AND "expiresAt" > CURRENT_TIMESTAMP FOR UPDATE`;
           if (!sessions.length) throw new PushSessionEndedError();
-          const data = { ciphertext: sealed.ciphertext, tokenDigest, sessionId };
+          const data = {
+            ciphertext: sealed.ciphertext,
+            tokenDigest,
+            sessionId,
+            presentation: presentation ?? null,
+          };
           if (mode === "import") await tx.pushToken.create({ data: { userId, ...data } });
           else {
             await tx.pushToken.deleteMany({ where: { tokenDigest, userId: { not: userId } } });

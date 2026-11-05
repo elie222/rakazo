@@ -12,7 +12,7 @@ import { LocalAgentHomeStore } from "@rakazo/adapters";
 import type { AccountExportRecord, Actor } from "@rakazo/contracts";
 import { PAGE_SOURCE_MAX_BYTES } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, createDb } from "@rakazo/db";
+import { asSystem, createDb, createOrganizationForUser } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AccountImportError, importAccount } from "./account-import.js";
 import { buildArchive, chunked, exportFiles, manifestFor } from "./account-import.test-support.js";
@@ -329,7 +329,7 @@ describePostgres("account import (PostgreSQL)", () => {
         },
       ]),
     );
-  const runImport = (bytes: Uint8Array) =>
+  const runImport = (bytes: Uint8Array, importer = actor) =>
     importAccount(
       {
         prisma,
@@ -340,7 +340,7 @@ describePostgres("account import (PostgreSQL)", () => {
         dataDir: root,
         maxArtifactBytes: 1024 * 1024,
       },
-      actor,
+      importer,
       chunked(bytes),
     );
   const ownedSpaceIds = async () =>
@@ -387,7 +387,9 @@ describePostgres("account import (PostgreSQL)", () => {
 
   afterAll(async () => {
     if (!db) return;
-    await system.organization.deleteMany({ where: { id: organizationId } });
+    await system.organization.deleteMany({
+      where: { OR: [{ id: organizationId }, { members: { some: { userId } } }] },
+    });
     await system.user.deleteMany({ where: { id: userId } });
     await rm(root, { recursive: true, force: true });
     await db.prisma.$disconnect();
@@ -534,6 +536,14 @@ describePostgres("account import (PostgreSQL)", () => {
     expect(firstBots).toHaveLength(2);
     expect(secondBots).toHaveLength(2);
     expect(firstBots.filter((id) => secondBots.includes(id))).toEqual([]);
+  });
+
+  it("imports into the importer's current organization", async () => {
+    const work = await createOrganizationForUser(system, { userId, name: "Work" });
+    const result = await runImport(archive(), { ...actor, spaceId: work.defaultSpaceId });
+    await expect(
+      system.space.findUniqueOrThrow({ where: { id: result.spaces[0]!.id } }),
+    ).resolves.toMatchObject({ organizationId: work.id });
   });
 
   it("leaves out an artifact the export could not read, with its versions", async () => {

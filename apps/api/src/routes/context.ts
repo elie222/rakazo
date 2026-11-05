@@ -5,6 +5,7 @@ import {
   CHATGPT_OAUTH_PROVIDER,
   CodexCatalogCache,
   codexLiveCatalogsForSpace,
+  connectedModelSeesImages,
   connectionServesModel,
   createFaviconResolver,
   decisionModelCatalog,
@@ -287,7 +288,13 @@ export function createRouterContext(deps: RouterDeps) {
         choice.modelId,
         resolution,
       );
-      if (!credential && (choice.credentialId || !(entry && "managed" in entry && entry.managed)))
+      // Computer mode runs only on the member's own connections.
+      if (
+        !credential &&
+        (role === "computer" ||
+          choice.credentialId ||
+          !(entry && "managed" in entry && entry.managed))
+      )
         throw new ORPCError("BAD_REQUEST", { message: "Connect that model provider first" });
       // Another account of the provider listing the model does not make it run on this one;
       // the catalog names the connections that can, as the picker shows.
@@ -300,6 +307,18 @@ export function createRouterContext(deps: RouterDeps) {
         throw new ORPCError("BAD_REQUEST", {
           message: "That model is not available for this connection",
         });
+      if (
+        role === "computer" &&
+        !(await connectedModelSeesImages(
+          { prisma: deps.prisma, secretStore: deps.secrets },
+          actor.userId,
+          choice.provider,
+          choice.modelId,
+          credential,
+          entry?.images,
+        ))
+      )
+        throw new ORPCError("BAD_REQUEST", { message: "Choose a model that can see images" });
       if (choice.thinkingLevel) {
         const { allowed } = await prepareAllowedThinkingLevels(
           deps,

@@ -1,7 +1,7 @@
-import { Type } from "@earendil-works/pi-ai";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, ThinkingLevelSchema } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
+import { Type } from "typebox";
 import {
   normalizeOpenAiToolParameters,
   openAiToolParametersNeedNormalization,
@@ -106,6 +106,7 @@ function builtinParameters(tool: ConnectorTool) {
       name: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String()),
+      instructions_offset: Type.Optional(Type.Integer({ minimum: 0 })),
       color: Type.Optional(Type.String()),
       artifact_id: Type.Optional(Type.String()),
       use_attached_image: Type.Optional(Type.Boolean()),
@@ -167,7 +168,7 @@ function builtinParameters(tool: ConnectorTool) {
   if (tool.name === "create_space") {
     return Type.Object({ name: Type.String({ minLength: 1, maxLength: 60 }) });
   }
-  if (tool.name === "archive_bot" || tool.name === "delete_bot") {
+  if (tool.name === "archive_bot") {
     return Type.Object({
       confirm_name: Type.String(),
       bot_id: Type.Optional(Type.String()),
@@ -378,6 +379,9 @@ export function prepareFleetArguments(
   if (argumentGiven(raw.dailyCheckIns)) out.dailyCheckIns = raw.dailyCheckIns;
   const notify = raw.notifyOnFinish ?? raw.notify_on_finish;
   if (argumentGiven(notify)) out.notifyOnFinish = notify;
+  // The read pager's offset is a number; the handler validates it.
+  if (toolName === "update_bot" && argumentGiven(raw.instructions_offset))
+    out.instructions_offset = raw.instructions_offset;
   return out;
 }
 

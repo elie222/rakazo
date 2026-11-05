@@ -68,4 +68,9 @@ export const RU_MESSAGES: Record<string, string> = {
   "Your changes to the {name} page are approved.": "Ваши изменения на странице {name} одобрены.",
   "We couldn't approve your changes to the {name} page.":
     "Нам не удалось одобрить ваши изменения на странице {name}.",
+  "Your saved computer files will be deleted": "Сохранённые файлы вашего компьютера будут удалены",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "Сохранённые файлы вашего компьютера будут удалены {date}, если вы не продлите подписку.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Сохранённые файлы вашего компьютера будут удалены {date}, если вы не выберете тариф.",
 };

@@ -12,6 +12,29 @@ SandboxProvider workspace <-> AgentHomeStore <-> Rakazo-owned DATA_DIR
 
 Pi runs in the Rakazo API/worker process. It is not installed in, or executed by, E2B. The built-in tools are ordinary Pi tools, not Claude- or MCP-specific tools, so any model exposed through Pi can call them. Screen operation still requires a model that can accept image tool results and reason about screenshots.
 
+## Computer-use model
+
+Settings → Models has a **Computer-use model** list next to the main and approval models.
+It is one more model role: account-wide unless a Space overrides models. When a run starts,
+the first choice that can run is used; a provider outage during screen work does not switch to
+the next one. Left empty, the main model works the screen itself, as before. It is meant for a
+main model that cannot see, such as a text-only or self-hosted one.
+
+When it is set, the main model gets `enter_computer_mode` instead of the graphical tools.
+Calling it hands a concrete goal to the computer-use model in the same run, which gets the
+screen tools; `leave_computer_mode` returns a summary to the main model (with its active
+fallback and effort). Each model uses its own connection and context limits. A choice that
+is unavailable or cannot see images is skipped for the next one; if none works, the main
+model keeps the screen. The role is skipped when it names the main model itself, and for a
+main model that runs without a connection of the member's own, since a paused turn pins
+both models by connection.
+
+Approval and takeover checkpoints pin both models and their authentication types. Resume
+uses exactly those, even if settings changed meanwhile; a paused turn whose model or
+account is gone fails instead of retrying. Pi's provider serializers translate foreign
+reasoning and tool/result IDs, and replace screenshots with a placeholder for a main model
+that cannot see them.
+
 ## Computer contract
 
 Each workspace gets one Team Computer by default. Bots share its files and installed tools. Each Team bot starts in `bots/<bot-id>/`, while deliberately shared work belongs in `shared/`. These folders organize work but are not security boundaries: every Team bot can access the full Team workspace. A bot can instead use a Private Computer, where the whole workspace is its home.
@@ -79,7 +102,7 @@ The E2B adapter uses `@e2b/desktop` and the Novita adapter uses `novita-sandbox`
 
 ## Daytona backend
 
-The database stores the provider kind and opaque `providerRef`. That reference is an acceleration path, not durable data. It is passed back only to the same provider kind. A missing machine or a provider-kind change creates a replacement and restores its workspace through the provider-neutral contract.
+The Daytona adapter uses `@daytona/sdk` for lifecycle, commands, and files. It creates sandboxes from `DAYTONA_SNAPSHOT` when set, with Daytona's auto-stop and auto-delete turned off, so Rakazo's idle timer decides when a computer stops and a leaked sandbox bills until it is removed. Waking a sandbox Daytona has archived copies its disk back first, so start allows up to 10 minutes. Bot commands run through Daytona's process API and return their output when they finish rather than streaming it. The shared Linux runtime installs the desktop if the snapshot lacks it, which makes the first start slower, and serves each bot's screen through a signed Daytona preview URL that expires after an hour and is revoked on stop.
 
 ## Boat backend
 
@@ -88,6 +111,8 @@ The Boat adapter uses Boat's official TypeScript SDK for lifecycle, command, and
 Boat stop archives the machine and resume reconnects the same opaque sandbox id. Each bot’s Chrome profile lives under the portable workspace and is included in checkpoint/export. Boat states the API cannot recover from (deleted, cancelled, snapshot data expired, or an `error` that recover cannot fix) are reported as gone, so the computer is replaced and restored from its last checkpoint.
 
 ## Persistence
+
+The database stores the provider kind and opaque `providerRef`. That reference is an acceleration path, not durable data. It is passed back only to the same provider kind. A missing machine or a provider-kind change creates a replacement and restores its workspace through the provider-neutral contract.
 
 The portable computer workspace is the durable boundary. E2B uses `/home/user/rakazo-home`; Docker and local providers expose the equivalent home. Browser profiles are rooted under `.browser-profiles` in that workspace on E2B. Rakazo checkpoints transferred workspaces into `AgentHomeStore` at run completion or failure, before explicit stop, and before idle suspension. Docker mounts the Rakazo-owned home directly and only advances its revision marker at those boundaries. New or replacement machines import the latest stored workspace before use.
 
@@ -142,14 +167,14 @@ warns that unsaved work may be lost.
 
 The reconciler republishes queued operations after a missed enqueue. Jobs already
 claimed are never destructively replayed. A worker that stops heartbeating for ten
-minutes is marked interrupted and remains reserved until its provider calls settle.
-Only then is recovery available. If a worker has permanently disappeared, an operator
-must stop the affected workers and verify that provider operations have stopped before
-using the server-owner-only **Release computer** action in the interrupted dialog.
-Its confirmation requires an explicit assertion that workers and provider operations
-have stopped, then makes normal recovery available. The corresponding RPC is
-`computer/releaseInterrupted` with `{ id, workersStopped: true }`; it accepts only
-interrupted operations in the owner’s current workspace. A stale heartbeat alone
-never authorizes takeover. Progress reports
+minutes is marked interrupted and stays reserved, because its provider calls may still
+be running. If that worker settles, it records the outcome as usual. If it has not
+settled an hour after it was marked interrupted, the reconciler records the operation
+as failed and frees the computer, assuming by then that the provider calls have ended.
+The reconciler cannot know which state an unfinished save or teardown started from,
+so a computer with its machine still attached is quarantined, as after a stop the
+provider could not confirm, and bots cannot use it until Recover, Update or Reset
+replaces it. Any other computer left mid-save, mid-teardown or mid-boot becomes an
+error. Recover is then available. Progress reports
 actual lifecycle stages rather than estimated percentages; workspace files and
 browser profiles are portable, while system packages outside the workspace are not.

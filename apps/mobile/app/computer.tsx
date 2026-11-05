@@ -4,7 +4,6 @@ import {
   createScreenReconnect,
   displayName,
   isRetryableError,
-  SCREEN_RECONNECT_DELAY_MS,
   screenProbeUrl,
   waitForScreenPage,
 } from "@rakazo/core";
@@ -292,14 +291,21 @@ export default function Computer() {
 
   // A screen that drops after connecting loads again by itself now and then; the load goes
   // through the screen's full authorization, so a revoked one stays closed.
-  const screenReconnect = useRef(createScreenReconnect());
+  // One reconnect at a time: once its reload is on its way, the same drop's further reports
+  // must not start another.
+  const screenReconnecting = useRef(false);
+  // Each bot's screen has its own reconnect budget, so a committed switch of bots starts a
+  // fresh one. useMemo ties the new budget to a committed render: a render that never
+  // commits, such as a suspended transition toward another bot that is then cancelled,
+  // leaves the screen on screen with its budget.
+  const screenReconnect = useMemo(() => createScreenReconnect(), [botId]);
   const screenReconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const screenReconnectWait = useRef<AbortController | null>(null);
   const currentScreenUrl = useRef<string | null>(null);
   currentScreenUrl.current = loadedScreenUrl ?? embeddedScreenUrl;
   const onScreenState = useCallback(
     (state: ScreenPageState) => {
-      const next = screenReconnect.current.report(state);
+      const next = screenReconnect.report(state);
       if (next !== "reconnect") {
         // A drop that won't reconnect by itself shows why, with Retry.
         const failed = next === "error";
@@ -313,11 +319,16 @@ export default function Computer() {
         );
         return;
       }
+      // One reconnect at a time: while its reload is still on its way, further reports of the
+      // same drop only describe it again and must not start a second reload.
+      if (screenReconnecting.current) return;
+      screenReconnecting.current = true;
       clearTimeout(screenReconnectTimer.current);
       screenReconnectWait.current?.abort();
       const wait = new AbortController();
       screenReconnectWait.current = wait;
       const url = currentScreenUrl.current;
+      const delay = screenReconnect.delayMs();
       screenReconnectTimer.current = setTimeout(() => {
         // Wait out an API that can't be reached, so the one reconnect isn't spent on it; the
         // reload then shows whatever the page answers.
@@ -327,22 +338,35 @@ export default function Computer() {
           async (signal) => (probe ? screenPageStatus(probe, fetch, signal) : 200),
           { signal: wait.signal },
         ).then((outcome) => {
-          if (outcome !== "cancelled") void reloadScreen();
+          if (outcome === "cancelled") {
+            screenReconnecting.current = false;
+            return;
+          }
+          void reloadScreen();
         });
-      }, SCREEN_RECONNECT_DELAY_MS);
+      }, delay);
     },
-    [reloadScreen, t],
+    [reloadScreen, screenReconnect, t],
   );
-  const onScreenLoadStart = useCallback(() => screenReconnect.current.loaded(), []);
-  // Closing the screen, leaving the app or a new screen URL (taking or releasing control)
-  // cancels a pending reconnect.
+  const onScreenLoadStart = useCallback(() => {
+    screenReconnecting.current = false;
+    screenReconnect.loaded();
+  }, [screenReconnect]);
+  // Closing the screen, leaving the app, switching bots or a new screen URL (taking or
+  // releasing control) cancels a pending reconnect.
   useEffect(
     () => () => {
       screenReconnectWait.current?.abort();
       clearTimeout(screenReconnectTimer.current);
+      screenReconnecting.current = false;
     },
     // A renewed link for the same screen keeps the page and the pending reconnect.
-    [computerOpen, foreground, embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null],
+    [
+      botId,
+      computerOpen,
+      foreground,
+      embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null,
+    ],
   );
 
   useEffect(() => {
@@ -482,7 +506,11 @@ export default function Computer() {
       label={t("Retry screen")}
       prominence="primary"
       size="default"
-      onPress={() => void reloadScreen()}
+      onPress={() => {
+        // A pressed retry starts the screen's reconnects over, with their whole budget.
+        screenReconnect.reset();
+        void reloadScreen();
+      }}
     />
   ) : null;
 

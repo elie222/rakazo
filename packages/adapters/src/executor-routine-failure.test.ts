@@ -97,7 +97,13 @@ async function failRun(scenario: Scenario) {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => ({ ...run })),
       findFirst: vi.fn(async () => ({
-        bot: { notifyOnFinish: scenario.notifyOnFinish ?? true },
+        bot: {
+          id: "bot-1",
+          name: "Assistant",
+          color: "blue",
+          avatarSet: "default",
+          notifyOnFinish: scenario.notifyOnFinish ?? true,
+        },
         thread: { groupId: null },
       })),
       updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -307,6 +313,17 @@ describe("routine failure notifications", () => {
 
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "failure", title: "Assistant failed" }),
+      expect.anything(),
+    );
+  });
+
+  it("keeps a failed daily check-in quiet", async () => {
+    const { send } = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: "strategic-initiative:bot-1:1",
+    });
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "failure" }),
       expect.anything(),
     );
   });
@@ -621,7 +638,16 @@ function retryHarness(scenario: RetryScenario = {}) {
             (scenario.laterRunBeforeCreate && prisma.$transaction.mock.calls.length > 0)
             ? { id: "run-later" }
             : null
-          : { bot: { notifyOnFinish: true }, thread: { groupId: null } },
+          : {
+              bot: {
+                id: "bot-1",
+                name: "Assistant",
+                color: "blue",
+                avatarSet: "default",
+                notifyOnFinish: true,
+              },
+              thread: { groupId: null },
+            },
       ),
     },
     routine: {
@@ -706,6 +732,7 @@ describe("running a routine retry", () => {
           badge: 1,
           botId: "bot-1",
           threadId: "thread-1",
+          sender: expect.objectContaining({ botId: "bot-1", name: "Assistant" }),
         },
         expect.objectContaining({ userId: "user-1" }),
       );

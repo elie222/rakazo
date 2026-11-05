@@ -83,7 +83,7 @@ SDK 的本地模式在屏幕页内加载 `/computer-screen/sdk/ASP/container.htm
 
 ## 限制
 
-- **只支持 Team Computer。** 同一台云电脑上的所有 bot 共用它，所以无影上不能使用 Private Computer。
+- **Private Computer 也共用这台云电脑。** 无影没有按电脑分配的机器，所以无影上的 Private Computer 和用这个提供方的其他电脑共用同一台云电脑和同一个 Windows 账号。
 - **一台云电脑一个 Windows 账号。** 用同一台云电脑的所有账号（包括所有用部署默认的账号）共用它的文件、屏幕、
   键鼠输入和命令环境，包括保存的命令凭据。只用来观看的屏幕登录码，在 Rakazo 之外也能操作云电脑。
   给每个人配自己的云电脑，或者只和彼此信任的人共用一台。

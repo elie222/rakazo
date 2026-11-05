@@ -70,7 +70,7 @@ describe("Android mobile platform contract", () => {
       /waiting_input[\s\S]*filter \{ it\.notificationsEnabled \}[\s\S]*alertedAttention\.add/,
     );
     expect(service).toContain(
-      "if (openThreadId != null) openThreadId == run.threadId else openBotId == run.botId",
+      "if (openThreadId != null) openThreadId == threadId else openBotId == botId",
     );
     expect(service).toContain("manager.notify(run.threadId.hashCode(), notification)");
     expect(service).toContain("THREAD_NOTIFICATION_IDS");
