@@ -1388,6 +1388,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Discard changes?": "要放弃更改吗？",
   Discard: "放弃",
   "Could not delete note": "无法删除笔记",
+  "Recent payments": "最近付款",
   "Spending limit": "支出上限",
   Amount: "金额",
   Currency: "币种",
@@ -1403,6 +1404,10 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{amount} spent this week": "本周已花费 {amount}",
   "{amount} spent this month": "本月已花费 {amount}",
   "{amount} spent": "已花费 {amount}",
+  "Button “{button}” · read from the page, not checked": "按钮“{button}”· 读取自页面，未核实",
+  "On the button": "按钮上的金额",
+  "Read from the page, not checked": "读取自页面，未核实",
+  Total: "合计",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

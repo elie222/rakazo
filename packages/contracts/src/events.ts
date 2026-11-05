@@ -106,6 +106,21 @@ export const BotSettingsValuesSchema = z.object({
 });
 export type BotSettingsValues = z.infer<typeof BotSettingsValuesSchema>;
 
+/** A payment's order as read from the page: every value is page text, none of it checked. */
+export const AskReceipt = z.object({
+  /** The pay button's label. */
+  button: z.string().max(200).optional(),
+  items: z.array(z.object({ name: z.string().max(200), amount: z.string().max(100) })).max(30),
+  /** Order lines the card leaves out; `atLeast` when the page may list even more. */
+  more: z.object({ count: z.number().int().positive(), atLeast: z.boolean() }).optional(),
+  /** What is paid: the amount the button names, or else the page's total. */
+  amount: z.string().max(100).optional(),
+  amountSource: z.enum(["button", "page"]),
+  /** The page's total beside a button that names its own amount. */
+  total: z.string().max(100).optional(),
+});
+export type AskReceipt = z.infer<typeof AskReceipt>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -131,6 +146,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
       .optional(),
     detail: z.string().optional(),
     detailFormat: z.enum(["text", "code"]).optional(),
+    /** On a payment card, the order as the page shows it, drawn as a receipt in place of `detail`. */
+    receipt: AskReceipt.optional(),
     input: z.enum(["text", "secret"]).optional(),
     /** Why the secret is needed; drives field label on the masked card. */
     purpose: SecretAskPurpose.optional(),

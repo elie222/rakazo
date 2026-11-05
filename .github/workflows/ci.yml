@@ -61,13 +61,52 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # Reuse prior build outputs across PRs; first hit still compiles cold packages.
+      - name: Restore turbo build cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .turbo/cache
+          key: turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-build-
+      - name: Cache Electron binary
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/electron-cache
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
+      - name: Ensure Electron binary
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
+        run: |
+          set -euo pipefail
+          install_js="$(pnpm --filter @rakazo/desktop exec node -p "require('path').join(require('path').dirname(require.resolve('electron/package.json')), 'install.js')")"
+          for attempt in 1 2 3; do
+            if node "$install_js"; then
+              exit 0
+            fi
+            echo "Electron download attempt $attempt failed; retrying…" >&2
+            sleep $((attempt * 5))
+          done
+          exit 1
       - run: pnpm build
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
           BETTER_AUTH_SECRET: ci-build-auth-secret-at-least-32-characters
           ENCRYPTION_KEY: ci-build-encryption-key-at-least-32-characters
+      - name: Save turbo build cache
+        if: success()
+        continue-on-error: true
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .turbo/cache
+          key: turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
       - name: Electron smoke
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
         run: xvfb-run --auto-servernum pnpm --filter @rakazo/desktop exec playwright test --config e2e/playwright.config.ts
       - name: Upload desktop setup screenshots
         if: always()
@@ -156,14 +195,14 @@ jobs:
       - name: Optional vendor SDKs load lazily
         run: node --test scripts/lazy-vendors.test.mjs
 
-  # The unit suite is CPU-bound, so three runners finish in about a third of the time.
+  # The unit suite is CPU-bound; six runners keep it under the native install floor.
   unit-tests-shard:
-    name: Unit tests (${{ matrix.shard }}/3)
+    name: Unit tests (${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6]
     timeout-minutes: 20
     concurrency:
       group: ci-unit-${{ matrix.shard }}-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
@@ -185,10 +224,11 @@ jobs:
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - name: Install age for the encrypted backup round trip
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends age
+        # Ubuntu 24.04 ships age 1.1.1, which supports --encrypt, --decrypt, and age-keygen -y.
+        run: sudo apt-get install -y age
       - name: Unit tests
         if: steps.areas.outputs.all_packages != 'false'
-        run: pnpm run test --shard=${{ matrix.shard }}/3
+        run: pnpm run test --shard=${{ matrix.shard }}/6
       - name: Unit tests for affected packages
         if: steps.areas.outputs.all_packages == 'false'
         env:
@@ -201,7 +241,7 @@ jobs:
             infra/updater/src/compose-env.test.ts \
             packages/adapters/src/lark-lazy-loading.test.ts \
             packages/testkit/src/ios-screenshot-catalog.test.ts \
-            --shard=${{ matrix.shard }}/3
+            --shard=${{ matrix.shard }}/6
 
   # The required check and the deploy gate, under one stable name.
   checks:
@@ -212,6 +252,9 @@ jobs:
     steps:
       - run: test "${{ needs.static-checks.result }}" = success && test "${{ needs.unit-tests-shard.result }}" = success
 
+  # Desktop + its workspace deps only. A full-workspace install on Windows also links supervisor
+  # (dockerode → cpu-features) and spends ~1 minute on a node-gyp rebuild that fails without VS and
+  # is unused by these tests. Electron's binary is cached separately from the pnpm store.
   native-computer:
     name: Native computer (${{ matrix.os }})
     needs: changes
@@ -231,16 +274,43 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Cache Electron binary
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/electron-cache
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Windows pnpm launcher test
         if: runner.os == 'Windows'
         run: node --test scripts/pnpm.test.mjs
       - name: Worktree environment setup test
         run: node --test scripts/setup-worktree.test.mjs
-      - run: pnpm install --frozen-lockfile
+      - name: Install desktop workspace
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
+        run: pnpm install --frozen-lockfile --filter "@rakazo/desktop..."
+      # Install scripts can skip the zip when GitHub releases blip; pull it into the shared cache now.
+      # bash on Windows too: the default PowerShell shell rejects the for-loop below.
+      - name: Ensure Electron binary
+        shell: bash
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
+        run: |
+          set -euo pipefail
+          install_js="$(pnpm --filter @rakazo/desktop exec node -p "require('path').join(require('path').dirname(require.resolve('electron/package.json')), 'install.js')")"
+          for attempt in 1 2 3; do
+            if node "$install_js"; then
+              exit 0
+            fi
+            echo "Electron download attempt $attempt failed; retrying…" >&2
+            sleep $((attempt * 5))
+          done
+          exit 1
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - run: pnpm --filter @rakazo/desktop build
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
       - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/host-computer.test.ts
       - name: Screen control on a real Windows desktop
         if: runner.os == 'Windows'
@@ -249,17 +319,18 @@ jobs:
         run: pnpm --filter @rakazo/desktop exec electron ../../node_modules/vitest/vitest.mjs run --root ../.. packages/adapters/src/host-computer.test.ts apps/desktop/src/host-computer.test.ts
         env:
           ELECTRON_RUN_AS_NODE: "1"
+          electron_config_cache: ${{ runner.temp }}/electron-cache
 
   # Checks its own changed areas instead of needing `changes`: a deploy needs this job, and on main
   # it must reach its lock in push order so an older revision cannot replace a newer waiting one.
-  # The suites are CPU-bound, so two runners finish in about half the time.
+  # The suites are CPU-bound; six runners keep them under the native install floor.
   test-integration-shard:
-    name: Postgres journeys (${{ matrix.shard }}/2)
+    name: Postgres journeys (${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4, 5, 6]
     concurrency:
       group: ci-postgres-${{ matrix.shard }}-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
     timeout-minutes: 15
@@ -271,6 +342,17 @@ jobs:
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
+      - name: Start Postgres
+        if: steps.areas.outputs.server != 'false'
+        run: |
+          docker run -d --name ci-postgres \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=rakazo \
+            -p 5432:5432 \
+            mirror.gcr.io/library/postgres:18-alpine \
+            postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500
+          echo "CI_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/rakazo" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         if: steps.areas.outputs.server != 'false'
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -280,7 +362,19 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
         if: steps.areas.outputs.server != 'false'
-      - run: pnpm test:integration --shard=${{ matrix.shard }}/2
+      - name: Wait for Postgres
+        if: steps.areas.outputs.server != 'false'
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec ci-postgres pg_isready -U postgres -d rakazo; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Postgres did not become ready" >&2
+          docker logs ci-postgres >&2 || true
+          exit 1
+      - run: pnpm test:integration --shard=${{ matrix.shard }}/6
         if: steps.areas.outputs.server != 'false'
 
   # The required check and the deploy gate, under one stable name.

@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type {
   SpendingCurrency,
   SpendingLimit,
+  SpendingPayment,
   SpendingPeriod,
   SpendingStatus,
 } from "@rakazo/contracts";
@@ -21,6 +22,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSpaceQueries } from "../lib/query";
+import { formatRelativeTime } from "../lib/relative-time";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
@@ -37,6 +39,10 @@ export function SpendingLimitSettings() {
   const [amountText, setAmountText] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const payments = useQuery({
+    ...queries.spendingLimit.payments.queryOptions(),
+    enabled: Boolean(status?.shown),
+  }).data;
   if (!status?.shown) return null;
   const { limit, spent } = status;
   const money = (amount: number, currency: string) =>
@@ -193,6 +199,46 @@ export function SpendingLimitSettings() {
         ) : null}
         {error ? <p className="mt-1 text-[13px] text-destructive">{error}</p> : null}
       </SettingsRow>
+      {payments?.length ? <RecentPayments payments={payments} money={money} /> : null}
     </SettingsGroup>
+  );
+}
+
+const FIRST_PAYMENTS = 5;
+
+function RecentPayments({
+  payments,
+  money,
+}: {
+  payments: SpendingPayment[];
+  money: (amount: number, currency: string) => string;
+}) {
+  const [all, setAll] = useState(false);
+  const shown = all ? payments : payments.slice(0, FIRST_PAYMENTS);
+  return (
+    <SettingsRow label={<Trans>Recent payments</Trans>}>
+      <ul className="mt-1 divide-y divide-border" data-testid="spending-payments">
+        {shown.map((payment) => (
+          <li key={payment.id} className="flex items-baseline justify-between gap-4 py-2">
+            <div className="min-w-0">
+              <p className="truncate text-[13px] text-foreground">{payment.site}</p>
+              <p className="truncate text-[12px] text-muted-foreground">
+                {[payment.botName, formatRelativeTime(payment.createdAt)]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            </div>
+            <span className="shrink-0 text-[13px] tabular-nums text-foreground">
+              {money(payment.amount, payment.currency)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {!all && payments.length > FIRST_PAYMENTS ? (
+        <Button variant="ghost" size="sm" className="-ml-2" onClick={() => setAll(true)}>
+          <Trans>Show all</Trans>
+        </Button>
+      ) : null}
+    </SettingsRow>
   );
 }

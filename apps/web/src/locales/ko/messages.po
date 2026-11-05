@@ -182,6 +182,10 @@ msgstr ""
 msgid "{count} months"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "{count}개 더"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr ""
@@ -1203,6 +1207,10 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "기본 제공"
+
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "버튼 “{button}” · 페이지에서 읽음, 확인 안 됨"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -4664,6 +4672,10 @@ msgstr "{day}일 {time}"
 msgid "on the 1st at {0}"
 msgstr "1일 {0}에"
 
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "버튼 금액"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "한 번"
@@ -5129,6 +5141,10 @@ msgstr "반응하기"
 msgid "Reactions"
 msgstr "반응"
 
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "페이지에서 읽음, 확인 안 됨"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "답변을 자동으로 읽기"
@@ -5161,6 +5177,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "최근"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "최근 결제"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -5964,6 +5984,7 @@ msgstr "공유 기억"
 msgid "Show"
 msgstr "보기"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""
@@ -6745,6 +6766,10 @@ msgstr "도구 이름"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "합계"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"

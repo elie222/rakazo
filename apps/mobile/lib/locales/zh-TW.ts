@@ -1386,6 +1386,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Discard changes?": "要捨棄變更嗎？",
   Discard: "捨棄",
   "Could not delete note": "無法刪除筆記",
+  "Recent payments": "最近付款",
   "Spending limit": "支出上限",
   Amount: "金額",
   Currency: "幣別",
@@ -1401,6 +1402,10 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "{amount} spent this week": "本週已花費 {amount}",
   "{amount} spent this month": "本月已花費 {amount}",
   "{amount} spent": "已花費 {amount}",
+  "Button “{button}” · read from the page, not checked": "按鈕「{button}」· 讀取自頁面，未核實",
+  "On the button": "按鈕上的金額",
+  "Read from the page, not checked": "讀取自頁面，未核實",
+  Total: "合計",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };
