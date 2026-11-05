@@ -1,6 +1,12 @@
 import type { SpendingLimit, SpendingStatus } from "@rakazo/contracts";
-import { SpendingLimitSchema } from "@rakazo/contracts";
+import {
+  MAX_SPENDING_LIMIT,
+  SPENDING_CURRENCIES,
+  SpendingLimitSchema,
+  SpendingPeriodSchema,
+} from "@rakazo/contracts";
 import { spendingPeriodStart } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 
@@ -49,7 +55,16 @@ export async function loadSpendingLimit(
     currency: row.currency,
     period: row.period,
   });
-  return limit.success ? { ...limit.data, startsAt: row.startsAt } : null;
+  if (limit.success) return { ...limit.data, startsAt: row.startsAt };
+  // A stored limit this release can't read still limits: each part it can't read becomes the
+  // strictest valid one, and it stays in Settings for the user to fix.
+  getLogger().warn("stored spending limit is invalid; enforcing the strictest reading");
+  return {
+    amount: Math.min(Math.max(Math.trunc(row.amount) || 1, 1), MAX_SPENDING_LIMIT),
+    currency: SPENDING_CURRENCIES.find((currency) => currency === row.currency) ?? "usd",
+    period: SpendingPeriodSchema.safeParse(row.period).data ?? "none",
+    startsAt: row.startsAt,
+  };
 }
 
 async function spentIn(
@@ -100,10 +115,12 @@ export async function checkPayment(
 export async function recordPayment(
   prisma: Pick<SpendingClient, "$transaction">,
   input: PaymentInput,
-  now = new Date(),
+  at?: Date,
 ): Promise<PaymentRefusal | null> {
   return prisma.$transaction(async (tx) => {
     await lockSpending(tx, input.userId);
+    // Read once the lock is held: a payment that waited past a reset belongs to the new period.
+    const now = at ?? new Date();
     const existing = await tx.payment.findUnique({
       where: { operationKey: input.operationKey },
       select: { releasedAt: true },

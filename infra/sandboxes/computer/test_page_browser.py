@@ -609,6 +609,12 @@ class PurchaseTest(unittest.TestCase):
             "steps": [2], "label": "Pay $5", "amount": "$5", "amountFrom": "button", "reason": "final_step"}})
         self.assertEqual(browser.actions(), [])
 
+    def test_purchase_check_reports_the_page_total_beside_a_button_amount(self):
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "total": "$10"})
+        result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})
+        self.assertEqual(result["purchase"]["amount"], "$5")
+        self.assertEqual(result["purchase"]["total"], "$10")
+
     def test_one_card_approves_one_purchase_click_of_a_batch(self):
         browser = pays(pays(FakeAgentBrowser(), "e7"), "e8")
         result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}, {"kind": "click", "ref": "e8"}]})

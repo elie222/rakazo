@@ -1019,7 +1019,8 @@ class PageBrowser:
         if args.get("desktop") is True and not steps:
             first = self.purchases().desktop(args)
         purchase = {"steps": steps, "label": first.get("label", ""), "amount": first.get("amount", ""),
-                    "amountFrom": first.get("amountFrom", "page"), "reason": first.get("reason")} if first else None
+                    "amountFrom": first.get("amountFrom", "page"), "reason": first.get("reason"),
+                    **({"total": first["total"]} if first and first.get("total") else {})} if first else None
         return {"ok": True, "url": "", "title": "", **self.purchases().where(), "site": site, "purchase": purchase}
 
     # -- commands ---------------------------------------------------------------------------------
@@ -1945,9 +1946,13 @@ PURCHASE_HELPERS = r"""
   const cut = (text, max) => Array.from(text).slice(0, max).join("");
   // What the card shows: the button's text, and the amount the button names or else the page's total.
   // `words`: everything the control says, so an amount only its aria label names is the one shown.
+  // A button that names another amount than the page's total also reports the total, which the spending
+  // limit counts if larger.
   function shownPurchase(reason, label, words = [label]) {
     const named = words.map((word) => moneyIn(word, false)).find(Boolean) || "";
-    return { reason, label: cut(label, 80), amount: named || totalShown(), amountFrom: named ? "button" : "page" };
+    const total = totalShown();
+    return { reason, label: cut(label, 80), amount: named || total, amountFrom: named ? "button" : "page",
+      ...(named && total && total !== named ? { total } : {}) };
   }
   // `frame`: the page shows a payment provider's card frame, which only the caller can vouch for.
   function purchaseOf(el, frame) {

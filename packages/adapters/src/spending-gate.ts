@@ -17,15 +17,26 @@ export function spendingRefusalError(refusal: PaymentRefusal): string {
 
 type Run = { userId: string; spaceId: string; botId: string; threadId: string };
 
-/** A pay click as a payment: the page's host and the amount it shows, null when unreadable. */
+/**
+ * A pay click as a payment: the page's host and the larger of the amount the card showed and the
+ * page's total, since a button can name less than the checkout charges. Null when unreadable.
+ */
 function pagePayment(run: Run, purchase: PurchaseApproval, operationKey: string): PaymentInput {
-  const parsed = purchase.site ? parsePageAmount(purchase.amount) : null;
+  const amounts = purchase.site
+    ? [purchase.amount, purchase.total ?? ""].filter(Boolean).map(parsePageAmount)
+    : [];
+  const read = amounts.length && amounts.every(Boolean) ? amounts.map((amount) => amount!) : [];
+  const currency = read[0]?.currency;
+  const counted =
+    read.length && read.every((amount) => amount.currency === currency)
+      ? Math.max(...read.map((amount) => amount.amount))
+      : null;
   return {
     operationKey,
     ...run,
     site: purchase.site,
-    amount: parsed?.amount ?? null,
-    currency: parsed?.currency ?? null,
+    amount: counted,
+    currency: counted === null ? null : (currency ?? null),
   };
 }
 

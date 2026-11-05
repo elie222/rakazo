@@ -169,6 +169,27 @@ describePostgres("spending limit (PostgreSQL)", () => {
     expect((await as(() => spendingStatus(prisma, actor.userId))).spent).toBe(700);
   });
 
+  it("enforces the strictest reading of a stored limit it can't read", async () => {
+    const actor = await seedUser();
+    const prisma = db!.prisma;
+    await asSystem(prisma).spendingLimit.create({
+      data: { userId: actor.userId, amount: 500, currency: "jpy", period: "year" },
+    });
+    const as = <T>(fn: () => Promise<T>) => runAsTenant(actor, fn);
+    expect(await as(() => recordPayment(prisma, payment(actor, 600)))).toMatchObject({
+      refused: "over_limit",
+      limit: { amount: 500, currency: "usd", period: "none" },
+    });
+    expect(
+      await as(() => recordPayment(prisma, payment(actor, 100, { currency: "eur" }))),
+    ).toMatchObject({ refused: "unchecked" });
+    expect((await as(() => spendingStatus(prisma, actor.userId))).limit).toEqual({
+      amount: 500,
+      currency: "usd",
+      period: "none",
+    });
+  });
+
   it("keeps one user's limit and payments from another", async () => {
     const actor = await seedUser();
     const other = await seedUser();

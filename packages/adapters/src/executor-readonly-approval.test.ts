@@ -3582,7 +3582,7 @@ describe("a click that completes a purchase on a website", () => {
   ];
 
   /** A page browser whose check says what the page would do, and which records what it pressed. */
-  function pageBrowser(found: typeof purchase | null = purchase) {
+  function pageBrowser(found: (typeof purchase & { total?: string }) | null = purchase) {
     const acts: unknown[][] = [];
     const checks: unknown[] = [];
     const provider = {
@@ -3855,6 +3855,20 @@ describe("a click that completes a purchase on a website", () => {
       expect(f.results).toEqual([{ error: over }]);
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
       expect(page.acts).toEqual([]);
+    });
+
+    it("counts the page's total when the button names less", async () => {
+      const page = pageBrowser({ ...purchase, label: "Pay $5", amount: "$5", total: "$250" });
+      const f = fixture({ builtin: true, browser: page.provider, spendingLimit: limit });
+      f.setCalls([payCall()]);
+      await f.run();
+      expect(f.results).toEqual([
+        {
+          error:
+            "This would go over the user's spending limit of $200.00 a month ($0.00 spent), so nothing was paid. Don't retry; tell the user.",
+        },
+      ]);
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
     });
 
     it("refuses an approved payment when another used the room while the card waited", async () => {

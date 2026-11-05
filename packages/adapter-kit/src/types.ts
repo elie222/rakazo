@@ -1214,6 +1214,8 @@ export interface BrowserPurchase {
   amount: string;
   /** Whether the amount is the one the button names or the total the page shows. */
   amountSource?: "button" | "page";
+  /** The total the page shows beside a button that names its own amount; older computers omit it. */
+  total?: string;
 }
 
 export interface BrowserPurchaseCheckRequest {

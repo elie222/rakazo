@@ -58,7 +58,7 @@ day, week or month, or never. Days and months follow your timezone; weeks start 
 covers every bot and space on your account, and only you can change it.
 
 Every payment you approve counts against it: a checkout's pay button at the total the page shows,
-and a wallet purchase at its exact amount. A pay button counts when the bot's page browser recognizes
+or the amount the button names if that is more, and a wallet purchase at its exact amount. A pay button counts when the bot's page browser recognizes
 it as paying, the same presses that always ask; on a computer without the page browser, nothing is
 recognized, so only wallet purchases count. A payment that would go over the limit is refused before
 you are asked, and the bot tells you. While a limit is set, a checkout whose total can't be read, or
