@@ -9,9 +9,9 @@ import type { RunTeardownTarget } from "./groups.js";
 import { snapshotRunTeardownTargets } from "./groups.js";
 import { runAsSystem } from "./row-security.js";
 import {
-  fallbackSpaceForMember,
   lockSpaceDeletion,
   personalOrganizationIds,
+  rehomeSharedItems,
   SpaceNotFoundError,
 } from "./spaces.js";
 import { activeRunStatuses } from "./thread-listing.js";
@@ -501,55 +501,6 @@ async function departSpace(prisma: PrismaClient, input: SpaceRef): Promise<Space
       ),
     ),
   );
-}
-
-/**
- * What the departing person made available in other Spaces of theirs was homed in this one, and
- * would go when it does. Each item moves to a Space it is already available in: one it was chosen
- * for, or for an item available everywhere their fallback Space. An item whose new home already
- * has one with the same name stays, and goes with this Space.
- */
-async function rehomeSharedItems(tx: Prisma.TransactionClient, input: SpaceRef): Promise<void> {
-  const { spaceId, userId } = input;
-  const fallback = await fallbackSpaceForMember(tx, userId);
-  const own = { spaceId, userId };
-  const chosen = { select: { spaceId: true }, orderBy: { spaceId: "asc" as const }, take: 1 };
-  const [servers, skills, installs] = await Promise.all([
-    tx.mcpServer.findMany({
-      where: own,
-      select: { id: true, slug: true, allSpaces: true, availableIn: chosen },
-    }),
-    tx.agentSkill.findMany({
-      where: own,
-      select: { id: true, name: true, allSpaces: true, availableIn: chosen },
-    }),
-    tx.capabilityInstall.findMany({
-      where: own,
-      select: { id: true, allSpaces: true, availableIn: chosen },
-    }),
-  ]);
-  const homeOf = (item: { allSpaces: boolean; availableIn: Array<{ spaceId: string }> }) =>
-    item.allSpaces ? fallback : (item.availableIn[0]?.spaceId ?? null);
-  for (const server of servers) {
-    const home = homeOf(server);
-    if (!home) continue;
-    const taken = await tx.mcpServer.count({ where: { spaceId: home, userId, slug: server.slug } });
-    if (!taken) await tx.mcpServer.update({ where: { id: server.id }, data: { spaceId: home } });
-  }
-  for (const skill of skills) {
-    const home = homeOf(skill);
-    if (!home) continue;
-    const taken = await tx.agentSkill.count({
-      where: { spaceId: home, userId, name: { equals: skill.name, mode: "insensitive" } },
-    });
-    if (!taken) await tx.agentSkill.update({ where: { id: skill.id }, data: { spaceId: home } });
-  }
-  for (const install of installs) {
-    const home = homeOf(install);
-    if (home) {
-      await tx.capabilityInstall.update({ where: { id: install.id }, data: { spaceId: home } });
-    }
-  }
 }
 
 /** Sections are unique per (space, person, name): merge into the owner's same-named one. */

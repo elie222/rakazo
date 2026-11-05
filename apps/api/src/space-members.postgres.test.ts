@@ -913,4 +913,30 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       }),
     ).resolves.toBeNull();
   });
+  it("keeps a guest's tools for their other spaces when the owner deletes the shared space", async () => {
+    const owner = await person("owner");
+    const invitee = await person("invitee");
+    const home = await sharedSpace(owner, "Home");
+    await call(invitee.actor, "spaces/invites/accept", { token: await invite(owner, home) });
+    const everywhere = await system.mcpServer.create({
+      data: {
+        spaceId: home,
+        userId: invitee.id,
+        slug: "notes",
+        name: "Notes",
+        transport: "http",
+        endpoint: "https://mcp.example.test",
+        allSpaces: true,
+      },
+    });
+
+    await expect(
+      call(inSpace(owner.actor, home), "spaces/remove", { spaceId: home }),
+    ).resolves.toMatchObject({ status: 200 });
+
+    await expect(system.space.findUnique({ where: { id: home } })).resolves.toBeNull();
+    await expect(
+      system.mcpServer.findUniqueOrThrow({ where: { id: everywhere.id } }),
+    ).resolves.toMatchObject({ spaceId: invitee.spaceId, userId: invitee.id });
+  });
 });

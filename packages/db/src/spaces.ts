@@ -223,9 +223,10 @@ export async function homeOrganizationId(
 export async function fallbackSpaceForMember(
   db: Pick<PrismaClient, "spaceMember">,
   userId: string,
+  exceptSpaceId?: string,
 ): Promise<string | null> {
   const memberships = await db.spaceMember.findMany({
-    where: { userId },
+    where: { userId, ...(exceptSpaceId ? { spaceId: { not: exceptSpaceId } } : {}) },
     select: { spaceId: true, role: true, space: { select: { isDefault: true } } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
@@ -485,6 +486,7 @@ export async function deleteClaimedSpaceForMember(
         // was cut short; a retry finishes it.
         if (remainingBots > 0 || provisioned > 0) throw new SpaceDeletionInProgressError();
         const pageShareSecrets = await deletePageShareSecrets(tx, { spaceId: input.spaceId });
+        await rehomeGuestItems(tx, input.spaceId);
         const { organizationId } = await tx.space.delete({
           where: { id: input.spaceId },
           select: { organizationId: true },
@@ -509,6 +511,67 @@ export async function deleteClaimedSpaceForMember(
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
+}
+
+/**
+ * What the departing person made available in other Spaces of theirs was homed in this one, and
+ * would go when it does. Each item moves to a Space it is already available in: one it was chosen
+ * for, or for an item available everywhere their fallback Space. An item whose new home already
+ * has one with the same name stays, and goes with this Space.
+ */
+export async function rehomeSharedItems(
+  tx: Prisma.TransactionClient,
+  input: { spaceId: string; userId: string },
+): Promise<void> {
+  const { spaceId, userId } = input;
+  const fallback = await fallbackSpaceForMember(tx, userId, spaceId);
+  const own = { spaceId, userId };
+  const chosen = { select: { spaceId: true }, orderBy: { spaceId: "asc" as const }, take: 1 };
+  const [servers, skills, installs] = await Promise.all([
+    tx.mcpServer.findMany({
+      where: own,
+      select: { id: true, slug: true, allSpaces: true, availableIn: chosen },
+    }),
+    tx.agentSkill.findMany({
+      where: own,
+      select: { id: true, name: true, allSpaces: true, availableIn: chosen },
+    }),
+    tx.capabilityInstall.findMany({
+      where: own,
+      select: { id: true, allSpaces: true, availableIn: chosen },
+    }),
+  ]);
+  const homeOf = (item: { allSpaces: boolean; availableIn: Array<{ spaceId: string }> }) =>
+    item.allSpaces ? fallback : (item.availableIn[0]?.spaceId ?? null);
+  for (const server of servers) {
+    const home = homeOf(server);
+    if (!home) continue;
+    const taken = await tx.mcpServer.count({ where: { spaceId: home, userId, slug: server.slug } });
+    if (!taken) await tx.mcpServer.update({ where: { id: server.id }, data: { spaceId: home } });
+  }
+  for (const skill of skills) {
+    const home = homeOf(skill);
+    if (!home) continue;
+    const taken = await tx.agentSkill.count({
+      where: { spaceId: home, userId, name: { equals: skill.name, mode: "insensitive" } },
+    });
+    if (!taken) await tx.agentSkill.update({ where: { id: skill.id }, data: { spaceId: home } });
+  }
+  for (const install of installs) {
+    const home = homeOf(install);
+    if (home) {
+      await tx.capabilityInstall.update({ where: { id: install.id }, data: { spaceId: home } });
+    }
+  }
+}
+
+/** Before a Space goes, what its guests made available elsewhere moves out of it (see above). */
+async function rehomeGuestItems(tx: Prisma.TransactionClient, spaceId: string): Promise<void> {
+  const guests = await tx.spaceMember.findMany({
+    where: { spaceId, role: { not: "owner" } },
+    select: { userId: true },
+  });
+  for (const { userId } of guests) await rehomeSharedItems(tx, { spaceId, userId });
 }
 
 /**
@@ -638,6 +701,7 @@ export async function deleteClaimedSpace(
         }
         // Teardown was cut short; deleting again finishes it.
         if (remainingBots > 0 || remainingComputers > 0) throw new SpaceDeletionInProgressError();
+        await rehomeGuestItems(tx, spaceId);
         // The page links' tokens go with the Space; the caller removes them from the store.
         const pageShareSecrets = await tx.secret.findMany({
           where: { pageShare: { is: { spaceId } } },
