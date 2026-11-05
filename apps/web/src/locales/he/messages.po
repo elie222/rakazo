@@ -4476,10 +4476,6 @@ msgstr "אין בוטים תואמים"
 msgid "No longer active"
 msgstr "כבר לא פעיל"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "No managed app catalog is configured on this deployment."
-msgstr "לא הוגדר קטלוג אפליקציות מנוהל בהתקנה הזו."
-
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""

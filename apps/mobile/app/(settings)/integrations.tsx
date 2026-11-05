@@ -22,6 +22,7 @@ import {
   EMPTY_PLUGIN_CATALOG_MESSAGE,
   filterConnectionCatalogItems,
   humanizeToolName,
+  integrationCatalogsReady,
   isCatalogItemConnected,
   matchesWordPrefixes,
   newClientId,
@@ -216,6 +217,12 @@ export default function Integrations() {
     });
   }
 
+  const catalogsReady = integrationCatalogsReady({
+    catalogLoaded: catalogReady,
+    catalogFailed: !!catalogError,
+    pluginsLoaded: pluginsState !== "loading",
+    pluginsUnavailable: pluginsState === "partial",
+  });
   const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
   const showFeatured = !query.trim();
   const catalogApps = useMemo(() => filterConnectionCatalogItems(catalog, query), [catalog, query]);
@@ -268,6 +275,8 @@ export default function Integrations() {
     setCatalogReady(false);
     setSources([]);
     setPluginInstalls([]);
+    setPluginEntries([]);
+    setPluginsState("loading");
     setMcpServers([]);
     setMcpError(null);
     setDetailKey(null);
@@ -295,12 +304,14 @@ export default function Integrations() {
       clearStaleScope();
       return refresh();
     }
+    setPluginsState("loading");
     const previous = cacheScope.current;
     if (previous && (previous.userId !== scope.userId || previous.spaceId !== scope.spaceId)) {
       applySnapshot({ catalog: [], connections: [] });
       setCatalogReady(false);
       setSources([]);
       setPluginInstalls([]);
+      setPluginEntries([]);
       setMcpServers([]);
       setMcpError(null);
       setDetailKey(null);
@@ -1448,7 +1459,7 @@ export default function Integrations() {
                   </View>
                 ) : null}
 
-                {catalogReady && catalog.length === 0 ? (
+                {catalogsReady && catalog.length === 0 && plugins.length === 0 && !filtering ? (
                   <Text style={styles.secondary}>{t(EMPTY_PLUGIN_CATALOG_MESSAGE)}</Text>
                 ) : null}
 
@@ -1490,12 +1501,11 @@ export default function Integrations() {
                   </View>
                 ) : null}
 
-                {catalogReady &&
+                {catalogsReady &&
                 catalogApps.length === 0 &&
                 pluginMatches.length === 0 &&
                 brandMatches.length === 0 &&
                 savedServerMatches.length === 0 &&
-                pluginsState !== "loading" &&
                 filtering ? (
                   <Text style={styles.secondary}>{t("No apps match your search.")}</Text>
                 ) : null}

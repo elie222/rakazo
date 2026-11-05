@@ -4477,10 +4477,6 @@ msgstr "沒有符合的機器人"
 msgid "No longer active"
 msgstr "已停用"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "No managed app catalog is configured on this deployment."
-msgstr "此部署尚未設定受管理的應用程式目錄。"
-
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""

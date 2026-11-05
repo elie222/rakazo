@@ -4476,10 +4476,6 @@ msgstr "没有匹配的 Bot"
 msgid "No longer active"
 msgstr "已停用"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "No managed app catalog is configured on this deployment."
-msgstr "此部署未配置托管应用目录。"
-
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""

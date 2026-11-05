@@ -23,6 +23,7 @@ import {
   filterConnectionCatalogItems,
   humanizeToolName,
   installedPluginParts,
+  integrationCatalogsReady,
   isCatalogItemConnected,
   isRecommendedPlugin,
   managedAppFor,
@@ -315,6 +316,13 @@ export function PluginsOverlay({
   const rendered = weakMatches.slice(0, visibleCount);
 
   const catalogEntries = pluginCatalog.data?.entries ?? NO_PLUGINS;
+  // An empty managed catalog says nothing about plugins that are still loading or unavailable.
+  const catalogsReady = integrationCatalogsReady({
+    catalogLoaded,
+    catalogFailed: !!loadError,
+    pluginsLoaded: pluginCatalog.isSuccess,
+    pluginsUnavailable: !!pluginCatalog.data?.unavailableRegistries.length,
+  });
   // One row per brand: a plugin for a managed app lends that app its skills instead of being
   // listed again. Skill packs with nothing to connect belong to Skills, not here.
   const { plugins, pluginForApp } = useMemo(() => {
@@ -1713,7 +1721,7 @@ export function PluginsOverlay({
               {catalogLoaded && showFeatured && !category ? (
                 <div className="mb-6" data-testid="featured-connectors">
                   {catalog.length === 0 ? (
-                    plugins.length ? null : (
+                    !catalogsReady || plugins.length ? null : (
                       <p className="text-body leading-6 text-muted-foreground/80">
                         <Trans>Configure a plugin catalog on the server to connect apps.</Trans>
                       </p>
@@ -1758,16 +1766,7 @@ export function PluginsOverlay({
                 </div>
               ) : null}
 
-              {catalogLoaded &&
-              catalog.length === 0 &&
-              !showFeatured &&
-              !pluginMatches.length &&
-              !brandMatches.length ? (
-                <p className="text-muted-foreground/80">
-                  <Trans>No managed app catalog is configured on this deployment.</Trans>
-                </p>
-              ) : null}
-              {catalogLoaded &&
+              {catalogsReady &&
               visible.length === 0 &&
               !showFeatured &&
               !pluginMatches.length &&
