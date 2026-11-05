@@ -5,6 +5,7 @@ import type { FinalizeRunInput } from "./events.js";
 import { finalizeRun } from "./events.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import { asSystem, runAsSystem } from "./row-security.js";
+import { runCodeKind, runCodeSpentKind, runLoginKind, runSecretKind } from "./run-secrets.js";
 
 function finalizationFixture() {
   const tx = {
@@ -24,7 +25,10 @@ function finalizationFixture() {
       deleteMany: vi.fn(async () => ({ count: 0 })),
     },
     externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-    secret: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    secret: {
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+      findFirst: vi.fn(async (): Promise<{ id: string } | null> => null),
+    },
     steeringMessage: {
       deleteMany: vi.fn(async () => ({ count: 0 })),
       findMany: vi.fn(async () => []),
@@ -51,6 +55,18 @@ function finalizationFixture() {
 }
 
 describe("finalizeRun turn-memory capture", () => {
+  it("does not export a turn whose temporary credentials are about to be deleted", async () => {
+    const { prisma, tx, input } = finalizationFixture();
+    tx.secret.findFirst.mockResolvedValue({ id: "fixture-temporary-secret" });
+    await finalizeRun(prisma, {
+      ...input,
+      outcome: "completed",
+      blocks: [],
+      memoryCapture: { sourceMemoryIds: [], scope: "isolated" },
+    });
+    expect(tx.run.update).not.toHaveBeenCalled();
+    expect(tx.secret.deleteMany).toHaveBeenCalled();
+  });
   it.each([
     { scope: "isolated", sourceMemoryIds: [] },
     { scope: "isolated", sourceMemoryIds: ["memory-a", "memory-b"] },
@@ -225,6 +241,41 @@ describePostgres("turn-memory capture commits and rollback (PostgreSQL)", () => 
       leaseFence: 1,
     };
   }
+
+  it.each(["login", "code", "spent", "waiting"] as const)(
+    "completes and removes temporary %s credentials without scheduling external capture",
+    async (kind) => {
+      const input = await createRunningTurn();
+      const owner = identity!;
+      const secretKind =
+        kind === "login"
+          ? runLoginKind(input.runId, "example")
+          : kind === "code"
+            ? runCodeKind(input.runId)
+            : kind === "spent"
+              ? runCodeSpentKind(input.runId)
+              : runSecretKind(input.runId);
+      const secret = await system.secret.create({
+        data: {
+          userId: owner.userId,
+          spaceId: owner.spaceId,
+          kind: secretKind,
+          ciphertext: "synthetic-sealed-secret",
+        },
+      });
+      await finalizeRun(system, {
+        ...input,
+        outcome: "completed",
+        blocks: [],
+        memoryCapture: { sourceMemoryIds: [], scope: "isolated" },
+      });
+      const run = await system.run.findUniqueOrThrow({ where: { id: input.runId } });
+      expect(run.status).toBe("completed");
+      expect(run.memoryCaptureDueAt).toBeNull();
+      expect(run.memoryCapturePayload).toBeNull();
+      expect(await system.secret.findUnique({ where: { id: secret.id } })).toBeNull();
+    },
+  );
 
   it.each(["isolated", "shared", "failed", "legacy"] as const)(
     "commits the %s path",

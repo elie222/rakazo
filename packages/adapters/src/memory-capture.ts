@@ -24,9 +24,12 @@ import {
   commandCredentialRedactions,
   loadBotCommandEnvironment,
   loadLoginPasswordRedactions,
+  loadRunCodeRedactions,
+  loadRunLoginRedactions,
 } from "./bot-secrets.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { isRetryableMemoryError } from "./memory-provider-factory.js";
+import { loadPurchaseRedactions } from "./purchase-service.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
 
 /**
@@ -563,12 +566,26 @@ async function capturePendingTurn(
       // Production supplies the same Prisma client and vault loader as the executor.
       // The narrower capture interface keeps offline fixtures independent of the vault.
       const prisma = deps.prisma as unknown as PrismaClient;
-      const secretScope = { userId: run.userId, spaceId: run.spaceId };
-      const [passwords, environment] = await Promise.all([
+      const secretScope = { userId: run.userId, spaceId: run.spaceId, botId: run.botId };
+      const [passwords, environment, runLogins, runCodes, purchases] = await Promise.all([
         loadLoginPasswordRedactions(prisma, deps.secretStore, secretScope),
         loadBotCommandEnvironment(prisma, deps.secretStore, secretScope),
+        // Terminal cleanup removes run-only rows; only values still stored can be loaded here.
+        loadRunLoginRedactions(prisma, deps.secretStore, secretScope, run.id),
+        loadRunCodeRedactions(prisma, deps.secretStore, secretScope, run.id),
+        // Sealed payment values still need hiding after a wallet is disconnected.
+        loadPurchaseRedactions(
+          { prisma, secretStore: deps.secretStore as SecretStore },
+          secretScope,
+        ),
       ]);
-      secrets = [...passwords, ...commandCredentialRedactions(environment)];
+      secrets = [
+        ...passwords,
+        ...commandCredentialRedactions(environment),
+        ...runLogins,
+        ...runCodes,
+        ...purchases,
+      ];
     }
     const scope = effectiveMemoryScope(null, run.memoryCaptureScope ?? "isolated");
     try {

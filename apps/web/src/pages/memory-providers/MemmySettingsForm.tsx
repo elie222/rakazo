@@ -11,7 +11,7 @@ export function MemmySettingsForm({ busy, onConnect }: MemoryProviderSettingsFor
   const [token, setToken] = useState("");
   // Both fields are required, so Connect stays disabled instead of adding error copy;
   // URL validity is the backend's classification, shown by the overlay after connect.
-  const incomplete = !endpoint.trim() || token.trim().length < 8;
+  const incomplete = !endpoint.trim() || !token.trim();
 
   async function connect() {
     const result = memmyConnectionDraft({ endpoint, token });

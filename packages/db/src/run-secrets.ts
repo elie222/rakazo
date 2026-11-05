@@ -30,25 +30,36 @@ export function runCodeSpentKind(runId: string): string {
  * with the run. All are stored under the run's user and space, which also keeps this delete on the
  * secrets index.
  */
+function runSecretSelectors(
+  runs: ReadonlyArray<{ id: string; userId: string; spaceId: string }>,
+): Prisma.SecretWhereInput[] {
+  return runs.flatMap((run) => [
+    { userId: run.userId, spaceId: run.spaceId, kind: runSecretKind(run.id) },
+    { userId: run.userId, spaceId: run.spaceId, kind: runCodeKind(run.id) },
+    { userId: run.userId, spaceId: run.spaceId, kind: runCodeSpentKind(run.id) },
+    { userId: run.userId, spaceId: run.spaceId, kind: { startsWith: runLoginKind(run.id, "") } },
+  ]);
+}
+
+/** Presence only: never retain or decrypt a temporary credential for memory capture. */
+export async function hasRunSecretsInTransaction(
+  tx: Pick<Prisma.TransactionClient, "secret">,
+  run: { id: string; userId: string; spaceId: string },
+): Promise<boolean> {
+  return (
+    (await tx.secret.findFirst({
+      where: { OR: runSecretSelectors([run]) },
+      select: { id: true },
+    })) !== null
+  );
+}
+
 export async function deleteRunSecretsInTransaction(
   tx: Pick<Prisma.TransactionClient, "secret">,
   runs: ReadonlyArray<{ id: string; userId: string; spaceId: string }>,
 ): Promise<void> {
   if (runs.length === 0) return;
-  await tx.secret.deleteMany({
-    where: {
-      OR: runs.flatMap((run) => [
-        { userId: run.userId, spaceId: run.spaceId, kind: runSecretKind(run.id) },
-        { userId: run.userId, spaceId: run.spaceId, kind: runCodeKind(run.id) },
-        { userId: run.userId, spaceId: run.spaceId, kind: runCodeSpentKind(run.id) },
-        {
-          userId: run.userId,
-          spaceId: run.spaceId,
-          kind: { startsWith: runLoginKind(run.id, "") },
-        },
-      ]),
-    },
-  });
+  await tx.secret.deleteMany({ where: { OR: runSecretSelectors(runs) } });
 }
 
 /**

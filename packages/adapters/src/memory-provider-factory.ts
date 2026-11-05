@@ -355,6 +355,7 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
     if (result.kind === "configured") return result.value;
     if (result.kind === "unavailable") {
       getLogger().warn("Semantic memory unavailable", {
+        spaceId,
         reason: result.reason,
         retryable: result.retryable,
       });
@@ -368,6 +369,7 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
     requireLifecycle: boolean,
   ): Promise<MemoryProviderResolution> {
     let stage: MemoryProviderLoadStage = "configuration_load";
+    let legacyProvider = false;
     try {
       const config = await this.prisma.spaceMemoryConfig.findUnique({
         where: { spaceId },
@@ -376,6 +378,7 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
       if (!config) return { kind: "unconfigured" };
       const adapter = MEMORY_PROVIDER_ADAPTERS.get(config.provider);
       if (!adapter) return unavailable("unknown_provider");
+      legacyProvider = !adapter.createTurnMemory;
       if (requireLifecycle && !adapter.createTurnMemory) {
         return unavailable("lifecycle_unsupported");
       }
@@ -388,7 +391,25 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
         return unavailable("private_endpoint_not_authorized");
       }
       stage = "endpoint_revalidation";
-      await adapter.revalidate?.(settings);
+      if (adapter.revalidate) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            adapter.revalidate(settings),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => {
+                reject(
+                  Object.assign(new Error("Memory endpoint revalidation timed out"), {
+                    code: "ETIMEDOUT",
+                  }),
+                );
+              }, 2500);
+            }),
+          ]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      }
       stage = "credential_load";
       const plaintext = await this.secrets.load(config.secret.ciphertext, config.secret.id);
       stage = "credential_decode";
@@ -405,6 +426,17 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
         },
       };
     } catch (error) {
+      // Preserve existing semantic providers' credential/create failure behavior. Only the
+      // optional lifecycle path converts those failures into explicit availability states.
+      if (
+        !requireLifecycle &&
+        legacyProvider &&
+        (stage === "credential_load" ||
+          stage === "credential_decode" ||
+          stage === "provider_creation")
+      ) {
+        throw error;
+      }
       return resolutionFailure(error, stage);
     }
   }

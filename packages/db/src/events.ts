@@ -59,7 +59,7 @@ import {
   partialReplyClientNonce,
   RunHistoryWriteError,
 } from "./messages.js";
-import { deleteRunSecretsInTransaction } from "./run-secrets.js";
+import { deleteRunSecretsInTransaction, hasRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { recordSecurityEvent } from "./security-events.js";
@@ -1855,7 +1855,18 @@ async function finalizeRunOnce(
       },
     });
     if (terminal.count !== 1) return null;
-    if (input.outcome === "completed" && input.memoryCapture) {
+    // Completion removes run-only login/code rows below. Do not export a turn that
+    // depends on those values for redaction: the background worker cannot recover them,
+    // and extending their lifetime just for memory would defeat their privacy boundary.
+    const temporaryCredentials =
+      input.outcome === "completed" && input.memoryCapture && writableRun
+        ? await hasRunSecretsInTransaction(tx, {
+            id: input.runId,
+            userId: writableRun.userId,
+            spaceId: input.spaceId,
+          })
+        : false;
+    if (input.outcome === "completed" && input.memoryCapture && !temporaryCredentials) {
       await tx.run.update({
         where: { id: input.runId },
         data: {

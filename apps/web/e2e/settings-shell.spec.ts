@@ -195,6 +195,8 @@ test("Memmy memory settings uses a service URL and masked token", async ({ page 
   await expect(connect).toBeDisabled();
   await endpoint.fill("https://memory.example.test");
   await expect(connect).toBeDisabled();
+  await token.fill("x");
+  await expect(connect).toBeEnabled();
   await token.fill("example-service-token");
   await expect(connect).toBeEnabled();
   await expect(memory.getByLabel("Model", { exact: true })).toHaveCount(0);

@@ -9,7 +9,7 @@ import {
 import type { MessageBlock } from "@rakazo/contracts";
 import { stuckWorkStatusMessages } from "@rakazo/core";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { Prisma, reconcileComputerRuns } from "@rakazo/db";
+import { reconcileComputerRuns } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { PoolClient } from "pg";
 import { returnBotMessageOutcome } from "./bot-messages.js";
@@ -24,7 +24,6 @@ const DEFAULT_INTERVAL_MS = 30_000;
 const DEFAULT_BATCH_SIZE = 100;
 const ROUTINE_LOOKAHEAD_MS = 60_000;
 const CONTROL_LOOKAHEAD_MS = 60_000;
-const MEMORY_CAPTURE_PAYLOAD_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 /**
  * A queued run's job lock older than a run lease is abandoned. A live worker
  * finishing a failed attempt holds it for seconds before Graphile unlocks it.
@@ -244,37 +243,19 @@ export function createJobReconciler(
         deps.prisma.run.findMany({
           where: {
             status: "completed",
-            memoryCaptureDueAt: {
-              not: null,
-              gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
-            },
+            memoryCaptureDueAt: { not: null },
             memoryCapturedAt: null,
           },
           orderBy: [{ memoryCaptureDueAt: "asc" }, { id: "asc" }],
           take: batchSize,
-          // One row per conversation: a hundred stuck turns in one thread must not fill
-          // the batch and starve every other conversation's lost wakeup.
-          distinct: ["threadId"],
+          // Match the worker's lock/drain identity, including independent bots in a group.
+          distinct: ["threadId", "botId"],
           select: { id: true },
         }),
       ]);
 
-      // Space, Bot, Thread and Task deletion cascade to the Run and its payload.
-      // Retained Runs release the snapshot after capture, or after 30 days pending.
-      await deps.prisma.run.updateMany({
-        where: {
-          memoryCapturePayload: { not: Prisma.DbNull },
-          OR: [
-            { memoryCapturedAt: { not: null } },
-            {
-              memoryCaptureDueAt: {
-                lt: new Date(now.getTime() - MEMORY_CAPTURE_PAYLOAD_RETENTION_MS),
-              },
-            },
-          ],
-        },
-        data: { memoryCapturePayload: Prisma.DbNull },
-      });
+      // Frozen evidence is released by the acknowledgement/terminal path, not by age.
+      // Removing it while delivery is pending would change the payload on the next retry.
 
       const events = deps.events;
       if (events) {

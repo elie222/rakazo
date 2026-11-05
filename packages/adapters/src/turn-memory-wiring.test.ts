@@ -229,6 +229,10 @@ function makeFakeCapturePrisma(options: {
       ),
     },
   };
+  Object.assign(prisma, {
+    secret: { findMany: vi.fn(async () => []) },
+    purchase: { findMany: vi.fn(async () => []) },
+  });
   return { prisma, runUpdate, rows };
 }
 

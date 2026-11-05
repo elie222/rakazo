@@ -1,7 +1,6 @@
 import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
 import { stuckWorkStatusMessages } from "@rakazo/core";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { Prisma } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import type { ReconciliationLeadership } from "./job-reconciler.js";
@@ -158,11 +157,7 @@ describe("createJobReconciler", () => {
             row.status === args?.where?.status &&
             row.memoryCapturedAt === args?.where?.memoryCapturedAt &&
             (dueFilter?.not === null ? row.memoryCaptureDueAt !== null : true) &&
-            Boolean(
-              dueFilter?.gte &&
-                row.memoryCaptureDueAt &&
-                row.memoryCaptureDueAt.getTime() >= dueFilter.gte.getTime(),
-            ),
+            (!dueFilter?.gte || row.memoryCaptureDueAt.getTime() >= dueFilter.gte.getTime()),
         )
         .map(({ id }) => ({ id }));
     }) as never);
@@ -173,16 +168,12 @@ describe("createJobReconciler", () => {
     expect(prisma.run.findMany).toHaveBeenCalledWith({
       where: {
         status: "completed",
-        memoryCaptureDueAt: {
-          not: null,
-          gte: expect.any(Date),
-        },
+        memoryCaptureDueAt: { not: null },
         memoryCapturedAt: null,
       },
       orderBy: [{ memoryCaptureDueAt: "asc" }, { id: "asc" }],
       take: 100,
-      // One row per conversation, so a stuck thread cannot fill the batch.
-      distinct: ["threadId"],
+      distinct: ["threadId", "botId"],
       select: { id: true },
     });
     expect(enqueue).toHaveBeenCalledWith({
@@ -194,7 +185,7 @@ describe("createJobReconciler", () => {
     });
   });
 
-  it("skips memory capture for runs already captured or due more than seven days ago", async () => {
+  it("skips acknowledged turns but recovers pending capture regardless of age", async () => {
     const now = Date.now();
     const candidates = [
       {
@@ -224,11 +215,7 @@ describe("createJobReconciler", () => {
             row.status === args?.where?.status &&
             row.memoryCapturedAt === args?.where?.memoryCapturedAt &&
             (dueFilter?.not === null ? row.memoryCaptureDueAt !== null : true) &&
-            Boolean(
-              dueFilter?.gte &&
-                row.memoryCaptureDueAt &&
-                row.memoryCaptureDueAt.getTime() >= dueFilter.gte.getTime(),
-            ),
+            (!dueFilter?.gte || row.memoryCaptureDueAt.getTime() >= dueFilter.gte.getTime()),
         )
         .map(({ id }) => ({ id }));
     }) as never);
@@ -236,36 +223,18 @@ describe("createJobReconciler", () => {
 
     await createJobReconciler({ prisma, jobs }).reconcileOnce();
 
-    expect(capturedCutoff).toBeInstanceOf(Date);
-    expect(capturedCutoff!.getTime()).toBeGreaterThanOrEqual(now - 7 * 24 * 60 * 60 * 1000 - 1_000);
-    expect(capturedCutoff!.getTime()).toBeLessThanOrEqual(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    expect(enqueue).not.toHaveBeenCalled();
+    expect(capturedCutoff).toBeUndefined();
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ name: "memory.capture", payload: { runId: "run-expired-due" } }),
+    );
   });
 
-  it("clears handled or older-than-30-day payloads without changing capture state", async () => {
-    vi.useFakeTimers();
-    const now = new Date("2026-12-10T12:00:00.000Z");
-    vi.setSystemTime(now);
-    try {
-      const prisma = fakePrisma();
-      const { jobs, enqueue } = publisher();
-
-      await createJobReconciler({ prisma, jobs }).reconcileOnce();
-
-      expect(prisma.run.updateMany).toHaveBeenCalledExactlyOnceWith({
-        where: {
-          memoryCapturePayload: { not: Prisma.DbNull },
-          OR: [
-            { memoryCapturedAt: { not: null } },
-            { memoryCaptureDueAt: { lt: new Date("2026-11-10T12:00:00.000Z") } },
-          ],
-        },
-        data: { memoryCapturePayload: Prisma.DbNull },
-      });
-      expect(enqueue).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
+  it("leaves capture snapshots to acknowledgement and explicit retention policies", async () => {
+    const prisma = fakePrisma();
+    const { jobs, enqueue } = publisher();
+    await createJobReconciler({ prisma, jobs }).reconcileOnce();
+    expect(prisma.run.updateMany).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it("restores queued runs and near-due routines with stable replacement keys", async () => {

@@ -38,6 +38,9 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   Eligible owner conversations are recalled before each turn and captured after successful completion.
   The service can distil that evidence into procedures for later recall. Choose the summary,
   evolution and embedding models in Memmy's own settings; Rakazo does not select or replace them.
+  Turns with temporary run-only credentials or one-time codes are not exported: completion deletes
+  those values, so a background worker could no longer redact them safely. Other capture evidence
+  uses the existing saved/run/payment credential redaction loaders before it is frozen.
 
 The Server URL is reached by the Rakazo API and worker, not by the browser. If those run in
 containers, `127.0.0.1` points at that container. Use an endpoint reachable from both services;

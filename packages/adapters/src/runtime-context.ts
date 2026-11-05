@@ -19,6 +19,7 @@ import {
   resolveCompletionMaxTokens,
 } from "./pi-runtime-limits.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
+import { TURN_MEMORY_CONTEXT_PREFIX } from "./turn-memory-prompt.js";
 import { isVerbatimMcpResult, toolCallIdentity } from "./verbatim-mcp-result.js";
 
 /** Minimum whole-result window, unless the full model budget requires clipping. */
@@ -441,7 +442,8 @@ export function createRuntimeContextPolicy(
       (message) =>
         (message as Message & OriginalMetadata).rakazoHistory &&
         !(message as Message & OriginalMetadata).rakazoMessageId &&
-        (text(message).startsWith("Rakazo-owned compacted context through message sequence ") ||
+        (text(message).startsWith(TURN_MEMORY_CONTEXT_PREFIX) ||
+          text(message).startsWith("Rakazo-owned compacted context through message sequence ") ||
           text(message).startsWith(
             "Memory recalled from earlier conversations that fell outside the visible history.",
           )),
