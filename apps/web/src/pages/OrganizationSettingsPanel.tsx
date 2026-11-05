@@ -122,12 +122,12 @@ function OrganizationSettings({
                 }}
               />
             ) : (
-              <p className="break-words text-sm">{organization.name}</p>
+              <p className="break-words text-body">{organization.name}</p>
             )
           }
         >
           {error ? (
-            <p role="alert" className="pt-2 text-[12.5px] text-destructive">
+            <p role="alert" className="pt-2 text-body-sm text-destructive">
               {error}
             </p>
           ) : null}
@@ -210,7 +210,7 @@ export function DeleteOrganizationDialog({
           />
         </Field>
         {error ? (
-          <p role="alert" className="text-[13.5px] text-destructive">
+          <p role="alert" className="text-body text-destructive">
             {error}
           </p>
         ) : null}

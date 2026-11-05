@@ -103,14 +103,14 @@ export function PluginSubmissionsPanel() {
           <Spinner className="size-5 text-muted-foreground" aria-label={t`Loading…`} />
         </div>
       ) : submissions.isError ? (
-        <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
+        <div role="alert" className="flex items-center gap-3 text-body text-destructive">
           {errorText(submissions.error, t`Couldn't load submissions`)}
           <Button variant="outline" size="sm" onClick={() => void submissions.refetch()}>
             <Trans>Retry</Trans>
           </Button>
         </div>
       ) : list.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           <Trans>No submissions</Trans>
         </p>
       ) : (
@@ -128,8 +128,8 @@ export function PluginSubmissionsPanel() {
                   logo={submission.logo}
                   site={submission.website}
                 />
-                <div className="min-w-0 flex-1 space-y-0.5 text-[13px]">
-                  <h3 className="truncate text-[15px] font-medium text-foreground">
+                <div className="min-w-0 flex-1 space-y-0.5 text-body-sm">
+                  <h3 className="truncate text-body-lg font-medium text-foreground">
                     {submission.name}
                   </h3>
                   {submission.source ? <ExternalLink href={submission.source} /> : null}
@@ -181,17 +181,17 @@ export function PluginSubmissionsPanel() {
                 ) : null}
               </div>
               {submission.description ? (
-                <p className="whitespace-pre-wrap text-[14px] leading-6 text-foreground" dir="auto">
+                <p className="whitespace-pre-wrap text-body leading-6 text-foreground" dir="auto">
                   {submission.description}
                 </p>
               ) : null}
               {submission.testing ? (
                 <Disclosure
                   summary={<Trans>Testing</Trans>}
-                  summaryClassName="text-[13px] text-muted-foreground"
+                  summaryClassName="text-body-sm text-muted-foreground"
                 >
                   <p
-                    className="mt-2 whitespace-pre-wrap text-[13px] leading-5 text-muted-foreground"
+                    className="mt-2 whitespace-pre-wrap text-body-sm leading-5 text-muted-foreground"
                     dir="auto"
                   >
                     {submission.testing}
@@ -199,7 +199,7 @@ export function PluginSubmissionsPanel() {
                 </Disclosure>
               ) : null}
               {submission.reason ? (
-                <p className="text-[13px] text-destructive" dir="auto">
+                <p className="text-body-sm text-destructive" dir="auto">
                   {submission.reason}
                 </p>
               ) : null}

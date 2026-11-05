@@ -104,7 +104,7 @@ function ConnectorIcon({ name, logo }: { name: string; logo?: string | null }) {
       className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
     />
   ) : (
-    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
+    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-body font-semibold text-foreground">
       {name[0]}
     </div>
   );
@@ -736,7 +736,7 @@ export function PluginsOverlay({
     const icon = <ConnectorIcon name={label} logo={logo} />;
     const title = (
       <div className="min-w-0 flex-1 text-start">
-        <div className="truncate text-[15px] font-medium text-foreground">{label}</div>
+        <div className="truncate text-body-lg font-medium text-foreground">{label}</div>
       </div>
     );
     return (
@@ -791,11 +791,11 @@ export function PluginsOverlay({
                 className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
               />
             ) : (
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-body font-semibold text-foreground">
                 {item.name[0]}
               </div>
             )}
-            <div className="truncate text-[17px] font-medium text-foreground">{item.name}</div>
+            <div className="truncate text-heading3 font-medium text-foreground">{item.name}</div>
           </div>
           <Button
             type="button"
@@ -815,7 +815,7 @@ export function PluginsOverlay({
                 value={labelDrafts[row.id] ?? row.displayName}
                 aria-label={t`Account label`}
                 maxLength={CONNECTION_LABEL_MAX_LENGTH}
-                className="h-9 rounded-lg border-transparent bg-transparent px-2 text-[14px] shadow-none hover:bg-accent/60 focus-visible:bg-background dark:bg-transparent"
+                className="h-9 rounded-lg border-transparent bg-transparent px-2 text-body shadow-none hover:bg-accent/60 focus-visible:bg-background dark:bg-transparent"
                 onChange={(event) =>
                   setLabelDrafts((current) => ({
                     ...current,
@@ -836,7 +836,7 @@ export function PluginsOverlay({
               <Button
                 type="button"
                 variant="ghost"
-                className="h-8 shrink-0 px-2.5 text-[12px] text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-focus-within/account:opacity-100 pointer-fine:group-hover/account:opacity-100"
+                className="h-8 shrink-0 px-2.5 text-label text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-focus-within/account:opacity-100 pointer-fine:group-hover/account:opacity-100"
                 size="sm"
                 disabled={pending === row.id || uninstalling}
                 onClick={() => void revokeAccount(row, item)}
@@ -848,7 +848,7 @@ export function PluginsOverlay({
           <Button
             type="button"
             variant="ghost"
-            className="h-9 px-2 text-[14px] text-muted-foreground"
+            className="h-9 px-2 text-body text-muted-foreground"
             size="sm"
             disabled={connecting || uninstalling}
             onClick={() => void connect(item)}
@@ -862,7 +862,7 @@ export function PluginsOverlay({
           <Disclosure
             data-testid="connection-tools"
             className="px-2"
-            summaryClassName="text-[13px] text-muted-foreground"
+            summaryClassName="text-body-sm text-muted-foreground"
             summary={
               toolsLoading ? (
                 <Trans>Tools</Trans>
@@ -876,7 +876,7 @@ export function PluginsOverlay({
                 <Badge
                   key={tool.name}
                   variant="secondary"
-                  className="h-6 px-2.5 text-[12px] font-normal"
+                  className="h-6 px-2.5 text-label font-normal"
                   title={tool.description || undefined}
                 >
                   {toolLabel(tool.name, item)}
@@ -913,7 +913,7 @@ export function PluginsOverlay({
       );
     const unavailable =
       pluginCatalog.error || pluginCatalog.data?.unavailableRegistries.length ? (
-        <div role="alert" className="mt-6 flex items-center gap-3 text-sm text-muted-foreground">
+        <div role="alert" className="mt-6 flex items-center gap-3 text-body text-muted-foreground">
           <Trans>Some plugins could not be loaded.</Trans>
           <Button variant="outline" size="sm" onClick={() => void pluginCatalog.refetch()}>
             <Trans>Retry</Trans>
@@ -1093,7 +1093,7 @@ export function PluginsOverlay({
         >
           <ChevronLeft />
         </Button>
-        <h2 className="text-[17px] font-medium text-foreground">{title}</h2>
+        <h2 className="text-heading3 font-medium text-foreground">{title}</h2>
       </div>
     );
   }
@@ -1250,9 +1250,9 @@ export function PluginsOverlay({
               </FieldDescription>
             </Field>
           ) : null}
-          {sourceHint ? <p className="text-sm text-muted-foreground">{sourceHint}</p> : null}
+          {sourceHint ? <p className="text-body text-muted-foreground">{sourceHint}</p> : null}
           {sourceError ? (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="text-body text-destructive">
               {sourceError}
             </p>
           ) : null}
@@ -1301,9 +1301,11 @@ export function PluginsOverlay({
               {catalogFeedPending ? <Trans>Searching…</Trans> : <Trans>Search</Trans>}
             </Button>
           </form>
-          {catalogFeedError ? <p className="text-sm text-destructive">{catalogFeedError}</p> : null}
+          {catalogFeedError ? (
+            <p className="text-body text-destructive">{catalogFeedError}</p>
+          ) : null}
           {catalogFeedSearched && !catalogFeedPending && catalogFeedResults.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-body text-muted-foreground">
               <Trans>No results</Trans>
             </p>
           ) : null}
@@ -1326,9 +1328,9 @@ export function PluginsOverlay({
                   result.name
                 )}
               </div>
-              <div className="text-xs text-muted-foreground">{result.domain}</div>
+              <div className="text-label text-muted-foreground">{result.domain}</div>
               {result.description ? (
-                <p className="mt-2 text-sm leading-5 text-muted-foreground">{result.description}</p>
+                <p className="mt-2 text-body text-muted-foreground">{result.description}</p>
               ) : null}
               <div className="mt-3 flex flex-wrap gap-2">
                 {result.surfaces.map((surface) => {
@@ -1391,8 +1393,8 @@ export function PluginsOverlay({
         <button type="button" className={ROW_BUTTON} onClick={() => openPlugin(selection)}>
           <PluginLogo name={selection.name} logo={selection.logo} site={selection.site} />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[15px] font-medium">{selection.name}</span>
-            <span className="block truncate text-[13px] text-muted-foreground">
+            <span className="block truncate text-body-lg font-medium">{selection.name}</span>
+            <span className="block truncate text-body-sm text-muted-foreground">
               {part === "connector" ? (
                 <Plural value={servers.length} one="# connector" other="# connectors" />
               ) : (
@@ -1433,7 +1435,7 @@ export function PluginsOverlay({
             {mcpError ? (
               <div
                 role="alert"
-                className="mb-2 flex items-center gap-2 px-2.5 text-sm text-destructive"
+                className="mb-2 flex items-center gap-2 px-2.5 text-body text-destructive"
               >
                 {mcpError}
                 <Button variant="link" size="xs" onClick={() => void mcpQuery.refetch()}>
@@ -1442,7 +1444,7 @@ export function PluginsOverlay({
               </div>
             ) : null}
             {sourceError ? (
-              <p role="alert" className="mb-2 px-2.5 text-sm text-destructive">
+              <p role="alert" className="mb-2 px-2.5 text-body text-destructive">
                 {sourceError}
               </p>
             ) : null}
@@ -1460,8 +1462,8 @@ export function PluginsOverlay({
                   >
                     <ConnectorIcon name={server.name} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] font-medium">{server.name}</span>
-                      <span className="block truncate text-[13px] text-muted-foreground">
+                      <span className="block truncate text-body-lg font-medium">{server.name}</span>
+                      <span className="block truncate text-body-sm text-muted-foreground">
                         {!server.enabled ? (
                           <Trans>Disabled</Trans>
                         ) : server.oauthStatus === "reconnect" ? (
@@ -1488,8 +1490,8 @@ export function PluginsOverlay({
                   >
                     <ConnectorIcon name={source.name} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] font-medium">{source.name}</span>
-                      <span className="block truncate text-[13px] text-muted-foreground">
+                      <span className="block truncate text-body-lg font-medium">{source.name}</span>
+                      <span className="block truncate text-body-sm text-muted-foreground">
                         {source.kind === "api"
                           ? "OpenAPI"
                           : source.kind === "graphql"
@@ -1550,7 +1552,7 @@ export function PluginsOverlay({
             {browsing && connectedCount > 0 ? (
               <Button
                 variant="ghost"
-                className="-my-1 h-9 gap-2.5 px-2.5 text-[14px] text-muted-foreground"
+                className="-my-1 h-9 gap-2.5 px-2.5 text-body text-muted-foreground"
                 onClick={() => setView("manage")}
               >
                 <span aria-hidden className="flex -space-x-1.5">
@@ -1563,7 +1565,7 @@ export function PluginsOverlay({
                           className="h-6 w-6 rounded-lg bg-favicon-plate object-contain p-0.5"
                         />
                       ) : (
-                        <span className="grid h-6 w-6 place-items-center rounded-lg border border-border/60 bg-favicon-plate text-[11px] font-semibold text-foreground">
+                        <span className="grid h-6 w-6 place-items-center rounded-lg border border-border/60 bg-favicon-plate text-caption font-semibold text-foreground">
                           {mark.name[0]?.toUpperCase()}
                         </span>
                       )}
@@ -1594,7 +1596,7 @@ export function PluginsOverlay({
               }}
               aria-label={t`Search apps`}
               placeholder={t`Search apps`}
-              className="h-11 rounded-xl px-4 md:text-[15px]"
+              className="h-11 rounded-xl px-4 md:text-body-lg"
             />
             {categories.length >= 2 || category ? (
               <div className="flex flex-wrap gap-2" data-testid="integration-categories">
@@ -1605,7 +1607,7 @@ export function PluginsOverlay({
                     size="sm"
                     variant={category === name ? "default" : "secondary"}
                     aria-pressed={category === name}
-                    className="h-8 rounded-full px-3.5 text-[13px]"
+                    className="h-8 rounded-full px-3.5 text-body-sm"
                     onClick={() => {
                       setCategory(name);
                       setPluginCount(PLUGIN_PAGE_SIZE);
@@ -1626,7 +1628,7 @@ export function PluginsOverlay({
                               ? "default"
                               : "secondary"
                           }
-                          className="h-8 rounded-full px-3.5 text-[13px]"
+                          className="h-8 rounded-full px-3.5 text-body-sm"
                         />
                       }
                     >
@@ -1673,7 +1675,7 @@ export function PluginsOverlay({
         >
           {catalogError || loadError ? (
             <div className="mb-4 flex items-center gap-3">
-              <p className="text-sm text-destructive">{catalogError ?? loadError}</p>
+              <p className="text-body text-destructive">{catalogError ?? loadError}</p>
               {!catalogLoaded || (loadError && !catalogError) ? (
                 <Button variant="outline" size="sm" onClick={() => void integrations.refetch()}>
                   <Trans>Retry</Trans>
@@ -1712,7 +1714,7 @@ export function PluginsOverlay({
                 <div className="mb-6" data-testid="featured-connectors">
                   {catalog.length === 0 ? (
                     plugins.length ? null : (
-                      <p className="text-[13.5px] leading-6 text-muted-foreground/80">
+                      <p className="text-body leading-6 text-muted-foreground/80">
                         <Trans>Configure a plugin catalog on the server to connect apps.</Trans>
                       </p>
                     )
@@ -1735,15 +1737,15 @@ export function PluginsOverlay({
                               disabled ? "opacity-70" : ""
                             }`}
                           >
-                            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
+                            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-body font-semibold text-foreground">
                               {tile.label[0]}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-[15px] font-medium text-foreground">
+                              <div className="truncate text-body-lg font-medium text-foreground">
                                 {tile.label}
                               </div>
                               {disabled ? (
-                                <div className="truncate text-[12.5px] text-muted-foreground">
+                                <div className="truncate text-body-sm text-muted-foreground">
                                   <Trans>Not in the plugin catalog</Trans>
                                 </div>
                               ) : null}
@@ -1851,7 +1853,7 @@ export function PluginsOverlay({
                     href={SUBMIT_PLUGIN_URL}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
+                    className="inline-flex items-center gap-1 text-body-sm text-muted-foreground hover:text-foreground"
                   >
                     <Trans>Submit a plugin</Trans>
                     <ArrowUpRight size={14} />

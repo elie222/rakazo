@@ -82,7 +82,7 @@ export function BillingSettingsPanel() {
             <Skeleton className="h-5 w-24" />
           )}
           {price ? (
-            <p className="mt-3 flex flex-wrap gap-x-2 text-[14px] text-foreground/75">
+            <p className="mt-3 flex flex-wrap gap-x-2 text-body text-foreground/75">
               <span>{price}</span>
               {seats > 1 ? (
                 <span className="text-muted-foreground">
@@ -92,7 +92,7 @@ export function BillingSettingsPanel() {
             </p>
           ) : null}
           {dateLabel ? (
-            <p className="mt-2 text-[12.5px] text-muted-foreground/80">{dateLabel}</p>
+            <p className="mt-2 text-body-sm text-muted-foreground/80">{dateLabel}</p>
           ) : null}
         </div>
         {status?.canManage && status.hasCustomer ? (
@@ -107,7 +107,7 @@ export function BillingSettingsPanel() {
         ) : null}
       </div>
       {error ? (
-        <p role="alert" className="mt-3 text-sm text-destructive">
+        <p role="alert" className="mt-3 text-body text-destructive">
           {error}
         </p>
       ) : null}

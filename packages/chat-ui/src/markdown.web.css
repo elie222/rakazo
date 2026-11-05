@@ -145,7 +145,7 @@
   color: var(--foreground);
   padding: 0.08em 0.32em;
   font-family: var(--font-mono);
-  font-size: var(--text-body2);
+  font-size: var(--text-body-sm);
   direction: ltr;
   unicode-bidi: isolate;
 }
@@ -165,8 +165,8 @@
   border: 0;
   background: transparent;
   padding: 0;
-  font-size: var(--text-body2);
-  line-height: var(--text-body2--line-height);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
   white-space: pre;
 }
 
