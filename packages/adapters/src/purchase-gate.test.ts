@@ -432,6 +432,8 @@ describe("purchase detection for the page tools", () => {
         { name: " Bananas\u202e \u001f × 6\u0007", amount: "$3.00" },
         { name: "No amount" },
         { name: "Amount on the button", amount: "$1" },
+        { name: "On the button", amount: "$1" },
+        { name: "Total due", amount: "$1" },
         { name: 'Button: "Place order"', amount: "$1" },
         "Delivery $6.00",
         { name: "", amount: "$1" },

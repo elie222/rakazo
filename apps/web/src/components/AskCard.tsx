@@ -6,6 +6,7 @@ import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
   isApprovalAskBlock,
   isSecretAskBlock,
+  receiptItems,
   resolveAskChoice,
   selectedAskActionLabel,
 } from "@rakazo/core";
@@ -40,7 +41,8 @@ function ReceiptRow({
 
 /** A payment's order as the page shows it: its lines, then what is paid, then where it came from. */
 function AskReceiptView({ receipt }: { receipt: AskReceipt }) {
-  const { button, items, more, amount, total } = receipt;
+  const { button, more, amount, total } = receipt;
+  const items = receiptItems(receipt.items, [t`Total`, t`On the button`]);
   const count = more ? `${more.count}${more.atLeast ? "+" : ""}` : "";
   const lines = items.length > 0 || more || total;
   return (

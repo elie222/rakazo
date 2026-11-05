@@ -32,7 +32,8 @@ const INVISIBLE = /[\u{E0000}-\u{E007F}​-‏⁠-⁤‪-‮⁦-⁩﻿]/gu;
 const pageText = (text: string, max: number) =>
   Array.from(text.replace(INVISIBLE, "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
 
-const CARD_LABEL = /^(?:button|amount on the button|total on the page)\b/i;
+// The card's own row labels, in its text and its receipt; the apps also drop their translations.
+const CARD_LABEL = /^(?:button|(?:amount )?on the button|total)\b/i;
 // The page reads at most this many order lines; a longer order may have more.
 const MAX_ITEMS = 30;
 // The card lists this many order lines; a longer order shows one fewer and how many more there are.

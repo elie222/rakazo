@@ -850,6 +850,8 @@ it("draws a payment's order as a receipt in place of the text detail", async () 
       items: [
         { name: "Bananas × 6", amount: "$3.00" },
         { name: "Delivery", amount: "$6.00" },
+        // A page line named like the card's own row is left out.
+        { name: "On the button", amount: "$1.00" },
       ],
       more: { count: 23, atLeast: true },
       amount: "$20.00",

@@ -1,4 +1,5 @@
 import type { AskReceipt } from "@rakazo/contracts";
+import { receiptItems } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { StyleSheet, Text, View } from "react-native";
 import { useI18n } from "../lib/i18n";
@@ -23,7 +24,8 @@ function ReceiptRow({ name, amount, strong }: { name: string; amount: string; st
 export function AskReceiptView({ receipt }: { receipt: AskReceipt }) {
   const { t } = useI18n();
   const tokens = useMobileTokens();
-  const { button, items, more, amount, total } = receipt;
+  const { button, more, amount, total } = receipt;
+  const items = receiptItems(receipt.items, [t("Total"), t("On the button")]);
   const lines = items.length > 0 || Boolean(more) || Boolean(total);
   return (
     <View style={{ marginTop: 10, gap: 10 }}>
