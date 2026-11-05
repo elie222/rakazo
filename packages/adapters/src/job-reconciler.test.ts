@@ -82,6 +82,30 @@ describe("createJobReconciler", () => {
     expect(prisma.messagingOutbound.findFirst).toHaveBeenCalled();
   });
 
+  it("keeps recovering due work while an auxiliary reconciler hangs", async () => {
+    const prisma = fakePrisma([], [{ id: "routine-due", nextRunAt: new Date() }]);
+    const { jobs, enqueue } = publisher();
+    const storage = deferred();
+    const reconcileHomeStorage = vi.fn(() => storage.promise);
+    const reconciler = createJobReconciler({ prisma, jobs, reconcileHomeStorage });
+
+    await reconciler.reconcileOnce();
+    await reconciler.reconcileOnce();
+
+    const wakeups = enqueue.mock.calls.filter(([job]) => job.name === "routine.wakeup");
+    expect(wakeups).toHaveLength(2);
+    // A pass still running is not started again.
+    expect(reconcileHomeStorage).toHaveBeenCalledOnce();
+    let stopped = false;
+    const stopping = reconciler.stop().then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    storage.resolve();
+    await stopping;
+  });
+
   it("restores a due pending messaging outbox drain", async () => {
     const prisma = fakePrisma();
     vi.mocked(prisma.messagingOutbound.findFirst).mockResolvedValue({ id: "outbound-1" } as never);
