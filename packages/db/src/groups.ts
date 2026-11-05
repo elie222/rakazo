@@ -615,15 +615,18 @@ export function createGroupRepos(prisma: PrismaClient) {
           await lockSpaceGroup(tx, actor, groupId);
           const archived = await tx.chatGroupMember.findMany({
             where: { groupId, bot: { archivedAt: { not: null } } },
-            select: { bot: { select: { id: true, userId: true, computerId: true } } },
+            select: {
+              bot: { select: { id: true, computer: { select: { id: true, userId: true } } } },
+            },
             orderBy: groupMemberOrder,
           });
           for (const { bot } of archived) {
-            if (bot.computerId) {
+            // The limit is the computer's owner's: a shared Team Computer is the space owner's.
+            if (bot.computer) {
               await restoreBotUnderComputerQuota(tx, {
-                userId: bot.userId,
+                userId: bot.computer.userId,
                 botId: bot.id,
-                computerId: bot.computerId,
+                computerId: bot.computer.id,
               });
             } else {
               await tx.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });

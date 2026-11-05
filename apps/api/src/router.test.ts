@@ -7255,7 +7255,13 @@ describe("group restore with archived bots", () => {
     const tx = {
       bot,
       chatGroup,
-      chatGroupMember: { findMany: vi.fn(async () => archivedBots.map((item) => ({ bot: item }))) },
+      chatGroupMember: {
+        findMany: vi.fn(async () =>
+          archivedBots.map(({ id, computerId }) => ({
+            bot: { id, computer: computerId ? { id: computerId, userId: "user-1" } : null },
+          })),
+        ),
+      },
       computer: {
         count: vi.fn(async (args: { where: { id?: string } }) => (args.where.id ? 0 : inUse)),
       },
