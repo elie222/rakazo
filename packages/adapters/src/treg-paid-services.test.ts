@@ -210,6 +210,30 @@ describe("TregPaidServiceProvider", () => {
     expect(result).toEqual({ outcome: "refused", reason: "unavailable" });
   });
 
+  it("refuses account errors without the error header and ignores unsafe charges", async () => {
+    const answers = [
+      json({ error: "insufficient_balance", topup_url: "https://catalog.example.test/topup" }, 402),
+      json({ ok: true }, 200, { "X-Treg-Cost-Micro": "9".repeat(30) }),
+    ];
+    const { services } = provider(() => answers.shift()!);
+    expect(await services.call(mapsService, {}, callOptions, context)).toEqual({
+      outcome: "refused",
+      reason: "unavailable",
+    });
+    expect(await services.call(mapsService, {}, callOptions, context)).toMatchObject({
+      costUsd: 0,
+    });
+  });
+
+  it("only sends its token over https, or plain http to this machine", () => {
+    expect(
+      () => new TregPaidServiceProvider({ apiKey: "k", baseUrl: "http://catalog.example.test" }),
+    ).toThrow();
+    expect(
+      () => new TregPaidServiceProvider({ apiKey: "k", baseUrl: "http://localhost:8080" }),
+    ).not.toThrow();
+  });
+
   it("maps the ceiling refusal, input refusals and a failed waterfall", async () => {
     const answers = [
       json({ error: "route_max_cost" }, 402, { "X-Treg-Error": "1" }),

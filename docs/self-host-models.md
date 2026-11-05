@@ -177,11 +177,13 @@ only). `PAID_SERVICES_BASE_URL` points at a self-hosted Treg instead of `https:/
 org-scoped token, and keep the account topped up or on automatic top-up: an empty balance makes
 every call fail.
 
-Bots get `service_search` and `service_call`. Only read-only lookups are offered: actions on
+Bots get `service_search` and `service_call`, except in messaging channels, where the people asking
+are not the owner whose credits pay. Only read-only lookups are offered: actions on
 accounts, generation tasks, and services that need the account's own connections are left out.
 Each call has a cost ceiling (by default three times the listed price, at most $2) that the
 provider enforces before it charges. When model credits are on, a call first holds that ceiling
-from the organization's credits and then settles to what the provider charged plus 20%; failed
+from the organization's credits and then settles to what the provider charged plus 20%, never
+above the ceiling; failed
 calls are free. A call that may have run without an answer keeps its hold for the credit
 reconciler to flag. Every call appears in Usage under the `services` provider.
 

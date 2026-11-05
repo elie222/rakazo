@@ -32,7 +32,7 @@ const callArgs = z.object({
     .record(z.string().max(100), z.union([z.string().max(2_000), z.number(), z.boolean()]))
     .optional(),
   body: z.unknown().optional(),
-  max_cost_usd: z.number().positive().max(MAX_PAID_SERVICE_CALL_USD).optional(),
+  max_cost_usd: z.number().min(0.001).max(MAX_PAID_SERVICE_CALL_USD).optional(),
 });
 
 type Scope = { userId: string; spaceId: string; runId: string; botId: string };
@@ -175,7 +175,9 @@ export async function serviceCallFromTool(
     };
   }
 
-  const costUsd = result.outcome === "answered" ? roundUsd(result.costUsd * markup) : 0;
+  // The agent agreed to at most maxUsd; a provider that settles above its ceiling is not passed on.
+  const costUsd =
+    result.outcome === "answered" ? Math.min(maxUsd, roundUsd(result.costUsd * markup)) : 0;
   if (reservationId || result.outcome === "answered") {
     const usage: AgentUsage = {
       providerRequestId: result.outcome === "answered" ? (result.providerCallId ?? null) : null,
