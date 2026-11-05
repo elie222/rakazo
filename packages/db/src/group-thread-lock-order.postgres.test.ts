@@ -105,12 +105,6 @@ describePostgres("group and thread lock order (PostgreSQL)", () => {
         );
         return result.rows[0].waiting as number;
       },
-      async deadlocks(): Promise<number> {
-        const result = await client.query(
-          "SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()",
-        );
-        return Number(result.rows[0].deadlocks);
-      },
       release: () => client.release(),
     };
   }
@@ -128,7 +122,6 @@ describePostgres("group and thread lock order (PostgreSQL)", () => {
     let threadWriter: Promise<unknown> = Promise.resolve();
     let groupWriter: Promise<unknown> = Promise.resolve();
     try {
-      const before = await probe.deadlocks();
       threadWriter = system.$transaction(
         async (tx) => {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
@@ -177,9 +170,10 @@ describePostgres("group and thread lock order (PostgreSQL)", () => {
       }
       proceed();
 
+      // A deadlock aborts one of the two, so both committing is the whole check; the
+      // database-wide deadlock counter would also count other test files' transactions.
       const settled = await Promise.allSettled([threadWriter, groupWriter]);
       expect(settled.map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
-      expect(await probe.deadlocks()).toBe(before);
     } finally {
       proceed();
       await Promise.allSettled([threadWriter, groupWriter]);
