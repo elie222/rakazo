@@ -18,21 +18,6 @@ import { modelPickerRequest } from "./model-picker-selection";
 import { queryClient } from "./query";
 
 const mocks = vi.hoisted(() => ({
-  responders: [] as {
-    onMoveShouldSetPanResponderCapture: () => boolean;
-    onPanResponderGrant: () => void;
-    onPanResponderMove: (event: { nativeEvent: { pageY: number } }) => void;
-    onPanResponderRelease: () => void;
-    onPanResponderTerminate: () => void;
-  }[],
-  layouts: new Map<
-    HTMLElement,
-    {
-      onLayout: (event: { nativeEvent: { layout: { y: number; height: number } } }) => void;
-      onTouchEnd?: () => void;
-      onTouchCancel?: () => void;
-    }
-  >(),
   scrollToLocation: vi.fn(),
   scrollTo: vi.fn(),
   reportVisibleRows: true,
@@ -279,24 +264,15 @@ vi.mock("react-native", () => {
     accessibilityLabel,
     accessibilityRole,
     accessibilityValue,
-    onLayout,
-    onTouchEnd,
-    onTouchCancel,
   }: {
     children?: ReactNode;
     accessibilityLabel?: string;
     accessibilityRole?: string;
     accessibilityValue?: { text: string };
-    onLayout?: (event: { nativeEvent: { layout: { y: number; height: number } } }) => void;
-    onTouchEnd?: () => void;
-    onTouchCancel?: () => void;
   }) =>
     createElement(
       "div",
       {
-        ref: (node: HTMLElement | null) => {
-          if (node && onLayout) mocks.layouts.set(node, { onLayout, onTouchEnd, onTouchCancel });
-        },
         "aria-label": accessibilityLabel,
         role: accessibilityRole,
         "aria-valuetext": accessibilityValue?.text,
@@ -313,13 +289,6 @@ vi.mock("react-native", () => {
     },
     Keyboard: { dismiss: mocks.dismissKeyboard },
     Alert: { alert: mocks.alert, prompt: mocks.prompt },
-    PanResponder: {
-      create: (handlers: (typeof mocks.responders)[number]) => {
-        mocks.responders.push(handlers);
-        return { panHandlers: {} };
-      },
-    },
-    Vibration: { vibrate: vi.fn() },
     Linking: { openURL: vi.fn() },
     StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
     ScrollView: view,
@@ -478,7 +447,6 @@ vi.mock("../components/settings-group", () => ({
     detail,
     accessibilityState,
     onPress,
-    onLongPress,
     trailing,
     value,
     accessibilityLabel,
@@ -503,7 +471,6 @@ vi.mock("../components/settings-group", () => ({
     detail?: string;
     accessibilityState?: { selected?: boolean; expanded?: boolean };
     onPress: () => void;
-    onLongPress?: (event: { nativeEvent: { pageY: number } }) => void;
     trailing: ReactNode;
   }) => {
     if (onAccessibilityAction) mocks.rowAccessibilityActions.set(title, onAccessibilityAction);
@@ -521,7 +488,6 @@ vi.mock("../components/settings-group", () => ({
         "aria-valuetext": accessibilityValue?.text,
         "aria-selected": accessibilityState?.selected,
         onClick: onPress,
-        onContextMenu: () => onLongPress?.({ nativeEvent: { pageY: 25 } }),
       },
       leading,
       title,
@@ -602,8 +568,6 @@ let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.responders.length = 0;
-  mocks.layouts.clear();
   mocks.reportVisibleRows = true;
   mocks.headerInset = 0;
   mocks.focused = true;
@@ -1078,71 +1042,6 @@ describe("model role lists", () => {
     [...section(title).querySelectorAll<HTMLButtonElement>("button")].find((button) =>
       button.textContent?.includes(name),
     )!;
-
-  const beginDrag = async () => {
-    mocks.backups = [model(2), model(3), model(4)];
-    await renderModels();
-    for (const [index, name] of ["Model 2", "Model 3", "Model 4"].entries()) {
-      const wrapper = rowButton("Main model", name).parentElement!.parentElement!;
-      act(() =>
-        mocks.layouts
-          .get(wrapper)!
-          .onLayout({ nativeEvent: { layout: { y: index * 50, height: 50 } } }),
-      );
-    }
-    const button = rowButton("Main model", "Model 2");
-    act(() => button.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
-    const responder = mocks.responders.findLast((item) =>
-      item.onMoveShouldSetPanResponderCapture(),
-    )!;
-    return { responder, wrapper: button.parentElement!.parentElement! };
-  };
-
-  it.each(["onTouchEnd", "onTouchCancel"] as const)(
-    "clears a stationary long press on %s",
-    async (event) => {
-      const { responder, wrapper } = await beginDrag();
-      act(() => mocks.layouts.get(wrapper)![event]!());
-      expect(responder.onMoveShouldSetPanResponderCapture()).toBe(false);
-      act(() => responder.onPanResponderRelease());
-      expect(roleSaves()).toEqual([]);
-    },
-  );
-
-  it("saves the dragged order once on responder release", async () => {
-    const { responder, wrapper } = await beginDrag();
-    act(() => {
-      responder.onPanResponderGrant();
-      responder.onPanResponderMove({ nativeEvent: { pageY: 150 } });
-    });
-    act(() => mocks.layouts.get(wrapper)!.onTouchEnd!());
-    await act(async () => responder.onPanResponderRelease());
-    expect(roleSaves()).toEqual([{ backups: [model(3), model(4), model(2)] }]);
-    expect(responder.onMoveShouldSetPanResponderCapture()).toBe(false);
-  });
-
-  it("does not save a drag after the model list changes", async () => {
-    const { responder } = await beginDrag();
-    act(() => {
-      responder.onPanResponderGrant();
-      responder.onPanResponderMove({ nativeEvent: { pageY: 150 } });
-    });
-    await menuAction("Model 3", "remove");
-    await act(async () => responder.onPanResponderRelease());
-    expect(roleSaves()).toEqual([{ backups: [model(2), model(4)] }]);
-  });
-
-  it("cancels a drag when native responder ownership is lost", async () => {
-    const { responder } = await beginDrag();
-    act(() => {
-      responder.onPanResponderGrant();
-      responder.onPanResponderMove({ nativeEvent: { pageY: 150 } });
-      responder.onPanResponderTerminate();
-      responder.onPanResponderRelease();
-    });
-    expect(roleSaves()).toEqual([]);
-    expect(responder.onMoveShouldSetPanResponderCapture()).toBe(false);
-  });
 
   it("keeps the native menu outside the model picker's press target", async () => {
     mocks.primary = model(1);

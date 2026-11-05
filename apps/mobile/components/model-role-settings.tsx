@@ -24,8 +24,8 @@ import {
 import { createModelRoleSettings, modelRoleListPatch } from "@rakazo/core";
 import type { Href } from "expo-router";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { AccessibilityInfo, PanResponder, StyleSheet, Text, Vibration, View } from "react-native";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { AccessibilityInfo, StyleSheet, Text, View } from "react-native";
 import type { RpcArgs } from "../lib/api";
 import { captureApiRequestContext, currentApiBase, rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
@@ -343,91 +343,10 @@ export function ModelRoleSettings({
     }
   }
 
-  const cardLayouts = useRef(new Map<string, { y: number; h: number }>());
-  const dragRef = useRef<{ index: number; dy: number } | null>(null);
-  const [drag, setDrag] = useState<{ index: number; dy: number } | null>(null);
-  const dragOwned = useRef(false);
-  const dragSettings = useRef(settings);
-  const dragController = useRef(controller);
-  const dragOriginY = useRef(0);
-  const latest = useRef({ rows, commit, settings, controller, busy });
-  latest.current = { rows, commit, settings, controller, busy };
-  const tokens = useMobileTokens();
-
-  function updateDrag(next: { index: number; dy: number } | null) {
-    dragRef.current = next;
-    setDrag(next);
-  }
-
-  function dropTarget(index: number, dy: number) {
-    const currentRows = latest.current.rows;
-    const own =
-      currentRows[index] && cardLayouts.current.get(modelRoleChoiceKey(currentRows[index]));
-    if (!own) return index;
-    const center = own.y + own.h / 2 + dy;
-    let target = index;
-    for (const [i, choice] of currentRows.entries()) {
-      const box = cardLayouts.current.get(modelRoleChoiceKey(choice));
-      if (i === index || !box) continue;
-      const mid = box.y + box.h / 2;
-      if (i > index && center > mid) target = Math.max(target, i);
-      if (i < index && center < mid) target = Math.min(target, i);
-    }
-    return target;
-  }
-
-  function endDrag(save: boolean) {
-    const current = dragRef.current;
-    dragOwned.current = false;
-    updateDrag(null);
-    if (
-      !current ||
-      !save ||
-      latest.current.busy ||
-      latest.current.settings !== dragSettings.current ||
-      latest.current.controller !== dragController.current
-    )
-      return;
-    const target = dropTarget(current.index, current.dy);
-    if (target === current.index) return;
-    const next = [...latest.current.rows];
-    next.splice(target, 0, ...next.splice(current.index, 1));
-    void latest.current.commit(next);
-  }
-
-  const dragResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        // Capture beats the ScrollView's pan once a long-press has grabbed a row.
-        onMoveShouldSetPanResponderCapture: () => dragRef.current !== null,
-        onPanResponderGrant: () => {
-          dragOwned.current = true;
-        },
-        onPanResponderMove: (event) => {
-          const current = dragRef.current;
-          if (!current) return;
-          updateDrag({ ...current, dy: event.nativeEvent.pageY - dragOriginY.current });
-        },
-        onPanResponderRelease: () => endDrag(true),
-        onPanResponderTerminate: () => endDrag(false),
-      }),
-    [],
-  );
-
-  function grabRow(index: number, pageY: number) {
-    dragSettings.current = settings;
-    dragController.current = controller;
-    dragOriginY.current = pageY;
-    updateDrag({ index, dy: 0 });
-    Vibration.vibrate(8);
-  }
-
   if (!settings && !state.error) return null;
   const offset = primary ? 0 : 1;
   // Order only means something once there is more than one row.
   const ordered = rows.length + offset > 1;
-  const dragTarget = drag ? dropTarget(drag.index, drag.dy) : -1;
   const number = (index: number) => (
     <Text style={styles.number} accessibilityElementsHidden importantForAccessibility="no">
       {index + 1}
@@ -493,54 +412,8 @@ export function ModelRoleSettings({
             ? [t("Thinking: {level}", { level: thinkingLevelLabel(thinking, t) })]
             : []),
         ].join(", ");
-        const dragging = drag?.index === index;
-        const markerBelow = drag !== null && dragTarget > drag.index && index === dragTarget;
-        const markerAbove = drag !== null && dragTarget < drag.index && index === dragTarget;
-        const marker =
-          markerBelow || markerAbove ? (
-            <View
-              accessible={false}
-              importantForAccessibility="no"
-              pointerEvents="none"
-              style={{
-                position: "absolute",
-                start: 12,
-                end: 12,
-                height: 2,
-                borderRadius: 1,
-                backgroundColor: tokens.primary,
-                ...(markerBelow ? { bottom: -1 } : { top: -1 }),
-              }}
-            />
-          ) : null;
-        const draggable = rows.length > 1 && !busy;
         return (
-          <View
-            key={modelRoleChoiceKey(choice)}
-            onLayout={(event) =>
-              cardLayouts.current.set(modelRoleChoiceKey(choice), {
-                y: event.nativeEvent.layout.y,
-                h: event.nativeEvent.layout.height,
-              })
-            }
-            onTouchEnd={() => {
-              if (!dragOwned.current) endDrag(false);
-            }}
-            onTouchCancel={() => endDrag(false)}
-            {...(draggable ? dragResponder.panHandlers : null)}
-            style={[
-              rowMenuStyles.row,
-              dragging
-                ? {
-                    transform: [{ translateY: drag?.dy ?? 0 }],
-                    zIndex: 5,
-                    elevation: 4,
-                    opacity: 0.95,
-                  }
-                : null,
-            ]}
-          >
-            {markerAbove ? marker : null}
+          <View key={modelRoleChoiceKey(choice)} style={rowMenuStyles.row}>
             <View style={rowMenuStyles.content}>
               <SettingsRow
                 accessibilityRole="button"
@@ -549,9 +422,6 @@ export function ModelRoleSettings({
                 detail={detail}
                 disabled={busy}
                 onPress={() => pick(index)}
-                onLongPress={
-                  draggable ? (event) => grabRow(index, event.nativeEvent.pageY) : undefined
-                }
                 accessibilityActions={accessibilityActions}
                 onAccessibilityAction={({ nativeEvent }) => act(index, nativeEvent.actionName)}
               />
@@ -562,7 +432,6 @@ export function ModelRoleSettings({
               disabled={busy}
               onAction={(id) => act(index, id)}
             />
-            {markerBelow ? marker : null}
           </View>
         );
       })}
