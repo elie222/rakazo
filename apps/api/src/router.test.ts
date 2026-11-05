@@ -2788,6 +2788,42 @@ describe("MCP server health", () => {
       expect(listed?.health).toMatchObject({ status: "error", code: MCP_OAUTH_CLIENT_REQUIRED });
     });
 
+    it.each([
+      "http://localhost:5173/mcp/oauth/callback",
+      "http://127.0.0.1:5180/mcp/oauth/callback",
+      "https://127.0.0.1:5173/mcp/oauth/callback",
+      "http://127.0.0.1:5173/other-callback",
+    ])("rejects an unregistered callback before starting OAuth: %s", async (redirectUri) => {
+      const h = harness({
+        row: baseRow({
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.test/mcp",
+        }),
+      });
+      const begin = vi.fn();
+      Object.assign(h.deps, {
+        mcpOAuth: { ...(h.deps.mcpOAuth as object), begin },
+      });
+      const client = createRouterClient(createRouter(h.deps), {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "owner-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        } as never,
+      });
+
+      await expect(
+        client.mcp.oauth.begin({ serverId: "server-1", redirectUri }),
+      ).rejects.toMatchObject({
+        code: "MCP_OAUTH_REDIRECT_MISMATCH",
+        status: 400,
+      });
+      expect(begin).not.toHaveBeenCalled();
+    });
+
     it("uses the registered web callback when a native client omits the redirect", async () => {
       const h = harness({
         row: baseRow({ transport: "streamable_http", endpoint: "https://mcp.example.test/mcp" }),
@@ -5799,6 +5835,10 @@ describe("bot intro run", () => {
     expect(enqueue).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ payload: { runId: "record-2" } }),
     );
+    // The intro locks the thread row, which snapshot reads hold for up to 15s.
+    expect(deps.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
   });
 
   it("leaves a placeholder account name out of the intro", async () => {
@@ -6103,13 +6143,15 @@ describe("codex live catalog", () => {
     expect(ids).not.toContain("gpt-unknown-from-backend");
   });
 
-  it("never reads the catalog for an API-key credential and still lists Spark", async () => {
+  it("never reads the catalog for an API-key credential", async () => {
     const read = vi.fn().mockResolvedValue([liveModel(spark)]);
     const { handler } = catalogDeps({ read, apiKeyOnly: true });
 
     const ids = await listIds(handler);
 
-    expect(ids).toContain(spark);
+    // Pi no longer bundles Spark for Codex; only an account catalog can add it.
+    expect(ids).not.toContain(spark);
+    expect(ids).toContain(luna);
     expect(read).not.toHaveBeenCalled();
   });
 
@@ -6190,7 +6232,8 @@ describe("codex live catalog", () => {
 
     // Spark's preference points at account B: only B's catalog can unlock it.
     const read = vi.fn(async (_userId: string, account: { accountId: string }) =>
-      account.accountId === "acct-b" ? [liveModel(spark)] : [liveModel(luna)],
+      // A catalog is trusted only when it shares a bundled slug, so B lists Luna too.
+      account.accountId === "acct-b" ? [liveModel(spark), liveModel(luna)] : [liveModel(luna)],
     );
     deps.codexCatalog = { read };
     const first = await listIds(new RPCHandler(createRouter(deps)));
@@ -6676,7 +6719,7 @@ describe("model set default auth", () => {
     expect(main[0]).toMatchObject({ credentialId: personal.id, thinkingLevel: "high" });
   });
 
-  it("does not rewrite a Spark API-key preference when another Codex model becomes the default", async () => {
+  it("rebinds a Spark API-key preference when another Codex model becomes the default", async () => {
     const older = new Date("2026-01-01T00:00:00.000Z");
     const newer = new Date("2026-02-01T00:00:00.000Z");
     const apiCredential = {
@@ -6751,12 +6794,14 @@ describe("model set default auth", () => {
     await expect(response.json()).resolves.toEqual({ json: { ok: true } });
     expect(load).toHaveBeenCalledWith("cipher-oauth", "secret-oauth");
     expect(upsert).toHaveBeenCalledTimes(1);
+    // Pi no longer bundles Spark for Codex, so its binding is no longer an auth-restricted
+    // model to protect and the older credential takes the new default.
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           userId_credentialId: {
             userId: actor.userId,
-            credentialId: "cred-oauth",
+            credentialId: "cred-api",
           },
         },
         create: expect.objectContaining({ modelId: luna }),
@@ -7031,7 +7076,7 @@ describe("bot model auth on save", () => {
     );
   });
 
-  it("rejects setting Codex Spark on the space's ChatGPT subscription credential", async () => {
+  it("rejects setting Codex Spark, which Pi no longer bundles, on the space's ChatGPT credential", async () => {
     const oauthCredential = credentialRow("cred-oauth", "secret-oauth");
     const { preferenceFindFirst, handler } = saveDeps({
       modelId: luna,
@@ -7054,7 +7099,7 @@ describe("bot model auth on save", () => {
     await expect(response.json()).resolves.toEqual({
       json: expect.objectContaining({
         code: "BAD_REQUEST",
-        message: expect.stringMatching(/not available with your current sign-in/i),
+        message: "Unknown model for that provider",
       }),
     });
     expect(preferenceFindFirst).toHaveBeenCalledWith(

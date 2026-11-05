@@ -15,7 +15,7 @@ import {
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { signupSurveyAsksTeamSize } from "@rakazo/contracts";
+import { MCP_OAUTH_REDIRECT_MISMATCH, signupSurveyAsksTeamSize } from "@rakazo/contracts";
 import { comparePlugins, containsSecret, matchesPluginQuery } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
@@ -902,7 +902,10 @@ export function mcpRoutes(ctx: RouterContext) {
             const expectedRedirect = new URL("/mcp/oauth/callback", deps.env.webOrigin).toString();
             // Native clients omit the redirect; the registered web callback is always used.
             if (input.redirectUri && new URL(input.redirectUri).toString() !== expectedRedirect) {
-              throw new Error("MCP OAuth redirect URI is not allowed");
+              throw new ORPCError(MCP_OAUTH_REDIRECT_MISMATCH, {
+                status: 400,
+                message: "The sign-in address does not match this server's configuration.",
+              });
             }
             return await mcpOAuth.begin({
               ...input,
@@ -911,6 +914,7 @@ export function mcpRoutes(ctx: RouterContext) {
               userId: context.actor.userId,
             });
           } catch (error) {
+            if (error instanceof ORPCError) throw error;
             if (error instanceof McpOAuthClientRequiredError) {
               await recordMcpServerHealth(
                 deps.prisma,

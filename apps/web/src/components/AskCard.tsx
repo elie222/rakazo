@@ -1,11 +1,12 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
-import type { LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
+import type { AskReceipt, LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
   isApprovalAskBlock,
   isSecretAskBlock,
+  receiptItems,
   resolveAskChoice,
   selectedAskActionLabel,
 } from "@rakazo/core";
@@ -20,6 +21,59 @@ import { OptionRow, optionLetter } from "./OptionRow";
 import { SecretAskCard } from "./SecretAskCard";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
+
+function ReceiptRow({
+  name,
+  amount,
+  className,
+}: {
+  name: string;
+  amount: string;
+  className?: string;
+}) {
+  return (
+    <li className={`flex items-baseline justify-between gap-4 ${className ?? ""}`}>
+      <span className="min-w-0 break-words">{name}</span>
+      <span className="shrink-0 tabular-nums">{amount}</span>
+    </li>
+  );
+}
+
+/** A payment's order as the page shows it: its lines, then what is paid, then where it came from. */
+function AskReceiptView({ receipt }: { receipt: AskReceipt }) {
+  const { button, more, amount, total } = receipt;
+  const items = receiptItems(receipt.items, [t`Total`, t`On the button`]);
+  const count = more ? `${more.count}${more.atLeast ? "+" : ""}` : "";
+  const lines = items.length > 0 || more || total;
+  return (
+    <div data-testid="ask-receipt" className="mt-3 text-[15px] leading-[1.5] text-foreground">
+      {lines ? (
+        <ul className="space-y-1 border-b border-border pb-2.5">
+          {items.map((item, index) => (
+            // Page lines can repeat, so their place is their key.
+            <ReceiptRow key={index} name={item.name} amount={item.amount} />
+          ))}
+          {more ? <li className="text-muted-foreground">{t`${count} more`}</li> : null}
+          {total ? <ReceiptRow name={t`Total`} amount={total} /> : null}
+        </ul>
+      ) : null}
+      {amount ? (
+        <ul className={lines ? "pt-2.5" : undefined}>
+          <ReceiptRow
+            className="font-medium"
+            name={receipt.amountSource === "button" ? t`On the button` : t`Total`}
+            amount={amount}
+          />
+        </ul>
+      ) : null}
+      <p className="mt-2.5 text-[13px] leading-[1.45] text-muted-foreground">
+        {button
+          ? t`Button “${button}” · read from the page, not checked`
+          : t`Read from the page, not checked`}
+      </p>
+    </div>
+  );
+}
 
 function formatAnsweredState(
   answer: string | undefined,
@@ -192,7 +246,9 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
           <ChatMarkdown>{block.text}</ChatMarkdown>
         )}
       </div>
-      {block.detail ? (
+      {block.receipt ? (
+        <AskReceiptView receipt={block.receipt} />
+      ) : block.detail ? (
         <pre
           data-testid="ask-detail"
           className={

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import type { DisposablePostgres } from "./postgres.js";
 import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
 async function main() {
@@ -22,7 +22,7 @@ async function main() {
   }
 
   const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-canary-"));
-  let postgres: StartedPostgreSqlContainer | undefined;
+  let postgres: DisposablePostgres | undefined;
   try {
     if (runOpenRouter) postgres = await startPostgres();
     const env = {

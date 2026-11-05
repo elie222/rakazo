@@ -66,9 +66,8 @@ export function searchInboxSession(): SearchInboxSession {
   return { generation: currentSessionGeneration(), apiBase: currentApiBase() };
 }
 
-/** Whether a request still belongs to the current account session and server. */
-export function isSearchInboxSessionCurrent(session: SearchInboxSession): boolean {
-  return session.generation === currentSessionGeneration() && session.apiBase === currentApiBase();
+export function isSearchInboxSession(askedIn: SearchInboxSession): boolean {
+  return askedIn.generation === currentSessionGeneration() && askedIn.apiBase === currentApiBase();
 }
 
 /**
@@ -81,7 +80,7 @@ export function isSearchInboxSessionCurrent(session: SearchInboxSession): boolea
  */
 export function addToSearchInbox(item: InboxAddition, askedIn?: SearchInboxSession): void {
   // A bot or group asked for in another session (another account or server) never joins this one.
-  if (askedIn && !isSearchInboxSessionCurrent(askedIn)) return;
+  if (askedIn && !isSearchInboxSession(askedIn)) return;
   const current = getSearchInbox();
   if (current.length === 0) return;
   additions = [...additions.filter((kept) => additionId(kept) !== additionId(item)), item];

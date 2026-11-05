@@ -8,8 +8,9 @@ import { createRoot } from "react-dom/client";
 import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
-import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "./api";
+import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode, signOut } from "./api";
 import { replaceWithSignIn } from "./auth-routing";
+import { endCallBeforeSessionEnd } from "./call-session";
 import { promptAccountDeletion } from "./delete-account-prompt";
 import { registerSettingsSheet } from "./settings-sheet";
 
@@ -225,6 +226,7 @@ vi.mock("./archived-chats", () => ({
   loadArchivedChats: vi.fn(async () => ({ bots: [], groups: [] })),
 }));
 vi.mock("./auth-routing", () => ({ replaceWithSignIn: vi.fn() }));
+vi.mock("./call-session", () => ({ endCallBeforeSessionEnd: vi.fn(async () => undefined) }));
 vi.mock("./delete-account-prompt", () => ({ promptAccountDeletion: vi.fn() }));
 const haptics = vi.hoisted(() => ({
   enabled: true,
@@ -639,6 +641,7 @@ it.each([false, true])(
         "Vault",
         "Integrations",
         "Skills",
+        "Memory",
         "Messaging",
         "AI data sharing",
       ];
@@ -655,6 +658,7 @@ it.each([false, true])(
       for (const [title, href] of [
         ["Models", "/models"],
         ["Vault", "/vault"],
+        ["Memory", "/memory"],
         ["Messaging", "/messaging"],
       ]) {
         events.length = 0;
@@ -725,4 +729,17 @@ it("hides Messaging when no chat app is connected to the server", async () => {
   const titles = Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
   expect(titles).toContain("Skills");
   expect(titles).not.toContain("Messaging");
+});
+
+it("hangs up the active call before signing out", async () => {
+  const view = await renderAccount();
+  const order: string[] = [];
+  vi.mocked(endCallBeforeSessionEnd).mockImplementationOnce(async () => {
+    order.push("hang-up");
+  });
+  vi.mocked(signOut).mockImplementationOnce(async () => {
+    order.push("sign-out");
+  });
+  await view.press("Sign out");
+  expect(order).toEqual(["hang-up", "sign-out"]);
 });

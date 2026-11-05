@@ -1,5 +1,5 @@
 import type { ComposerMentionBinding } from "@rakazo/core";
-import { validateComposerMentionBindings } from "@rakazo/core";
+import { createKeyedListeners, validateComposerMentionBindings } from "@rakazo/core";
 
 export const COMPOSER_DRAFT_STORAGE_PREFIX = "rakazo.composerDraft.";
 const COMPOSER_BINDINGS_STORAGE_PREFIX = "rakazo.composerBindings.";
@@ -196,3 +196,14 @@ export function writeComposerDraft(
     // Quota or private-mode failures: the draft still lives in memory.
   }
 }
+
+/** The composer key for a chat: one bot's chat or a group's. */
+export function composerDraftKey(target: { botId: string } | { groupId: string }): string {
+  return "botId" in target ? `bot:${target.botId}` : `group:${target.groupId}`;
+}
+
+const composerOffers = createKeyedListeners<string>();
+
+/** Text a card in the chat hands to that chat's composer; the person still sends it. */
+export const offerComposerText = composerOffers.emit;
+export const subscribeComposerOffer = composerOffers.subscribe;

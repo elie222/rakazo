@@ -15,7 +15,8 @@ instead of adding a second one, and it deletes notes that no longer hold. It kee
 notes in `MEMORY.md`, merging or removing notes to make room. You can still add more by hand.
 
 To see what a bot remembers, click its name at the top of the chat and open **Memory**. Each note can
-be downloaded or deleted.
+be edited, downloaded or deleted. In the mobile app, the notes are in the bot's chat settings, where
+you can edit or delete them.
 
 ## Shared memory
 
@@ -23,7 +24,7 @@ Some things every bot should know, such as your name, your company, or how you l
 written. Those go in **Shared memory**: every bot in the [space](./spaces.md) reads these notes and
 keeps them up to date.
 
-Find it in **Settings → Memory**.
+Find it in **Settings → Memory**, on the web, desktop and mobile apps.
 
 ## Memory providers
 

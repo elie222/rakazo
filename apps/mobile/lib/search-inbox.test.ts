@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { InboxSpace } from "./inbox-spaces";
 import {
   getSearchInbox,
-  isSearchInboxSessionCurrent,
+  isSearchInboxSession,
   searchInboxSession,
   setSearchInbox,
   subscribeSearchInbox,
@@ -33,10 +33,10 @@ it.each([
   { generation: 1, apiBase: "https://other.example.test" },
 ])("rejects an inbox request after its session or server changes: %j", (next) => {
   const request = searchInboxSession();
-  expect(isSearchInboxSessionCurrent(request)).toBe(true);
+  expect(isSearchInboxSession(request)).toBe(true);
   Object.assign(state, next);
-  expect(isSearchInboxSessionCurrent(request)).toBe(false);
-  expect(isSearchInboxSessionCurrent(searchInboxSession())).toBe(true);
+  expect(isSearchInboxSession(request)).toBe(false);
+  expect(isSearchInboxSession(searchInboxSession())).toBe(true);
 });
 
 it("publishes the exact home roster and unsubscribes", () => {

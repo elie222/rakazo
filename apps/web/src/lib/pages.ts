@@ -47,6 +47,11 @@ function subscribeTheme(onChange: () => void) {
   return () => observer.disconnect();
 }
 
+/** The app's light or dark theme, following changes. */
+export function useAppTheme(): "light" | "dark" {
+  return useSyncExternalStore(subscribeTheme, readTheme, () => "dark" as const);
+}
+
 async function fetchPageRuntime(): Promise<string> {
   const response = await fetch(PAGE_RUNTIME_PATH);
   if (!response.ok) throw new Error(`Page runtime returned ${response.status}`);
@@ -67,7 +72,7 @@ export function usePageDocument(
   bottomInset = 0,
 ): { document: string | null; failed: boolean; retry: () => void } {
   const { t, i18n } = useLingui();
-  const theme = useSyncExternalStore(subscribeTheme, readTheme, () => "dark" as const);
+  const theme = useAppTheme();
   // The surface follows the theme, so it is read again whenever the theme changes.
   const surface = useMemo(() => (theme ? readSurface(on) : ""), [theme, on]);
   const touch = useMedia("(pointer: coarse)");

@@ -27,14 +27,12 @@ export function subscribeHaptics(listener: () => void): () => void {
 
 export function loadHapticsPreference(): Promise<void> {
   if (loadTask) return loadTask;
-  // Cache the task before storage runs, including adapters that can throw synchronously.
   loadTask = Promise.resolve().then(async () => {
     try {
       const stored = await SecureStore.getItemAsync(STORAGE_KEY);
       if (!changedLocally) enabled = stored !== "false";
       loaded = true;
     } catch {
-      // Allow a later retry without enabling feedback or undoing an explicit choice.
       loadTask = undefined;
     } finally {
       notify();
@@ -48,9 +46,7 @@ export function setHapticsEnabled(value: boolean): Promise<void> {
   changedLocally = true;
   loaded = true;
   notify();
-  // Keep rapid toggles in order on disk without delaying the switch or feedback gate.
   const writing = writeTask.then(() => SecureStore.setItemAsync(STORAGE_KEY, String(value)));
-  // Report this save's failure to the caller while allowing the next save to run.
   writeTask = writing.catch(() => undefined);
   return writing;
 }

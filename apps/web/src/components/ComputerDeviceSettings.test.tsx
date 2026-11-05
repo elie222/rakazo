@@ -4,6 +4,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { rpc } from "../lib/rpc";
 import { listUserDevices, removeUserDevice } from "../lib/user-devices";
 import { ComputerDeviceSettings } from "./ComputerDeviceSettings";
 
@@ -39,6 +40,7 @@ vi.mock("@rakazo/ui-web", () => ({
   ),
 }));
 vi.mock("../lib/user-devices", () => ({ listUserDevices: vi.fn(), removeUserDevice: vi.fn() }));
+vi.mock("../lib/rpc", () => ({ rpc: { me: vi.fn() } }));
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -138,5 +140,82 @@ it("stays off and reports it when turning this computer on fails", async () => {
   await act(async () => toggle.click());
   expect(device.setAllowed).toHaveBeenCalledWith(true);
   expect(toggle.checked).toBe(false);
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not change");
+});
+
+it("turns this computer on and off for the app-managed local server", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  const me = { canChooseHostComputer: true, computerHost: "docker" };
+  vi.mocked(rpc.me).mockImplementation(async () => me as Awaited<ReturnType<typeof rpc.me>>);
+  const computer = {
+    managesHostChoice: true,
+    requestAccess: vi.fn(async () => {
+      me.computerHost = "this-mac";
+      return true;
+    }),
+    revokeAccess: vi.fn(async () => {
+      me.computerHost = "docker";
+    }),
+    onConfigure: () => () => undefined,
+  };
+  window.rakazoDesktop = {
+    platform: "darwin",
+    computer,
+    device: { state: async () => null, setAllowed: vi.fn() },
+  } as unknown as RakazoDesktop;
+  await act(async () => root.render(<ComputerDeviceSettings />));
+  const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!;
+  expect(toggle.checked).toBe(false);
+
+  await act(async () => toggle.click());
+  expect(computer.requestAccess).toHaveBeenCalled();
+  expect(toggle.checked).toBe(true);
+
+  await act(async () => toggle.click());
+  expect(computer.revokeAccess).toHaveBeenCalled();
+  expect(toggle.checked).toBe(false);
+});
+
+it("stays hidden on a server that does not run bots on this computer", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  vi.mocked(rpc.me).mockResolvedValue({
+    canChooseHostComputer: false,
+    computerHost: null,
+  } as Awaited<ReturnType<typeof rpc.me>>);
+  window.rakazoDesktop = {
+    platform: "darwin",
+    computer: { managesHostChoice: true },
+    device: { state: async () => null },
+  } as unknown as RakazoDesktop;
+  await act(async () => root.render(<ComputerDeviceSettings />));
+  expect(host.innerHTML).toBe("");
+});
+
+it("keeps the local switch when a later profile read fails", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  vi.mocked(rpc.me)
+    .mockResolvedValueOnce({ canChooseHostComputer: true, computerHost: "this-mac" } as Awaited<
+      ReturnType<typeof rpc.me>
+    >)
+    .mockRejectedValue(new Error("offline"));
+  const computer = {
+    managesHostChoice: true,
+    requestAccess: vi.fn(async () => true),
+    revokeAccess: vi.fn(async () => {
+      throw new Error("Local server is unavailable");
+    }),
+    onConfigure: () => () => undefined,
+  };
+  window.rakazoDesktop = {
+    platform: "darwin",
+    computer,
+    device: { state: async () => null, setAllowed: vi.fn() },
+  } as unknown as RakazoDesktop;
+  await act(async () => root.render(<ComputerDeviceSettings />));
+  await act(async () =>
+    host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!.click(),
+  );
+  const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]');
+  expect(toggle?.checked).toBe(true);
   expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not change");
 });

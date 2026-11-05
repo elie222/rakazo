@@ -20,10 +20,11 @@ and remote providers. This stack credential does not replace a remote provider's
 
 ## Settings configuration
 
-Admins can choose **Settings → Computer → New computers run on** and save a supported provider's fields.
+Set `COMPUTER_SETTINGS_ENABLED=true` on the API to turn this on. Admins can then choose
+**Settings → Computer → New computers run on** and save a supported provider's fields.
 The API supplies the provider's field descriptors and validates values server-side. Credentials are encrypted in the secret store and
 never returned; a blank secret field keeps its saved value for the same provider and destination.
-Changing a URL requires credentials again. **Deployment default** uses `SANDBOX_PROVIDER`.
+Changing a URL requires credentials again. **Default** uses `SANDBOX_PROVIDER`.
 Docker, Kubernetes, Incus, desktop, fake, and none remain environment-only. Settings overrides are disabled
 for desktop and fake deployments.
 
@@ -184,7 +185,8 @@ private ranges, is recommended.
 ## `incus`
 
 Each computer is an [Incus](https://linuxcontainers.org/incus/) application container started
-from the published computer image through Incus's OCI support (Incus 6.9 or newer). The API and
+from the published computer image through Incus's OCI support (Incus 6.11 or newer; the start
+command's uid needs the `oci.uid` and `oci.gid` keys). The API and
 worker call the Incus REST API with a client certificate; no supervisor or Docker socket is
 involved.
 
@@ -201,7 +203,8 @@ Computers without the URL, certificate or key fall back to `none`.
 
 Each instance is unprivileged, without nesting, with an isolated id map (its own range of host
 uids) and the limits above, all set on the instance so a profile cannot loosen them. The image's
-own start command and every command run as the image's user (uid 1000) with no privilege
+own start command and every command run as uid 1000, set on the instance and on each exec rather
+than taken from the image's user, with no privilege
 escalation, the same boundary as a Docker computer, so a custom image must keep that command.
 
 Each start creates a new instance named `rakazo-<uuid>` and labelled `user.rakazo-bot-id=<bot id>`;

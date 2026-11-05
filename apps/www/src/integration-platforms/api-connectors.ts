@@ -1,5 +1,17 @@
 import { GITHUB_URL } from "../site";
-import { INTEGRATIONS_DOC, homepage } from "./shared";
+import {
+  COMPOSIO,
+  INTEGRATIONS_DOC,
+  PIPEDREAM,
+  PRICES_CHECKED,
+  TWILIO,
+  TWILIO_SMS_PRICING,
+  homepage,
+  usd,
+} from "./shared";
+
+/** Texts a month in the Twilio example. */
+const REMINDERS = 300;
 import type { IntegrationPlatform } from "./types";
 
 export const apiConnectors: IntegrationPlatform = {
@@ -8,12 +20,12 @@ export const apiConnectors: IntegrationPlatform = {
   gives: "One tool per operation in an OpenAPI or GraphQL API",
   logins: "Your API key or token, encrypted in Rakazo",
   bestFor: "APIs with a key and no MCP server",
-  title: "API connectors for AI agents: turn OpenAPI and GraphQL APIs into tools",
+  title: "API connectors for AI agents: turn OpenAPI and GraphQL APIs into tools, and what they cost",
   description:
-    "How Rakazo turns an OpenAPI description or a GraphQL endpoint into tools for AI agents, with keys kept out of the model, and how integrations.sh helps find an app's API.",
+    "How Rakazo turns an OpenAPI description or a GraphQL endpoint into tools for AI agents, what calling a third-party API really costs, how it compares with MCP and Composio, and how integrations.sh helps find an app's API.",
   h1: "Turn any OpenAPI or GraphQL API into tools for your AI agents",
   intro: [
-    "Many apps have an API but no MCP server and no ready-made integration. An API connector closes that gap: point it at the API's [OpenAPI](https://www.openapis.org) description or GraphQL endpoint, and each operation becomes a tool an AI agent can call. [integrations.sh](https://integrations.sh) is an open source catalog that helps you find those descriptions.",
+    "Many apps have an API but no MCP server and no ready-made integration. An API connector closes that gap: point it at the API's [OpenAPI](https://www.openapis.org) description or GraphQL endpoint, and each operation becomes a tool an AI agent can call. There is no platform fee in the middle: you pay only what the API itself charges. [integrations.sh](https://integrations.sh) is an open source catalog that helps you find those descriptions.",
     "[Rakazo](/) is an open source app for AI teammates that do real work. You talk to each bot in chat, bots use tools in your apps, and each bot also has its own computer. You can use it on Rakazo Cloud or host it yourself. API connectors let your bots use apps that aren't in the [integrations catalog](/integrations/), with only an API key.",
   ],
   scene: {
@@ -45,8 +57,83 @@ export const apiConnectors: IntegrationPlatform = {
         "Authenticate with a bearer token or an API key header. The key is encrypted, never sent to the model, and removed from what the API sends back.",
         "Find an API by domain. When the operator points `INTEGRATIONS_CATALOG_URL` at an integrations.sh-compatible catalog, **Search by domain** adds a service's OpenAPI description or MCP server with the address and sign-in method filled in.",
         "Read without asking. A `GET` operation or a GraphQL query counts as reading, so in **Ask** mode it usually runs without a card. Writes ask first, under your [approval settings](/docs/approvals/).",
-        "Share it. Every bot in the [spaces](/docs/spaces/) you choose can use the connector. Past 20 tools, a bot searches for the operations it needs instead of loading them all.",
+        "Share it. Every bot in the [spaces](/docs/spaces/) you choose can use the connector. API connectors share one tool count with the MCP servers installed from **Integrations**: past 20 tools in total, a bot searches for the operations it needs instead of loading them all.",
       ],
+    },
+    {
+      heading: "What API connectors cost",
+      paragraphs: [
+        "Rakazo adds nothing per call: API connectors are part of every plan on Rakazo Cloud and free when you host Rakazo yourself. integrations.sh is free and open source. The cost is whatever the API's owner charges for the calls your bot makes, under your own account and key, and it comes in three shapes.",
+        "Many business apps include API access in the plan you already pay for and limit how fast you can call it. Some services charge for each request or for what the request does, such as sending a text message. And your own company's APIs cost only the servers they run on. Either way the bill comes from the API's owner, on the terms of your account with them.",
+      ],
+      table: {
+        caption: "What a bot's API calls cost, by example",
+        columns: ["API", "What the API costs", "Limits that matter for a bot"],
+        rows: [
+          {
+            topic: "GitHub REST API",
+            cells: ["Included with any GitHub account", "5,000 requests an hour with a personal access token"],
+          },
+          {
+            topic: "HubSpot API",
+            cells: [
+              "Included in every HubSpot plan, Free included",
+              "100 requests per 10 seconds and 250,000 a day on Free and Starter; 190 and 625,000 on Professional",
+            ],
+          },
+          {
+            topic: "Twilio SMS",
+            cells: [
+              `${usd(TWILIO.segment)} per US message segment, plus a carrier fee of ${usd(TWILIO.carrierLow)} to ${usd(TWILIO.carrierHigh)}`,
+              "Business texting in the US needs A2P 10DLC registration first",
+            ],
+          },
+          {
+            topic: "Your own API",
+            cells: ["Your hosting", "Whatever you set"],
+          },
+        ],
+        note: `From [GitHub's rate limit docs](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api), [HubSpot's usage guidelines](https://developers.hubspot.com/docs/developer-tooling/platform/usage-guidelines) and [Twilio's US SMS pricing](${TWILIO_SMS_PRICING}), checked ${PRICES_CHECKED}.`,
+      },
+      bullets: [
+        `A worked example: a bot that texts ${REMINDERS} appointment reminders a month through Twilio spends about ${REMINDERS} × (${usd(TWILIO.segment)} + ${usd(TWILIO.carrierTypical)}) ≈ ${usd(Number((REMINDERS * (TWILIO.segment + TWILIO.carrierTypical)).toFixed(2)))}, plus the phone number's monthly fee. The same bot reading 2,000 HubSpot records a month costs nothing beyond your HubSpot plan, well inside its limits.`,
+        "The cost people miss is model tokens. Every response an API sends back goes into the bot's context and is billed as input by your model provider. Rakazo cuts responses at 1 MB, but asking for only the fields you need, through an operation's filters, saves more.",
+        "Rate limits belong to your account or key, so several bots sharing one key share one limit. A bot that hits a limit gets the API's error and can wait and try again.",
+        `Compared with a hosted platform: [Composio](/integration-platforms/composio/) charges from ${usd(COMPOSIO.per1000.own)} to ${usd(COMPOSIO.per1000.premium)} per 1,000 calls past its free tier and [Pipedream Connect](/integration-platforms/pipedream/) starts at ${usd(PIPEDREAM.yearlyFee)} a month, on top of the same API limits. An API connector skips that layer when a key is all you need.`,
+      ],
+    },
+    {
+      heading: "API connector vs MCP server vs a hosted platform",
+      table: {
+        caption: "Three ways to give a bot tools for an app",
+        columns: ["Compared", "API connector", "MCP server", "Composio or Pipedream"],
+        rows: [
+          {
+            topic: "Who writes the tools",
+            cells: ["Generated from the API's description", "The app's team or whoever runs the server", "The platform"],
+          },
+          {
+            topic: "Sign-in",
+            cells: ["API key or token", "OAuth, token or header", "Managed OAuth"],
+          },
+          {
+            topic: "Cost on top of the app",
+            cells: ["None", "None for an app's own server", "Per call, credit or user"],
+          },
+          {
+            topic: "Where logins live",
+            cells: ["Encrypted in Rakazo", "Encrypted in Rakazo", "With the platform"],
+          },
+          {
+            topic: "Tool quality",
+            cells: ["As good as the API's descriptions", "Usually written for agents", "Written for agents"],
+          },
+          {
+            topic: "Best for",
+            cells: ["APIs with a key and no MCP server, and your own APIs", "Apps that publish a server", "Apps that need OAuth and have no server"],
+          },
+        ],
+      },
     },
     {
       heading: "When to choose API connectors",
@@ -101,6 +188,11 @@ export const apiConnectors: IntegrationPlatform = {
         "Use the app's [MCP server](/integration-platforms/mcp/) when it has one. Its tools are designed for agents and it supports OAuth. Use an API connector when the app only offers an API and a key.",
     },
     {
+      question: "How much does it cost to connect an AI agent to an API?",
+      answer:
+        "Rakazo charges nothing per call. You pay the API's own price under your account, which for many business apps is included in your plan with a rate limit, and for metered services such as SMS or search is a price per request. The bot's model tokens for reading the responses are billed by your model provider.",
+    },
+    {
       question: "Does the model see my API key?",
       answer:
         "No. Rakazo stores the key encrypted, adds it to each request itself, and removes it from responses before the bot sees them.",
@@ -115,6 +207,15 @@ export const apiConnectors: IntegrationPlatform = {
     { label: "integrations.sh, publishing a service", href: "https://integrations.sh/publishing/" },
     { label: "OpenAPI Initiative", href: "https://www.openapis.org" },
     { label: "GraphQL, introspection", href: "https://graphql.org/learn/introspection/" },
+    {
+      label: "GitHub, REST API rate limits",
+      href: "https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api",
+    },
+    {
+      label: "HubSpot, API usage guidelines",
+      href: "https://developers.hubspot.com/docs/developer-tooling/platform/usage-guidelines",
+    },
+    { label: "Twilio, US SMS pricing", href: TWILIO_SMS_PRICING },
     INTEGRATIONS_DOC,
     { label: "Rakazo, connect apps", href: `${GITHUB_URL}/blob/main/docs/integrations.md` },
   ],

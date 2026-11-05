@@ -143,7 +143,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
     scope: "bot",
   });
   await rpc(page, "memory/update", {
-    documentId: seededDocs[0].id,
+    documentId: seededDocs[0]!.id,
     content: "# Chief\n\nA remembered preference.\n",
   });
   await openBotPanelTab(page, "Advanced");

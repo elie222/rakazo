@@ -21,7 +21,7 @@ vi.mock("./api", () => ({ rpc: state.rpc, selectSpace: state.selectSpace }));
 vi.mock("./haptics", () => ({ hapticSuccess: state.hapticSuccess }));
 vi.mock("./search-inbox", () => ({
   searchInboxSession: () => ({ ...state.session }),
-  isSearchInboxSessionCurrent: (askedIn: typeof state.session) =>
+  isSearchInboxSession: (askedIn: typeof state.session) =>
     askedIn.generation === state.session.generation && askedIn.apiBase === state.session.apiBase,
 }));
 vi.mock("./organizations", () => ({ refreshOrganizations: state.refreshOrganizations }));

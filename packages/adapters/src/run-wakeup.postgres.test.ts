@@ -117,11 +117,34 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     const waitingOnBot = host();
     const handoff = host();
     const unblocked = host();
+    // A queue check that settles only after stop() drops its result without logging,
+    // so a fixed sleep cannot prove the quiet phases below stay quiet. The queue
+    // check is the host's only raw query; wait for it to settle while its host
+    // still runs, then stop and assert.
+    const queryRaw = db.prisma.$queryRaw.bind(db.prisma);
+    let queueChecksSettled = 0;
+    const querySpy = vi.spyOn(db.prisma, "$queryRaw").mockImplementation((async (
+      query: unknown,
+      ...values: unknown[]
+    ) => {
+      const result = queryRaw(query as never, ...(values as never[]));
+      const settle = () => {
+        queueChecksSettled += 1;
+      };
+      // A failed check counts too, and this side branch must not leave an
+      // unhandled rejection: the host catches the error on its own branch.
+      void Promise.resolve(result).then(settle, settle);
+      return result;
+    }) as never);
+    const runOneQueueCheck = async (host: RunWorkerHost) => {
+      const settled = queueChecksSettled;
+      await host.start({} as BackgroundJobHandlers);
+      await wait(() => expect(queueChecksSettled).toBeGreaterThan(settled));
+      await host.stop();
+    };
     try {
       // Waiting for the bot's own earlier run is expected, not a failure to start.
-      await waitingOnBot.start({} as BackgroundJobHandlers);
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      await waitingOnBot.stop();
+      await runOneQueueCheck(waitingOnBot);
       expect(sink.events.some((event) => event.message === "run.queue_delayed")).toBe(false);
 
       // A release moments ago is the handoff to the bot's next run.
@@ -129,9 +152,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
         where: { id: lease.id },
         data: { expiresAt: new Date(0) },
       });
-      await handoff.start({} as BackgroundJobHandlers);
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      await handoff.stop();
+      await runOneQueueCheck(handoff);
       expect(sink.events.some((event) => event.message === "run.queue_delayed")).toBe(false);
 
       await system.computerExecutionLease.update({
@@ -149,6 +170,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       expect(warning["queue.oldest_wait_ms"]).toBeGreaterThanOrEqual(45_000);
       expect(warning["queue.oldest_wait_ms"]).toBeLessThan(60_000);
     } finally {
+      querySpy.mockRestore();
       await waitingOnBot.stop();
       await handoff.stop();
       await unblocked.stop();

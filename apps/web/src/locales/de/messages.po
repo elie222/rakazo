@@ -182,6 +182,10 @@ msgstr ""
 msgid "{count} months"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "{count} weitere"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr ""
@@ -363,6 +367,38 @@ msgstr "Noch {remaining}"
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr ""
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a day"
+msgstr "{shown} pro Tag"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a month"
+msgstr "{shown} pro Monat"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a week"
+msgstr "{shown} pro Woche"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} in total"
+msgstr "{shown} insgesamt"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent"
+msgstr "{shown} ausgegeben"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this month"
+msgstr "Diesen Monat {shown} ausgegeben"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this week"
+msgstr "Diese Woche {shown} ausgegeben"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent today"
+msgstr "Heute {shown} ausgegeben"
 
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
@@ -761,6 +797,10 @@ msgstr "Immer erlaubt"
 msgid "Always open {site}"
 msgstr "Immer {site} öffnen"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Amount"
+msgstr "Betrag"
+
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "Für diesen Anbieter ist ein API-Schlüssel gespeichert, keine Anmeldung per Abonnement."
@@ -1030,6 +1070,10 @@ msgstr "Avatar-Studio"
 msgid "Back"
 msgstr "Zurück"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Back or forward"
+msgstr "Zurück oder vorwärts"
+
 #: src/components/pages/PageNotice.tsx
 msgid "Back to chat"
 msgstr "Zurück zum Chat"
@@ -1164,6 +1208,10 @@ msgstr ""
 msgid "Built-in"
 msgstr "Integriert"
 
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "Schaltfläche „{button}“ · von der Seite gelesen, nicht geprüft"
+
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
 msgstr "Anrufen"
@@ -1208,6 +1256,7 @@ msgstr "Kann keine Bilder lesen"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1284,6 +1333,10 @@ msgstr "Modell wechseln"
 msgid "Change password"
 msgstr "Passwort ändern"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "Server wechseln"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "Wird geändert…"
@@ -1299,6 +1352,10 @@ msgstr ""
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Chat Completions"
 msgstr ""
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Chat details"
+msgstr "Chatdetails"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1319,7 +1376,7 @@ msgstr "Chats"
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Check again"
-msgstr ""
+msgstr "Erneut prüfen"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Check every"
@@ -1361,7 +1418,7 @@ msgstr "Prüfe deine E-Mails"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
-msgstr ""
+msgstr "Computer-Einrichtung wird geprüft…"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Checking connection…"
@@ -1371,7 +1428,7 @@ msgstr "Verbindung wird geprüft…"
 #: src/components/DesktopUpdates.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Checking…"
-msgstr ""
+msgstr "Wird geprüft…"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
@@ -1450,6 +1507,7 @@ msgstr "Wird geleert…"
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/chat-find-bar.tsx
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "Schließen"
@@ -1559,6 +1617,7 @@ msgid "Command"
 msgstr "Befehl"
 
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr ""
 
@@ -1629,11 +1688,11 @@ msgstr "Computer"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Computers are available. Reload or open a bot to continue."
-msgstr ""
+msgstr "Computer sind verfügbar. Lade neu oder öffne einen Bot, um fortzufahren."
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "Computer sind aus. Setze SANDBOX_PROVIDER=docker mit SANDBOX_SUPERVISOR_TOKEN, oder setze SANDBOX_PROVIDER auf e2b, novita, daytona oder boat mit dem passenden API-Key. Stack nach der Änderung von .env neu erstellen."
+msgid "Computers are off on this server."
+msgstr "Computer sind auf diesem Server aus."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1697,6 +1756,7 @@ msgstr "API-Schlüssel verbinden"
 
 #: src/components/SidebarFooter.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Connect apps"
 msgstr "Apps verbinden"
 
@@ -1815,7 +1875,6 @@ msgstr "Mit {0} fortfahren"
 msgid "Conversations"
 msgstr ""
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1833,10 +1892,6 @@ msgstr "Kopiert"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Kopieren"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr ""
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2297,6 +2352,10 @@ msgstr "Regel konnte nicht gespeichert werden"
 msgid "Could not save skill"
 msgstr "Skill konnte nicht gespeichert werden"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Could not save spending limit"
+msgstr "Ausgabenlimit konnte nicht gespeichert werden"
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "Could not save that choice"
 msgstr "Auswahl konnte nicht gespeichert werden"
@@ -2401,7 +2460,7 @@ msgstr "Standardbereich für Erinnerungen konnte nicht aktualisiert werden"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
-msgstr ""
+msgstr "Computer-Einrichtung konnte nicht geprüft werden ({failureMessage}). Behebe die Verbindung und prüfe dann erneut."
 
 #: src/components/pages/SharePopover.tsx
 msgid "Couldn't copy. Select the link and copy it."
@@ -2521,6 +2580,10 @@ msgstr "Zugangsdaten: {names}"
 msgid "Credit amount"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "Guthaben"
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
 msgstr ""
@@ -2532,6 +2595,10 @@ msgstr "Cron"
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron expression"
 msgstr "Cron-Ausdruck"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Currency"
+msgstr "Währung"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2557,6 +2624,10 @@ msgstr "{label} anpassen"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
 msgstr "Bot-Avatar anpassen"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Daily"
+msgstr "Täglich"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
@@ -2590,6 +2661,7 @@ msgstr "Tage"
 msgid "Decline"
 msgstr "Ablehnen"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2708,11 +2780,6 @@ msgstr "Abgelehnt"
 msgid "Deny"
 msgstr "Ablehnen"
 
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr ""
-
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Description"
@@ -2742,6 +2809,10 @@ msgstr "Details"
 #: src/pages/PluginsOverlay.tsx
 msgid "Developer"
 msgstr ""
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Dictate"
+msgstr "Diktieren"
 
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
@@ -2830,10 +2901,6 @@ msgstr "Verworfen. Du kannst die Verbindung jederzeit in den MCP-Einstellungen w
 msgid "Docker"
 msgstr "Docker"
 
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr ""
-
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker begrenzt für mehr Sicherheit den Zugriff auf deinen Computer. Wenn {hostLabel} verwendet wird, können Bots mit deinen lokalen Dateien und Werkzeugen arbeiten."
@@ -2907,6 +2974,7 @@ msgid "Each name can be used once."
 msgstr "Jeder Name kann nur einmal verwendet werden."
 
 #: src/components/AskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -3197,6 +3265,11 @@ msgstr ""
 msgid "Find a page"
 msgstr "Seite finden"
 
+#: src/pages/shell/chat-find-bar.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Find in chat"
+msgstr "Im Chat suchen"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Find models"
@@ -3227,6 +3300,10 @@ msgstr "Fertig."
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "MCP-Verbindung wird abgeschlossen…"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Focus message"
+msgstr "Nachricht fokussieren"
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -3312,6 +3389,10 @@ msgstr "Schenk einem Freund {weeks} Wochen gratis"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "Zur Startseite"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Go to bot"
+msgstr "Zu Bot wechseln"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Grant"
@@ -3663,6 +3744,11 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr ""
+
+#: src/pages/Shell.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Keyboard shortcuts"
+msgstr "Tastaturkurzbefehle"
 
 #: src/components/vault/kinds.tsx
 msgid "Keys"
@@ -4122,6 +4208,7 @@ msgid "month"
 msgstr ""
 
 #: src/components/ModelCredits.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Monatlich"
@@ -4252,6 +4339,7 @@ msgstr "Nie fragen"
 
 #: src/components/VaultSettings.tsx
 #: src/pages/shell/chat-context.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New"
 msgstr "Neu"
 
@@ -4283,6 +4371,7 @@ msgstr "Neue Gruppe"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "New group chat"
 msgstr "Neuer Gruppenchat"
 
@@ -4328,6 +4417,14 @@ msgstr ""
 #: src/components/VaultSettings.tsx
 msgid "New variable"
 msgstr ""
+
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Next match"
+msgstr "Nächster Treffer"
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Next or previous bot"
+msgstr "Nächster oder vorheriger Bot"
 
 #: src/components/markdown-copy.tsx
 msgid "Next page"
@@ -4417,6 +4514,10 @@ msgstr ""
 msgid "No reply"
 msgstr "Keine Antwort"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "No reset"
+msgstr "Ohne Zurücksetzen"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx
@@ -4452,6 +4553,7 @@ msgstr ""
 msgid "No trigger"
 msgstr ""
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr ""
@@ -4566,6 +4668,10 @@ msgstr "am {day}. um {time}"
 msgid "on the 1st at {0}"
 msgstr "am 1. um {0}"
 
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "Auf der Schaltfläche"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "Einmalig"
@@ -4621,7 +4727,7 @@ msgstr "Chat mit {0} öffnen"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Open computer settings"
-msgstr ""
+msgstr "Computer-Einstellungen öffnen"
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Open external link?"
@@ -4952,6 +5058,10 @@ msgstr "Vorschau von {0}"
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr ""
 
+#: src/pages/shell/chat-find-bar.tsx
+msgid "Previous match"
+msgstr "Vorheriger Treffer"
+
 #: src/components/markdown-copy.tsx
 msgid "Previous page"
 msgstr "Vorherige Seite"
@@ -5011,7 +5121,6 @@ msgstr "In Warteschlange"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
@@ -5027,6 +5136,10 @@ msgstr "Reagieren"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Reactions"
 msgstr "Reaktionen"
+
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "Von der Seite gelesen, nicht geprüft"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
@@ -5060,6 +5173,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "Kürzlich"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "Letzte Zahlungen"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -5197,6 +5314,7 @@ msgstr "Neu laden"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -5367,6 +5485,10 @@ msgstr "Passwort zurücksetzen"
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "Setze dein Passwort zurück"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Resets"
+msgstr "Zurücksetzen"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5540,6 +5662,7 @@ msgstr "Samstag"
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5647,6 +5770,10 @@ msgstr "Apps suchen"
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
 msgstr ""
+
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Search bots"
+msgstr "Bots suchen"
 
 #: src/pages/shell/command-palette.tsx
 msgid "Search bots, actions, and settings"
@@ -5777,10 +5904,15 @@ msgstr "Servername"
 msgid "Server URL"
 msgstr "Server-URL"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Set"
+msgstr "Festlegen"
+
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "Einstellungen"
@@ -5805,6 +5937,7 @@ msgstr "Einstellungen: Nutzung"
 msgid "Setup complete"
 msgstr "Einrichtung abgeschlossen"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "Einrichtungshilfe"
@@ -5847,6 +5980,7 @@ msgstr "Gemeinsame Erinnerungen"
 msgid "Show"
 msgstr "Anzeigen"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""
@@ -6056,6 +6190,10 @@ msgstr "Spricht"
 msgid "Speech model"
 msgstr "Sprachmodell"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Spending limit"
+msgstr "Ausgabenlimit"
+
 #: src/components/AccountAccess.tsx
 msgid "SSO"
 msgstr ""
@@ -6192,8 +6330,8 @@ msgid "Subscribe for {price} / month"
 msgstr "Für {price} / Monat abonnieren"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "Rakazo-Guthaben abonnieren"
+msgid "Subscribe to credits"
+msgstr "Guthaben abonnieren"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"
@@ -6397,6 +6535,10 @@ msgid "Thinking: {0}"
 msgstr "Denken: {0}"
 
 #: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "Dieses Konto ist deaktiviert"
+
+#: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
 msgstr "Diese App braucht eine eigene Anmeldeeinrichtung, um sich zu verbinden."
 
@@ -6591,6 +6733,10 @@ msgstr "An:"
 msgid "Today"
 msgstr "Heute"
 
+#: src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Toggle sidebar"
+msgstr "Seitenleiste ein-/ausblenden"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "Token"
@@ -6616,6 +6762,10 @@ msgstr "Toolname"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "Gesamt"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
@@ -6656,6 +6806,10 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "Testzeiträume erhalten weniger Stunden, um Missbrauch zu verhindern."
+
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
@@ -6993,6 +7147,10 @@ msgstr "Wochentage"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "Wochenenden"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Weekly"
+msgstr "Wöchentlich"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

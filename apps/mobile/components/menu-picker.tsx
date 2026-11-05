@@ -7,7 +7,12 @@ import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from 
 import { NativeSymbol } from "./native-symbol";
 import { Chevron } from "./row-accessories";
 
-export type MenuPickerChoice = { key: string; label: string };
+export type MenuPickerChoice = {
+  key: string;
+  label: string;
+  /** An action shown in red, such as removing the item the row picks for. */
+  destructive?: boolean;
+};
 
 /** Native choice menu shared by rows with different layouts. */
 export function MenuPickerMenu({
@@ -37,13 +42,19 @@ export function MenuPickerMenu({
     >
       <MenuView
         style={menuStyles.fullWidth}
-        actions={choices.map((choice) => ({
-          // MenuView reports an empty id as the title, so prefix keys to keep "" distinct.
-          id: `choice:${choice.key}`,
-          title: choice.label,
-          state: choice.key === value ? "on" : "off",
-          attributes: { disabled },
-        }))}
+        actions={[
+          ...choices
+            .filter((choice) => !choice.destructive)
+            .map((choice) => ({
+              // MenuView reports an empty id as the title, so prefix keys to keep "" distinct.
+              id: `choice:${choice.key}`,
+              title: choice.label,
+              state: choice.key === value ? ("on" as const) : ("off" as const),
+              attributes: { disabled },
+            })),
+          // Destructive choices are actions, not values: their own section, without a checkmark.
+          ...destructive(choices, disabled),
+        ]}
         colorScheme={colorScheme}
         onPressAction={(event) => {
           const id = event.nativeEvent.event;
@@ -55,6 +66,19 @@ export function MenuPickerMenu({
       </MenuView>
     </View>
   );
+}
+
+function destructive(choices: readonly MenuPickerChoice[], disabled: boolean) {
+  const actions = choices
+    .filter((choice) => choice.destructive)
+    .map((choice) => ({
+      id: `choice:${choice.key}`,
+      title: choice.label,
+      attributes: { disabled, destructive: true },
+    }));
+  return actions.length
+    ? [{ id: "destructive", title: "", displayInline: true, subactions: actions }]
+    : [];
 }
 
 const menuStyles = StyleSheet.create({

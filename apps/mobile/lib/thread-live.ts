@@ -112,7 +112,6 @@ export function useThreadLiveSubscription({
       while (current() && getHapticsEnabled()) {
         let failure: unknown;
         try {
-          // The boundary never changes a pinned or expanded history window.
           const head = await rpc("threads/head", groupId ? { groupId } : { botId: botId! }, {
             signal: abort.signal,
             ...(firstAttempt ? { timeoutMs: FEEDBACK_HEAD_BUDGET_MS } : {}),
@@ -126,10 +125,8 @@ export function useThreadLiveSubscription({
           return;
         } catch (error) {
           failure = error;
-          // A failed lookup has no reliable capture point; skip that feedback window.
           boundary.pending.clear();
         } finally {
-          // Only the first attempt participates in bootstrap. Retries never hold up live chat.
           if (firstAttempt) settleFirst(boundary.cursor);
           firstAttempt = false;
         }
@@ -189,8 +186,6 @@ export function useThreadLiveSubscription({
       if (!resuming) liveProjectionFloor.current = next?.cursor ?? -1;
       const projectionFloor = liveProjectionFloor.current;
       if (!resuming) {
-        // A newer initial snapshot may already contain a reply completed after the head was
-        // captured. Replay that interval for feedback without projecting it over the snapshot.
         const boundary = feedbackBoundary.current;
         if (boundary) {
           const floor =
@@ -228,7 +223,6 @@ export function useThreadLiveSubscription({
                 const boundary = feedbackBoundary.current;
                 if (newEvent && visible.current && boundary) {
                   if (boundary.cursor === null) {
-                    // Focus can change while this stream stays open and its head is in flight.
                     boundary.pending.set(event.runId, event.seq ?? -1);
                   } else if ((event.seq ?? -1) > boundary.cursor) {
                     hapticSuccess();
