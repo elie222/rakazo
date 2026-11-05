@@ -1262,8 +1262,8 @@ app.delete("/computers/:id", async (c) => {
   }
 });
 
-function startSupervisor() {
-  const logger = createRootLogger(SERVICE_NAMES.supervisor);
+async function startSupervisor() {
+  const logger = await createRootLogger(SERVICE_NAMES.supervisor);
   // Resolve the ceilings before binding the port. They are otherwise parsed inside
   // containerCreateOptions, so a malformed RAKAZO_COMPUTER_* value would let the supervisor start
   // and pass its healthcheck, then fail the first POST /computers with a 500 that reads like a
@@ -1313,7 +1313,8 @@ function closeListeningServer(server: {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  startSupervisor();
+  // A rejected startup keeps Node's default: the error is printed and the process exits.
+  void startSupervisor();
 }
 
 // Enforcement is host-side (DOCKER-USER/INPUT on rakazo-c* bridges); the flag only
