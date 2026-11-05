@@ -275,6 +275,8 @@ export class TregPaidServiceProvider implements PaidServiceProvider {
     const providerCallId = response.headers.get("X-Treg-Call-Id") ?? undefined;
     // A routed job still running may finish and charge; the caller keeps its hold.
     if (response.status === 202) throw new Error("Paid service call is still running");
+    if (code?.startsWith("idempotency"))
+      throw new Error(`Paid service replay answered ${response.status}`);
     // Account-level codes are refused even without Treg's error header, so they never reach a bot.
     if (
       response.headers.get("X-Treg-Error") === "1" ||
