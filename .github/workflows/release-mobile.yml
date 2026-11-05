@@ -16,6 +16,7 @@ permissions:
 concurrency:
   group: release-mobile
   cancel-in-progress: false
+  queue: max
 
 jobs:
   ios:
