@@ -317,15 +317,10 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
     : (original?.references ?? []);
 
   const key = `sent:${call.effectKey}`;
+  // Only what the bot chose: a reply's subject repeats what the sender wrote, outside text that
+  // this result, counted as the bot's own, must not carry.
   const done = (id: string) =>
-    call.finish({
-      sent: true,
-      id,
-      from: address,
-      to: input.to,
-      ...(cc.length ? { cc } : {}),
-      subject,
-    });
+    call.finish({ sent: true, id, from: address, to: input.to, ...(cc.length ? { cc } : {}) });
   const earlier = await deps.prisma.botEmailMessage.findUnique({
     where: { botId_key: { botId: bot.id, key } },
     select: { id: true },

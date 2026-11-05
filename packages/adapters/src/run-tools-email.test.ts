@@ -589,7 +589,6 @@ describe("send_email", () => {
       id: "sent-1",
       from: "scout@bots.test",
       to: ["support@shop.test"],
-      subject: "Order 42",
     });
     expect(send).toHaveBeenCalledWith({
       from: '"Scout Bot" <scout@bots.test>',
