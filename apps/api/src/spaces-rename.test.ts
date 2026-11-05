@@ -123,17 +123,17 @@ describe("spaces.rename", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("renames an owned space in another organization", async () => {
+  it("rejects a space in another organization", async () => {
     const { update, handler } = renameHarness({
       organizationId: "org-other",
       role: "owner",
       deletingAt: null,
     });
 
-    const response = await rename(handler, "Home");
+    const response = await rename(handler, "Stolen");
 
-    expect(response.status).toBe(200);
-    expect(update).toHaveBeenCalled();
+    expect(response.status).toBe(404);
+    expect(update).not.toHaveBeenCalled();
   });
 
   it.each(["   ", "x".repeat(61)])(
