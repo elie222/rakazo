@@ -396,13 +396,20 @@ export class LocalStackController {
 
   /** Fast path for launch: only a stack with our private token and desired image may be reused. */
   async matchesDesiredStack(url = this.currentWebUrl): Promise<boolean> {
+    if (
+      this.deps.hostComputer &&
+      (await readPrivateFile(path.join(this.deps.stackDir, STACK_HOST_CONFIG_FILE), 256)) !==
+        this.hostConfigIdentity()
+    )
+      return false;
     return this.probeStack((probed) => probed === this.deps.imageTag, url);
   }
 
   /**
    * Startup rediscovery behind a saved external server: the stack may be an older release
-   * this app must not reuse, so any answer under our token records it. Only the menu's
-   * off-switch follows from this; nothing starts or stops.
+   * this app must not reuse, or one started before the computer-access settings changed, so
+   * any answer under our token records it. Only the menu's off-switch follows from this;
+   * nothing starts or stops.
    */
   async rediscoverManagedStack(url = this.currentWebUrl): Promise<boolean> {
     return this.probeStack((probed) => probed !== null, url);
@@ -418,12 +425,6 @@ export class LocalStackController {
     const stopGeneration = this.stopGeneration;
     // A stop still in flight is tearing the stack down, so its answer would already be stale.
     if (this.stopping !== null) return false;
-    if (
-      this.deps.hostComputer &&
-      (await readPrivateFile(path.join(this.deps.stackDir, STACK_HOST_CONFIG_FILE), 256)) !==
-        this.hostConfigIdentity()
-    )
-      return false;
     const token = await readStackToken(this.deps.stackDir);
     if (token === null) return false;
     this.currentStackToken = token;

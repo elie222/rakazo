@@ -428,6 +428,12 @@ describe("LocalStackController", () => {
         hostComputer: { ...hostComputer, token: "cd".repeat(32) },
       }).matchesDesiredStack(),
     ).toBe(false);
+    // The off-switch still finds that stack: it runs under our token whatever its bridge.
+    expect(
+      await controller({
+        hostComputer: { ...hostComputer, token: "cd".repeat(32) },
+      }).rediscoverManagedStack(),
+    ).toBe(true);
   });
 
   it("pushes every state change so the setup window is never left waiting on a poll", async () => {
