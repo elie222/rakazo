@@ -118,6 +118,7 @@ export async function listSpaceMembers(
     role: "owner" | "member";
   }>;
   canManage: boolean;
+  openInvites: number;
 }> {
   const rows = await prisma.spaceMember.findMany({
     where: { spaceId: input.spaceId },
@@ -140,7 +141,13 @@ export async function listSpaceMembers(
       role: isOwnerRole(row.role) ? ("owner" as const) : ("member" as const),
     }))
     .sort((a, b) => Number(b.role === "owner") - Number(a.role === "owner"));
-  return { spaceName: self.space.name, members, canManage: isOwnerRole(self.role) };
+  const canManage = isOwnerRole(self.role);
+  const openInvites = canManage
+    ? await prisma.spaceInvite.count({
+        where: { spaceId: input.spaceId, acceptedAt: null, expiresAt: { gt: new Date() } },
+      })
+    : 0;
+  return { spaceName: self.space.name, members, canManage, openInvites };
 }
 
 /** A new single-use link. Only its SHA-256 is stored; the token is returned once. */
@@ -168,6 +175,12 @@ export async function createSpaceInvite(
     });
   });
   return { token, expiresAt };
+}
+
+/** Every link not yet used stops working. */
+export async function cancelSpaceInvites(prisma: PrismaClient, input: SpaceRef): Promise<void> {
+  await requireSpaceOwner(prisma, input);
+  await prisma.spaceInvite.deleteMany({ where: { spaceId: input.spaceId, acceptedAt: null } });
 }
 
 type InviteRow = {

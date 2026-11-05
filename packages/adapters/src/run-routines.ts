@@ -352,6 +352,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
       active: true,
       crons: true,
       nextRunAt: true,
+      userId: true,
       bot: { select: { archivedAt: true } },
     },
   });
@@ -366,8 +367,10 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
     return;
   }
   // A one-time routine turns itself off when it fires, so only a recurring one counts as paused.
+  // A routine someone else has since taken over must not retry on its former owner's accounts.
   if (
     !routine ||
+    routine.userId !== failed.userId ||
     (!routine.active && !isOneShotRoutineCrons(routine.crons)) ||
     routine.bot.archivedAt
   ) {
@@ -390,6 +393,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
       const claimed = await tx.routine.updateMany({
         where: {
           id: failed.routineId!,
+          userId: failed.userId,
           active: routine.active,
           ...(!routine.active ? { crons: { equals: routine.crons } } : {}),
           bot: { archivedAt: null },

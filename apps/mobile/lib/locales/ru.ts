@@ -350,6 +350,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Всегда разрешать этот инструмент",
   "Always allow {site}": "Всегда разрешать {site}",
   "Replaces the login saved for {site}": "Заменяет сохранённый вход для {site}",
+  "Cancel open invites": "Отменить открытые приглашения",
+  "Could not cancel invites": "Не удалось отменить приглашения",
   "Everyone in this bot's space can read the chats it gets from {app}.":
     "Все в пространстве этого бота могут читать чаты, которые он получает из {app}.",
   "Sites you sign in to stay signed in for everyone in this space":

@@ -173,6 +173,10 @@ it("lets the owner share an invite link and remove a member after confirming", a
   await act(async () => header.invite?.());
   expect(rpc).toHaveBeenCalledWith("spaces/invites/create", { spaceId: "space-shared" });
   expect(share).toHaveBeenCalledWith({ url: "https://rakazo.example/invite/token-1" });
+  // An open link can be cancelled until someone uses it.
+  await act(async () => buttonNamed("Cancel open invites")?.click());
+  expect(rpc).toHaveBeenCalledWith("spaces/invites/cancel", { spaceId: "space-shared" });
+  expect(buttonNamed("Cancel open invites")).toBeUndefined();
 
   await act(async () => buttonNamed("Remove")?.click());
   expect(alert.mock.calls.at(-1)?.[0]).toBe("Remove Bob Stone?");

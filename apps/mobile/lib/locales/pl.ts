@@ -782,6 +782,8 @@ export const PL_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Zawsze zezwalaj na to narzędzie",
   "Always allow {site}": "Zawsze zezwalaj na {site}",
   "Replaces the login saved for {site}": "Zastępuje dane logowania zapisane dla {site}",
+  "Cancel open invites": "Anuluj otwarte zaproszenia",
+  "Could not cancel invites": "Nie udało się anulować zaproszeń",
   "Everyone in this bot's space can read the chats it gets from {app}.":
     "Wszyscy w przestrzeni tego bota mogą czytać czaty, które otrzymuje z {app}.",
   Invite: "Zaproś",

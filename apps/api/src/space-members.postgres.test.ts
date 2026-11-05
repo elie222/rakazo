@@ -766,6 +766,39 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     ).resolves.toBe(1);
   });
 
+  it("cancels unused invite links, and only the owner can", async () => {
+    const owner = await person("owner");
+    const invitee = await person("invitee");
+    const stranger = await person("stranger");
+    const home = await sharedSpace(owner, "Home");
+    const used = await invite(owner, home);
+    await call(invitee.actor, "spaces/invites/accept", { token: used });
+    const leaked = await invite(owner, home);
+    await expect(
+      call(invitee.actor, "spaces/members/list", { spaceId: home }),
+    ).resolves.toMatchObject({ json: { openInvites: 0 } });
+    await expect(
+      call(owner.actor, "spaces/members/list", { spaceId: home }),
+    ).resolves.toMatchObject({
+      json: { openInvites: 1 },
+    });
+
+    await expect(
+      call(inSpace(invitee.actor, home), "spaces/invites/cancel", { spaceId: home }),
+    ).resolves.toMatchObject({ status: 403 });
+    await expect(call(owner.actor, "spaces/invites/cancel", { spaceId: home })).resolves.toEqual({
+      status: 200,
+      json: { ok: true },
+    });
+    await expect(
+      call(stranger.actor, "spaces/invites/accept", { token: leaked }),
+    ).resolves.toMatchObject({ status: 404 });
+    // A link someone already used still lets them back into what they joined.
+    await expect(
+      call(invitee.actor, "spaces/invites/preview", { token: used }),
+    ).resolves.toMatchObject({ json: { alreadyMember: true } });
+  });
+
   it("caps open invite links per space", async () => {
     const owner = await person("owner");
     const home = await sharedSpace(owner, "Home");

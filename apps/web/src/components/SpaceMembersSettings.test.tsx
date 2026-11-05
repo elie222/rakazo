@@ -10,7 +10,7 @@ const { rpc, toast } = vi.hoisted(() => ({
   rpc: {
     spaces: {
       members: { list: vi.fn(), remove: vi.fn(), leave: vi.fn() },
-      invites: { create: vi.fn() },
+      invites: { create: vi.fn(), cancel: vi.fn() },
     },
   },
   toast: vi.fn(),
@@ -98,6 +98,7 @@ async function renderWith(members: SpaceMembers, onLeft = vi.fn()) {
 
 it("lets the owner invite and remove members but not leave", async () => {
   await renderWith({ spaceName: "Home", members: [owner, member], canManage: true });
+  expect(buttonNamed("Cancel open invites")).toBeUndefined();
   expect(rpc.spaces.members.list).toHaveBeenCalledWith({ spaceId: space.id });
   const rows = [...host.querySelectorAll('ul[aria-label="Members"] > li')];
   expect(rows.map((row) => row.textContent)).toEqual([
@@ -142,6 +143,14 @@ it("copies a new invite link and keeps it on screen", async () => {
   const input = host.querySelector<HTMLInputElement>('input[aria-label="Invite link"]');
   expect(input?.value).toBe("https://rakazo.example/invite/token-1");
   expect(input?.readOnly).toBe(true);
+});
+
+it("cancels open invite links only when there are some", async () => {
+  await renderWith({ spaceName: "Home", members: [owner], canManage: true, openInvites: 2 });
+  rpc.spaces.invites.cancel.mockResolvedValue({ ok: true });
+  await act(async () => buttonNamed("Cancel open invites")?.click());
+  expect(rpc.spaces.invites.cancel).toHaveBeenCalledWith({ spaceId: space.id });
+  expect(buttonNamed("Cancel open invites")).toBeUndefined();
 });
 
 it("removes a member only after confirming", async () => {

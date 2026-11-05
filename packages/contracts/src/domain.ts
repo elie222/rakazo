@@ -413,6 +413,8 @@ export const SpaceMembersSchema = z.object({
   members: z.array(SpaceMemberSchema),
   /** True when the current member owns the space and may invite or remove people. */
   canManage: z.boolean(),
+  /** For the owner: links created but not yet used or expired. */
+  openInvites: z.number().int().nonnegative().optional(),
 });
 export type SpaceMembers = z.infer<typeof SpaceMembersSchema>;
 

@@ -788,6 +788,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Deze tool altijd toestaan",
   "Always allow {site}": "{site} altijd toestaan",
   "Replaces the login saved for {site}": "Vervangt de opgeslagen login voor {site}",
+  "Cancel open invites": "Openstaande uitnodigingen intrekken",
+  "Could not cancel invites": "Uitnodigingen konden niet worden ingetrokken",
   "Everyone in this bot's space can read the chats it gets from {app}.":
     "Iedereen in de ruimte van deze bot kan de chats lezen die hij via {app} krijgt.",
   "Sites you sign in to stay signed in for everyone in this space":

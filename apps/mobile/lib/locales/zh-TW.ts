@@ -1165,6 +1165,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Always allow this tool": "一律允許此工具",
   "Always allow {site}": "一律允許 {site}",
   "Replaces the login saved for {site}": "取代為 {site} 儲存的登入資訊",
+  "Cancel open invites": "取消未使用的邀請",
+  "Could not cancel invites": "無法取消邀請",
   "Everyone in this bot's space can read the chats it gets from {app}.":
     "此機器人空間中的每個人都能閱讀它從 {app} 收到的聊天。",
   "Sites you sign in to stay signed in for everyone in this space":

@@ -271,6 +271,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["spaces/invites/create", { spaceId: "missing-space" }],
       ["spaces/invites/preview", { token: "missing-token" }],
       ["spaces/invites/accept", { token: "missing-token" }],
+      ["spaces/invites/cancel", { spaceId: "missing-space" }],
       ["organizations/list"],
       ["organizations/create", { name: "Nope" }],
       ["organizations/rename", { organizationId: "missing-organization", name: "Nope" }],

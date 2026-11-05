@@ -70,6 +70,17 @@ export function SpaceMembersSettings({
       .catch(() => undefined);
   }
 
+  async function cancelInvites() {
+    setError(null);
+    try {
+      await rpc.spaces.invites.cancel({ spaceId: space.id });
+      setInviteUrl(null);
+      setMembers((current) => (current ? { ...current, openInvites: 0 } : current));
+    } catch (err) {
+      setError(errorText(err, t`Could not cancel invites`));
+    }
+  }
+
   async function invite() {
     if (inviting) return;
     setInviting(true);
@@ -77,6 +88,9 @@ export function SpaceMembersSettings({
     try {
       const link = await rpc.spaces.invites.create({ spaceId: space.id });
       setInviteUrl(link.url);
+      setMembers((current) =>
+        current ? { ...current, openInvites: (current.openInvites ?? 0) + 1 } : current,
+      );
       copy(link.url);
     } catch (err) {
       setError(errorText(err, t`Could not create invite link`));
@@ -175,6 +189,11 @@ export function SpaceMembersSettings({
                 </InputGroupButton>
               </InputGroupAddon>
             </InputGroup>
+          ) : null}
+          {members?.openInvites ? (
+            <Button variant="ghost" size="sm" onClick={() => void cancelInvites()}>
+              <Trans>Cancel open invites</Trans>
+            </Button>
           ) : null}
         </div>
       ) : null}

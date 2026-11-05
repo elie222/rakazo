@@ -412,6 +412,8 @@ export const appContract = {
       accept: oc
         .input(z.object({ token: z.string().min(1).max(200) }))
         .output(z.object({ spaceId: Id })),
+      /** Owner only. Every unused link stops working, for one that went to the wrong place. */
+      cancel: oc.input(z.object({ spaceId: Id })).output(z.object({ ok: z.literal(true) })),
     },
   },
   organizations: {

@@ -791,6 +791,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Dieses Tool immer erlauben",
   "Always allow {site}": "{site} immer erlauben",
   "Replaces the login saved for {site}": "Ersetzt die für {site} gespeicherte Anmeldung",
+  "Cancel open invites": "Offene Einladungen widerrufen",
+  "Could not cancel invites": "Einladungen konnten nicht widerrufen werden",
   "Everyone in this bot's space can read the chats it gets from {app}.":
     "Alle im Bereich dieses Bots können die Chats lesen, die er über {app} erhält.",
   "Sites you sign in to stay signed in for everyone in this space":

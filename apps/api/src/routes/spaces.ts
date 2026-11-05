@@ -10,6 +10,7 @@ import {
   CannotDeleteSpaceAsNonOwnerError,
   CannotRemoveSpaceOwnerError,
   CannotRenameSpaceAsNonOwnerError,
+  cancelSpaceInvites,
   createExternalConversationRepos,
   createSpaceForMember,
   createSpaceInvite,
@@ -343,6 +344,20 @@ export function spacesRoutes(ctx: RouterContext) {
           }
           return { spaceId: accepted.spaceId };
         }),
+        cancel: authed.spaces.invites.cancel.handler(({ context, input }) =>
+          asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
+            await cancelSpaceInvites(deps.prisma, {
+              spaceId: input.spaceId,
+              userId: context.actor.userId,
+            }).catch(mapSpaceMemberError);
+            await recordAuditEvent({
+              action: "space.invites.cancelled",
+              actor: { type: "user", id: context.actor.userId },
+              spaceId: input.spaceId,
+            });
+            return { ok: true as const };
+          }),
+        ),
       },
     },
     bootstrap: authed.bootstrap.handler(async ({ context, input }) => {

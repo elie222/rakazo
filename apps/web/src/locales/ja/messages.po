@@ -1252,6 +1252,10 @@ msgstr "新しいボットをキャンセル"
 msgid "Cancel new group"
 msgstr "新しいグループをキャンセル"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Cancel open invites"
+msgstr ""
+
 #: src/pages/shell/chat-context.tsx
 msgid "Cancel reply"
 msgstr "返信をキャンセル"
@@ -1919,6 +1923,10 @@ msgstr "このサーバーを承認できませんでした"
 #: src/pages/shell/message-cards.tsx
 msgid "Could not authorize this app"
 msgstr "このアプリを承認できませんでした"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not cancel invites"
+msgstr ""
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Could not change"

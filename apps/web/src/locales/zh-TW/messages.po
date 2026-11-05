@@ -1253,6 +1253,10 @@ msgstr "取消新增機器人"
 msgid "Cancel new group"
 msgstr "取消新增群組"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Cancel open invites"
+msgstr ""
+
 #: src/pages/shell/chat-context.tsx
 msgid "Cancel reply"
 msgstr "取消回覆"
@@ -1920,6 +1924,10 @@ msgstr "無法核准此伺服器"
 #: src/pages/shell/message-cards.tsx
 msgid "Could not authorize this app"
 msgstr "無法授權此應用程式"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not cancel invites"
+msgstr ""
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Could not change"

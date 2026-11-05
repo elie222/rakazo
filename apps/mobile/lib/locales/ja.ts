@@ -775,6 +775,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "Always allow this tool": "このツールを常に許可",
   "Always allow {site}": "{site} を常に許可",
   "Replaces the login saved for {site}": "{site} に保存されたログインを置き換えます",
+  "Cancel open invites": "未使用の招待を取り消す",
+  "Could not cancel invites": "招待を取り消せませんでした",
   "Everyone in this bot's space can read the chats it gets from {app}.":
     "このボットのスペースにいる全員が、{app} から届くチャットを読めます。",
   "Sites you sign in to stay signed in for everyone in this space":

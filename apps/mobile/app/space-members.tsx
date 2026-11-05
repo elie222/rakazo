@@ -52,12 +52,25 @@ export default function SpaceMembersScreen() {
     setPending(true);
     try {
       const link = await rpc("spaces/invites/create", { spaceId });
+      setMembers((current) =>
+        current ? { ...current, openInvites: (current.openInvites ?? 0) + 1 } : current,
+      );
       // iOS shares a URL as a link; Android only takes text.
       await Share.share(Platform.OS === "ios" ? { url: link.url } : { message: link.url });
     } catch (err) {
       Alert.alert(t("Could not create invite link"), errorText(err, t("Try again.")));
     } finally {
       setPending(false);
+    }
+  }
+
+  async function cancelInvites() {
+    if (!spaceId) return;
+    try {
+      await rpc("spaces/invites/cancel", { spaceId });
+      setMembers((current) => (current ? { ...current, openInvites: 0 } : current));
+    } catch (err) {
+      Alert.alert(t("Could not cancel invites"), errorText(err, t("Try again.")));
     }
   }
 
@@ -188,6 +201,17 @@ export default function SpaceMembersScreen() {
                 row
               );
             })}
+          </SettingsGroup>
+        ) : null}
+        {canManage && members?.openInvites ? (
+          <SettingsGroup>
+            <SettingsRow
+              key="cancel-invites"
+              title={t("Cancel open invites")}
+              destructive
+              accessibilityRole="button"
+              onPress={() => void cancelInvites()}
+            />
           </SettingsGroup>
         ) : null}
         {members && !canManage ? (

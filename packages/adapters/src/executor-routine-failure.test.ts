@@ -574,6 +574,7 @@ interface RetryScenario {
   enqueueFails?: boolean;
   routineNotify?: boolean;
   missingRoutine?: boolean;
+  routineOwner?: string;
   missingTask?: boolean;
   pausedBeforeCreate?: boolean;
   archivedBeforeCreate?: boolean;
@@ -656,6 +657,7 @@ function retryHarness(scenario: RetryScenario = {}) {
           : {
               notify: scenario.routineNotify ?? true,
               active: scenario.active ?? true,
+              userId: scenario.routineOwner ?? "user-1",
               crons: scenario.oneShot ? ["@once"] : ["0 9 * * *"],
               nextRunAt:
                 scenario.nextRunAt === undefined
@@ -693,6 +695,7 @@ describe("running a routine retry", () => {
         prisma.routine.findUnique.mockResolvedValueOnce({
           notify: true,
           active: false,
+          userId: "user-1",
           crons: ["0 9 * * *"],
           nextRunAt: null,
           bot: { archivedAt: null },
@@ -714,6 +717,7 @@ describe("running a routine retry", () => {
     ["paused", { active: false }],
     ["archived", { archived: true }],
     ["missing its routine", { missingRoutine: true }],
+    ["now someone else's", { routineOwner: "user-2" }],
     ["missing its task", { missingTask: true }],
   ] satisfies Array<[string, RetryScenario]>)(
     "notifies when the retry is abandoned because it is %s",
@@ -787,7 +791,7 @@ describe("running a routine retry", () => {
       await executor.retryRoutineRun("run-1");
 
       expect(tx.routine.updateMany).toHaveBeenCalledWith({
-        where: { id: "routine-1", active: true, bot: { archivedAt: null } },
+        where: { id: "routine-1", userId: "user-1", active: true, bot: { archivedAt: null } },
         data: { active: true },
       });
       expect(tx.task.create).not.toHaveBeenCalled();
@@ -910,6 +914,7 @@ describe("running a routine retry", () => {
     expect(tx.routine.updateMany).toHaveBeenCalledWith({
       where: {
         id: "routine-1",
+        userId: "user-1",
         active: false,
         crons: { equals: ["@once"] },
         bot: { archivedAt: null },

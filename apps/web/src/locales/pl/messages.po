@@ -1252,6 +1252,10 @@ msgstr "Anuluj tworzenie bota"
 msgid "Cancel new group"
 msgstr "Anuluj tworzenie grupy"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Cancel open invites"
+msgstr "Anuluj otwarte zaproszenia"
+
 #: src/pages/shell/chat-context.tsx
 msgid "Cancel reply"
 msgstr "Anuluj odpowiedź"
@@ -1919,6 +1923,10 @@ msgstr "Nie udało się zatwierdzić tego serwera"
 #: src/pages/shell/message-cards.tsx
 msgid "Could not authorize this app"
 msgstr "Nie udało się autoryzować tej aplikacji"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not cancel invites"
+msgstr "Nie udało się anulować zaproszeń"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Could not change"
