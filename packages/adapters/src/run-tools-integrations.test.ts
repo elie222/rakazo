@@ -4,6 +4,7 @@ import type { RunContext } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import { connectorTool } from "./run-tools-integrations.js";
 
+const executed: Array<{ withApp?: boolean }> = [];
 const publishMessage = vi.fn(async (..._args: unknown[]) => null);
 const storeMcpAppHtml = vi.fn(async (..._args: unknown[]) => "artifact-app");
 
@@ -21,7 +22,8 @@ function setup(events: ConnectorEvent[], artifacts: unknown = {}, secrets: strin
       artifacts,
       events: { append: vi.fn() },
       connector: {
-        async *execute() {
+        async *execute(call: { withApp?: boolean }) {
+          executed.push(call);
           yield* events;
         },
       },
@@ -116,14 +118,13 @@ describe("connector tool with an MCP app", () => {
     expect(publishMessage).not.toHaveBeenCalled();
   });
 
-  it("keeps no app document for background work, which posts no card", async () => {
-    const { ctx, call } = setup([
-      { type: "result", data: { content: [] } },
-      { type: "app", app },
-    ]);
-    (ctx.run as { trigger: string }).trigger = "tickets";
-    await connectorTool(ctx, call);
-    expect(storeMcpAppHtml).not.toHaveBeenCalled();
+  it("asks for the app only when the run posts cards", async () => {
+    const chat = setup([{ type: "result", data: { content: [] } }]);
+    await connectorTool(chat.ctx, chat.call);
+    const background = setup([{ type: "result", data: { content: [] } }]);
+    (background.ctx.run as { trigger: string }).trigger = "tickets";
+    await connectorTool(background.ctx, background.call);
+    expect(executed.slice(-2).map((call) => call.withApp)).toEqual([true, false]);
   });
 
   it("posts no card without artifact storage", async () => {

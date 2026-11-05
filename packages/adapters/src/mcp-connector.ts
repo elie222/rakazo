@@ -702,7 +702,7 @@ export class McpConnector implements ConnectorProvider {
       yield { type: "result", data: redactConnectorPayload(result, secrets) };
       const app = await readMcpApp(
         assignment.server.name,
-        call.route.appResourceUri,
+        call.withApp ? call.route.appResourceUri : undefined,
         result,
         (uri) =>
           this.withSession(assignment.server, context, (session) =>

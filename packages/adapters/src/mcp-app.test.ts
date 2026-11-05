@@ -252,10 +252,16 @@ describe("installed MCP server with an app", () => {
   it("follows a successful call with its app, and a failed one with none", async () => {
     const server = appServer();
     const [tool] = await server.provider.discoverTools(context as never);
-    const call = async () => {
+    const call = async (withApp = true) => {
       const events: Array<{ type: string } & Record<string, unknown>> = [];
       for await (const event of server.provider.execute(
-        { tool: "get_forecast", args: { city: "Lisbon" }, executionId: "e1", route: tool!.route },
+        {
+          tool: "get_forecast",
+          args: { city: "Lisbon" },
+          executionId: "e1",
+          route: tool!.route,
+          withApp,
+        },
         context as never,
       )) {
         events.push(event as never);
@@ -278,6 +284,10 @@ describe("installed MCP server with an app", () => {
       },
     ]);
     expect(server.reads).toEqual(["ui://weather/app"]);
+
+    // A caller that shows no card (a routine watch, background work) never fetches the app.
+    expect((await call(false)).map((event) => event.type)).toEqual(["result"]);
+    expect(server.reads).toHaveLength(1);
 
     server.failNextCall();
     expect((await call()).map((event) => event.type)).toEqual(["result"]);

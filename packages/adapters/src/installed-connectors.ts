@@ -328,7 +328,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
         };
         const app = await readMcpApp(
           install.name,
-          call.route?.appResourceUri,
+          call.withApp ? call.route?.appResourceUri : undefined,
           result,
           (uri) => readRemoteMcpResource(session, uri),
           credential ? [credential] : [],

@@ -162,4 +162,22 @@ test("the app runs sandboxed: no tools, no app access, no undeclared network", a
     storage: false,
     network: "blocked",
   });
+  // Navigating its own frame to a site it never declared reaches nothing: the shell allows only
+  // the app's own srcdoc document there.
+  const outside: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().startsWith("https://example.com")) outside.push(request.url());
+  });
+  await appFrame(page)
+    .evaluate(() => {
+      location.href = "https://example.com/elsewhere";
+    })
+    .catch(() => undefined);
+  await expect
+    .poll(() => page.frames().some((frame) => frame.url().startsWith("chrome-error:")))
+    .toBe(true);
+  expect(page.frames().map((frame) => frame.url())).not.toContainEqual(
+    expect.stringContaining("example.com"),
+  );
+  expect(outside).toEqual([]);
 });

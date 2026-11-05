@@ -35,8 +35,10 @@ export async function connectorTool(ctx: RunContext, call: ToolCall) {
   const { name, args, effectKey, connectorCall } = call;
   if (deps.connector) {
     let result: unknown = { error: `unknown tool ${name}` };
+    // Background work posts no cards, so it does not fetch the app either.
+    const withApp = Boolean(deps.artifacts) && !isBackgroundRunTrigger(run.trigger);
     for await (const event of deps.connector.execute(
-      { ...connectorCall, tool: name, args, executionId: effectKey },
+      { ...connectorCall, tool: name, args, executionId: effectKey, withApp },
       context,
     )) {
       if (event.type === "app") {
@@ -87,8 +89,7 @@ async function showConnectorApp(
   result: unknown,
 ): Promise<void> {
   const { deps, run, bot, thread } = ctx;
-  // Background work posts no cards, so it keeps no app document either.
-  if (!deps.artifacts || isBackgroundRunTrigger(run.trigger)) return;
+  if (!deps.artifacts) return;
   try {
     const artifactId = await storeMcpAppHtml(
       { prisma: deps.prisma, artifacts: deps.artifacts },
