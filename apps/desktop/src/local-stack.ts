@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { copyFile, lstat, mkdir, readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
-import type { DesktopLocalStackPhase, DesktopLocalStackState } from "@rakazo/contracts";
+import type { DesktopLocalStackState } from "@rakazo/contracts";
 import type { DockerFailureKind, RunDocker, RunDockerResult } from "./docker-cli.js";
 import {
   classifyDockerFailure,
@@ -348,14 +348,6 @@ function defaultSleep(ms: number, signal: AbortSignal) {
   });
 }
 
-/** Phases in which stack containers may be running; early failures launch none. */
-const RUNNING_PHASES: ReadonlySet<DesktopLocalStackPhase> = new Set([
-  "starting",
-  "waiting-healthy",
-  "ready",
-  "failed",
-]);
-
 /**
  * Installs and starts the compose stack under the app's user data. Every docker call
  * uses a fixed argv and an allowlisted environment; the setup window polls `state()`.
@@ -370,8 +362,9 @@ export class LocalStackController {
   private ticket = 0;
   /** Starts ticketed at or below this were superseded by a later stop and must not run. */
   private voidBefore = 0;
-  /** A reused stack runs while its phase stays idle; only a successful stop clears this. */
-  private reusedManagedStack = false;
+  /** True once `compose up` may have left containers running, or a launch probe confirmed
+   * a reusable stack; retries and failures keep it, and only a successful stop clears it. */
+  private managedStackMayRun = false;
   /** Bumped when a stop begins, so a probe started earlier cannot record reuse afterwards. */
   private stopGeneration = 0;
 
@@ -389,17 +382,19 @@ export class LocalStackController {
   }
 
   /**
-   * True while a stack this app manages may have containers running: an in-progress start
-   * past the point of launching containers, a failure after containers may have launched,
-   * or a reuse a launch probe confirmed. Early failures such as missing Docker never
-   * started a container, so the desktop's stack off-switch stays hidden for them.
+   * True while a stack this app manages may have containers running: one whose `compose up`
+   * ran this session (also across retries and later failures), or one whose reuse a launch
+   * probe confirmed. Early failures never started a container, so the desktop's stack
+   * off-switch stays hidden for them.
    */
   managedStackRunning(): boolean {
-    return RUNNING_PHASES.has(this.current.phase) || this.reusedManagedStack;
+    return this.managedStackMayRun;
   }
 
   /** Fast path for launch: only a stack with our private token and desired image may be reused. */
   async matchesDesiredStack(url = this.currentWebUrl): Promise<boolean> {
+    // A stop still in flight is tearing the stack down, so its answer would already be stale.
+    if (this.stopping !== null) return false;
     if (
       this.deps.hostComputer &&
       (await readPrivateFile(path.join(this.deps.stackDir, STACK_HOST_CONFIG_FILE), 256)) !==
@@ -415,7 +410,7 @@ export class LocalStackController {
         (await this.deps.probe(url, AbortSignal.timeout(HEALTH_POLL_INTERVAL_MS), token)) ===
         this.deps.imageTag;
       // A stop that began while the probe was pending may have stopped the stack it saw.
-      if (matched && stopGeneration === this.stopGeneration) this.reusedManagedStack = true;
+      if (matched && stopGeneration === this.stopGeneration) this.managedStackMayRun = true;
       return matched;
     } catch {
       return false;
@@ -467,7 +462,7 @@ export class LocalStackController {
   private async runStop(): Promise<DesktopLocalStackState> {
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
     const stopped = binary === null ? null : await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
-    if (stopped?.code === 0) this.reusedManagedStack = false;
+    if (stopped?.code === 0) this.managedStackMayRun = false;
     this.setState(
       stopped?.code === 0
         ? initialStackState(this.deps.imageTag)
@@ -592,6 +587,8 @@ export class LocalStackController {
     }
 
     this.push({ type: "up-start" });
+    // `compose up` may leave containers running even when it fails or is aborted midway.
+    this.managedStackMayRun = true;
     const upArgs = composeSupportsWaitTimeout(version.stdout)
       ? ["up", "-d", "--wait", "--wait-timeout", String(COMPOSE_WAIT_TIMEOUT_S)]
       : ["up", "-d"];

@@ -662,6 +662,87 @@ describe("LocalStackController", () => {
     expect(stack.managedStackRunning()).toBe(false);
   });
 
+  it("does not record reuse from a probe that starts while a stop is pending", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    let releaseStop: () => void = () => undefined;
+    const stopGate = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    let stopping: Promise<unknown> = Promise.resolve();
+    let probes = 0;
+    const stack = controller(
+      {
+        // The first probe is the health wait of the start below; a later one must not
+        // answer before the pending stop has settled and cleared the running flag.
+        probe: (_url, _signal, supplied) => {
+          probes += 1;
+          if (supplied !== token || probes === 1) return Promise.resolve("v1.2.3");
+          return Promise.resolve(stopping).then(() => "v1.2.3" as string | null);
+        },
+      },
+      (args) => (args[7] === "stop" ? { wait: stopGate } : ok(args)),
+    );
+
+    await stack.start();
+    stopping = stack.stop();
+    const reuse = stack.matchesDesiredStack();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    releaseStop();
+    await stopping;
+    await expect(reuse).resolves.toBe(false);
+    expect(probes).toBe(1);
+    expect(stack.managedStackRunning()).toBe(false);
+  });
+
+  it("keeps the stop item across a retry that has not reached compose up again", async () => {
+    let releasePull: () => void = () => undefined;
+    const pullGate = new Promise<void>((resolve) => {
+      releasePull = resolve;
+    });
+    let pulls = 0;
+    const stack = controller({}, (args) => {
+      if (args[7] !== "pull") return ok(args);
+      pulls += 1;
+      // The retry hangs in `compose pull`, with containers from the first start still up.
+      return pulls === 2 ? { code: 1, stderr: "no such host", wait: pullGate } : ok(args);
+    });
+    await stack.start();
+    expect(stack.managedStackRunning()).toBe(true);
+
+    const retry = stack.start();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(stack.state().phase).toBe("pulling");
+    expect(stack.managedStackRunning()).toBe(true);
+    releasePull();
+    expect((await retry).phase).toBe("failed");
+    expect(stack.managedStackRunning()).toBe(true);
+  });
+
+  it("hides the stop item for a first start that fails before compose up", async () => {
+    const pullFailed = controller({}, (args) =>
+      args[7] === "pull" ? { code: 1, stderr: "no such host" } : ok(args),
+    );
+    expect((await pullFailed.start()).phase).toBe("failed");
+    expect(pullFailed.managedStackRunning()).toBe(false);
+
+    const emptyResourceDir = path.join(root, "empty");
+    await mkdir(emptyResourceDir);
+    const prepareFailed = controller({ resourceDir: emptyResourceDir });
+    expect((await prepareFailed.start()).phase).toBe("failed");
+    expect(prepareFailed.managedStackRunning()).toBe(false);
+  });
+
+  it("keeps the stop item when a stop fails", async () => {
+    const stack = controller({}, (args) =>
+      args[7] === "stop" ? { code: 1, stderr: "Cannot connect to the Docker daemon" } : ok(args),
+    );
+    await stack.start();
+    await stack.stop();
+    expect(stack.managedStackRunning()).toBe(true);
+  });
+
   it("reuses only the privately identified stack on the desired image", async () => {
     const stackPath = path.join(root, "stack");
     await mkdir(stackPath, { recursive: true });
