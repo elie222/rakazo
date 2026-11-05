@@ -260,6 +260,7 @@ test("live page helper reads a checkout's order lines for the pay approval", asy
           <div class="row"><span>Bananas × 6</span><span>$3.00</span></div>
           <div class="row"><span>Oat milk 1L <small>× 2</small></span><span>$8.40</span></div>
           <div class="row" style="display: none"><span>Hidden gift</span><span>$1.00</span></div>
+          <div style="opacity: 0"><div class="row"><span>Faded gift</span><span>$2.00</span></div></div>
           <div class="row"><span>Subtotal</span><span>$11.40</span></div>
           <div class="row"><span>Delivery</span><span>$6.00</span></div>
           <div class="row"><strong>Total</strong><strong>$17.40</strong></div>

@@ -1952,6 +1952,10 @@ PURCHASE_HELPERS = r"""
   const APART = "\u001f";
   const ANY_AMOUNT = new RegExp(MONEY.source, "i");
   const SUBTOTAL = /sub-?\s?total|סכום ביניים/i;
+  // A line that is itself a total says so in whole words: "Totally Oats" is an item.
+  const TOTAL_LINE = new RegExp(`(?<!\\p{L})(?:${TOTAL.source})(?!\\p{L})`, "iu");
+  // What the shopper sees: an element hidden by its own style, or by a transparent or hidden ancestor, is not.
+  const seen = (el) => visible(el) && (el.checkVisibility?.({ opacityProperty: true, visibilityProperty: true }) ?? true);
   // A choice is not an order line, and nor is an offer to add something: a delivery option or an extra names
   // its price too. Other controls, such as a quantity picker or Remove, may sit in a line; their words are not read.
   const CHOICES = "label, input[type=radio], input[type=checkbox], [role=radio], [role=checkbox], [role=switch], "
@@ -1968,7 +1972,7 @@ PURCHASE_HELPERS = r"""
     for (let node = walker.nextNode(), parts = 0; node && parts < 40; node = walker.nextNode()) {
       const parent = node.parentElement;
       const part = tidy(node.data);
-      if (part && parent && !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(parent.tagName) && visible(parent)
+      if (part && parent && !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(parent.tagName) && seen(parent)
           && !parent.closest(CONTROLS)) {
         text += (!text ? "" : /\d$/.test(text) && /^\d/.test(part) ? APART : " ") + part;
         parts += 1;
@@ -1997,7 +2001,7 @@ PURCHASE_HELPERS = r"""
     for (const el of all.slice(Math.max(0, last - 3000), last + 1).reverse()) {
       if (rows.length >= 400) break;
       if (!small(el, 400) || !ANY_AMOUNT.test(el.textContent) || el.querySelector(CHOICES)
-          || !visible(el) || offers(el)) continue;
+          || !seen(el) || offers(el)) continue;
       const text = shownText(el);
       const amount = text.length <= 160 ? text.match(LINE_AMOUNT)?.[0] : "";
       const name = amount ? text.slice(0, -amount.length).replaceAll(APART, " ").replace(/[\s:·•–—-]+$/u, "") : "";
@@ -2014,7 +2018,7 @@ PURCHASE_HELPERS = r"""
       for (const line of [...lines].reverse()) {
         if (!before(line.el, total) || line.el.contains(total)) continue;
         if (cards.some((card) => before(line.el, card) && before(card, total))) break;
-        if (!TOTAL.test(line.name) && !SUBTOTAL.test(line.name)) found.unshift({ name: line.name, amount: line.amount });
+        if (!TOTAL_LINE.test(line.name) && !SUBTOTAL.test(line.name)) found.unshift({ name: line.name, amount: line.amount });
       }
       if (found.length) return found.slice(0, 30);
     }
