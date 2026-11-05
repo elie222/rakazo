@@ -920,7 +920,6 @@ async function handleChannelEvent(
   const senderIdentity = senderMember.identityId
     ? await deps.prisma.messagingIdentity.findUnique({ where: { id: senderMember.identityId } })
     : null;
-  if (senderIdentity && (await accountDeactivated(deps.prisma, senderIdentity.userId))) return;
   const fromLabel = senderIdentity
     ? await ownerFirstName(deps.prisma, senderIdentity.userId, event.from)
     : event.from;
