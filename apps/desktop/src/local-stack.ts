@@ -367,7 +367,8 @@ export class LocalStackController {
   /** True once `compose up` may have left containers running, or a launch probe confirmed
    * a reusable stack; retries and failures keep it, and only a successful stop clears it. */
   private managedStackMayRun = false;
-  /** Bumped when a stop begins, so a probe started earlier cannot record reuse afterwards. */
+  /** Bumped when a stop succeeds, where the running flag clears; a probe started before
+   * that success cannot record reuse afterwards, and a failed stop keeps the stack a candidate. */
   private stopGeneration = 0;
 
   constructor(private readonly deps: LocalStackDeps) {
@@ -395,8 +396,8 @@ export class LocalStackController {
 
   /** Fast path for launch: only a stack with our private token and desired image may be reused. */
   async matchesDesiredStack(url = this.currentWebUrl): Promise<boolean> {
-    // Captured before the first await, so a stop beginning during the token read still
-    // counts as later than this probe.
+    // Captured before the first await, so a stop that succeeds during the token read
+    // still counts as later than this probe.
     const stopGeneration = this.stopGeneration;
     // A stop still in flight is tearing the stack down, so its answer would already be stale.
     if (this.stopping !== null) return false;
@@ -449,7 +450,6 @@ export class LocalStackController {
   /** Stops the containers (`compose stop`); volumes and images stay for the next start. */
   stop(): Promise<DesktopLocalStackState> {
     this.voidBefore = this.ticket;
-    this.stopGeneration += 1;
     // Join a stop already running unless a start was queued behind it; the latest
     // intent is "stopped", so that start is voided and a fresh stop follows it.
     if (this.stopping !== null && this.running === null) return this.stopping;
@@ -470,7 +470,10 @@ export class LocalStackController {
   private async runStop(): Promise<DesktopLocalStackState> {
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
     const stopped = binary === null ? null : await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
-    if (stopped?.code === 0) this.managedStackMayRun = false;
+    if (stopped?.code === 0) {
+      this.stopGeneration += 1;
+      this.managedStackMayRun = false;
+    }
     this.setState(
       stopped?.code === 0
         ? initialStackState(this.deps.imageTag)

@@ -798,6 +798,39 @@ describe("LocalStackController", () => {
     expect(stack.managedStackRunning()).toBe(false);
   });
 
+  it("records reuse from a probe that outlives a failed stop", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    let releaseStop: () => void = () => undefined;
+    const stopGate = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    let stopping: Promise<unknown> = Promise.resolve();
+    const stack = controller(
+      {
+        // The probe answers only after the stop settles, and it still sees the stack up.
+        probe: (_url, _signal, supplied) =>
+          supplied === token
+            ? Promise.resolve(stopping).then(() => "v1.2.3" as string | null)
+            : Promise.resolve(null),
+      },
+      (args) =>
+        args[7] === "stop"
+          ? { code: 1, stderr: "Cannot connect to the Docker daemon", wait: stopGate }
+          : ok(args),
+    );
+
+    const reuse = stack.matchesDesiredStack();
+    stopping = stack.stop();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    releaseStop();
+    await stopping;
+    expect(stack.state().phase).toBe("failed");
+    await expect(reuse).resolves.toBe(true);
+    expect(stack.managedStackRunning()).toBe(true);
+  });
+
   it("tells dependent UI when a reuse probe first records a running stack", async () => {
     const stackPath = path.join(root, "stack");
     await mkdir(stackPath, { recursive: true });
