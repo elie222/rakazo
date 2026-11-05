@@ -118,6 +118,15 @@ export function useBrowserNotifications(
   }, [rpc]);
   const notifiedBrowserEvents = useRef(new Set<string>());
   const pendingBrowserNotifications = useRef(new Map<string, PendingBrowserNotification>());
+  // A permission answer can arrive after the shell has gone; its held notifications go with it.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      pendingBrowserNotifications.current.clear();
+    };
+  }, []);
   const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
     const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
     if (!currentBot || typeof Notification === "undefined") return true;
@@ -142,6 +151,7 @@ export function useBrowserNotifications(
     return result !== "pending";
   }, []);
   const flushPendingBrowserNotifications = useCallback(() => {
+    if (!mounted.current) return;
     for (const [threadId, pending] of pendingBrowserNotifications.current) {
       if (deliverBrowserNotification(pending)) {
         pendingBrowserNotifications.current.delete(threadId);

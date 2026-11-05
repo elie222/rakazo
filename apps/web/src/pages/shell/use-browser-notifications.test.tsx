@@ -261,6 +261,26 @@ describe("useBrowserNotifications chat alerts", () => {
     root = createRoot(document.createElement("div"));
   });
 
+  it("drops a notification held for permission when the shell unmounts first", async () => {
+    FakeNotification.permission = "default";
+    visible = false;
+    await open({ botId: "bot-b" });
+    const event = {
+      id: "event-1",
+      type: "run.failed",
+      threadId: "thread-b",
+      seq: 5,
+      botId: "bot-b",
+      payload: {},
+    } as const;
+    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", true, undefined));
+    act(() => root.unmount());
+    FakeNotification.permission = "granted";
+    hook.flushPendingBrowserNotifications();
+    expect(shown()).toEqual([]);
+    root = createRoot(document.createElement("div"));
+  });
+
   it("closes the stream when the shell unmounts", async () => {
     await open({ botId: "bot-a" });
     act(() => root.unmount());
