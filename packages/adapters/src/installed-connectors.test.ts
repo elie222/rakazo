@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { describe, expect, it, vi } from "vitest";
@@ -668,6 +670,49 @@ describe("OpenAPI connector import", () => {
       }),
     ).toThrow("unsafe header Authorization");
   });
+
+  it.each([
+    { status: 503, size: 1_000_000, error: "OpenAPI document returned HTTP 503" },
+    { status: 200, size: 2_000_001, error: "OpenAPI document is too large" },
+  ])(
+    "releases a rejected OpenAPI response ($status, $size bytes) before closing",
+    async ({ status, size, error }) => {
+      const server = createServer((_request, response) => {
+        response.writeHead(status, { "content-length": String(size) });
+        // Keep the body open so dispatcher cleanup cannot finish without cancellation.
+        response.write("x");
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const { port } = server.address() as AddressInfo;
+      const controller = new AbortController();
+      const prepared = prepareApiInstall({
+        source: `http://127.0.0.1:${port}/openapi`,
+        config: { openApi: true, auth: { type: "none" } },
+        signal: controller.signal,
+        allowPrivateEndpoint: true,
+      });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await expect(
+          Promise.race([
+            prepared,
+            new Promise<never>((_resolve, reject) => {
+              timer = setTimeout(
+                () => reject(new Error("OpenAPI rejection did not settle")),
+                2_000,
+              );
+            }),
+          ]),
+        ).rejects.toThrow(error);
+      } finally {
+        clearTimeout(timer);
+        controller.abort();
+        server.closeAllConnections();
+        await prepared.catch(() => undefined);
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+  );
 
   const prepareOpenApiFrom = (body: string) => {
     const fetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => {
