@@ -428,6 +428,7 @@ export function ModelRoleSettings({
             </View>
             <RowMenuButton
               title={name}
+              connection={connectionName(choice)}
               actions={actions}
               disabled={busy}
               onAction={(id) => act(index, id)}
@@ -462,11 +463,13 @@ export function ModelRoleSettings({
 
 function RowMenuButton({
   title,
+  connection,
   actions,
   onAction,
   disabled = false,
 }: {
   title: string;
+  connection: string;
   actions: MenuAction[];
   onAction: (id: string) => void;
   disabled?: boolean;
@@ -492,7 +495,7 @@ function RowMenuButton({
       <View
         accessible
         accessibilityRole="button"
-        accessibilityLabel={t("{name} options", { name: title })}
+        accessibilityLabel={t("{name} options", { name: withConnectionName(title, connection) })}
         accessibilityState={{ disabled }}
         style={rowMenuStyles.buttonInner}
       >

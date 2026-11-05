@@ -1694,6 +1694,11 @@ describe("several connections for one provider", () => {
     expect(
       [...section("Main model").querySelectorAll("button")].map((button) => button.textContent),
     ).toEqual(["1Model 1OpenRouter", "2Model 1OpenRouter (Work)", "Add fallback"]);
+    expect(
+      [...section("Main model").querySelectorAll('[role="button"]')].map((button) =>
+        button.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Model 1 (OpenRouter) options", "Model 1 (OpenRouter, Work) options"]);
     const menu = [...mocks.menus.entries()].filter(([title]) => title === "Model 1");
     expect(menu).toHaveLength(1);
     await act(async () =>
