@@ -686,11 +686,13 @@ export function RoutineEditor({
             />
           ) : null}
 
-          {draft.emailSenders && email ? (
+          {/* Shown without email too, so a server that stopped receiving mail still lets it go. */}
+          {draft.emailSenders ? (
             <EmailTriggerCard
+              key={bot.id}
               bot={bot}
-              domain={email.domain}
-              address={email.address}
+              domain={email?.domain ?? null}
+              address={email?.address ?? null}
               senders={draft.emailSenders}
               onChange={(emailSenders) => onChange({ ...draft, emailSenders })}
               onRemove={() => onChange({ ...draft, emailSenders: null })}
@@ -1006,7 +1008,8 @@ function EmailTriggerCard({
   onRemove,
 }: {
   bot: { id: string; name: string };
-  domain: string;
+  /** Null while loading, or when this server no longer receives email. */
+  domain: string | null;
   address: string | null;
   senders: RoutineEmailSenders;
   onChange: (senders: RoutineEmailSenders) => void;
@@ -1062,52 +1065,54 @@ function EmailTriggerCard({
           <X />
         </Button>
       </div>
-      <div className="mt-2.5 space-y-2.5 text-[13.5px]">
-        {address ? (
-          <div className={cellClass}>{address}</div>
-        ) : (
-          <form
-            className="flex items-center gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void claim();
-            }}
-          >
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <Input
-                id={`${fieldId}-name`}
-                aria-label={t`Email address`}
-                value={name}
-                onChange={(event) => {
-                  setName(event.target.value);
-                  setClaimError(null);
-                }}
-                className="min-w-0 flex-1 font-mono text-xs"
-              />
-              <span className="shrink-0 font-mono text-xs text-muted-foreground">@{domain}</span>
-            </div>
-            <Button type="submit" variant="secondary" size="sm" disabled={claiming || !name}>
-              <Trans>Claim</Trans>
-            </Button>
-          </form>
-        )}
-        {claimError ? (
-          <p role="alert" className="text-[13px] text-destructive">
-            {claimError}
-          </p>
-        ) : null}
-        {ownerDomain ? (
-          <NativeSelect
-            aria-label={t`Who can start it`}
-            className="w-full"
-            value={senders}
-            onChange={(event) => onChange(event.target.value as RoutineEmailSenders)}
-          >
-            <NativeSelectOption value="owner">{t`Only me`}</NativeSelectOption>
-            <NativeSelectOption value="domain">{t`Anyone at @${ownerDomain}`}</NativeSelectOption>
-          </NativeSelect>
-        ) : null}
-      </div>
+      {domain ? (
+        <div className="mt-2.5 space-y-2.5 text-[13.5px]">
+          {address ? (
+            <div className={cellClass}>{address}</div>
+          ) : (
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void claim();
+              }}
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                <Input
+                  id={`${fieldId}-name`}
+                  aria-label={t`Email address`}
+                  value={name}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    setClaimError(null);
+                  }}
+                  className="min-w-0 flex-1 font-mono text-xs"
+                />
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">@{domain}</span>
+              </div>
+              <Button type="submit" variant="secondary" size="sm" disabled={claiming || !name}>
+                <Trans>Claim</Trans>
+              </Button>
+            </form>
+          )}
+          {claimError ? (
+            <p role="alert" className="text-[13px] text-destructive">
+              {claimError}
+            </p>
+          ) : null}
+          {ownerDomain ? (
+            <NativeSelect
+              aria-label={t`Who can start it`}
+              className="w-full"
+              value={senders}
+              onChange={(event) => onChange(event.target.value as RoutineEmailSenders)}
+            >
+              <NativeSelectOption value="owner">{t`Only me`}</NativeSelectOption>
+              <NativeSelectOption value="domain">{t`Anyone at @${ownerDomain}`}</NativeSelectOption>
+            </NativeSelect>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

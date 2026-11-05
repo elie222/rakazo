@@ -10,40 +10,51 @@ export async function readBoundedBytes(
   maxBytes: number,
 ): Promise<Uint8Array | null> {
   const contentLengthHeader = request.headers.get("content-length");
+  let declared: number | null = null;
   if (contentLengthHeader !== null) {
     const contentLength = Number(contentLengthHeader);
     if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > maxBytes) {
       cancelBody(request.body);
       return null;
     }
+    declared = contentLength;
   }
 
   if (!request.body) return new Uint8Array();
 
   const reader = request.body.getReader();
+  // With a declared length the bytes land in one buffer; otherwise chunks are joined once at the end.
+  let body = declared === null ? null : new Uint8Array(declared);
   const chunks: Uint8Array[] = [];
   let bytes = 0;
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      bytes += value.byteLength;
-      if (bytes > maxBytes) {
+      if (bytes + value.byteLength > maxBytes) {
         cancelBody(reader);
         return null;
       }
-      chunks.push(value);
+      if (body && bytes + value.byteLength <= body.byteLength) body.set(value, bytes);
+      else {
+        // A body longer than it declared: keep what came so far and finish as chunks.
+        if (body) chunks.push(body.subarray(0, bytes));
+        body = null;
+        chunks.push(value);
+      }
+      bytes += value.byteLength;
     }
   } finally {
     reader.releaseLock();
   }
-  const body = new Uint8Array(bytes);
+  if (body) return body.subarray(0, bytes);
+  const joined = new Uint8Array(bytes);
   let offset = 0;
   for (const chunk of chunks) {
-    body.set(chunk, offset);
+    joined.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return body;
+  return joined;
 }
 
 /** Best-effort body/reader cancel; must not delay a rejection response. */
