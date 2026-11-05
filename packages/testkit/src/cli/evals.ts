@@ -61,7 +61,8 @@ import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
 import { runApprovalSuite } from "./approval-eval.js";
-import { type DisposablePostgres, disposableDatabaseEnv, startPostgres } from "./postgres.js";
+import type { DisposablePostgres } from "./postgres.js";
+import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
 async function main() {
   const { values } = parseArgs({

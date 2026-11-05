@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import { type DisposablePostgres, disposableDatabaseEnv, startPostgres } from "./postgres.js";
+import type { DisposablePostgres } from "./postgres.js";
+import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
 async function main() {
   loadRootEnv();
