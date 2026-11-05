@@ -497,19 +497,25 @@ async function departSpace(
           await tx.bot.updateMany(reassign);
           await tx.thread.updateMany(reassign);
           await tx.chatGroup.updateMany(reassign);
-          // Their computers go with the bots, so the computer limit counts them for the owner.
-          await tx.computer.updateMany(reassign);
           // A screen they hold is no one's to release now: end the lease so others can take it.
+          // Found before their computers change hands, so a lease from before holders were
+          // recorded (held by whoever the computer is kept for) is theirs, not the owner's.
           const held = await tx.computer.findMany({
-            where: { spaceId, controlHolder: "user", controlUserId: userId },
+            where: {
+              spaceId,
+              controlHolder: "user",
+              OR: [{ controlUserId: userId }, { controlUserId: null, userId }],
+            },
             select: { id: true, controlLeaseId: true },
           });
           if (held.length) {
             await tx.computer.updateMany({
               where: { id: { in: held.map((computer) => computer.id) } },
-              data: { controlLeaseExpiresAt: new Date() },
+              data: { controlLeaseExpiresAt: new Date(), controlUserId: userId },
             });
           }
+          // Their computers go with the bots, so the computer limit counts them for the owner.
+          await tx.computer.updateMany(reassign);
           // A team computer is found by its person. A departing owner's is the Space's one Team
           // Computer, so it is found by the next owner's key from now on; any other is retired
           // so someone who rejoins starts fresh. The home key, and with it the files, stays.

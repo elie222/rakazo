@@ -1037,6 +1037,54 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     ).resolves.toMatchObject({ userId: invitee.id });
   });
 
+  it("frees a removed member's screen held from before holders were recorded", async () => {
+    const owner = await person("owner");
+    const invitee = await person("invitee");
+    const home = await sharedSpace(owner, "Home");
+    await call(invitee.actor, "spaces/invites/accept", { token: await invite(owner, home) });
+    const computer = await system.computer.create({
+      data: {
+        spaceId: home,
+        userId: invitee.id,
+        scopeKey: `bot:legacy-${invitee.id}`,
+        homeKey: `legacy-${invitee.id}`,
+        kind: "docker",
+        state: "running",
+        providerRef: "fake-ref",
+      },
+    });
+    const bot = await system.bot.create({
+      data: {
+        spaceId: home,
+        userId: invitee.id,
+        name: "Helper",
+        color: "test",
+        computerId: computer.id,
+      },
+    });
+    await system.computer.update({
+      where: { id: computer.id },
+      data: {
+        controlHolder: "user",
+        controlLeaseId: randomUUID(),
+        controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+        controlBotId: bot.id,
+        controlUserId: null,
+      },
+    });
+
+    await expect(
+      call(inSpace(owner.actor, home), "spaces/members/remove", {
+        spaceId: home,
+        userId: invitee.id,
+      }),
+    ).resolves.toMatchObject({ status: 200 });
+    // The computer is the owner's now, but the screen the member held is not.
+    await expect(
+      system.computer.findUniqueOrThrow({ where: { id: computer.id } }),
+    ).resolves.toMatchObject({ userId: owner.id, controlHolder: "none", controlLeaseId: null });
+  });
+
   it("gives a shared space one team computer, whoever creates the bot", async () => {
     const owner = await person("owner");
     const invitee = await person("invitee");
