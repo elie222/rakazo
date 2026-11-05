@@ -585,10 +585,18 @@ function updateMemberStatus(
 }
 
 export function userHoldsComputerControl(
-  computer: Pick<ComputerStatus, "controlHolder" | "controlBotId"> | null | undefined,
+  computer:
+    | Pick<ComputerStatus, "controlHolder" | "controlBotId" | "controlledByOther">
+    | null
+    | undefined,
   botId: string | undefined,
 ): boolean {
-  return Boolean(botId && computer?.controlHolder === "user" && computer.controlBotId === botId);
+  return Boolean(
+    botId &&
+      computer?.controlHolder === "user" &&
+      computer.controlBotId === botId &&
+      !computer.controlledByOther,
+  );
 }
 
 /** True when a live bot run is blocking Take control (API would return 409). */
@@ -665,7 +673,8 @@ export function reduceComputerStatus(
     return prev.controlHolder === holder &&
       prev.controlBotId === null &&
       !prev.takeoverRequested &&
-      prev.busyBotName === null
+      prev.busyBotName === null &&
+      !prev.controlledByOther
       ? prev
       : {
           ...prev,
@@ -673,6 +682,7 @@ export function reduceComputerStatus(
           controlBotId: null,
           takeoverRequested: false,
           busyBotName: null,
+          controlledByOther: undefined,
         };
   }
   const status = event.payload.status;

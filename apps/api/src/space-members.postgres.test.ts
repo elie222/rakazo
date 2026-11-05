@@ -852,6 +852,15 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     });
     const asInvitee = inSpace(invitee.actor, home);
 
+    // The invitee is told someone else has control; the holder is not.
+    await expect(call(asInvitee, "computer/status", { botId: bot.id })).resolves.toMatchObject({
+      status: 200,
+      json: { controlHolder: "user", controlledByOther: true },
+    });
+    const ownerStatus = await call(inSpace(owner.actor, home), "computer/status", {
+      botId: bot.id,
+    });
+    expect(ownerStatus.json).not.toHaveProperty("controlledByOther");
     await expect(call(asInvitee, "computer/takeover", { botId: bot.id })).resolves.toMatchObject({
       status: 409,
     });

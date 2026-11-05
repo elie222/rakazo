@@ -3,6 +3,7 @@ import {
   computerSupportsUpdate,
   DISK_WARNING_PERCENT,
   diskUsedPercent,
+  holdsUserControl,
 } from "@rakazo/adapters";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, computerScreenSize } from "@rakazo/core";
@@ -68,10 +69,16 @@ export function toComputerStatus(
     diskUsedBytes?: bigint | null;
     diskFreeBytes?: bigint | null;
     diskDismissedPercent?: number | null;
+    controlUserId?: string | null;
+    userId?: string | null;
   } | null,
   busyBotName: string | null = null,
   shared = false,
+  viewerId?: string,
 ): ComputerStatus {
+  const controlledByOther = Boolean(
+    viewerId && computer?.controlHolder === "user" && !holdsUserControl(computer, viewerId),
+  );
   const kind = (computer?.kind ?? "fake") as ComputerStatus["kind"];
   const state =
     kind === "none"
@@ -98,6 +105,7 @@ export function toComputerStatus(
   return {
     botId,
     ...(shared ? { shared } : {}),
+    ...(controlledByOther ? { controlledByOther } : {}),
     mode: computer?.scope === "dedicated" ? "dedicated" : "team",
     kind,
     state,

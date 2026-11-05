@@ -1355,6 +1355,8 @@ export const ComputerStatusSchema = z.object({
   diskFullPercent: z.number().int().min(0).max(100).optional(),
   /** True when other people share the Space, and with it this computer and its browser sign-ins. */
   shared: z.boolean().optional(),
+  /** True when another person in the Space has control, so this viewer only watches. */
+  controlledByOther: z.boolean().optional(),
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 

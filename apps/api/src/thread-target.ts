@@ -438,6 +438,7 @@ export async function threadHead(prisma: PrismaClient, target: ThreadTarget) {
 export async function threadSnapshot(
   deps: { prisma: PrismaClient },
   target: ThreadTarget,
+  viewerId?: string,
 ): Promise<ThreadSnapshot> {
   // Lock the thread row so messages, the event cursor, active runs, and live
   // progress are read from one consistent commit. A torn Promise.all can
@@ -539,7 +540,13 @@ export async function threadSnapshot(
       olderCursor: core.messagePage.olderCursor,
       run: core.run ? mapRun(core.run) : null,
       activeRuns: core.activeRuns.map(mapRun),
-      computer: toComputerStatus(target.botId, target.bot.computer, busyBotName, core.shared),
+      computer: toComputerStatus(
+        target.botId,
+        target.bot.computer,
+        busyBotName,
+        core.shared,
+        viewerId,
+      ),
     };
   }
 

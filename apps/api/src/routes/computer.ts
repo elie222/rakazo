@@ -908,6 +908,7 @@ async function computerStatus(
     bot.computer,
     busyBotName,
     await spaceIsShared(deps.prisma, actor.spaceId),
+    actor.userId,
   );
 }
 
