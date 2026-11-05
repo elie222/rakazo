@@ -24,7 +24,7 @@ env:
 jobs:
   # Pull requests skip suites their files cannot affect (see .github/scripts/changed-areas.sh); a
   # job skipped by `if` still satisfies a required check. Main skips this job, and with it every
-  # job that needs it.
+  # job that needs it. Web E2E checks its own areas instead, so its shards start with the first jobs.
   changes:
     name: Changed areas
     if: github.event_name == 'pull_request'
@@ -32,7 +32,6 @@ jobs:
     timeout-minutes: 5
     outputs:
       web: ${{ steps.areas.outputs.web }}
-      e2e: ${{ steps.areas.outputs.e2e }}
       server: ${{ steps.areas.outputs.server }}
       native: ${{ steps.areas.outputs.native }}
       compose: ${{ steps.areas.outputs.compose }}
@@ -303,14 +302,14 @@ jobs:
           persist-credentials: false
       - run: bash infra/compose/upgrade-postgres.docker-test.sh
 
+  # Main leaves Web E2E to the nightly run.
   test-e2e:
     name: Web E2E
-    needs: changes
+    if: github.event_name == 'pull_request'
     uses: ./.github/workflows/playwright.yml
     with:
       upload_artifacts: true
-      # Skipped inside the called workflow so the required "Web E2E / Web E2E" check still reports.
-      skip: ${{ needs.changes.outputs.e2e != 'true' }}
+      changed_areas: true
 
   # Publishes sha-<commit> and edge alongside the checks, so the production deploy pulls the
   # image this run built instead of building on the production host.
