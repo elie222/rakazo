@@ -130,10 +130,20 @@ describeIntegration("bot templates", () => {
     expect(await db.bot.count({ where: owner })).toBe(1);
     expect(await db.routine.count({ where: owner })).toBe(1);
 
-    await rpc(app, cookie, "bots/remove", { botId: again.bot.id });
+    // An archived bot no longer counts: the listing offers Create, which makes a new bot.
+    await rpc(app, cookie, "bots/archive", { botId: again.bot.id });
+    const listed = await rpc<BotTemplateListing[]>(app, cookie, "bots/templates");
+    expect(listed.find((item) => item.id === triage.id)?.botId).toBeNull();
+    const replacement = await rpc<Created>(app, cookie, "bots/createFromTemplate", input);
+    expect(replacement.created).toBe(true);
+    expect(replacement.bot.id).not.toBe(again.bot.id);
+    const repeated = await rpc<Created>(app, cookie, "bots/createFromTemplate", input);
+    expect([repeated.bot.id, repeated.created]).toEqual([replacement.bot.id, false]);
+
+    await rpc(app, cookie, "bots/remove", { botId: replacement.bot.id });
     const fresh = await rpc<Created>(app, cookie, "bots/createFromTemplate", input);
     expect(fresh.created).toBe(true);
-    expect(fresh.bot.id).not.toBe(again.bot.id);
+    expect(fresh.bot.id).not.toBe(replacement.bot.id);
   });
 
   it("renames its skill on a clash and points the routine at the new name", async () => {

@@ -1,11 +1,7 @@
+import { importSetupStateInput, isImportSetupComplete, isImportSetupDone } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import type { ImportSetupBlock } from "./import-setup";
-import {
-  importSetupDetail,
-  importSetupStateInput,
-  isImportSetupComplete,
-  isImportSetupDone,
-} from "./import-setup";
+import { importSetupDetail } from "./import-setup";
 
 const block: ImportSetupBlock = {
   kind: "import_setup",

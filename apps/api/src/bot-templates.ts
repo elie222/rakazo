@@ -14,12 +14,12 @@ import {
   BOT_TEMPLATES,
   buildSkillMd,
   findBotTemplate,
-  matchAppCatalog,
+  matchConnectedAppCatalog,
 } from "@rakazo/core";
 import type { AgentImportServices, Built } from "./agent-import.js";
 import { requestDigest, savedTimeZone, writeImportedBot } from "./agent-import.js";
 
-/** One bot per template: creating it again returns the bot it made, until that bot is deleted. */
+/** One bot per template: creating it again returns the bot it made, until that bot is archived or deleted. */
 function importKey(templateId: string): string {
   return `template:${templateId}`;
 }
@@ -33,6 +33,7 @@ export async function listBotTemplates(
       spaceId: actor.spaceId,
       userId: actor.userId,
       importKey: { in: BOT_TEMPLATES.map((template) => importKey(template.id)) },
+      bot: { archivedAt: null },
     },
     select: { importKey: true, botId: true },
   });
@@ -113,7 +114,7 @@ export function templateAppCards(
   catalog: ConnectionCatalogItem[],
 ): MessageBlock[] {
   return template.apps.flatMap((app) => {
-    const entry = matchAppCatalog(catalog, app);
+    const entry = matchConnectedAppCatalog(catalog, app);
     return entry && !entry.connected ? [appConnectCard(entry)] : [];
   });
 }
@@ -158,5 +159,14 @@ export async function createBotFromTemplate<PreparedKey>(
       return templatePlan(template, await savedTimeZone(services.prisma, actor));
     },
   };
+  // An archived bot no longer counts as the template's bot: its record makes way for a new one.
+  await services.prisma.agentImport.deleteMany({
+    where: {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      importKey: request.importKey,
+      bot: { archivedAt: { not: null } },
+    },
+  });
   return writeImportedBot(services, actor, request, signal);
 }

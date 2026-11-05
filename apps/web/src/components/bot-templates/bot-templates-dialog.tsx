@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { Bot, BotTemplateListing, ConnectionCatalogItem } from "@rakazo/contracts";
 import { isBotTemplateChanged } from "@rakazo/contracts";
-import { formatCron, matchAppCatalog } from "@rakazo/core";
+import { formatCron, matchConnectedAppCatalog } from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -210,7 +210,7 @@ function TemplateDetail({
     enabled: template.apps.length > 0,
   });
   const apps = template.apps.flatMap((slug) => {
-    const entry = matchAppCatalog(catalog.data ?? [], slug);
+    const entry = matchConnectedAppCatalog(catalog.data ?? [], slug);
     return entry ? [entry] : [];
   });
   const schedule = (crons: string[]) =>

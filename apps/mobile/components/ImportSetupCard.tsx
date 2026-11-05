@@ -1,5 +1,11 @@
 import type { AgentImportSetupItem, AgentImportSetupState } from "@rakazo/contracts";
-import { isRetiredImportSetup } from "@rakazo/core";
+import {
+  importSetupStateInput,
+  isImportSetupComplete,
+  isImportSetupDone,
+  isImportSetupVerifiable,
+  isRetiredImportSetup,
+} from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import type { Href } from "expo-router";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -9,13 +15,7 @@ import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import type { ImportSetupBlock } from "../lib/import-setup";
-import {
-  importSetupDetail,
-  importSetupStateInput,
-  isImportSetupComplete,
-  isImportSetupDone,
-  isImportSetupVerifiable,
-} from "../lib/import-setup";
+import { importSetupDetail } from "../lib/import-setup";
 import { threadCardWidth } from "../lib/message-presentation";
 import { native, useMobileTokens } from "../lib/native";
 import { useThreadReadOnly } from "../lib/thread-read-only";
