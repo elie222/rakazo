@@ -1945,8 +1945,11 @@ PURCHASE_HELPERS = r"""
   }
   // Page text is cut by characters, not code units, so a cut never leaves half an emoji.
   const cut = (text, max) => Array.from(text).slice(0, max).join("");
-  // An order line ends with its one amount: "Oat milk 1L × 2 $8.40", "Delivery 6,00 €".
-  const LINE_AMOUNT = new RegExp(`(?:${MONEY.source})$`, "i");
+  // An order line ends with its one amount: "Oat milk 1L × 2 $8.40", "Delivery 6,00 €", "Discount -$5.00". A
+  // minus sign right before the amount is kept, so a credit never reads as a charge.
+  const LINE_AMOUNT = new RegExp(`[-−]?(?:${MONEY.source})$`, "i");
+  // Between two parts of a line that end and start with a digit: "2" and "150,00 €" in two cells are not "2 150,00 €".
+  const APART = "\u001f";
   const ANY_AMOUNT = new RegExp(MONEY.source, "i");
   const SUBTOTAL = /sub-?\s?total|סכום ביניים/i;
   // A choice is not an order line, and nor is an offer to add something: a delivery option or an extra names
@@ -1960,16 +1963,18 @@ PURCHASE_HELPERS = r"""
   const PAGE_EDGES = "header, nav, footer, [role=banner], [role=navigation], [role=contentinfo]";
   // What an element shows, with a space between its parts so "6" and "$3.00" in two cells stay apart.
   function shownText(el) {
-    const parts = [];
+    let text = "";
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node && parts.length < 40; node = walker.nextNode()) {
+    for (let node = walker.nextNode(), parts = 0; node && parts < 40; node = walker.nextNode()) {
       const parent = node.parentElement;
-      if (parent && !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(parent.tagName) && visible(parent)
+      const part = tidy(node.data);
+      if (part && parent && !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(parent.tagName) && visible(parent)
           && !parent.closest(CONTROLS)) {
-        parts.push(node.data);
+        text += (!text ? "" : /\d$/.test(text) && /^\d/.test(part) ? APART : " ") + part;
+        parts += 1;
       }
     }
-    return tidy(parts.join(" "));
+    return text;
   }
   // The order lines the checkout lists above its total, as the page words them: each a name and the amount
   // at its end, such as an item with its quantity and price, delivery or tax. Read back from the total no further
@@ -1995,7 +2000,7 @@ PURCHASE_HELPERS = r"""
           || !visible(el) || offers(el)) continue;
       const text = shownText(el);
       const amount = text.length <= 160 ? text.match(LINE_AMOUNT)?.[0] : "";
-      const name = amount ? text.slice(0, -amount.length).replace(/[\s:·•–—-]+$/u, "") : "";
+      const name = amount ? text.slice(0, -amount.length).replaceAll(APART, " ").replace(/[\s:·•–—-]+$/u, "") : "";
       // Whole, so the bot's secrets are found and hidden before the card cuts the name short.
       if (/\p{L}/u.test(name)) rows.unshift({ el, name, amount });
     }

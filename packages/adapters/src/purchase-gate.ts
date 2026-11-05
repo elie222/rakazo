@@ -45,7 +45,9 @@ function withItems(
   const items = (Array.isArray(value) ? value.slice(0, MAX_ITEMS) : []).flatMap((item) => {
     const { name, amount } = (item ?? {}) as Record<string, unknown>;
     if (typeof name !== "string" || typeof amount !== "string") return [];
-    const line = { name: shown(name, 80), amount: shown(amount, 40) };
+    // Control characters are page noise, not words: they read as spaces.
+    const plain = (text: string) => text.replace(/\p{Cc}/gu, " ");
+    const line = { name: shown(plain(name), 80), amount: shown(plain(amount), 40) };
     return line.name && line.amount ? [line] : [];
   });
   return items.length ? { items } : {};

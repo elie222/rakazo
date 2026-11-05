@@ -407,7 +407,7 @@ describe("purchase detection for the page tools", () => {
       label: "Place order",
       amount: "$9",
       items: [
-        { name: " Bananas\u202e  × 6 ", amount: "$3.00" },
+        { name: " Bananas\u202e \u001f × 6\u0007", amount: "$3.00" },
         { name: "No amount" },
         "Delivery $6.00",
         { name: "", amount: "$1" },
