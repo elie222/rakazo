@@ -3,6 +3,7 @@ import { AgentImportSetupItemSchema } from "./agent-import-setup.js";
 import { botSecretDestinationSchema, LoginFieldLabels, OneTimeCodeTarget } from "./bot-secrets.js";
 import { Id, ThinkingLevelSchema } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
+import { McpAppCspSchema } from "./mcp-app.js";
 import { PAGE_TITLE_MAX_LENGTH } from "./pages.js";
 
 export const ProductEventType = z.enum([
@@ -310,6 +311,21 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     mimeType: z.string(),
     name: z.string(),
     size: z.number().int().nonnegative(),
+  }),
+  z.object({
+    /**
+     * An MCP server's app showing one tool call. The app's HTML is a hidden artifact; the
+     * arguments and result are what its view receives, the result as the bot got it (credentials
+     * redacted).
+     */
+    kind: z.literal("app"),
+    artifactId: Id,
+    server: z.string().max(200),
+    tool: z.string().max(200),
+    toolArguments: z.record(z.string(), z.any()),
+    toolResult: z.record(z.string(), z.any()),
+    csp: McpAppCspSchema.optional(),
+    prefersBorder: z.boolean().optional(),
   }),
   z.object({
     /** A page the bot saved. Title and version are as sent; read the page for its latest. */

@@ -1,5 +1,6 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import {
+  ATTACHMENT_MAX_COUNT,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_MEMORY_MAX_BYTES,
@@ -422,10 +423,14 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "read_file",
     description:
-      "Read a UTF-8 text file from this bot's home. On a Team Computer, relative paths use the bot folder and shared/... accesses shared work. Open visual or binary files with open_path instead.",
+      "Read a UTF-8 text file from this bot's home. On a Team Computer, relative paths use the bot folder and shared/... accesses shared work. Open visual or binary files with open_path instead. Large files come back in line ranges; follow nextOffset to read on.",
     inputSchema: {
       type: "object",
-      properties: { path: { type: "string" } },
+      properties: {
+        path: { type: "string" },
+        offset: { type: "integer", description: "First line to read, 1-based." },
+        limit: { type: "integer", description: "Maximum number of lines." },
+      },
       required: ["path"],
     },
   },
@@ -1700,6 +1705,13 @@ export const builtinAgentTools: ConnectorTool[] = [
           description: "Exact name of the target bot when bot_id is omitted.",
         },
         message: { type: "string", description: "What to send." },
+        files: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: ATTACHMENT_MAX_COUNT,
+          description:
+            "Paths of files or folders on your computer to send with it. A bot on your computer reads them in place; one with its own computer gets copies, so zip a folder for it. Never paste file contents into message.",
+        },
         intent: {
           type: "string",
           enum: ["request", "result", "question", "status", "fyi"],
@@ -1727,6 +1739,13 @@ export const builtinAgentTools: ConnectorTool[] = [
           description: "Exact name of the target member when bot_id is omitted.",
         },
         message: { type: "string", description: "What the receiving bot should do next." },
+        files: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: ATTACHMENT_MAX_COUNT,
+          description:
+            "Paths of files or folders on your computer to send with it. A bot on your computer reads them in place; one with its own computer gets copies, so zip a folder for it. Never paste file contents into message.",
+        },
       },
       required: ["message"],
     },

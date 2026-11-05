@@ -10,7 +10,7 @@ picks the provider and `PI_DEFAULT_MODEL` the model:
 
 | `PI_DEFAULT_PROVIDER` | Key | Default model |
 | --- | --- | --- |
-| `openrouter` (default) | `OPENROUTER_API_KEY` | `openai/gpt-6-luna` |
+| `openrouter` (default) | `OPENROUTER_API_KEY` | `anthropic/claude-haiku-5.5` |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-5` |
 | `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-flash` |
 
