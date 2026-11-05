@@ -170,9 +170,13 @@ export async function claimOrganizationForDeletion(
         if (otherMembers > 0) throw new SharedOrganizationError();
         if (otherOwned === 0) throw new CannotDeleteLastOrganizationError();
         await lockOrganizationSpaces(tx, input.organizationId);
-        const earlier = {
+        // The previous release claimed under the bare `organization-deletion:<id>`.
+        const earlier: Prisma.SpaceWhereInput = {
           organizationId: input.organizationId,
-          deletionClaimId: { startsWith: `organization-deletion:${input.organizationId}:` },
+          OR: [
+            { deletionClaimId: `organization-deletion:${input.organizationId}` },
+            { deletionClaimId: { startsWith: `organization-deletion:${input.organizationId}:` } },
+          ],
         };
         const live = await tx.space.count({
           where: {

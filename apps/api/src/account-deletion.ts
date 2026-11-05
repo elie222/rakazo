@@ -115,10 +115,14 @@ export async function deleteOrganization(
   );
   const operationId = `organization-delete:${organizationId}`;
   let billingCancelled = false;
+  // Work cut off by the deadline that resumes later starts nothing new: a later attempt may own it.
+  const stillLeased = () => deadline.signal.throwIfAborted();
   const work = async () => {
     await keepOrganizationTrialUse(deps.prisma, organizationId);
+    stillLeased();
     await deps.billing?.cancelForDeletedOrganization(organizationId);
     billingCancelled = true;
+    stillLeased();
     const inOrganization = { spaceId: { in: spaceIds } };
     // The claim leaves the owner as its only member, so every Space goes: its files can go before
     // the rows that list them, and a failed removal is found again on retry.
@@ -126,6 +130,7 @@ export async function deleteOrganization(
       where: inOrganization,
       select: { spaceId: true, storageKey: true },
     });
+    stillLeased();
     await settleAll(
       artifacts.map(({ spaceId, storageKey }) =>
         deps.artifacts.remove(
@@ -144,6 +149,7 @@ export async function deleteOrganization(
       computers: inOrganization,
       signal: deadline.signal,
     });
+    stillLeased();
     await deleteEmptyOrganization(deps.prisma, organizationId);
     await recordAuditEvent({
       action: "organization.deleted",
@@ -224,6 +230,7 @@ async function deleteClaimedSpaces(
       webhookSecretId: true,
     },
   });
+  input.signal?.throwIfAborted();
   await settleAll(
     bots.map((bot) =>
       destroyBot({ ...deps, secretStore: deps.secrets }, bot, context(bot.spaceId, bot.id), {
@@ -244,6 +251,7 @@ async function deleteClaimedSpaces(
       bots: { select: { id: true } },
     },
   });
+  input.signal?.throwIfAborted();
   await settleAll(
     computers.map(async (computer) => {
       // Only someone else's bot can still be on it, and its files are theirs.
@@ -263,9 +271,9 @@ async function deleteClaimedSpaces(
     }),
   );
 
-  // Teardown abandoned at a deadline that finishes later leaves the rest to the next attempt.
-  input.signal?.throwIfAborted();
   for (const spaceId of input.spaceIds) {
+    // Teardown abandoned at a deadline that finishes later leaves the rest to the next attempt.
+    input.signal?.throwIfAborted();
     const deleted = await deleteClaimedSpace(deps.prisma, {
       spaceId,
       claimId: input.claimId,

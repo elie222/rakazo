@@ -504,6 +504,86 @@ describePostgres("organizations (PostgreSQL)", () => {
     await until(() => sandbox.destroyed.includes(hungRef));
   });
 
+  it("starts no teardown from an attempt whose billing call returns after its deadline", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const ref = `sb-late-${suffix}`;
+    await botWithComputer(work.id, ada.userId, ref);
+    let billingCalled!: () => void;
+    const called = new Promise<void>((resolve) => {
+      billingCalled = resolve;
+    });
+    let returnBilling!: () => void;
+    const held = new Promise<void>((resolve) => {
+      returnBilling = resolve;
+    });
+    const deadline = new AbortController();
+    const late = runAsSystem("an attempt cut off at its deadline", () =>
+      deleteOrganization(
+        {
+          ...deps(),
+          billing: {
+            cancelForDeletedOrganization: async () => {
+              billingCalled();
+              await held;
+            },
+          },
+        } as Parameters<typeof deleteOrganization>[0],
+        ada.userId,
+        work.id,
+        deadline.signal,
+      ),
+    );
+    await called;
+    deadline.abort(new Error("Organization deletion timed out"));
+    await expect(late).rejects.toThrow("timed out");
+    // Its lease lapses, and a retry takes over and starts tearing the bot down.
+    await system.space.updateMany({
+      where: { organizationId: work.id },
+      data: { deletingAt: new Date(Date.now() - 10 * 60_000) },
+    });
+    const release = sandbox.hold(ref);
+    const retry = client(ada).organizations.remove({ organizationId: work.id });
+    await until(() => sandbox.started.includes(ref));
+
+    returnBilling();
+    // Give the cut-off attempt time to go on, if it would.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
+    release();
+    await retry;
+
+    await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
+    expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
+  });
+
+  it("takes over a claim the previous release left, keeping it when billing fails", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    await subscribe(asUser(ada, work.id));
+    // A deletion that stalled under the previous release's bare claim id.
+    await system.space.updateMany({
+      where: { organizationId: work.id },
+      data: {
+        deletionClaimId: `organization-deletion:${work.id}`,
+        deletingAt: new Date(Date.now() - 10 * 60_000),
+      },
+    });
+    vi.spyOn(emulator, "cancelCustomerSubscriptions").mockRejectedValueOnce(
+      new Error("billing unavailable"),
+    );
+
+    await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
+      "billing unavailable",
+    );
+
+    expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
+      deletingAt: expect.any(Date),
+      deletionClaimId: expect.stringContaining(`organization-deletion:${work.id}:`),
+    });
+    expect((await client(ada).organizations.list()).organizations).toHaveLength(1);
+  });
+
   it("deletes the organization with its last Space, so no crash leaves it without its claim", async () => {
     const ada = await signup();
     const work = await client(ada).organizations.create({ name: "Work" });
