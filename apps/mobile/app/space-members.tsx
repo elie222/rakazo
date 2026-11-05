@@ -12,12 +12,14 @@ import {
   StyleSheet,
   Text,
 } from "react-native";
+import { GlassIconButton } from "../components/glass-icon-button";
 import { SettingsGroup, SettingsRow } from "../components/settings-group";
-import { cancelHeaderOptions, trailingHeaderOptions } from "../components/sheet-header";
+import { cancelHeaderOptions } from "../components/sheet-header";
 import { rpc, selectedSpaceId, selectSpace } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
+import { iosAtLeast } from "../lib/native-controls";
 import { errorText } from "../lib/user-error";
 
 export default function SpaceMembersScreen() {
@@ -112,7 +114,32 @@ export default function SpaceMembersScreen() {
       <Stack.Screen
         options={{
           ...cancelHeaderOptions(t("Close"), () => router.back()),
-          ...(canManage ? trailingHeaderOptions(t("Invite"), () => void invite(), pending) : {}),
+          // An action, not a confirmation, so it gets its own glyph rather than the done checkmark.
+          ...(canManage
+            ? iosAtLeast(26)
+              ? {
+                  unstable_headerRightItems: () => [
+                    {
+                      type: "button" as const,
+                      label: t("Invite"),
+                      icon: { type: "sfSymbol" as const, name: "person.badge.plus" as const },
+                      disabled: pending,
+                      onPress: () => void invite(),
+                    },
+                  ],
+                }
+              : {
+                  headerRight: () => (
+                    <GlassIconButton
+                      accessibilityLabel={t("Invite")}
+                      ios="person.badge.plus"
+                      android="person-add-outline"
+                      disabled={pending}
+                      onPress={() => void invite()}
+                    />
+                  ),
+                }
+            : {}),
         }}
       />
       <ScrollView

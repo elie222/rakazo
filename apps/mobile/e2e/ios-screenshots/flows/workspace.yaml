@@ -61,7 +61,7 @@ name: Workspace
 - takeScreenshot: 09-space-settings
 - openLink: "rakazo:///space-members?spaceId=${RAKAZO_SCREENSHOT_TEAM_SPACE_ID}"
 - extendedWaitUntil:
-    visible: ".*Your other spaces stay private.*"
+    visible: "Owner"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000

@@ -19,13 +19,19 @@ const { rpc, selectSpace, selectedSpaceId, alert, share, router, header } = vi.h
 
 vi.mock("./api", () => ({ rpc, selectSpace, selectedSpaceId }));
 vi.mock("expo-secure-store", () => ({}));
+vi.mock("./native-controls", () => ({ iosAtLeast: () => true }));
+vi.mock("../components/glass-icon-button", () => ({ GlassIconButton: () => null }));
 vi.mock("expo-router", () => ({
   useRouter: () => router,
   // Opened from Settings: no name in the link, so the sheet takes it from the list.
   useLocalSearchParams: () => ({ spaceId: "space-shared" }),
   Stack: {
-    Screen: ({ options }: { options: { invite?: () => void } }) => {
-      header.invite = options.invite;
+    Screen: ({
+      options,
+    }: {
+      options: { unstable_headerRightItems?: () => Array<{ onPress: () => void }> };
+    }) => {
+      header.invite = options.unstable_headerRightItems?.()[0]?.onPress;
       return null;
     },
   },
@@ -90,7 +96,6 @@ vi.mock("../components/settings-group", () => ({
 }));
 vi.mock("../components/sheet-header", () => ({
   cancelHeaderOptions: () => ({}),
-  trailingHeaderOptions: (_label: string, onPress: () => void) => ({ invite: onPress }),
 }));
 vi.mock("./native", () => ({
   native: {},
