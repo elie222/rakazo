@@ -135,6 +135,7 @@ default look either way.
 {
   "dark": { "background": "#1A1714", "sidebar": "#14110F", "primary": "#E8B26A" },
   "light": { "background": "#FBF7F0", "primary": "#8A4B12" },
+  "radius": "6px",
   "fonts": {
     "sans": "Onest, system-ui, sans-serif",
     "mono": "ui-monospace, monospace",
@@ -146,7 +147,8 @@ default look either way.
 `dark` and `light` take any of the color names in
 [`packages/ui-tokens/src/index.ts`](../packages/ui-tokens/src/index.ts) (`ColorTokens` and
 `WebColorTokens`) with a hex value; anything you leave out keeps its default. `sans` and `mono` are
-font-family lists. A font that isn't installed on every device needs its file listed under `files`
+font-family lists. `radius` is the base corner size in `px` or `rem` (default `0.75rem`); smaller
+and larger corners scale from it. A font that isn't installed on every device needs its file listed under `files`
 (`.woff2`, `.woff`, `.ttf` or `.otf`, relative to the theme file); the web service serves it from
 your own domain. The web service re-reads the file on each page load, so a reload shows your edits.
 Font files must sit inside the theme's folder. A file it can't use is skipped with a
