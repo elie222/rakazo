@@ -21,7 +21,10 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { AdapterContext, AgentHomeStore, PortableFile } from "@rakazo/adapter-kit";
 import { fileHandlePath } from "./file-handle-path.js";
-import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
+import {
+  isTaggedCacheDirectory,
+  shouldSkipPortableWorkspaceFile,
+} from "./workspace-save-policy.js";
 
 const STAGING_PREFIX = "rakazo-workspace-";
 /** Staging directories in use are touched this often, so other processes can tell them apart. */
@@ -180,9 +183,10 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   ): Promise<string> {
     await this.waitForBotWrite(botId);
     await this.recoverInterruptedCommit(botId);
-    const full = await containedExistingPath(this.botDir(botId), filePath);
+    const { root, full } = await containedExistingPath(this.botDir(botId), filePath);
     const handle = await open(full, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
+      assertContained(root, await fileHandlePath(handle.fd));
       if (options?.maxBytes !== undefined) {
         const info = await handle.stat();
         if (info.size > options.maxBytes) {
@@ -267,6 +271,23 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     await removeTree(`${dir}.previous`);
     await removeTree(dir);
     await rm(this.revisionFile(botId), { force: true });
+    await rm(this.downloadedFile(botId), { force: true });
+  }
+
+  /**
+   * Records that this host's copy came from object storage. A file beside the revision marker,
+   * rather than a change to its contents, so a previous release reading the marker keeps working.
+   */
+  protected async markDownloaded(botId: string) {
+    await mkdir(path.join(this.root, "home-downloads"), { recursive: true });
+    await writeFile(this.downloadedFile(botId), "");
+  }
+
+  protected async isDownloaded(botId: string): Promise<boolean> {
+    return stat(this.downloadedFile(botId)).then(
+      () => true,
+      () => false,
+    );
   }
 
   protected async touchRevision(botId: string) {
@@ -301,6 +322,10 @@ export class LocalAgentHomeStore implements AgentHomeStore {
       if (isMissing(error)) return undefined;
       throw error;
     });
+  }
+
+  private downloadedFile(botId: string) {
+    return path.join(this.root, "home-downloads", path.basename(this.botDir(botId)));
   }
 
   private revisionFile(botId: string) {
@@ -380,8 +405,10 @@ function safeJoin(root: string, rel: string) {
 
 async function containedExistingPath(root: string, rel: string) {
   await mkdir(root, { recursive: true });
-  const candidate = safeJoin(root, rel);
-  return containedTarget(root, candidate);
+  const resolvedRoot = await realpath(root);
+  const full = await realpath(safeJoin(resolvedRoot, rel));
+  assertContained(resolvedRoot, full);
+  return { root: resolvedRoot, full };
 }
 
 async function containedWritePath(root: string, rel: string) {
@@ -653,7 +680,8 @@ async function copyDir(
       shouldSkipPortableWorkspaceFile(
         path.relative(root, path.join(current, entry.name)).split(path.sep).join("/"),
         info.isDirectory(),
-      )
+      ) ||
+      (info.isDirectory() && (await isTaggedCacheDirectory(from)))
     )
       continue;
     if (info.isDirectory()) await copyDir(from, to, root, visited);
@@ -680,6 +708,7 @@ async function* walkFiles(
     const info = await stat(full);
     if (shouldSkipPortableWorkspaceFile(portablePath, info.isDirectory())) continue;
     if (info.isDirectory()) {
+      if (await isTaggedCacheDirectory(full)) continue;
       yield* walkFiles(root, full, skipHidden, portablePath, visited);
     } else if (info.isFile()) {
       const { content, mode } = await readTraversalFile(root, full, skipHidden);
@@ -693,7 +722,10 @@ async function removeExcludedStagedEntries(root: string, directory = root) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const full = path.join(directory, entry.name);
     const relative = path.relative(root, full).split(path.sep).join("/");
-    if (shouldSkipPortableWorkspaceFile(relative, entry.isDirectory())) {
+    if (
+      shouldSkipPortableWorkspaceFile(relative, entry.isDirectory()) ||
+      (entry.isDirectory() && (await isTaggedCacheDirectory(full)))
+    ) {
       await rm(full, { recursive: true, force: true });
     } else if (entry.isDirectory()) {
       await removeExcludedStagedEntries(root, full);

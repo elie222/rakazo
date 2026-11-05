@@ -169,7 +169,12 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
     .map((block) => {
       if (block.kind === "text") return block.text;
       if (block.kind === "chart") return `[chart: ${block.name}]`;
+      if (block.kind === "app") return `[app: ${block.server} showed ${block.tool}]`;
       if (block.kind === "image") return `[image: ${block.name}]`;
+      // The id lets a later turn, or another chat, update this page instead of making a new one.
+      if (block.kind === "page") {
+        return `[page: ${block.title} (pageId ${block.pageId}, version ${block.version})]`;
+      }
       if (block.kind === "file") {
         return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
       }
@@ -248,6 +253,14 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "application/zip": ".zip",
 };
 
+/** Short file-type badge, as a file's extension reads ("TXT", "MD", "PDF"). */
+export function artifactTypeLabel(mimeType: string): string {
+  const extension = attachmentExtensionForMimeType(mimeType);
+  if (extension) return extension.slice(1).toUpperCase();
+  const slash = mimeType.indexOf("/");
+  return (slash === -1 ? mimeType : mimeType.slice(slash + 1)).toUpperCase().slice(0, 6);
+}
+
 export function inferAttachmentMimeType(
   name: string,
   reportedType?: string,
@@ -287,6 +300,11 @@ export function attachmentExtensionForMimeType(mimeType: string): string {
   return isAllowedAttachmentMimeType(mimeType) ? MIME_TYPE_EXTENSIONS[mimeType] : "";
 }
 
+/** Where a run copies an attached file in the bot's workspace; history tools report the same path. */
+export function attachmentComputerPath(artifactId: string, mimeType: string): string {
+  return `attachments/${artifactId}${attachmentExtensionForMimeType(mimeType)}`;
+}
+
 export function attachmentsForThread<T extends { threadKey: string }>(
   attachments: readonly T[],
   threadKey: string | undefined,
@@ -303,9 +321,23 @@ export function attachmentsForBot<T extends { botId: string }>(
   return attachments.filter((attachment) => attachment.botId === botId);
 }
 
+/**
+ * The message whose attachments this run receives: a person's message, or a message or
+ * handoff another bot delivered, whose files arrive the same way.
+ */
 export function userTurnMessageForRun<
   T extends { id?: string; role: string; runId?: string | null; blocks: MessageBlock[] },
 >(trigger: string, runId: string, messages: T[], sourceMessageId?: string | null): T | undefined {
+  if (trigger === "bot_message" || trigger === "follow_up") {
+    if (!sourceMessageId) return undefined;
+    return messages.find(
+      (message) =>
+        message.id === sourceMessageId &&
+        message.blocks.some(
+          (block) => block.kind === "bot_message_received" || block.kind === "handoff",
+        ),
+    );
+  }
   if (trigger !== "user" && trigger !== "messaging" && trigger !== "reaction") return undefined;
   return messages.find(
     (message) =>

@@ -1,5 +1,56 @@
+import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { describeToolActivity } from "./pi-runtime-tools.js";
+import {
+  agentToolDefinitions,
+  connectorStepNames,
+  describeToolActivity,
+} from "./pi-runtime-tools.js";
+
+describe("connector tool labels", () => {
+  const search: ConnectorTool = {
+    name: "VENDOR_SEARCH_TOOLS",
+    label: "Finding tools",
+    description: "",
+    inputSchema: {},
+  };
+  const batch: ConnectorTool = {
+    name: "VENDOR_MULTI_EXECUTE",
+    label: "Running tools",
+    description: "",
+    inputSchema: {},
+    batch: { items: "tools", action: "tool_slug", arguments: "arguments" },
+  };
+  const tools = new Map([search, batch].map((tool) => [tool.name, tool]));
+  const args = { tools: [{ tool_slug: "POSTIZ_LIST_POSTS", arguments: {} }] };
+
+  it("finds a tool under the name the model calls it", () => {
+    const renamed: ConnectorTool = { ...search, name: "VENDOR SEARCH" };
+    const byAgentName = agentToolDefinitions([renamed]);
+    expect(describeToolActivity("VENDOR_SEARCH", {}, (name) => byAgentName.get(name))).toBe(
+      "Finding tools",
+    );
+  });
+
+  it("shows a label or the actions a batch runs instead of the model's tool name", () => {
+    expect(describeToolActivity(search.name, { queries: [] }, (name) => tools.get(name))).toBe(
+      "Finding tools",
+    );
+    expect(describeToolActivity(batch.name, args, (name) => tools.get(name))).toBe(
+      "Using Postiz list posts",
+    );
+    expect(connectorStepNames(search, {})).toEqual(["Finding tools"]);
+    expect(connectorStepNames(batch, args)).toEqual(["Postiz list posts"]);
+    expect(connectorStepNames(batch, {})).toEqual(["Running tools"]);
+    const many = { tools: ["A", "B", "C", "D"].map((tool_slug) => ({ tool_slug })) };
+    expect(connectorStepNames(batch, many)).toEqual(["Running tools"]);
+    const partial = { tools: [{ tool_slug: "POSTIZ_LIST_POSTS" }, {}] };
+    expect(connectorStepNames(batch, partial)).toEqual(["Running tools"]);
+    const odd = { tools: [{ tool_slug: "list posts --token=abc" }] };
+    expect(connectorStepNames(batch, odd)).toEqual(["Running tools"]);
+    expect(describeToolActivity(batch.name, odd, (name) => tools.get(name))).toBe("Running tools");
+    expect(connectorStepNames(undefined, {})).toEqual([]);
+  });
+});
 
 describe("describeToolActivity", () => {
   it("summarizes builtin tools with their most informative argument", () => {
@@ -14,6 +65,12 @@ describe("describeToolActivity", () => {
     );
     expect(describeToolActivity("list_fleet", {})).toBe("Checking your bots");
     expect(describeToolActivity("render_plot", { spec: {} })).toBe("Rendering a chart");
+    expect(describeToolActivity("save_page", { help: true })).toBe(
+      "Reading the page kit reference",
+    );
+    expect(describeToolActivity("save_page", { title: "Plan", source: "x" })).toBe(
+      "Writing the page code",
+    );
     expect(describeToolActivity("add_mcp_server", { name: "Linear" })).toBe(
       "Connecting MCP server: Linear",
     );

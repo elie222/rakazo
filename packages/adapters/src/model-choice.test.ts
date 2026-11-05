@@ -117,4 +117,20 @@ describe("resolveModelChoice", () => {
       error: 'No model matches "zzz-unknown".',
     });
   });
+
+  it("bounds the echoed query in errors", async () => {
+    const elsewhere = await resolveModelChoice(connected(["google"]), scope, {
+      model: `${"claude ".repeat(10_000)}sonnet`,
+    });
+    expect(elsewhere).toMatchObject({ ok: false });
+    if (!elsewhere.ok) {
+      expect(elsewhere.error).toContain("No connected model matches");
+      expect(elsewhere.error.length).toBeLessThan(600);
+    }
+    const nowhere = await resolveModelChoice(connected([]), scope, {
+      model: "z".repeat(60_000),
+    });
+    expect(nowhere).toMatchObject({ ok: false });
+    if (!nowhere.ok) expect(nowhere.error.length).toBeLessThan(400);
+  });
 });

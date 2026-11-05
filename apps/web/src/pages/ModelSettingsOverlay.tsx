@@ -8,6 +8,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
+import { popularModelProvidersFirst } from "@rakazo/core";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -95,31 +96,28 @@ export function ModelSettingsOverlay({
     panelRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [connectionAt]);
 
-  const providers: ConnectableProvider[] = groups
-    .filter((group) => !credentialByProvider.has(group.id))
-    .map((group) => ({ id: group.id, name: group.name }));
-  if (
-    groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID) &&
-    !isOllamaCloudBaseUrl(credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl)
-  )
-    providers.push({
-      id: OPENAI_COMPATIBLE_PROVIDER_ID,
-      name: t`Ollama Cloud`,
-      baseUrl: OLLAMA_CLOUD_BASE_URL,
-    });
   // Adding another account is open to every provider, connected or not.
-  const allProviders: ConnectableProvider[] = [
-    ...groups.map((group) => ({ id: group.id, name: group.name })),
-    ...(groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID)
-      ? [
-          {
-            id: OPENAI_COMPATIBLE_PROVIDER_ID,
-            name: t`Ollama Cloud`,
-            baseUrl: OLLAMA_CLOUD_BASE_URL,
-          },
-        ]
-      : []),
-  ];
+  const allProviders = popularModelProvidersFirst<ConnectableProvider>(
+    [
+      ...groups.map((group) => ({ id: group.id, name: group.name })),
+      ...(groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID)
+        ? [
+            {
+              id: OPENAI_COMPATIBLE_PROVIDER_ID,
+              name: t`Ollama Cloud`,
+              baseUrl: OLLAMA_CLOUD_BASE_URL,
+            },
+          ]
+        : []),
+    ],
+    (entry) => entry.id,
+    (entry) => entry.name,
+  );
+  const providers = allProviders.filter((entry) =>
+    entry.baseUrl
+      ? !isOllamaCloudBaseUrl(credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl)
+      : !credentialByProvider.has(entry.id),
+  );
   const connectionName = (entry: ModelCredential) => {
     const group = groups.find((item) => item.id === entry.provider);
     return connectionDisplayName(
@@ -215,7 +213,7 @@ export function ModelSettingsOverlay({
     ) : (
       <>
         {provider === me?.hostCredentialProvider ? (
-          <p className="mb-5 text-[13px] leading-[1.5] text-muted-foreground">
+          <p className="mb-5 text-body-sm leading-[1.5] text-muted-foreground">
             <Trans>
               Uses this server's own {hostCredentialSource} credentials to access{" "}
               {selectedProviderName}.
@@ -237,7 +235,7 @@ export function ModelSettingsOverlay({
       <div className={framed ? "mb-3 flex items-center justify-between gap-3" : "sr-only"}>
         <h4
           data-testid="model-connection-title"
-          className="min-w-0 truncate text-[15px] font-medium text-foreground"
+          className="min-w-0 truncate text-body-lg font-medium text-foreground"
         >
           {connected ? selectedConnectionName : <Trans>Connect {selectedProviderName}</Trans>}
         </h4>
@@ -254,12 +252,12 @@ export function ModelSettingsOverlay({
         </Button>
       </div>
       {error ? (
-        <p className="mb-4 text-sm text-destructive" role="alert">
+        <p className="mb-4 text-body text-destructive" role="alert">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p className="mb-4 text-sm text-success" role="status">
+        <p className="mb-4 text-body text-success" role="status">
           {notice}
         </p>
       ) : null}
@@ -269,7 +267,8 @@ export function ModelSettingsOverlay({
           <ConnectionNameField
             key={credential.id}
             credential={credential}
-            onRenamed={() => void refresh()}
+            // A rename touches only the label; keep any unsaved form fields.
+            onRenamed={() => void refresh({ keepForm: true })}
           />
         ) : null}
         {connection}
@@ -280,12 +279,12 @@ export function ModelSettingsOverlay({
   const content = (
     <>
       {error && !connectionAt ? (
-        <p className="mb-4 text-sm text-destructive" role="alert">
+        <p className="mb-4 text-body text-destructive" role="alert">
           {error}
         </p>
       ) : null}
       {notice && !connectionAt ? (
-        <p className="mb-4 text-sm text-success" role="status">
+        <p className="mb-4 text-body text-success" role="status">
           {notice}
         </p>
       ) : null}
@@ -329,6 +328,22 @@ export function ModelSettingsOverlay({
             }
             panel={connectionAt === "approval" ? panelFor(true) : null}
           />
+          <ModelRoleSettings
+            userId={me.userId}
+            spaceId={me.spaceId}
+            scope={scope}
+            credentials={credentials}
+            modelRole="computer"
+            title={t`Computer-use model`}
+            defaultLabel={t`Same as main model`}
+            providers={providers}
+            providerLabel={providerLabel}
+            onConnect={(next, intent) => openConnection(next, intent, null, "computer")}
+            onManage={(id, credentialId) =>
+              openConnection({ id, name: id }, null, credentialId, "computer")
+            }
+            panel={connectionAt === "computer" ? panelFor(true) : null}
+          />
           {scope === "space" ? null : (
             <ProvidersSection
               credentials={credentials}
@@ -363,7 +378,7 @@ export function ModelSettingsOverlay({
           />
         </div>
       ) : catalog.length ? null : (
-        <p className="text-[13px] leading-[1.5] text-muted-foreground">
+        <p className="text-body-sm leading-[1.5] text-muted-foreground">
           <Trans>No model catalog is available.</Trans>
         </p>
       )}

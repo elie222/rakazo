@@ -36,8 +36,8 @@ export const TR_MESSAGES: Record<string, string> = {
   "Have any questions? Reply to this email.": "Sorunuz mu var? Bu e-postayı yanıtlayın.",
   Unsubscribe: "Abonelikten çık",
   "Invite a friend": "Bir arkadaşını davet et",
-  "Invite a friend to Rakazo and earn a free month when they start a qualifying subscription with a new card.":
-    "Bir arkadaşınızı Rakazo’ya davet edin; arkadaşınız yeni bir kartla uygun bir aboneliğe başladığında bir ay ücretsiz kazanın.",
+  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
+    "Bir arkadaşını Rakazo'ya davet et: {weeks} hafta ücretsiz kullanır, yeni bir kartla uygun bir aboneliğe başladığında da sen bir ay ücretsiz kazanırsın.",
   "Open Rakazo": "Rakazo’yu açın",
   "and choose Invite friends for your link.":
     "ve bağlantınızı almak için Arkadaşlarını davet et’i seçin.",
@@ -69,4 +69,9 @@ export const TR_MESSAGES: Record<string, string> = {
     "{name} sayfasındaki değişiklikleriniz onaylandı.",
   "We couldn't approve your changes to the {name} page.":
     "{name} sayfasındaki değişikliklerinizi onaylayamadık.",
+  "Your saved computer files will be deleted": "Kayıtlı bilgisayar dosyaların silinecek",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "Yeniden abone olmazsan kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "Bir plan seçmezsen kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.",
 };

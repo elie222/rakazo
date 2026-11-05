@@ -167,22 +167,18 @@ it("requires an owned, active bot before creating an install URL", async () => {
   await expect(f.manager.start(actor, "bot-b")).rejects.toBeInstanceOf(IsolationError);
   expect(f.prisma.messagingInstallSession.create).not.toHaveBeenCalled();
 });
-it("connects the first bot in the user's default space when no bot is chosen", async () => {
+it("connects the user's first bot in the current space when no bot is chosen", async () => {
   const f = fixture();
-  f.prisma.spaceMember.findFirst.mockResolvedValueOnce({
-    userId: "user-a",
-    spaceId: "space-home",
-    member: { user: { email: "fake@example.test" } },
-  } as never);
-  f.prisma.bot.findFirst.mockResolvedValueOnce({ id: "bot-home", spaceId: "space-home" } as never);
+  f.prisma.bot.findFirst.mockResolvedValueOnce({ id: "bot-work", spaceId: "space-work" } as never);
   await f.manager.start({ ...actor, spaceId: "space-work" });
   expect(f.prisma.bot.findFirst).toHaveBeenCalledWith(
     expect.objectContaining({
-      where: { spaceId: "space-home", userId: "user-a", archivedAt: null },
+      where: { spaceId: "space-work", userId: "user-a", archivedAt: null },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     }),
   );
-  expect(f.getSession()).toMatchObject({ botId: "bot-home", spaceId: "space-home" });
+  expect(f.prisma.spaceMember.findFirst).not.toHaveBeenCalled();
+  expect(f.getSession()).toMatchObject({ botId: "bot-work", spaceId: "space-work" });
 });
 it("disconnects only the user's own installation, from any of their spaces", async () => {
   const f = fixture();

@@ -7,11 +7,19 @@ describe("speechLocaleTag", () => {
     expect(speechLocaleTag("pt-BR")).toBe("pt-BR");
     expect(speechLocaleTag("nl")).toBe("nl-NL");
     expect(speechLocaleTag("ja")).toBe("ja-JP");
+    expect(speechLocaleTag("pl")).toBe("pl-PL");
     expect(speechLocaleTag("zh-TW")).toBe("zh-TW");
   });
 });
 
 describe("recognitionLocaleTag", () => {
+  it.each(["pl", "pl-PL", "pl_PL", "en-US", null])(
+    "uses Polish speech recognition for Polish UI with speaker %j",
+    (speaker) => {
+      expect(recognitionLocaleTag("pl", speaker)).toBe("pl-PL");
+    },
+  );
+
   it.each([
     ["es-CL", "es-CL"],
     ["es-MX", "es-MX"],
@@ -47,6 +55,7 @@ describe("recognitionLocaleTag", () => {
     expect(recognitionLocaleTag("en", "it-IT")).toBe("it-IT");
     expect(recognitionLocaleTag("en", "es-CL")).toBe("es-CL");
     expect(recognitionLocaleTag("en", "es-419")).toBe("es-MX");
+    expect(recognitionLocaleTag("en", "pl")).toBe("pl-PL");
     expect(recognitionLocaleTag("en", null)).toBe("en-US");
   });
 
@@ -71,6 +80,7 @@ describe("supportedSpeechTag", () => {
     expect(supportedSpeechTag("en-DE", apple)).toBe("en-US");
     expect(supportedSpeechTag("de-CH", apple)).toBe("de-DE");
     expect(supportedSpeechTag("es-PE", ["es-419", "es-ES"])).toBe("es-419");
+    expect(supportedSpeechTag("pl-DE", ["en-US", "pl-PL"])).toBe("pl-PL");
   });
 
   it("keeps the tag when the recognizer lists nothing or nothing of its language", () => {

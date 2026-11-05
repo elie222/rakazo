@@ -7,21 +7,26 @@ import {
   suggestEmailCorrection,
 } from "@rakazo/core";
 import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@rakazo/ui-web";
+import { Server } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { IconTooltip } from "../components/IconTooltip";
 import { PasskeySignIn } from "../components/PasskeySignIn";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
+import { desktopBridge } from "../lib/desktop";
 import { clearSpaceSelection } from "../lib/rpc";
 import { runSsoFlow } from "../lib/sso-flow";
 import { authErrorText, credentialIssueText } from "../lib/user-error";
+import { WindowChrome } from "./WindowChrome";
 
 type AuthMode = "in" | "up" | "forgot";
 
-const fieldClass = "mt-2 h-12 rounded-xl px-4 text-base md:text-base";
+// off-scale: 16px below md stops iOS Safari zooming into a focused field.
+const fieldClass = "mt-2 h-12 rounded-xl px-4 text-[16px]/6 md:text-body-lg";
 const CODE_LENGTH = 6;
-export const submitClass = "mt-3 h-12 w-full rounded-xl text-base";
+export const submitClass = "mt-3 h-12 w-full rounded-xl text-body-lg";
 
 export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
@@ -261,7 +266,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
             </Button>
           ) : null}
           {error && !reset?.passwordAuth ? (
-            <p role="alert" className="mt-3 text-sm text-destructive">
+            <p role="alert" className="mt-3 text-body text-destructive">
               {error}
             </p>
           ) : null}
@@ -301,7 +306,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                         <InputOTPSlot
                           key={index}
                           index={index}
-                          className="size-12 text-lg first:rounded-l-xl last:rounded-r-xl"
+                          className="size-12 text-heading3 first:rounded-l-xl last:rounded-r-xl"
                         />
                       ))}
                     </InputOTPGroup>
@@ -328,7 +333,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     className={fieldClass}
                   />
                   {emailSuggestion && emailBlurred ? (
-                    <p role="status" className="mt-2 text-sm text-warning">
+                    <p role="status" className="mt-2 text-body text-warning">
                       <Trans>
                         Did you mean{" "}
                         <button
@@ -363,7 +368,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     className={fieldClass}
                   />
                   {mode === "in" && reset?.passwordReset ? (
-                    <div className="mt-2 text-right text-sm">
+                    <div className="mt-2 text-right text-body">
                       <Link to="/forgot-password" className="font-medium text-foreground">
                         <Trans>Forgot password?</Trans>
                       </Link>
@@ -372,7 +377,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                 </div>
               ) : null}
               {error ? (
-                <p role="alert" className="mt-3 w-full text-sm text-destructive">
+                <p role="alert" className="mt-3 w-full text-body text-destructive">
                   {error}
                 </p>
               ) : null}
@@ -496,7 +501,7 @@ export function PasswordResetPage() {
     <AuthFrame onSubmit={submit} title={<Trans>Choose a new password</Trans>}>
       {complete ? (
         <div role="status" className="w-full text-center">
-          <p className="text-lg">
+          <p className="text-heading3">
             <Trans>Password updated</Trans>
           </p>
           <Link to="/sign-in" className="mt-6 inline-block font-medium">
@@ -519,7 +524,7 @@ export function PasswordResetPage() {
             className="mt-4"
           />
           {error ? (
-            <p role="alert" className="mt-3 w-full text-sm text-destructive">
+            <p role="alert" className="mt-3 w-full text-body text-destructive">
               {error}
             </p>
           ) : null}
@@ -549,18 +554,42 @@ export function AuthFrame({
   onSubmit: (event: React.FormEvent) => void;
   children: React.ReactNode;
 }) {
+  const { t } = useLingui();
+  const server = desktopBridge()?.server;
   return (
-    <div className="flex min-h-full items-center justify-center bg-background px-6 py-16 text-foreground">
-      <form onSubmit={onSubmit} className="flex w-[460px] flex-col items-center">
-        <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-muted">
-          <span className="h-5 w-[9px] rounded-full bg-primary" />
-          <span className="h-5 w-[9px] rounded-full bg-primary" />
-        </div>
-        <h1 aria-live="polite" className="mb-9 mt-7 text-4xl font-medium tracking-tight">
-          {title}
-        </h1>
-        {children}
-      </form>
+    <div
+      className="flex min-h-full flex-col bg-background text-foreground"
+      data-rakazo-surface="auth"
+    >
+      <div className="app-drag flex items-center gap-2 px-5 py-[18px]">
+        <WindowChrome />
+        {server ? (
+          <IconTooltip label={t`Change server`}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t`Change server`}
+              className="app-no-drag ml-auto text-muted-foreground"
+              onClick={() => void server.change()}
+            >
+              <Server />
+            </Button>
+          </IconTooltip>
+        ) : null}
+      </div>
+      <div className="flex flex-1 items-center justify-center px-6 pb-16">
+        <form onSubmit={onSubmit} className="flex w-full max-w-[460px] flex-col items-center">
+          <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-muted">
+            <span className="h-5 w-[9px] rounded-full bg-primary" />
+            <span className="h-5 w-[9px] rounded-full bg-primary" />
+          </div>
+          <h1 aria-live="polite" className="mb-9 mt-7 text-display font-medium tracking-tight">
+            {title}
+          </h1>
+          {children}
+        </form>
+      </div>
     </div>
   );
 }

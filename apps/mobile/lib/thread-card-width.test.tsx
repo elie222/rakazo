@@ -2,7 +2,7 @@
 
 import type { MessageBlock } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode, Ref } from "react";
-import { act } from "react";
+import { act, createContext } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { Linking } from "react-native";
@@ -92,6 +92,7 @@ vi.mock("./native", () => ({
 }));
 
 vi.mock("@rakazo/chat-ui/native", () => ({
+  MarkdownLongPressContext: createContext(undefined),
   ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
   withBlockMentions: <T,>(blocks: T) => blocks,
 }));
@@ -112,6 +113,8 @@ vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
 vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
 vi.mock("../components/ComputerCard", () => ({ ComputerCard: () => null }));
+vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
+vi.mock("../components/thread/mcp-app-card", () => ({ McpAppCard: () => null }));
 vi.mock("../components/inline-image-attachment", () => ({
   InlineImageAttachment: ({ name, onOpen }: { name: string; onOpen: () => void }) => (
     <button type="button" aria-label={name} onClick={onOpen} />
@@ -138,7 +141,7 @@ function Bubble(props: Partial<BubbleProps> & Pick<BubbleProps, "message">) {
       onAnswer={async () => undefined}
       onOpenBot={() => undefined}
       onOpenComputer={() => undefined}
-      onPreviewMarkdown={() => undefined}
+      onPreviewFile={() => undefined}
       onPreviewImage={() => undefined}
       onOpenPeerChat={() => undefined}
       actionProps={{}}

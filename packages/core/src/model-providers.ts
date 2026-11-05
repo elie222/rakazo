@@ -93,16 +93,20 @@ export const POPULAR_MODEL_PROVIDER_IDS = [
 const DEFAULT_PROVIDER_COUNT = POPULAR_MODEL_PROVIDER_IDS.length;
 const POPULAR_MODEL_PROVIDER_IDS_LIST: readonly string[] = POPULAR_MODEL_PROVIDER_IDS;
 
-/** Popular providers in curated order, then the rest in their original order. */
+/** Popular providers in curated order, then the rest by name. */
 export function popularModelProvidersFirst<T>(
   items: readonly T[],
   providerId: (item: T) => string,
+  name: (item: T) => string,
 ): T[] {
   const rank = (item: T) => {
     const index = POPULAR_MODEL_PROVIDER_IDS_LIST.indexOf(providerId(item));
     return index === -1 ? DEFAULT_PROVIDER_COUNT : index;
   };
-  return [...items].sort((a, b) => rank(a) - rank(b));
+  return [...items].sort(
+    (a, b) =>
+      rank(a) - rank(b) || name(a).localeCompare(name(b), undefined, { sensitivity: "base" }),
+  );
 }
 
 /**

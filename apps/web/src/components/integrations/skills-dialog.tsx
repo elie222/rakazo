@@ -106,7 +106,7 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
         <div data-testid="skills-git-import" className="max-w-xl space-y-6">
           <div className="flex items-center gap-2">
             {back(() => setImporting(false))}
-            <h2 className="text-[17px] font-medium text-foreground">
+            <h2 className="text-heading3 font-medium text-foreground">
               <Trans>From GitHub</Trans>
             </h2>
           </div>
@@ -145,7 +145,7 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
     return (
       <div className="space-y-8">
         <section data-testid="your-skills">
-          <h3 className="mb-2 px-2.5 text-[14px] font-medium text-muted-foreground">
+          <h3 className="mb-2 px-2.5 text-body font-medium text-muted-foreground">
             <Trans>Your skills</Trans>
           </h3>
           <div className="px-2.5">
@@ -154,7 +154,7 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
         </section>
         {skillSets.length ? (
           <section data-testid="plugin-skill-sets">
-            <h3 className="mb-2 px-2.5 text-[14px] font-medium text-muted-foreground">
+            <h3 className="mb-2 px-2.5 text-body font-medium text-muted-foreground">
               <Trans>Plugins</Trans>
             </h3>
             <div className="grid grid-cols-2 gap-2">
@@ -170,8 +170,8 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
                   >
                     <PluginLogo name={set.name} logo={set.logo} site={set.site} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] font-medium">{set.name}</span>
-                      <span className="block truncate text-[13px] text-muted-foreground">
+                      <span className="block truncate text-body-lg font-medium">{set.name}</span>
+                      <span className="block truncate text-body-sm text-muted-foreground">
                         <Plural value={skillCount(install)} one="# skill" other="# skills" />
                       </span>
                     </span>
@@ -182,7 +182,7 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
           </section>
         ) : null}
         <section data-testid="skill-packs-section">
-          <h3 className="mb-2 px-2.5 text-[14px] font-medium text-muted-foreground">
+          <h3 className="mb-2 px-2.5 text-body font-medium text-muted-foreground">
             <Trans>Browse</Trans>
           </h3>
           <Input
@@ -201,7 +201,7 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
           {catalog.error || catalog.data?.unavailableRegistries.length ? (
             <div
               role="alert"
-              className="mb-4 flex items-center gap-3 text-sm text-muted-foreground"
+              className="mb-4 flex items-center gap-3 text-body text-muted-foreground"
             >
               <Trans>Some plugins could not be loaded.</Trans>
               <Button variant="outline" size="sm" onClick={() => void catalog.refetch()}>

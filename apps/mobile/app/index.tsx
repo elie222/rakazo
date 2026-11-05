@@ -16,6 +16,7 @@ import {
   Alert,
   AppState,
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   Text,
@@ -30,6 +31,7 @@ import { ActivitySection } from "../components/inbox-activity";
 import { InboxHeader } from "../components/inbox-header";
 import { InboxListFooter, SWIPE_ROWS, useInboxRenderItem } from "../components/inbox-render-item";
 import { CompactRowsContext, SelectedChatContext } from "../components/inbox-rows";
+import { OrganizationTitleMenu } from "../components/organization-menu";
 import { PickChatPane } from "../components/pick-chat-pane";
 import { useUnreadJumpPills } from "../components/unread-jump-overlay";
 import { fetchSpaceActivity } from "../lib/activity";
@@ -52,12 +54,14 @@ import {
   unreadChatCount,
 } from "../lib/app-badge";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
+import { explicitSignInRoute } from "../lib/auth-routing";
 import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
 import { isPaywallShown } from "../lib/billing";
 import type { CreateAction } from "../lib/create-chooser";
 import { createInboxBot } from "../lib/create-inbox-bot";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
+import { hapticImpact, hapticSelection } from "../lib/haptics";
 import { getActiveUiLocale, t, useI18n } from "../lib/i18n";
 import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox-spaces";
@@ -77,11 +81,20 @@ import { applyUnreadOverrides, withoutArchiving } from "../lib/inbox-swipe";
 import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
 import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import {
+  ensureOrganizations,
+  organizationSwitchActions,
+  organizationSwitchEpoch,
+  subscribeOrganizationSwitch,
+  useOrganizations,
+} from "../lib/organizations";
 import type { OrganizeTarget } from "../lib/organize-target";
 import { findOrganizeTarget } from "../lib/organize-target";
 import { offerPasskeyOnce } from "../lib/passkey";
 import { ACTIVITY_POLL_INTERVAL_MS, INBOX_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { registerPushToken } from "../lib/push";
+import { forgetReferrals, rememberReferral } from "../lib/referral";
+import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
 import { loadSavedInbox, saveInbox } from "../lib/saved-chats";
 import {
   currentReadySessionGeneration,
@@ -136,9 +149,13 @@ export function HomeSession({
 }: InboxPaneProps & { embedded?: boolean }) {
   const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const ready = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
+  const organizationEpoch = useSyncExternalStore(
+    subscribeOrganizationSwitch,
+    organizationSwitchEpoch,
+  );
   return (
     <Home
-      key={`${generation}:${ready}`}
+      key={`${generation}:${ready}:${organizationEpoch}`}
       embedded={embedded}
       onSelectSpace={onSelectSpace}
       onShareSelect={onShareSelect}
@@ -166,6 +183,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   );
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [hasSession, setHasSession] = useState(false);
+  const [returningUser, setReturningUser] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [organizeTarget, setOrganizeTarget] = useState<OrganizeTarget | null>(null);
   const organizeRequestId = useRef(0);
@@ -206,6 +224,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   );
 
   const toggleActivityMode = useCallback(() => {
+    hapticSelection();
     setActivityMode((on) => {
       const next = !on;
       void saveActivityMode(next);
@@ -246,17 +265,20 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         apiBase !== currentApiBase()
       )
         return;
-      if (nextMe.billingEnabled) {
+      if (!nextMe.billingEnabled) forgetReferrals();
+      else {
+        // Filed under the Space it was fetched for, so a late answer never shows in another.
+        const spaceId = selectedSpaceId();
         void rpc("billing/status")
           .then((billing) => {
-            if (
+            const current =
               requestId === inboxRequestId.current &&
               generation === currentSessionGeneration() &&
-              apiBase === currentApiBase() &&
-              billing.funding !== undefined &&
-              !billing.access &&
-              !isPaywallShown()
-            )
+              apiBase === currentApiBase();
+            // Only while this session is still the live one: a reply after sign-out must not
+            // restore the previous owner's link.
+            if (current) rememberReferral(spaceId, billing.referral);
+            if (current && billing.funding !== undefined && !billing.access && !isPaywallShown())
               router.push("/paywall");
           })
           .catch(() => undefined);
@@ -278,6 +300,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         }
       }
       inboxLoaded.current = true;
+      void ensureOrganizations();
       setBadgeLoad({ generation: badgeGeneration });
       setLoadFailure(null);
       saveInbox(
@@ -320,8 +343,11 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   }, [loadBots]);
 
   useEffect(() => {
-    void loadSessionToken().then((token) => {
+    void Promise.all([loadSessionToken(), hasSignedInBefore()]).then(([token, before]) => {
+      // Sessions saved before this mark existed are recorded on their first open.
+      if (token) void rememberSignedIn();
       setHasSession(Boolean(token));
+      setReturningUser(before);
       setSessionLoaded(true);
     });
   }, []);
@@ -506,8 +532,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     right: embedded ? 0 : insets.right,
   });
   // Liquid Glass uses the native bar: glass bar items and a native menu.
-  // The list beside a chat has no navigation bar of its own.
-  const nativeHeader = iosAtLeast(26) && !embedded;
+  // The list beside a chat and the share picker have no navigation bar of their own.
+  const nativeHeader = iosAtLeast(26) && !embedded && !onShareSelect;
   const headerHeight = useHeaderHeightIfAny();
   const listRef = useRef<FlatList<InboxItem>>(null);
   const jumpSignals = useSyncExternalStore(
@@ -662,18 +688,25 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [deleteInboxSpace, t],
   );
 
-  const createQuickBot = useCallback(async () => {
-    if (creatingBotRef.current || spaceActionRef.current.busy || spaceActionRef.current.recoveryId)
-      return;
-    creatingBotRef.current = true;
-    try {
-      await createInboxBot({ refreshBots, openChat });
-    } catch (err) {
-      setError(errorText(err, t("Could not create bot")));
-    } finally {
-      creatingBotRef.current = false;
-    }
-  }, [openChat, refreshBots, t]);
+  const createQuickBot = useCallback(
+    async (spaceId?: string) => {
+      if (
+        creatingBotRef.current ||
+        spaceActionRef.current.busy ||
+        spaceActionRef.current.recoveryId
+      )
+        return;
+      creatingBotRef.current = true;
+      try {
+        await createInboxBot({ refreshBots, openChat, spaceId });
+      } catch (err) {
+        setError(errorText(err, t("Could not create bot")));
+      } finally {
+        creatingBotRef.current = false;
+      }
+    },
+    [openChat, refreshBots, t],
+  );
 
   const runCreateAction = useCallback(
     (action: CreateAction) => {
@@ -685,6 +718,13 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [createQuickBot, router],
   );
 
+  const organizations = useOrganizations(hasSession && !onShareSelect).data;
+  const hasOrganizationMenu = organizationSwitchActions(organizations).length > 0;
+  const headerTitle = useMemo(
+    () => (hasOrganizationMenu ? () => <OrganizationTitleMenu list={organizations} /> : undefined),
+    [hasOrganizationMenu, organizations],
+  );
+
   useHomeHeader({
     nativeHeader,
     ready,
@@ -693,6 +733,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     activityMode,
     toggleActivityMode,
     runCreateAction,
+    headerTitle,
   });
 
   const openBot = useCallback(
@@ -736,6 +777,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         return;
       }
       if (!target) return;
+      if (Platform.OS === "android") hapticImpact();
       setOrganizeTarget(target);
       void loadBots();
     },
@@ -764,6 +806,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     botSections,
     chooseInboxSpace,
     confirmDeleteSpace,
+    createBotInSpace: createQuickBot,
     day,
     deleteSection,
     editSectionFromMenu,
@@ -787,7 +830,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       </View>
     );
   }
-  if (!hasSession) return <Redirect href="/sign-in" />;
+  if (!hasSession) return <Redirect href={returningUser ? explicitSignInRoute : "/sign-in"} />;
   // With nothing to show, the failure takes the screen; over saved chats it stays one line.
   // Headings of empty saved Spaces are not chats, so they do not hide the failure.
   const showLoadFailure = Boolean(loadFailure) && inboxHasNoChats(listData);
@@ -802,6 +845,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           toggleActivityMode={toggleActivityMode}
           runCreateAction={runCreateAction}
           columnInsets={columnInsets}
+          title={headerTitle?.()}
         />
       )}
 
@@ -851,10 +895,16 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                         <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
                       </Pressable>
                     ) : null}
-                    {!onShareSelect &&
-                    activityMode &&
-                    (activity.active.length > 0 || activity.recent.length > 0) ? (
-                      <ActivitySection activity={activity} bots={bots} />
+                    {/* Folds are saved per account, so wait for it before offering them. */}
+                    {!onShareSelect && activityMode && userId ? (
+                      <ActivitySection
+                        activity={activity}
+                        bots={visible}
+                        groups={visibleGroups}
+                        toggledSections={collapsed}
+                        onToggleSection={toggleCollapsed}
+                        openChat={openChat}
+                      />
                     ) : null}
                   </>
                 }

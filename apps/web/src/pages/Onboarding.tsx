@@ -238,7 +238,11 @@ export function OnboardingPage() {
     for (const entry of catalog) {
       if (!seen.has(entry.provider)) seen.set(entry.provider, entry);
     }
-    return popularModelProvidersFirst([...seen.values()], (entry) => entry.provider);
+    return popularModelProvidersFirst(
+      [...seen.values()],
+      (entry) => entry.provider,
+      (entry) => entry.providerName ?? entry.provider,
+    );
   }, [catalog]);
 
   const modelsForProvider = useMemo(
@@ -268,7 +272,7 @@ export function OnboardingPage() {
       cloudflareRoutingReady &&
       (isOpenAiCompatible ? openAiCompatibleReady : acceptsKey && apiKey.trim()),
   );
-  // Subscriptions and the common API providers first; every other provider follows.
+  // Subscriptions and the common API providers first; every other provider follows by name.
   const providerOptions = useMemo(() => {
     const byId = new Map(providers.map((entry) => [entry.provider, entry]));
     // Beside the subscriptions, the key-based options say API.
@@ -284,16 +288,20 @@ export function OnboardingPage() {
         label: optionLabel(option.provider, option.auth),
       })),
     ];
-    const rest = providers
-      .filter(
-        (entry) => !MAIN_PROVIDER_OPTIONS.some((option) => option.provider === entry.provider),
-      )
-      .flatMap((entry) => {
-        const item = { value: entry.provider, label: entry.providerName ?? entry.provider };
-        return entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-          ? [item, { value: "ollama-preset", label: t`Ollama Cloud` }]
-          : [item];
-      });
+    const rest = popularModelProvidersFirst(
+      providers
+        .filter(
+          (entry) => !MAIN_PROVIDER_OPTIONS.some((option) => option.provider === entry.provider),
+        )
+        .flatMap((entry) => {
+          const item = { value: entry.provider, label: entry.providerName ?? entry.provider };
+          return entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+            ? [item, { value: "ollama-preset", label: t`Ollama Cloud` }]
+            : [item];
+        }),
+      (option) => option.value,
+      (option) => option.label,
+    );
     return { main, rest };
   }, [billingEnabled, providers, t]);
   // Base UI Select.Value only resolves labels when Root gets `items`.
@@ -558,10 +566,10 @@ export function OnboardingPage() {
         {step === "survey" ? <SignupSurvey onDone={() => setSurveyDone(true)} /> : null}
         {step === "model" ? (
           <div>
-            <h1 className="text-[32px] font-medium text-foreground">
+            <h1 className="text-display font-medium text-foreground">
               <Trans>Connect a model</Trans>
             </h1>
-            <div className="mt-8 block text-sm font-medium text-foreground">
+            <div className="mt-8 block text-body font-medium text-foreground">
               <span>
                 <Trans>Provider</Trans>
               </span>
@@ -619,7 +627,7 @@ export function OnboardingPage() {
             {provider ? (
               <>
                 {isOpenAiCompatible ? (
-                  <div className="mt-6 block text-sm text-foreground">
+                  <div className="mt-6 block text-body text-foreground">
                     <label htmlFor={`${fieldId}-base-url`} className="block font-medium">
                       <Trans>Server URL</Trans>
                       <Input
@@ -739,7 +747,7 @@ export function OnboardingPage() {
                       <div className="rounded-lg border border-border px-3.5 py-3">
                         {oauth.mode === "auth-url" ? (
                           <>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-body text-muted-foreground">
                               <Trans>
                                 Sign in at{" "}
                                 <a
@@ -768,7 +776,7 @@ export function OnboardingPage() {
                                 <Trans>Submit</Trans>
                               </Button>
                             </div>
-                            <p className="mt-2 text-sm text-muted-foreground">
+                            <p className="mt-2 text-body text-muted-foreground">
                               <Plural
                                 value={Math.ceil(oauth.expiresInSeconds / 60)}
                                 one="Waiting for sign-in — the link expires in about # minute."
@@ -778,7 +786,7 @@ export function OnboardingPage() {
                           </>
                         ) : (
                           <>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-body text-muted-foreground">
                               {popupBlocked ? (
                                 <Trans>
                                   Open{" "}
@@ -808,7 +816,7 @@ export function OnboardingPage() {
                               )}
                             </p>
                             <div className="mt-2 flex items-center gap-3">
-                              <p className="font-mono text-[22px] tracking-[0.2em] text-foreground">
+                              <p className="font-mono text-heading2 tracking-[0.2em] text-foreground">
                                 {oauth.userCode}
                               </p>
                               <Button
@@ -824,7 +832,7 @@ export function OnboardingPage() {
                                 {codeCopied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
                               </Button>
                             </div>
-                            <p className="mt-2 text-sm text-muted-foreground">
+                            <p className="mt-2 text-body text-muted-foreground">
                               <Plural
                                 value={Math.ceil(oauth.expiresInSeconds / 60)}
                                 one="Waiting for sign-in — the code expires in about # minute."
@@ -856,7 +864,7 @@ export function OnboardingPage() {
                   <div className="mt-4 grid gap-4">
                     <label
                       htmlFor={`${fieldId}-account-id`}
-                      className="block text-sm font-medium text-foreground"
+                      className="block text-body font-medium text-foreground"
                     >
                       <Trans>Account ID</Trans>
                       <Input
@@ -871,7 +879,7 @@ export function OnboardingPage() {
                     {isCloudflareGateway ? (
                       <label
                         htmlFor={`${fieldId}-gateway-id`}
-                        className="block text-sm font-medium text-foreground"
+                        className="block text-body font-medium text-foreground"
                       >
                         <Trans>Gateway ID</Trans>
                         <Input
@@ -889,7 +897,7 @@ export function OnboardingPage() {
                 {acceptsKey ? (
                   isOpenAiCompatible ? (
                     <CompatibleKeyField
-                      className="mt-4 block text-sm text-muted-foreground"
+                      className="mt-4 block text-body text-muted-foreground"
                       baseUrl={baseUrl}
                     >
                       <Input
@@ -908,7 +916,7 @@ export function OnboardingPage() {
                   ) : (
                     <label
                       htmlFor={`${fieldId}-api-key`}
-                      className="mt-4 block text-sm font-medium text-foreground"
+                      className="mt-4 block text-body font-medium text-foreground"
                     >
                       {subscriptionSignIn ? (
                         <Trans>Or paste an API key</Trans>
@@ -951,7 +959,7 @@ export function OnboardingPage() {
                 ) : null}
                 {/* The model is chosen once the account is connected; sign-in uses the default. */}
                 {!isOpenAiCompatible && acceptsKey && apiKey.trim() ? (
-                  <div className="mt-6 block text-sm text-foreground">
+                  <div className="mt-6 block text-body text-foreground">
                     <span className="font-medium">
                       <Trans>Model</Trans>
                     </span>
@@ -985,11 +993,11 @@ export function OnboardingPage() {
               </>
             ) : null}
             {notice ? (
-              <p className="mt-3 text-sm text-success" role="status">
+              <p className="mt-3 text-body text-success" role="status">
                 {notice}
               </p>
             ) : null}
-            {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+            {error ? <p className="mt-3 text-body text-destructive">{error}</p> : null}
             <Button
               className="mt-6"
               disabled={!credits && !canSaveModel}
@@ -1001,7 +1009,7 @@ export function OnboardingPage() {
         ) : null}
         {step === "bot" ? (
           <div>
-            <p className="text-sm text-destructive">{error}</p>
+            <p className="text-body text-destructive">{error}</p>
             <Button className="mt-4" onClick={() => void createFirstBot()}>
               <Trans>Try again</Trans>
             </Button>

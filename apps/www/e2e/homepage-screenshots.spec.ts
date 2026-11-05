@@ -66,6 +66,9 @@ test("homepage screenshots", async ({ page }, testInfo) => {
   await openHomepage(page, "/ja/");
   await captureScreenshot(page, testInfo, "03-marketing-homepage-ja");
 
+  await openHomepage(page, "/pl/");
+  await captureScreenshot(page, testInfo, "03-marketing-homepage-pl");
+
   await openHomepage(page, "/he/");
   await captureScreenshot(page, testInfo, "03-marketing-homepage-he");
 
@@ -89,6 +92,8 @@ test.describe("on an iPhone", () => {
     await captureScreenshot(page, testInfo, "02-marketing-homepage-iphone");
     await openAnsweredOnboarding(page);
     await captureScreenshot(page, testInfo, "06-marketing-demo-onboarding-iphone");
+    await openHomepage(page, "/pl/");
+    await captureScreenshot(page, testInfo, "07-marketing-homepage-pl-iphone");
   });
 });
 

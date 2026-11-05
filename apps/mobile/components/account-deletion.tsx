@@ -17,6 +17,7 @@ import { replaceWithSignIn } from "../lib/auth-routing";
 import { promptAccountDeletion } from "../lib/delete-account-prompt";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
+import { forgetSignedIn } from "../lib/returning-user";
 import { continueWithSso } from "../lib/sso";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
@@ -110,13 +111,23 @@ export function useAccountDeletion({
       if (hasPassword) await deleteAccount(value);
       else {
         const current = await fetchAccountSecurity();
+        // A password gained while the dialog was open turns the code field into a
+        // password field; the code must not survive as its value.
+        if (current.hasPassword !== security?.hasPassword) setPassword("");
         setSecurity(current);
         setSsoReauthenticated(current.freshOidcAuth);
         const token = codeSent ? value.trim() : undefined;
-        if (current.hasPassword || (!current.freshOidcAuth && !token)) return;
+        // Nothing can be sent without a password, a fresh sign-in proof, or a code:
+        // an expired proof says so; the switched field asks for the new password.
+        if (current.hasPassword) return;
+        if (!current.freshOidcAuth && !token) {
+          setError(t("Sign in again"));
+          return;
+        }
         await deleteAccount(undefined, token);
       }
       setOpen(false);
+      await forgetSignedIn();
       replaceWithSignIn("/sign-in");
     } catch (err) {
       setError(errorText(err, t("Could not delete account")));

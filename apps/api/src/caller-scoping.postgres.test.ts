@@ -3,7 +3,13 @@ import { RPCHandler } from "@orpc/server/fetch";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, createDb, runAsSystem, runAsTenant } from "@rakazo/db";
+import {
+  asSystem,
+  createDb,
+  createOrganizationForUser,
+  runAsSystem,
+  runAsTenant,
+} from "@rakazo/db";
 import { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { queueMcpConnectedRun } from "./mcp-approval.js";
@@ -63,7 +69,9 @@ describePostgres("caller and tenant scoping (PostgreSQL)", () => {
   });
 
   afterAll(async () => {
-    await system.organization.deleteMany({ where: { id: organizationId } });
+    await system.organization.deleteMany({
+      where: { OR: [{ id: organizationId }, { members: { some: { userId: userA } } }] },
+    });
     await system.user.deleteMany({ where: { id: { in: [userA, userB] } } });
     for (const db of [runtime, owner]) {
       await db?.prisma.$disconnect();
@@ -283,5 +291,30 @@ describePostgres("caller and tenant scoping (PostgreSQL)", () => {
     expect(listed).toContain(own.id);
     expect(listed).not.toContain(elsewhere.id);
     expect(await call("boards/list")).toEqual([expect.objectContaining({ spaceId: shared })]);
+  });
+
+  it("scopes a person with two organizations to the one their Space is in", async () => {
+    const work = await createOrganizationForUser(system, { userId: userA, name: "Work" });
+    const inWork: Actor = { ...actorA, spaceId: work.defaultSpaceId };
+    const workBot = await bot(work.defaultSpaceId, userA, { name: "Work" });
+    const sharedBot = await bot(shared, userA, { name: "Shared" });
+    const router = createRouter({ prisma: runtime.prisma, env: {} } as unknown as RouterDeps);
+    const listed = async (actor: Actor) => {
+      const { response } = await new RPCHandler(router).handle(
+        new Request("https://api.example.test/rpc/bots/list", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: {} }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
+      return ((await response!.json()) as { json: Array<{ id: string }> }).json.map(
+        (row) => row.id,
+      );
+    };
+
+    expect(await listed(inWork)).toEqual([workBot.id]);
+    expect(await listed(actorA)).toContain(sharedBot.id);
+    expect(await listed(actorA)).not.toContain(workBot.id);
   });
 });

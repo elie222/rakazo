@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { bootstrapUserSpace } from "./bootstrap-user.js";
+import { bootstrapUserSpace, createOrganizationWithDefaultSpace } from "./bootstrap-user.js";
 import type { PrismaClient } from "./client.js";
 
 function makePrisma(settings: { id: string; ownerUserId: string | null } | null) {
@@ -146,5 +146,33 @@ describe("bootstrapUserSpace concurrency", () => {
     );
 
     expect(result.spaceId).toBe("org-winner");
+  });
+});
+
+describe("createOrganizationWithDefaultSpace", () => {
+  it("names the default Space after the organization and gives it the organization's id", async () => {
+    const prisma = makePrisma(null);
+    const id = await createOrganizationWithDefaultSpace(prisma as unknown as PrismaClient, {
+      userId: "user-1",
+      orgId: "org-work",
+      name: "Work",
+      slug: "org-random",
+    });
+
+    expect(id).toBe("org-work");
+    expect(prisma.organization.create.mock.calls[0]![0].data).toMatchObject({
+      id: "org-work",
+      name: "Work",
+      slug: "org-random",
+    });
+    expect(prisma.space.create.mock.calls[0]![0].data).toMatchObject({
+      id: "org-work",
+      organizationId: "org-work",
+      name: "Work",
+      isDefault: true,
+    });
+    expect(prisma.memoryDocument.create).toHaveBeenCalledOnce();
+    expect(prisma.notificationPreference.create).toHaveBeenCalledOnce();
+    expect(prisma.deploymentSettings.upsert).not.toHaveBeenCalled();
   });
 });

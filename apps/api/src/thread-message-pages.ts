@@ -142,7 +142,7 @@ async function withoutPeerRunMessages<
       return blocks.some(isBackgroundInputBlock);
     }
     if (!peerRunIds.has(row.runId)) return true;
-    // Keep peer receipts (chips), ask cards, and the bot's own text, chart, or attachment reply.
+    // Keep peer receipts (chips), ask cards, and the bot's text, chart, page or attachment reply.
     return blocks.some(
       (block) =>
         block.kind === "bot_message_sent" ||
@@ -150,8 +150,10 @@ async function withoutPeerRunMessages<
         block.kind === "ask" ||
         block.kind === "text" ||
         block.kind === "chart" ||
+        block.kind === "app" ||
         block.kind === "file" ||
-        block.kind === "image",
+        block.kind === "image" ||
+        block.kind === "page",
     );
   });
 }
@@ -218,8 +220,10 @@ export function shouldForwardPeerThreadEvent(event: {
           block.kind === "ask" ||
           block.kind === "text" ||
           block.kind === "chart" ||
+          block.kind === "app" ||
           block.kind === "file" ||
-          block.kind === "image"),
+          block.kind === "image" ||
+          block.kind === "page"),
     )
   );
 }

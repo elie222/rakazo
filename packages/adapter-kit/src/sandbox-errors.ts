@@ -78,3 +78,23 @@ export class SandboxDamagedError extends Error {
     this.name = "SandboxDamagedError";
   }
 }
+
+/**
+ * The provider would not start the computer at the size asked for: the operator's account does
+ * not offer it, or the computer's files would not fit a smaller one. The computer is unchanged.
+ */
+export class SandboxSizeUnavailableError extends Error {
+  readonly code = "SANDBOX_SIZE_UNAVAILABLE";
+  constructor(
+    readonly reason: "not_offered" | "too_small",
+    options?: { cause?: unknown },
+  ) {
+    super(
+      reason === "too_small"
+        ? "The computer's files do not fit a smaller size"
+        : "This computer size is not available",
+      options,
+    );
+    this.name = "SandboxSizeUnavailableError";
+  }
+}

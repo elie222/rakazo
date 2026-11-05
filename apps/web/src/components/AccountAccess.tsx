@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account-security";
 import { authClient } from "../lib/auth";
 import { clearComposerDrafts } from "../lib/composer-draft";
+import { forgetSignedIn } from "../lib/returning-user";
 import { runSsoFlow } from "../lib/sso-flow";
 import { authErrorText } from "../lib/user-error";
 import { SettingsRow } from "./SettingsRows";
@@ -93,7 +94,7 @@ export function DeleteAccountForm({
     <>
       {open ? (
         <div className="mt-3 space-y-3">
-          <p className="text-sm">
+          <p className="text-body">
             <Trans>This permanently deletes your account and data.</Trans>
           </p>
           {!security ? (
@@ -191,6 +192,7 @@ export function DeleteAccountForm({
                 if (result.error)
                   throw new Error(authErrorText(result.error, t`Could not continue`));
                 clearComposerDrafts();
+                forgetSignedIn();
                 window.location.assign("/sign-in");
               })
             }
@@ -200,7 +202,7 @@ export function DeleteAccountForm({
         </div>
       ) : null}
       {error ? (
-        <p role="alert" className="mt-2 text-[12.5px] text-destructive">
+        <p role="alert" className="mt-2 text-body-sm text-destructive">
           {error}
         </p>
       ) : null}
@@ -245,7 +247,7 @@ export function LinkSsoRow() {
       }
     >
       {error ? (
-        <p role="alert" className="mt-2 text-[12.5px] text-destructive">
+        <p role="alert" className="mt-2 text-body-sm text-destructive">
           {error}
         </p>
       ) : null}

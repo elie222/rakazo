@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Bot, ComputerStatus } from "@rakazo/contracts";
 import { BotAvatar, Button } from "@rakazo/ui-web";
-import { Maximize2 } from "lucide-react";
+import { HardDrive, Maximize2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { ComputersUnavailableHint } from "../../components/ComputersUnavailableHint";
 import { screenIframeSandbox } from "../../lib/computer-screen";
@@ -26,9 +26,50 @@ type ComputerPanelProps = {
   onRecoveryDismissed: () => void;
   onOpenComputerSettings?: () => void;
   onOpen: () => void;
+  cleaningUpDisk?: boolean;
+  onCleanUpDisk?: () => void;
+  onDismissDiskWarning?: () => void;
 };
 
 export function ComputerPanel({
+  cleaningUpDisk,
+  onCleanUpDisk,
+  onDismissDiskWarning,
+  ...props
+}: ComputerPanelProps) {
+  const percent = props.computer?.diskFullPercent;
+  const warn = percent !== undefined && onCleanUpDisk && onDismissDiskWarning;
+  // The preview keeps its place either way, so the warning never remounts the live screen.
+  return (
+    <>
+      <ComputerPreview {...props} />
+      {warn && (
+        <div
+          data-testid="computer-disk-warning"
+          className="mt-2 flex items-center gap-2 rounded-[14px] border border-warning/40 py-1.5 ps-3 pe-1.5 text-body"
+        >
+          <HardDrive aria-hidden size={15} strokeWidth={1.9} className="shrink-0 text-warning" />
+          <span className="min-w-0 flex-1">
+            <Trans>Computer is {percent}% full</Trans>
+          </span>
+          <Button variant="secondary" size="sm" disabled={cleaningUpDisk} onClick={onCleanUpDisk}>
+            <Trans>Clean up</Trans>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t`Dismiss`}
+            onClick={onDismissDiskWarning}
+          >
+            <X size={15} aria-hidden />
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ComputerPreview({
   bot,
   computer,
   computerOpen,
@@ -45,7 +86,7 @@ export function ComputerPanel({
   onRecoveryDismissed,
   onOpenComputerSettings,
   onOpen,
-}: ComputerPanelProps) {
+}: Omit<ComputerPanelProps, "cleaningUpDisk" | "onCleanUpDisk" | "onDismissDiskWarning">) {
   // A clickable preview invites a boot that costs money, so an idle computer only wakes from its button.
   const idle =
     !computerOpen &&
@@ -72,12 +113,12 @@ export function ComputerPanel({
           />
           <span
             aria-hidden
-            className="absolute -end-3 -top-2 text-[11px] font-medium leading-none text-muted-foreground/70"
+            className="absolute -end-3 -top-2 text-caption font-medium leading-none text-muted-foreground/70"
           >
             z<sup>z</sup>
           </span>
         </div>
-        <span className="text-sm text-muted-foreground">
+        <span className="text-body text-muted-foreground">
           <Trans>Asleep</Trans>
         </span>
         <Button variant="secondary" size="sm" data-testid="computer-preview-open" onClick={onOpen}>
@@ -101,13 +142,13 @@ export function ComputerPanel({
       >
         {computerOpen ? (
           <div
-            className={`grid h-full place-items-center text-sm text-muted-foreground/80 ${hideOnHover}`}
+            className={`grid h-full place-items-center text-body text-muted-foreground/80 ${hideOnHover}`}
           >
             <Trans>Open in full window</Trans>
           </div>
         ) : computer?.kind === "desktop" ? (
           <DesktopKindEmptyState
-            className={`grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80 ${hideOnHover}`}
+            className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}
           />
         ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
           <iframe
@@ -122,7 +163,7 @@ export function ComputerPanel({
           />
         ) : (
           <div
-            className={`grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80 ${hideOnHover}`}
+            className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}
           >
             {computerScreenError ??
               (showComputerRecoveryHint ? (
@@ -150,7 +191,7 @@ export function ComputerPanel({
             aria-label={t`Open`}
             onClick={onOpen}
           >
-            <span className="inline-flex items-center gap-2 rounded-full bg-background px-3.5 py-2 text-[14px] text-foreground shadow-md">
+            <span className="inline-flex items-center gap-2 rounded-full bg-background px-3.5 py-2 text-body text-foreground shadow-md">
               <Maximize2 size={15} strokeWidth={1.9} aria-hidden />
               <Trans>Open</Trans>
             </span>

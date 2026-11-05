@@ -1,15 +1,19 @@
 import { randomBytes } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import { runContinueJob } from "@rakazo/adapter-kit";
-import type { getBotSecretMetadata } from "@rakazo/adapters";
 import {
   archiveBot,
   checkpointAndStopComputer,
+  defaultVaultItemTitle,
   forgetBotSecret,
+  forgetPageShareSecrets,
   hasActiveComputerControl,
-  listBotSecretMetadata,
+  isSecretAlreadySaved,
+  listVaultItems,
+  newVaultItemName,
   normalizeSecretDestination,
   pageUrlOrigin,
+  relabelVaultItem,
   revealBotSecret,
   SPACE_VAULT_NOT_IN_USE,
   stopCancelledGroupRuns,
@@ -40,6 +44,7 @@ import {
   restoreBotUnderComputerQuota,
   SpaceDeletionInProgressError,
   settingsTarget,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { AgentImportServices } from "../agent-import.js";
@@ -74,6 +79,8 @@ const BOT_SECRET_INPUT_ERRORS = [
   "Credential cannot be used with this authentication method",
   "Remove the existing credential before changing its destination",
   "Credential limit reached",
+  "Invalid card",
+  "Invalid contact",
   SPACE_VAULT_NOT_IN_USE,
 ];
 
@@ -106,37 +113,78 @@ function vaultScope(actor: Actor, vault?: SettingsScope) {
   return { userId: actor.userId, spaceId: actor.spaceId, vault };
 }
 
+/**
+ * Save a vault item. One without a name is new and gets a free name from its title. One already
+ * saved under the name keeps its value when none is given, so its title or note can change alone.
+ */
 async function saveVaultCredential(
   deps: RouterDeps,
   scope: ReturnType<typeof vaultScope>,
-  input: Pick<VaultPutInput, "destination" | "value">,
+  input: Pick<VaultPutInput, "destination" | "value" | "title" | "note">,
 ) {
+  const { name } = input.destination;
+  if (input.value === undefined) {
+    if (!name) throw new ORPCError("BAD_REQUEST", { message: "A new item needs its value" });
+    try {
+      const labels = { title: input.title, note: input.note };
+      if (!(await relabelVaultItem(deps.prisma, scope, name, labels))) {
+        throw new ORPCError("NOT_FOUND", { message: "Credential not found" });
+      }
+    } catch (error) {
+      throw mapBotSecretStoreError(error);
+    }
+    return vaultItemDto(deps, scope, name);
+  }
+  const { value } = input;
   // A pasted page URL is saved under its site. One with a username or password is left
   // as typed, so the origin rule turns it down and the person can fix it.
   const site = pageUrlOrigin(input.destination.origin, { allowUserinfo: false, maxLength: 2048 });
-  let row: Awaited<ReturnType<typeof getBotSecretMetadata>>;
-  try {
-    row = await storeBotSecret({
+  const store = (itemName: string, createOnly: boolean) =>
+    storeBotSecret({
       prisma: deps.prisma,
       secretStore: deps.secrets,
       scope,
-      destination: site ? { ...input.destination, origin: site } : input.destination,
-      plaintext: input.value,
+      destination: { ...input.destination, name: itemName, ...(site ? { origin: site } : {}) },
+      plaintext: value,
+      title: input.title,
+      note: input.note,
+      createOnly,
     });
+  try {
+    if (name) {
+      await store(name, false);
+      return vaultItemDto(deps, scope, name);
+    }
+    // A new item is named from its title. It is only ever created, so another save that took
+    // the same name a moment earlier is never replaced; this one takes the next free name.
+    const base = input.title || defaultVaultItemTitle(input.destination, value);
+    for (let attempt = 0; ; attempt++) {
+      const fresh = await newVaultItemName(deps.prisma, scope, base, input.destination.auth.type);
+      try {
+        await store(fresh, true);
+        return vaultItemDto(deps, scope, fresh);
+      } catch (error) {
+        if (attempt >= 2 || !isSecretAlreadySaved(error)) throw error;
+      }
+    }
   } catch (error) {
     throw mapBotSecretStoreError(error);
   }
+}
+
+async function vaultItemDto(
+  deps: RouterDeps,
+  scope: ReturnType<typeof vaultScope>,
+  name: string,
+): Promise<BotSecretMetadata> {
+  const [row] = await listVaultItems(deps.prisma, deps.secrets, scope, name);
   if (!row) throw new ORPCError("CONFLICT", { message: "Credential was not saved" });
   return botSecretMetadataDto(row);
 }
 
-function botSecretMetadataDto(row: {
-  name: string;
-  origin: string;
-  auth: unknown;
-  createdAt: Date;
-  updatedAt: Date;
-}): BotSecretMetadata {
+function botSecretMetadataDto(
+  row: Awaited<ReturnType<typeof listVaultItems>>[number],
+): BotSecretMetadata {
   // Unreadable or no-longer-storable destinations become auth:null so the owner UI stays remove-only.
   const parsed = BotSecretAuth.safeParse(row.auth);
   let auth: BotSecretMetadata["auth"] = null;
@@ -152,6 +200,9 @@ function botSecretMetadataDto(row: {
     name: row.name,
     origin: row.origin,
     auth,
+    title: row.title,
+    note: row.note,
+    ...(row.preview ? { preview: row.preview } : {}),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -175,8 +226,7 @@ export function botIntroPrompt(input: {
     ]
       .filter(Boolean)
       .join(" "),
-    // Text streamed before ask_user is not kept once the run pauses, so the greeting
-    // goes in the question itself.
+    // The greeting goes in the question itself, so the card stands on its own.
     canAsk
       ? `Call ask_user right away, with no text before it. Its question greets them by first name in a few words and asks what they want you for, with ${options}. They can also type their own answer.`
       : `Greet them by first name in a few words and ask in one sentence what they want you for, suggesting ${options}.`,
@@ -240,7 +290,7 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
       },
       select: { id: true },
     });
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (run) await deps.jobs.enqueue(runContinueJob(run.id));
 }
 
@@ -261,7 +311,9 @@ export function botsRoutes(ctx: RouterContext) {
       create: authed.bots.create.handler(async ({ context, input }) => {
         let bot: Bot;
         try {
-          bot = await repos.createBot(context.actor, input);
+          // Older apps always send Original, which would pin every new bot to it.
+          const { avatarSet: _ignored, ...request } = input;
+          bot = await repos.createBot(context.actor, request);
         } catch (error) {
           throw mapSpaceLifecycleError(error);
         }
@@ -297,6 +349,7 @@ export function botsRoutes(ctx: RouterContext) {
             dailyCheckIns: source.dailyCheckIns,
             color: source.color,
             avatarSet: resolveBotAvatarSet(source.avatarSet),
+            avatarSetPinned: source.avatarSetPinned,
             computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
             modelProvider: source.modelProvider,
             modelId: source.modelId,
@@ -356,6 +409,16 @@ export function botsRoutes(ctx: RouterContext) {
         if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
         const thinkingLevel = input.thinkingLevel;
         if (!existing.thread) throw new IsolationError();
+        // Picking a set on one bot pins it unless it is the owner's default, which unpins it.
+        const avatarSetPinned =
+          input.avatarSet === undefined
+            ? undefined
+            : await deps.prisma.user
+                .findUniqueOrThrow({
+                  where: { id: context.actor.userId },
+                  select: { botAvatarSet: true },
+                })
+                .then((user) => input.avatarSet !== resolveBotAvatarSet(user.botAvatarSet));
         await commitBotUpdate({
           prisma: deps.prisma,
           notify: (threadId, seq) => deps.events.notify(threadId, seq),
@@ -375,6 +438,7 @@ export function botsRoutes(ctx: RouterContext) {
             notifyOnFinish: input.notifyOnFinish,
             color: input.color,
             avatarSet: input.avatarSet,
+            avatarSetPinned,
             pinned: input.pinned,
             memoryScope: input.memoryScope,
             sectionId: input.sectionId,
@@ -656,18 +720,27 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       remove: authed.groups.remove.handler(async ({ context, input }) => {
         const removed = await groupRepos.removeGroup(context.actor, input.groupId);
-        await stopCancelledGroupRuns(deps, context.actor, removed);
-        const cleanup = await Promise.allSettled(
-          removed.artifactStorageKeys.map((storageKey) =>
-            deps.artifacts.remove(
-              storageKey,
-              computerContext(context.actor, removed.contextBotId, `group-remove:${input.groupId}`),
+        try {
+          await stopCancelledGroupRuns(deps, context.actor, removed);
+        } finally {
+          // The group row is already gone, so a retry could no longer find these.
+          const cleanup = await Promise.allSettled(
+            removed.artifactStorageKeys.map((storageKey) =>
+              deps.artifacts.remove(
+                storageKey,
+                computerContext(
+                  context.actor,
+                  removed.contextBotId,
+                  `group-remove:${input.groupId}`,
+                ),
+              ),
             ),
-          ),
-        );
-        for (const result of cleanup) {
-          if (result.status === "rejected")
-            getLogger().error("group artifact cleanup", result.reason);
+          );
+          for (const result of cleanup) {
+            if (result.status === "rejected")
+              getLogger().error("group artifact cleanup", result.reason);
+          }
+          await forgetPageShareSecrets(deps.secrets, removed.pageShareSecrets);
         }
         return { ok: true as const };
       }),
@@ -706,8 +779,9 @@ export function botsRoutes(ctx: RouterContext) {
     },
     vault: {
       list: authed.vault.list.handler(async ({ context, input }) => {
-        const rows = await listBotSecretMetadata(
+        const rows = await listVaultItems(
           deps.prisma,
+          deps.secrets,
           vaultScope(context.actor, input?.scope),
         );
         return rows.map(botSecretMetadataDto);
@@ -747,7 +821,7 @@ export function botsRoutes(ctx: RouterContext) {
     botSecrets: {
       list: authed.botSecrets.list.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);
-        const rows = await listBotSecretMetadata(deps.prisma, vaultScope(context.actor));
+        const rows = await listVaultItems(deps.prisma, deps.secrets, vaultScope(context.actor));
         return rows.map(botSecretMetadataDto);
       }),
       put: authed.botSecrets.put.handler(async ({ context, input }) => {

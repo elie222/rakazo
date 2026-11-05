@@ -153,7 +153,7 @@ describe("archived chat read failures", () => {
       expect(push).not.toHaveBeenCalled();
       expect(alert).toHaveBeenCalledWith("Could not load bot", expect.any(String), [
         { text: "Cancel", style: "cancel" },
-        { text: "Try again.", onPress: expect.any(Function) },
+        { text: "Try again", onPress: expect.any(Function) },
       ]);
       rpc.mockResolvedValueOnce({});
       await act(async () => alert.mock.calls[0]![2][1].onPress());
@@ -338,7 +338,7 @@ describe("archived chat read failures", () => {
     expect(container.textContent).toContain(bot.name);
     expect(container.textContent).toContain("Could not reach the server");
     const retry = [...container.querySelectorAll("button")].find(
-      (item) => item.textContent === "Try again.",
+      (item) => item.textContent === "Try again",
     )!;
     rpc.mockResolvedValueOnce([]);
     await act(async () => retry.click());
@@ -494,7 +494,7 @@ describe("archived chat read failures", () => {
       (item) => item.textContent === "Restore Crew",
     )!;
     await act(async () => restore.click());
-    expect(container.textContent).toBe("Could not load chatsTry again.");
+    expect(container.textContent).toBe("Could not load chatsTry again");
   });
 
   it("keeps the groups load error after restoring the last bot", async () => {
@@ -508,7 +508,7 @@ describe("archived chat read failures", () => {
       (item) => item.textContent === "Restore",
     )!;
     await act(async () => restore.click());
-    expect(container.textContent).toBe("Could not load chatsTry again.");
+    expect(container.textContent).toBe("Could not load chatsTry again");
   });
 
   it("keeps a bots retry that is running when a group is restored", async () => {
@@ -525,7 +525,7 @@ describe("archived chat read failures", () => {
     );
     groupRpc.mockResolvedValueOnce([group]);
     const retry = [...container.querySelectorAll("button")].find(
-      (item) => item.textContent === "Try again.",
+      (item) => item.textContent === "Try again",
     )!;
     await act(async () => retry.click());
     groupRpc.mockResolvedValueOnce({ ok: true });
@@ -600,7 +600,7 @@ describe("archived chat read failures", () => {
       );
       rpc.mockResolvedValueOnce([bot]);
       const retry = [...container.querySelectorAll("button")].find(
-        (item) => item.textContent === "Try again.",
+        (item) => item.textContent === "Try again",
       )!;
       await act(async () => retry.click());
       rpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);

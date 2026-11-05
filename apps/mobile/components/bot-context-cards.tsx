@@ -1,7 +1,8 @@
 import type { MemoryDocument, ScratchpadItem } from "@rakazo/contracts";
 import { isEmptyBotMemory } from "@rakazo/contracts";
-import { useEffect, useState } from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
+import { Pressable, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
@@ -11,6 +12,7 @@ import { ProfileEditDialog } from "./profile-edit-dialog";
 
 export function BotContextCards({ botId }: { botId: string }) {
   const { t } = useI18n();
+  const router = useRouter();
   const tokens = useMobileTokens();
   const [work, setWork] = useState<ScratchpadItem[]>([]);
   const [docs, setDocs] = useState<MemoryDocument[]>([]);
@@ -18,26 +20,30 @@ export function BotContextCards({ botId }: { botId: string }) {
   const [allDocs, setAllDocs] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let current = true;
-    void rpc("scratchpad/list", { botId })
-      .then((items) => {
-        if (current) setWork(items);
-      })
-      .catch((err) => {
-        if (current) setError(errorText(err));
-      });
-    void rpc("memory/list", { botId, scope: "bot" })
-      .then((documents) => {
-        if (current) setDocs(documents.filter((doc) => !isEmptyBotMemory(doc)));
-      })
-      .catch((err) => {
-        if (current) setError(errorText(err));
-      });
-    return () => {
-      current = false;
-    };
-  }, [botId]);
+  // Reload on return, so an edited or deleted note shows its saved state.
+  useFocusEffect(
+    useCallback(() => {
+      let current = true;
+      setError(null);
+      void rpc("scratchpad/list", { botId })
+        .then((items) => {
+          if (current) setWork(items);
+        })
+        .catch((err) => {
+          if (current) setError(errorText(err));
+        });
+      void rpc("memory/list", { botId, scope: "bot" })
+        .then((documents) => {
+          if (current) setDocs(documents.filter((doc) => !isEmptyBotMemory(doc)));
+        })
+        .catch((err) => {
+          if (current) setError(errorText(err));
+        });
+      return () => {
+        current = false;
+      };
+    }, [botId]),
+  );
   const heading = { color: tokens.mutedForeground, fontSize: 12, fontWeight: "500" as const };
   const card = { backgroundColor: native.fill, borderRadius: 12, padding: 16, gap: 12 };
   return (
@@ -142,7 +148,9 @@ export function BotContextCards({ botId }: { botId: string }) {
                 key={doc.id}
                 accessibilityRole="button"
                 accessibilityLabel={doc.path}
-                onPress={() => Alert.alert(doc.path, doc.content)}
+                onPress={() =>
+                  router.push({ pathname: "/memory-note", params: { id: doc.id, botId } })
+                }
                 style={{
                   minHeight: 44,
                   flexDirection: "row",

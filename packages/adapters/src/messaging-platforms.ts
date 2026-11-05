@@ -20,6 +20,7 @@ import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "ch
 import { createSendblueAdapter } from "chat-adapter-sendblue";
 import type { ClientOptions as SendblueClientOptions } from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
+import { boundInboundMarkdown } from "./chat-sdk-surface.js";
 import { LazyLarkAdapter } from "./lark/lazy-adapter.js";
 import { Domain } from "./lark/thread-id.js";
 import { LazyPhotonAdapter } from "./photon/lazy-adapter.js";
@@ -221,6 +222,7 @@ export function messagingPlatformsFromEnv(
         adapter.encodeThreadId({ fromNumber: lineNumber, contactNumber: address }),
       peekStatuses: parseSendblueStatuses,
       participants: (raw) => sendblueParticipants(raw, lineNumber),
+      rosterAt: (raw) => sendblueRosterAt(raw),
       channelName: (raw) => sendblueGroupName(raw),
       transport: (raw) => sendblueTransport(raw),
     });
@@ -239,6 +241,7 @@ export function messagingPlatformsFromEnv(
         timeout: MESSAGING_SEND_TIMEOUT_MS,
       },
     });
+    boundInboundMarkdown(adapter);
     // Slack's reactions.add fails with already_reacted when a replayed inbound reacts twice.
     const addReaction = adapter.addReaction.bind(adapter);
     Object.assign(adapter, {
@@ -680,6 +683,15 @@ function sendblueParticipants(raw: unknown, lineNumber: string): string[] {
   return participants.filter(
     (entry): entry is string => typeof entry === "string" && entry !== lineNumber,
   );
+}
+
+/** When Sendblue says the roster was current: the message's send time. */
+function sendblueRosterAt(raw: unknown): Date | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const sent = (raw as { date_sent?: unknown }).date_sent;
+  if (typeof sent !== "string") return null;
+  const at = new Date(sent);
+  return Number.isNaN(at.getTime()) ? null : at;
 }
 
 function sendblueGroupName(raw: unknown): string | null {

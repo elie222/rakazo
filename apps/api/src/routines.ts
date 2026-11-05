@@ -7,6 +7,7 @@ import {
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
+  routineScheduleDelayed,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { IsolationError } from "@rakazo/db";
@@ -116,6 +117,10 @@ export function mapRoutine(row: {
     watchState: parseRoutineWatchState(row.watchState),
     lastRunAt: row.lastRunAt?.toISOString() ?? null,
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
+    scheduleDelayed: routineScheduleDelayed({
+      active: row.active,
+      nextRunAt: row.nextRunAt?.getTime() ?? null,
+    }),
     createdAt: row.createdAt.toISOString(),
   };
 }

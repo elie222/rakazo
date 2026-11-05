@@ -3,6 +3,7 @@ import { useFocusEffect } from "expo-router";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useEffect } from "react";
 import { mergeMobileSnapshot, mobileThreadRefreshResult, rpc, selectedSpaceId } from "./api";
+import { onConversationCleared } from "./conversation-cleared";
 import { useI18n } from "./i18n";
 import { isIntegrationsScopeCurrent } from "./integrations-cache";
 import { threadRefreshDelayMs } from "./refresh";
@@ -37,6 +38,7 @@ export function useThreadSync({
   messageId,
   readOnly,
   foreground,
+  focused,
   sessionEpoch,
   activeBotId,
   activeGroupId,
@@ -55,6 +57,7 @@ export function useThreadSync({
   messageId?: string;
   readOnly: boolean;
   foreground: boolean;
+  focused: boolean;
   sessionEpoch: number;
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
@@ -186,6 +189,7 @@ export function useThreadSync({
     botId,
     groupId,
     foreground,
+    focused,
     readOnly,
     sessionEpoch,
     messageId,
@@ -205,6 +209,14 @@ export function useThreadSync({
   });
 
   useEffect(() => () => pendingSave.current?.(), [botId, groupId]);
+
+  // A save still waiting when the chat is cleared would write the old messages back.
+  useEffect(() => {
+    if (!botId) return;
+    return onConversationCleared((clearedBotId) => {
+      if (clearedBotId === botId) pendingSave.current = null;
+    });
+  }, [botId]);
 
   // Save the latest messages of the live chat (not a jump or loaded history) once updates settle.
   useEffect(() => {

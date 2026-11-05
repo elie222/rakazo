@@ -50,7 +50,7 @@ it("uses the Expo proxy, validates the session, and saves the existing session s
   expect(callback).toBe("rakazo://sign-in");
   expect(new URL(url).pathname).toBe("/api/auth/expo-authorization-proxy");
   expect(new URL(url).searchParams.get("oauthState")).toBe("encrypted-state");
-  expect(replaceSessionTokenIfCurrent).toHaveBeenCalledWith(1, "new-session");
+  expect(replaceSessionTokenIfCurrent).toHaveBeenCalledWith(1, "new-session", false);
   expect(clearSpace).toHaveBeenCalledOnce();
 });
 it.each([WebBrowserResultType.CANCEL, WebBrowserResultType.DISMISS])(
@@ -68,6 +68,14 @@ it.each([
 ])("rejects invalid callbacks", async (url) => {
   vi.mocked(openAuthSessionAsync).mockResolvedValue({ type: "success", url });
   await expect(continueWithSso()).rejects.toThrow();
+  expect(replaceSessionTokenIfCurrent).not.toHaveBeenCalled();
+});
+it("says when the server refused a deactivated account", async () => {
+  vi.mocked(openAuthSessionAsync).mockResolvedValue({
+    type: "success",
+    url: "rakazo://sign-in?error=ACCOUNT_DEACTIVATED",
+  });
+  await expect(continueWithSso()).rejects.toThrow("This account is deactivated");
   expect(replaceSessionTokenIfCurrent).not.toHaveBeenCalled();
 });
 it.each(["server", "session"])("drops results when the %s changes", async (changed) => {
