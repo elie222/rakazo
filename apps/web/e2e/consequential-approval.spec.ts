@@ -120,6 +120,15 @@ test("A webhook run's card says why it asks after Always allow", async ({ page }
   await waitForRunIdle(page);
 
   const botId = activeBotId(page);
+  // A delivery with no active webhook routine is ignored.
+  await rpc(page, "routines/create", {
+    botId,
+    name: "Relay",
+    prompt: "Handle the relay's request.",
+    webhookEnabled: true,
+    active: true,
+    notify: false,
+  });
   const hook = await rpc<{ secret: string; path: string }>(page, "bots/rotateWebhookSecret", {
     botId,
   });
