@@ -361,6 +361,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
         prompt: "List groceries",
         crons: ["0 9 * * 1"],
         watchState: { fingerprint: "invitee-account" },
+        accountFailures: 3,
       },
     });
     const secret = await system.secret.create({
@@ -435,6 +436,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       active: false,
       nextRunAt: null,
       watchState: null,
+      accountFailures: 0,
     });
     await expect(
       system.botSection.findUnique({ where: { id: mergedSection.id } }),

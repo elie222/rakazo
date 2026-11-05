@@ -535,7 +535,14 @@ async function departSpace(
           await tx.routine.updateMany({
             where: { spaceId, userId },
             // A watch restarts from the owner's accounts, not the departed person's results.
-            data: { userId: ownerId, active: false, nextRunAt: null, watchState: Prisma.DbNull },
+            // Backoff earned on their accounts does not hold the owner back either.
+            data: {
+              userId: ownerId,
+              active: false,
+              nextRunAt: null,
+              watchState: Prisma.DbNull,
+              accountFailures: 0,
+            },
           });
 
           const own = { spaceId, userId };
