@@ -695,8 +695,13 @@ describe("LocalStackController", () => {
 
     await stack.start();
     stopping = stack.stop();
+    let reuseSettled = false;
     const reuse = stack.matchesDesiredStack();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    void reuse.finally(() => {
+      reuseSettled = true;
+    });
+    // Hold the stop until the check has settled or reached its probe, however slow the runner.
+    await vi.waitFor(() => expect(reuseSettled || probes > 1).toBe(true));
     releaseStop();
     await stopping;
     await expect(reuse).resolves.toBe(false);
@@ -776,31 +781,24 @@ describe("LocalStackController", () => {
     const stackPath = path.join(root, "stack");
     await mkdir(stackPath, { recursive: true });
     const token = await ensureStackToken(stackPath, fakeHex);
-    let releaseStop: () => void = () => undefined;
-    const stopGate = new Promise<void>((resolve) => {
-      releaseStop = resolve;
-    });
     let stopping: Promise<unknown> = Promise.resolve();
     let probes = 0;
-    const stack = controller(
-      {
-        // The first probe is the health wait of the start below; a later one must not
-        // answer before the stop that began during the token read has settled.
-        probe: (_url, _signal, supplied) => {
-          probes += 1;
-          if (supplied !== token || probes === 1) return Promise.resolve("v1.2.3");
-          return Promise.resolve(stopping).then(() => "v1.2.3" as string | null);
-        },
+    const stack = controller({
+      // The first probe is the health wait of the start below; a later one must not
+      // answer before the stop that began during the token read has settled.
+      probe: (_url, _signal, supplied) => {
+        probes += 1;
+        if (supplied !== token || probes === 1) return Promise.resolve("v1.2.3");
+        return Promise.resolve(stopping).then(() => "v1.2.3" as string | null);
       },
-      (args) => (args[7] === "stop" ? { wait: stopGate } : ok(args)),
-    );
+    });
 
     await stack.start();
     const reuse = stack.matchesDesiredStack();
     stopping = stack.stop();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    releaseStop();
+    // The stop settles in microtasks, before the token read's file I/O can finish.
     await stopping;
+    expect(probes).toBe(1);
     await expect(reuse).resolves.toBe(true);
     expect(stack.managedStackRunning()).toBe(false);
   });
@@ -814,13 +812,15 @@ describe("LocalStackController", () => {
       releaseStop = resolve;
     });
     let stopping: Promise<unknown> = Promise.resolve();
+    let probes = 0;
     const stack = controller(
       {
         // The probe answers only after the stop settles, and it still sees the stack up.
-        probe: (_url, _signal, supplied) =>
-          supplied === token
-            ? Promise.resolve(stopping).then(() => "v1.2.3" as string | null)
-            : Promise.resolve(null),
+        probe: (_url, _signal, supplied) => {
+          if (supplied !== token) return Promise.resolve(null);
+          probes += 1;
+          return Promise.resolve(stopping).then(() => "v1.2.3" as string | null);
+        },
       },
       (args) =>
         args[7] === "stop"
@@ -830,7 +830,8 @@ describe("LocalStackController", () => {
 
     const reuse = stack.matchesDesiredStack();
     stopping = stack.stop();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Settle the stop only once the probe is pending; the token read can outlast a fixed delay.
+    await vi.waitFor(() => expect(probes).toBe(1));
     releaseStop();
     await stopping;
     expect(stack.state().phase).toBe("failed");
@@ -912,20 +913,23 @@ describe("LocalStackController", () => {
       releaseStop = resolve;
     });
     let stopping: Promise<unknown> = Promise.resolve();
+    let probes = 0;
     const stack = controller(
       {
         // The probe answers only after the stop settles, still claiming an older release.
-        probe: (_url, _signal, supplied) =>
-          supplied === token
-            ? Promise.resolve(stopping).then(() => "v1.2.2" as string | null)
-            : Promise.resolve(null),
+        probe: (_url, _signal, supplied) => {
+          if (supplied !== token) return Promise.resolve(null);
+          probes += 1;
+          return Promise.resolve(stopping).then(() => "v1.2.2" as string | null);
+        },
       },
       (args) => (args[7] === "stop" ? { wait: stopGate } : ok(args)),
     );
 
     const rediscovered = stack.rediscoverManagedStack();
     stopping = stack.stop();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Settle the stop only once the probe is pending; the token read can outlast a fixed delay.
+    await vi.waitFor(() => expect(probes).toBe(1));
     releaseStop();
     await stopping;
     await expect(rediscovered).resolves.toBe(true);
