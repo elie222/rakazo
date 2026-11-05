@@ -324,6 +324,11 @@ export async function seedIosScreenshotFixture(input: {
       userId: me.userId,
     });
     await ensureTickets(db.prisma, me.spaceId, me.userId, [researcher.id, writer.id]);
+    await ensureMemoryNotes(db.prisma, {
+      spaceId: me.spaceId,
+      userId: me.userId,
+      botId: researcher.id,
+    });
     await ensureRequestCards(db.prisma, { threadId: support.threadId, botId: support.id });
     const billing = { apiUrl: input.apiUrl, prisma: db.prisma, complete: input.completeCheckout };
     await ensurePlan({ ...billing, headers: populated.headers, userId: me.userId, trial: false });
@@ -356,6 +361,39 @@ export async function seedIosScreenshotFixture(input: {
   } finally {
     await db.prisma.$disconnect();
     await db.pool.end();
+  }
+}
+
+/** A note the bot remembered and one every bot in the space shares, for the memory screens. */
+async function ensureMemoryNotes(
+  prisma: ReturnType<typeof createDb>["prisma"],
+  input: { spaceId: string; userId: string; botId: string },
+) {
+  const notes = [
+    {
+      scope: "bot",
+      botId: input.botId,
+      path: "preferences.md",
+      content:
+        "# Preferences\n\n- Cite a source for every claim.\n- Keep summaries under five bullets.\n",
+    },
+    {
+      scope: "user",
+      botId: null,
+      path: "team.md",
+      content:
+        "# Launch team\n\n- Dana owns the announcement.\n- Lee reviews every customer quote.\n",
+    },
+  ];
+  for (const note of notes) {
+    const existing = await prisma.memoryDocument.findFirst({
+      where: { spaceId: input.spaceId, scope: note.scope, botId: note.botId, path: note.path },
+      select: { id: true },
+    });
+    if (existing) continue;
+    await prisma.memoryDocument.create({
+      data: { ...note, spaceId: input.spaceId, userId: input.userId },
+    });
   }
 }
 

@@ -95,19 +95,22 @@ export const PRICING_PLANS: PricingPlan[] = [
     ],
     action: { label: "Start free trial", href: APP_URL },
   },
-  {
-    name: "Rakazo credits",
-    price: CREDITS_PRICE,
-    note: "Model usage included",
-    features: [
-      "Hosted by us",
-      "No model account needed",
-      "Cloud computer included",
-      "Top up any time",
-    ],
-    action: { label: "Get started", href: APP_URL },
-  },
 ];
+
+/** The less common hosted option, shown below the main plans. */
+export const CREDITS_PLAN: PricingPlan = {
+  name: "Rakazo credits",
+  price: CREDITS_PRICE,
+  note: "Model usage with no markup, plus computer hours",
+  features: [
+    "Hosted by us",
+    "No model account needed",
+    "Model usage at the provider's price, no markup",
+    "Cloud computer hours included",
+    "Top up any time",
+  ],
+  action: { label: "Get started", href: APP_URL },
+};
 
 /** A comparison cell: included, not included, or a short value with optional detail on hover. */
 export type PricingCell = boolean | string | { label: string; detail: string };
@@ -218,7 +221,7 @@ ${plan.features.map((feature) => `- ${feature}`).join("\n")}
 
 export const PRICING_MARKDOWN = `# Rakazo pricing
 
-${PRICING_PLANS.map(planMarkdown).join("\n\n")}
+${[...PRICING_PLANS, CREDITS_PLAN].map(planMarkdown).join("\n\n")}
 
 ## Compare plans
 

@@ -63,6 +63,11 @@ export const DESKTOP_MENU_COMMANDS = [
   "forward",
   "next-bot",
   "previous-bot",
+  "new-group",
+  "integrations",
+  "chat-panel",
+  "shortcuts",
+  "find",
 ] as const;
 
 export type DesktopMenuCommand = (typeof DESKTOP_MENU_COMMANDS)[number];
@@ -107,6 +112,11 @@ export interface RakazoDesktop {
   passkeys?: {
     /** Relying parties this build is associated with for system passkeys (macOS); others fail. */
     rpIds: () => Promise<string[]>;
+  };
+  /** Absent on older desktop releases. */
+  server?: {
+    /** Opens the desktop setup window to pick another Rakazo server. */
+    change: () => Promise<void>;
   };
   /** Absent on older desktop releases, which have no Settings… menu item. */
   settings?: {

@@ -25,7 +25,7 @@
     "better-auth": "1.7.16",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-email": "6.11.3"
+    "react-email": "6.11.6"
   },
   "devDependencies": {
     "@types/react": "19.2.18",
