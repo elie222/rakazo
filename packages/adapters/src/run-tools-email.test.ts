@@ -559,7 +559,7 @@ describe("send_email", () => {
       },
       bot: { id: "bot-1", userId: "owner-1", spaceId: "space-1", name: 'Scout "Bot"' },
       run: { userId: "owner-1" },
-      secrets: ["hunter2-secret"],
+      secrets: ["hunter2-secret", "line-one\nline-two"],
     };
     const call = (args: Record<string, unknown>, effectKey = "effect-1") =>
       emailTools.send_email!(
@@ -600,6 +600,14 @@ describe("send_email", () => {
     expect(saved).toEqual([
       expect.objectContaining({ sent: true, fromAddress: "scout@bots.test", key: "sent:effect-1" }),
     ]);
+  });
+
+  it("keeps a secret that spans lines out of the subject", async () => {
+    const { call, send } = sendRun();
+
+    await call({ to: ["a@shop.test"], subject: "Key line-one\nline-two", text: "Hi" });
+
+    expect(send.mock.calls[0]?.[0].subject).not.toContain("line-one");
   });
 
   it("answers an email in its own thread", async () => {

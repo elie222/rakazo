@@ -296,17 +296,16 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
   if (input.inReplyTo && !original) {
     return call.finish({ error: "No email with that id in your inbox." });
   }
+  // Redacted before lines are joined, so a secret that spans lines still matches.
   const subject = redactSecrets(
-    (
-      input.subject ||
+    input.subject ||
       (original
         ? /^re:/i.test(original.subject)
           ? original.subject
           : `Re: ${original.subject}`
-        : "")
-    ).replace(/[\r\n]+/g, " "),
+        : ""),
     ctx.secrets,
-  );
+  ).replace(/[\r\n]+/g, " ");
   if (!subject) return call.finish({ error: "Give the email a subject." });
   // Secrets this run has used never leave in an email, whatever the bot was asked to write.
   const text = redactSecrets(input.text, ctx.secrets);
