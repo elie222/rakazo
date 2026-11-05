@@ -61,6 +61,13 @@ It needs these repository secrets:
 Re-running it for a version that is already in review leaves that submission
 alone.
 
+If the iOS upload succeeded but App Review submission failed, run `release-mobile`
+with `ios_build_id` set to that finished EAS build's ID and the release notes.
+This retries only App Review: it skips both Android jobs, the iOS build, and the
+upload. The workflow verifies that the reused build belongs to this app and was
+built with the production iOS profile. Review failures include Apple's associated
+validation errors so missing metadata can be corrected before retrying.
+
 ## Google Play
 
 Run `release-google-play` from `main` for an Android-only store release, or
