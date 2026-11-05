@@ -41,6 +41,22 @@ describe("service_search", () => {
 });
 
 describe("service_call", () => {
+  it("rejects an oversized query before holding credits", async () => {
+    const query = Object.fromEntries(
+      Array.from({ length: 10 }, (_, i) => [`k${i}`, "x".repeat(2_000)]),
+    );
+    expect(
+      await serviceCallFromTool(
+        { prisma, provider: new FakePaidServiceProvider(), billing: true },
+        scope,
+        { service: "people.email", query },
+        "run-1:service_call:big",
+        context,
+      ),
+    ).toEqual({ error: "query is too large." });
+    expect(reserveModelCredits).not.toHaveBeenCalled();
+  });
+
   it("holds the ceiling, then settles to the provider's charge plus the markup", async () => {
     const provider = new FakePaidServiceProvider();
     const result = await serviceCallFromTool(

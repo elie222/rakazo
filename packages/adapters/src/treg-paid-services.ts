@@ -290,6 +290,15 @@ export class TregPaidServiceProvider implements PaidServiceProvider {
       // An idempotent replay that is running or lost may already have been charged.
       if (response.status === 409 || response.status === 410)
         throw new Error(`Paid service replay answered ${response.status}`);
+      if (headerCost)
+        return {
+          outcome: "answered",
+          ok: false,
+          status: response.status,
+          data: { error: "The service could not answer." },
+          costUsd: headerCost / 1_000_000,
+          providerCallId,
+        };
       if (response.status === 400 || response.status === 422) {
         const message = typeof error?.message === "string" ? error.message : undefined;
         return {
