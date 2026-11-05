@@ -344,9 +344,10 @@ export function useComposerActions({
       const initialGroupTarget = activeGroupId.current;
       if ((!initialBotTarget && !initialGroupTarget) || sending) return false;
       const editsAtSend = draftEdits.current;
-      // The reply this send carries; a reply picked after this point is for the next message.
-      const replyAtSend = activeReplyTarget;
-      const replyQuoteAtSend = activeReplyQuote;
+      // The reply this send carries, read from the ref so a callback that outlived
+      // a re-pick of the same message still carries the armed one; a reply picked
+      // after this point is for the next message.
+      const { target: replyAtSend, quote: replyQuoteAtSend } = armedReply.current;
       const originThreadKey = initialGroupTarget ?? initialBotTarget;
       const attachments = attachmentsForThread(pendingAttachments, originThreadKey);
       const plan = resolveComposerSendPlan({
@@ -370,7 +371,7 @@ export function useComposerActions({
       // The open page rides only on text this chat sends, never on a group or routine-only send.
       const fromPage =
         plan.shouldSend && !reroutedToGroup
-          ? pageSession.send(plan.trimmed, activeSnapshot?.messages ?? [], activeReplyTarget?.id)
+          ? pageSession.send(plan.trimmed, activeSnapshot?.messages ?? [], replyAtSend?.id)
           : { text: plan.trimmed, replyToMessageId: undefined };
       const trimmed = fromPage.text.trim();
       const replyToMessageId = fromPage.replyToMessageId;
@@ -463,11 +464,9 @@ export function useComposerActions({
           text: trimmed || undefined,
           mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
           artifactIds: artifactIds.length ? artifactIds : undefined,
-          replyToMessageId: reroutedToGroup
-            ? undefined
-            : (replyToMessageId ?? activeReplyTarget?.id),
+          replyToMessageId: reroutedToGroup ? undefined : (replyToMessageId ?? replyAtSend?.id),
           replyQuote:
-            reroutedToGroup || replyToMessageId ? undefined : (activeReplyQuote ?? undefined),
+            reroutedToGroup || replyToMessageId ? undefined : (replyQuoteAtSend ?? undefined),
           fromPage: !reroutedToGroup && replyToMessageId ? true : undefined,
         } as const;
         // The routines run in the same server operation as the message: both or neither.
@@ -534,8 +533,6 @@ export function useComposerActions({
       }
     },
     [
-      activeReplyTarget?.id,
-      activeReplyQuote,
       activeSnapshot?.messages,
       pageSession,
       clearSentReply,
