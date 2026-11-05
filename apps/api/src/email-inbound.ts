@@ -251,7 +251,7 @@ async function saveToInbox(
   if (found) return { id: found.id, files: found.attachments as InboxFile[] };
   if (options.capped) {
     const recent = await deps.prisma.botEmailMessage.count({
-      where: { botId: bot.id, receivedAt: { gte: new Date(Date.now() - DAY_MS) } },
+      where: { botId: bot.id, sent: false, receivedAt: { gte: new Date(Date.now() - DAY_MS) } },
     });
     if (recent >= INBOX_DAILY_LIMIT) return null;
   }

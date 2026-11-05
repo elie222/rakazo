@@ -94,6 +94,8 @@ export function selectBuiltinToolsForRun(options: {
   emailInbox?: boolean;
   /** This server receives email and the bot has no address yet. */
   emailClaimable?: boolean;
+  /** The inbox may be read and this server can send email. */
+  emailSend?: boolean;
 }) {
   const disabled = disabledBuiltinToolSet(options.disabledBuiltinTools);
   const ownerStartedRun = isOwnerStartedRun(options.trigger, Boolean(options.followUpFromUser));
@@ -104,6 +106,7 @@ export function selectBuiltinToolsForRun(options: {
     ownerStartedRun &&
     !options.groupId &&
     !options.messagingChannelRun;
+  const emailMailbox = Boolean(options.emailInbox) || emailClaimOffered;
   return selectCloudAgentTools(
     selectMemoryTools(
       filterBuiltinToolsForRun(
@@ -142,7 +145,8 @@ export function selectBuiltinToolsForRun(options: {
           "generate_video",
         ].includes(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
-      (options.emailInbox || emailClaimOffered || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
+      (emailMailbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
+      ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
       (emailClaimOffered || tool.name !== "claim_email_address") &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
       ((options.userComputer && options.userComputerScreen) ||

@@ -3,8 +3,8 @@
 Give each bot its own address, such as `scout@bots.example.com`. Every email sent to it is saved
 to the bot's inbox, which the bot reads when it needs to, for example to pick up the code when it
 signs up for a service. Your own mail to it starts the bot, and mail can start its
-[routines](./routines.md). This is optional and off until you set it up. Rakazo receives mail
-only; bots do not send email from these addresses.
+[routines](./routines.md). Bots can also [send email](#sending) from their address. This is
+optional and off until you set it up.
 
 You need a domain (or subdomain) that receives mail for every name on it, and something that
 hands each message to Rakazo. Rakazo does not run a mail server itself: any mail relay that can
@@ -128,6 +128,22 @@ saves at most 500 messages a day that start nothing; past that, such mail is dro
 day's count falls, while mail that starts the bot or a routine is always saved. The bot
 reads its inbox only in its owner's own chat, routines and mail, never in a group chat or a shared
 channel, and what it reads counts as outside data.
+
+## Sending
+
+Bots send from their own address through the same provider as account email (`EMAIL_PROVIDER`
+and its settings), so set those on the worker as well as the API. The provider must be allowed to
+send as the bot domain:
+
+- **Resend:** add the domain under **Domains** and publish the DNS records it shows. They sit on
+  a `send` subdomain and the domain's DKIM selector, so they don't clash with the MX records that
+  receive mail.
+- **SMTP:** the relay must accept a From address on the domain and sign it with DKIM, or
+  recipients will mark the mail as spam.
+
+Replies go to the bot's address and land in its inbox. Each send follows the bot's usual
+[approval](./approvals.md) settings. A bot sends at most 50 emails a day, to at most 10 people
+each, and never includes a secret saved in the Vault. What it sends stays in its inbox.
 
 ## Who can start work
 

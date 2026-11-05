@@ -88,7 +88,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
       {
         id: email.id,
         from: sender(email),
-        verified: email.verified,
+        ...(email.sent ? { sent: true } : { verified: email.verified }),
         to: email.to,
         ...(email.cc.length ? { cc: email.cc } : {}),
         subject: email.subject,
@@ -118,6 +118,8 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
   const startedAt = Date.now();
   const where = {
     botId: bot.id,
+    // Waiting is for mail to arrive, so what the bot sent never ends it.
+    ...(input.waitSeconds ? { sent: false } : {}),
     ...(input.since || input.before
       ? {
           receivedAt: {
@@ -145,6 +147,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
         fromAddress: true,
         fromName: true,
         verified: true,
+        sent: true,
         subject: true,
         receivedAt: true,
         text: true,
@@ -169,7 +172,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
   const listed = emails.map((email) => ({
     id: email.id,
     from: sender(email),
-    verified: email.verified,
+    ...(email.sent ? { sent: true } : { verified: email.verified }),
     subject: email.subject,
     receivedAt: email.receivedAt.toISOString(),
     preview: redactSecrets(email.text, ctx.secrets)
@@ -236,9 +239,147 @@ async function claimEmailAddress(ctx: RunContext, call: ToolCall) {
   return call.finish({ address: `${parsed.data}@${domain}` });
 }
 
-/** The bot's own address and inbox: mail anyone sent to it. */
+/** Emails one bot sends a day at most, so a looping bot cannot spam from the shared domain. */
+export const SEND_EMAIL_DAILY_LIMIT = 50;
+const SEND_RECIPIENTS_MAX = 10;
+const SEND_TEXT_MAX_CHARS = 20_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_REFERENCES = 20;
+
+const Recipients = z
+  .union([z.email(), z.array(z.email())])
+  .transform((value) =>
+    (Array.isArray(value) ? value : [value]).map((address) => address.trim().toLowerCase()),
+  );
+const SendEmailSchema = z
+  .object({
+    to: Recipients,
+    cc: Recipients.optional(),
+    subject: z.string().trim().max(500).optional(),
+    text: z.string().trim().min(1).max(SEND_TEXT_MAX_CHARS),
+    inReplyTo: z.string().trim().min(1).max(100).optional(),
+  })
+  .strict();
+
+/** Email from the bot's own address; replies come back to its inbox. */
+async function sendEmail(ctx: RunContext, call: ToolCall) {
+  const { deps, bot, run } = ctx;
+  const domain = deps.inboundEmailDomain;
+  if (!deps.email || !domain) return call.finish({ error: "This server can't send email." });
+  if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });
+  const parsed = SendEmailSchema.safeParse(call.args);
+  if (!parsed.success) {
+    return call.finish({
+      error: parsed.error.issues
+        .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
+        .join(" "),
+    });
+  }
+  const input = parsed.data;
+  const cc = input.cc ?? [];
+  if (input.to.length + cc.length > SEND_RECIPIENTS_MAX) {
+    return call.finish({ error: `Send to at most ${SEND_RECIPIENTS_MAX} people at once.` });
+  }
+  const name = await deps.prisma.botEmailAddress.findUnique({
+    where: { botId: bot.id },
+    select: { localPart: true },
+  });
+  if (!name) return call.finish({ error: "You don't have an email address yet." });
+  const address = `${name.localPart}@${domain}`;
+
+  const original = input.inReplyTo
+    ? await deps.prisma.botEmailMessage.findFirst({
+        where: { id: input.inReplyTo, botId: bot.id },
+        select: { subject: true, messageId: true, references: true },
+      })
+    : null;
+  if (input.inReplyTo && !original) {
+    return call.finish({ error: "No email with that id in your inbox." });
+  }
+  const subject = redactSecrets(
+    (
+      input.subject ||
+      (original
+        ? /^re:/i.test(original.subject)
+          ? original.subject
+          : `Re: ${original.subject}`
+        : "")
+    ).replace(/[\r\n]+/g, " "),
+    ctx.secrets,
+  );
+  if (!subject) return call.finish({ error: "Give the email a subject." });
+  // Saved secrets never leave in an email, whatever the bot was asked to write.
+  const text = redactSecrets(input.text, ctx.secrets);
+  const references = original?.messageId
+    ? [...original.references, original.messageId].slice(-MAX_REFERENCES)
+    : [];
+
+  const key = `sent:${call.effectKey}`;
+  const done = (id: string) =>
+    call.finish({
+      sent: true,
+      id,
+      from: address,
+      to: input.to,
+      ...(cc.length ? { cc } : {}),
+      subject,
+    });
+  const earlier = await deps.prisma.botEmailMessage.findUnique({
+    where: { botId_key: { botId: bot.id, key } },
+    select: { id: true },
+  });
+  if (earlier) return done(earlier.id);
+  const recent = await deps.prisma.botEmailMessage.count({
+    where: { botId: bot.id, sent: true, receivedAt: { gte: new Date(Date.now() - DAY_MS) } },
+  });
+  if (recent >= SEND_EMAIL_DAILY_LIMIT) {
+    return call.finish({
+      error: `You've sent ${SEND_EMAIL_DAILY_LIMIT} emails today, the most a bot can. Try again tomorrow.`,
+    });
+  }
+  // Saved before it goes: a retry after a crash finds it and never sends the email twice.
+  const row = await deps.prisma.botEmailMessage.create({
+    data: {
+      spaceId: bot.spaceId,
+      botId: bot.id,
+      key,
+      references,
+      fromAddress: address,
+      fromName: bot.name,
+      verified: true,
+      sent: true,
+      to: input.to,
+      cc,
+      subject,
+      text,
+    },
+    select: { id: true },
+  });
+  try {
+    await deps.email.send({
+      from: `"${bot.name.replace(/["\\\r\n]/g, "")}" <${address}>`,
+      replyTo: address,
+      to: input.to,
+      ...(cc.length ? { cc } : {}),
+      subject,
+      text,
+      ...(original?.messageId
+        ? { headers: { "In-Reply-To": original.messageId, References: references.join(" ") } }
+        : {}),
+    });
+  } catch (error) {
+    await deps.prisma.botEmailMessage.delete({ where: { id: row.id } }).catch(() => undefined);
+    return call.finish({
+      error: `The email wasn't sent: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+  return done(row.id);
+}
+
+/** The bot's own address and inbox: mail anyone sent to it, and mail it sends. */
 export const emailTools: ToolHandlers = {
   read_email: readEmail,
   delete_email: deleteEmail,
   claim_email_address: claimEmailAddress,
+  send_email: sendEmail,
 };
