@@ -234,13 +234,12 @@ group requests are refused. Rotating it means changing the value and restarting 
   changing its name, email or logins, and can then turn it off. Only an account whose email was
   verified is taken over. Anyone could have signed up first with an address nobody proved, so
   the directory gets a conflict for it, as it does when two accounts' emails differ only by case;
-the operator decides what to do with those accounts.
+  the operator decides what to do with those accounts.
 - **Turning a person off** (`active: false`) or **deleting** them deactivates the account at once.
   It ends every sign-in and paired computer, removes notification registrations, cancels runs
   they started, skips their routines, and refuses any new sign-in, run, webhook delivery or
-  message from their linked chat apps. Their bots, chats,
-  memory, files and connections stay. Turning them back on restores sign-in, and routines resume
-  from their next scheduled time.
+  message from their linked chat apps. Their bots, chats, memory, files and connections stay.
+  Turning them back on restores sign-in, and routines resume from their next scheduled time.
 - **Adding a deleted person again** with the same external id finds their existing account.
 
 Without an identity provider, the operator can do the same from the API container:
@@ -251,9 +250,10 @@ docker compose --env-file .env -f docker-compose.images.yml exec api \
 ```
 
 It leaves accounts the identity provider manages to the provider: it will not turn off one the
-provider has on, or turn back on one the provider turned off or deleted. The same command finishes a deactivation whose cleanup failed. Sign-in and runs are refused as
-soon as the account is off, and the API logs `directory.account_change.unfinished` with the account
-id if ending its sessions, computers or runs did not complete.
+provider has on, or turn back on one the provider turned off or deleted. The same command
+finishes a deactivation whose cleanup failed. Sign-in and runs are refused as soon as the account
+is off, and the API logs `directory.account_change.unfinished` with the account id if ending its
+sessions, computers or runs did not complete.
 
 Deactivation and reactivation are recorded as `auth.account.deactivated` and
 `auth.account.reactivated` [security events](./self-host-observability.md#security-events) and in
