@@ -17,6 +17,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   useWindowDimensions,
   View,
@@ -747,12 +748,7 @@ export default function Computer() {
             {hasControl && computer?.shared ? (
               <Text
                 testID="computer-shared-browser"
-                style={{
-                  color: tokens.mutedForeground,
-                  fontSize: 12,
-                  paddingHorizontal: 14,
-                  paddingBottom: 4,
-                }}
+                style={[styles.sharedBrowser, { color: tokens.mutedForeground }]}
               >
                 {t("Sites you sign in to stay signed in for everyone in this space")}
               </Text>
@@ -937,3 +933,7 @@ function ScreenWebView({
     />
   );
 }
+
+const styles = StyleSheet.create({
+  sharedBrowser: { fontSize: 12, paddingHorizontal: 14, paddingBottom: 4 },
+});

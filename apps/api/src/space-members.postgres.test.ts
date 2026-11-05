@@ -860,6 +860,18 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
         allSpaces: true,
       },
     });
+    const work = await sharedSpace(invitee, "Work");
+    const chosen = await system.mcpServer.create({
+      data: {
+        spaceId: home,
+        userId: invitee.id,
+        slug: "work-tracker",
+        name: "Work tracker",
+        transport: "http",
+        endpoint: "https://mcp.example.test/work",
+        availableIn: { create: { spaceId: work, userId: invitee.id } },
+      },
+    });
     const onlyHere = await system.mcpServer.create({
       data: {
         spaceId: home,
@@ -884,6 +896,10 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(
       system.mcpServer.findUniqueOrThrow({ where: { id: everywhere.id } }),
     ).resolves.toMatchObject({ spaceId: invitee.spaceId, userId: invitee.id });
+    // One chosen for another Space moves there, not to a Space it was never available in.
+    await expect(
+      system.mcpServer.findUniqueOrThrow({ where: { id: chosen.id } }),
+    ).resolves.toMatchObject({ spaceId: work });
     await expect(system.mcpServer.findUnique({ where: { id: onlyHere.id } })).resolves.toBeNull();
     await expect(
       system.thread.findUniqueOrThrow({ where: { id: thread.id } }),

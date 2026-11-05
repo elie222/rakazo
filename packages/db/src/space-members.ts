@@ -505,35 +505,51 @@ async function departSpace(prisma: PrismaClient, input: SpaceRef): Promise<Space
 
 /**
  * What the departing person made available in other Spaces of theirs was homed in this one, and
- * would go when it does. It moves to their fallback Space, unless that Space already has one with
- * the same name.
+ * would go when it does. Each item moves to a Space it is already available in: one it was chosen
+ * for, or for an item available everywhere their fallback Space. An item whose new home already
+ * has one with the same name stays, and goes with this Space.
  */
 async function rehomeSharedItems(tx: Prisma.TransactionClient, input: SpaceRef): Promise<void> {
   const { spaceId, userId } = input;
-  const home = await fallbackSpaceForMember(tx, userId);
-  if (!home) return;
+  const fallback = await fallbackSpaceForMember(tx, userId);
   const own = { spaceId, userId };
-  const [servers, skills, taken, takenSkills] = await Promise.all([
-    tx.mcpServer.findMany({ where: own, select: { id: true, slug: true } }),
-    tx.agentSkill.findMany({ where: own, select: { id: true, name: true } }),
-    tx.mcpServer.findMany({ where: { spaceId: home, userId }, select: { slug: true } }),
-    tx.agentSkill.findMany({ where: { spaceId: home, userId }, select: { name: true } }),
+  const chosen = { select: { spaceId: true }, orderBy: { spaceId: "asc" as const }, take: 1 };
+  const [servers, skills, installs] = await Promise.all([
+    tx.mcpServer.findMany({
+      where: own,
+      select: { id: true, slug: true, allSpaces: true, availableIn: chosen },
+    }),
+    tx.agentSkill.findMany({
+      where: own,
+      select: { id: true, name: true, allSpaces: true, availableIn: chosen },
+    }),
+    tx.capabilityInstall.findMany({
+      where: own,
+      select: { id: true, allSpaces: true, availableIn: chosen },
+    }),
   ]);
-  const slugs = new Set(taken.map((server) => server.slug));
-  const names = new Set(takenSkills.map((skill) => skill.name.toLowerCase()));
-  await tx.mcpServer.updateMany({
-    where: { id: { in: servers.filter((server) => !slugs.has(server.slug)).map(({ id }) => id) } },
-    data: { spaceId: home },
-  });
-  await tx.agentSkill.updateMany({
-    where: {
-      id: {
-        in: skills.filter((skill) => !names.has(skill.name.toLowerCase())).map(({ id }) => id),
-      },
-    },
-    data: { spaceId: home },
-  });
-  await tx.capabilityInstall.updateMany({ where: own, data: { spaceId: home } });
+  const homeOf = (item: { allSpaces: boolean; availableIn: Array<{ spaceId: string }> }) =>
+    item.allSpaces ? fallback : (item.availableIn[0]?.spaceId ?? null);
+  for (const server of servers) {
+    const home = homeOf(server);
+    if (!home) continue;
+    const taken = await tx.mcpServer.count({ where: { spaceId: home, userId, slug: server.slug } });
+    if (!taken) await tx.mcpServer.update({ where: { id: server.id }, data: { spaceId: home } });
+  }
+  for (const skill of skills) {
+    const home = homeOf(skill);
+    if (!home) continue;
+    const taken = await tx.agentSkill.count({
+      where: { spaceId: home, userId, name: { equals: skill.name, mode: "insensitive" } },
+    });
+    if (!taken) await tx.agentSkill.update({ where: { id: skill.id }, data: { spaceId: home } });
+  }
+  for (const install of installs) {
+    const home = homeOf(install);
+    if (home) {
+      await tx.capabilityInstall.update({ where: { id: install.id }, data: { spaceId: home } });
+    }
+  }
 }
 
 /** Sections are unique per (space, person, name): merge into the owner's same-named one. */
