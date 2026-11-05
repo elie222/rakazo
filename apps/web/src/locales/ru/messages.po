@@ -5162,6 +5162,10 @@ msgstr ""
 msgid "Recent"
 msgstr "Недавние"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "Последние платежи"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
 msgstr ""
@@ -5964,6 +5968,7 @@ msgstr "Общая память"
 msgid "Show"
 msgstr "Показать"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""

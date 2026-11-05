@@ -5162,6 +5162,10 @@ msgstr ""
 msgid "Recent"
 msgstr "최근"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "최근 결제"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
 msgstr ""
@@ -5964,6 +5968,7 @@ msgstr "공유 기억"
 msgid "Show"
 msgstr "보기"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""

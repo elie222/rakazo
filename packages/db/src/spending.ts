@@ -1,4 +1,4 @@
-import type { SpendingLimit, SpendingStatus } from "@rakazo/contracts";
+import type { SpendingLimit, SpendingPayment, SpendingStatus } from "@rakazo/contracts";
 import {
   MAX_SPENDING_LIMIT,
   SPENDING_CURRENCIES,
@@ -199,12 +199,12 @@ export async function spendingStatus(
   };
 }
 
-// The limit matters once a bot has a way to pay: a saved card or a connected wallet.
+// The limit matters once a bot has a way to pay, a saved card or a connected wallet, or has paid.
 async function canPay(
-  prisma: Pick<SpendingClient, "vaultCredential" | "paymentWallet">,
+  prisma: Pick<SpendingClient, "vaultCredential" | "paymentWallet" | "payment">,
   userId: string,
 ): Promise<boolean> {
-  const [card, wallet] = await Promise.all([
+  const [card, wallet, paid] = await Promise.all([
     prisma.vaultCredential.findFirst({
       where: { userId, auth: { path: ["type"], equals: "card" } },
       select: { id: true },
@@ -213,8 +213,33 @@ async function canPay(
       where: { userId, status: "connected" },
       select: { id: true },
     }),
+    prisma.payment.findFirst({ where: { userId, releasedAt: null }, select: { id: true } }),
   ]);
-  return Boolean(card || wallet);
+  return Boolean(card || wallet || paid);
+}
+
+/** The latest payments that count, newest first, each with its bot's name while the user can see it. */
+export async function recentPayments(
+  prisma: Pick<PrismaClient, "payment" | "bot">,
+  userId: string,
+  take = 50,
+): Promise<SpendingPayment[]> {
+  const rows = await prisma.payment.findMany({
+    where: { userId, releasedAt: null },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take,
+    select: { id: true, site: true, amount: true, currency: true, botId: true, createdAt: true },
+  });
+  const bots = await prisma.bot.findMany({
+    where: { id: { in: [...new Set(rows.map((row) => row.botId))] } },
+    select: { id: true, name: true },
+  });
+  const names = new Map(bots.map((bot) => [bot.id, bot.name]));
+  return rows.map(({ botId, createdAt, ...row }) => ({
+    ...row,
+    botName: names.get(botId) ?? null,
+    createdAt: createdAt.toISOString(),
+  }));
 }
 
 /**

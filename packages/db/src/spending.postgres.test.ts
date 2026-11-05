@@ -5,6 +5,7 @@ import { asSystem, runAsTenant } from "./row-security.js";
 import type { PaymentInput } from "./spending.js";
 import {
   checkPayment,
+  recentPayments,
   recordPayment,
   releasePayment,
   releasePendingSpacePayments,
@@ -159,10 +160,11 @@ describePostgres("spending limit (PostgreSQL)", () => {
     expect(await as(() => recordPayment(prisma, payment(actor, 700)))).toBeNull();
     // Nothing to count it by: not recorded, not refused.
     expect(await as(() => recordPayment(prisma, payment(actor, null)))).toBeNull();
+    // A bot has paid, so the setting shows even without a card or wallet.
     expect(await as(() => spendingStatus(prisma, actor.userId))).toEqual({
       limit: null,
       spent: 0,
-      shown: false,
+      shown: true,
     });
     await as(() =>
       saveSpendingLimit(prisma, actor.userId, { amount: 1_000, currency: "usd", period: "week" }),
@@ -227,6 +229,41 @@ describePostgres("spending limit (PostgreSQL)", () => {
       rows.find((row) => row.operationKey === pending.operationKey)?.releasedAt,
     ).toBeInstanceOf(Date);
     expect(rows.find((row) => row.operationKey === approved.operationKey)?.releasedAt).toBeNull();
+  });
+
+  it("lists the payments that count, newest first, with the bot's name", async () => {
+    const actor = await seedUser();
+    const prisma = db!.prisma;
+    const as = <T>(fn: () => Promise<T>) => runAsTenant(actor, fn);
+    const bot = await asSystem(prisma).bot.create({
+      data: { spaceId: actor.spaceId, userId: actor.userId, name: "Shopper", color: "#000000" },
+    });
+    const older = payment(actor, 500, { botId: bot.id });
+    const released = payment(actor, 700, { botId: bot.id });
+    const newer = payment(actor, 300, { botId: "gone", site: "other.example.test" });
+    await as(() => recordPayment(prisma, older, new Date("2026-11-01T10:00:00Z")));
+    await as(() => recordPayment(prisma, released, new Date("2026-11-02T10:00:00Z")));
+    await as(() => recordPayment(prisma, newer, new Date("2026-11-03T10:00:00Z")));
+    await as(() => releasePayment(prisma, released.operationKey));
+    const listed = await as(() => recentPayments(prisma, actor.userId));
+    expect(listed.map(({ id: _id, ...row }) => row)).toEqual([
+      {
+        site: "other.example.test",
+        amount: 300,
+        currency: "usd",
+        botName: null,
+        createdAt: "2026-11-03T10:00:00.000Z",
+      },
+      {
+        site: "shop.example.test",
+        amount: 500,
+        currency: "usd",
+        botName: "Shopper",
+        createdAt: "2026-11-01T10:00:00.000Z",
+      },
+    ]);
+    const other = await seedUser();
+    expect(await runAsTenant(other, () => recentPayments(prisma, actor.userId))).toEqual([]);
   });
 
   it("keeps one user's limit and payments from another", async () => {

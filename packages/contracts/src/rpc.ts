@@ -171,6 +171,7 @@ import {
 import {
   PaymentWalletStatusSchema,
   SpendingLimitSchema,
+  SpendingPaymentSchema,
   SpendingStatusSchema,
 } from "./payments.js";
 import { MessageReactionSchema } from "./reactions.js";
@@ -1446,6 +1447,8 @@ export const appContract = {
     set: oc
       .input(z.object({ limit: SpendingLimitSchema.nullable() }).strict())
       .output(SpendingStatusSchema),
+    /** The latest payments that count, newest first. */
+    payments: oc.output(z.array(SpendingPaymentSchema)),
   },
   /** The signed-in user's wallet; absent when the deployment offers none. */
   paymentWallet: {

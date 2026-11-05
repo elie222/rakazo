@@ -5162,6 +5162,10 @@ msgstr ""
 msgid "Recent"
 msgstr "אחרונים"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "תשלומים אחרונים"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
 msgstr ""
@@ -5964,6 +5968,7 @@ msgstr "זיכרון משותף"
 msgid "Show"
 msgstr "הצגה"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""

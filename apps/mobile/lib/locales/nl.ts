@@ -1380,6 +1380,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Discard changes?": "Wijzigingen verwerpen?",
   Discard: "Verwerpen",
   "Could not delete note": "Notitie kon niet worden verwijderd",
+  "Recent payments": "Recente betalingen",
   "Spending limit": "Bestedingslimiet",
   Amount: "Bedrag",
   Currency: "Valuta",

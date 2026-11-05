@@ -5162,6 +5162,10 @@ msgstr "Odebrano"
 msgid "Recent"
 msgstr "Ostatnie"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "Ostatnie płatności"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
 msgstr "Zalecane"
@@ -5964,6 +5968,7 @@ msgstr "Wspólna pamięć"
 msgid "Show"
 msgstr "Pokaż"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr "Pokaż wszystkie"

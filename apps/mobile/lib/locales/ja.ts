@@ -1413,6 +1413,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Discard changes?": "変更を破棄しますか？",
   Discard: "破棄",
   "Could not delete note": "メモを削除できませんでした",
+  "Recent payments": "最近の支払い",
   "Spending limit": "支出上限",
   Amount: "金額",
   Currency: "通貨",

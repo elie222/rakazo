@@ -548,6 +548,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["paymentWallet/disconnect"],
       ["spendingLimit/get"],
       ["spendingLimit/set", { limit: null }],
+      ["spendingLimit/payments"],
       ["externalConversations/updatePolicy"],
       ["agentSecrets/list"],
       ["agentSecrets/put"],

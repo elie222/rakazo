@@ -5162,6 +5162,10 @@ msgstr ""
 msgid "Recent"
 msgstr "Recent"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "Recente betalingen"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
 msgstr ""
@@ -5964,6 +5968,7 @@ msgstr "Gedeeld geheugen"
 msgid "Show"
 msgstr "Tonen"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr "Alles tonen"

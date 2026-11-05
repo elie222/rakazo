@@ -1421,6 +1421,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Discard changes?": "Отменить изменения?",
   Discard: "Не сохранять",
   "Could not delete note": "Не удалось удалить заметку",
+  "Recent payments": "Последние платежи",
   "Spending limit": "Лимит расходов",
   Amount: "Сумма",
   Currency: "Валюта",

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } from "./helpers";
 
-test("shows the spending limit once a card is saved, and sets a monthly limit", async ({
+test("shows the spending limit once a card is saved, sets a monthly limit, and lists a payment", async ({
   page,
 }, testInfo) => {
   await signup(page, `spending-limit-${Date.now()}@rakazo.test`, "password12", "Spender");
@@ -32,4 +32,26 @@ test("shows the spending limit once a card is saved, and sets a monthly limit", 
   await expect(limit).toContainText("$200.00 a month");
   await expect(limit).toContainText("$0.00 spent this month");
   await captureScreenshot(page, testInfo, "spending-limit-set");
+
+  // The offline wallet signs in on its first check, then the bot buys through it.
+  await page.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await rpc(page, "paymentWallet/connect", {});
+  await expect
+    .poll(async () => (await rpc<{ status: string }>(page, "paymentWallet/status", {})).status)
+    .toBe("connected");
+  await page.getByPlaceholder(/Message/).fill("buy from the fixture shop");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("transcript").getByText(/Purchase \S+ is approved/)).toBeVisible({
+    timeout: 60_000,
+  });
+
+  const reopened = await openUserSettings(page);
+  await reopened.getByTestId("settings-nav-confirmations").click();
+  const payments = reopened.getByTestId("spending-payments");
+  await expect(payments.getByRole("listitem")).toHaveCount(1);
+  await expect(payments).toContainText("shop.example.test");
+  await expect(payments).toContainText("$23.40");
+  await expect(reopened.getByTestId("spending-limit")).toContainText("$23.40 spent this month");
+  await captureScreenshot(page, testInfo, "spending-limit-payments");
 });
