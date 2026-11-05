@@ -15,6 +15,8 @@ const describePostgres =
 
 const WAIT_BUDGET_MS = 5_000;
 const WAIT_INTERVAL_MS = 20;
+// Each transaction expires well inside the 20 s test, so its result and the cleanup land first.
+const TRANSACTION_TIMEOUT_MS = 8_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -147,17 +149,23 @@ describePostgres("group and thread lock order (PostgreSQL)", () => {
             payload: {},
           });
         },
-        { timeout: 30_000 },
+        { timeout: TRANSACTION_TIMEOUT_MS },
       );
       threadWriter.catch(() => undefined);
-      const xactId = await threadLocked;
+      // A thread writer that fails before it holds the lock reports its error, not a timeout.
+      const xactId = await Promise.race([
+        threadLocked,
+        threadWriter.then(() => {
+          throw new Error("the thread writer finished before it held the thread lock");
+        }),
+      ]);
 
       groupWriter = system.$transaction(
         async (tx) => {
           await lockOwnedGroup(tx, { spaceId, userId }, groupId);
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
         },
-        { timeout: 30_000 },
+        { timeout: TRANSACTION_TIMEOUT_MS },
       );
       groupWriter.catch(() => undefined);
 
