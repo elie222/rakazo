@@ -16,6 +16,7 @@ import { ArtifactFileCard } from "../../components/ArtifactFileCard";
 import { AskCard } from "../../components/AskCard";
 import { CollaborationMarker } from "../../components/ai/CollaborationMarker";
 import { CloudAgentCard } from "../../components/CloudAgentCard";
+import { McpAppCard } from "../../components/McpAppCard";
 import { PageBlockCard } from "../../components/pages/PageBlockCard";
 import { SubagentCard } from "../../components/SubagentCard";
 import {
@@ -471,6 +472,13 @@ export const MessageView = memo(function MessageView({
             return (
               <div key={i} className="flex justify-start">
                 <ChartBlockView name={block.name} spec={block.spec} data={block.data} />
+              </div>
+            );
+          }
+          if (block.kind === "app") {
+            return (
+              <div key={i} className="flex justify-start">
+                <McpAppCard block={block} target={artifactTarget} />
               </div>
             );
           }

@@ -26,10 +26,12 @@ import type {
   ThreadEvents,
 } from "@rakazo/db";
 import {
+  accountDeactivated,
   createThreadMessage,
   crossSpaceCommunicationAllowed,
   normalizeMessagingLinkCode,
   redeemMessagingLinkCode,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { MessagingReceipts } from "./messaging-receipts.js";
@@ -140,6 +142,8 @@ async function handleDirectEvent(
   const existing = await deps.prisma.messagingIdentity.findUnique({ where });
   if (existing && event.installationSpaceId && existing.spaceId !== event.installationSpaceId)
     return;
+  // A deactivated person's chat apps act for nobody: no commands, messages or links.
+  if (existing && (await accountDeactivated(deps.prisma, existing.userId))) return;
   if (existing) {
     // Any reply — even a content-free reaction — ends the consecutive-
     // outbound streak, but only real text wakes the bot. The conversation
@@ -255,6 +259,12 @@ async function handleDirectEvent(
 
 /** Time for all voice note transcripts of one inbound message; files are delivered without them after it. */
 const VOICE_TRANSCRIBE_BUDGET_MS = 20_000;
+
+/**
+ * How far a roster's platform time may run ahead of the server's clock and still count
+ * as the roster's version; further ahead the event applies its membership unversioned.
+ */
+const ROSTER_TIME_SKEW_MS = 5 * 60_000;
 
 /** Download provider-held files into thread artifacts, mirroring the team-chat path. */
 async function storeInboundMedia(
@@ -475,8 +485,11 @@ export async function teamChatSenderCanWakeMessageRoutines(
 
   const linkedIdentity = await deps.prisma.messagingIdentity.findUnique({
     where: { provider_address: { provider: event.provider, address: event.from } },
-    select: { id: true },
+    select: { id: true, userId: true },
   });
+  // A deactivated person counts as unlinked: like anyone in the workspace, never as themselves.
+  if (linkedIdentity && (await accountDeactivated(deps.prisma, linkedIdentity.userId)))
+    return false;
 
   if (event.isDirect) return Boolean(linkedIdentity);
 
@@ -570,7 +583,7 @@ async function stopOwnerWork(
       });
     }
     return stop;
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   await enqueueDeliverJob(deps);
   if (stop?.runIds.length) await finishThreadStop(deps, identity, target, stop);
 }
@@ -782,68 +795,117 @@ async function handleChannelEvent(
     return;
   }
 
+  // A deactivated sender's message does nothing: no invitations, memberships or relays.
+  const sender = await deps.prisma.messagingIdentity.findUnique({
+    where: { provider_address: { provider: event.provider, address: event.from } },
+    select: { userId: true },
+  });
+  if (sender && (await accountDeactivated(deps.prisma, sender.userId))) return;
+
   const participants = [...event.participants];
   if (!participants.includes(event.from)) participants.push(event.from);
 
+  // Roster membership changes go with the roster's own version, under the channel's
+  // row lock. A webhook retry can deliver a roster older than one a newer event
+  // already settled, and without the lock an older handler could pass the version
+  // check, pause, and then sweep members the newer roster had just settled. Whichever
+  // handler takes the lock first records its roster time — equal times conflict too —
+  // and a handler whose roster is not newer than the recorded one changes no
+  // membership at all: no sweep, no re-invite, no discovery. Invitations are
+  // announced only after the transaction commits.
+  // The roster time is the platform's clock, which can run ahead of ours. Within a
+  // small skew it stays the version, so ordering and redeliveries behave as usual.
+  // Further ahead the time is bogus and the event's roster is distrusted whole, on
+  // every delivery alike: it changes no membership — no discovery, no invites, no
+  // sweep — and records no time, so it can never settle or unsettle members, and a
+  // far-future time can never sit ahead of every later real roster and freeze it.
+  const eventRosterAt = event.participants.length > 0 ? event.rosterAt : undefined;
+  const rosterTimeRejected =
+    eventRosterAt !== undefined && eventRosterAt.getTime() > Date.now() + ROSTER_TIME_SKEW_MS;
+  const rosterAt = rosterTimeRejected ? undefined : eventRosterAt;
+  const invited: IdentityRow[] = [];
   let hasUnlinked = false;
-  for (const address of participants) {
-    const identity = await deps.prisma.messagingIdentity.findUnique({
-      where: { provider_address: { provider: event.provider, address } },
-    });
-    const member = await deps.prisma.messagingChannelMember.findUnique({
-      where: { channelId_address: { channelId: channel.id, address } },
-    });
-    if (member) {
-      // Compare against the current identity, not just null: unlinking
-      // deletes the identity row but leaves this FK-free column pointing at
-      // the dead id, so a re-link would otherwise never reattach and the
-      // member would sit in the channel unreachable by every lookup.
-      if (identity && member.identityId !== identity.id) {
-        await deps.prisma.messagingChannelMember.update({
-          where: { id: member.id },
-          data: { identityId: identity.id },
-        });
-        if (member.status === "invited") await inviteMember(deps, channel, identity);
-      }
-      if (member.status === "left") {
-        // Back in the group: restart the approval cycle.
-        await deps.prisma.messagingChannelMember.update({
-          where: { id: member.id },
-          data: { status: "invited" },
-        });
-        if (identity) await inviteMember(deps, channel, identity);
-      }
-      if (!identity) hasUnlinked = true;
-      continue;
+  await deps.prisma.$transaction(async (tx) => {
+    // A rejected time distrusts the event's membership entirely; its message content,
+    // if any, still flows below as for any message.
+    if (rosterTimeRejected) return;
+    await tx.$queryRaw`SELECT id FROM messaging_channels WHERE id = ${channel.id} FOR UPDATE`;
+    if (rosterAt) {
+      const settled = await tx.messagingChannel.findUniqueOrThrow({
+        where: { id: channel.id },
+        select: { rosterSeenAt: true },
+      });
+      if (settled.rosterSeenAt && rosterAt <= settled.rosterSeenAt) return;
+      await tx.messagingChannel.update({
+        where: { id: channel.id },
+        data: { rosterSeenAt: rosterAt },
+      });
     }
-    // Upsert, not create: concurrent group webhooks race on the unique key.
-    await deps.prisma.messagingChannelMember.upsert({
-      where: { channelId_address: { channelId: channel.id, address } },
-      create: {
-        channelId: channel.id,
-        address,
-        identityId: identity?.id ?? null,
-        status: "invited",
-      },
-      update: {},
-    });
-    if (identity) await inviteMember(deps, channel, identity);
-    else hasUnlinked = true;
-  }
+    for (const address of participants) {
+      const identity = await tx.messagingIdentity.findUnique({
+        where: { provider_address: { provider: event.provider, address } },
+      });
+      const member = await tx.messagingChannelMember.findUnique({
+        where: { channelId_address: { channelId: channel.id, address } },
+      });
+      if (member) {
+        // Compare against the current identity, not just null: unlinking
+        // deletes the identity row but leaves this FK-free column pointing at
+        // the dead id, so a re-link would otherwise never reattach and the
+        // member would sit in the channel unreachable by every lookup.
+        if (identity && member.identityId !== identity.id) {
+          await tx.messagingChannelMember.update({
+            where: { id: member.id },
+            data: { identityId: identity.id },
+          });
+          if (member.status === "invited") {
+            if (await queueInvite(tx, channel, identity)) invited.push(identity);
+          }
+        }
+        if (member.status === "left") {
+          // Back in the group: restart the approval cycle.
+          await tx.messagingChannelMember.update({
+            where: { id: member.id },
+            data: { status: "invited" },
+          });
+          if (identity) {
+            if (await queueInvite(tx, channel, identity)) invited.push(identity);
+          }
+        }
+        if (!identity) hasUnlinked = true;
+        continue;
+      }
+      // Upsert, not create: concurrent group webhooks race on the unique key.
+      await tx.messagingChannelMember.upsert({
+        where: { channelId_address: { channelId: channel.id, address } },
+        create: {
+          channelId: channel.id,
+          address,
+          identityId: identity?.id ?? null,
+          status: "invited",
+        },
+        update: {},
+      });
+      if (identity) {
+        if (await queueInvite(tx, channel, identity)) invited.push(identity);
+      } else hasUnlinked = true;
+    }
 
-  // Someone removed from the group must stop receiving its content.
-  // A webhook without a participants roster says nothing about membership —
-  // never sweep on partial data.
-  if (event.participants.length > 0) {
-    await deps.prisma.messagingChannelMember.updateMany({
-      where: {
-        channelId: channel.id,
-        address: { notIn: participants },
-        status: { in: ["invited", "approved"] },
-      },
-      data: { status: "left" },
-    });
-  }
+    // Someone removed from the group must stop receiving its content.
+    // A webhook without a participants roster says nothing about membership —
+    // never sweep on partial data.
+    if (event.participants.length > 0) {
+      await tx.messagingChannelMember.updateMany({
+        where: {
+          channelId: channel.id,
+          address: { notIn: participants },
+          status: { in: ["invited", "approved"] },
+        },
+        data: { status: "left" },
+      });
+    }
+  });
+  for (const identity of invited) await announceInvite(deps, channel, identity);
 
   if (hasUnlinked && !channel.introPostedAt) {
     // Under the channel lock, so the intro never takes a position inside a
@@ -899,7 +961,7 @@ async function handleChannelEvent(
     const identity = await deps.prisma.messagingIdentity.findUnique({
       where: { id: member.identityId! },
     });
-    if (!identity) continue;
+    if (!identity || (await accountDeactivated(deps.prisma, identity.userId))) continue;
     const thread = await deps.prisma.thread.findFirst({ where: { botId: identity.botId } });
     if (!thread) continue;
     const target = {
@@ -930,18 +992,20 @@ async function handleChannelEvent(
   }
 }
 
-async function inviteMember(
-  deps: MessagingInboundDeps,
+async function queueInvite(
+  db: Pick<PrismaClient, "messagingOutbound" | "user">,
   channel: { id: string; name: string | null },
   identity: IdentityRow,
-): Promise<void> {
+): Promise<boolean> {
+  // A deactivated person is not invited anywhere.
+  if (await accountDeactivated(db, identity.userId)) return false;
   const name = channel.name ?? "a group chat";
   // A returning member restarts the approval cycle; clear the prior invite
   // row or skipDuplicates would leave them with no prompt to answer.
-  await deps.prisma.messagingOutbound.deleteMany({
+  await db.messagingOutbound.deleteMany({
     where: { idempotencyKey: `invite:${channel.id}:${identity.id}` },
   });
-  await deps.prisma.messagingOutbound.createMany({
+  await db.messagingOutbound.createMany({
     data: [
       {
         idempotencyKey: `invite:${channel.id}:${identity.id}`,
@@ -952,6 +1016,15 @@ async function inviteMember(
     ],
     skipDuplicates: true,
   });
+  return true;
+}
+
+async function announceInvite(
+  deps: MessagingInboundDeps,
+  channel: { id: string; name: string | null },
+  identity: IdentityRow,
+): Promise<void> {
+  const name = channel.name ?? "a group chat";
   const thread = await deps.prisma.thread.findFirst({ where: { botId: identity.botId } });
   if (thread) {
     const note = await createThreadMessage(deps.prisma, {

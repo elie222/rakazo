@@ -47,6 +47,7 @@ import {
   formatBillingDate,
   formatBillingPrice,
 } from "../lib/billing";
+import type { RpcClient } from "../lib/rpc";
 import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 import { AccountMenu } from "./AccountMenu";
@@ -252,8 +253,8 @@ export function CreditChoice({
   const [interval, setByokInterval] = useState<ByokInterval>("month");
   const credit = formatBillingAmount(amount, "usd", i18n.locale);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState(false);
-  const { logOut, signingOut } = useSignOut("/sign-in", () => setError(true));
+  const [error, setError] = useState<string | null>(null);
+  const { logOut, signingOut } = useSignOut("/sign-in", setError);
   // A choice that answers after the plans were closed must not leave the app.
   const closed = useRef(false);
   useEffect(() => {
@@ -267,7 +268,7 @@ export function CreditChoice({
   }
   async function choose(ownKey: boolean) {
     setPending(true);
-    setError(false);
+    setError(null);
     try {
       if (ownKey && status.byokFreeUntil) {
         go((await rpc.billing.checkout({ interval })).url);
@@ -282,7 +283,7 @@ export function CreditChoice({
         go(url);
       }
     } catch {
-      setError(true);
+      setError(t`Could not open billing`);
       setPending(false);
     }
   }
@@ -374,7 +375,7 @@ export function CreditChoice({
         <Card>
           <CardHeader>
             <h2 className="text-lg font-medium">
-              <Trans>Rakazo credits</Trans>
+              <Trans>Credits</Trans>
             </h2>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-4">
@@ -395,7 +396,7 @@ export function CreditChoice({
             <Button
               className="w-full"
               disabled={pending || !status.canManage || !status.creditPurchasesEnabled}
-              aria-label={t`Subscribe to Rakazo credits`}
+              aria-label={t`Subscribe to credits`}
               onClick={() => void choose(false)}
             >
               <Trans>Subscribe</Trans>
@@ -405,7 +406,7 @@ export function CreditChoice({
       </div>
       {error ? (
         <p role="alert" className="text-sm text-destructive">
-          <Trans>Could not open billing</Trans>
+          {error}
         </p>
       ) : null}
     </div>
@@ -415,9 +416,12 @@ export function CreditChoice({
 export function ModelCreditsSettings({
   status,
   refresh,
+  client,
 }: {
   status: BillingStatus;
   refresh: () => Promise<void>;
+  /** Bound to the space the billing panel opened for, not the current selection. */
+  client: RpcClient;
 }) {
   const { t, i18n } = useLingui();
   const [amount, setAmount] = useState<CreditAmount>(
@@ -604,7 +608,7 @@ export function ModelCreditsSettings({
                 disabled={pending}
                 onClick={() =>
                   void action(async () => {
-                    const { url } = await rpc.billing.checkout({
+                    const { url } = await client.billing.checkout({
                       interval: checkoutAnnualPrice ? interval : "month",
                       ...(checkoutOffer ? { tier: checkoutTier } : {}),
                     });
@@ -674,7 +678,7 @@ export function ModelCreditsSettings({
               onClick={() =>
                 void action(async () => {
                   setEndTrialOpen(false);
-                  await rpc.billing.endTrial();
+                  await client.billing.endTrial();
                   await refresh();
                 })
               }
@@ -709,7 +713,7 @@ export function ModelCreditsSettings({
               onClick={() =>
                 void action(async () => {
                   setYearlyOpen(false);
-                  await rpc.billing.switchToYearly();
+                  await client.billing.switchToYearly();
                   await refresh();
                 })
               }
@@ -751,7 +755,7 @@ export function ModelCreditsSettings({
                   const tier = tierTarget?.tier;
                   setTierTarget(null);
                   if (!tier) return;
-                  await rpc.billing.changeTier({ tier });
+                  await client.billing.changeTier({ tier });
                   await refresh();
                 })
               }
@@ -778,10 +782,10 @@ export function ModelCreditsSettings({
               onClick={() =>
                 void action(async () => {
                   if (recurring) {
-                    await rpc.billing.setMonthlyCredits({ amountCents: amount });
+                    await client.billing.setMonthlyCredits({ amountCents: amount });
                     await refresh();
                   } else {
-                    const { url } = await rpc.billing.purchaseCredits({
+                    const { url } = await client.billing.purchaseCredits({
                       amountCents: amount,
                       monthly: true,
                     });
@@ -810,7 +814,7 @@ export function ModelCreditsSettings({
               disabled={pending}
               onClick={() =>
                 void action(async () => {
-                  const { url } = await rpc.billing.portal();
+                  const { url } = await client.billing.portal();
                   window.location.assign(url);
                 })
               }
@@ -826,7 +830,7 @@ export function ModelCreditsSettings({
           disabled={pending || !status.creditPurchasesEnabled}
           onClick={() =>
             void action(async () => {
-              await rpc.billing.selectFunding({ funding: "credits" });
+              await client.billing.selectFunding({ funding: "credits" });
               window.location.reload();
             })
           }
@@ -840,7 +844,7 @@ export function ModelCreditsSettings({
           disabled={pending}
           onClick={() =>
             void action(async () => {
-              const { url } = await rpc.billing.selectFunding({ funding: "byok" });
+              const { url } = await client.billing.selectFunding({ funding: "byok" });
               window.location.assign(url ?? "/app?settings=models");
             })
           }
@@ -868,7 +872,7 @@ export function ModelCreditsSettings({
             disabled={pending}
             onClick={() =>
               void action(async () => {
-                const { url } = await rpc.billing.purchaseCredits({
+                const { url } = await client.billing.purchaseCredits({
                   amountCents: topupAmount,
                   monthly: false,
                 });

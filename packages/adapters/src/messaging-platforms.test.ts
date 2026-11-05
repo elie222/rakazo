@@ -408,6 +408,16 @@ describe("sendblue platform hooks", () => {
     expect(sendblue.channelName!(null)).toBeNull();
   });
 
+  it("takes the roster's time from the message's send time", () => {
+    expect(sendblue.rosterAt!({ date_sent: "2026-11-04T10:01:00.000Z" })).toEqual(
+      new Date("2026-11-04T10:01:00.000Z"),
+    );
+    expect(sendblue.rosterAt!({ date_sent: "not-a-date" })).toBeNull();
+    expect(sendblue.rosterAt!({ date_sent: 42 })).toBeNull();
+    expect(sendblue.rosterAt!({})).toBeNull();
+    expect(sendblue.rosterAt!(null)).toBeNull();
+  });
+
   it("accepts only supported per-message transports", () => {
     for (const service of ["iMessage", "SMS", "RCS"]) {
       expect(sendblue.transport!({ service })).toBe(service);

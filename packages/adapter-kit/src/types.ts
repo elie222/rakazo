@@ -269,8 +269,12 @@ export interface ConnectorTool {
   readOnly?: boolean;
   /** Set when the tool runs other actions named in its arguments; see ToolBatch. */
   batch?: ToolBatch;
+  /** What the person sees for a call, when the name the model uses would read badly. */
+  label?: string;
   /** In-process routing metadata. It is never exposed to the model. */
   route?: ConnectorRoute;
+  /** The `ui://` resource an MCP server shows this tool's result with (MCP Apps). */
+  appResourceUri?: string;
 }
 
 /**
@@ -293,6 +297,8 @@ export interface ConnectorRoute {
   connectionId?: string;
   /** Source label for lazy catalog name indexes. Never exposed as a model schema field. */
   catalogGroup?: string;
+  /** The `ui://` resource that shows this tool's result; see ConnectorApp. */
+  appResourceUri?: string;
 }
 
 export interface ConnectorCall {
@@ -301,11 +307,26 @@ export interface ConnectorCall {
   connectionId?: string;
   executionId: string;
   route?: ConnectorRoute;
+  /** Read the tool's app after a successful call. Only a caller that shows it asks. */
+  withApp?: boolean;
+}
+
+/**
+ * An MCP server's app for one successful call (MCP Apps): HTML the client shows sandboxed with
+ * the call's input and result. Declared domains are already narrowed to the ones allowed.
+ */
+export interface ConnectorApp {
+  server: string;
+  html: string;
+  csp: { connectDomains?: string[]; resourceDomains?: string[] };
+  prefersBorder?: boolean;
 }
 
 export type ConnectorEvent =
   | { type: "log"; message: string }
   | { type: "result"; data: unknown }
+  /** Follows the call's `result` when its tool has an app. */
+  | { type: "app"; app: ConnectorApp }
   | { type: "error"; message: string; logIds?: string[] };
 
 export interface ConnectorCapabilities {
@@ -506,6 +527,17 @@ export interface AgentRunModel {
   oauth?: {
     credential: AgentModelOAuthCredential;
     persist?: (credential: AgentModelOAuthCredential) => Promise<void>;
+    /**
+     * Refreshes the stored credential under the lock every refresh of it shares,
+     * calling `refresh` on the stored copy only if no other refresh already rotated it.
+     */
+    refresh?: (
+      held: AgentModelOAuthCredential,
+      refresh: (
+        stored: AgentModelOAuthCredential,
+        signal: AbortSignal,
+      ) => Promise<AgentModelOAuthCredential | undefined>,
+    ) => Promise<AgentModelOAuthCredential>;
     /** Drop the stored credential after a terminal provider rejection. */
     retire?: (
       reason: ModelCredentialRetireReason,
@@ -927,6 +959,12 @@ export interface MessagingInboundMessage {
   /** Group roster addresses when the platform reports them; often empty. */
   participants: string[];
   /**
+   * When the platform says this roster was current, when it reports a time for
+   * the event; a roster older than the newest one already processed for the
+   * channel changes no membership.
+   */
+  rosterAt?: Date;
+  /**
    * Member departures this event reports one at a time (Telegram service
    * messages on a platform that sends no roster): addresses that left or were
    * removed, plus our own bot leaving, which ends every membership because
@@ -1146,6 +1184,8 @@ export type BrowserActStep =
       site?: string;
       label?: string;
       amount?: string;
+      /** The page's total the card showed beside the button, or empty when it showed none. */
+      total?: string;
     }
   /** Attaches computer files to a file input without opening a native file chooser. */
   | { kind: "upload"; ref: string; paths: string[]; roots?: string[] }
@@ -1214,6 +1254,8 @@ export interface BrowserPurchase {
   amount: string;
   /** Whether the amount is the one the button names or the total the page shows. */
   amountSource?: "button" | "page";
+  /** The total the page shows beside a button that names its own amount; older computers omit it. */
+  total?: string;
 }
 
 export interface BrowserPurchaseCheckRequest {

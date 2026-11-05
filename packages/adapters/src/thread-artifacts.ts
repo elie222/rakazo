@@ -14,6 +14,7 @@ import {
   ATTACHMENT_MAX_COUNT,
   attachmentSizeLabel,
   HISTORY_ATTACHMENTS_PER_RESPONSE,
+  MCP_APP_MIME_TYPE,
 } from "@rakazo/contracts";
 import {
   attachmentComputerPath,
@@ -390,4 +391,65 @@ export function recentThreadFilesInstruction(files: readonly MaterializedThreadF
     "Files attached earlier in this conversation are also on your computer:",
     ...files.map(fileLine),
   ].join("\n");
+}
+
+/**
+ * Keeps an MCP app's HTML as a hidden artifact of the thread's bot or group, so its card can load
+ * it later through the same authorized read as attachments. One copy per document: a later call
+ * with the same app reuses it. The artifact list and search leave this type out.
+ */
+export async function storeMcpAppHtml(
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
+  input: {
+    spaceId: string;
+    userId: string;
+    botId: string;
+    groupId?: string;
+    runId: string;
+    server: string;
+    html: string;
+    operationId: string;
+  },
+): Promise<string> {
+  const bytes = new TextEncoder().encode(input.html);
+  const hash = createHash("sha256").update(bytes).digest("hex");
+  const owner = {
+    spaceId: input.spaceId,
+    userId: input.userId,
+    botId: input.botId,
+    groupId: input.groupId ?? null,
+  };
+  const existing = await deps.prisma.artifact.findFirst({
+    where: { ...owner, hash, mimeType: MCP_APP_MIME_TYPE },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const name = `${input.server} app.html`.slice(0, ARTIFACT_NAME_MAX_LENGTH);
+  const context = {
+    operationId: input.operationId,
+    traceId: input.operationId,
+    spaceId: input.spaceId,
+    userId: input.userId,
+    botId: input.botId,
+    signal: new AbortController().signal,
+  };
+  const stored = await deps.artifacts.put({ name, mimeType: MCP_APP_MIME_TYPE, bytes }, context);
+  // Its own one-version family: a file of the same name never versions it, nor it the file.
+  const row = await deps.prisma.artifact
+    .create({
+      data: {
+        ...owner,
+        runId: input.runId,
+        name,
+        mimeType: MCP_APP_MIME_TYPE,
+        size: bytes.byteLength,
+        hash,
+        storageKey: stored.id,
+      },
+    })
+    .catch(async (error) => {
+      await deps.artifacts.remove(stored.id, context).catch(() => undefined);
+      throw error;
+    });
+  return row.id;
 }

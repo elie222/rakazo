@@ -6,8 +6,9 @@ import {
   hasHostedModelCredits,
   hostedModelCreditObserver,
   parseModelSecret,
+  refreshStoredModelCredential,
   resolveMemberMainModel,
-  resolveModelAuth,
+  resolveStoredModelAuth,
   retireToReconnectMarker,
   secretValuesToRedact,
   serializeModelSecret,
@@ -294,7 +295,14 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       credential,
       parseModelSecret(plaintext).maxTokens,
     );
-    const auth = await resolveModelAuth(plaintext, provider, { persist, retire });
+    const auth = await resolveStoredModelAuth(
+      this.deps.prisma,
+      this.deps.secrets,
+      scope,
+      credential,
+      plaintext,
+      provider,
+    );
     const parsed = auth.secret;
     const limit = parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {};
     const context =
@@ -321,6 +329,13 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
                 }),
               );
             },
+            refresh: refreshStoredModelCredential(
+              this.deps.prisma,
+              this.deps.secrets,
+              scope,
+              credential,
+              provider,
+            ),
             retire,
           },
         },
