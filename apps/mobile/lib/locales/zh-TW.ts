@@ -1401,6 +1401,10 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "{amount} spent this week": "本週已花費 {amount}",
   "{amount} spent this month": "本月已花費 {amount}",
   "{amount} spent": "已花費 {amount}",
+  "Button “{button}” · read from the page, not checked": "按鈕「{button}」· 讀取自頁面，未核實",
+  "On the button": "按鈕上的金額",
+  "Read from the page, not checked": "讀取自頁面，未核實",
+  Total: "合計",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

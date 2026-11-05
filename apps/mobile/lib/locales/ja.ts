@@ -1428,6 +1428,11 @@ export const JA_MESSAGES: Record<string, string> = {
   "{amount} spent this week": "今週の支出: {amount}",
   "{amount} spent this month": "今月の支出: {amount}",
   "{amount} spent": "支出: {amount}",
+  "Button “{button}” · read from the page, not checked":
+    "ボタン「{button}」· ページから読み取り、未確認",
+  "On the button": "ボタンの金額",
+  "Read from the page, not checked": "ページから読み取り、未確認",
+  Total: "合計",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

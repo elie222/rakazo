@@ -629,6 +629,15 @@ class PurchaseTest(unittest.TestCase):
         self.assertEqual(result["purchase"]["amount"], "$5")
         self.assertEqual(result["purchase"]["total"], "$10")
 
+    def test_purchase_check_passes_on_the_order_lines_the_page_lists(self):
+        items = [{"name": "Bananas \u00d7 6", "amount": "$3.00"}, {"name": "Delivery", "amount": "$6.00"}]
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "items": items})
+        result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})
+        self.assertEqual(result["purchase"]["items"], items)
+        # A page that lists none sends none, as before.
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "items": []})
+        self.assertNotIn("items", page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})["purchase"])
+
     def test_one_card_approves_one_purchase_click_of_a_batch(self):
         browser = pays(pays(FakeAgentBrowser(), "e7"), "e8")
         result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}, {"kind": "click", "ref": "e8"}]})

@@ -183,6 +183,10 @@ msgstr "{count} 天"
 msgid "{count} months"
 msgstr "{count} 個月"
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "還有 {count} 項"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr "{count} 週"
@@ -1204,6 +1208,10 @@ msgstr "瀏覽 MCP 伺服器"
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "內建"
+
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "按鈕「{button}」· 讀取自頁面，未核實"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -4665,6 +4673,10 @@ msgstr "{day} 日 {time}"
 msgid "on the 1st at {0}"
 msgstr "每月 1 日 {0}"
 
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "按鈕上的金額"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "一次性"
@@ -5129,6 +5141,10 @@ msgstr "回應"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Reactions"
 msgstr "表情回應"
+
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "讀取自頁面，未核實"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
@@ -6746,6 +6762,10 @@ msgstr "工具名稱"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "工具"
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "合計"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
