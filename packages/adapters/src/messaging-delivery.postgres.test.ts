@@ -21,6 +21,7 @@ describePostgres("messaging outbound drain order (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
   let system: PrismaClient;
   let identity: { userId: string; spaceId: string; botId: string; threadId: string };
+  let identityId: string;
   const address = `order-${randomUUID()}`;
   const threadIds: string[] = [];
 
@@ -40,10 +41,16 @@ describePostgres("messaging outbound drain order (PostgreSQL)", () => {
       botId: provisioned.botId,
       threadId: provisioned.threadId,
     };
+    identityId = (await system.messagingIdentity.findUnique({ where: { botId: identity.botId } }))!
+      .id;
   });
   afterAll(async () => {
     if (system) {
       await system.messagingOutbound.deleteMany({ where: { threadId: { in: threadIds } } });
+      // DM rows carry the identity, not a thread.
+      if (identityId) {
+        await system.messagingOutbound.deleteMany({ where: { identityId } });
+      }
       await system.messagingChannel.deleteMany({ where: { threadId: { in: threadIds } } });
       await system.messagingIdentity.deleteMany({ where: { address } });
       await system.organization.deleteMany({ where: { id: identity?.spaceId } });
@@ -230,6 +237,88 @@ describePostgres("messaging outbound drain order (PostgreSQL)", () => {
     expect(later[0]!.createdAt.getTime()).toBeGreaterThan(earlier.at(-1)!.createdAt.getTime());
     // Later tests drain every pending row in the database.
     await system.messagingOutbound.deleteMany({ where: { threadId } });
+  });
+
+  /**
+   * A run mirrored to the DM identity: a messaging run whose source carries no
+   * channel block, or a delegated bot_message run with no source at all.
+   */
+  async function dmRunWithReply(trigger: "messaging" | "bot_message", reply: string, seq: number) {
+    const source =
+      trigger === "messaging"
+        ? await system.message.create({
+            data: {
+              threadId: identity.threadId,
+              seq,
+              role: "user",
+              blocks: [{ kind: "text", text: "dm hi" }],
+              clientNonce: `dm-src-${seq}-${address}`,
+            },
+          })
+        : null;
+    const task = await system.task.create({
+      data: { ...identity, prompt: "mirror fixture", status: "completed" },
+    });
+    const run = await system.run.create({
+      data: {
+        ...identity,
+        taskId: task.id,
+        status: "completed",
+        trigger,
+        ...(source ? { sourceMessageId: source.id } : {}),
+      },
+    });
+    await system.message.create({
+      data: {
+        threadId: identity.threadId,
+        seq: seq + 1,
+        role: "bot",
+        botId: identity.botId,
+        runId: run.id,
+        blocks: [{ kind: "text", text: reply }],
+      },
+    });
+    return run;
+  }
+
+  it("never interleaves two mirrors of one DM identity, not even on a clock tie", async () => {
+    // Seq stays clear of the group fixture's rows in the same thread.
+    const runA = await dmRunWithReply("messaging", `one ${"x".repeat(4_100)} END-A`, 201);
+    const runB = await dmRunWithReply("bot_message", `two ${"y".repeat(4_100)} END-B`, 203);
+    const { messaging } = fakeSurface();
+    const deps = makeDeps(system, messaging);
+
+    // Both mirrors read the same millisecond: whichever wins the allocation
+    // lock first, its rows must stay contiguous and clear of the other's.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    try {
+      await Promise.all([
+        mirrorMessagingOutbound(deps, runA.id),
+        mirrorMessagingOutbound(deps, runB.id),
+      ]);
+    } finally {
+      clock.mockRestore();
+    }
+
+    const rows = await system.messagingOutbound.findMany({
+      where: { identityId },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    expect(rows).toHaveLength(4);
+    // The fillers (x for the first reply, y for the second) mark every part.
+    const owner = (row: (typeof rows)[number]) => (row.body.includes("y") ? 2 : 1);
+    const firstOf = (reply: 1 | 2) => rows.findIndex((row) => owner(row) === reply);
+    const lastOf = (reply: 1 | 2) => rows.map(owner).lastIndexOf(reply);
+    // Each reply's parts form one contiguous block in send order.
+    expect(lastOf(1) - firstOf(1)).toBe(1);
+    expect(lastOf(2) - firstOf(2)).toBe(1);
+    // And the two blocks do not overlap.
+    expect(firstOf(2) > lastOf(1) || firstOf(1) > lastOf(2)).toBe(true);
+    const earlier = rows.filter((row) => owner(row) === (firstOf(1) < firstOf(2) ? 1 : 2));
+    const later = rows.filter((row) => owner(row) === (firstOf(1) < firstOf(2) ? 2 : 1));
+    expect(later[0]!.createdAt.getTime()).toBeGreaterThan(earlier.at(-1)!.createdAt.getTime());
+    // Later tests drain every pending row in the database.
+    await system.messagingOutbound.deleteMany({ where: { identityId } });
   });
 
   it("does not start a send beside an in-flight row when an earlier row lands late", async () => {

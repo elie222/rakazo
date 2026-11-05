@@ -5,7 +5,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
-import { insertGroupOutboundRows } from "@rakazo/adapters";
+import { insertOutboundRows } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { MessagingCommand } from "@rakazo/core";
@@ -848,7 +848,7 @@ async function handleChannelEvent(
   if (hasUnlinked && !channel.introPostedAt) {
     // Under the channel lock, so the intro never takes a position inside a
     // mirrored reply's range and the drain's claim stays serialised with it.
-    await insertGroupOutboundRows(deps.prisma, channel, [
+    await insertOutboundRows(deps.prisma, { identityId: null, threadId: channel.threadId }, [
       {
         idempotencyKey: `intro:${channel.id}`,
         kind: "intro",
