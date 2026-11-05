@@ -13,6 +13,8 @@ export const SECURITY_EVENT_TYPES = [
   "auth.passkey.changed",
   "auth.passkey.removed",
   "auth.account.deleted",
+  "auth.account.deactivated",
+  "auth.account.reactivated",
   "auth.identity.confirmed",
   "credential.created",
   "credential.changed",

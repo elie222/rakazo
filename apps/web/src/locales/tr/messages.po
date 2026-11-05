@@ -1663,8 +1663,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr "Bilgisayarlar hazır. Devam etmek için sayfayı yenile veya bir bot aç."
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "Bilgisayarlar kapalı. SANDBOX_PROVIDER=docker ve SANDBOX_SUPERVISOR_TOKEN ayarlayın; ya da SANDBOX_PROVIDER değerini e2b, novita, daytona veya boat yapıp API anahtarını ekleyin. .env değişince stacki yeniden oluşturun."
+msgid "Computers are off on this server."
+msgstr "Bu sunucuda bilgisayarlar kapalı."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1847,7 +1847,6 @@ msgstr "{0} ile devam et"
 msgid "Conversations"
 msgstr "Sohbetler"
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1865,10 +1864,6 @@ msgstr "Kopyalandı"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Kopyala"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr ".env örneğini kopyala"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2577,6 +2572,10 @@ msgstr "Kimlik bilgileri: {names}"
 msgid "Credit amount"
 msgstr "Kredi tutarı"
 
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "Krediler"
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
 msgstr "Krediler ($)"
@@ -2889,10 +2888,6 @@ msgstr "Kapatıldı. MCP ayarlarından istediğin zaman yeniden bağlanabilirsin
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
 msgstr "Docker"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr "Docker yapılandırılmış ama bilgisayarlar yanıt vermiyor. Sandbox supervisor'ın çalıştığını doğrula, .env'i değiştirdiysen yığını yeniden oluştur."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
@@ -5146,7 +5141,6 @@ msgstr "Kuyrukta"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr "Rakazo kredileri"
@@ -5951,6 +5945,7 @@ msgstr "Ayarlar: Kullanım"
 msgid "Setup complete"
 msgstr "Kurulum tamamlandı"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "Kurulum yardımı"
@@ -6342,8 +6337,8 @@ msgid "Subscribe for {price} / month"
 msgstr "Aylık {price} ile abone ol"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "Rakazo kredilerine abone ol"
+msgid "Subscribe to credits"
+msgstr "Kredilere abone ol"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"
@@ -6549,6 +6544,10 @@ msgstr "Düşünüyor"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Thinking: {0}"
 msgstr "Düşünme: {0}"
+
+#: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "Bu hesap devre dışı bırakıldı"
 
 #: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
@@ -6821,7 +6820,7 @@ msgstr "Kötüye kullanımı önlemek için denemelerde daha az saat verilir."
 
 #: src/components/ErrorNotice.tsx
 msgid "Troubleshoot"
-msgstr ""
+msgstr "Sorun gider"
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"

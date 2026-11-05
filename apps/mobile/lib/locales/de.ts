@@ -1020,6 +1020,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Email verification required": "E-Mail-Verifizierung erforderlich",
   "Link SSO": "SSO verknüpfen",
   "Registration is closed": "Registrierung ist geschlossen",
+  "This account is deactivated": "Dieses Konto ist deaktiviert",
   Retry: "Erneut versuchen",
   "Send deletion code": "Löschcode senden",
   "Sign in to your existing account to link SSO":

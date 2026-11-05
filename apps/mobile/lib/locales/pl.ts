@@ -1013,6 +1013,7 @@ export const PL_MESSAGES: Record<string, string> = {
   "Email verification required": "Wymagana weryfikacja adresu e-mail",
   "Link SSO": "Połącz SSO",
   "Registration is closed": "Rejestracja jest zamknięta",
+  "This account is deactivated": "To konto jest dezaktywowane",
   Retry: "Ponów",
   "Send deletion code": "Wyślij kod usunięcia",
   "Sign in to your existing account to link SSO":

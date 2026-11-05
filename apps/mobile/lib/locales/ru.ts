@@ -1053,6 +1053,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Email verification required": "Требуется подтверждение электронной почты",
   "Link SSO": "Привязать SSO",
   "Registration is closed": "Регистрация закрыта",
+  "This account is deactivated": "Эта учётная запись деактивирована",
   Retry: "Повторить",
   "Send deletion code": "Отправить код удаления",
   "Sign in to your existing account to link SSO":

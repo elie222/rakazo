@@ -43,6 +43,7 @@ describe("a run whose sender has left the space", () => {
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
       spaceMember: { findUnique: vi.fn(async () => null) },
+      user: { findUnique: vi.fn(async () => null) },
       $transaction: vi.fn(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx)),
     };
     const runtimeRun = vi.fn();

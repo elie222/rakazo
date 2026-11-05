@@ -993,6 +993,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Email verification required": "需要驗證電子信箱",
   "Link SSO": "關聯 SSO",
   "Registration is closed": "註冊已關閉",
+  "This account is deactivated": "此帳戶已停用",
   Retry: "重試",
   "Send deletion code": "傳送刪除驗證碼",
   "Sign in to your existing account to link SSO": "請登入現有帳號以關聯 SSO",

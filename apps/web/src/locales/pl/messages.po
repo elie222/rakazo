@@ -1663,8 +1663,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr "Komputery są dostępne. Odśwież stronę lub otwórz bota, aby kontynuować."
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "Komputery są wyłączone. Ustaw SANDBOX_PROVIDER=docker z SANDBOX_SUPERVISOR_TOKEN lub ustaw SANDBOX_PROVIDER na e2b, novita, daytona albo boat z odpowiednim kluczem API. Po zmianie .env odtwórz środowisko."
+msgid "Computers are off on this server."
+msgstr "Komputery są wyłączone na tym serwerze."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1847,7 +1847,6 @@ msgstr "Kontynuuj z {0}"
 msgid "Conversations"
 msgstr "Rozmowy"
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1865,10 +1864,6 @@ msgstr "Skopiowano"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Kopiuj"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr "Kopiuj przykład .env"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2577,6 +2572,10 @@ msgstr "Dane uwierzytelniające: {names}"
 msgid "Credit amount"
 msgstr "Kwota doładowania"
 
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "Środki"
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
 msgstr "Środki ($)"
@@ -2889,10 +2888,6 @@ msgstr "Odrzucono. Możesz połączyć się ponownie w ustawieniach MCP."
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
 msgstr "Docker"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr "Docker jest skonfigurowany, ale komputery nie odpowiadają. Sprawdź, czy nadzorca piaskownicy działa. Po zmianie .env odtwórz środowisko."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
@@ -5146,7 +5141,6 @@ msgstr "W kolejce"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr "Środki Rakazo"
@@ -5951,6 +5945,7 @@ msgstr "Ustawienia: Użycie"
 msgid "Setup complete"
 msgstr "Konfiguracja zakończona"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "Pomoc w konfiguracji"
@@ -6342,8 +6337,8 @@ msgid "Subscribe for {price} / month"
 msgstr "Subskrybuj za {price} / miesiąc"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "Subskrybuj środki Rakazo"
+msgid "Subscribe to credits"
+msgstr "Subskrybuj środki"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"
@@ -6549,6 +6544,10 @@ msgstr "Rozumowanie"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Thinking: {0}"
 msgstr "Rozumowanie: {0}"
+
+#: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "To konto jest dezaktywowane"
 
 #: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."

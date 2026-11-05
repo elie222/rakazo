@@ -49,6 +49,7 @@ function deps(
         .mockResolvedValue(options.senderRunning === false ? null : { id: "run-1" }),
       findUnique: vi.fn().mockResolvedValue({ status: "running" }),
       create: vi.fn().mockResolvedValue({ id: "run-2" }),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     bot: {
       findFirst: vi.fn().mockResolvedValue(options.targetArchived ? null : { id: "bot-target" }),
@@ -138,6 +139,34 @@ describe("messaging another bot", () => {
       ),
     ).toHaveLength(0);
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("puts sent files on the recipient's message, and only the text in the sender's echo", async () => {
+    const harness = deps();
+    const file = {
+      kind: "file" as const,
+      artifactId: "artifact-zip",
+      name: "project.zip",
+      mimeType: "application/zip",
+      size: 19_000,
+    };
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "deploy this",
+      files: [file],
+    });
+
+    expect(sent).toMatchObject({ ok: true });
+    const created = harness.tx.message.create.mock.calls.map(
+      ([call]) => (call as { data: { threadId: string; blocks: Array<{ kind: string }> } }).data,
+    );
+    expect(created.find((m) => m.threadId === "thread-sender")?.blocks).toEqual([
+      expect.objectContaining({ kind: "bot_message_sent" }),
+    ]);
+    expect(created.find((m) => m.threadId === "thread-target")?.blocks).toEqual([
+      expect.objectContaining({ kind: "bot_message_received" }),
+      file,
+    ]);
   });
 
   it("marks a forced failure return unread on both sides", async () => {

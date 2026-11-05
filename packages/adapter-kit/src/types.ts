@@ -269,6 +269,8 @@ export interface ConnectorTool {
   readOnly?: boolean;
   /** Set when the tool runs other actions named in its arguments; see ToolBatch. */
   batch?: ToolBatch;
+  /** What the person sees for a call, when the name the model uses would read badly. */
+  label?: string;
   /** In-process routing metadata. It is never exposed to the model. */
   route?: ConnectorRoute;
 }
@@ -506,6 +508,17 @@ export interface AgentRunModel {
   oauth?: {
     credential: AgentModelOAuthCredential;
     persist?: (credential: AgentModelOAuthCredential) => Promise<void>;
+    /**
+     * Refreshes the stored credential under the lock every refresh of it shares,
+     * calling `refresh` on the stored copy only if no other refresh already rotated it.
+     */
+    refresh?: (
+      held: AgentModelOAuthCredential,
+      refresh: (
+        stored: AgentModelOAuthCredential,
+        signal: AbortSignal,
+      ) => Promise<AgentModelOAuthCredential | undefined>,
+    ) => Promise<AgentModelOAuthCredential>;
     /** Drop the stored credential after a terminal provider rejection. */
     retire?: (
       reason: ModelCredentialRetireReason,

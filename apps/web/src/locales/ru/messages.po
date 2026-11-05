@@ -1348,7 +1348,7 @@ msgstr "Чаты"
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Check again"
-msgstr ""
+msgstr "Проверить снова"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Check every"
@@ -1390,7 +1390,7 @@ msgstr "Проверьте свою электронную почту"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
-msgstr ""
+msgstr "Проверяем настройку компьютеров…"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Checking connection…"
@@ -1660,11 +1660,11 @@ msgstr "Компьютеры"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Computers are available. Reload or open a bot to continue."
-msgstr ""
+msgstr "Компьютеры доступны. Перезагрузите страницу или откройте бота, чтобы продолжить."
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "Компьютеры выключены. Установите SANDBOX_PROVIDER=docker с помощью SANDBOX_SUPERVISOR_TOKEN или установите для SANDBOX_PROVIDER значение e2b, novita, Daytona или boat с его ключом API. Воссоздайте стек после изменения .env."
+msgid "Computers are off on this server."
+msgstr "Компьютеры на этом сервере выключены."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1847,7 +1847,6 @@ msgstr "Продолжить с {0}"
 msgid "Conversations"
 msgstr ""
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1865,10 +1864,6 @@ msgstr "Скопировано"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Копировать"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr ""
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2457,7 +2452,7 @@ msgstr "Не удалось обновить область памяти по у
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
-msgstr ""
+msgstr "Не удалось проверить настройку компьютеров ({failureMessage}). Восстановите подключение и проверьте снова."
 
 #: src/components/pages/SharePopover.tsx
 msgid "Couldn't copy. Select the link and copy it."
@@ -2576,6 +2571,10 @@ msgstr "Учётные данные: {names}"
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "Кредиты"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
@@ -2889,10 +2888,6 @@ msgstr "Закрыто. Подключиться снова можно в люб
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
 msgstr "Docker"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr ""
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
@@ -4750,7 +4745,7 @@ msgstr "Открыть чат с {0}"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Open computer settings"
-msgstr ""
+msgstr "Открыть настройки компьютера"
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Open external link?"
@@ -5146,7 +5141,6 @@ msgstr "В очереди"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
@@ -5951,6 +5945,7 @@ msgstr "Настройки: Использование"
 msgid "Setup complete"
 msgstr "Настройка завершена"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "Помощь по настройке"
@@ -6342,8 +6337,8 @@ msgid "Subscribe for {price} / month"
 msgstr "Подписаться за {price} / месяц"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "Оформить подписку на кредиты Rakazo"
+msgid "Subscribe to credits"
+msgstr "Оформить подписку на кредиты"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"
@@ -6549,6 +6544,10 @@ msgstr "рассуждение"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Thinking: {0}"
 msgstr "Размышление: {0}"
+
+#: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "Эта учётная запись деактивирована"
 
 #: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."

@@ -78,6 +78,13 @@ async function auditRows(
   caller: { ip?: string; userAgent?: string } | undefined,
 ): Promise<Prisma.AuditEventCreateManyInput[]> {
   const { actor } = input;
+  // The person the event is about: the acting user, or a user something was done to.
+  const personId =
+    actor.type === "user"
+      ? actor.id
+      : input.target?.type === "user"
+        ? (input.target.id ?? undefined)
+        : undefined;
   const [space, user, memberships] = await Promise.all([
     input.spaceId
       ? db.space.findUnique({
@@ -85,13 +92,11 @@ async function auditRows(
           select: { organizationId: true, name: true },
         })
       : null,
-    actor.type === "user"
-      ? db.user.findUnique({ where: { id: actor.id }, select: { email: true } })
-      : null,
-    !input.spaceId && !input.organizationId && actor.type === "user"
+    personId ? db.user.findUnique({ where: { id: personId }, select: { email: true } }) : null,
+    !input.spaceId && !input.organizationId && personId
       ? // A guest's own account events are not the business of the organizations that invited them.
         db.member.findMany({
-          where: { userId: actor.id, role: { not: GUEST_ROLE } },
+          where: { userId: personId, role: { not: GUEST_ROLE } },
           select: { organizationId: true },
         })
       : [],
@@ -110,7 +115,7 @@ async function auditRows(
     action: input.action.slice(0, 128),
     targetType: bounded(input.target?.type, 64),
     targetId: bounded(input.target?.id, 200),
-    targetLabel: bounded(input.target?.label, 200),
+    targetLabel: bounded(input.target?.label ?? (actor.type === "user" ? null : user?.email), 200),
     outcome: input.outcome ?? "success",
     runId: bounded(input.runId, 128),
     threadId: bounded(input.threadId, 128),

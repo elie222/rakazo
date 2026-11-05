@@ -42,7 +42,8 @@ import {
   kickModelCredentialRefresh,
   parseModelSecret,
   persistStoredModelSecret,
-  resolveModelAuth,
+  refreshStoredModelCredential,
+  resolveStoredModelAuth,
   retireToReconnectMarker,
   secretValuesToRedact,
   serializeModelSecret,
@@ -217,6 +218,7 @@ async function resolveModelKeyMaterial(
   maxImagesPerPrompt?: number;
   oauth?: AgentModelOAuthCredential;
   persistOAuth?: (credential: AgentModelOAuthCredential) => Promise<void>;
+  refreshOAuth?: NonNullable<NonNullable<AgentRunRequest["model"]["oauth"]>["refresh"]>;
   retireOAuth?: (
     reason: ModelCredentialRetireReason,
     detail?: string,
@@ -257,7 +259,14 @@ async function resolveModelKeyMaterial(
         parseModelSecret(plaintext).maxTokens,
       );
       const resolveAuth = () =>
-        resolveModelAuth(plaintext, credential.provider, { persist, retire });
+        resolveStoredModelAuth(
+          deps.prisma,
+          deps.secretStore,
+          { userId, spaceId },
+          credential,
+          plaintext,
+          credential.provider,
+        );
       let resolved: Awaited<ReturnType<typeof resolveAuth>> | undefined;
       let liveCodex: Awaited<ReturnType<typeof codexLiveModel>> | undefined;
       const authError = validateModelAuthAvailability(provider, modelId, plaintext);
@@ -364,6 +373,15 @@ async function resolveModelKeyMaterial(
               });
             }
           : undefined,
+        refreshOAuth: oauth
+          ? refreshStoredModelCredential(
+              deps.prisma,
+              deps.secretStore,
+              { userId, spaceId },
+              credential,
+              credential.provider,
+            )
+          : undefined,
         retireOAuth: retire,
         ownCredential: true,
         redact: [...secretValuesToRedact(resolved.secret), resolved.apiKey].filter(
@@ -400,6 +418,7 @@ export function resolvedModelRunFields(
       ? {
           credential: resolved.oauth,
           persist: resolved.persistOAuth,
+          refresh: resolved.refreshOAuth,
           retire: resolved.retireOAuth,
         }
       : undefined,

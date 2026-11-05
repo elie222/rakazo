@@ -1663,8 +1663,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr "Computers zijn beschikbaar. Herlaad of open een bot om verder te gaan."
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "Computers staan uit. Stel SANDBOX_PROVIDER=docker in met SANDBOX_SUPERVISOR_TOKEN, of stel SANDBOX_PROVIDER in op e2b, novita, daytona of boat met de bijbehorende API-sleutel. Bouw de stack opnieuw op nadat je .env hebt gewijzigd."
+msgid "Computers are off on this server."
+msgstr "Computers staan uit op deze server."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1847,7 +1847,6 @@ msgstr "Doorgaan met {0}"
 msgid "Conversations"
 msgstr ""
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1865,10 +1864,6 @@ msgstr "Gekopieerd"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Kopiëren"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr ".env-voorbeeld kopiëren"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2577,6 +2572,10 @@ msgstr "Inloggegevens: {names}"
 msgid "Credit amount"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "Tegoed"
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
 msgstr ""
@@ -2889,10 +2888,6 @@ msgstr "Gesloten. Je kunt altijd opnieuw verbinden via de MCP-instellingen."
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
 msgstr "Docker"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr "Docker is geconfigureerd, maar computers reageren niet. Controleer of de sandbox-supervisor draait en bouw de stack daarna opnieuw op nadat je .env hebt gewijzigd."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
@@ -5146,7 +5141,6 @@ msgstr "In wachtrij"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
@@ -5951,6 +5945,7 @@ msgstr "Instellingen: gebruik"
 msgid "Setup complete"
 msgstr "Instellen voltooid"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "Installatiehulp"
@@ -6342,8 +6337,8 @@ msgid "Subscribe for {price} / month"
 msgstr "Abonneren voor {price} / maand"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "Abonneren op Rakazo-tegoed"
+msgid "Subscribe to credits"
+msgstr "Abonneren op tegoed"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"
@@ -6549,6 +6544,10 @@ msgstr "Denkt"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Thinking: {0}"
 msgstr "Denken: {0}"
+
+#: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "Dit account is gedeactiveerd"
 
 #: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."

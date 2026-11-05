@@ -5837,6 +5837,10 @@ describe("bot intro run", () => {
     expect(enqueue).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ payload: { runId: "record-2" } }),
     );
+    // The intro locks the thread row, which snapshot reads hold for up to 15s.
+    expect(deps.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
   });
 
   it("leaves a placeholder account name out of the intro", async () => {

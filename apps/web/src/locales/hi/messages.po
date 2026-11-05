@@ -1348,7 +1348,7 @@ msgstr "चैट"
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Check again"
-msgstr ""
+msgstr "फिर से जांचें"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Check every"
@@ -1390,7 +1390,7 @@ msgstr "अपना ईमेल देखें"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
-msgstr ""
+msgstr "कंप्यूटर सेटअप जांचा जा रहा है…"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Checking connection…"
@@ -1400,7 +1400,7 @@ msgstr "कनेक्शन जाँचा जा रहा है…"
 #: src/components/DesktopUpdates.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Checking…"
-msgstr ""
+msgstr "जांच हो रही है…"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
@@ -1660,11 +1660,11 @@ msgstr "कंप्यूटर"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Computers are available. Reload or open a bot to continue."
-msgstr ""
+msgstr "कंप्यूटर उपलब्ध हैं। जारी रखने के लिए रीलोड करें या कोई बॉट खोलें।"
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "कंप्यूटर बंद हैं। SANDBOX_PROVIDER=docker और SANDBOX_SUPERVISOR_TOKEN सेट करें, या SANDBOX_PROVIDER को e2b, novita, daytona, या boat पर सेट कर उसका API key दें। .env बदलने के बाद स्टैक फिर बनाएँ।"
+msgid "Computers are off on this server."
+msgstr "इस सर्वर पर कंप्यूटर बंद हैं।"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1847,7 +1847,6 @@ msgstr "{0} के साथ जारी रखें"
 msgid "Conversations"
 msgstr ""
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1865,10 +1864,6 @@ msgstr "कॉपी किया गया"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "कॉपी करें"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr ""
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2457,7 +2452,7 @@ msgstr "डिफ़ॉल्ट मेमोरी स्कोप अपडे
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
-msgstr ""
+msgstr "कंप्यूटर सेटअप की जांच नहीं हो सकी ({failureMessage})। कनेक्शन ठीक करें, फिर से जांचें।"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Couldn't copy. Select the link and copy it."
@@ -2576,6 +2571,10 @@ msgstr "क्रेडेंशियल: {names}"
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "क्रेडिट"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
@@ -2889,10 +2888,6 @@ msgstr "खारिज किया गया। MCP सेटिंग्स �
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
 msgstr "Docker"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr ""
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
@@ -4750,7 +4745,7 @@ msgstr "{0} के साथ चैट खोलें"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Open computer settings"
-msgstr ""
+msgstr "कंप्यूटर सेटिंग्स खोलें"
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Open external link?"
@@ -5146,7 +5141,6 @@ msgstr "कतार में"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
@@ -5951,6 +5945,7 @@ msgstr "सेटिंग्स: उपयोग"
 msgid "Setup complete"
 msgstr "सेटअप पूरा हुआ"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "सेटअप सहायता"
@@ -6342,8 +6337,8 @@ msgid "Subscribe for {price} / month"
 msgstr "{price} / माह पर सदस्यता लें"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "Rakazo क्रेडिट की सदस्यता लें"
+msgid "Subscribe to credits"
+msgstr "क्रेडिट की सदस्यता लें"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"
@@ -6549,6 +6544,10 @@ msgstr "सोच रहा है"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Thinking: {0}"
 msgstr "सोच: {0}"
+
+#: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "यह खाता निष्क्रिय है"
 
 #: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."

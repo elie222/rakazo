@@ -1013,6 +1013,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Email verification required": "E-mailverificatie vereist",
   "Link SSO": "SSO koppelen",
   "Registration is closed": "Registratie is gesloten",
+  "This account is deactivated": "Dit account is gedeactiveerd",
   Retry: "Opnieuw proberen",
   "Send deletion code": "Verwijderingscode verzenden",
   "Sign in to your existing account to link SSO":
