@@ -564,7 +564,10 @@ export function reduceThreadSnapshot(
     );
     const liveId = progressMessageId(event);
     const { remaining } = takeLiveMessage(prev.messages, liveId);
-    const without = remaining.filter((message) => !replacedSubagent(message, replacedSubagentIds));
+    // A live subagent placeholder gives way to the saved card; the saved card itself stays put.
+    const without = remaining.filter(
+      (message) => message.id === id || !replacedSubagent(message, replacedSubagentIds),
+    );
     return { ...prev, cursor: event.seq, messages: upsertMessageById(without, next) };
   }
   return prev;
