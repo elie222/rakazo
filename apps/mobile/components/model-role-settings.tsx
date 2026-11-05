@@ -490,6 +490,7 @@ function RowMenuButton({
       style={rowMenuStyles.button}
     >
       <View
+        accessible
         accessibilityRole="button"
         accessibilityLabel={t("{name} options", { name: title })}
         accessibilityState={{ disabled }}
