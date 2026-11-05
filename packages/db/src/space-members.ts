@@ -338,7 +338,7 @@ export async function leaveSpace(prisma: PrismaClient, input: SpaceRef): Promise
   });
   if (!membership) throw new SpaceNotFoundError();
   if (isOwnerRole(membership.role)) throw new SpaceOwnerCannotLeaveError();
-  return departSpace(prisma, input);
+  return departSpace(prisma, { ...input, leaving: true });
 }
 
 /**
@@ -359,28 +359,40 @@ export async function prepareAccountDeletion(
     // A Space in an organization that goes with the account goes with it.
     if (owned.has(membership.space.organizationId)) continue;
     const { spaceId } = membership;
-    if (isOwnerRole(membership.role)) {
-      // Another owner keeps the Space, and the account's own things in it go with the account.
-      const coOwner = await prisma.spaceMember.findFirst({
-        where: { spaceId, userId: { not: userId }, role: { contains: "owner" } },
-        select: { id: true },
-      });
-      if (coOwner) continue;
-      // Otherwise the longest-standing full member takes it over; with only guests left it goes
-      // with the account (claimSpacesLeavingWithAccount).
-      const successor = await prisma.spaceMember.findFirst({
-        where: { spaceId, userId: { not: userId }, member: { role: { not: GUEST_ROLE } } },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        select: { id: true },
-      });
-      if (!successor) continue;
-      await runAsSystem("hand a departing owner's Space to a teammate", () =>
-        prisma.spaceMember.update({ where: { id: successor.id }, data: { role: "owner" } }),
-      );
+    // Under the Space's lock, so a member who is leaving meanwhile is never chosen.
+    if (isOwnerRole(membership.role) && !(await handOwnership(prisma, { spaceId, userId }))) {
+      continue;
     }
     departures.push({ spaceId, ...(await departSpace(prisma, { spaceId, userId })) });
   }
   return departures;
+}
+
+/**
+ * Whether a departing owner's Space stays for its other members: another owner keeps it, or the
+ * longest-standing full member is made its owner. With only guests left it goes with the
+ * account (claimSpacesLeavingWithAccount), and the account's own things in it go too.
+ */
+async function handOwnership(prisma: PrismaClient, input: SpaceRef): Promise<boolean> {
+  const { spaceId, userId } = input;
+  return runAsSystem("hand a departing owner's Space to a teammate", () =>
+    prisma.$transaction(async (tx) => {
+      await lockSpaceDeletion(tx, spaceId);
+      const coOwner = await tx.spaceMember.findFirst({
+        where: { spaceId, userId: { not: userId }, role: { contains: "owner" } },
+        select: { id: true },
+      });
+      if (coOwner) return false;
+      const successor = await tx.spaceMember.findFirst({
+        where: { spaceId, userId: { not: userId }, member: { role: { not: GUEST_ROLE } } },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true },
+      });
+      if (!successor) return false;
+      await tx.spaceMember.update({ where: { id: successor.id }, data: { role: "owner" } });
+      return true;
+    }),
+  );
 }
 
 /**
@@ -393,9 +405,9 @@ export async function prepareAccountDeletion(
  */
 async function departSpace(
   prisma: PrismaClient,
-  input: SpaceRef & { removedBy?: string },
+  input: SpaceRef & { removedBy?: string; leaving?: boolean },
 ): Promise<SpaceDeparture> {
-  const { spaceId, userId, removedBy } = input;
+  const { spaceId, userId, removedBy, leaving } = input;
   // Bots, routines and credentials are tenant rows; this moves them between people.
   return runAsSystem("move a departing member's Space content to its owner", () =>
     withTransactionRetry(() =>
@@ -418,6 +430,8 @@ async function departSpace(
             if (!remover || !isOwnerRole(remover.role)) throw new SpaceOwnerRequiredError();
             if (isOwnerRole(departing.role)) throw new CannotRemoveSpaceOwnerError();
           }
+          // Someone made owner since they asked to leave stays: the Space is theirs now.
+          if (leaving && isOwnerRole(departing.role)) throw new SpaceOwnerCannotLeaveError();
           const ownerId = owners.find((member) => isOwnerRole(member.role))?.userId;
           if (!ownerId) throw new CannotRemoveSpaceOwnerError();
 
@@ -508,15 +522,12 @@ async function departSpace(
           await tx.botMcpServer.deleteMany({
             where: { spaceId, OR: [{ userId }, { server: { userId } }] },
           });
-          // What they made available in other Spaces of theirs keeps working there.
-          const onlyHere = {
-            ...own,
-            allSpaces: false,
-            availableIn: { none: { spaceId: { not: spaceId } } },
-          };
-          await tx.mcpServer.deleteMany({ where: onlyHere });
-          await tx.capabilityInstall.deleteMany({ where: onlyHere });
-          await tx.agentSkill.deleteMany({ where: onlyHere });
+          // What they made available in other Spaces of theirs keeps working there; the rest
+          // of their tools here, plugins with all their parts, goes.
+          await rehomeSharedItems(tx, { spaceId, userId });
+          await tx.capabilityInstall.deleteMany({ where: own });
+          await tx.mcpServer.deleteMany({ where: own });
+          await tx.agentSkill.deleteMany({ where: own });
           await tx.mcpServerSpace.deleteMany({ where: own });
           await tx.capabilityInstallSpace.deleteMany({ where: own });
           await tx.agentSkillSpace.deleteMany({ where: own });
@@ -533,7 +544,6 @@ async function departSpace(
           await tx.secret.deleteMany({ where: own });
           // Model, voice and role preferences, setting overrides and AI consents cascade from here.
           await tx.spaceMember.delete({ where: { id: departing.id } });
-          await rehomeSharedItems(tx, { spaceId, userId });
           // A guest belonged only through its Spaces; a full member keeps their organization.
           await tx.member.deleteMany({
             where: {

@@ -931,6 +931,38 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
         endpoint: "https://mcp.example.test/home",
       },
     });
+    // A plugin whose server is already in their own Space under that name goes whole.
+    await system.mcpServer.create({
+      data: {
+        spaceId: invitee.spaceId,
+        userId: invitee.id,
+        slug: "calendar",
+        name: "Calendar",
+        transport: "http",
+        endpoint: "https://mcp.example.test/mine",
+      },
+    });
+    const plugin = await system.capabilityInstall.create({
+      data: {
+        spaceId: home,
+        userId: invitee.id,
+        kind: "plugin",
+        name: "Calendar",
+        source: "test",
+        allSpaces: true,
+        mcpServers: {
+          create: {
+            spaceId: home,
+            userId: invitee.id,
+            slug: "calendar",
+            name: "Calendar",
+            transport: "http",
+            endpoint: "https://mcp.example.test/calendar",
+            allSpaces: true,
+          },
+        },
+      },
+    });
     const bot = await system.bot.create({
       data: { spaceId: home, userId: invitee.id, name: "Planner", color: "test" },
     });
@@ -941,6 +973,9 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(
       call(inSpace(invitee.actor, home), "spaces/members/leave", { spaceId: home }),
     ).resolves.toMatchObject({ status: 200 });
+    await expect(
+      system.capabilityInstall.findUnique({ where: { id: plugin.id } }),
+    ).resolves.toBeNull();
 
     await expect(
       system.mcpServer.findUniqueOrThrow({ where: { id: everywhere.id } }),

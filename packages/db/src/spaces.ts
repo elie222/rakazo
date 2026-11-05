@@ -520,8 +520,9 @@ export async function deleteClaimedSpaceForMember(
 /**
  * What the departing person made available in other Spaces of theirs was homed in this one, and
  * would go when it does. Each item moves to a Space it is already available in: one it was chosen
- * for, or for an item available everywhere their fallback Space. An item whose new home already
- * has one with the same name stays, and goes with this Space.
+ * for, or for an item available everywhere their fallback Space. A plugin moves with its servers
+ * and skills, as one. An item whose new home already has one with the same name stays, and goes
+ * with this Space.
  */
 export async function rehomeSharedItems(
   tx: Prisma.TransactionClient,
@@ -529,43 +530,77 @@ export async function rehomeSharedItems(
 ): Promise<void> {
   const { spaceId, userId } = input;
   const fallback = await fallbackSpaceForMember(tx, userId, spaceId);
-  const own = { spaceId, userId };
-  const chosen = { select: { spaceId: true }, orderBy: { spaceId: "asc" as const }, take: 1 };
+  const shared = {
+    spaceId,
+    userId,
+    OR: [{ allSpaces: true }, { availableIn: { some: { spaceId: { not: spaceId } } } }],
+  };
+  const chosen = {
+    where: { spaceId: { not: spaceId } },
+    select: { spaceId: true },
+    orderBy: { spaceId: "asc" as const },
+    take: 1,
+  };
   const [servers, skills, installs] = await Promise.all([
     tx.mcpServer.findMany({
-      where: own,
-      select: { id: true, slug: true, allSpaces: true, availableIn: chosen },
+      where: shared,
+      select: { id: true, slug: true, installId: true, allSpaces: true, availableIn: chosen },
     }),
     tx.agentSkill.findMany({
-      where: own,
-      select: { id: true, name: true, allSpaces: true, availableIn: chosen },
+      where: shared,
+      select: { id: true, name: true, installId: true, allSpaces: true, availableIn: chosen },
     }),
     tx.capabilityInstall.findMany({
-      where: own,
+      where: shared,
       select: { id: true, allSpaces: true, availableIn: chosen },
     }),
   ]);
   const homeOf = (item: { allSpaces: boolean; availableIn: Array<{ spaceId: string }> }) =>
     item.allSpaces ? fallback : (item.availableIn[0]?.spaceId ?? null);
+  const nameTaken = async (home: string, items: { slugs: string[]; names: string[] }) =>
+    (items.slugs.length > 0 &&
+      (await tx.mcpServer.count({ where: { spaceId: home, userId, slug: { in: items.slugs } } })) >
+        0) ||
+    (
+      await Promise.all(
+        items.names.map((name) =>
+          tx.agentSkill.count({
+            where: { spaceId: home, userId, name: { equals: name, mode: "insensitive" } },
+          }),
+        ),
+      )
+    ).some((count) => count > 0);
   for (const server of servers) {
     const home = homeOf(server);
-    if (!home) continue;
-    const taken = await tx.mcpServer.count({ where: { spaceId: home, userId, slug: server.slug } });
-    if (!taken) await tx.mcpServer.update({ where: { id: server.id }, data: { spaceId: home } });
+    if (server.installId || !home) continue;
+    if (await nameTaken(home, { slugs: [server.slug], names: [] })) continue;
+    await tx.mcpServer.update({ where: { id: server.id }, data: { spaceId: home } });
+    await tx.mcpServerSpace.deleteMany({ where: { serverId: server.id, spaceId: home } });
   }
   for (const skill of skills) {
     const home = homeOf(skill);
-    if (!home) continue;
-    const taken = await tx.agentSkill.count({
-      where: { spaceId: home, userId, name: { equals: skill.name, mode: "insensitive" } },
-    });
-    if (!taken) await tx.agentSkill.update({ where: { id: skill.id }, data: { spaceId: home } });
+    if (skill.installId || !home) continue;
+    if (await nameTaken(home, { slugs: [], names: [skill.name] })) continue;
+    await tx.agentSkill.update({ where: { id: skill.id }, data: { spaceId: home } });
+    await tx.agentSkillSpace.deleteMany({ where: { skillId: skill.id, spaceId: home } });
   }
   for (const install of installs) {
     const home = homeOf(install);
-    if (home) {
-      await tx.capabilityInstall.update({ where: { id: install.id }, data: { spaceId: home } });
-    }
+    if (!home) continue;
+    const parts = await Promise.all([
+      tx.mcpServer.findMany({ where: { installId: install.id }, select: { slug: true } }),
+      tx.agentSkill.findMany({ where: { installId: install.id }, select: { name: true } }),
+    ]);
+    const items = {
+      slugs: parts[0].map((server) => server.slug),
+      names: parts[1].map((skill) => skill.name),
+    };
+    if (await nameTaken(home, items)) continue;
+    const moved = { where: { installId: install.id }, data: { spaceId: home } };
+    await tx.capabilityInstall.update({ where: { id: install.id }, data: { spaceId: home } });
+    await tx.mcpServer.updateMany(moved);
+    await tx.agentSkill.updateMany(moved);
+    await tx.capabilityInstallSpace.deleteMany({ where: { installId: install.id, spaceId: home } });
   }
 }
 
