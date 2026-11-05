@@ -172,6 +172,20 @@ describe("desktop preload bridge", () => {
     expect(off).toHaveBeenCalledWith("desktop.menu.command", expect.any(Function));
   });
 
+  it.each(["win32", "linux"])("offers push only on macOS (%s)", (platform) => {
+    const { exposeInMainWorld } = runPreload("preload.cjs", {}, platform);
+    const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+    expect(bridge.push).toBeUndefined();
+  });
+
+  it("bridges the macOS push token and the chat a notification opened", async () => {
+    const { invoke, exposeInMainWorld } = runPreload("preload.cjs", {}, "darwin");
+    const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+    await bridge.push!.token();
+    await bridge.push!.takeOpened();
+    expect(invoke.mock.calls).toEqual([["desktop.push.token"], ["desktop.push.takeOpened"]]);
+  });
+
   it.each(["win32", "linux"])("offers system speech only on macOS (%s)", (platform) => {
     const { exposeInMainWorld } = runPreload("preload.cjs", {}, platform);
     const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];

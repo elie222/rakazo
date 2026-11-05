@@ -16,12 +16,14 @@ loadRootEnv();
 await unwrapEnvFromKeyManager();
 
 import {
+  apnsDesktopConfig,
   apnsVoipConfig,
   auditLogConfig,
   ChatSdkMessagingSurface,
   CodexCatalogCache,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
+  createApnsDesktopProvider,
   createApnsVoipProvider,
   createArtifactStore,
   createAuditLogReconciler,
@@ -273,6 +275,7 @@ async function main() {
     jobs,
     accessToken: process.env.EXPO_ACCESS_TOKEN,
     voip: await createApnsVoipProvider(apnsVoipConfig(process.env)),
+    desktop: await createApnsDesktopProvider(apnsDesktopConfig(process.env)),
   });
   const executor = createRunExecutor({
     maxUploadSizeBytes,

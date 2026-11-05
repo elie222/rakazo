@@ -2,6 +2,8 @@ export * from "./agent-connections.js";
 export * from "./agent-environment.js";
 export * from "./agent-import-settings.js";
 export * from "./ai-consent.js";
+export { apnsDesktopConfig, createApnsDesktopProvider } from "./apns-desktop-config.js";
+export type { ApnsConfig } from "./apns-http.js";
 export type { ApnsVoipConfig } from "./apns-voip.js";
 export { apnsVoipConfig, createApnsVoipProvider } from "./apns-voip-config.js";
 export * from "./artifact-store-factory.js";

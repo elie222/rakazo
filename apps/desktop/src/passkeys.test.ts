@@ -57,6 +57,18 @@ describe("passkeyEntitlements", () => {
     );
   });
 
+  it("adds the push entitlement only when asked, matching the build's signing", () => {
+    expect(passkeyEntitlements(base, "ABCDE12345", pkg.build.appId)).not.toContain(
+      "aps-environment",
+    );
+    expect(passkeyEntitlements(base, "ABCDE12345", pkg.build.appId, { push: true })).toContain(
+      "<key>com.apple.developer.aps-environment</key>\n    <string>production</string>",
+    );
+    expect(
+      passkeyEntitlements(base, "ABCDE12345", pkg.build.appId, { push: true, developerMode: true }),
+    ).toContain("<key>com.apple.developer.aps-environment</key>\n    <string>development</string>");
+  });
+
   it("keeps helpers on the base entitlements", () => {
     expect(pkg.build.mac.entitlementsInherit).toBe(pkg.build.mac.entitlements);
     expect(base).not.toContain("associated-domains");
