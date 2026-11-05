@@ -10,8 +10,10 @@ async function expectRailBesideCard(row: Locator, cardId: string) {
     await row.hover();
     await expect(rail).toHaveCSS("opacity", "1", { timeout: 1_000 });
   }).toPass();
+  // The rail slides in a few pixels as it appears, so measure it while the row stays hovered.
   await expect
     .poll(async () => {
+      await row.hover();
       const cardBox = await card.boundingBox();
       const railBox = await rail.boundingBox();
       if (!cardBox || !railBox) return null;
