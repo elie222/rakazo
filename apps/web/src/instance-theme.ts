@@ -78,7 +78,8 @@ function readFontFiles(value: unknown, themeDir: string): FontFile[] {
 
 function inside(dir: string, file: string): boolean {
   const relative = path.relative(dir, file);
-  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+  const escapes = relative === ".." || relative.startsWith(`..${path.sep}`);
+  return relative !== "" && !escapes && !path.isAbsolute(relative);
 }
 
 export function parseInstanceTheme(source: string, themeDir: string): InstanceTheme {

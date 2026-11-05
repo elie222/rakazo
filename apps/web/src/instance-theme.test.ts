@@ -61,6 +61,11 @@ describe("instance theme", () => {
       dir,
     );
     expect(theme.fonts.files[0]?.file).toBe(path.join(dir, "fonts/Onest.woff2"));
+    const dotted = parseInstanceTheme(
+      JSON.stringify({ fonts: { files: [{ family: "Onest", file: "..fonts/Onest.woff2" }] } }),
+      dir,
+    );
+    expect(dotted.fonts.files[0]?.file).toBe(path.join(dir, "..fonts/Onest.woff2"));
     expect(renderInstanceThemeCss(theme)).toContain(
       'src: url("/instance-theme/font/0.woff2") format("woff2");\n  font-weight: 100 900;',
     );
