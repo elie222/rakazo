@@ -562,11 +562,13 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
         (pathValue as Record<string, unknown>).parameters,
         operation.parameters,
       )) {
-        properties[parameter.name] = asRecord(
-          inlineOpenApiSchema(refs, parameter.schema, "string"),
-        ) ?? {
+        const schema = asRecord(inlineOpenApiSchema(refs, parameter.schema, "string")) ?? {
           type: "string",
         };
+        properties[parameter.name] =
+          typeof parameter.description === "string"
+            ? { ...schema, description: parameter.description }
+            : schema;
         if (parameter.in === "query") queryParameters.push(parameter.name);
         if (parameter.in === "header") {
           if (isSensitiveHeader(parameter.name) || isTransportHeader(parameter.name)) {
