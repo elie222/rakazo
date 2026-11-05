@@ -477,35 +477,33 @@ function RowMenuButton({
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const colorScheme = useResolvedAppearance();
-  return (
+  const button = (
+    <View
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={t("{name} options", { name: withConnectionName(title, connection) })}
+      accessibilityState={{ disabled }}
+      style={rowMenuStyles.buttonInner}
+    >
+      <NativeSymbol
+        ios="ellipsis"
+        android="ellipsis-horizontal"
+        color={tokens.mutedForeground}
+        size={20}
+      />
+    </View>
+  );
+  return disabled ? (
+    <View style={rowMenuStyles.button}>{button}</View>
+  ) : (
     <MenuView
       colorScheme={colorScheme}
       title={title}
-      actions={
-        disabled
-          ? actions.map((action) => ({
-              ...action,
-              attributes: { ...action.attributes, disabled: true },
-            }))
-          : actions
-      }
+      actions={actions}
       onPressAction={({ nativeEvent }) => onAction(nativeEvent.event)}
       style={rowMenuStyles.button}
     >
-      <View
-        accessible
-        accessibilityRole="button"
-        accessibilityLabel={t("{name} options", { name: withConnectionName(title, connection) })}
-        accessibilityState={{ disabled }}
-        style={rowMenuStyles.buttonInner}
-      >
-        <NativeSymbol
-          ios="ellipsis"
-          android="ellipsis-horizontal"
-          color={tokens.mutedForeground}
-          size={20}
-        />
-      </View>
+      {button}
     </MenuView>
   );
 }
