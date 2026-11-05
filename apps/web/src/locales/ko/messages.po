@@ -809,10 +809,6 @@ msgstr "금액"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "이 서비스에는 구독 로그인이 아니라 API 키가 저장되어 있습니다."
 
-#: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "An existing Honcho peer to read from. Rakazo never writes to it."
-msgstr "데이터를 읽어올 기존 Honcho 피어입니다. Rakazo는 이 피어에 데이터를 쓰지 않습니다."
-
 #: src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "가져온 API 키를 확인하지 못했습니다. 다시 시도하세요."
@@ -5173,6 +5169,10 @@ msgstr "추론 강도"
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr ""
+
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "Recall from this peer; save to Rakazo’s own peers."
+msgstr "이 피어에서 불러오고 Rakazo 자체 피어에 저장합니다."
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
