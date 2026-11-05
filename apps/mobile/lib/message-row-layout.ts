@@ -19,12 +19,11 @@ export function messageRowLayout(
 ) {
   const wideAsk = blocks.some(isSecretAskBlock);
   const full = wideAsk || isCenteredAgentEvent(blocks);
-  // Connect cards and a question's option buttons fill the bubble width instead of shrinking
-  // to their button or to a short question.
   const fillsBubble = blocks.some(
     (block) =>
       block.kind === "app_connect" ||
       block.kind === "mcp_approval" ||
+      block.kind === "app" ||
       (block.kind === "ask" &&
         Boolean(block.actions?.length) &&
         !isApprovalAskBlock(block) &&

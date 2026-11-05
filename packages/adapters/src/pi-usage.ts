@@ -570,6 +570,11 @@ export function maximumModelCallCost(
       [tier.input, tier.output, tier.cacheRead, tier.cacheWrite].every(
         (rate) => Number.isFinite(rate) && rate >= 0,
       ),
+    ) ||
+    // An unlisted model gets zero placeholder rates; with no positive rate anywhere
+    // the price is unknown, not free, so reservation must refuse the call.
+    !tiers.some((tier) =>
+      [tier.input, tier.output, tier.cacheRead, tier.cacheWrite].some((rate) => rate > 0),
     )
   )
     return undefined;

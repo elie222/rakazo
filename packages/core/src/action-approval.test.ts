@@ -15,6 +15,7 @@ import {
   newSiteOutcome,
   outboundSiteGate,
   planActionGate,
+  receiptItems,
   repeatsDeniedAction,
   resolveActionApproval,
   resolveActionApprovalDetail,
@@ -1037,5 +1038,21 @@ describe("repeatsDeniedAction", () => {
       repeatsDeniedAction({ toolName: WRAPPER, args: args("GMAIL_SEND_DRAFT"), denied: [sent] }),
     ).toBe(false);
     expect(repeatsDeniedAction({ toolName: WRAPPER, args: {}, denied: [sent] })).toBe(false);
+  });
+});
+
+describe("receiptItems", () => {
+  it("leaves out page lines named like the card's own rows, in the app's words", () => {
+    const items = [
+      { name: "Bananas", amount: "$3.00" },
+      { name: " gesamt ", amount: "$1.00" },
+      { name: "Gesamt: fällig", amount: "$1.00" },
+      { name: "Gesamtpaket Socken", amount: "$9.00" },
+      { name: "Auf der Schaltfläche", amount: "$1.00" },
+    ];
+    expect(receiptItems(items, ["Gesamt", "Auf der Schaltfläche"])).toEqual([
+      { name: "Bananas", amount: "$3.00" },
+      { name: "Gesamtpaket Socken", amount: "$9.00" },
+    ]);
   });
 });

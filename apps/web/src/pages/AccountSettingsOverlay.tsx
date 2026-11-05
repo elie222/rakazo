@@ -613,11 +613,13 @@ export function ComputerSettingsPanel({
   onSandboxProviderChange,
   onRecoveryDismissed,
   canConfigureComputers = false,
+  computerSettingsEnabled = false,
 }: {
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
   onRecoveryDismissed?: () => void;
   canConfigureComputers?: boolean;
+  computerSettingsEnabled?: boolean;
 }) {
   // Once shown, the hint stays mounted so a successful check can show its confirmation.
   const unavailable = computersAreUnavailable(sandboxProvider);
@@ -640,7 +642,7 @@ export function ComputerSettingsPanel({
         />
       ) : null}
       {/* The server decides what an account may change, including removing keys it saved. */}
-      {canConfigureComputers || sandboxProvider ? (
+      {computerSettingsEnabled && (canConfigureComputers || sandboxProvider) ? (
         <ComputerProviderSettings
           scope={canConfigureComputers ? "deployment" : "account"}
           onProviderChange={onSandboxProviderChange}

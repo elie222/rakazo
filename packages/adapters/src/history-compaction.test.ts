@@ -539,7 +539,7 @@ describe("compactHistory", () => {
     expect(request.tools).toEqual([]);
     expect(request.model).toEqual({
       provider: "openrouter",
-      id: "openai/gpt-6-luna",
+      id: "anthropic/claude-haiku-5.5",
       apiKey: "openrouter-key",
     });
     expect(request.prompt).toContain("message 0");

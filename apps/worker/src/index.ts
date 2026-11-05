@@ -107,7 +107,7 @@ import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 
-const logger = createRootLogger(SERVICE_NAMES.worker);
+const logger = await createRootLogger(SERVICE_NAMES.worker);
 
 async function main() {
   const stopStallWatch = watchEventLoopStalls();

@@ -580,8 +580,6 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
     expect(regular.maxWidth).toBe(avatar ? undefined : "90%");
     expect(regular.menuMaxWidth).toBe(avatar ? 360 - gutter : 324);
   }
-  // Connect cards and option buttons take the full bubble width rather than shrinking to
-  // their button or a short question.
   for (const kind of ["appConnect", "mcpApproval", "options"] as const) {
     const card = measure(kind, false, false);
     expect(card.width).toBe("90%");

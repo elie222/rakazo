@@ -1,5 +1,11 @@
+import { MCP_APP_MIME_TYPE } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+
+/** Files people and bots see: an MCP app's HTML is kept as an artifact only for its chat card. */
+export const LISTED_ARTIFACT = {
+  mimeType: { not: MCP_APP_MIME_TYPE },
+} satisfies Prisma.ArtifactWhereInput;
 
 export async function resolveNextArtifactVersion(
   prisma: Pick<PrismaClient, "artifact">,
@@ -18,6 +24,8 @@ export async function resolveNextArtifactVersion(
       botId: params.botId,
       groupId: params.groupId ?? null,
       name: { equals: params.name, mode: "insensitive" },
+      // An MCP app's hidden HTML never starts or joins a file's version history.
+      ...LISTED_ARTIFACT,
     },
     orderBy: [{ version: "desc" }, { createdAt: "desc" }],
     select: { id: true, rootArtifactId: true, version: true },
