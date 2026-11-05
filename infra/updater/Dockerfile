@@ -10,9 +10,12 @@ COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-compose \
   /usr/local/libexec/docker/cli-plugins/docker-compose
 COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-buildx \
   /usr/local/libexec/docker/cli-plugins/docker-buildx
-RUN apt-get update \
+COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
+RUN /tmp/apt-security.sh \
+  && apt-get update \
   && apt-get install -y --no-install-recommends git ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+  && /tmp/apt-security.sh --check \
+  && rm -rf /var/lib/apt/lists/* /tmp/apt-security.sh
 WORKDIR /app
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY patches patches
