@@ -439,6 +439,81 @@ it("keeps self-hosted edits typed while a reconnect is in flight", async () => {
   }
 });
 
+it("shows what a reconnect saved for fields edited before it started", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const saved = {
+    ...fish,
+    provider: "openai-compatible",
+    voiceId: "",
+    endpoint: "http://127.0.0.1:8000/v1",
+    ttsModel: "saved-speech",
+    sttModel: "saved-transcription",
+  };
+  voice.catalog
+    .mockReset()
+    .mockResolvedValue([
+      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
+    ]);
+  // The server adds the missing /v1 and keeps the speech model the blank field left out.
+  voice.credentials
+    .mockReset()
+    .mockResolvedValueOnce([saved])
+    .mockResolvedValue([{ ...saved, endpoint: "http://127.0.0.1:7000/v1" }]);
+  voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
+  voice.voices.mockReset().mockResolvedValue([]);
+  let releaseConnect: () => void = () => undefined;
+  voice.connect
+    .mockReset()
+    .mockImplementationOnce(
+      () => new Promise((resolve) => (releaseConnect = () => resolve(saved))),
+    );
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const type = async (input: HTMLInputElement, value: string) => {
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  try {
+    await act(async () => {
+      root.render(
+        withQueries(<VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />),
+      );
+    });
+    await vi.waitFor(() =>
+      expect(labelledInput(container, "Server URL").value).toBe(saved.endpoint),
+    );
+    await type(labelledInput(container, "Server URL"), "http://127.0.0.1:7000");
+    await type(labelledInput(container, "Speech model"), "");
+    const reconnect = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Reconnect",
+    );
+    if (!reconnect) throw new Error("Missing reconnect button");
+    await act(async () => {
+      reconnect.click();
+    });
+    await type(labelledInput(container, "Transcription model"), "typed-transcription");
+    await act(async () => {
+      releaseConnect();
+    });
+
+    expect(voice.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: "http://127.0.0.1:7000", ttsModel: undefined }),
+    );
+    await vi.waitFor(() => expect(voice.credentials).toHaveBeenCalledTimes(2));
+    expect(labelledInput(container, "Server URL").value).toBe("http://127.0.0.1:7000/v1");
+    expect(labelledInput(container, "Speech model").value).toBe("saved-speech");
+    expect(labelledInput(container, "Transcription model").value).toBe("typed-transcription");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("follows the voice a reconnect saves when the voice field was edited and reverted", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const saved = {
