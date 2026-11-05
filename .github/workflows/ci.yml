@@ -224,11 +224,21 @@ jobs:
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - name: Install age for the encrypted backup round trip
-        # A static binary skips apt-get update on the shared runner image.
+        # Prefer the static binary so we skip apt-get update on the shared runner image.
+        # GitHub releases sometimes answer 504; retry the download, then fall back to apt.
         run: |
-          curl -fsSL "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz" \
-            | tar -xz -C "$RUNNER_TEMP"
-          sudo install -m 755 "$RUNNER_TEMP/age/age" /usr/local/bin/age
+          set -euo pipefail
+          tarball="$RUNNER_TEMP/age-v1.2.1-linux-amd64.tar.gz"
+          if curl --fail --retry 5 --retry-all-errors --retry-delay 2 -fsSL \
+            "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz" \
+            -o "$tarball" \
+            && tar -xz -C "$RUNNER_TEMP" -f "$tarball" \
+            && sudo install -m 755 "$RUNNER_TEMP/age/age" /usr/local/bin/age; then
+            exit 0
+          fi
+          echo "Static age download failed; falling back to apt." >&2
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends age
       - name: Unit tests
         if: steps.areas.outputs.all_packages != 'false'
         run: pnpm run test --shard=${{ matrix.shard }}/6
