@@ -8,7 +8,11 @@ import type {
   CreateRoutineInput as CreateRoutineInputType,
   MessageBlock,
 } from "@rakazo/contracts";
-import { BOT_TEMPLATE_CHANGED, CreateRoutineInput } from "@rakazo/contracts";
+import {
+  BOT_TEMPLATE_CHANGED,
+  BOT_TEMPLATE_IMPORT_KEY_PREFIX,
+  CreateRoutineInput,
+} from "@rakazo/contracts";
 import {
   appConnectCard,
   BOT_TEMPLATES,
@@ -21,7 +25,7 @@ import { requestDigest, savedTimeZone, writeImportedBot } from "./agent-import.j
 
 /** One bot per template: creating it again returns the bot it made, until that bot is archived or deleted. */
 function importKey(templateId: string): string {
-  return `template:${templateId}`;
+  return `${BOT_TEMPLATE_IMPORT_KEY_PREFIX}${templateId}`;
 }
 
 export async function listBotTemplates(
@@ -33,6 +37,7 @@ export async function listBotTemplates(
       spaceId: actor.spaceId,
       userId: actor.userId,
       importKey: { in: BOT_TEMPLATES.map((template) => importKey(template.id)) },
+      source: "template",
       bot: { archivedAt: null },
     },
     select: { importKey: true, botId: true },

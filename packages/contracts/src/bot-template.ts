@@ -68,6 +68,9 @@ export const CreateBotFromTemplateOutput = z.object({
   created: z.boolean(),
 });
 
+/** Import keys a template's bot is recorded under; agent imports cannot use them. */
+export const BOT_TEMPLATE_IMPORT_KEY_PREFIX = "template:";
+
 /** Sent as the error's `data.reason` when the template changed after it was shown. */
 export const BOT_TEMPLATE_CHANGED = "template_changed";
 

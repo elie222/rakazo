@@ -1,4 +1,5 @@
 import type { ConnectionCatalogItem } from "@rakazo/contracts";
+import { AgentImportCreateInput } from "@rakazo/contracts";
 import { findBotTemplate } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { templateAppCards } from "./bot-templates.js";
@@ -21,4 +22,19 @@ describe("templateAppCards", () => {
     ]);
     expect(templateAppCards(briefing, [])).toEqual([]);
   });
+});
+
+it("keeps template import keys out of agent imports", () => {
+  const request = {
+    files: [{ path: "SOUL.md", content: "Calm." }],
+    name: "Imported",
+    selection: { instructions: [], memory: [], skills: [] },
+  };
+  expect(AgentImportCreateInput.safeParse({ ...request, importKey: "import-1234" }).success).toBe(
+    true,
+  );
+  expect(
+    AgentImportCreateInput.safeParse({ ...request, importKey: "template:morning-briefing" })
+      .success,
+  ).toBe(false);
 });

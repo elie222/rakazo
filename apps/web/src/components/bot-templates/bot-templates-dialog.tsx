@@ -80,7 +80,8 @@ export function BotTemplatesDialog({
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const copy = useBotTemplateCopy();
-  const templates = useQuery(queries.bots.templates.queryOptions());
+  // Read afresh each time it opens: a template's bot may have been made or deleted since.
+  const templates = useQuery({ ...queries.bots.templates.queryOptions(), staleTime: 0 });
   const [openId, setOpenId] = useState<string | null>(null);
   const open = templates.data?.find((template) => template.id === openId);
   const [featured, ...others] = templates.data ?? [];
