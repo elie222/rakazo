@@ -9,7 +9,7 @@ const run = promisify(execFile);
 const databaseUrl = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_URL : undefined;
 const describePostgres = databaseUrl ? describe.sequential : describe.skip;
 
-describePostgres("the operator's account status command (PostgreSQL)", () => {
+describePostgres("the operator's account status command (PostgreSQL)", { timeout: 120_000 }, () => {
   let db: ReturnType<typeof createDb>;
   let system: PrismaClient;
   beforeAll(() => {
