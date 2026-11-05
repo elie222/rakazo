@@ -1165,6 +1165,8 @@ export type BrowserActStep =
       site?: string;
       label?: string;
       amount?: string;
+      /** The page's total the card showed beside the button, or empty when it showed none. */
+      total?: string;
     }
   /** Attaches computer files to a file input without opening a native file chooser. */
   | { kind: "upload"; ref: string; paths: string[]; roots?: string[] }
@@ -1233,6 +1235,8 @@ export interface BrowserPurchase {
   amount: string;
   /** Whether the amount is the one the button names or the total the page shows. */
   amountSource?: "button" | "page";
+  /** The total the page shows beside a button that names its own amount; older computers omit it. */
+  total?: string;
 }
 
 export interface BrowserPurchaseCheckRequest {

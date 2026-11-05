@@ -1331,6 +1331,21 @@ export const ES_MESSAGES: Record<string, string> = {
   "Discard changes?": "¿Descartar los cambios?",
   Discard: "Descartar",
   "Could not delete note": "No se pudo eliminar la nota",
+  "Spending limit": "Límite de gasto",
+  Amount: "Importe",
+  Currency: "Moneda",
+  Daily: "Diario",
+  Weekly: "Semanal",
+  "No reset": "Sin reinicio",
+  "Enter an amount": "Introduce un importe",
+  "{amount} a day": "{amount} al día",
+  "{amount} a week": "{amount} a la semana",
+  "{amount} a month": "{amount} al mes",
+  "{amount} in total": "{amount} en total",
+  "{amount} spent today": "{amount} gastados hoy",
+  "{amount} spent this week": "{amount} gastados esta semana",
+  "{amount} spent this month": "{amount} gastados este mes",
+  "{amount} spent": "{amount} gastados",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

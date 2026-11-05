@@ -64,6 +64,8 @@ model User {
   modelCredentials            UserModelCredential[]
   voiceCredentials            UserVoiceCredential[]
   paymentWallet               PaymentWallet?
+  spendingLimit               SpendingLimit?
+  payments                    Payment[]
   secrets                     Secret[]
   mcpServers                  McpServer[]
   botSections                 BotSection[]
@@ -1265,6 +1267,45 @@ model CloudAgent {
   @@index([providerKey, nextPollAt])
   @@index([spaceId, userId, id])
   @@map("cloud_agents")
+}
+
+/// The most a user's bots may spend in a period, across every bot and Space. Minor units.
+model SpendingLimit {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int
+  /// Lowercase ISO 4217 code.
+  currency  String
+  /// day | week | month | none
+  period    String
+  /// When a limit that never resets started counting.
+  startsAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("spending_limits")
+}
+
+/// A payment the user approved, from a checkout click or their wallet, counted against the
+/// spending limit until it is released (it never went through). No card details.
+model Payment {
+  id           String    @id @default(uuid())
+  /// The approved effect or wallet operation; one payment each.
+  operationKey String    @unique
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId      String
+  botId        String
+  threadId     String
+  /// The checkout's host.
+  site         String
+  amount       Int
+  /// Lowercase ISO 4217 code.
+  currency     String
+  releasedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@map("payments")
 }
 
 model PaymentWallet {
