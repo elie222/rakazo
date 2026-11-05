@@ -1448,7 +1448,12 @@ export default function Integrations() {
                   </View>
                 ) : null}
 
-                {catalogReady && catalog.length === 0 ? (
+                {catalogReady &&
+                !catalogError &&
+                pluginsState === "ready" &&
+                catalog.length === 0 &&
+                plugins.length === 0 &&
+                !filtering ? (
                   <Text style={styles.secondary}>{t(EMPTY_PLUGIN_CATALOG_MESSAGE)}</Text>
                 ) : null}
 
@@ -1495,7 +1500,8 @@ export default function Integrations() {
                 pluginMatches.length === 0 &&
                 brandMatches.length === 0 &&
                 savedServerMatches.length === 0 &&
-                pluginsState !== "loading" &&
+                !catalogError &&
+                pluginsState === "ready" &&
                 filtering ? (
                   <Text style={styles.secondary}>{t("No apps match your search.")}</Text>
                 ) : null}
