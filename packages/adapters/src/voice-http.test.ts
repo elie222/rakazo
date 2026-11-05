@@ -7,6 +7,7 @@ import {
   verifyVoiceHttpGet,
   voiceAccountIssue,
   voiceDeadline,
+  voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
 
@@ -235,5 +236,21 @@ describe("voiceAccountIssue", () => {
     expect(voiceRequestError(400, "ElevenLabs", "speaking", null)).not.toBeInstanceOf(
       VoiceAccountError,
     );
+  });
+});
+
+describe("voiceLanguageHint", () => {
+  it("keeps the lowercase primary subtag of a valid language tag", () => {
+    expect(voiceLanguageHint("pl")).toBe("pl");
+    expect(voiceLanguageHint("es-ES")).toBe("es");
+    expect(voiceLanguageHint(" PT-br ")).toBe("pt");
+    expect(voiceLanguageHint("zh-Hant-TW")).toBe("zh");
+  });
+
+  it("omits values that are not language tags", () => {
+    expect(voiceLanguageHint(undefined)).toBeUndefined();
+    expect(voiceLanguageHint("")).toBeUndefined();
+    expect(voiceLanguageHint("english")).toBeUndefined();
+    expect(voiceLanguageHint("es_ES")).toBeUndefined();
   });
 });

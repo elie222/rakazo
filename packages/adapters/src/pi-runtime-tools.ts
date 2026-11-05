@@ -38,6 +38,7 @@ import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
 import { textContentArg } from "./tool-text.js";
 import { isVerbatimMcpResult } from "./verbatim-mcp-result.js";
+import { positiveIntegerArg } from "./workspace-file-tools.js";
 
 export interface ToolCallBudget {
   count: number;
@@ -368,7 +369,18 @@ function toAgentTool(
         };
       }
       if (tool.name === "list_files") return { path: String(raw.path ?? "") };
-      if (tool.name === "read_file" || tool.name === "open_path") {
+      if (tool.name === "read_file") {
+        const offset = positiveIntegerArg(raw.offset);
+        const limit = positiveIntegerArg(raw.limit);
+        return {
+          path: String(raw.path ?? ""),
+          // Values that are not positive integers are dropped so one bad
+          // argument cannot fail the read; the executor revalidates.
+          ...(offset !== undefined ? { offset } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+        };
+      }
+      if (tool.name === "open_path") {
         return { path: String(raw.path ?? "") };
       }
       if (tool.name === "launch_app") {

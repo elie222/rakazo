@@ -5,7 +5,9 @@ import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { useState } from "react";
 import { connectMcpOauth } from "../../lib/mcp-connect";
 import { rpc } from "../../lib/rpc";
-import { errorText } from "../../lib/user-error";
+import type { ErrorDetails } from "../../lib/user-error";
+import { errorDetails } from "../../lib/user-error";
+import { ErrorNotice } from "../ErrorNotice";
 
 /** Personal MCP connections never configure deployment-wide provider credentials. */
 export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId?: string }) {
@@ -15,7 +17,7 @@ export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId
   const [results, setResults] = useState<IntegrationCatalogResult[]>([]);
   const [searched, setSearched] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorDetails | null>(null);
   const [connected, setConnected] = useState<string[]>([]);
   const remoteResults = [
     ...new Map(
@@ -35,7 +37,7 @@ export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId
     try {
       await action();
     } catch (err) {
-      setError(errorText(err, t`Could not connect`));
+      setError(errorDetails(err, t`Could not connect`));
     } finally {
       setBusy(false);
     }
@@ -121,11 +123,7 @@ export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId
           </Button>
         </div>
       </Disclosure>
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorNotice error={error} /> : null}
       {onDone ? (
         <Button disabled={busy} onClick={onDone}>
           <Trans>Continue</Trans>

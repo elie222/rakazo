@@ -28,3 +28,31 @@ export async function saveLocalComputerHost(
   });
   if (!response.ok) throw new Error("Could not save local computer choice");
 }
+
+type ComputerHost = "docker" | "this-mac";
+
+/**
+ * Saves the local computer choice in the order chosen, so a grant still saving never overwrites a
+ * later revoke. `revoke` ends native access at once; the save follows it, so a slow server never
+ * prolongs access, and `settled` runs whether or not either part fails.
+ */
+export function createLocalComputerChoice(deps: {
+  save: (computerHost: ComputerHost) => Promise<void>;
+  revoke: () => Promise<void> | undefined;
+  settled: () => void;
+}) {
+  let saves: Promise<unknown> = Promise.resolve();
+  const persist = (computerHost: ComputerHost) => {
+    const saving = saves.catch(() => undefined).then(() => deps.save(computerHost));
+    saves = saving;
+    return saving;
+  };
+  return {
+    persist,
+    async revoke() {
+      const results = await Promise.allSettled([deps.revoke(), persist("docker")]);
+      deps.settled();
+      for (const result of results) if (result.status === "rejected") throw result.reason;
+    },
+  };
+}

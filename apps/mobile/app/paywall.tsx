@@ -43,6 +43,7 @@ import {
   setPaywallShown,
   subscribedPlan,
 } from "../lib/billing";
+import { endCallBeforeSessionEnd } from "../lib/call-session";
 import { translucentColor } from "../lib/color";
 import { dateLocaleForUi, useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
@@ -165,6 +166,8 @@ export default function Paywall() {
     leaving.current = true;
     try {
       if (!(await confirmUnsentSendLoss("sign-out"))) return;
+      // Hang up while the session still exists, so the server records the call's end.
+      await endCallBeforeSessionEnd();
       await signOut();
       replaceWithSignIn();
     } catch (err) {

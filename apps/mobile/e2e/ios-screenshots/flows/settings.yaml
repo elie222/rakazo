@@ -98,6 +98,13 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 11-routine
+- openLink: "rakazo:///routine-runs?routineId=${RAKAZO_SCREENSHOT_ROUTINE_ID}&botName=Researcher"
+- extendedWaitUntil:
+    visible: ".*Run history.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 11b-routine-runs
 - openLink: "rakazo:///bot-settings?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
 - scrollUntilVisible:
     element: "Advanced"

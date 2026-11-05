@@ -1288,6 +1288,10 @@ msgstr "Model wijzigen"
 msgid "Change password"
 msgstr "Wachtwoord wijzigen"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "Server wijzigen"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "Bezig met wijzigen…"
@@ -6712,6 +6716,10 @@ msgstr "Proefperiode eindigt op {day}"
 #: src/components/ModelCredits.tsx
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "Proefperiodes krijgen minder uren om misbruik te voorkomen."
+
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
