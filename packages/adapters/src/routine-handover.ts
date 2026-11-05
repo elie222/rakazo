@@ -22,5 +22,5 @@ export async function finishRoutineHandover(
       data: { userId: routine.userId },
     });
   }
-  await clearRoutineBackoff(deps, routine.id);
+  await clearRoutineBackoff(deps, { routineId: routine.id });
 }

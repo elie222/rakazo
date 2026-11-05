@@ -637,7 +637,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
   if (!stopped) return;
   ctx.stopHeartbeatAfterCompletion();
   if (run.trigger === "routine" && run.routineId) {
-    await clearRoutineBackoff(deps, run.routineId);
+    await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
   }
   if (stopped.continuationRunId) {
     await deps.jobs
@@ -900,7 +900,7 @@ export async function completeRun(ctx: RunContext) {
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();
   if (run.trigger === "routine" && run.routineId) {
-    await clearRoutineBackoff(deps, run.routineId);
+    await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
   }
   const { screenRelease } = ctx.state.computerUse;
   if (screenRelease) screenRelease.keepWarm = true;
@@ -1080,7 +1080,12 @@ export async function failRun(
     run.routineId &&
     (refusal || error instanceof SandboxAllowanceUsedError)
   ) {
-    await backOffRoutineAfterAccountError(deps, run.routineId, new Date(), refusal?.resetAt);
+    await backOffRoutineAfterAccountError(
+      deps,
+      { routineId: run.routineId, userId: run.userId },
+      new Date(),
+      refusal?.resetAt,
+    );
   }
   const retrying = !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
   // Nobody asked for a check-in, so its failure is not news to the user.

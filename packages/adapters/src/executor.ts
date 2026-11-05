@@ -984,7 +984,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             message,
           );
           if (failed && accountFailure && run.trigger === "routine" && run.routineId) {
-            await backOffRoutineAfterAccountError(deps, run.routineId);
+            await backOffRoutineAfterAccountError(deps, {
+              routineId: run.routineId,
+              userId: run.userId,
+            });
           }
         };
         if (pinnedComputerFailure) {
