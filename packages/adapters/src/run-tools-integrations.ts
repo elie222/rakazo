@@ -1,4 +1,5 @@
 import type { ConnectorApp } from "@rakazo/adapter-kit";
+import { isBackgroundRunTrigger } from "@rakazo/core";
 import { normalizedHttpUrl } from "@rakazo/core/egress";
 import { getLogger } from "@rakazo/logging";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
@@ -86,7 +87,8 @@ async function showConnectorApp(
   result: unknown,
 ): Promise<void> {
   const { deps, run, bot, thread } = ctx;
-  if (!deps.artifacts) return;
+  // Background work posts no cards, so it keeps no app document either.
+  if (!deps.artifacts || isBackgroundRunTrigger(run.trigger)) return;
   try {
     const artifactId = await storeMcpAppHtml(
       { prisma: deps.prisma, artifacts: deps.artifacts },

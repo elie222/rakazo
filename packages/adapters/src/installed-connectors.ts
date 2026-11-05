@@ -326,8 +326,12 @@ export class InstalledConnectorProvider implements ConnectorProvider {
           type: "result",
           data: redactConnectorPayload(result, credential ? [credential] : []),
         };
-        const app = await readMcpApp(install.name, call.route?.appResourceUri, result, (uri) =>
-          readRemoteMcpResource(session, uri),
+        const app = await readMcpApp(
+          install.name,
+          call.route?.appResourceUri,
+          result,
+          (uri) => readRemoteMcpResource(session, uri),
+          credential ? [credential] : [],
         );
         if (app) yield { type: "app", app };
         return;

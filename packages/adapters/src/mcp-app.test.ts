@@ -94,6 +94,17 @@ describe("MCP app resource", () => {
     ).toBe(undefined);
   });
 
+  it("redacts the connection's credentials from the document", async () => {
+    const app = await readMcpApp(
+      "Weather",
+      "ui://weather/app",
+      { content: [] },
+      async () => read({ text: "<p>token sk-connection-secret</p>" }),
+      ["sk-connection-secret"],
+    );
+    expect(app?.html).not.toContain("sk-connection-secret");
+  });
+
   it("reads no app for a failed call, and a failed read only means no app", async () => {
     const reader = vi.fn(async () => read({ text: APP_HTML }));
     expect(await readMcpApp("Weather", "ui://weather/app", { isError: true }, reader)).toBe(

@@ -26,7 +26,7 @@ function setup(events: ConnectorEvent[], artifacts: unknown = {}, secrets: strin
         },
       },
     },
-    run: { id: "run-1", spaceId: "space-1", userId: "user-1" },
+    run: { id: "run-1", spaceId: "space-1", userId: "user-1", trigger: "user" },
     bot: { id: "bot-1" },
     thread: { id: "thread-1", groupId: null },
     context: {},
@@ -114,6 +114,16 @@ describe("connector tool with an MCP app", () => {
 
     expect(await connectorTool(ctx, call)).toEqual(result);
     expect(publishMessage).not.toHaveBeenCalled();
+  });
+
+  it("keeps no app document for background work, which posts no card", async () => {
+    const { ctx, call } = setup([
+      { type: "result", data: { content: [] } },
+      { type: "app", app },
+    ]);
+    (ctx.run as { trigger: string }).trigger = "tickets";
+    await connectorTool(ctx, call);
+    expect(storeMcpAppHtml).not.toHaveBeenCalled();
   });
 
   it("posts no card without artifact storage", async () => {

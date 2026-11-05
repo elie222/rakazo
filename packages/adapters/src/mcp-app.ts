@@ -7,7 +7,7 @@ import {
   MCP_APP_MIME_TYPE,
   MCP_APP_RESULT_MAX_BYTES,
 } from "@rakazo/contracts";
-import { mcpAppCsp } from "@rakazo/core";
+import { mcpAppCsp, redactSecrets } from "@rakazo/core";
 
 /** Told to every MCP server at initialize: this client shows apps (MCP Apps, SEP-1865). */
 export const MCP_APP_CLIENT_CAPABILITIES: ClientCapabilities = {
@@ -74,18 +74,21 @@ export function mcpAppFromResource(
 
 /**
  * Reads the app for a call that succeeded. A failed read only means no app: the call's result
- * already reached the bot.
+ * already reached the bot. The connection's credentials are redacted from the document, as they
+ * are from the result, in case the server echoes them.
  */
 export async function readMcpApp(
   server: string,
   uri: string | undefined,
   result: unknown,
   read: (uri: string) => Promise<ReadResult>,
+  secrets: readonly string[] = [],
 ): Promise<ConnectorApp | undefined> {
   if (!uri || !result || typeof result !== "object") return undefined;
   if ((result as { isError?: unknown }).isError === true) return undefined;
   try {
-    return mcpAppFromResource(server, uri, await read(uri));
+    const app = mcpAppFromResource(server, uri, await read(uri));
+    return app && { ...app, html: redactSecrets(app.html, secrets) };
   } catch {
     return undefined;
   }

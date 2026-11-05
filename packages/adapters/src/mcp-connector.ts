@@ -708,6 +708,7 @@ export class McpConnector implements ConnectorProvider {
           this.withSession(assignment.server, context, (session) =>
             session.readResource(uri, { signal: context.signal }),
           ),
+        secrets,
       );
       if (app) yield { type: "app", app };
     } catch (error) {
