@@ -24,6 +24,7 @@ export const MAX_PAID_SERVICE_CALL_USD = 2;
 const MIN_DEFAULT_CEILING_USD = 0.05;
 const RESULT_MAX_CHARS = 50_000;
 const BODY_MAX_CHARS = 20_000;
+const QUERY_MAX_CHARS = 4_000;
 
 const searchArgs = z.object({ query: z.string().trim().min(1).max(200) });
 const callArgs = z.object({
@@ -109,6 +110,13 @@ export async function serviceCallFromTool(
   const { service: serviceId, query, body, max_cost_usd } = parsed.data;
   if (body !== undefined && (JSON.stringify(body)?.length ?? 0) > BODY_MAX_CHARS)
     return { error: "body is too large." };
+  if (
+    query &&
+    new URLSearchParams(
+      Object.entries(query).map(([key, value]) => [key, String(value)]),
+    ).toString().length > QUERY_MAX_CHARS
+  )
+    return { error: "query is too large." };
   const service = await deps.provider.describe(serviceId, context).catch((error: unknown) => {
     context.signal.throwIfAborted();
     getLogger().warn("paid_services.describe_failed", {

@@ -261,6 +261,27 @@ describe("TregPaidServiceProvider", () => {
     });
   });
 
+  it("bills a refusal that carries a charge", async () => {
+    const answers = [
+      json({ error: "invalid_identity" }, 422, { "X-Treg-Error": "1", "X-Treg-Cost-Micro": "400" }),
+      new Response("not json", {
+        status: 502,
+        headers: { "X-Treg-Error": "1", "X-Treg-Cost-Micro": "300" },
+      }),
+    ];
+    const { services } = provider(() => answers.shift()!);
+    expect(await services.call(mapsService, {}, callOptions, context)).toMatchObject({
+      outcome: "answered",
+      ok: false,
+      costUsd: 0.0004,
+    });
+    expect(await services.call(mapsService, {}, callOptions, context)).toMatchObject({
+      outcome: "answered",
+      ok: false,
+      costUsd: 0.0003,
+    });
+  });
+
   it("throws when the call may still finish and charge", async () => {
     const answers = [
       json({ _treg: { outcome: "pending" } }, 202),
