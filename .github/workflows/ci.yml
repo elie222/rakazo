@@ -56,47 +56,19 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: ./.github/actions/setup-workspace
         with:
-          node-version: 22
-          cache: pnpm
-      # Reuse prior build outputs across PRs; first hit still compiles cold packages.
-      - name: Restore turbo build cache
-        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: .turbo/cache
-          key: turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
-          restore-keys: |
-            turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-
-            turbo-build-
-      - name: Cache Electron binary
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ runner.temp }}/electron-cache
-          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - run: pnpm install --frozen-lockfile
+          electron: "true"
+          turbo: build
+      - run: pnpm db:generate
         env:
-          electron_config_cache: ${{ runner.temp }}/electron-cache
-      - name: Ensure Electron binary
-        env:
-          electron_config_cache: ${{ runner.temp }}/electron-cache
-        run: |
-          set -euo pipefail
-          install_js="$(pnpm --filter @rakazo/desktop exec node -p "require('path').join(require('path').dirname(require.resolve('electron/package.json')), 'install.js')")"
-          for attempt in 1 2 3; do
-            if node "$install_js"; then
-              exit 0
-            fi
-            echo "Electron download attempt $attempt failed; retrying…" >&2
-            sleep $((attempt * 5))
-          done
-          exit 1
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - run: pnpm build
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
           BETTER_AUTH_SECRET: ci-build-auth-secret-at-least-32-characters
           ENCRYPTION_KEY: ci-build-encryption-key-at-least-32-characters
+          electron_config_cache: ${{ runner.temp }}/electron-cache
       - name: Save turbo build cache
         if: success()
         continue-on-error: true
@@ -134,12 +106,9 @@ jobs:
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: ./.github/actions/setup-workspace
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+          turbo: ${{ github.event_name == 'pull_request' && 'check' || 'none' }}
       - name: Lint
         if: github.event_name == 'pull_request'
         run: pnpm lint
@@ -151,15 +120,6 @@ jobs:
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
-      # Pull requests reuse main's typecheck results for packages whose inputs they leave unchanged.
-      # Main starts with an empty cache, so it typechecks everything before a deploy.
-      - name: Restore typecheck cache
-        if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: .turbo/cache
-          key: turbo-check-${{ github.sha }}
-          restore-keys: turbo-check-
       - name: Typecheck
         if: steps.areas.outputs.all_packages != 'false'
         run: pnpm check
@@ -173,7 +133,7 @@ jobs:
         uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: .turbo/cache
-          key: turbo-check-${{ github.sha }}
+          key: turbo-check-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
       - name: Host operations safety tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 infra/compose/host-safeguards.test.py
@@ -214,18 +174,17 @@ jobs:
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-workspace
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - name: Install age for the encrypted backup round trip
-        # Ubuntu 24.04 ships age 1.1.1, which supports --encrypt, --decrypt, and age-keygen -y.
-        run: sudo apt-get install -y age
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/age.tar.gz" \
+            "https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz"
+          echo "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  $RUNNER_TEMP/age.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/age.tar.gz" -C "$RUNNER_TEMP" age/age age/age-keygen
+          sudo install -m 755 "$RUNNER_TEMP/age/age" "$RUNNER_TEMP/age/age-keygen" /usr/local/bin/
       - name: Unit tests
         if: steps.areas.outputs.all_packages != 'false'
         run: pnpm run test --shard=${{ matrix.shard }}/6
@@ -260,8 +219,9 @@ jobs:
       - run: test "${{ needs.static-checks.result }}" = success && test "${{ needs.unit-tests-shard.result }}" = success
 
   # Desktop + its workspace deps only. A full-workspace install on Windows also links supervisor
-  # (dockerode → cpu-features) and spends ~1 minute on a node-gyp rebuild that fails without VS and
-  # is unused by these tests. Electron's binary is cached separately from the pnpm store.
+  # (dockerode → cpu-features) and spends about a minute on a node-gyp rebuild that fails without
+  # Visual Studio and is unused by these tests. Electron's binary is cached separately from the
+  # pnpm store.
   native-computer:
     name: Native computer (${{ matrix.os }})
     needs: changes
@@ -276,45 +236,19 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - name: Cache Electron binary
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ runner.temp }}/electron-cache
-          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Windows pnpm launcher test
         if: runner.os == 'Windows'
         run: node --test scripts/pnpm.test.mjs
       - name: Worktree environment setup test
         run: node --test scripts/setup-worktree.test.mjs
-      - name: Install desktop workspace
-        env:
-          electron_config_cache: ${{ runner.temp }}/electron-cache
-        run: pnpm install --frozen-lockfile --filter "@rakazo/desktop..."
-      # Install scripts can skip the zip when GitHub releases blip; pull it into the shared cache now.
-      # bash on Windows too: the default PowerShell shell rejects the for-loop below.
-      - name: Ensure Electron binary
-        shell: bash
-        env:
-          electron_config_cache: ${{ runner.temp }}/electron-cache
-        run: |
-          set -euo pipefail
-          install_js="$(pnpm --filter @rakazo/desktop exec node -p "require('path').join(require('path').dirname(require.resolve('electron/package.json')), 'install.js')")"
-          for attempt in 1 2 3; do
-            if node "$install_js"; then
-              exit 0
-            fi
-            echo "Electron download attempt $attempt failed; retrying…" >&2
-            sleep $((attempt * 5))
-          done
-          exit 1
+      - uses: ./.github/actions/setup-workspace
+        with:
+          electron: "true"
+          filter: "@rakazo/desktop..."
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+          electron_config_cache: ${{ runner.temp }}/electron-cache
       - run: pnpm --filter @rakazo/desktop build
         env:
           electron_config_cache: ${{ runner.temp }}/electron-cache
@@ -349,6 +283,19 @@ jobs:
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
+      - name: Postgres cache week
+        if: steps.areas.outputs.server != 'false'
+        id: postgres-cache-week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Restore Postgres image cache
+        if: steps.areas.outputs.server != 'false'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/docker-postgres-cache
+          key: docker-postgres-18-alpine-v2-${{ steps.postgres-cache-week.outputs.week }}
+      - name: Load or pull Postgres image
+        if: steps.areas.outputs.server != 'false'
+        run: bash .github/scripts/restore-postgres-image.sh
       - name: Start Postgres
         if: steps.areas.outputs.server != 'false'
         run: |
@@ -360,14 +307,7 @@ jobs:
             mirror.gcr.io/library/postgres:18-alpine \
             postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500
           echo "CI_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/rakazo" >> "$GITHUB_ENV"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-        if: steps.areas.outputs.server != 'false'
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        if: steps.areas.outputs.server != 'false'
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-workspace
         if: steps.areas.outputs.server != 'false'
       - name: Wait for Postgres
         if: steps.areas.outputs.server != 'false'

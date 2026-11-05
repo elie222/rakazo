@@ -1,4 +1,5 @@
 export const ES_MESSAGES: Record<string, string> = {
+  Haptics: "Respuesta háptica",
   "Add rule": "Añadir regla",
   "Tool name": "Nombre de la herramienta",
   Title: "Título",
@@ -408,6 +409,9 @@ export const ES_MESSAGES: Record<string, string> = {
   Play: "Reproducir",
   Pause: "Pausar",
   "Select text": "Seleccionar texto",
+  "Filter by who made it": "Filtrar por quién lo creó",
+  "All files": "Todos los archivos",
+  "Made by bots": "Creados por bots",
   "All bots": "Todos los bots",
   Artifact: "Artefacto",
   Artifacts: "Artefactos",

@@ -1,4 +1,5 @@
 export const JA_MESSAGES: Record<string, string> = {
+  Haptics: "触覚フィードバック",
   "Add rule": "ルールを追加",
   "Tool name": "ツール名",
   Address: "住所",
@@ -406,6 +407,9 @@ export const JA_MESSAGES: Record<string, string> = {
   Play: "再生",
   Pause: "一時停止",
   "Select text": "テキストを選択",
+  "Filter by who made it": "作成者で絞り込む",
+  "All files": "すべてのファイル",
+  "Made by bots": "ボットが作成",
   "All bots": "すべてのボット",
   Artifact: "アーティファクト",
   Artifacts: "アーティファクト",

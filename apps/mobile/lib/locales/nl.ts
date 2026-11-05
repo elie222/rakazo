@@ -1,4 +1,5 @@
 export const NL_MESSAGES: Record<string, string> = {
+  Haptics: "Haptische feedback",
   "Add rule": "Regel toevoegen",
   "Tool name": "Toolnaam",
   Address: "Adres",
@@ -420,6 +421,9 @@ export const NL_MESSAGES: Record<string, string> = {
   Play: "Afspelen",
   Pause: "Pauzeren",
   "Select text": "Tekst selecteren",
+  "Filter by who made it": "Filteren op maker",
+  "All files": "Alle bestanden",
+  "Made by bots": "Gemaakt door bots",
   "All bots": "Alle bots",
   Artifact: "Artefact",
   Artifacts: "Artefacten",

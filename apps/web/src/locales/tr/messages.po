@@ -725,6 +725,10 @@ msgstr "{credit} tutarın tamamı model kullanımına gider."
 msgid "All bots"
 msgstr "Tüm botlar"
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "Tüm dosyalar"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr "Tüm alanlar"
@@ -3253,6 +3257,10 @@ msgid "Filter by date"
 msgstr "Tarihe göre filtrele"
 
 #: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "Oluşturana göre filtrele"
+
+#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "Filtreler"
@@ -3916,6 +3924,10 @@ msgstr "Düşük"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "Düşük"
+
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "Botların oluşturdukları"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
@@ -5786,6 +5798,10 @@ msgstr "Etki alanına göre ara"
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Search integrations.sh"
 msgstr "integrations.sh üzerinde ara"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Search MCP servers for “{query}”"
+msgstr "MCP sunucularında “{query}” ara"
 
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx

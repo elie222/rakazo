@@ -725,6 +725,10 @@ msgstr "La totalité des {credit} sert à l’utilisation des modèles."
 msgid "All bots"
 msgstr "Tous les bots"
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "Tous les fichiers"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr ""
@@ -3253,6 +3257,10 @@ msgid "Filter by date"
 msgstr "Filtrer par date"
 
 #: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "Filtrer par créateur"
+
+#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "Filtres"
@@ -3916,6 +3924,10 @@ msgstr "Faible"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "Faible"
+
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "Créés par des bots"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
@@ -5786,6 +5798,10 @@ msgstr "Rechercher par domaine"
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Search integrations.sh"
 msgstr "Rechercher sur integrations.sh"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Search MCP servers for “{query}”"
+msgstr "Rechercher « {query} » dans les serveurs MCP"
 
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx

@@ -125,7 +125,7 @@ export function PageView({
                 <DialogTitle className="sr-only">{t`Page`}</DialogTitle>
               )}
               {renameError ? (
-                <p role="alert" className="text-[12px] leading-4 text-destructive">
+                <p role="alert" className="text-label text-destructive">
                   {renameError}
                 </p>
               ) : null}
@@ -197,7 +197,7 @@ function TitlePill({ title, onRename }: { title: string; onRename?: (title: stri
   const [draft, setDraft] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const pill =
-    "pointer-events-auto flex h-11 max-w-full min-w-0 items-center gap-3 rounded-full ring-[0.5px] ring-foreground/[0.06] pr-[15px] pl-[11px] text-[14px] leading-5 font-medium text-foreground";
+    "pointer-events-auto flex h-11 max-w-full min-w-0 items-center gap-3 rounded-full ring-[0.5px] ring-foreground/[0.06] pr-[15px] pl-[11px] text-body font-medium text-foreground";
 
   function commit() {
     const next = draft?.trim() ?? "";

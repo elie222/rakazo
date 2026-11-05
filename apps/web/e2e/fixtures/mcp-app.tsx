@@ -78,7 +78,7 @@ function Offered() {
   const [text, setText] = useState("");
   useEffect(() => subscribeComposerOffer(composerDraftKey({ botId: BOT.botId }), setText), []);
   return text ? (
-    <output data-testid="composer-offer" className="m-4 block text-sm">
+    <output data-testid="composer-offer" className="m-4 block text-body">
       {text}
     </output>
   ) : null;

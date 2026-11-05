@@ -48,7 +48,7 @@ function ScopePicker({
             pressed={value === option}
             disabled={disabled}
             onPressedChange={() => onChange(option)}
-            className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
+            className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
           >
             {option === "isolated" ? <Trans>Isolated</Trans> : <Trans>Shared</Trans>}
           </Toggle>
@@ -178,12 +178,12 @@ export function MemorySettingsOverlay({
 
       <div className="rk-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 pt-6 sm:px-8 sm:pb-8">
         <div className={`space-y-5 ${SETTINGS_CONTENT_WIDTH}`}>
-          {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
+          {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
 
           <SpaceMemorySection />
 
           {config === undefined ? (
-            <p className="text-[13px] text-muted-foreground">
+            <p className="text-body-sm text-muted-foreground">
               <Spinner aria-label={t`Loading memory settings…`} />
             </p>
           ) : config ? (
@@ -192,11 +192,11 @@ export function MemorySettingsOverlay({
                 <h3 className="text-heading3 font-medium text-foreground">
                   {registration?.name ?? config.provider}
                 </h3>
-                <span className="text-[13px] text-success">
+                <span className="text-body-sm text-success">
                   <Trans>Connected</Trans>
                 </span>
               </div>
-              <p className="mt-1 text-[13px] text-muted-foreground">
+              <p className="mt-1 text-body-sm text-muted-foreground">
                 {registration?.connectedLabel(config) ?? config.provider}
               </p>
               <div className="mt-4">
@@ -234,7 +234,7 @@ export function MemorySettingsOverlay({
               <h3 id={providerSelectId} className="text-heading3 font-medium text-foreground">
                 <Trans>Provider</Trans>
               </h3>
-              <p className="mt-1 text-[13px] text-muted-foreground">
+              <p className="mt-1 text-body-sm text-muted-foreground">
                 <Trans>Lets bots save and recall facts by meaning, alongside MEMORY.md.</Trans>
               </p>
               {MEMORY_PROVIDER_SETTINGS.length > 1 ? (
@@ -254,7 +254,7 @@ export function MemorySettingsOverlay({
                   </NativeSelect>
                 </div>
               ) : (
-                <p className="mt-3 text-[14px] text-foreground">{registration.name}</p>
+                <p className="mt-3 text-body text-foreground">{registration.name}</p>
               )}
 
               <div className="mt-4">
@@ -264,7 +264,7 @@ export function MemorySettingsOverlay({
               <registration.SettingsForm busy={busy} onConnect={connect} />
             </section>
           ) : (
-            <p className="text-[13px] text-destructive">
+            <p className="text-body-sm text-destructive">
               <Trans>The selected memory provider is not available in this build.</Trans>
             </p>
           )}
