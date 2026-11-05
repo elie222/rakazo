@@ -72,6 +72,7 @@ import { conversationSessionId, reliableModelStream } from "./pi-runtime-stream.
 import { MAX_PARALLEL_SUBAGENTS } from "./pi-runtime-subagent.js";
 import type { EventQueue, ToolCallBudget, ToolHost } from "./pi-runtime-tools.js";
 import {
+  agentToolDefinitions,
   describeToolActivity,
   releaseToolCallBudget,
   toAgentTools,
@@ -301,6 +302,7 @@ export class PiAgentRuntime implements AgentRuntime {
         };
         resumeHost = host;
         const allTools = toAgentTools(toolDefs, host);
+        const toolsByAgentName = agentToolDefinitions(toolDefs);
         let tools = allTools;
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
@@ -486,9 +488,13 @@ export class PiAgentRuntime implements AgentRuntime {
             activeStreamTarget = target;
             contextPolicy = contextPolicyFor(target);
             host.activeModel = target;
+            // A backup keeps its own effort.
             const nextThinkingLevel = thinkingLevelFor(
               target.model,
-              target.config.thinkingLevel ?? request.model.thinkingLevel,
+              target.config.thinkingLevel ??
+                (sameModelTarget(target.config, request.model)
+                  ? request.model.thinkingLevel
+                  : undefined),
             );
             agent.state.model = target.model;
             agent.state.thinkingLevel = nextThinkingLevel;
@@ -803,7 +809,9 @@ export class PiAgentRuntime implements AgentRuntime {
             toolActivityShowing = true;
             queue.push({
               type: "progress",
-              text: describeToolActivity(event.toolName, event.args),
+              text: describeToolActivity(event.toolName, event.args, (name) =>
+                toolsByAgentName.get(name),
+              ),
               activity: true,
             });
           }

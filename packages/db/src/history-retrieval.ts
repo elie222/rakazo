@@ -6,6 +6,7 @@ import {
   HistoryQueriesSchema,
 } from "@rakazo/contracts";
 import { attachmentComputerPath, shortenedTextLength, textBoundary } from "@rakazo/core";
+import { LISTED_ARTIFACT } from "./artifact-versions.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { searchTerms } from "./content-crypto.js";
@@ -605,6 +606,7 @@ export async function readHistory(
               : { botId: scope.botId, groupId: null }),
             runId: { in: runs.map((run) => run.id) },
             ...(input.artifactAfterId ? { id: { gt: input.artifactAfterId } } : {}),
+            ...LISTED_ARTIFACT,
           },
           select: {
             id: true,

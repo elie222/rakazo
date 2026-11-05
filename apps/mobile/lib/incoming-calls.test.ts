@@ -261,6 +261,89 @@ describe("mobile incoming calls", () => {
     expect(answers()).toHaveLength(1);
     expect(fake.native.finishAnswer).not.toHaveBeenCalledWith("call-1", false);
   });
+  it("answers a caller the stream names without waiting for a slow roster", async () => {
+    const expiresAt = new Date(Date.now() + 3000).toISOString();
+    const answer = fake.rpc.getMockImplementation()!;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) => {
+      if (path === "spaces/list") await new Promise((resolve) => setTimeout(resolve, 4000));
+      return answer(path, ...rest);
+    });
+    fake.lastResponse = {
+      actionIdentifier: "answer",
+      notification: {
+        request: {
+          content: { data: { ...block(), expiresAt, kind: "incoming_call", botId: orgBot.id } },
+        },
+      },
+    };
+    stop = startIncomingCalls();
+    await tick();
+    fake.onEvent?.([{ ...orgBot, incomingCall: { ...block(), expiresAt } }]);
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-1"));
+  });
+  it("answers a caller the stream names while a slow roster loads after an empty snapshot", async () => {
+    const answer = fake.rpc.getMockImplementation()!;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) => {
+      if (path === "spaces/list") await new Promise((resolve) => setTimeout(resolve, 4000));
+      return answer(path, ...rest);
+    });
+    fake.lastResponse = {
+      actionIdentifier: "answer",
+      notification: {
+        request: { content: { data: { ...block(), kind: "incoming_call", botId: orgBot.id } } },
+      },
+    };
+    stop = startIncomingCalls();
+    await tick();
+    fake.onEvent?.([]);
+    await vi.advanceTimersByTimeAsync(1000);
+    fake.onEvent?.([{ ...orgBot, incomingCall: block() }]);
+    await vi.advanceTimersByTimeAsync(4100);
+    expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-1"));
+  });
+  it("answers a caller the stream names after an empty snapshot when the roster load fails", async () => {
+    const answer = fake.rpc.getMockImplementation()!;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) => {
+      if (path === "spaces/list") {
+        await new Promise((resolve) => setTimeout(resolve, 4000));
+        throw new Error("offline");
+      }
+      return answer(path, ...rest);
+    });
+    fake.lastResponse = {
+      actionIdentifier: "answer",
+      notification: {
+        request: { content: { data: { ...block(), kind: "incoming_call", botId: orgBot.id } } },
+      },
+    };
+    stop = startIncomingCalls();
+    await tick();
+    fake.onEvent?.([]);
+    await vi.advanceTimersByTimeAsync(1000);
+    fake.onEvent?.([{ ...orgBot, incomingCall: block() }]);
+    await vi.advanceTimersByTimeAsync(4100);
+    expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-1"));
+  });
+  it("ignores a frame from a stopped feed while a restarted feed's answer waits", async () => {
+    stop = startIncomingCalls();
+    await tick();
+    const stale = fake.onEvent!;
+    stop?.();
+    fake.lastResponse = {
+      actionIdentifier: "answer",
+      notification: {
+        request: { content: { data: { ...block(), kind: "incoming_call", botId: orgBot.id } } },
+      },
+    };
+    stop = startIncomingCalls();
+    await tick();
+    // The old read was mid-chunk when its feed stopped; its frame predates the call.
+    stale([]);
+    await tick();
+    fake.onEvent?.([{ ...orgBot, incomingCall: { ...block(), callId: "call-1" } }]);
+    await vi.waitFor(() => expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-1")));
+  });
   it("declines through the same backend path as web", async () => {
     await respondToMobileCall(await ring(), "decline");
     expect(fake.rpc).toHaveBeenCalledWith(

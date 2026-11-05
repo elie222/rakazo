@@ -1005,6 +1005,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Email verification required": "E-mailverificatie vereist",
   "Link SSO": "SSO koppelen",
   "Registration is closed": "Registratie is gesloten",
+  "This account is deactivated": "Dit account is gedeactiveerd",
   Retry: "Opnieuw proberen",
   "Send deletion code": "Verwijderingscode verzenden",
   "Sign in to your existing account to link SSO":
@@ -1379,6 +1380,27 @@ export const NL_MESSAGES: Record<string, string> = {
   "Discard changes?": "Wijzigingen verwerpen?",
   Discard: "Verwerpen",
   "Could not delete note": "Notitie kon niet worden verwijderd",
+  "Recent payments": "Recente betalingen",
+  "Spending limit": "Bestedingslimiet",
+  Amount: "Bedrag",
+  Currency: "Valuta",
+  Daily: "Dagelijks",
+  Weekly: "Wekelijks",
+  "No reset": "Niet resetten",
+  "Enter an amount": "Voer een bedrag in",
+  "{amount} a day": "{amount} per dag",
+  "{amount} a week": "{amount} per week",
+  "{amount} a month": "{amount} per maand",
+  "{amount} in total": "{amount} in totaal",
+  "{amount} spent today": "{amount} vandaag uitgegeven",
+  "{amount} spent this week": "{amount} deze week uitgegeven",
+  "{amount} spent this month": "{amount} deze maand uitgegeven",
+  "{amount} spent": "{amount} uitgegeven",
+  "Button “{button}” · read from the page, not checked":
+    "Knop ‘{button}’ · van de pagina gelezen, niet gecontroleerd",
+  "On the button": "Op de knop",
+  "Read from the page, not checked": "Van de pagina gelezen, niet gecontroleerd",
+  Total: "Totaal",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

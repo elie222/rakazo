@@ -156,6 +156,7 @@ export async function runTrial(
     for (const row of usage)
       seenUsage.set(row.id, {
         ...row,
+        modelId: row.model,
         operation:
           row.operationKind === "answer" && row.runId && setupRunIds.has(row.runId)
             ? "setup"
@@ -243,6 +244,7 @@ export async function runTrial(
           description: scenario.peer.description,
           instructions: scenario.peer.instructions,
           notifyOnFinish: false,
+          ...(scenario.peer.ownComputer ? { computerMode: "dedicated" } : {}),
         });
         await discardBotIntroRun(trial, cookie, created.id);
         await rpc(app, cookie, "bots/update", {
@@ -286,6 +288,26 @@ export async function runTrial(
       if (scenario.approvalTool) await rpc(app, cookie, "autoReview/set", { mode: "ask" });
     };
     await setupActor();
+    if (scenario.computerFiles?.length) {
+      // Written through the same upload path as a person's file drop, under each owner's control.
+      for (const owner of [botId, peer?.id]) {
+        const files = scenario.computerFiles.filter(
+          (file) => (file.owner === "peer" ? peer?.id : botId) === owner,
+        );
+        if (!owner || !files.length) continue;
+        await rpc(app, cookie, "computer/boot", { botId: owner });
+        await rpc(app, cookie, "computer/takeover", { botId: owner });
+        for (const file of files)
+          await rpc(app, cookie, "computer/uploadFile", {
+            botId: owner,
+            path: file.path,
+            contentBase64: Buffer.from(file.content).toString("base64"),
+          });
+        await rpc(app, cookie, "computer/release", { botId: owner });
+      }
+      if (scenario.computerFiles.some((file) => file.owner === "peer") && !peer)
+        throw new EvalFailure("harness", "Peer computer files need the case's peer bot");
+    }
     if (scenario.routine) {
       await rpc(app, cookie, "routines/create", {
         botId,
@@ -530,7 +552,13 @@ export async function runTrial(
           }));
       } else if ("fromPeer" in step) {
         if (!peer) throw new EvalFailure("harness", "A fromPeer step needs the case's peer bot");
-        await deliverPeerMessage(prisma, handles.jobs, peer, botId, step.fromPeer);
+        await deliverPeerMessage(
+          prisma,
+          handles.jobs,
+          peer,
+          botId,
+          step.fromPeer.replaceAll("{peerHome}", `bots/${peer.id}`),
+        );
         runId = await poll(
           async () =>
             (
@@ -777,8 +805,26 @@ export async function runTrial(
       if (unaddressedMessageId && group) {
         // Handoffs start more runs after the first one ends; wait until every member is done.
         const memberBotIds = [botId, ...group.memberIds.values()];
+        // The trial budget spans every member's work, not only the first run's turn, and the
+        // drain below runs that work, so it keeps checking while the drain is in flight.
+        const assertToolBudget = async () => {
+          if ((await countCurrentTools()) + clearedToolCount > options.maxToolCalls)
+            throw new EvalFailure("incomplete", "Tool call budget exceeded");
+        };
         const settled = await poll(async () => {
-          if (handles?.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
+          await assertToolBudget();
+          if (handles?.awaitIdle) {
+            const drained = withinDeadline(handles.awaitIdle(), deadline);
+            // A budget failure abandons the drain; its own timeout must not crash the trial.
+            drained.catch(() => undefined);
+            while (
+              !(await Promise.race([
+                drained.then(() => true),
+                new Promise((resolve) => setTimeout(() => resolve(false), 200)),
+              ]))
+            )
+              await assertToolBudget();
+          }
           const runs = await prisma.run.findMany({
             where: { botId: { in: memberBotIds }, createdAt: { gte: new Date(requestStarted) } },
             select: { status: true, error: true },
@@ -906,6 +952,15 @@ export async function runTrial(
       routines.length,
       await prisma.event.count({ where: { botId, type: "routine.created" } }),
     );
+    const deliveries = await deliveredBySubject(prisma, botId, [
+      ...(peer
+        ? [
+            (await prisma.thread.findUnique({ where: { botId: peer.id }, select: { id: true } }))
+              ?.id,
+          ]
+        : []),
+      group?.threadId,
+    ]);
     await captureTools();
     const finalStep = scenario.steps.length;
     const evidence: Evidence = {
@@ -914,6 +969,8 @@ export async function runTrial(
       memberReplies,
       routineRuns,
       peerExchanges,
+      ...(deliveries.length ? { deliveries } : {}),
+      ...(peer ? { peerHome: `bots/${peer.id}` } : {}),
       files,
       ...(Object.keys(seededAttachments).length ? { seededAttachments } : {}),
       records: services.records,
@@ -993,13 +1050,16 @@ export async function runTrial(
   } finally {
     if (handles) {
       try {
-        if (handles.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
+        // Stopping each bot covers only its own chat; a member's run can still wait in the
+        // group. Stop it before draining, so a failed trial does not pay for the member's
+        // remaining work while the drain waits for it; when the trial ended cleanly every
+        // member is already terminal and the stop changes nothing.
+        if (group) await rpc(handles.app, cookie, "threads/stop", { groupId: group.id });
       } catch {
         result.cleanupFailed = true;
       }
       try {
-        // Stopping each bot covers only its own chat; a member's run can still wait in the group.
-        if (group) await rpc(handles.app, cookie, "threads/stop", { groupId: group.id });
+        if (handles.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
       } catch {
         result.cleanupFailed = true;
       }
@@ -1048,12 +1108,18 @@ export async function runTrial(
       await captureUsage().catch(() => {
         result.cleanupFailed = true;
       });
+      // Explicit pricing covers the eval model only; other models the product called
+      // during the trial are priced at their own reported or catalog-estimated charge.
+      const pricedModel = options.connection.modelId
+        ? { provider: options.connection.provider, modelId: options.connection.modelId }
+        : undefined;
       Object.assign(
         result,
         measureCalls(
           [...seenUsage.values()],
           options.pricing,
           options.connection.cacheCapabilities?.minimumTokens,
+          pricedModel,
         ),
       );
       result.stepAccounting = measureWorkflowSteps(
@@ -1061,6 +1127,7 @@ export async function runTrial(
         runSteps,
         options.pricing,
         options.connection.cacheCapabilities?.minimumTokens,
+        pricedModel,
       );
       result.cacheDecisions = handles.cacheDecisions ? [...handles.cacheDecisions] : [];
       result.historyDiagnostics = handles.historyDiagnostics ? [...handles.historyDiagnostics] : [];
@@ -1163,6 +1230,39 @@ async function deliverPeerMessage(
     { allowTerminalSource: true },
   );
   if (!sent.ok) throw new EvalFailure("harness", `Peer message was not delivered: ${sent.error}`);
+}
+
+/** Messages and handoffs the subject delivered into these threads, read from what was stored. */
+async function deliveredBySubject(
+  prisma: EvalApp["prisma"],
+  botId: string,
+  threadIds: Array<string | undefined>,
+): Promise<NonNullable<Evidence["deliveries"]>> {
+  const ids = threadIds.filter((id): id is string => Boolean(id));
+  if (!ids.length) return [];
+  const messages = await prisma.message.findMany({
+    where: { threadId: { in: ids } },
+    select: { blocks: true },
+    orderBy: { seq: "asc" },
+  });
+  return messages.flatMap((message) => {
+    const blocks = message.blocks as MessageBlock[];
+    const sent = blocks.find(
+      (block) =>
+        (block.kind === "bot_message_received" || block.kind === "handoff") &&
+        block.fromBotId === botId,
+    );
+    if (!sent || (sent.kind !== "bot_message_received" && sent.kind !== "handoff")) return [];
+    return [
+      {
+        kind: sent.kind === "handoff" ? ("handoff" as const) : ("message" as const),
+        text: sent.text,
+        files: blocks.flatMap((block) =>
+          (block.kind === "file" || block.kind === "image") && block.name ? [block.name] : [],
+        ),
+      },
+    ];
+  });
 }
 
 async function poll<T>(read: () => Promise<T | undefined>, deadline: number): Promise<T> {

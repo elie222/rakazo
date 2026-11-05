@@ -14,6 +14,7 @@ import type {
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
+import { humanizeToolName } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { COMPOSIO_MULTI_EXECUTE_TOOL, composioToolBatch } from "./composio-batch.js";
 import type { ToolkitDirectoryEntry } from "./composio-catalog-cache.js";
@@ -71,6 +72,7 @@ function mapOneTool(item: unknown): ConnectorTool | undefined {
       description: String(fn.description ?? name),
       inputSchema: asObject(fn.parameters) ?? { type: "object", properties: {} },
       batch: composioToolBatch(name),
+      ...composioToolLabel(name),
       route: { connectorId: "composio", toolName: name },
     };
   }
@@ -83,7 +85,26 @@ function mapOneTool(item: unknown): ConnectorTool | undefined {
       asObject(raw.inputSchema) ??
       asObject(raw.parameters) ?? { type: "object", properties: {} },
     batch: composioToolBatch(name),
+    ...composioToolLabel(name),
     route: { connectorId: "composio", toolName: name },
+  };
+}
+
+const COMPOSIO_TOOL_PREFIX = "COMPOSIO_";
+const COMPOSIO_TOOL_LABELS: Record<string, string> = {
+  COMPOSIO_SEARCH_TOOLS: "Searching your apps",
+  COMPOSIO_GET_TOOL_SCHEMAS: "Checking app details",
+  COMPOSIO_MULTI_EXECUTE_TOOL: "Using your apps",
+  COMPOSIO_REMOTE_WORKBENCH: "Running code",
+  COMPOSIO_REMOTE_BASH_TOOL: "Running code",
+  COMPOSIO_MANAGE_CONNECTIONS: "Checking connections",
+};
+
+/** Session tools carry the vendor's name, which means nothing to the person watching. */
+function composioToolLabel(name: string): { label?: string } {
+  if (!name.startsWith(COMPOSIO_TOOL_PREFIX)) return {};
+  return {
+    label: COMPOSIO_TOOL_LABELS[name] ?? humanizeToolName(name.slice(COMPOSIO_TOOL_PREFIX.length)),
   };
 }
 

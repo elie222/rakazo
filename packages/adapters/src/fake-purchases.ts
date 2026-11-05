@@ -12,6 +12,7 @@ import type {
   PurchaseSnapshot,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, Purchase } from "@rakazo/db";
+import { fakeSpendingPrisma } from "./fake-spending.js";
 import { readStripeChargeChallenge, stripeChargeAuthorization } from "./mpp-stripe.js";
 
 export const FAKE_PAY_TOKEN = "fake_pay_token_secret";
@@ -155,7 +156,9 @@ export function fakePurchasePrisma(fixture: {
       return { count: found.length };
     },
   };
+  const spending = fakeSpendingPrisma();
   const tx = {
+    ...spending.client,
     purchase,
     thread: {
       updateMany: async ({ where }: { where: Row }) => ({
@@ -191,7 +194,7 @@ export function fakePurchasePrisma(fixture: {
     ...tx,
     $transaction: async <T>(fn: (client: typeof tx) => Promise<T>) => fn(tx),
   } as unknown as PrismaClient;
-  return { prisma, purchases, runs, tasks, live };
+  return { prisma, purchases, runs, tasks, live, spending: spending.state };
 }
 
 export function fakeJobs() {

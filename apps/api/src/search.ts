@@ -9,7 +9,13 @@ import {
   snippetAroundMatch,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { contentEncryptionOf, INDEXED_MESSAGE, Prisma, UNINDEXED_MESSAGE } from "@rakazo/db";
+import {
+  contentEncryptionOf,
+  INDEXED_MESSAGE,
+  LISTED_ARTIFACT,
+  Prisma,
+  UNINDEXED_MESSAGE,
+} from "@rakazo/db";
 
 const SEARCH_LIMIT = 25;
 /** Cap name matches so content hits (messages/files/links/routines) keep most of the budget. */
@@ -190,6 +196,7 @@ export async function querySpaceSearch(
       botId: { not: null },
       name: { contains: likeQuery, mode: "insensitive" },
       bot: { archivedAt: null },
+      ...LISTED_ARTIFACT,
     },
     include: { bot: { select: { name: true } } },
     take: SEARCH_LIMIT,
@@ -230,6 +237,7 @@ export async function querySpaceSearch(
       userId: actor.userId,
       groupId: { in: openableGroupIds },
       name: { contains: likeQuery, mode: "insensitive" },
+      ...LISTED_ARTIFACT,
     },
     include: { group: { select: { name: true } } },
     take: SEARCH_LIMIT,

@@ -38,6 +38,7 @@ All of these are optional:
 ```env
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
+SCIM_BEARER_TOKEN=        # lets your identity provider add and remove accounts; see self-host-accounts.md
 SANDBOX_PROVIDER=docker   # or none, e2b, novita, daytona, createos, boat. Keep fake only for pnpm test.
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile

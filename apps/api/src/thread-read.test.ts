@@ -107,6 +107,11 @@ describe("markThreadRead", () => {
     await expect(markThreadRead(prisma, actor, target)).resolves.toBe(3);
     expect(updateMany).toHaveBeenCalledTimes(3);
     expect(queryRaw).toHaveBeenCalledOnce();
+    // The locked fallback waits on the same snapshot-held lock as every other write,
+    // so it runs on the explicit budget rather than the default.
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
     expect(row).toEqual({ unread: false, lastReadSeq: 9, nextMessageSeq: 10 });
   });
 
