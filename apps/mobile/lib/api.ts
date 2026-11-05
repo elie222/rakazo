@@ -488,8 +488,9 @@ async function clearCredentialsForEndpointChange(
       };
     }
   }
-  const failed = async () => {
-    if (pendingSignOut) await removePendingSignOut(pendingSignOut);
+  // `restoredToken` is the session the device still has; until the clear, that is the recorded one.
+  const failed = async (restoredToken = revokedToken.value) => {
+    await settleRolledBackSignOut(pendingSignOut, restoredToken);
     return {
       ok: false as const,
       result: { ok: false as const, error: t("Could not clear the previous server session") },
@@ -509,8 +510,11 @@ async function clearCredentialsForEndpointChange(
     let kept = true;
     if (previousSpace.value && spaceSelectionGeneration === spaceGeneration) {
       kept = await writeStoredValue(SPACE_KEY, previousSpace.value);
-      // A selection made during that write may have landed first; store the live one again.
-      if (spaceSelectionGeneration !== spaceGeneration) {
+      // A selection made during a write may have landed first; store the live one again until a
+      // write completes with no selection made during it.
+      let written = spaceGeneration;
+      while (spaceSelectionGeneration !== written) {
+        written = spaceSelectionGeneration;
         kept = cachedSpaceId
           ? await writeStoredValue(SPACE_KEY, cachedSpaceId)
           : await clearStoredValue(SPACE_KEY);
@@ -533,7 +537,20 @@ async function clearCredentialsForEndpointChange(
   }
 
   await restoreCredentials(previousToken.value, previousSpace.value);
-  return failed();
+  return failed(previousToken.value);
+}
+
+/**
+ * Settles a rolled-back switch's revocation record. The rollback restores only the session in use,
+ * so a record for a stored token it does not bring back stays and becomes deliverable.
+ */
+async function settleRolledBackSignOut(
+  record: PendingSignOut | undefined,
+  restoredToken: string | undefined,
+): Promise<void> {
+  if (!record) return;
+  if (record.token === restoredToken) await removePendingSignOut(record);
+  else await promotePendingSignOut(record);
 }
 
 async function restoreCredentials(previousToken: string, previousSpace: string) {
@@ -635,7 +652,7 @@ async function saveApiBaseLocked(
   }
   if (!(await saveServerHeaders(parsed.url, headers))) {
     if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
-    if (pendingPreviousSignOut) await removePendingSignOut(pendingPreviousSignOut);
+    await settleRolledBackSignOut(pendingPreviousSignOut, cleared?.previousToken);
     return { ok: false, error: t("Could not save the server URL") };
   }
   try {
@@ -645,7 +662,7 @@ async function saveApiBaseLocked(
     if (cleared) {
       await restoreCredentials(cleared.previousToken, cleared.previousSpace);
     }
-    if (pendingPreviousSignOut) await removePendingSignOut(pendingPreviousSignOut);
+    await settleRolledBackSignOut(pendingPreviousSignOut, cleared?.previousToken);
     return { ok: false, error: t("Could not save the server URL") };
   }
   setCachedApiBase(parsed.url);
@@ -695,14 +712,14 @@ async function resetApiBaseLocked(
   } catch {
     if (cleared) {
       await restoreCredentials(cleared.previousToken, cleared.previousSpace);
-      if (pendingPreviousSignOut) await removePendingSignOut(pendingPreviousSignOut);
+      await settleRolledBackSignOut(pendingPreviousSignOut, cleared.previousToken);
       return { ok: false, error: t("Could not clear the custom server URL") };
     }
   }
   if (!(await saveServerHeaders(url, {}))) {
     await SecureStore.setItemAsync(ENDPOINT_KEY, previous).catch(() => undefined);
     if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
-    if (pendingPreviousSignOut) await removePendingSignOut(pendingPreviousSignOut);
+    await settleRolledBackSignOut(pendingPreviousSignOut, cleared?.previousToken);
     return { ok: false, error: t("Could not clear the custom server URL") };
   }
   setCachedApiBase(url);

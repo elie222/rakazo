@@ -3296,6 +3296,43 @@ describe("mobile API authentication", () => {
   );
 
   it.each(["save", "reset"])(
+    "a %s rolled back after clearing a stored session a failed save left unsent keeps its revocation",
+    async (change) => {
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      if (change === "reset") await saveApiBase("https://old-server.example");
+      await restoreSessionToken("token-a");
+      await selectSpace("space-old");
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        if (key === "rakazo.session_token" && value === "token-b") throw new Error("device locked");
+        if (change === "save" && key === "rakazo.api_base") throw new Error("device locked");
+        store.set(key, value);
+      });
+      vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+        if (change === "reset" && key === "rakazo.api_base") throw new Error("device locked");
+        store.delete(key);
+      });
+      configureSessionEndHangUp(() => saveSessionToken("token-b"));
+      let result: Awaited<ReturnType<typeof saveApiBase>>;
+      try {
+        result = await (change === "save"
+          ? saveApiBase("https://second-server.example")
+          : resetApiBase());
+      } finally {
+        configureSessionEndHangUp(undefined);
+        mockSecureStore(store);
+      }
+
+      // The rollback does not bring token-a back, so its revocation stays owed.
+      expect(result).toMatchObject({ ok: false });
+      expect(store.has("rakazo.session_token")).toBe(false);
+      expect(await authHeaders()).not.toHaveProperty("authorization");
+      expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
+      await resetApiBase();
+    },
+  );
+
+  it.each(["save", "reset"])(
     "a %s stopped by a session change stores a Space selected during its restoring write",
     async (change) => {
       const store = new Map<string, string>();
@@ -3326,6 +3363,48 @@ describe("mobile API authentication", () => {
       expect(result).toMatchObject({ ok: false });
       expect(selectedSpaceId()).toBe("space-new");
       expect(store.get("rakazo.space_id")).toBe("space-new");
+      expect(store.has("rakazo.space_rollback")).toBe(false);
+      await resetApiBase();
+    },
+  );
+
+  it.each(["save", "reset"])(
+    "a %s stopped by a session change stores the last Space selected during its repair",
+    async (change) => {
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      if (change === "reset") await saveApiBase("https://old-server.example");
+      await restoreSessionToken("token-a");
+      await selectSpace("space-old");
+      let selecting: Promise<boolean> | undefined;
+      let reselecting: Promise<boolean> | undefined;
+      let newWrites = 0;
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        if (key === "rakazo.space_rollback" && value) await saveSessionToken("token-b");
+        if (key === "rakazo.space_id" && value === "space-old" && !selecting) {
+          selecting = selectSpace("space-new");
+          await selecting;
+        }
+        // The second write of space-new is the switch's repair; another selection lands first.
+        if (key === "rakazo.space_id" && value === "space-new" && ++newWrites === 2) {
+          reselecting = selectSpace("space-newest");
+          await reselecting;
+        }
+        store.set(key, value);
+      });
+      let result: Awaited<ReturnType<typeof saveApiBase>>;
+      try {
+        result = await (change === "save"
+          ? saveApiBase("https://second-server.example")
+          : resetApiBase());
+      } finally {
+        mockSecureStore(store);
+      }
+
+      expect(reselecting).toBeDefined();
+      expect(result).toMatchObject({ ok: false });
+      expect(selectedSpaceId()).toBe("space-newest");
+      expect(store.get("rakazo.space_id")).toBe("space-newest");
       expect(store.has("rakazo.space_rollback")).toBe(false);
       await resetApiBase();
     },
