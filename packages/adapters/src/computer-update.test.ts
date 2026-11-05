@@ -225,6 +225,15 @@ describe("background computer maintenance", () => {
     );
   });
 
+  it("frees an abandoned update even when republishing a queued one fails", async () => {
+    const { row, rows, deps, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 61 * 60_000);
+    rows.push({ ...row, id: "queued-0", status: "queued", updatedAt: new Date(0) });
+    jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
+    await expect(reconcileComputerUpdates(deps)).rejects.toThrow("queue unavailable");
+    expect(row.status).toBe("failed");
+  });
+
   it("rejects a busy computer before publishing an operation", async () => {
     const { row, deps, computer, jobs } = fixture();
     computer.updateMany.mockResolvedValueOnce({ count: 0 });

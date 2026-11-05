@@ -612,8 +612,8 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
   const select = (where: Prisma.ComputerUpdateWhereInput) =>
     deps.prisma.computerUpdate.findMany({ where, take: 100, orderBy: { updatedAt: "asc" } });
   // Republishing leaves a queued row untouched, so a backlog of them would fill every pass.
+  // Stalled rows go first so a failing republish cannot keep a computer reserved.
   const updates = [
-    ...(await select({ status: "queued" })),
     ...(await select({
       OR: [
         { status: "running", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
@@ -623,6 +623,7 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
         { status: "interrupted", updatedAt: { lt: new Date(Date.now() - ABANDONED_MS) } },
       ],
     })),
+    ...(await select({ status: "queued" })),
   ];
   for (const update of updates) {
     if (update.status === "queued") {
