@@ -778,6 +778,10 @@ export async function runTrial(
         // Handoffs start more runs after the first one ends; wait until every member is done.
         const memberBotIds = [botId, ...group.memberIds.values()];
         const settled = await poll(async () => {
+          // The trial budget spans every member's work, not only the first run's turn.
+          const toolCount = (await countCurrentTools()) + clearedToolCount;
+          if (toolCount > options.maxToolCalls)
+            throw new EvalFailure("incomplete", "Tool call budget exceeded");
           if (handles?.awaitIdle) await withinDeadline(handles.awaitIdle(), deadline);
           const runs = await prisma.run.findMany({
             where: { botId: { in: memberBotIds }, createdAt: { gte: new Date(requestStarted) } },
