@@ -2284,17 +2284,15 @@ describe("sendThreadMessage", () => {
         update: vi.fn(),
       },
       run: {
-        findMany: vi
-          .fn()
-          .mockResolvedValue([
-            {
-              id: "intro-run",
-              taskId: "intro-task",
-              status: "running",
-              trigger: "created",
-              userId: "user-1",
-            },
-          ]),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "intro-run",
+            taskId: "intro-task",
+            status: "running",
+            trigger: "created",
+            userId: "user-1",
+          },
+        ]),
         create: vi.fn(),
         findUnique: vi.fn().mockResolvedValue({ status: "running", startedAt: new Date() }),
         updateMany: vi.fn(),
