@@ -382,6 +382,12 @@ test("a saved local stack is reused only after its private identity matches", as
 test("a restart with a saved external server keeps the off-switch for a running stack", async () => {
   const stackDir = path.join(userData, "stack");
   await mkdir(stackDir, { recursive: true });
+  const host = await prepareHostComputer(userData);
+  await writeFile(
+    path.join(stackDir, ".desktop-host-config"),
+    createHash("sha256").update(JSON.stringify(host.connection)).digest("hex"),
+  );
+  await host.close();
   await writeFile(path.join(stackDir, ".desktop-stack-token"), `${"ab".repeat(32)}\n`, {
     encoding: "utf8",
     mode: 0o600,
