@@ -462,10 +462,6 @@ msgstr "1 个工作区"
 msgid "A bit of everything"
 msgstr "什么都做一点"
 
-#: src/components/SharedSpaceRules.tsx
-msgid "A bot uses the accounts of whoever messages it, and anyone here can read its reply."
-msgstr "机器人会使用给它发消息的人的账户，这里的每个人都能看到它的回复。"
-
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr "命令的输出"
@@ -1194,6 +1190,10 @@ msgstr "机器人"
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
 msgstr "Bot 和浏览器自动化"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Bots use the accounts of whoever messages them"
+msgstr "机器人使用给它发消息的人的账号"
 
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
@@ -3173,13 +3173,13 @@ msgstr "每月"
 msgid "Every week"
 msgstr "每周"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "Everyone here sees its chats, bots and memory"
+msgstr "这里的每个人都能看到它的聊天、机器人和记忆"
+
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
-
-#: src/components/SharedSpaceRules.tsx
-msgid "Everyone in this space sees all its chats, bots and memory."
-msgstr "此空间中的每个人都能看到其中所有的聊天、机器人和记忆。"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
@@ -7425,8 +7425,8 @@ msgid "Your OpenRouter"
 msgstr "你的 OpenRouter"
 
 #: src/components/SharedSpaceRules.tsx
-msgid "Your other spaces stay private."
-msgstr "你的其他空间仍保持私密。"
+msgid "Your other spaces stay private"
+msgstr "你的其他空间仍保持私密"
 
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."

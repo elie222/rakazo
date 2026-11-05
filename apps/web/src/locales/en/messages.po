@@ -462,10 +462,6 @@ msgstr "1 space"
 msgid "A bit of everything"
 msgstr "A bit of everything"
 
-#: src/components/SharedSpaceRules.tsx
-msgid "A bot uses the accounts of whoever messages it, and anyone here can read its reply."
-msgstr "A bot uses the accounts of whoever messages it, and anyone here can read its reply."
-
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr "A command's output"
@@ -1194,6 +1190,10 @@ msgstr "Bots"
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
 msgstr "Bots and browser automation"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Bots use the accounts of whoever messages them"
+msgstr "Bots use the accounts of whoever messages them"
 
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
@@ -3173,13 +3173,13 @@ msgstr "Every month"
 msgid "Every week"
 msgstr "Every week"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "Everyone here sees its chats, bots and memory"
+msgstr "Everyone here sees its chats, bots and memory"
+
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr "Everyone in this bot's space can read the chats it gets from {linkApp}."
-
-#: src/components/SharedSpaceRules.tsx
-msgid "Everyone in this space sees all its chats, bots and memory."
-msgstr "Everyone in this space sees all its chats, bots and memory."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
@@ -7425,8 +7425,8 @@ msgid "Your OpenRouter"
 msgstr "Your OpenRouter"
 
 #: src/components/SharedSpaceRules.tsx
-msgid "Your other spaces stay private."
-msgstr "Your other spaces stay private."
+msgid "Your other spaces stay private"
+msgstr "Your other spaces stay private"
 
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."

@@ -1,23 +1,27 @@
 import { Trans } from "@lingui/react/macro";
+import { cn } from "@rakazo/ui-web";
+import { KeyRound, Lock, Users } from "lucide-react";
 
-/** What sharing a space means, shown where someone invites or joins. */
+/** What joining a shared space means, shown once: on the invite, when someone agrees to it. */
 export function SharedSpaceRules({ className }: { className?: string }) {
   return (
     <ul
-      className={["list-disc space-y-1 ps-5 text-muted-foreground", className]
-        .filter(Boolean)
-        .join(" ")}
+      className={cn(
+        "w-full space-y-3 rounded-xl border border-border px-4 py-3.5 text-start text-sm text-muted-foreground",
+        className,
+      )}
     >
-      <li>
-        <Trans>Everyone in this space sees all its chats, bots and memory.</Trans>
+      <li className="flex items-center gap-3">
+        <Users aria-hidden="true" className="size-4 shrink-0 text-foreground" />
+        <Trans>Everyone here sees its chats, bots and memory</Trans>
       </li>
-      <li>
-        <Trans>Your other spaces stay private.</Trans>
+      <li className="flex items-center gap-3">
+        <Lock aria-hidden="true" className="size-4 shrink-0 text-foreground" />
+        <Trans>Your other spaces stay private</Trans>
       </li>
-      <li>
-        <Trans>
-          A bot uses the accounts of whoever messages it, and anyone here can read its reply.
-        </Trans>
+      <li className="flex items-center gap-3">
+        <KeyRound aria-hidden="true" className="size-4 shrink-0 text-foreground" />
+        <Trans>Bots use the accounts of whoever messages them</Trans>
       </li>
     </ul>
   );

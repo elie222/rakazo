@@ -40,11 +40,9 @@ test("an owner invites someone by link and both see the space's members", async 
   await expect(ownerSettings.getByRole("button", { name: "Leave space" })).toHaveCount(0);
 
   await ownerSettings.getByRole("button", { name: "Invite" }).click();
-  const link = ownerSettings.getByRole("textbox", { name: "Invite link" });
-  await expect(link).toHaveValue(/\/invite\//);
   await expect(ownerPage.getByText("Invite link copied")).toBeVisible();
-  const inviteUrl = await link.inputValue();
-  expect(await ownerPage.evaluate(() => navigator.clipboard.readText())).toBe(inviteUrl);
+  const inviteUrl = await ownerPage.evaluate(() => navigator.clipboard.readText());
+  expect(inviteUrl).toMatch(/\/invite\//);
   await captureScreenshot(ownerPage, testInfo, "space-members-owner");
 
   // A signed-out invitee signs in first and comes back to the invite.

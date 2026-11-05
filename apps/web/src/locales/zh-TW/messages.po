@@ -463,10 +463,6 @@ msgstr ""
 msgid "A bit of everything"
 msgstr "什麼都做一點"
 
-#: src/components/SharedSpaceRules.tsx
-msgid "A bot uses the accounts of whoever messages it, and anyone here can read its reply."
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr "命令的輸出"
@@ -1195,6 +1191,10 @@ msgstr "機器人"
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
 msgstr "機器人與瀏覽器自動化"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Bots use the accounts of whoever messages them"
+msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
@@ -3174,12 +3174,12 @@ msgstr "每月"
 msgid "Every week"
 msgstr "每週"
 
-#: src/pages/MessagingSettingsPanel.tsx
-msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
+#: src/components/SharedSpaceRules.tsx
+msgid "Everyone here sees its chats, bots and memory"
 msgstr ""
 
-#: src/components/SharedSpaceRules.tsx
-msgid "Everyone in this space sees all its chats, bots and memory."
+#: src/pages/MessagingSettingsPanel.tsx
+msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
@@ -7426,7 +7426,7 @@ msgid "Your OpenRouter"
 msgstr "你的 OpenRouter"
 
 #: src/components/SharedSpaceRules.tsx
-msgid "Your other spaces stay private."
+msgid "Your other spaces stay private"
 msgstr ""
 
 #: src/components/ModelCredits.tsx

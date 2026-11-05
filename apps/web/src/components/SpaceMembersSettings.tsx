@@ -63,11 +63,16 @@ export function SpaceMembersSettings({
     };
   }, [rpc, space.id]);
 
-  function copy(url: string) {
-    void navigator.clipboard
-      ?.writeText(url)
-      .then(() => toast(t`Invite link copied`))
-      .catch(() => undefined);
+  /** Copies the link; only when that fails is the link shown, to copy by hand. */
+  async function copy(url: string) {
+    try {
+      if (!navigator.clipboard) throw new Error("No clipboard");
+      await navigator.clipboard.writeText(url);
+      setInviteUrl(null);
+      toast(t`Invite link copied`);
+    } catch {
+      setInviteUrl(url);
+    }
   }
 
   async function cancelInvites() {
@@ -87,11 +92,10 @@ export function SpaceMembersSettings({
     setError(null);
     try {
       const link = await rpc.spaces.invites.create({ spaceId: space.id });
-      setInviteUrl(link.url);
       setMembers((current) =>
         current ? { ...current, openInvites: (current.openInvites ?? 0) + 1 } : current,
       );
-      copy(link.url);
+      await copy(link.url);
     } catch (err) {
       setError(errorText(err, t`Could not create invite link`));
     } finally {
@@ -133,9 +137,27 @@ export function SpaceMembersSettings({
   const canManage = members?.canManage === true;
   const memberName =
     confirm?.kind === "remove" ? accountDisplay(confirm.member, confirm.member.email).label : "";
+  const action = !members ? null : canManage ? (
+    <Button variant="ghost" size="sm" disabled={inviting} onClick={() => void invite()}>
+      <UserPlus />
+      <Trans>Invite</Trans>
+    </Button>
+  ) : (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="text-destructive hover:text-destructive"
+      onClick={() => {
+        setConfirmError(null);
+        setConfirm({ kind: "leave" });
+      }}
+    >
+      <Trans>Leave space</Trans>
+    </Button>
+  );
   return (
-    <div data-testid="space-members-settings" className="space-y-4">
-      <SettingsGroup title={t`Members`}>
+    <div data-testid="space-members-settings" className="space-y-2">
+      <SettingsGroup title={t`Members`} action={action}>
         {members ? (
           <ul className="divide-y divide-border" aria-label={t`Members`}>
             {members.members.map((member) => (
@@ -160,53 +182,33 @@ export function SpaceMembersSettings({
         )}
       </SettingsGroup>
       {members && error ? <p className="px-1 text-[13px] text-destructive">{error}</p> : null}
-      {canManage ? (
-        <div className="flex flex-col items-start gap-3">
-          <Button
-            variant="outline"
-            className="rounded-full"
-            disabled={inviting}
-            onClick={() => void invite()}
-          >
-            <UserPlus />
-            <Trans>Invite</Trans>
-          </Button>
-          {inviteUrl ? (
-            <InputGroup className="max-w-md">
-              <InputGroupInput
-                readOnly
-                aria-label={t`Invite link`}
-                value={inviteUrl}
-                onFocus={(event) => event.currentTarget.select()}
-              />
-              <InputGroupAddon align="inline-end">
-                <InputGroupButton
-                  size="icon-sm"
-                  aria-label={t`Copy invite link`}
-                  onClick={() => copy(inviteUrl)}
-                >
-                  <Copy />
-                </InputGroupButton>
-              </InputGroupAddon>
-            </InputGroup>
-          ) : null}
-          {members?.openInvites ? (
-            <Button variant="ghost" size="sm" onClick={() => void cancelInvites()}>
-              <Trans>Cancel open invites</Trans>
-            </Button>
-          ) : null}
-        </div>
+      {canManage && inviteUrl ? (
+        <InputGroup>
+          <InputGroupInput
+            readOnly
+            aria-label={t`Invite link`}
+            value={inviteUrl}
+            onFocus={(event) => event.currentTarget.select()}
+          />
+          <InputGroupAddon align="inline-end">
+            <InputGroupButton
+              size="icon-sm"
+              aria-label={t`Copy invite link`}
+              onClick={() => void copy(inviteUrl)}
+            >
+              <Copy />
+            </InputGroupButton>
+          </InputGroupAddon>
+        </InputGroup>
       ) : null}
-      {members && !canManage ? (
+      {canManage && members?.openInvites ? (
         <Button
-          variant="destructive"
-          className="rounded-full"
-          onClick={() => {
-            setConfirmError(null);
-            setConfirm({ kind: "leave" });
-          }}
+          variant="text"
+          size="sm"
+          className="h-auto px-1 text-[13px]"
+          onClick={() => void cancelInvites()}
         >
-          <Trans>Leave space</Trans>
+          <Trans>Cancel open invites</Trans>
         </Button>
       ) : null}
       {confirm ? (

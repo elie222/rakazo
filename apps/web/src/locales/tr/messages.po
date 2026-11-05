@@ -462,10 +462,6 @@ msgstr "1 alan"
 msgid "A bit of everything"
 msgstr "Hepsi biraz"
 
-#: src/components/SharedSpaceRules.tsx
-msgid "A bot uses the accounts of whoever messages it, and anyone here can read its reply."
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr "Bir komutun çıktısı"
@@ -1194,6 +1190,10 @@ msgstr "Botlar"
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
 msgstr "Botlar ve tarayıcı otomasyonu"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Bots use the accounts of whoever messages them"
+msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
@@ -3173,12 +3173,12 @@ msgstr "Her ay"
 msgid "Every week"
 msgstr "Her hafta"
 
-#: src/pages/MessagingSettingsPanel.tsx
-msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
+#: src/components/SharedSpaceRules.tsx
+msgid "Everyone here sees its chats, bots and memory"
 msgstr ""
 
-#: src/components/SharedSpaceRules.tsx
-msgid "Everyone in this space sees all its chats, bots and memory."
+#: src/pages/MessagingSettingsPanel.tsx
+msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
@@ -7425,7 +7425,7 @@ msgid "Your OpenRouter"
 msgstr "OpenRouter sağlayıcınız"
 
 #: src/components/SharedSpaceRules.tsx
-msgid "Your other spaces stay private."
+msgid "Your other spaces stay private"
 msgstr ""
 
 #: src/components/ModelCredits.tsx

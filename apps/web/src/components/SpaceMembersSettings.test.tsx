@@ -127,7 +127,7 @@ it("a member cannot invite or remove, and leaves after confirming", async () => 
   expect(onLeft).toHaveBeenCalledWith("space-own");
 });
 
-it("copies a new invite link and keeps it on screen", async () => {
+it("copies a new invite link, and shows it only when copying fails", async () => {
   const writeText = vi.fn(async () => undefined);
   Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
   await renderWith({ spaceName: "Home", members: [owner], canManage: true });
@@ -135,14 +135,18 @@ it("copies a new invite link and keeps it on screen", async () => {
     url: "https://rakazo.example/invite/token-1",
     expiresAt: new Date().toISOString(),
   });
+  const linkField = () => host.querySelector<HTMLInputElement>('input[aria-label="Invite link"]');
 
   await act(async () => buttonNamed("Invite")?.click());
   expect(rpc.spaces.invites.create).toHaveBeenCalledWith({ spaceId: space.id });
   expect(writeText).toHaveBeenCalledWith("https://rakazo.example/invite/token-1");
   expect(toast).toHaveBeenCalledWith("Invite link copied");
-  const input = host.querySelector<HTMLInputElement>('input[aria-label="Invite link"]');
-  expect(input?.value).toBe("https://rakazo.example/invite/token-1");
-  expect(input?.readOnly).toBe(true);
+  expect(linkField()).toBeNull();
+
+  writeText.mockRejectedValueOnce(new Error("denied"));
+  await act(async () => buttonNamed("Invite")?.click());
+  expect(linkField()?.value).toBe("https://rakazo.example/invite/token-1");
+  expect(linkField()?.readOnly).toBe(true);
 });
 
 it("cancels open invite links only when there are some", async () => {

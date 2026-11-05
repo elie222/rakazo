@@ -1,7 +1,7 @@
 import { Trans } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
 import type { SpaceInvitePreview } from "@rakazo/contracts";
-import { Button } from "@rakazo/ui-web";
+import { Button, cn } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { SharedSpaceRules } from "../components/SharedSpaceRules";
@@ -110,16 +110,16 @@ export function InvitePage() {
   const { spaceName, inviterName } = state.preview;
   return (
     <AuthFrame title={<Trans>Join {spaceName}</Trans>} onSubmit={join}>
-      <p className="-mt-5 text-center text-muted-foreground">
+      <p className="-mt-6 text-center text-muted-foreground">
         <Trans>{inviterName} invited you</Trans>
       </p>
-      <SharedSpaceRules className="mx-auto mt-4 max-w-sm text-start text-sm" />
+      <SharedSpaceRules className="mt-8" />
       {joinError ? (
         <p role="alert" className="mt-3 text-sm text-destructive">
           {joinError}
         </p>
       ) : null}
-      <Button type="submit" disabled={joining} className={submitClass}>
+      <Button type="submit" disabled={joining} className={cn(submitClass, "mt-6")}>
         <Trans>Join</Trans>
       </Button>
     </AuthFrame>

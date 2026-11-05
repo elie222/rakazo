@@ -12,20 +12,20 @@ import {
   StyleSheet,
   Text,
 } from "react-native";
-import { GlassIconButton } from "../components/glass-icon-button";
+import { NativeSymbol } from "../components/native-symbol";
 import { SettingsGroup, SettingsRow } from "../components/settings-group";
 import { cancelHeaderOptions } from "../components/sheet-header";
 import { rpc, selectedSpaceId, selectSpace } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
-import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
+import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { errorText } from "../lib/user-error";
 
 export default function SpaceMembersScreen() {
   const { t } = useI18n();
   const styles = useThemedStyles(createStyles);
   const appearance = useResolvedAppearance();
+  const tokens = useMobileTokens();
   const router = useRouter();
   const { spaceId, name } = useLocalSearchParams<{ spaceId: string; name?: string }>();
   const [members, setMembers] = useState<SpaceMembers | null>(null);
@@ -124,37 +124,7 @@ export default function SpaceMembersScreen() {
   const canManage = members?.canManage === true;
   return (
     <>
-      <Stack.Screen
-        options={{
-          ...cancelHeaderOptions(t("Close"), () => router.back()),
-          // An action, not a confirmation, so it gets its own glyph rather than the done checkmark.
-          ...(canManage
-            ? iosAtLeast(26)
-              ? {
-                  unstable_headerRightItems: () => [
-                    {
-                      type: "button" as const,
-                      label: t("Invite"),
-                      icon: { type: "sfSymbol" as const, name: "person.badge.plus" as const },
-                      disabled: pending,
-                      onPress: () => void invite(),
-                    },
-                  ],
-                }
-              : {
-                  headerRight: () => (
-                    <GlassIconButton
-                      accessibilityLabel={t("Invite")}
-                      ios="person.badge.plus"
-                      android="person-add-outline"
-                      disabled={pending}
-                      onPress={() => void invite()}
-                    />
-                  ),
-                }
-            : {}),
-        }}
-      />
+      <Stack.Screen options={cancelHeaderOptions(t("Close"), () => router.back())} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         style={styles.screen}
@@ -201,6 +171,23 @@ export default function SpaceMembersScreen() {
                 row
               );
             })}
+            {canManage ? (
+              <SettingsRow
+                key="invite"
+                title={t("Invite")}
+                tinted
+                leading={
+                  <NativeSymbol
+                    ios="person.badge.plus"
+                    android="person-add-outline"
+                    color={tokens.link}
+                  />
+                }
+                disabled={pending}
+                accessibilityRole="button"
+                onPress={() => void invite()}
+              />
+            ) : null}
           </SettingsGroup>
         ) : null}
         {canManage && members?.openInvites ? (

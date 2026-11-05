@@ -7,34 +7,23 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SpaceMembersScreen from "../app/space-members";
 
-const { rpc, selectSpace, selectedSpaceId, alert, share, router, header } = vi.hoisted(() => ({
+const { rpc, selectSpace, selectedSpaceId, alert, share, router } = vi.hoisted(() => ({
   rpc: vi.fn(),
   selectSpace: vi.fn(async () => true),
   selectedSpaceId: vi.fn(() => "space-shared"),
   alert: vi.fn(),
   share: vi.fn(async () => ({ action: "sharedAction" })),
   router: { back: vi.fn(), dismissAll: vi.fn(), replace: vi.fn() },
-  header: { invite: undefined as (() => void) | undefined },
 }));
 
 vi.mock("./api", () => ({ rpc, selectSpace, selectedSpaceId }));
 vi.mock("expo-secure-store", () => ({}));
-vi.mock("./native-controls", () => ({ iosAtLeast: () => true }));
-vi.mock("../components/glass-icon-button", () => ({ GlassIconButton: () => null }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("expo-router", () => ({
   useRouter: () => router,
   // Opened from Settings: no name in the link, so the sheet takes it from the list.
   useLocalSearchParams: () => ({ spaceId: "space-shared" }),
-  Stack: {
-    Screen: ({
-      options,
-    }: {
-      options: { unstable_headerRightItems?: () => Array<{ onPress: () => void }> };
-    }) => {
-      header.invite = options.unstable_headerRightItems?.()[0]?.onPress;
-      return null;
-    },
-  },
+  Stack: { Screen: () => null },
 }));
 vi.mock("react-native", () => ({
   Appearance: { getColorScheme: () => "dark", addChangeListener: () => ({ remove() {} }) },
@@ -129,7 +118,6 @@ let root: Root;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  header.invite = undefined;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -167,10 +155,11 @@ it("lets the owner share an invite link and remove a member after confirming", a
   expect([...host.querySelectorAll("li")].map((row) => row.textContent)).toEqual([
     "Ada Lovelace | ada@example.test | Owner",
     "Bob Stone | bob@example.test",
+    "Invite",
   ]);
   expect(buttonNamed("Leave space")).toBeUndefined();
 
-  await act(async () => header.invite?.());
+  await act(async () => buttonNamed("Invite")?.click());
   expect(rpc).toHaveBeenCalledWith("spaces/invites/create", { spaceId: "space-shared" });
   expect(share).toHaveBeenCalledWith({ url: "https://rakazo.example/invite/token-1" });
   // An open link can be cancelled until someone uses it.
@@ -186,12 +175,12 @@ it("lets the owner share an invite link and remove a member after confirming", a
     spaceId: "space-shared",
     userId: "user-member",
   });
-  expect(host.querySelectorAll("li")).toHaveLength(1);
+  expect(host.querySelectorAll("li")).toHaveLength(2);
 });
 
 it("lets a member leave and returns home in their own space", async () => {
   await render(false);
-  expect(header.invite).toBeUndefined();
+  expect(buttonNamed("Invite")).toBeUndefined();
   expect(buttonNamed("Remove")).toBeUndefined();
 
   await act(async () => buttonNamed("Leave space")?.click());

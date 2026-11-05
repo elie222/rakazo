@@ -585,7 +585,10 @@ export function AuthFrame({
             <span className="h-5 w-[9px] rounded-full bg-primary" />
             <span className="h-5 w-[9px] rounded-full bg-primary" />
           </div>
-          <h1 aria-live="polite" className="mb-9 mt-7 text-4xl font-medium tracking-tight">
+          <h1
+            aria-live="polite"
+            className="mb-9 mt-7 text-balance text-center text-4xl font-medium tracking-tight"
+          >
             {title}
           </h1>
           {children}

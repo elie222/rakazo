@@ -5,16 +5,24 @@ export const SETTINGS_CONTENT_WIDTH = "max-w-2xl";
 /** A titled list of settings rows sharing one bordered surface. */
 export function SettingsGroup({
   title,
+  action,
   children,
   "data-testid": testId,
 }: {
   title?: ReactNode;
+  /** One control for the whole group, at the end of its title. */
+  action?: ReactNode;
   children: ReactNode;
   "data-testid"?: string;
 }) {
   return (
     <section data-testid={testId}>
-      {title ? (
+      {title && action ? (
+        <div className="mb-2 flex items-center justify-between gap-3 ps-1">
+          <h3 className="text-[14px] font-medium text-foreground">{title}</h3>
+          {action}
+        </div>
+      ) : title ? (
         <h3 className="mb-2 px-1 text-[14px] font-medium text-foreground">{title}</h3>
       ) : null}
       <div className="divide-y divide-border rounded-xl border border-border">{children}</div>
