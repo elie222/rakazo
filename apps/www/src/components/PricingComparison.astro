@@ -63,7 +63,8 @@ import PricingHint from "./PricingHint.astro";
                   href={column.action.href}
                   variant={index === 0 || index === PRICING_COMPARISON.columns.length - 1 ? "secondary" : "primary"}
                   size="sm"
-                  data-attr={`pricing-compare-${index}`}
+                  data-attr={`pricing-compare-${column.name.toLowerCase().replaceAll(" ", "-")}`}
+                  aria-label={"ariaLabel" in column.action ? column.action.ariaLabel : undefined}
                 >
                   {column.action.label}
                 </Button>

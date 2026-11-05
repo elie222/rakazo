@@ -76,36 +76,37 @@ const SANDBOX_PROVIDERS = Object.values(SANDBOX_NAMES);
 
 const CREDITS_PRICE = `From ${dollars(MODEL_CREDIT_AMOUNTS[0])}/mo`;
 
+const SELF_HOSTED_PLAN: PricingPlan = {
+  name: "Self-hosted",
+  price: "Free",
+  features: [
+    "Open source, Apache-2.0",
+    "Your server or your own computer",
+    "Bot computers in Docker or a sandbox",
+    "Any model you connect",
+  ],
+  action: { label: "Self-hosting guide", href: SELF_HOST_GUIDE_PATH },
+};
+
+const OWN_MODEL_PLAN: PricingPlan = {
+  name: "Your model",
+  price:
+    STANDARD.monthlyPriceCents === null ? "Free" : `${dollars(STANDARD.monthlyPriceCents)}/mo`,
+  note:
+    STANDARD.annualPriceCents === null
+      ? undefined
+      : `${dollars(STANDARD.annualPriceCents / 12)}/mo billed yearly`,
+  features: [
+    "Hosted by us",
+    "Claude, ChatGPT, or any API key",
+    "Bot computer included",
+    `${TRIAL_DAYS}-day free trial`,
+  ],
+  action: { label: "Start free trial", href: APP_URL },
+};
+
 /** Prices come from the same constants the app bills with. */
-export const PRICING_PLANS: PricingPlan[] = [
-  {
-    name: "Self-hosted",
-    price: "Free",
-    features: [
-      "Open source, Apache-2.0",
-      "Your server or your own computer",
-      "Bot computers in Docker or a sandbox",
-      "Any model you connect",
-    ],
-    action: { label: "Self-hosting guide", href: SELF_HOST_GUIDE_PATH },
-  },
-  {
-    name: "Your model",
-    price:
-      STANDARD.monthlyPriceCents === null ? "Free" : `${dollars(STANDARD.monthlyPriceCents)}/mo`,
-    note:
-      STANDARD.annualPriceCents === null
-        ? undefined
-        : `${dollars(STANDARD.annualPriceCents / 12)}/mo billed yearly`,
-    features: [
-      "Hosted by us",
-      "Claude, ChatGPT, or any API key",
-      "Bot computer included",
-      `${TRIAL_DAYS}-day free trial`,
-    ],
-    action: { label: "Start free trial", href: APP_URL },
-  },
-];
+export const PRICING_PLANS: PricingPlan[] = [SELF_HOSTED_PLAN, OWN_MODEL_PLAN];
 
 /** The less common hosted option, shown below the main plans. */
 export const CREDITS_PLAN: PricingPlan = {
@@ -144,17 +145,18 @@ const TIERS = (Object.keys(BYOK_TIERS) as ByokTier[]).flatMap((tier) => {
 const COLUMN_COUNT = TIERS.length + 2;
 const included = (cell: PricingCell): PricingCell[] => Array(COLUMN_COUNT).fill(cell);
 
-const SELF_HOSTED = PRICING_PLANS[0]!;
-const OWN_MODEL = PRICING_PLANS[1]!;
-
 export const PRICING_COMPARISON = {
   // Short button labels so they fit the narrow columns.
   columns: [
-    { name: SELF_HOSTED.name, price: SELF_HOSTED.price, action: { ...SELF_HOSTED.action, label: "Self-host" } },
+    {
+      name: SELF_HOSTED_PLAN.name,
+      price: SELF_HOSTED_PLAN.price,
+      action: { ...SELF_HOSTED_PLAN.action, label: "Self-host" },
+    },
     ...TIERS.map((tier) => ({
       name: tier.name,
       price: tier.price,
-      action: { ...OWN_MODEL.action, label: "Start trial" },
+      action: { ...OWN_MODEL_PLAN.action, label: "Start trial", ariaLabel: `Start ${tier.name} trial` },
     })),
     { name: CREDITS_PLAN.name, price: CREDITS_PRICE, action: CREDITS_PLAN.action },
   ],
