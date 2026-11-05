@@ -127,6 +127,7 @@ function TemplateDetail({
       const { bot } = await rpc("bots/createFromTemplate", {
         templateId: template.id,
         version: template.version,
+        name,
       });
       addToSearchInbox({ kind: "bot", bot }, askedIn);
       openBot(bot);

@@ -98,19 +98,28 @@ export async function managedAppCatalog(
   actor: Actor,
   operationId: string,
   botId?: string,
+  timeoutMs = 15_000,
 ): Promise<ConnectionCatalogItem[]> {
+  const signal = AbortSignal.timeout(timeoutMs);
+  // A provider may ignore the signal, so the wait itself gives up when it fires.
+  const givenUp = new Promise<ConnectionCatalogItem[]>((resolve) => {
+    signal.addEventListener("abort", () => resolve([]), { once: true });
+  });
   const catalogs = await Promise.all(
     connectors.managedProviders().map((provider) =>
-      provider
-        .catalog({
-          operationId,
-          traceId: operationId,
-          spaceId: actor.spaceId,
-          userId: actor.userId,
-          botId,
-          signal: AbortSignal.timeout(15_000),
-        })
-        .catch(() => []),
+      Promise.race([
+        provider
+          .catalog({
+            operationId,
+            traceId: operationId,
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            botId,
+            signal,
+          })
+          .catch(() => []),
+        givenUp,
+      ]),
     ),
   );
   return catalogs.flat();

@@ -132,7 +132,7 @@ export async function createBotFromTemplate<PreparedKey>(
   services: AgentImportServices<PreparedKey>,
   appCatalog: () => Promise<ConnectionCatalogItem[]>,
   actor: Actor,
-  input: { templateId: string; version: number },
+  input: { templateId: string; version: number; name?: string },
   signal?: AbortSignal,
 ) {
   const template = findBotTemplate(input.templateId);
@@ -141,7 +141,7 @@ export async function createBotFromTemplate<PreparedKey>(
     importKey: importKey(template.id),
     // The same for every version, so an existing bot is returned whatever changed since.
     digest: requestDigest({ templateId: template.id }),
-    name: template.name,
+    name: input.name ?? template.name,
     description: template.description,
     computerMode: "team",
     selection: {

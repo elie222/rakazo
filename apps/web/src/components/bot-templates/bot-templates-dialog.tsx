@@ -221,6 +221,7 @@ function TemplateDetail({
       const { bot } = await rpc.bots.createFromTemplate({
         templateId: template.id,
         version: template.version,
+        name,
       });
       onOpenBot(bot);
     } catch (err) {

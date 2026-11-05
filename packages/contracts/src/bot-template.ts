@@ -60,6 +60,8 @@ export const CreateBotFromTemplateInput = z.strictObject({
   templateId: slug,
   /** The version the user saw. */
   version: z.number().int().positive(),
+  /** The bot's name as the preview showed it, in the user's language. */
+  name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH).optional(),
 });
 
 export const CreateBotFromTemplateOutput = z.object({

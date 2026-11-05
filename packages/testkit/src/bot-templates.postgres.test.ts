@@ -155,10 +155,13 @@ describeIntegration("bot templates", () => {
     const cookie = await signup(app, `template-clash-${stamp}@rakazo.test`);
     const existing = buildSkillMd({ name: "inbox-triage", description: "Mine", body: "Mine." });
     await rpc(app, cookie, "agentSkills/create", { content: existing });
+    // The name the preview showed in the user's language is the one the bot gets.
     const { bot } = await rpc<Created>(app, cookie, "bots/createFromTemplate", {
       templateId: triage.id,
       version: triage.version,
+      name: "Posteingang sortieren",
     });
+    expect(bot.name).toBe("Posteingang sortieren");
     const owner = await ownerOf(cookie);
     const skills = await db.agentSkill.findMany({ where: owner, orderBy: { name: "asc" } });
     expect(skills.map((row) => row.name)).toEqual(["inbox-triage", "inbox-triage-2"]);

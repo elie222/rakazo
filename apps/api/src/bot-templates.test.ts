@@ -3,6 +3,7 @@ import { AgentImportCreateInput } from "@rakazo/contracts";
 import { findBotTemplate } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { templateAppCards } from "./bot-templates.js";
+import { managedAppCatalog } from "./onboarding.js";
 
 const entry = (connectorId: string, slug: string, name: string, connected: boolean) =>
   ({ connectorId, slug, name, logo: null, connected, noAuth: false }) as ConnectionCatalogItem;
@@ -37,4 +38,18 @@ it("keeps template import keys out of agent imports", () => {
     AgentImportCreateInput.safeParse({ ...request, importKey: "template:morning-briefing" })
       .success,
   ).toBe(false);
+});
+
+it("leaves out a managed provider whose catalog never answers", async () => {
+  const gmail = entry("second", "gmail", "Gmail", false);
+  const connectors = {
+    managedProviders: () => [
+      { catalog: () => new Promise<never>(() => undefined) },
+      { catalog: async () => [gmail] },
+    ],
+  } as never;
+  const actor = { spaceId: "space-1", userId: "user-1" } as never;
+  await expect(managedAppCatalog(connectors, actor, "test", undefined, 20)).resolves.toEqual([
+    gmail,
+  ]);
 });
