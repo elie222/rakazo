@@ -47,6 +47,7 @@ export function useInboxRenderItem({
   botSections,
   chooseInboxSpace,
   confirmDeleteSpace,
+  createBotInSpace,
   day,
   deleteSection,
   editSectionFromMenu,
@@ -69,6 +70,7 @@ export function useInboxRenderItem({
   botSections: MobileBotSection[];
   chooseInboxSpace: (spaceId: string) => void;
   confirmDeleteSpace: (space: InboxSpace) => void;
+  createBotInSpace: (spaceId: string) => void;
   day: number;
   /** The selected space: only its chats get swipe actions and the row menu. */
   spaceId: string | undefined;
@@ -121,6 +123,12 @@ export function useInboxRenderItem({
             {sharing ? null : (
               <MenuView
                 actions={[
+                  {
+                    id: "new-bot",
+                    title: t("New bot"),
+                    image: "person.crop.circle.badge.plus",
+                    attributes: { disabled: spaceBusy || !!spaceRecoveryId },
+                  },
                   { id: "settings", title: t("Settings"), image: "gearshape" },
                   ...(canDeleteInboxSpace(item.space)
                     ? [
@@ -139,7 +147,8 @@ export function useInboxRenderItem({
                 colorScheme={appearance}
                 onPressAction={({ nativeEvent }) => {
                   if (!item.space) return;
-                  if (nativeEvent.event === "delete") confirmDeleteSpace(item.space);
+                  if (nativeEvent.event === "new-bot") createBotInSpace(item.space.id);
+                  else if (nativeEvent.event === "delete") confirmDeleteSpace(item.space);
                   else
                     router.push({
                       pathname: "/space",
@@ -233,6 +242,7 @@ export function useInboxRenderItem({
       botSections,
       chooseInboxSpace,
       confirmDeleteSpace,
+      createBotInSpace,
       deleteSection,
       day,
       editSectionFromMenu,
