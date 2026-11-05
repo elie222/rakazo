@@ -20,6 +20,7 @@ vi.mock("@rakazo/ui-web", () => ({
   Button: ({ variant: _variant, ...props }: ComponentProps<"button"> & { variant?: string }) => (
     <button {...props} />
   ),
+  cn: (...classes: unknown[]) => classes.filter(Boolean).join(" "),
 }));
 vi.mock("./Auth", () => ({
   submitClass: "",
