@@ -589,8 +589,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   }, [router]);
 
   const chooseInboxSpace = useCallback(
-    async (spaceId: string) => {
-      if (spaceActionRef.current.busy) return;
+    async (spaceId: string): Promise<boolean> => {
+      if (spaceActionRef.current.busy) return false;
       spaceActionRef.current.busy = true;
       setSpaceBusy(true);
       inboxRequestId.current += 1;
@@ -623,10 +623,12 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         const message = errorText(err, t("Could not switch spaces"));
         setError(message);
         Alert.alert(message, t("Try again."));
+        return false;
       } finally {
         spaceActionRef.current.busy = false;
         setSpaceBusy(false);
       }
+      return true;
     },
     [refreshBots, loadActivity, onSelectSpace, t],
   );
@@ -685,18 +687,35 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [deleteInboxSpace, t],
   );
 
-  const createQuickBot = useCallback(async () => {
-    if (creatingBotRef.current || spaceActionRef.current.busy || spaceActionRef.current.recoveryId)
-      return;
-    creatingBotRef.current = true;
-    try {
-      await createInboxBot({ refreshBots, openChat });
-    } catch (err) {
-      setError(errorText(err, t("Could not create bot")));
-    } finally {
-      creatingBotRef.current = false;
-    }
-  }, [openChat, refreshBots, t]);
+  const createQuickBot = useCallback(
+    async (spaceId?: string) => {
+      if (
+        creatingBotRef.current ||
+        spaceActionRef.current.busy ||
+        spaceActionRef.current.recoveryId
+      )
+        return;
+      creatingBotRef.current = true;
+      try {
+        await createInboxBot({ refreshBots, openChat, spaceId });
+      } catch (err) {
+        setError(errorText(err, t("Could not create bot")));
+      } finally {
+        creatingBotRef.current = false;
+      }
+    },
+    [openChat, refreshBots, t],
+  );
+
+  // A heading's New bot: switch to that space first, so the chat opens inside it.
+  const createBotInSpace = useCallback(
+    async (spaceId: string) => {
+      if (creatingBotRef.current || spaceActionRef.current.recoveryId) return;
+      if (selectedSpaceId() !== spaceId && !(await chooseInboxSpace(spaceId))) return;
+      await createQuickBot(spaceId);
+    },
+    [chooseInboxSpace, createQuickBot],
+  );
 
   const runCreateAction = useCallback(
     (action: CreateAction) => {
@@ -795,6 +814,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     botSections,
     chooseInboxSpace,
     confirmDeleteSpace,
+    createBotInSpace,
     day,
     deleteSection,
     editSectionFromMenu,

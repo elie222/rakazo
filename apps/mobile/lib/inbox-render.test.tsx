@@ -18,7 +18,7 @@ import { useInboxDay } from "./use-inbox-day";
 import { usePublishSearchInbox } from "./use-publish-search-inbox";
 
 type MenuProps = {
-  actions: { id: string; title: string }[];
+  actions: { id: string; title: string; attributes?: { disabled?: boolean } }[];
   onPressAction: (event: { nativeEvent: { event: string } }) => void;
   children?: ReactNode;
 };
@@ -120,7 +120,13 @@ vi.mock("expo-router", () => {
     },
   };
 });
-vi.mock("./api", () => ({ rpc: ui.rpc }));
+vi.mock("./api", () => ({
+  rpc: ui.rpc,
+  // The request context carries only the headers a space pin changes.
+  captureApiRequestContext: async (spaceId: string | null = "space-selected") => ({
+    headers: { "x-rakazo-space-id": spaceId },
+  }),
+}));
 vi.mock("./native", () => ({
   native: {},
   useThemedStyles: (factory: () => unknown) => useMemo(factory, [factory]),
@@ -185,6 +191,7 @@ const callbacks = {
   botSections: [],
   chooseInboxSpace: action,
   confirmDeleteSpace: action,
+  createBotInSpace: action,
   deleteSection: action,
   editSectionFromMenu: action,
   groupAction: action,
@@ -596,8 +603,8 @@ it("offers every space heading's Settings, and Delete only where the member may 
     />,
   );
   expect(ui.menus.map((menu) => menu.actions.map((entry) => entry.id))).toEqual([
-    ["settings"],
-    ["settings", "delete"],
+    ["new-bot", "settings"],
+    ["new-bot", "settings", "delete"],
   ]);
   // Settings open the Space's own page, which edits that Space even when another is selected.
   act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "settings" } }));
@@ -607,6 +614,69 @@ it("offers every space heading's Settings, and Delete only where the member may 
   });
   act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "delete" } }));
   expect(confirmDeleteSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "space-work" }));
+});
+
+it("creates a bot in the heading's own space, and not while a space switch or recovery is under way", () => {
+  const createBotInSpace = vi.fn();
+  const heading = (id: string, name: string) =>
+    ({
+      type: "heading",
+      key: id,
+      title: name,
+      space: { id, name, isDefault: false, canDelete: true, bots: [], groups: [], botSections: [] },
+    }) as unknown as InboxItem;
+  const items = [heading("space-home", "Home"), heading("space-work", "Work")];
+  render(<List items={items} spaceId="space-home" options={{ createBotInSpace }} />);
+  const newBot = (menu: MenuProps) => menu.actions.find((entry) => entry.id === "new-bot");
+  expect(ui.menus.map((menu) => newBot(menu))).toEqual([
+    expect.objectContaining({ title: "New bot", attributes: { disabled: false } }),
+    expect.objectContaining({ title: "New bot", attributes: { disabled: false } }),
+  ]);
+  // A heading of a space that is not selected still makes the bot in that space.
+  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "new-bot" } }));
+  expect(createBotInSpace).toHaveBeenCalledWith("space-work");
+  for (const options of [{ spaceBusy: true }, { spaceRecoveryId: "space-home" }]) {
+    ui.menus = [];
+    render(<List items={items} spaceId="space-home" options={{ createBotInSpace, ...options }} />);
+    expect(ui.menus.map((menu) => newBot(menu)?.attributes)).toEqual([
+      { disabled: true },
+      { disabled: true },
+    ]);
+  }
+});
+
+it("pins a bot made for a space to that space while another is selected", async () => {
+  const bot = { id: "bot-new", name: "New Bot", spaceId: "space-work" };
+  const spaces = () =>
+    ui.rpc.mock.calls.map(([method, , options]) => [
+      method,
+      options?.requestContext?.headers["x-rakazo-space-id"],
+    ]);
+  ui.rpc
+    .mockReset()
+    .mockImplementation(async (method: string) => (method === "bots/create" ? bot : []));
+  ui.searchInboxSession.mockReset();
+  ui.addToSearchInbox.mockReset();
+  await createInboxBot({
+    refreshBots: async () => undefined,
+    openChat: vi.fn(),
+    spaceId: "space-work",
+  });
+  await vi.waitFor(() => expect(ui.rpc).toHaveBeenCalledTimes(3));
+  expect(spaces()).toEqual([
+    ["bots/list", "space-work"],
+    ["bots/create", "space-work"],
+    ["onboarding/start", "space-work"],
+  ]);
+  // The Create menu's bot sends no pin, so it follows the selected space as before.
+  ui.rpc.mockClear();
+  await createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() });
+  await vi.waitFor(() => expect(ui.rpc).toHaveBeenCalledTimes(3));
+  expect(spaces()).toEqual([
+    ["bots/list", undefined],
+    ["bots/create", undefined],
+    ["onboarding/start", undefined],
+  ]);
 });
 
 it("adds a bot made from the inbox's Create menu to the inbox roster before opening its chat", async () => {
@@ -634,6 +704,7 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
   expect(ui.rpc).toHaveBeenCalledWith(
     "bots/create",
     expect.not.objectContaining({ avatarSet: expect.anything() }),
+    undefined,
   );
   // The session is taken before the requests, so a bot that lands after a switch is dropped.
   expect(calls.slice(0, 5)).toEqual([
