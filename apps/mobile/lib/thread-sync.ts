@@ -38,6 +38,7 @@ export function useThreadSync({
   messageId,
   readOnly,
   foreground,
+  focused,
   sessionEpoch,
   activeBotId,
   activeGroupId,
@@ -56,6 +57,7 @@ export function useThreadSync({
   messageId?: string;
   readOnly: boolean;
   foreground: boolean;
+  focused: boolean;
   sessionEpoch: number;
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
@@ -187,6 +189,7 @@ export function useThreadSync({
     botId,
     groupId,
     foreground,
+    focused,
     readOnly,
     sessionEpoch,
     messageId,
