@@ -566,7 +566,7 @@ export function OnboardingPage() {
         {step === "survey" ? <SignupSurvey onDone={() => setSurveyDone(true)} /> : null}
         {step === "model" ? (
           <div>
-            <h1 className="text-heading1 font-medium text-foreground">
+            <h1 className="text-display font-medium text-foreground">
               <Trans>Connect a model</Trans>
             </h1>
             <div className="mt-8 block text-body font-medium text-foreground">

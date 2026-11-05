@@ -63,7 +63,7 @@ export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId
 
   return (
     <div className="space-y-6">
-      <h1 className="text-heading1 font-medium text-foreground">
+      <h1 className="text-display font-medium text-foreground">
         <Trans>Add MCP server</Trans>
       </h1>
       <form

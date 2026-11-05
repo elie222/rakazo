@@ -584,8 +584,7 @@ export function AuthFrame({
             <span className="h-5 w-[9px] rounded-full bg-primary" />
             <span className="h-5 w-[9px] rounded-full bg-primary" />
           </div>
-          {/* off-scale: sign-in hero title sized to the 74px logo mark */}
-          <h1 aria-live="polite" className="mb-9 mt-7 text-[36px] font-medium tracking-tight">
+          <h1 aria-live="polite" className="mb-9 mt-7 text-display font-medium tracking-tight">
             {title}
           </h1>
           {children}

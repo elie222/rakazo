@@ -52,8 +52,7 @@ export function SignupSurvey({ onDone }: { onDone: () => void }) {
         submit();
       }}
     >
-      {/* off-scale: welcome hero title after sign-in */}
-      <h1 className="text-[32px] font-medium text-foreground">
+      <h1 className="text-display font-medium text-foreground">
         <Trans>Welcome to Rakazo</Trans>
       </h1>
       <p id={`${fieldId}-use`} className="mt-8 text-body font-medium text-foreground">

@@ -315,8 +315,7 @@ export function CreditChoice({
             {status.byokPriceCents && status.byokAnnualPriceCents ? (
               <div className="flex h-12 items-center justify-between gap-3">
                 <p className="flex items-baseline gap-1">
-                  {/* off-scale: large price or balance figure */}
-                  <span className="text-[30px] font-medium tracking-tight">
+                  <span className="text-display font-medium tracking-tight">
                     {formatBillingAmount(
                       interval === "year"
                         ? Math.round(status.byokAnnualPriceCents / 12)
@@ -337,10 +336,7 @@ export function CreditChoice({
                 />
               </div>
             ) : (
-              <p
-                // off-scale: large price or balance figure
-                className="flex h-12 items-center text-[30px] font-medium tracking-tight"
-              >
+              <p className="flex h-12 items-center text-display font-medium tracking-tight">
                 {status.byokPriceCents ? (
                   formatMonthlyUsd(status.byokPriceCents, i18n.locale)
                 ) : (
@@ -535,8 +531,7 @@ export function ModelCreditsSettings({
           <h3 className="text-body text-muted-foreground">
             <Trans>Your subscription or API key</Trans>
           </h3>
-          {/* off-scale: large price or balance figure */}
-          <p className="mt-2 text-[30px] font-medium tabular-nums">{ownKeyPlan.price}</p>
+          <p className="mt-2 text-display font-medium tabular-nums">{ownKeyPlan.price}</p>
           {ownKeyPlan.date ? (
             <p className="mt-2 text-body text-muted-foreground">{ownKeyPlan.date}</p>
           ) : null}
@@ -585,8 +580,7 @@ export function ModelCreditsSettings({
             <Trans>Refresh</Trans>
           </Button>
         </div>
-        {/* off-scale: large price or balance figure */}
-        <p className="mt-2 text-[30px] font-medium tabular-nums">{balance}</p>
+        <p className="mt-2 text-display font-medium tabular-nums">{balance}</p>
         <p className="mt-2 text-body text-muted-foreground">
           {status.funding === "byok" && freeUntil ? (
             <Trans>Using your API key. Free plan ends {freeUntil}.</Trans>
@@ -649,8 +643,7 @@ export function ModelCreditsSettings({
           <h3 className="text-body text-muted-foreground">
             <Trans>Computer hours left</Trans>
           </h3>
-          {/* off-scale: large price or balance figure */}
-          <p className="mt-2 text-[30px] font-medium tabular-nums">{status.computerHoursLeft}</p>
+          <p className="mt-2 text-display font-medium tabular-nums">{status.computerHoursLeft}</p>
           {status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd ? (
             <>
               <p className="mt-2 text-body text-muted-foreground">
