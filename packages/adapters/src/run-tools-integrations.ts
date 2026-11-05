@@ -1,5 +1,5 @@
 import type { ConnectorApp } from "@rakazo/adapter-kit";
-import { isBackgroundRunTrigger } from "@rakazo/core";
+import { isBackgroundRunTrigger, redactSecrets } from "@rakazo/core";
 import { normalizedHttpUrl } from "@rakazo/core/egress";
 import { getLogger } from "@rakazo/logging";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
@@ -100,7 +100,7 @@ async function showConnectorApp(
         groupId: thread.groupId ?? undefined,
         runId: run.id,
         server: app.server,
-        html: app.html,
+        html: redactSecrets(app.html, ctx.secrets),
         operationId: `${call.effectKey}:app`,
       },
     );

@@ -45,6 +45,7 @@ export * from "./identity-display.js";
 export { identitySource } from "./identity-source.js";
 export * from "./inbound-routine.js";
 export * from "./instruction-diff.js";
+export * from "./keyed-listeners.js";
 export * from "./list-search.js";
 export * from "./logo-avatar-activity.js";
 export * from "./logo-avatar-activity-store.js";

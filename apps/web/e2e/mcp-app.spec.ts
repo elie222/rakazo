@@ -107,6 +107,13 @@ test("the app can only suggest a message or open a link after a click", async ({
 });
 
 test("the app runs sandboxed: no tools, no app access, no undeclared network", async ({ page }) => {
+  // An undeclared site the app tries to reach. Any request that got past the sandbox would be
+  // recorded here and stopped, so the test never touches the internet.
+  const outside: string[] = [];
+  await page.route("https://outside.example/**", (route) => {
+    outside.push(route.request().url());
+    return route.abort();
+  });
   await serveApp(page);
   await page.setViewportSize(viewports[0]!);
   await openChat(page);
@@ -131,10 +138,7 @@ test("the app runs sandboxed: no tools, no app access, no undeclared network", a
     } catch {
       storage = false;
     }
-    const network = await fetch("https://example.com/").then(
-      () => "reached",
-      () => "blocked",
-    );
+    await fetch("https://outside.example/collect").catch(() => undefined);
     return {
       toolCall: await ask("tools/call"),
       resourceRead: await ask("resources/read"),
@@ -149,7 +153,6 @@ test("the app runs sandboxed: no tools, no app access, no undeclared network", a
       })(),
       parentReadable,
       storage,
-      network,
     };
   });
   expect(result).toEqual({
@@ -160,24 +163,19 @@ test("the app runs sandboxed: no tools, no app access, no undeclared network", a
     cookie: "blocked",
     parentReadable: false,
     storage: false,
-    network: "blocked",
   });
   // Navigating its own frame to a site it never declared reaches nothing: the shell allows only
   // the app's own srcdoc document there.
-  const outside: string[] = [];
-  page.on("request", (request) => {
-    if (request.url().startsWith("https://example.com")) outside.push(request.url());
-  });
   await appFrame(page)
     .evaluate(() => {
-      location.href = "https://example.com/elsewhere";
+      location.href = "https://outside.example/elsewhere";
     })
     .catch(() => undefined);
   await expect
     .poll(() => page.frames().some((frame) => frame.url().startsWith("chrome-error:")))
     .toBe(true);
   expect(page.frames().map((frame) => frame.url())).not.toContainEqual(
-    expect.stringContaining("example.com"),
+    expect.stringContaining("outside.example"),
   );
   expect(outside).toEqual([]);
 });

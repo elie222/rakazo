@@ -72,8 +72,9 @@ export function SandboxedHtmlPreview({
         sharedCookiesEnabled={false}
         mixedContentMode="never"
         cacheEnabled={false}
-        // The library lets only about:blank past its own origin check; the shell's frame is srcdoc.
-        originWhitelist={appShell ? ["about:srcdoc"] : undefined}
+        // Every request reaches the check below, which allows only the shell and its srcdoc frame.
+        // A URL failing the library's own origin list would be handed to the system instead.
+        originWhitelist={appShell ? ["*"] : undefined}
         onShouldStartLoadWithRequest={({ url }) =>
           appShell ? isAppShellDocument(url) : isPreviewDocument(url)
         }

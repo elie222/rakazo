@@ -92,7 +92,7 @@ describe("connector tool with an MCP app", () => {
     const { ctx, call } = setup(
       [
         { type: "result", data: { content: [{ type: "text", text: `token ${secret}` }] } },
-        { type: "app", app },
+        { type: "app", app: { ...app, html: `<p>${secret}</p>` } },
       ],
       {},
       [secret],
@@ -103,6 +103,7 @@ describe("connector tool with an MCP app", () => {
 
     const blocks = publishMessage.mock.calls[0]?.[3];
     expect(JSON.stringify(blocks)).not.toContain(secret);
+    expect(JSON.stringify(storeMcpAppHtml.mock.calls[0]?.[1])).not.toContain(secret);
     expect(JSON.stringify(blocks)).toContain("Lisbon");
   });
 
