@@ -5,6 +5,13 @@ import type { ObjectStorage } from "@rakazo/adapter-kit";
 /** Upload part size: large enough that most homes are one request, small enough to hold in memory. */
 const PART_BYTES = 16 * 1024 * 1024;
 const DELETE_BATCH = 1000;
+/**
+ * The SDK waits forever by default, so a store that accepts a connection and then stops
+ * answering would keep each computer's sleep job, and the maintenance slot it holds, waiting
+ * for good. The idle limit counts inactivity, not duration: a large upload keeps its socket busy.
+ */
+const CONNECT_TIMEOUT_MS = 10_000;
+const IDLE_SOCKET_TIMEOUT_MS = 60_000;
 
 export interface S3ObjectStorageConfig {
   bucket: string;
@@ -79,6 +86,10 @@ export class S3ObjectStorage implements ObjectStorage {
           // accepts the newer optional ones.
           requestChecksumCalculation: "WHEN_REQUIRED",
           responseChecksumValidation: "WHEN_REQUIRED",
+          requestHandler: {
+            connectionTimeout: CONNECT_TIMEOUT_MS,
+            socketTimeout: IDLE_SOCKET_TIMEOUT_MS,
+          },
         }),
     }));
     return this.s3;

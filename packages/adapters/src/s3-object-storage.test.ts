@@ -1,8 +1,21 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type * as S3Sdk from "@aws-sdk/client-s3";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { MemoryObjectStorage, objectStorageConformance } from "./object-storage.test-support.js";
 import { objectStorageConfigFromEnv, S3ObjectStorage } from "./s3-object-storage.js";
+
+const clientConfigs = vi.hoisted(() => [] as unknown[]);
+vi.mock("@aws-sdk/client-s3", async (importOriginal) => {
+  const sdk = await importOriginal<typeof S3Sdk>();
+  class S3Client extends sdk.S3Client {
+    constructor(...args: ConstructorParameters<typeof sdk.S3Client>) {
+      clientConfigs.push(args[0]);
+      super(...args);
+    }
+  }
+  return { ...sdk, S3Client };
+});
 
 /**
  * Just enough of the S3 protocol, path-style, to exercise the adapter offline: single and
@@ -217,6 +230,20 @@ describe("S3ObjectStorage failures", () => {
       ),
     ).rejects.toThrow();
     expect(closed).toBe(true);
+  });
+});
+
+describe("S3ObjectStorage timeouts", () => {
+  it("gives up on a store that stops answering instead of waiting forever", async () => {
+    clientConfigs.length = 0;
+    for await (const _ of storage(`timeouts-${++run}/`).list("")) {
+      // Listing creates the client.
+    }
+    const [config] = clientConfigs as Array<{
+      requestHandler?: { connectionTimeout?: number; socketTimeout?: number };
+    }>;
+    expect(config?.requestHandler?.connectionTimeout).toBeGreaterThan(0);
+    expect(config?.requestHandler?.socketTimeout).toBeGreaterThan(0);
   });
 });
 
