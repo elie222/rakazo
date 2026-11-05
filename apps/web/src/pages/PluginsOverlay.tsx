@@ -1022,7 +1022,7 @@ export function PluginsOverlay({
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border/60 bg-favicon-plate text-muted-foreground">
             <Search className="size-4" />
           </div>
-          <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-foreground">
+          <span className="min-w-0 flex-1 truncate text-body-lg font-medium text-foreground">
             <Trans>Search MCP servers for “{query}”</Trans>
           </span>
         </button>
