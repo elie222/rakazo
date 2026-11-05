@@ -103,8 +103,10 @@ export default function VoiceSettings() {
   const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
-  // Fields typed into since the last load; an opening refresh keeps them.
+  // Fields typed into since the last load, and the provider they were typed for; an opening
+  // refresh keeps them only while that provider stays selected.
   const edited = useRef(new Set<VoiceField>());
+  const editedProvider = useRef("");
   // Every load and action bumps this, so an older refresh never lands over a newer choice.
   const loadRevision = useRef(0);
   const speechModelSave = useRef<string | null>(null);
@@ -143,6 +145,7 @@ export default function VoiceSettings() {
       if (revision !== loadRevision.current) return;
       setLoadError(null);
       const selected = pickProvider(nextCatalog, nextStatus, nextProvider);
+      if (selected !== editedProvider.current) edited.current.clear();
       setCatalog(nextCatalog);
       setCredentials(nextCredentials);
       setStatus(nextStatus);
@@ -168,6 +171,7 @@ export default function VoiceSettings() {
 
   const edit = (field: VoiceField, set: (value: string) => void) => (value: string) => {
     edited.current.add(field);
+    editedProvider.current = provider;
     set(value);
   };
 
