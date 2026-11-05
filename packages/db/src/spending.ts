@@ -9,6 +9,7 @@ import { spendingPeriodStart } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { runAsSystem } from "./row-security.js";
 
 type SpendingClient = Pick<
   PrismaClient,
@@ -218,7 +219,10 @@ async function canPay(
   return Boolean(card || wallet || paid);
 }
 
-/** The latest payments that count, newest first, each with its bot's name while the user can see it. */
+/**
+ * The latest payments that count, newest first, each with its bot's name while the bot is in a Space the
+ * user belongs to. Payments are the user's across Spaces, so names are read across the user's Spaces too.
+ */
 export async function recentPayments(
   prisma: Pick<PrismaClient, "payment" | "bot">,
   userId: string,
@@ -230,10 +234,15 @@ export async function recentPayments(
     take,
     select: { id: true, site: true, amount: true, currency: true, botId: true, createdAt: true },
   });
-  const bots = await prisma.bot.findMany({
-    where: { id: { in: [...new Set(rows.map((row) => row.botId))] } },
-    select: { id: true, name: true },
-  });
+  const bots = await runAsSystem("payment bot names in the user's Spaces", () =>
+    prisma.bot.findMany({
+      where: {
+        id: { in: [...new Set(rows.map((row) => row.botId))] },
+        space: { memberships: { some: { userId } } },
+      },
+      select: { id: true, name: true },
+    }),
+  );
   const names = new Map(bots.map((bot) => [bot.id, bot.name]));
   return rows.map(({ botId, createdAt, ...row }) => ({
     ...row,
