@@ -38,6 +38,23 @@ export function settleComposerDraftSubmission(
   for (const listener of acceptedListeners.get(threadKey) ?? []) listener(submission.text);
 }
 
+/**
+ * Keeps a failed send's nonce beside the saved draft only while that draft is
+ * still the one it sent, mentions included, so a retry cannot reuse it for a
+ * different payload.
+ */
+export function keepComposerRetryNonce(
+  threadKey: string,
+  submission: ComposerDraftSubmission,
+  nonce: string,
+): void {
+  if (
+    readComposerDraft(threadKey) === submission.text &&
+    readBindingRecord(threadKey) === submission.bindingRecord
+  )
+    writeComposerRetryNonce(threadKey, nonce);
+}
+
 let sendingWork = false;
 let attachmentWork = false;
 

@@ -42,6 +42,7 @@ import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
 import { useCallSession } from "../../lib/call-session";
 import {
   beginComposerDraftSubmission,
+  keepComposerRetryNonce,
   readComposerDraft,
   readComposerDraftBindings,
   readComposerRetryNonce,
@@ -204,11 +205,12 @@ const ComposerBody = memo(function Composer({
   // The words must reach the committed draft before send() reads it, so the
   // send waits one render for the state appendDictation just queued.
   const [dictationSendDue, setDictationSendDue] = useState(false);
+  // A dictation that finishes while an earlier send is in flight waits for it.
   useEffect(() => {
-    if (!dictationSendDue) return;
+    if (!dictationSendDue || sending) return;
     setDictationSendDue(false);
     void send();
-  }, [dictationSendDue]);
+  }, [dictationSendDue, sending]);
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const editRevision = useRef(0);
   useEffect(
@@ -221,12 +223,25 @@ const ComposerBody = memo(function Composer({
       }),
     [draftKey],
   );
+  // An open page rewrites what this chat sends (pageReply), so it is part of the payload.
+  const pageSession = usePageSession();
+  const dock = pageSession?.dock ?? noDock;
+  const openPageId = useSyncExternalStore(dock.subscribe, () => dock.get().page?.id ?? null);
   // A draft reloaded without edits may still belong to a send whose answer never
   // came; its nonce is stored beside it. Anything that would change the next
-  // payload (attachments, an armed reply) disqualifies the stored nonce.
-  const retryNonce = useRef<string | null>(
-    pendingAttachments.length === 0 && !replyTarget ? readComposerRetryNonce(draftKey) : null,
+  // payload (attachments, an armed reply, an open page) disqualifies the stored nonce.
+  const [storedRetryNonce] = useState(() =>
+    pendingAttachments.length === 0 && !replyTarget && openPageId === null
+      ? readComposerRetryNonce(draftKey)
+      : null,
   );
+  const retryNonce = useRef(storedRetryNonce);
+  const previousPageId = useRef(openPageId);
+  useEffect(() => {
+    if (previousPageId.current === openPageId) return;
+    previousPageId.current = openPageId;
+    retryNonce.current = null;
+  }, [openPageId]);
   const replyId = replyTarget?.id ?? null;
   const quote = replyTarget ? (replyQuote ?? null) : null;
   const previousReply = useRef({ id: replyId, quote });
@@ -285,7 +300,6 @@ const ComposerBody = memo(function Composer({
   });
   // A reply button on the open page adds its text here for the user to send, about that page
   // rather than a message picked before it.
-  const pageSession = usePageSession();
   const clearReply = useRef(onClearReply);
   clearReply.current = onClearReply;
   useEffect(
@@ -494,17 +508,18 @@ const ComposerBody = memo(function Composer({
     if (!canSend || sending || disabled) return;
     const revision = editRevision.current;
     // Recovery rebuilds the draft from text alone, so only a plain-text send —
-    // no reply target, no attachments, no skill — can share its nonce with a
-    // retry. Anything else keeps the words without a nonce.
+    // no reply target, no attachments, no skill, no open page — can share its
+    // nonce with a retry. Anything else keeps the words without a nonce.
     const nonceRecoverable =
-      !replyTarget && pendingAttachments.length === 0 && selectedSkill === null;
+      !replyTarget &&
+      pendingAttachments.length === 0 &&
+      selectedSkill === null &&
+      openPageId === null;
     const clientNonce =
       retryNonce.current ??
       // A chat reopened before its unsettled send failed has not edited since
       // mount, so the nonce stored beside the saved draft is still this draft's.
-      (revision === 0 && pendingAttachments.length === 0 && !replyTarget
-        ? readComposerRetryNonce(draftKey)
-        : null) ??
+      (revision === 0 && nonceRecoverable ? readComposerRetryNonce(draftKey) : null) ??
       newClientId();
     retryNonce.current = null;
     const submitted = compositionRef.current;
@@ -532,17 +547,16 @@ const ComposerBody = memo(function Composer({
       // send. The saved draft still holds the words; only a recoverable plain
       // text send keeps its nonce with them, so the retry is not mistaken for
       // a reply-linked or otherwise different message.
-      if (nonceRecoverable && readComposerDraft(draftKey) === draft)
-        writeComposerRetryNonce(draftKey, clientNonce);
+      if (nonceRecoverable) keepComposerRetryNonce(draftKey, submission, clientNonce);
       return;
     }
     // Restore only an untouched draft, retaining its nonce for an unchanged retry.
     // This composer still carries the reply and attachments the send carried, so
-    // the in-memory nonce is safe here; the stored one is only for plain text.
+    // the in-memory nonce is safe here unless the open page changed; the stored
+    // one is only for plain text.
     if (editRevision.current !== revision) return;
-    retryNonce.current = clientNonce;
-    if (nonceRecoverable && readComposerDraft(draftKey) === draft)
-      writeComposerRetryNonce(draftKey, clientNonce);
+    if ((pageSession?.dock.get().page?.id ?? null) === openPageId) retryNonce.current = clientNonce;
+    if (nonceRecoverable) keepComposerRetryNonce(draftKey, submission, clientNonce);
     commitComposition(submitted, false);
     setSelectedSkill(selectedSkill);
   }

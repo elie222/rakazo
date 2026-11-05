@@ -1351,6 +1351,121 @@ it("recovers a dictation in a chat reopened before the send settles", async () =
   }
 });
 
+it("sends a dictation that finishes while an earlier send is in flight", async () => {
+  let finish!: (accepted: boolean) => void;
+  const onSend = vi.fn(
+    (_text: string) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    renderComposer(onSend, { phoneCallsEnabled: true });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("first words"));
+    await act(async () => {});
+    rerenderComposer({ sending: true });
+    act(() => onFinal("second words"));
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+    await act(async () => finish(true));
+    rerenderComposer({ sending: false });
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(2);
+    expect(onSend.mock.calls[1]?.[0]).toBe("second words");
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it("does not keep the nonce when a reopened chat rebinds the same mention text", async () => {
+  const nonces: string[] = [];
+  let fail!: (error: Error) => void;
+  const onSend = vi.fn((_text: string, _mentions: unknown[], clientNonce: string) => {
+    nonces.push(clientNonce);
+    return new Promise<boolean>((_resolve, reject) => {
+      fail = reject;
+    });
+  });
+  const textarea = renderComposer(onSend);
+  type(textarea, "@Bo");
+  pressEnter(textarea);
+  type(textarea, `${textarea.value}hi`);
+  pressEnter(textarea);
+  await act(async () => {});
+  expect(onSend.mock.calls[0]?.[1]).toEqual([bob]);
+  act(() => root?.unmount());
+  container?.remove();
+  // The chat reopens before the answer: the same spelling, without Bob bound.
+  const reopened = renderComposer(vi.fn());
+  expect(reopened.value).toBe("@Bob hi");
+  type(reopened, "@Bo hi");
+  type(reopened, "@Bob hi");
+  expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(0);
+  await act(async () => {
+    fail(new Error("offline"));
+  });
+  expect(localStorage.getItem("rakazo.composerNonce.bot:bot-1")).toBeNull();
+});
+
+function renderWithOpenPage(onSend: ComponentProps<typeof Composer>["onSend"]) {
+  renderComposer(onSend);
+  const session = createPageSession();
+  session.dock.set({ page: { id: "page-1", title: "Plan" } });
+  act(() =>
+    root?.render(
+      <PagesProvider value={{ open: () => {}, session }}>
+        <Composer {...composerProps} />
+      </PagesProvider>,
+    ),
+  );
+  return { session, textarea: container!.querySelector("textarea")! };
+}
+
+it("does not store a retry nonce for a send made with a page open", async () => {
+  let fail!: (error: Error) => void;
+  const onSend = vi.fn(
+    () =>
+      new Promise<boolean>((_resolve, reject) => {
+        fail = reject;
+      }),
+  );
+  const { textarea } = renderWithOpenPage(onSend);
+  type(textarea, "about the page");
+  pressEnter(textarea);
+  await act(async () => {});
+  act(() => root?.unmount());
+  container?.remove();
+  await act(async () => {
+    fail(new Error("offline"));
+  });
+  expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("about the page");
+  expect(localStorage.getItem("rakazo.composerNonce.bot:bot-1")).toBeNull();
+});
+
+it("renews the nonce when the page closes before a retry", async () => {
+  const nonces: string[] = [];
+  const onSend = vi.fn(async (_text: string, _mentions: unknown[], clientNonce: string) => {
+    nonces.push(clientNonce);
+    return false;
+  });
+  const { session, textarea } = renderWithOpenPage(onSend);
+  type(textarea, "about the page");
+  pressEnter(textarea);
+  await act(async () => {});
+  expect(textarea.value).toBe("about the page");
+  act(() => session.dock.set({ page: null }));
+  pressEnter(textarea);
+  await act(async () => {});
+  expect(onSend).toHaveBeenCalledTimes(2);
+  expect(nonces[1]).not.toBe(nonces[0]);
+});
+
 it.each([false, true])(
   "restores dictation to the saved draft when the chat closes before the send fails (throws=%s)",
   async (throws) => {
