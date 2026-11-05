@@ -7125,6 +7125,10 @@ msgstr "שימוש ב{hostLabel}"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "השתמש ב-{oauthEnvReference} עבור אסימון הגישה."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Use 2 to 64 characters"
+msgstr "השתמשו ב-2 עד 64 תווים"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7145,6 +7149,10 @@ msgstr "שימוש בברירות המחדל עבור {label}"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "השתמשו באותיות, ספרות, נקודות, מקפים או קווים תחתונים"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"

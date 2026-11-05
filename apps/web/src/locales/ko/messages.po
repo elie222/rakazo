@@ -7125,6 +7125,10 @@ msgstr "{hostLabel} 사용"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "액세스 토큰에는 {oauthEnvReference}를 사용하세요."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Use 2 to 64 characters"
+msgstr "2~64자를 사용하세요"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7145,6 +7149,10 @@ msgstr "{label}에 기본값 사용"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "문자, 숫자, 점, 대시 또는 밑줄을 사용하세요"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"

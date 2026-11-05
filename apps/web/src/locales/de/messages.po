@@ -7125,6 +7125,10 @@ msgstr "{hostLabel} verwenden"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "Verwende {oauthEnvReference} für das Zugriffstoken."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Use 2 to 64 characters"
+msgstr "Verwende 2 bis 64 Zeichen"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7145,6 +7149,10 @@ msgstr "Standards für {label} verwenden"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "Verwende Buchstaben, Ziffern, Punkte, Bindestriche oder Unterstriche"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"

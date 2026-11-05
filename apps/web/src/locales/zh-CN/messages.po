@@ -7125,6 +7125,10 @@ msgstr "使用 {hostLabel}"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "访问令牌请使用 {oauthEnvReference}。"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Use 2 to 64 characters"
+msgstr "请使用 2 到 64 个字符"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7145,6 +7149,10 @@ msgstr "{label}使用默认设置"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr "用于此 Bot"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "请使用字母、数字、点、短横线或下划线"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"

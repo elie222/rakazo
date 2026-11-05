@@ -17,7 +17,8 @@ INBOUND_EMAIL_DOMAIN=bots.example.com
 INBOUND_EMAIL_SECRET=$(openssl rand -base64 32)
 ```
 
-Use a domain that nothing else receives mail on. Once it is set, **Email** appears under
+Use a domain that nothing else receives mail on, and set exactly the domain the relay receives
+mail for. Once it is set, **Email** appears under
 **Add trigger** in the routine editor, and each bot's owner picks the bot's name there the first
 time. Names are lowercase, never change, and are never given to another bot, even after the bot
 is deleted.
@@ -41,7 +42,8 @@ Treat any other error as temporary and retry.
 ### Cloudflare Email Routing
 
 Cloudflare receives mail for every name only on a domain's apex, such as `example-bots.com`, not
-on a subdomain. Add the domain to Cloudflare, turn on **Email Routing**, then deploy this Worker
+on a subdomain, so set `INBOUND_EMAIL_DOMAIN=example-bots.com` too. Add the domain to Cloudflare,
+turn on **Email Routing**, then deploy this Worker
 with `RAKAZO_URL` set to your public URL and `INBOUND_EMAIL_SECRET` stored as a secret:
 
 ```js
@@ -94,8 +96,9 @@ sudo install -d -m 755 /etc/rakazo
 printf %s "$INBOUND_EMAIL_SECRET" | sudo install -m 400 -o nobody /dev/stdin /etc/rakazo/inbound-email-secret
 ```
 
-The script
-needs `curl` and `jq`. It bounces a message that is too large and exits with 75 for anything else that fails, so Postfix
+Save the script below as
+`/usr/local/bin/rakazo-inbound-email`, make it executable (`chmod 755`), and run `postfix reload`
+once the configuration is in place. The script needs `curl` and `jq`. It bounces a message that is too large and exits with 75 for anything else that fails, so Postfix
 keeps the message and tries again:
 
 ```sh

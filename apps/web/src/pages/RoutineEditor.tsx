@@ -9,6 +9,7 @@ import type {
   RoutineWatchInput,
 } from "@rakazo/contracts";
 import {
+  BOT_EMAIL_NAME_TAKEN,
   BotEmailNameSchema,
   ROUTINE_WATCH_DEFAULT_MINUTES,
   ROUTINE_WATCH_MIN_MINUTES,
@@ -1030,7 +1031,14 @@ function EmailTriggerCard({
   async function claim() {
     const parsed = BotEmailNameSchema.safeParse(name);
     if (!parsed.success) {
-      setClaimError(parsed.error.issues[0]?.message ?? null);
+      const issue = parsed.error.issues[0];
+      setClaimError(
+        issue?.code === "too_small" || issue?.code === "too_big"
+          ? t`Use 2 to 64 characters`
+          : issue?.message === BOT_EMAIL_NAME_TAKEN
+            ? t`That address isn't available`
+            : t`Use letters, numbers, dots, dashes or underscores`,
+      );
       return;
     }
     setClaiming(true);
