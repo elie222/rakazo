@@ -1275,7 +1275,7 @@ export async function sendThreadMessage(
         },
       });
       return { message, runs, routineRuns, eventSeq: event.seq };
-    });
+    }, THREAD_LOCK_TRANSACTION_OPTIONS);
 
   const committed = await withSerializableRetry(commit).catch(async (error) => {
     const winner = await replayExistingSend(
@@ -1398,7 +1398,7 @@ export async function reactToThreadMessage(
       },
     });
     return { eventSeq: event.seq, runs };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (releaseTakeover) {
     for (const run of committed.runs) {
       if (run.status === "waiting_takeover") await releaseTakeover(run.id);
@@ -1788,7 +1788,7 @@ export async function markThreadRead(
     });
     if (result.count > 1) throw new IsolationError();
     return dividerSeq(thread, latestSeq);
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
 }
 
 /** A chat only gets a divider when its unread dot was on, so replies seen live never do. */
