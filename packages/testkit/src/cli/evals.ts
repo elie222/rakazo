@@ -614,15 +614,27 @@ async function main() {
                 });
               },
               modelCallObserver: {
-                // Other models the product calls, such as the Auto Review checker, run too: their
-                // reservation uses the eval model's rates, and the provider-reported charge settles it.
-                beforeCall: ({ inputTokensEstimate, maxOutputTokens, cacheWriteRetention }) => {
+                // Other models the product calls, such as the Auto Review checker, run too, but
+                // only ever at their own pricing: the eval model's rates would undercharge them
+                // whenever their provider reports no cost.
+                beforeCall: ({
+                  inputTokensEstimate,
+                  maxOutputTokens,
+                  provider,
+                  modelId,
+                  cacheWriteRetention,
+                  maxCostUsd,
+                }) => {
                   if (!acceptingCalls) throw new Error("Eval trial stopped scheduling inference");
-                  return liveBudget.reserve(
-                    inputTokensEstimate,
-                    maxOutputTokens,
-                    cacheWriteRetention,
-                  );
+                  if (provider === connection.provider && modelId === connection.modelId)
+                    return liveBudget.reserve(
+                      inputTokensEstimate,
+                      maxOutputTokens,
+                      cacheWriteRetention,
+                    );
+                  if (typeof maxCostUsd !== "number")
+                    throw new Error("Other model has no configured pricing");
+                  return liveBudget.reserveCostBound(maxCostUsd);
                 },
                 afterCall: (id, usage) => liveBudget.settleUsage(id, usage),
               },

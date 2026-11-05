@@ -148,6 +148,21 @@ function queueEndpointChange(step: () => Promise<EndpointResult>): Promise<Endpo
   return result;
 }
 
+const confirmedSpaceSwitchListeners = new Set<() => void>();
+
+/** Fires when a selection change to another Space is confirmed durable; a
+ * rollback after a failed switch, or selecting the same Space again, does not. */
+export function subscribeConfirmedSpaceSwitch(listener: () => void): () => void {
+  confirmedSpaceSwitchListeners.add(listener);
+  return () => {
+    confirmedSpaceSwitchListeners.delete(listener);
+  };
+}
+
+function noteConfirmedSpaceSwitch(): void {
+  for (const listener of [...confirmedSpaceSwitchListeners]) listener();
+}
+
 /** Keeps a timeout or cancel reason; turns transport and parsing detail into copy. */
 function requestError(error: unknown, signal: AbortSignal): unknown {
   return signal.aborted ? (signal.reason ?? error) : new Error(errorText(error), { cause: error });
@@ -254,6 +269,12 @@ export async function selectSpace(id: string) {
     }
     return false;
   }
+  // Playback belongs to the conversation being left; the listener in voice.ts
+  // stops it once a switch to another Space is confirmed. A fallback that
+  // failed to persist left its origin pending; this confirmed switch consumes
+  // it, so the fallback's retry cannot stop this Space's later playback.
+  if ((pendingFallbackSwitchFrom ?? previousSpaceId) !== id) noteConfirmedSpaceSwitch();
+  pendingFallbackSwitchFrom = null;
   await resumeSelectedSpaceNotifications(id, claimGeneration);
   return true;
 }
@@ -279,7 +300,15 @@ export function selectedSpaceId(): string | null {
  * storage could not replace it. Neutralize any same-endpoint rollback before
  * writing the replacement selection so a cleanup failure cannot leave the new
  * id beside a stale record that recoverSpaceRollback would prefer on restart. */
+/** The Space the user was actually on before a fallback adoption that has not
+ * landed yet; a retry that persists must still count as leaving it. */
+let pendingFallbackSwitchFrom: string | null = null;
+
 export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
+  const previousSpaceId = cachedSpaceId;
+  if (pendingFallbackSwitchFrom === null && previousSpaceId !== id) {
+    pendingFallbackSwitchFrom = previousSpaceId;
+  }
   cachedSpaceId = id;
   bumpSpaceSelectionGeneration();
   // Neutralize any same-endpoint rollback before writing SPACE_KEY. Writing the
@@ -287,10 +316,16 @@ export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   // would prefer on restart if later cleanup fails.
   const rollbackNeutralized =
     (await clearStoredValue(SPACE_ROLLBACK_KEY)) || (await saveSpaceRollback(id));
+  // Playback belongs to the conversation being left; the fallback too is a
+  // confirmed switch once it durably adopts another Space. A failed attempt
+  // already claimed the replacement in memory, so the Space remembered before
+  // the first attempt, not the claim, decides whether one was left behind.
   if (rollbackNeutralized && (await writeStoredValue(SPACE_KEY, id))) {
     // SPACE_KEY is authoritative; drop a rollback we may have written only to
     // overwrite a stale record (best-effort).
     await clearStoredValue(SPACE_ROLLBACK_KEY);
+    if ((pendingFallbackSwitchFrom ?? previousSpaceId) !== id) noteConfirmedSpaceSwitch();
+    pendingFallbackSwitchFrom = null;
     await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
       () => undefined,
     );
@@ -305,7 +340,13 @@ export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   );
   // Only treat a cleared selection as durable success when no same-endpoint
   // rollback remains to override it after restart.
-  return recoverySaved || (staleSelectionCleared && (await clearStoredValue(SPACE_ROLLBACK_KEY)));
+  const durable =
+    recoverySaved || (staleSelectionCleared && (await clearStoredValue(SPACE_ROLLBACK_KEY)));
+  if (durable && (pendingFallbackSwitchFrom ?? previousSpaceId) !== id) {
+    noteConfirmedSpaceSwitch();
+  }
+  if (durable) pendingFallbackSwitchFrom = null;
+  return durable;
 }
 
 export async function selectInitialSpace(id: string) {
