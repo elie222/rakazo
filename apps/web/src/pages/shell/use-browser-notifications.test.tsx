@@ -235,12 +235,17 @@ describe("useBrowserNotifications desktop push", () => {
     vi.stubGlobal("rakazoDesktop", {
       push: {
         token: async () => "d".repeat(64),
-        takeOpened: async () => ({ botId: "bot-b", threadId: "thread-b" }),
+        takeOpened: async () => ({ botId: "bot-b", threadId: "thread-b", spaceId: "space-2" }),
       },
     });
     await open({ botId: "bot-a" });
     expect(registerDesktopPush).toHaveBeenCalledWith({ token: "d".repeat(64) });
-    expect(openChat).toHaveBeenCalledWith({ botId: "bot-b", threadId: "thread-b" });
+    // The Space travels with it: the shell switches Space when it is not its own.
+    expect(openChat).toHaveBeenCalledWith({
+      botId: "bot-b",
+      threadId: "thread-b",
+      spaceId: "space-2",
+    });
   });
 
   it("registers nothing for a desktop build without push", async () => {

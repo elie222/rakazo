@@ -21,7 +21,8 @@ type ChatAlertOptions = {
   rpc: Pick<RpcClient, "notifications">;
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
-  openChat: (chat: Pick<ChatAlert, "botId" | "groupId">) => void;
+  /** `spaceId` is set when the chat may belong to another Space than the shell's. */
+  openChat: (chat: Pick<ChatAlert, "botId" | "groupId"> & { spaceId?: string }) => void;
 };
 
 /**

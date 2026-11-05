@@ -260,13 +260,26 @@ export class PrismaPushTokenStore implements PushTokenStore {
             { liveUntil: { lte: new Date() } },
           ],
         },
-        select: { id: true, ciphertext: true },
+        select: { id: true, ciphertext: true, sessionId: true },
       });
+      if (!rows.length) return [];
+      // A signed-out or expired session no longer receives its chats' contents.
+      const live = await this.prisma.session.findMany({
+        where: {
+          id: { in: [...new Set(rows.map((row) => row.sessionId))] },
+          userId,
+          expiresAt: { gt: new Date() },
+        },
+        select: { id: true },
+      });
+      const sessions = new Set(live.map((session) => session.id));
       return Promise.all(
-        rows.map(async (row) => ({
-          id: row.id,
-          token: await this.encryption.load(row.ciphertext, `desktop-push:${row.id}`),
-        })),
+        rows
+          .filter((row) => sessions.has(row.sessionId))
+          .map(async (row) => ({
+            id: row.id,
+            token: await this.encryption.load(row.ciphertext, `desktop-push:${row.id}`),
+          })),
       );
     });
   }

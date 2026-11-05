@@ -987,6 +987,14 @@ describe("desktop push", () => {
     expect(tokens.desktop.size).toBe(0);
   });
 
+  it("fails a desktop-only delivery that APNs could not take, so the caller can retry", async () => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.saveDesktop("user-1", "a".repeat(64), "session-1");
+    const push = new ExpoPushProvider(tokens, { desktop: desktopSender("failed") });
+    await expect(push.deliver(message, notifyContext)).rejects.toThrow("Desktop push failed.");
+    expect(tokens.desktop.size).toBe(1);
+  });
+
   it("ignores desktop registrations when the server cannot send to desktops", async () => {
     const tokens = new MemoryPushTokenStore();
     await tokens.saveDesktop("user-1", "a".repeat(64), "session-1");

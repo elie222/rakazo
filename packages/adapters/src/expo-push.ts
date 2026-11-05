@@ -299,7 +299,12 @@ export class ExpoPushProvider implements NotificationProvider {
   async deliver(message: NotificationMessage, context: AdapterContext): Promise<ExpoPushDelivery> {
     const desktop = await this.deliverDesktop(message, context);
     const registration = await this.deliverableToken(context.userId);
-    if (!registration) return desktop ? "delivered" : "undeliverable";
+    if (!registration) {
+      if (desktop === "sent") return "delivered";
+      // Thrown like an Expo failure, so callers that retry a notice retry this one too.
+      if (desktop === "failed") throw new Error("Desktop push failed.");
+      return "undeliverable";
+    }
     const token = registration.token;
     const title = capped(message.title, MAX_PUSH_TITLE_CHARS);
     let bodyChars = MAX_PUSH_BODY_CHARS;
@@ -362,9 +367,9 @@ export class ExpoPushProvider implements NotificationProvider {
   private async deliverDesktop(
     message: NotificationMessage,
     context: AdapterContext,
-  ): Promise<boolean> {
+  ): Promise<"sent" | "failed" | "none"> {
     const desktop = this.desktop;
-    if (!desktop) return false;
+    if (!desktop) return "none";
     const targets = (await this.tokens.desktopTargets?.(context.userId, context.spaceId)) ?? [];
     const results = await Promise.all(
       targets.map(async (target) => {
@@ -373,7 +378,8 @@ export class ExpoPushProvider implements NotificationProvider {
         return result;
       }),
     );
-    return results.includes("sent");
+    if (results.includes("sent")) return "sent";
+    return results.includes("failed") ? "failed" : "none";
   }
 
   /** Drops the token when the receipt says the device is no longer registered. */

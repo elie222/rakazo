@@ -204,5 +204,12 @@ suite("database push registrations", () => {
     expect(ciphertext?.ciphertext).not.toContain(desktopToken);
     await api.endSession(user("b"), session("b"));
     expect(await worker.desktopTargets(user("b"), "space-1")).toEqual([]);
+    // A session that expires while the app is closed stops its pushes too.
+    await api.saveDesktop(user("a"), desktopToken, session("a"));
+    expect(await worker.desktopTargets(user("a"), "space-1")).toHaveLength(1);
+    await runAsSystem("expire the desktop's session", () =>
+      a.prisma.session.update({ where: { id: session("a") }, data: { expiresAt: new Date(0) } }),
+    );
+    expect(await worker.desktopTargets(user("a"), "space-1")).toEqual([]);
   });
 });

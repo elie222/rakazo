@@ -347,16 +347,18 @@ export function accountRoutes(ctx: RouterContext) {
         let authorizedAt = Date.now();
         // A desktop app on this stream shows the Space's alerts, so it gets no push for them.
         const sessionId = deps.env?.desktopPushEnabled ? context.sessionId : undefined;
-        const markLive = (live: boolean) =>
-          sessionId
-            ? deps.pushTokens
-                .markDesktopLive?.(
-                  userId,
-                  sessionId,
-                  live ? { spaceId, until: new Date(Date.now() + DESKTOP_LIVE_MS) } : null,
-                )
-                .catch((error) => getLogger().warn("desktop live mark failed", { error }))
-            : undefined;
+        let markedAt = 0;
+        const markLive = (live: boolean) => {
+          if (!sessionId) return undefined;
+          markedAt = Date.now();
+          return deps.pushTokens
+            .markDesktopLive?.(
+              userId,
+              sessionId,
+              live ? { spaceId, until: new Date(markedAt + DESKTOP_LIVE_MS) } : null,
+            )
+            .catch((error) => getLogger().warn("desktop live mark failed", { error }));
+        };
         try {
           await markLive(true);
           while (!context.signal?.aborted) {
@@ -372,8 +374,9 @@ export function accountRoutes(ctx: RouterContext) {
               if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");
               authorizedAt = Date.now();
             }
+            // Renewed by time, not by heartbeat: a busy stream may never reach one.
+            if (Date.now() - markedAt >= HEARTBEAT_MS) await markLive(true);
             if (next === "heartbeat") {
-              await markLive(true);
               yield { type: "heartbeat" as const };
               continue;
             }

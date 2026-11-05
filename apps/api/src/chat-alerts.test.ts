@@ -80,6 +80,36 @@ describe("desktop push", () => {
     controller.abort();
   });
 
+  it("renews the live mark while alerts keep the stream busy", async () => {
+    const controller = new AbortController();
+    const markDesktopLive = vi.fn(async () => {});
+    let now = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const followChatAlerts = vi.fn(async function* () {
+      yield alert;
+      now += 21_000;
+      yield alert;
+    });
+    const client = createRouterClient(
+      createRouter({
+        events: { followChatAlerts },
+        pushTokens: { markDesktopLive },
+        env: { desktopPushEnabled: true },
+      } as unknown as RouterDeps),
+      { context: { actor, sessionId: "session-1", signal: controller.signal } },
+    );
+    try {
+      const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
+      await iterator.next();
+      await iterator.next();
+      const live = markDesktopLive.mock.calls.filter((call) => (call as unknown[])[2] !== null);
+      expect(live).toHaveLength(2);
+    } finally {
+      controller.abort();
+      vi.restoreAllMocks();
+    }
+  });
+
   it("does not touch registrations when the server cannot push to desktops", async () => {
     const controller = new AbortController();
     const markDesktopLive = vi.fn(async () => {});
