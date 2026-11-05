@@ -333,6 +333,7 @@ function createDeps(
         messagingChannelMember: prisma.messagingChannelMember,
         messagingOutbound: prisma.messagingOutbound,
         messagingIdentity: prisma.messagingIdentity,
+        user: prisma.user,
         messagingLinkCode,
         bot: prisma.bot,
       }),
@@ -3017,6 +3018,28 @@ describe("teamChatSenderCanWakeMessageRoutines", () => {
         ...dmEvent,
         provider: "slack",
         from: "U999",
+        isDirect: true,
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it("treats a deactivated linked sender like a stranger", async () => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "slack",
+        address: "U123",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+      },
+    });
+    deps.prisma.user.findUnique = vi.fn(async () => ({ deactivatedAt: new Date() })) as never;
+    await expect(
+      teamChatSenderCanWakeMessageRoutines(deps, {
+        ...dmEvent,
+        provider: "slack",
+        from: "U123",
         isDirect: true,
       }),
     ).resolves.toBe(false);

@@ -1,5 +1,10 @@
-import type { SpanAttributes, TelemetryContext, TelemetrySpan } from "@earendil-works/pi-telemetry";
-import type { Attributes, Context, Span, Tracer } from "@opentelemetry/api";
+import type {
+  SpanAttributes,
+  SpanLink,
+  TelemetryContext,
+  TelemetrySpan,
+} from "@earendil-works/pi-telemetry";
+import type { Attributes, Context, Link, Span, SpanContext, Tracer } from "@opentelemetry/api";
 import { ROOT_CONTEXT, SpanStatusCode, trace } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
@@ -46,6 +51,17 @@ function attributes(values: SpanAttributes = {}, captureContent: boolean): Attri
   ) as Attributes;
 }
 
+/** The OTel span behind each Pi context this bridge hands out, so a Pi span link can name it. */
+const spanContexts = new WeakMap<TelemetryContext, SpanContext>();
+
+/** A link to a context from another telemetry adapter has no OTel span to point at; drop it. */
+function links(values: readonly SpanLink[] = [], captureContent: boolean): Link[] {
+  return values.flatMap((link) => {
+    const context = spanContexts.get(link.context);
+    return context ? [{ context, attributes: attributes(link.attributes, captureContent) }] : [];
+  });
+}
+
 /** Explicit parent contexts preserve concurrent run/tool hierarchy without global registration. */
 export function otelPiContext(
   tracer: Tracer,
@@ -64,7 +80,10 @@ export function otelPiContext(
       const parentContext = parent ?? correlatedLogContext();
       const span: Span = tracer.startSpan(
         options.name,
-        { attributes: attributes({ ...options.attributes, ...correlation }, captureContent) },
+        {
+          attributes: attributes({ ...options.attributes, ...correlation }, captureContent),
+          links: links(options.links, captureContent),
+        },
         parentContext,
       );
       const child = otelPiContext(
@@ -75,6 +94,9 @@ export function otelPiContext(
       );
       const bridge: TelemetrySpan = {
         ...child,
+        addLink: (link) => {
+          for (const value of links([link], captureContent)) span.addLink(value);
+        },
         addEvent: (name, values) => {
           span.addEvent(name, attributes(values, captureContent));
         },
@@ -87,6 +109,7 @@ export function otelPiContext(
           });
         },
       };
+      spanContexts.set(bridge, span.spanContext());
       try {
         return await callback(bridge);
       } catch (error) {

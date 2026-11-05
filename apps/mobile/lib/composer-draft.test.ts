@@ -5,13 +5,20 @@ import { readComposerDraft, writeComposerDraft } from "./composer-draft";
 vi.mock("./api", () => ({ currentApiBase: () => "https://api.example.test" }));
 
 const files = vi.hoisted(() => new Map<string, string>());
-/** Copy steps throw while `copy` is true; file creation is silent while `create` is, as on iOS. */
-const failing = vi.hoisted(() => ({ copy: false, create: false }));
+/**
+ * Copy steps throw while `copy` is true; file creation is silent while `create` is, as on iOS.
+ * Copies pass over the `skip` directory without an error while it is set, as Android does
+ * with a directory it cannot list.
+ */
+const failing = vi.hoisted(() => ({ copy: false, create: false, skip: "" }));
 vi.mock("expo-file-system", () => {
   class Directory {
     uri: string;
     constructor(...parts: Array<string | { uri: string }>) {
       this.uri = parts.map((part) => (typeof part === "string" ? part : part.uri)).join("/");
+    }
+    get name() {
+      return this.uri.split("/").pop()!;
     }
     get exists() {
       return [...files.keys()].some((path) => path.startsWith(`${this.uri}/`));
@@ -36,8 +43,9 @@ vi.mock("expo-file-system", () => {
       const target = destination.exists
         ? `${destination.uri}/${this.uri.split("/").pop()}`
         : destination.uri;
+      const skip = failing.skip;
       for (const path of [...files.keys()])
-        if (path.startsWith(`${this.uri}/`))
+        if (path.startsWith(`${this.uri}/`) && !(skip && path.startsWith(`${skip}/`)))
           files.set(target + path.slice(this.uri.length), files.get(path)!);
     }
   }
@@ -85,6 +93,7 @@ beforeEach(() => {
   files.clear();
   failing.copy = false;
   failing.create = false;
+  failing.skip = "";
 });
 
 it("keeps drafts in documents, not the cache", () => {
@@ -131,4 +140,48 @@ it("does not save drafts when the clean-launch marker cannot be verified", () =>
   expect(writeComposerDraft(scope, "First draft", [])).toBe(false);
   expect(files.has(draftPath("document"))).toBe(false);
   expect(readComposerDraft(scope).text).toBe("");
+});
+
+it("copies again when the copy silently skipped a folder of drafts", () => {
+  legacyDraft("First account draft");
+  const other: ComposerDraftScope = { ...scope, userId: "user-b" };
+  const otherPath = draftPath("cache").replace("user-user-a", "user-user-b");
+  files.set(otherPath, JSON.stringify({ version: 1, text: "Second account draft", bindings: [] }));
+  failing.skip = otherPath.slice(0, otherPath.lastIndexOf("/"));
+  expect(readComposerDraft(other).text).toBe("Second account draft");
+  expect(files.has(otherPath)).toBe(true);
+  expect(files.has("document/composer-drafts-legacy-done")).toBe(false);
+  failing.skip = "";
+  expect(readComposerDraft(other).text).toBe("Second account draft");
+  expect(readComposerDraft(scope).text).toBe("First account draft");
+  expect(files.has(otherPath)).toBe(false);
+  expect(files.has("document/composer-drafts-legacy-done")).toBe(true);
+});
+
+it("saves and clears drafts in the cache while every copy skips a folder", () => {
+  legacyDraft("First account draft");
+  const other: ComposerDraftScope = { ...scope, userId: "user-b" };
+  const otherGroup: ComposerDraftScope = { ...other, threadKey: "group:group-1" };
+  const otherPath = draftPath("cache").replace("user-user-a", "user-user-b");
+  const groupPath = otherPath.replace("bot%3Abot-1", "group%3Agroup-1");
+  files.set(otherPath, JSON.stringify({ version: 1, text: "Second account draft", bindings: [] }));
+  files.set(groupPath, JSON.stringify({ version: 1, text: "Group draft", bindings: [] }));
+  failing.skip = otherPath.slice(0, otherPath.lastIndexOf("/"));
+  expect(writeComposerDraft(scope, "Edited draft", [])).toBe(true);
+  expect(writeComposerDraft(other, "", [])).toBe(true);
+  expect(writeComposerDraft(otherGroup, "Edited group draft", [])).toBe(true);
+  // Every read starts from disk, as after a restart.
+  expect(readComposerDraft(scope).text).toBe("Edited draft");
+  expect(readComposerDraft(other).text).toBe("");
+  expect(readComposerDraft(otherGroup).text).toBe("Edited group draft");
+  expect(writeComposerDraft(scope, "", [])).toBe(true);
+  expect(readComposerDraft(scope).text).toBe("");
+  expect(files.has("document/composer-drafts-legacy-done")).toBe(false);
+  failing.skip = "";
+  expect(readComposerDraft(otherGroup).text).toBe("Edited group draft");
+  expect(readComposerDraft(other).text).toBe("");
+  expect(readComposerDraft(scope).text).toBe("");
+  expect(files.has(groupPath.replace("cache/", "document/"))).toBe(true);
+  expect(files.has(groupPath)).toBe(false);
+  expect(files.has("document/composer-drafts-legacy-done")).toBe(true);
 });

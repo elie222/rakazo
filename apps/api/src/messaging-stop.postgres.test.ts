@@ -119,6 +119,66 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
   const userMessages = () =>
     system.message.count({ where: { threadId: identity.threadId, role: "user" } });
 
+  it("ignores a deactivated owner's chat app: no command, message or turn", async () => {
+    const running = await work();
+    await system.user.update({
+      where: { id: identity.userId },
+      data: { deactivatedAt: new Date() },
+    });
+    const messages = await system.message.count({ where: { threadId: identity.threadId } });
+
+    await text("stop", "deactivated-stop");
+    await text("hello", "deactivated-hello");
+
+    expect(await status(running.id)).toBe("running");
+    expect(await system.message.count({ where: { threadId: identity.threadId } })).toBe(messages);
+    expect(await runs()).toBe(1);
+    expect(await replies()).toEqual([]);
+
+    // In a group, too: no memberships, invitations or relays come from them.
+    await text("hello all", "deactivated-group", {
+      isDirect: false,
+      threadId: `group-${identity.address}`,
+      channelName: "Team",
+      participants: [identity.address, `other-${identity.address}`],
+    });
+    expect(
+      await system.messagingChannelMember.count({
+        where: { channel: { threadId: `group-${identity.address}` } },
+      }),
+    ).toBe(0);
+
+    // An active person's group does not invite them either.
+    const friend = await runAsSystem("test fixture", () =>
+      provisionMessagingIdentity(
+        prisma,
+        { provider: "test", address: `friend-${randomUUID()}` },
+        { signupsEnabled: undefined, signupAllowlist: undefined },
+      ),
+    );
+    try {
+      await handle({
+        type: "message",
+        provider: "test",
+        handle: `${friend.address}:invite`,
+        threadId: `friends-${identity.address}`,
+        isDirect: false,
+        from: friend.address,
+        fromLabel: null,
+        channelName: "Friends",
+        participants: [friend.address, identity.address],
+        content: "hi both",
+        mediaUrl: null,
+      } as MessagingInboundMessage);
+      expect(await replies()).toEqual([]);
+      expect(await system.message.count({ where: { threadId: identity.threadId } })).toBe(messages);
+    } finally {
+      await system.messagingIdentity.deleteMany({ where: { userId: friend.userId } });
+      await system.organization.deleteMany({ where: { id: friend.spaceId } });
+      await system.user.deleteMany({ where: { id: friend.userId } });
+    }
+  });
+
   it("stops running work, answers once and notes it in the app", async () => {
     const running = await work();
     await text("stop", "h-stop");

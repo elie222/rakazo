@@ -26,6 +26,7 @@ import type {
   ThreadEvents,
 } from "@rakazo/db";
 import {
+  accountDeactivated,
   createThreadMessage,
   crossSpaceCommunicationAllowed,
   normalizeMessagingLinkCode,
@@ -141,6 +142,8 @@ async function handleDirectEvent(
   const existing = await deps.prisma.messagingIdentity.findUnique({ where });
   if (existing && event.installationSpaceId && existing.spaceId !== event.installationSpaceId)
     return;
+  // A deactivated person's chat apps act for nobody: no commands, messages or links.
+  if (existing && (await accountDeactivated(deps.prisma, existing.userId))) return;
   if (existing) {
     // Any reply — even a content-free reaction — ends the consecutive-
     // outbound streak, but only real text wakes the bot. The conversation
@@ -482,8 +485,11 @@ export async function teamChatSenderCanWakeMessageRoutines(
 
   const linkedIdentity = await deps.prisma.messagingIdentity.findUnique({
     where: { provider_address: { provider: event.provider, address: event.from } },
-    select: { id: true },
+    select: { id: true, userId: true },
   });
+  // A deactivated person counts as unlinked: like anyone in the workspace, never as themselves.
+  if (linkedIdentity && (await accountDeactivated(deps.prisma, linkedIdentity.userId)))
+    return false;
 
   if (event.isDirect) return Boolean(linkedIdentity);
 
@@ -789,6 +795,13 @@ async function handleChannelEvent(
     return;
   }
 
+  // A deactivated sender's message does nothing: no invitations, memberships or relays.
+  const sender = await deps.prisma.messagingIdentity.findUnique({
+    where: { provider_address: { provider: event.provider, address: event.from } },
+    select: { userId: true },
+  });
+  if (sender && (await accountDeactivated(deps.prisma, sender.userId))) return;
+
   const participants = [...event.participants];
   if (!participants.includes(event.from)) participants.push(event.from);
 
@@ -846,8 +859,7 @@ async function handleChannelEvent(
             data: { identityId: identity.id },
           });
           if (member.status === "invited") {
-            await queueInvite(tx, channel, identity);
-            invited.push(identity);
+            if (await queueInvite(tx, channel, identity)) invited.push(identity);
           }
         }
         if (member.status === "left") {
@@ -857,8 +869,7 @@ async function handleChannelEvent(
             data: { status: "invited" },
           });
           if (identity) {
-            await queueInvite(tx, channel, identity);
-            invited.push(identity);
+            if (await queueInvite(tx, channel, identity)) invited.push(identity);
           }
         }
         if (!identity) hasUnlinked = true;
@@ -876,8 +887,7 @@ async function handleChannelEvent(
         update: {},
       });
       if (identity) {
-        await queueInvite(tx, channel, identity);
-        invited.push(identity);
+        if (await queueInvite(tx, channel, identity)) invited.push(identity);
       } else hasUnlinked = true;
     }
 
@@ -951,7 +961,7 @@ async function handleChannelEvent(
     const identity = await deps.prisma.messagingIdentity.findUnique({
       where: { id: member.identityId! },
     });
-    if (!identity) continue;
+    if (!identity || (await accountDeactivated(deps.prisma, identity.userId))) continue;
     const thread = await deps.prisma.thread.findFirst({ where: { botId: identity.botId } });
     if (!thread) continue;
     const target = {
@@ -983,10 +993,12 @@ async function handleChannelEvent(
 }
 
 async function queueInvite(
-  db: Pick<PrismaClient, "messagingOutbound">,
+  db: Pick<PrismaClient, "messagingOutbound" | "user">,
   channel: { id: string; name: string | null },
   identity: IdentityRow,
-): Promise<void> {
+): Promise<boolean> {
+  // A deactivated person is not invited anywhere.
+  if (await accountDeactivated(db, identity.userId)) return false;
   const name = channel.name ?? "a group chat";
   // A returning member restarts the approval cycle; clear the prior invite
   // row or skipDuplicates would leave them with no prompt to answer.
@@ -1004,6 +1016,7 @@ async function queueInvite(
     ],
     skipDuplicates: true,
   });
+  return true;
 }
 
 async function announceInvite(

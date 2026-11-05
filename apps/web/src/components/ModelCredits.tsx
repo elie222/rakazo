@@ -165,7 +165,11 @@ function ByokTierSelect({
       <SelectTrigger aria-label={t`Plan`} className="min-w-28">
         <SelectValue />
       </SelectTrigger>
-      <SelectContent alignItemWithTrigger={false} align="start">
+      <SelectContent
+        alignItemWithTrigger={false}
+        align="start"
+        className="w-auto min-w-(--anchor-width)"
+      >
         <SelectGroup>
           {offered.map(({ offer, price }) => (
             <SelectItem key={offer.tier} value={offer.tier} className="py-2">
@@ -284,6 +288,8 @@ export function CreditChoice({
       }
     } catch {
       setError(t`Could not open billing`);
+    } finally {
+      // Desktop opens the URL in the system browser and this page stays, so re-enable.
       setPending(false);
     }
   }
