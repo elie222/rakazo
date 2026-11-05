@@ -6,7 +6,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
-import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
+import { isLocalhostOrLoopbackIp, MCP_APP_READ_TIMEOUT_MS } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import { combineSignals } from "./connector-safety.js";
 import { MCP_APP_CLIENT_CAPABILITIES } from "./mcp-app.js";
@@ -479,7 +479,10 @@ export class McpSession {
     options?: { signal?: AbortSignal },
   ): Promise<{ contents?: unknown }> {
     this.assertConnected();
-    return this.client.readResource({ uri }, { signal: options?.signal });
+    return this.client.readResource(
+      { uri },
+      { signal: options?.signal, timeout: MCP_APP_READ_TIMEOUT_MS },
+    );
   }
 
   /** `afterClose` follows actual SDK shutdown, even if this call stops waiting. */

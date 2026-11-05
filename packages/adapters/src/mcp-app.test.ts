@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { InstalledConnectorProvider } from "./installed-connectors.js";
 import {
   mcpAppFromResource,
+  mcpAppViewArguments,
   mcpAppViewResult,
   mcpToolAppResourceUri,
   mcpToolVisibleToModel,
@@ -104,6 +105,11 @@ describe("MCP app resource", () => {
         throw new Error("resources/read not supported");
       }),
     ).toBe(undefined);
+  });
+
+  it("leaves oversized arguments out of the card", () => {
+    expect(mcpAppViewArguments({ city: "Lisbon" })).toEqual({ city: "Lisbon" });
+    expect(mcpAppViewArguments({ document: "x".repeat(70_000) })).toEqual({});
   });
 
   it("keeps the view's copy of a result within the card's budget", () => {

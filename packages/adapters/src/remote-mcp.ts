@@ -18,6 +18,7 @@ import {
   isLocalhostOrLoopbackIp,
   isLoopbackAddress,
   isNonPublicAddress,
+  MCP_APP_READ_TIMEOUT_MS,
   normalizeHost,
 } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
@@ -143,7 +144,8 @@ export async function readRemoteMcpResource(
   uri: string,
 ): Promise<{ contents?: unknown }> {
   return withScopedMcpClient(options, (client, signal) =>
-    client.readResource({ uri }, { signal, timeout: MCP_TIMEOUT_MS }),
+    // The call already answered; its app gets a shorter wait than a call.
+    client.readResource({ uri }, { signal, timeout: MCP_APP_READ_TIMEOUT_MS }),
   );
 }
 

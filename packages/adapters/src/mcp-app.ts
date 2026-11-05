@@ -1,6 +1,7 @@
 import type { ClientCapabilities, Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { ConnectorApp } from "@rakazo/adapter-kit";
 import {
+  MCP_APP_ARGUMENTS_MAX_BYTES,
   MCP_APP_EXTENSION,
   MCP_APP_HTML_MAX_BYTES,
   MCP_APP_MIME_TYPE,
@@ -112,4 +113,9 @@ export function mcpAppViewResult(result: unknown): Record<string, unknown> {
     ...(structuredContent !== undefined ? { structuredContent } : {}),
   };
   return fits(structured) ? structured : { content: [] };
+}
+
+/** The call's arguments as the view receives them: whole when small, otherwise left out. */
+export function mcpAppViewArguments(args: Record<string, unknown>): Record<string, unknown> {
+  return Buffer.byteLength(JSON.stringify(args)) <= MCP_APP_ARGUMENTS_MAX_BYTES ? args : {};
 }
