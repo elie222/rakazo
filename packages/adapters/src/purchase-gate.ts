@@ -32,12 +32,17 @@ const INVISIBLE = /[\u{E0000}-\u{E007F}​-‏⁠-⁤‪-‮⁦-⁩﻿]/gu;
 const pageText = (text: string, max: number) =>
   Array.from(text.replace(INVISIBLE, "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
 
-/** Order lines as the card shows them: page text, cut short, at most 30. Anything else is dropped. */
+// The page reads at most this many order lines; a longer order may have more.
+const MAX_ITEMS = 30;
+// The card lists this many order lines; a longer order shows one fewer and how many more there are.
+const CARD_ITEMS = 8;
+
+/** Order lines as the card shows them: page text, cut short, at most MAX_ITEMS. Anything else is dropped. */
 function withItems(
   value: unknown,
   shown: (text: string, max: number) => string = pageText,
 ): Pick<PurchaseApproval, "items"> {
-  const items = (Array.isArray(value) ? value.slice(0, 30) : []).flatMap((item) => {
+  const items = (Array.isArray(value) ? value.slice(0, MAX_ITEMS) : []).flatMap((item) => {
     const { name, amount } = (item ?? {}) as Record<string, unknown>;
     if (typeof name !== "string" || typeof amount !== "string") return [];
     const line = { name: shown(name, 80), amount: shown(amount, 40) };
@@ -45,8 +50,6 @@ function withItems(
   });
   return items.length ? { items } : {};
 }
-// The card lists this many order lines; a longer order shows one fewer and how many more there are.
-const CARD_ITEMS = 8;
 
 /** A purchase approval as the persisted request holds it, or nothing when it is not one. */
 export function purchaseApprovalOf(value: unknown): PurchaseApproval | undefined {
@@ -92,7 +95,9 @@ export function purchaseCardSummary(purchase: PurchaseApproval): FleetCardSummar
     lines: [
       ...(purchase.label ? [`Button: "${purchase.label}"`] : []),
       ...listed.map((item) => `${item.name}: ${item.amount}`),
-      ...(items.length > listed.length ? [`and ${items.length - listed.length} more`] : []),
+      ...(items.length > listed.length
+        ? [`and ${items.length - listed.length}${items.length < MAX_ITEMS ? "" : "+"} more`]
+        : []),
       ...(purchase.amount
         ? [
             `${purchase.amountSource === "button" ? "Amount on the button" : "Total on the page"}: ${purchase.amount}`,

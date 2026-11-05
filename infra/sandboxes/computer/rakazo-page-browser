@@ -1018,11 +1018,10 @@ class PageBrowser:
                 break
         if args.get("desktop") is True and not steps:
             first = self.purchases().desktop(args)
-        items = order_items(first.get("items")) if first else []
         purchase = {"steps": steps, "label": first.get("label", ""), "amount": first.get("amount", ""),
                     "amountFrom": first.get("amountFrom", "page"), "reason": first.get("reason"),
                     **({"total": first["total"]} if first and first.get("total") else {}),
-                    **({"items": items} if items else {})} if first else None
+                    **({"items": first["items"]} if first and first.get("items") else {})} if first else None
         return {"ok": True, "url": "", "title": "", **self.purchases().where(), "site": site, "purchase": purchase}
 
     # -- commands ---------------------------------------------------------------------------------
@@ -1950,9 +1949,14 @@ PURCHASE_HELPERS = r"""
   const LINE_AMOUNT = new RegExp(`(?:${MONEY.source})$`, "i");
   const ANY_AMOUNT = new RegExp(MONEY.source, "i");
   const SUBTOTAL = /sub-?\s?total|סכום ביניים/i;
-  // Controls and choices are not order lines: a delivery option names its price too.
-  const NOT_A_LINE = "input:not([type=hidden]), select, textarea, button, label, [role=button], [role=radio], "
-    + "[role=checkbox], [role=option], [role=switch], [contenteditable]";
+  // A choice is not an order line, and nor is an offer to add something: a delivery option or an extra names
+  // its price too. Other controls, such as a quantity picker or Remove, may sit in a line; their words are not read.
+  const CHOICES = "label, input[type=radio], input[type=checkbox], [role=radio], [role=checkbox], [role=switch], "
+    + "[role=option]";
+  const CONTROLS = `input:not([type=hidden]), select, textarea, button, [role=button], [role=spinbutton], [contenteditable], ${CHOICES}`;
+  const OFFER = /^(?:add|select|choose|include|upgrade|הוסף|הוספה|בחר)(?:\s|$)/;
+  const offers = (el) => [...el.querySelectorAll("button, a, [role=button]")]
+    .some((control) => wordsOf(control).some((word) => OFFER.test(phrase(word))));
   const PAGE_EDGES = "header, nav, footer, [role=banner], [role=navigation], [role=contentinfo]";
   // What an element shows, with a space between its parts so "6" and "$3.00" in two cells stay apart.
   function shownText(el) {
@@ -1960,7 +1964,8 @@ PURCHASE_HELPERS = r"""
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node && parts.length < 40; node = walker.nextNode()) {
       const parent = node.parentElement;
-      if (parent && !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(parent.tagName) && visible(parent)) {
+      if (parent && !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(parent.tagName) && visible(parent)
+          && !parent.closest(CONTROLS)) {
         parts.push(node.data);
       }
     }
@@ -1971,15 +1976,14 @@ PURCHASE_HELPERS = r"""
   // than a card field, so a summary beside the card form is not mixed with the page above it. None without a total.
   function orderItems() {
     const elements = [...(document.body?.querySelectorAll("*") || [])].slice(0, 5000);
-    const small = (el, max) => (el.textContent || "").length <= max && !el.matches(NOT_A_LINE)
-      && !el.closest(PAGE_EDGES) && !el.parentElement?.closest(NOT_A_LINE);
+    const small = (el, max) => (el.textContent || "").length <= max && !el.closest(CONTROLS) && !el.closest(PAGE_EDGES);
     const totals = elements.filter((el) => small(el, 200) && TOTAL.test(el.textContent)
       && !SUBTOTAL.test(el.textContent) && visible(el)).slice(-5);
     if (!totals.length) return [];
     const rows = [];
     for (const el of elements) {
-      if (rows.length >= 400 || !small(el, 400) || !ANY_AMOUNT.test(el.textContent) || el.querySelector(NOT_A_LINE)
-          || !visible(el)) continue;
+      if (rows.length >= 400 || !small(el, 400) || !ANY_AMOUNT.test(el.textContent) || el.querySelector(CHOICES)
+          || !visible(el) || offers(el)) continue;
       const text = shownText(el);
       const amount = text.length <= 160 ? text.match(LINE_AMOUNT)?.[0] : "";
       const name = amount ? text.slice(0, -amount.length).replace(/[\s:·•–—-]+$/u, "") : "";
@@ -2107,21 +2111,6 @@ FRAME_ELEMENTS = ("IFRAME", "FRAME", "OBJECT", "EMBED")
 def shown(text: Any) -> str:
     """Page text as the card shows it: no invisible characters, one space between words."""
     return " ".join(INVISIBLE.sub("", str(text or "")).split())
-
-
-MAX_ORDER_ITEMS = 30
-
-
-def order_items(found: Any) -> list[dict[str, str]]:
-    """The order lines the page lists beside a purchase, as the card shows them: page text, each a name and
-    an amount, cut short. Anything else the page answered is dropped."""
-    items: list[dict[str, str]] = []
-    for item in found[:MAX_ORDER_ITEMS] if isinstance(found, list) else []:
-        if isinstance(item, dict) and isinstance(item.get("name"), str) and isinstance(item.get("amount"), str):
-            name, amount = shown(item["name"])[:80], shown(item["amount"])[:40]
-            if name and amount:
-                items.append({"name": name, "amount": amount})
-    return items
 
 
 class Offscreen(RuntimeError):

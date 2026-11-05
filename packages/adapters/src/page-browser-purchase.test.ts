@@ -618,6 +618,23 @@ describe("a key on the screen", () => {
     expect(noTotal.intent("Pay $3")).not.toHaveProperty("items");
   });
 
+  it("lists a line with a quantity picker, but not a choice or an offer to add", () => {
+    const { intent } = page(`
+      <ul>
+        <li><span>Bananas</span><button aria-label="Fewer">−</button><input type="number" value="6">
+          <button>+</button><button>Remove</button><span>$3.00</span></li>
+        <li><span>Oat milk 1L</span><select><option>1</option><option selected>2</option></select>
+          <span>$8.40</span></li>
+        <li><span>2-year warranty</span><button>Add</button><span>$19.99</span></li>
+        <li><label><input type="checkbox"> Gift wrap</label><span>$4.00</span></li>
+      </ul>
+      <p>Total: $11.40</p><button>Place order</button>`);
+    expect(intent("Place order")?.items).toEqual([
+      { name: "Bananas", amount: "$3.00" },
+      { name: "Oat milk 1L", amount: "$8.40" },
+    ]);
+  });
+
   it("keeps an order line's visible words only, and cuts them short", () => {
     const { intent } = page(`
       <p><span>Ban​anas‮ ${"x".repeat(100)}</span> <span>$3.00</span></p>

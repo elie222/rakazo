@@ -392,6 +392,8 @@ describe("purchase detection for the page tools", () => {
     const long = lines(12);
     expect(long.filter((text) => text.startsWith("Item "))).toHaveLength(7);
     expect(long[8]).toBe("and 5 more");
+    // The page reads no more than 30 lines, so a full list may stand for a longer order.
+    expect(lines(30)[8]).toBe("and 23+ more");
     // A computer that lists none, or an older one, shows the card as before.
     expect(purchaseCardSummary({ ...shop, items: [] }).lines).toEqual(
       purchaseCardSummary(shop).lines,
