@@ -1,15 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray) => strings.join(""),
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: unknown }) => children,
-  useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
-}));
-
-import { BotEmailNameSchema } from "@rakazo/contracts";
-import { suggestedEmailName } from "./RoutineEditor";
+import { describe, expect, it } from "vitest";
+import { BotEmailNameSchema, suggestedEmailName } from "./bot-email.js";
 
 describe("suggestedEmailName", () => {
   it("turns a bot name into an address name the server accepts", () => {
