@@ -20,6 +20,7 @@ import {
   recordAuditEvent,
   recordComputerRunEnd,
   releaseOrganizationDeletionClaim,
+  restoreSpaceDeletionClaims,
   runAsSystem,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
   setOrganizationDeletionLease,
@@ -35,18 +36,31 @@ import { afterSpaceDeparture } from "./space-departure.js";
  * failure keeps the handle and deleting again resumes from what is left.
  */
 export async function deleteAccountContent(
-  deps: SpaceDeletionDeps & { events: ThreadEvents },
+  deps: SpaceDeletionDeps & {
+    events: ThreadEvents;
+    billing?: Pick<BillingService, "cancelForDeletedUser">;
+  },
   userId: string,
 ): Promise<void> {
-  // Leave other people's Spaces first, so what this account made there passes to their owners
-  // instead of being torn down with it.
+  const { claimId, spaceIds, takenOver } = await claimSpacesLeavingWithAccount(deps.prisma, userId);
+  try {
+    // Cancel under the claims, so a checkout opened while another organization's cancellation
+    // waits is refused by the deletion check instead of outliving the account.
+    await deps.billing?.cancelForDeletedUser(userId);
+  } catch (error) {
+    // Nothing was destroyed yet, so the account stays as it was: give back only what this
+    // attempt claimed, keeping claims an earlier attempt left and other deletions' markers.
+    await restoreSpaceDeletionClaims(deps.prisma, claimId, takenOver);
+    throw error;
+  }
+  // Then leave other people's Spaces, so what this account made there passes to their owners
+  // instead of being torn down with it. None of them is claimed above: each keeps another full
+  // member. As after leaving: tell members, stop the cancelled runs' work, free held screens,
+  // and start others' waiting follow-ups.
   const departures = await prepareAccountDeletion(deps.prisma, userId);
-  // As after leaving: tell members, stop the cancelled runs' work, free held screens, and start
-  // others' waiting follow-ups.
   for (const departure of departures) {
     await afterSpaceDeparture(deps, { spaceId: departure.spaceId, userId }, departure);
   }
-  const { claimId, spaceIds } = await claimSpacesLeavingWithAccount(deps.prisma, userId);
   const leaving = { OR: [{ userId }, { spaceId: { in: spaceIds } }] };
   await deleteClaimedSpaces(deps, {
     userId,
