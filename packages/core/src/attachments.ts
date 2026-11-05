@@ -169,6 +169,7 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
     .map((block) => {
       if (block.kind === "text") return block.text;
       if (block.kind === "chart") return `[chart: ${block.name}]`;
+      if (block.kind === "app") return `[app: ${block.server} showed ${block.tool}]`;
       if (block.kind === "image") return `[image: ${block.name}]`;
       // The id lets a later turn, or another chat, update this page instead of making a new one.
       if (block.kind === "page") {
@@ -320,9 +321,23 @@ export function attachmentsForBot<T extends { botId: string }>(
   return attachments.filter((attachment) => attachment.botId === botId);
 }
 
+/**
+ * The message whose attachments this run receives: a person's message, or a message or
+ * handoff another bot delivered, whose files arrive the same way.
+ */
 export function userTurnMessageForRun<
   T extends { id?: string; role: string; runId?: string | null; blocks: MessageBlock[] },
 >(trigger: string, runId: string, messages: T[], sourceMessageId?: string | null): T | undefined {
+  if (trigger === "bot_message" || trigger === "follow_up") {
+    if (!sourceMessageId) return undefined;
+    return messages.find(
+      (message) =>
+        message.id === sourceMessageId &&
+        message.blocks.some(
+          (block) => block.kind === "bot_message_received" || block.kind === "handoff",
+        ),
+    );
+  }
   if (trigger !== "user" && trigger !== "messaging" && trigger !== "reaction") return undefined;
   return messages.find(
     (message) =>

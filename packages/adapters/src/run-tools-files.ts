@@ -1,3 +1,4 @@
+import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { inferAttachmentMimeType, isBackgroundRunTrigger } from "@rakazo/core";
 import { resolveBotWorkspacePath } from "./computer-support.js";
@@ -13,6 +14,8 @@ import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
 import { textContentArg } from "./tool-text.js";
 import type { RunWorkspace } from "./workspace-file-tools.js";
 import { listFilesFromTool, readFileFromTool, renderPlotFromTool } from "./workspace-file-tools.js";
+
+export type AttachmentBlock = Extract<MessageBlock, { kind: "image" | "file" }>;
 
 function runWorkspace(ctx: RunContext, call: ToolCall): RunWorkspace {
   return {
@@ -119,55 +122,86 @@ export const fileTools: ToolHandlers = {
     return renderPlotFromTool(deps, run, args, executionId, workspace, call.finish);
   },
   async attach_file(ctx, call) {
-    const { deps, run, bot, thread, context } = ctx;
-    const { name, args, executionId } = call;
-    const filePath = String(args.path ?? "");
-    const failAttach = async (error: string) => {
+    const { deps, run, bot, thread } = ctx;
+    const filePath = String(call.args.path ?? "");
+    const fail = async (error: string) => {
       await recordComputerAction(ctx, call, "attach_file", filePath, { error });
       return call.finish({ error, path: filePath });
     };
-    if (!deps.artifacts) return failAttach("artifact storage unavailable");
-    const storedPath = resolveBotWorkspacePath(ctx.computer.mode, bot.id, filePath);
-    let bytes: Uint8Array;
+    const read = await readWorkspaceFile(ctx, call, filePath);
+    if ("error" in read) return fail(read.error);
     try {
-      bytes = await deps.sandbox.readFile(
-        await ctx.computer.get("tool", name),
-        storedPath,
-        context,
+      const saved = await saveWorkspaceFile(
+        ctx,
+        call,
+        filePath,
+        read.bytes,
+        { botId: bot.id, groupId: thread.groupId ?? undefined },
         {
-          maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES,
+          name: typeof call.args.name === "string" ? call.args.name : undefined,
+          description:
+            typeof call.args.description === "string" ? call.args.description : undefined,
         },
       );
-    } catch {
-      return failAttach("file not found or unreadable");
-    }
-    const mimeType = inferAttachmentMimeType(filePath);
-    if (!mimeType) return failAttach("unsupported attachment type");
-    try {
-      const attached = await attachWorkspaceFileToThread(
-        {
-          prisma: deps.prisma,
-          artifacts: deps.artifacts,
-          maxUploadSizeBytes: deps.maxUploadSizeBytes,
-        },
-        {
-          spaceId: run.spaceId,
-          userId: run.userId,
-          botId: bot.id,
-          groupId: thread.groupId ?? undefined,
-          runId: run.id,
-          filePath,
-          bytes,
-          operationId: executionId,
-          name: typeof args.name === "string" ? args.name : undefined,
-          description: typeof args.description === "string" ? args.description : undefined,
-        },
-      );
-      await publishMessage(deps, run, "bot", [attached.block]);
+      await publishMessage(deps, run, "bot", [saved.block]);
       await recordComputerAction(ctx, call, "attach_file", filePath);
-      return call.finish({ ok: true, artifactId: attached.artifactId, path: filePath });
+      return call.finish({ ok: true, artifactId: saved.artifactId, path: filePath });
     } catch (error) {
-      return failAttach(error instanceof Error ? error.message : "could not attach file");
+      return fail(error instanceof Error ? error.message : "could not attach file");
     }
   },
 };
+
+/** Read a file from this bot's computer that can become an attachment, without saving it. */
+export async function readWorkspaceFile(
+  ctx: RunContext,
+  call: ToolCall,
+  filePath: string,
+): Promise<{ error: string } | { bytes: Uint8Array }> {
+  const { deps, bot, context } = ctx;
+  if (!deps.artifacts) return { error: "artifact storage unavailable" };
+  let bytes: Uint8Array;
+  try {
+    bytes = await deps.sandbox.readFile(
+      await ctx.computer.get("tool", call.name),
+      resolveBotWorkspacePath(ctx.computer.mode, bot.id, filePath),
+      context,
+      { maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES },
+    );
+  } catch {
+    return { error: "file not found or unreadable" };
+  }
+  if (!inferAttachmentMimeType(filePath)) return { error: "unsupported attachment type" };
+  return { bytes };
+}
+
+/**
+ * Save a file read from this bot's computer as an attachment of the chat that will show it:
+ * a bot's own chat, or a group's.
+ */
+export async function saveWorkspaceFile(
+  ctx: RunContext,
+  call: ToolCall,
+  filePath: string,
+  bytes: Uint8Array,
+  owner: { botId: string; groupId?: string },
+  meta: { name?: string; description?: string } = {},
+): Promise<{ artifactId: string; block: AttachmentBlock }> {
+  const { deps, run } = ctx;
+  if (!deps.artifacts) throw new Error("artifact storage unavailable");
+  return attachWorkspaceFileToThread(
+    { prisma: deps.prisma, artifacts: deps.artifacts, maxUploadSizeBytes: deps.maxUploadSizeBytes },
+    {
+      spaceId: run.spaceId,
+      userId: run.userId,
+      botId: owner.botId,
+      groupId: owner.groupId,
+      runId: run.id,
+      filePath,
+      bytes,
+      operationId: call.executionId,
+      name: meta.name,
+      description: meta.description,
+    },
+  );
+}

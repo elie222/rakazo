@@ -141,6 +141,10 @@ describe("save_page", () => {
         [secret],
       ),
     ).toEqual([{ kind: "page", pageId: "page-1", version: 1, title: "A [redacted]" }]);
+    // Step labels can come from tool arguments, so they are redacted like notes.
+    expect(
+      redactBlocks([{ kind: "steps", steps: [{ label: `Run ${secret}`, count: 1 }] }], [secret]),
+    ).toEqual([{ kind: "steps", steps: [{ label: "Run [redacted]", count: 1 }] }]);
   });
 
   it("redacts a kept title that holds a secret this run learned after it was saved", async () => {

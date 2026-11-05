@@ -639,3 +639,21 @@ export function isApprovalAskBlock(block: {
     [...actionIds].every((id) => id === "allow" || id === "always" || id === "deny")
   );
 }
+
+/**
+ * A payment receipt's page lines, leaving out any the page named like one of the card's own rows
+ * (`labels`, as the app words them), so merchant text never reads as the card's.
+ */
+export function receiptItems<Item extends { name: string }>(
+  items: readonly Item[],
+  labels: readonly string[],
+): Item[] {
+  const own = labels.map((label) => label.trim().toLocaleLowerCase()).filter(Boolean);
+  return items.filter((item) => {
+    const name = item.name.trim().toLocaleLowerCase();
+    // "Total" and "Total due" pose as the card's row; "Totally Oats" doesn't.
+    return !own.some(
+      (label) => name.startsWith(label) && !/^[\p{L}\p{N}]/u.test(name.slice(label.length)),
+    );
+  });
+}

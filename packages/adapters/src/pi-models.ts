@@ -48,7 +48,7 @@ export type PiCatalogEntry = {
 const RECOMMENDED_MODEL_IDS: Readonly<Record<string, string>> = {
   "openai-codex": "gpt-6-luna",
   openai: "gpt-6-luna",
-  openrouter: "openai/gpt-6-luna",
+  openrouter: "anthropic/claude-haiku-5.5",
   anthropic: "claude-haiku-5-5",
   google: "gemini-3.8-flash",
   groq: "openai/gpt-oss-120b",

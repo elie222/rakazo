@@ -110,8 +110,13 @@ async function runTurn({
       count: vi.fn(async () => 0),
     },
     userVoiceCredential: { count: vi.fn(async () => 0) },
+    $executeRaw: vi.fn(async () => 0),
     secret: {
       findFirst: vi.fn(
+        async (args: { where: { id: string } }) =>
+          state.secrets.find((row) => row.id === args.where.id) ?? null,
+      ),
+      findUnique: vi.fn(
         async (args: { where: { id: string } }) =>
           state.secrets.find((row) => row.id === args.where.id) ?? null,
       ),

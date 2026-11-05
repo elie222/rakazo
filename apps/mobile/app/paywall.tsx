@@ -430,7 +430,7 @@ export default function Paywall() {
             <PlanCard
               selected={plan === "credits"}
               onPress={() => setPlan("credits")}
-              title={t("Rakazo credits")}
+              title={t("Credits")}
               badge={subscribed === "credits" ? t("Current plan") : undefined}
               price={{
                 label: t("{price} / month", { price: creditPrice }),
