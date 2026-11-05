@@ -10,7 +10,10 @@ const mocks = vi.hoisted(() => ({
     note: "Sent",
   })),
   handoffToGroupBot: vi.fn(async (..._args: unknown[]) => ({ ok: true as const })),
-  storeWorkspaceFile: vi.fn(async (..._args: unknown[]) => ({
+  readWorkspaceFile: vi.fn(async (..._args: unknown[]) => ({
+    bytes: new Uint8Array([1]),
+  })) as ReturnType<typeof vi.fn>,
+  saveWorkspaceFile: vi.fn(async (..._args: unknown[]) => ({
     artifactId: "artifact-zip",
     block: {
       kind: "file" as const,
@@ -23,7 +26,10 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("./bot-messages.js", () => ({ messageBot: mocks.messageBot }));
 vi.mock("./group-handoff.js", () => ({ handoffToGroupBot: mocks.handoffToGroupBot }));
-vi.mock("./run-tools-files.js", () => ({ storeWorkspaceFile: mocks.storeWorkspaceFile }));
+vi.mock("./run-tools-files.js", () => ({
+  readWorkspaceFile: mocks.readWorkspaceFile,
+  saveWorkspaceFile: mocks.saveWorkspaceFile,
+}));
 
 const { messagingTools } = await import("./run-tools-messaging.js");
 
@@ -86,7 +92,8 @@ describe("sending files to another bot", () => {
   it("passes paths on a shared computer instead of copying them", async () => {
     const { ctx } = context("computer-team");
     await messagingTools.message_bot!(ctx, callWith("message_bot", { files: ["site"] }));
-    expect(mocks.storeWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.readWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.saveWorkspaceFile).not.toHaveBeenCalled();
     expect(mocks.messageBot).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
@@ -129,7 +136,14 @@ describe("sending files to another bot", () => {
     const { ctx, listFiles } = context("computer-servo");
     await messagingTools.message_bot!(ctx, callWith("message_bot", { files: ["site.zip"] }));
     expect(listFiles).not.toHaveBeenCalled();
-    expect(mocks.storeWorkspaceFile).toHaveBeenCalledWith(ctx, expect.anything(), "site.zip");
+    // Filed under Servo's chat, where the copy is shown.
+    expect(mocks.saveWorkspaceFile).toHaveBeenCalledWith(
+      ctx,
+      expect.anything(),
+      "site.zip",
+      expect.any(Uint8Array),
+      { botId: "bot-servo" },
+    );
     expect(mocks.messageBot).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
@@ -143,14 +157,53 @@ describe("sending files to another bot", () => {
 
   it("asks for a zip when a copy cannot be made of a folder", async () => {
     const { ctx } = context("computer-servo");
-    mocks.storeWorkspaceFile.mockResolvedValueOnce({
-      error: "file not found or unreadable",
-    } as never);
+    mocks.readWorkspaceFile.mockResolvedValueOnce({ error: "file not found or unreadable" });
     await expect(
       messagingTools.message_bot!(ctx, callWith("message_bot", { files: ["site"] })),
     ).resolves.toEqual({
       error: "site: file not found or unreadable; zip it and send the zip. Nothing was sent.",
     });
     expect(mocks.messageBot).not.toHaveBeenCalled();
+  });
+
+  it("saves nothing when any file cannot be read", async () => {
+    const { ctx } = context("computer-servo");
+    mocks.readWorkspaceFile
+      .mockResolvedValueOnce({ bytes: new Uint8Array([1]) })
+      .mockResolvedValueOnce({ error: "unsupported attachment type" });
+    await expect(
+      messagingTools.message_bot!(ctx, callWith("message_bot", { files: ["site.zip", "app.ts"] })),
+    ).resolves.toEqual({
+      error: "app.ts: unsupported attachment type; zip it and send the zip. Nothing was sent.",
+    });
+    expect(mocks.saveWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.messageBot).not.toHaveBeenCalled();
+  });
+
+  it("reads nothing for a recipient it cannot find", async () => {
+    const { ctx } = context("computer-servo");
+    await expect(
+      messagingTools.message_bot!(
+        ctx,
+        callWith("message_bot", { bot_id: "bot-gone", files: ["site.zip"] }),
+      ),
+    ).resolves.toEqual({ error: "no bot found with that id or name. Nothing was sent." });
+    expect(mocks.readWorkspaceFile).not.toHaveBeenCalled();
+  });
+
+  it("files a handoff's copies under the group that shows them", async () => {
+    const { ctx } = context("computer-servo");
+    (ctx.thread as { groupId: string | null }).groupId = null;
+    await messagingTools.handoff_to_bot!(
+      ctx,
+      callWith("handoff_to_bot", { group_id: "group-2", files: ["site.zip"] }),
+    );
+    expect(mocks.saveWorkspaceFile).toHaveBeenCalledWith(
+      ctx,
+      expect.anything(),
+      "site.zip",
+      expect.any(Uint8Array),
+      { botId: "bot-coder", groupId: "group-2" },
+    );
   });
 });

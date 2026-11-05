@@ -141,7 +141,7 @@ describe("messaging another bot", () => {
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
   });
 
-  it("sends files on both the sender's echo and the recipient's message", async () => {
+  it("puts sent files on the recipient's message, and only the text in the sender's echo", async () => {
     const harness = deps();
     const file = {
       kind: "file" as const,
@@ -162,7 +162,6 @@ describe("messaging another bot", () => {
     );
     expect(created.find((m) => m.threadId === "thread-sender")?.blocks).toEqual([
       expect.objectContaining({ kind: "bot_message_sent" }),
-      file,
     ]);
     expect(created.find((m) => m.threadId === "thread-target")?.blocks).toEqual([
       expect.objectContaining({ kind: "bot_message_received" }),

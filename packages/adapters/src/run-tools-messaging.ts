@@ -23,7 +23,7 @@ import {
 } from "./run-progress.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import type { AttachmentBlock } from "./run-tools-files.js";
-import { storeWorkspaceFile } from "./run-tools-files.js";
+import { readWorkspaceFile, saveWorkspaceFile } from "./run-tools-files.js";
 import {
   clampUserProgressMessage,
   isProgressMessageTruncated,
@@ -38,7 +38,9 @@ type SentFiles = { files: AttachmentBlock[]; sharedPaths: string[] };
 
 /**
  * Files a bot passes by path to another bot. A recipient on the same computer reads them
- * where they are; one elsewhere, or one that cannot be told apart, gets a saved copy.
+ * where they are. One elsewhere, or one that cannot be told apart, gets saved copies, filed
+ * under the chat that shows them: its own, or the group's for a handoff. Every file is read
+ * before any is saved, so a bad path leaves nothing behind.
  */
 async function prepareSentFiles(
   ctx: RunContext,
@@ -54,26 +56,47 @@ async function prepareSentFiles(
   if (paths.length > ATTACHMENT_MAX_COUNT) {
     return { error: `send at most ${ATTACHMENT_MAX_COUNT} files; zip the rest into one file` };
   }
-  if (await sharesComputer(ctx, recipient)) return sharedFiles(ctx, call, paths);
-  const files: AttachmentBlock[] = [];
+  const target = await findRecipient(ctx, recipient);
+  if (!target) return { error: "no bot found with that id or name. Nothing was sent." };
+  const { bot } = ctx;
+  if (
+    bot.computerId &&
+    !bot.computerSwitching &&
+    !target.computerSwitching &&
+    target.computerId === bot.computerId
+  )
+    return sharedFiles(ctx, call, paths);
+  const read: Array<{ path: string; bytes: Uint8Array }> = [];
   for (const path of paths) {
-    const stored = await storeWorkspaceFile(ctx, call, path);
-    if ("error" in stored) {
+    const file = await readWorkspaceFile(ctx, call, path);
+    if ("error" in file) {
       // The recipient has its own computer, so a folder or raw source file has to travel zipped.
-      const hint = ZIP_HELPS.has(stored.error) ? "; zip it and send the zip" : "";
-      return { error: `${path}: ${stored.error}${hint}. Nothing was sent.` };
+      const hint = ZIP_HELPS.has(file.error) ? "; zip it and send the zip" : "";
+      return { error: `${path}: ${file.error}${hint}. Nothing was sent.` };
     }
-    files.push(stored.block);
+    read.push({ path, bytes: file.bytes });
+  }
+  const owner = recipient.groupId
+    ? { botId: bot.id, groupId: recipient.groupId }
+    : { botId: target.id };
+  const files: AttachmentBlock[] = [];
+  for (const file of read) {
+    try {
+      files.push((await saveWorkspaceFile(ctx, call, file.path, file.bytes, owner)).block);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "could not save the file";
+      return { error: `${file.path}: ${reason}. Nothing was sent.` };
+    }
   }
   return { files, sharedPaths: [] };
 }
 
-async function sharesComputer(
+/** The bot a message or handoff names, among the sender's bots or the group's members. */
+async function findRecipient(
   ctx: RunContext,
   recipient: { botId?: string; name?: string; groupId?: string },
-): Promise<boolean> {
-  const { bot, run, deps } = ctx;
-  if (!bot.computerId || bot.computerSwitching) return false;
+) {
+  const { run, deps, bot } = ctx;
   const candidates = await deps.prisma.bot.findMany({
     where: {
       spaceId: run.spaceId,
@@ -84,12 +107,7 @@ async function sharesComputer(
     select: { id: true, name: true, computerId: true, computerSwitching: true },
   });
   const target = resolveBotAddress(candidates, recipient);
-  return Boolean(
-    target &&
-      target.id !== bot.id &&
-      !target.computerSwitching &&
-      target.computerId === bot.computerId,
-  );
+  return target && target.id !== bot.id ? target : undefined;
 }
 
 /** Paths on the shared computer, checked to exist, as any bot on it can address them. */

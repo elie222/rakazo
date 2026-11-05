@@ -80,7 +80,7 @@ export async function messageBot(
     message: string;
     intent?: BotMessageIntent;
     deliveryKey?: string;
-    /** Saved attachments, shown on both sides and copied to the recipient's computer. */
+    /** Attachments filed under the recipient's chat, shown there and copied to its computer. */
     files?: Array<Extract<MessageBlock, { kind: "image" | "file" }>>;
   },
   options?: { allowTerminalSource?: boolean; forceUnread?: boolean },
@@ -149,7 +149,6 @@ export async function messageBot(
     intent,
   };
   const files = input.files ?? [];
-  const outboundBlocks: MessageBlock[] = [outboundBlock, ...files];
 
   let committed:
     | {
@@ -217,7 +216,7 @@ export async function messageBot(
         const outbound = await createThreadMessageInTransaction(tx, {
           threadId: run.threadId,
           role: "bot",
-          blocks: outboundBlocks,
+          blocks: [outboundBlock],
           botId: run.botId,
           runId: run.id,
           markUnread: options?.forceUnread === true,
@@ -284,7 +283,7 @@ export async function messageBot(
           runId: run.id,
           allowCancelledRun: options?.allowTerminalSource === true,
           lease: runLeaseFor(deps, run.id),
-          payload: { messageId: outbound.id, role: "bot", blocks: outboundBlocks },
+          payload: { messageId: outbound.id, role: "bot", blocks: [outboundBlock] },
         });
         return {
           ok: true as const,
