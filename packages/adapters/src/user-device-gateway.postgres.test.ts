@@ -164,15 +164,19 @@ describePostgres("user devices (PostgreSQL)", () => {
     );
     const revoked = await prisma.userDevice.findUniqueOrThrow({ where: { id: device.id } });
     expect(revoked.revokedAt).toBeInstanceOf(Date);
-    await expect(
-      prisma.securityEvent.count({
-        where: {
-          type: "device.revoked",
-          userId,
-          metadata: { path: ["deviceId"], equals: device.id },
-        },
-      }),
-    ).resolves.toBe(1);
+    // Heartbeats overlap: a later one can close the socket for the revoke an earlier one
+    // made while that one is still writing its security event.
+    await vi.waitFor(() =>
+      expect(
+        prisma.securityEvent.count({
+          where: {
+            type: "device.revoked",
+            userId,
+            metadata: { path: ["deviceId"], equals: device.id },
+          },
+        }),
+      ).resolves.toBe(1),
+    );
     installSecurityEventStore(undefined);
     await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
   });

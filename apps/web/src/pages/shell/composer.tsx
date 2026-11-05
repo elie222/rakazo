@@ -46,6 +46,7 @@ import {
   readComposerDraftBindings,
   settleComposerDraftSubmission,
   subscribeComposerDraftAccepted,
+  subscribeComposerOffer,
   writeComposerDraft,
 } from "../../lib/composer-draft";
 import { hasOpenDialog } from "../../lib/has-open-dialog";
@@ -276,17 +277,23 @@ const ComposerBody = memo(function Composer({
   const pageSession = usePageSession();
   const clearReply = useRef(onClearReply);
   clearReply.current = onClearReply;
+  const appendOffered = useRef((_text: string) => {});
+  appendOffered.current = (text: string) => {
+    clearReply.current?.();
+    const current = compositionRef.current.text;
+    editSelections.current = [{ start: current.length, end: current.length }];
+    const next = current.trim() ? `${current.trimEnd()} ${text}` : text;
+    updateDraft(next);
+    pendingCaret.current = { start: next.length, end: next.length };
+  };
   useEffect(
-    () =>
-      pageSession?.subscribeReply((text) => {
-        clearReply.current?.();
-        const current = compositionRef.current.text;
-        editSelections.current = [{ start: current.length, end: current.length }];
-        const next = current.trim() ? `${current.trimEnd()} ${text}` : text;
-        updateDraft(next);
-        pendingCaret.current = { start: next.length, end: next.length };
-      }),
-    [pageSession, draftKey],
+    () => pageSession?.subscribeReply((text) => appendOffered.current(text)),
+    [pageSession],
+  );
+  // An app card in this chat offers its text the same way.
+  useEffect(
+    () => subscribeComposerOffer(draftKey, (text) => appendOffered.current(text)),
+    [draftKey],
   );
   const [replyAnnouncement, setReplyAnnouncement] = useState("");
   // What the live region currently holds — a send disarming the reply clears

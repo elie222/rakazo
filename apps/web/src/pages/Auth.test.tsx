@@ -52,6 +52,9 @@ vi.mock("@rakazo/ui-web", () => ({
   ),
   InputOTPGroup: () => null,
   InputOTPSlot: () => null,
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ render }: { render: ReactNode }) => render,
+  TooltipContent: () => null,
   Label: ({ children, htmlFor, ...props }: React.ComponentProps<"label">) => (
     <label htmlFor={htmlFor} {...props}>
       {children}
@@ -186,6 +189,23 @@ it("selects a non-redirecting SSO request on desktop", async () => {
   expect(authClient.signIn.social).toHaveBeenCalledWith(
     expect.objectContaining({ provider: "oidc", disableRedirect: true }),
   );
+});
+
+it("lets the desktop app change its server from sign in", async () => {
+  const change = vi.fn(async () => undefined);
+  window.rakazoDesktop = { server: { change } } as unknown as NonNullable<Window["rakazoDesktop"]>;
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(capabilities);
+  await render();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="Change server"]')!.click(),
+  );
+  expect(change).toHaveBeenCalledOnce();
+});
+
+it("offers no server change in a browser", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(capabilities);
+  await render();
+  expect(host.querySelector('[aria-label="Change server"]')).toBeNull();
 });
 
 it("keeps SSO available for retry while an authorization request is pending", async () => {

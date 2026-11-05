@@ -1,7 +1,7 @@
 {
   "name": "@rakazo/desktop",
   "productName": "Rakazo",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "author": {
     "name": "Rakazo"
   },
@@ -13,7 +13,7 @@
     "build": "node scripts/build.mjs && node scripts/copy-static.mjs && node scripts/build-speech.mjs",
     "pack": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --mac --win --linux",
     "pack:dir": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --dir",
-    "check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.jsdom.json",
+    "check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.jsdom.json && tsc --noEmit -p e2e/tsconfig.json && tsc --noEmit -p scripts/tsconfig.json",
     "test": "vitest run --root ../.. apps/desktop/src",
     "test:e2e": "pnpm build && playwright test --config e2e/playwright.config.ts",
     "release": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --publish never"

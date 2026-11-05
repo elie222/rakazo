@@ -194,3 +194,59 @@ async function expectCachedPaint(
   expect(commitSnapshot.mock.calls.some(([next]) => next === cached)).toBe(painted);
   act(() => root.unmount());
 }
+
+it("anchors Load earlier on the first visible row, not the whole height delta", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // A fake scroller whose height can grow while the older page loads, the way
+  // a streaming reply appends content at the bottom during the fetch.
+  const height = { now: 1000 };
+  const rowBelow = { offsetTop: 600, offsetHeight: 200, isConnected: true };
+  const scroller = {
+    scrollTop: 500,
+    get scrollHeight() {
+      return height.now;
+    },
+    querySelectorAll: (selector: string) => (selector === "[data-message-id]" ? [rowBelow] : []),
+  };
+  const page = { threadId: "thread-1", messages: [], olderCursor: null };
+  const messages = vi.fn(async () => {
+    // The reply grew 250px at the bottom while the older page was loading.
+    height.now += 250;
+    return page;
+  });
+  const snapshot = { botId: "bot-1", threadId: "thread-1", olderCursor: "cursor-1" };
+  const input = syncInput({
+    inGroup: false,
+    get: () => new Promise<ThreadSnapshot>(() => {}),
+    commitSnapshot: vi.fn(),
+  });
+  input.rpc = { threads: { get: input.rpc.threads.get, messages } } as never;
+  input.thread = {
+    ...input.thread,
+    snapshot: snapshot as never,
+    snapshotRef: ref(snapshot),
+    updateSnapshot: vi.fn(() => {
+      // Prepending the older page grows the content above the reader by 400px.
+      height.now += 400;
+      rowBelow.offsetTop += 400;
+    }),
+    messageScroll: ref(scroller),
+  } as never;
+  let controls!: ReturnType<typeof useThreadSync>;
+  function Probe() {
+    controls = useThreadSync(input);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Probe)));
+
+  await act(async () => void (await controls.loadOlder()));
+  await act(async () => {
+    await new Promise((resolve) => window.requestAnimationFrame(() => resolve(null)));
+  });
+
+  // Only the prepended page (400px) may move the reader; the 250px appended
+  // at the bottom during the fetch must not.
+  expect(scroller.scrollTop).toBe(900);
+  act(() => root.unmount());
+});

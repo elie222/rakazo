@@ -182,6 +182,10 @@ msgstr "{count} dagen"
 msgid "{count} months"
 msgstr "{count} maanden"
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "nog {count}"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr "{count} weken"
@@ -363,6 +367,38 @@ msgstr "Nog {remaining} over"
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {# plaats} other {# plaatsen}}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a day"
+msgstr "{shown} per dag"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a month"
+msgstr "{shown} per maand"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a week"
+msgstr "{shown} per week"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} in total"
+msgstr "{shown} in totaal"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent"
+msgstr "{shown} uitgegeven"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this month"
+msgstr "{shown} deze maand uitgegeven"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this week"
+msgstr "{shown} deze week uitgegeven"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent today"
+msgstr "{shown} vandaag uitgegeven"
 
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
@@ -760,6 +796,10 @@ msgstr "Altijd toegestaan"
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
 msgstr "{site} altijd openen"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Amount"
+msgstr "Bedrag"
 
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
@@ -1168,6 +1208,10 @@ msgstr "MCP-servers doorzoeken"
 msgid "Built-in"
 msgstr "Ingebouwd"
 
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "Knop ‘{button}’ · van de pagina gelezen, niet gecontroleerd"
+
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
 msgstr "Bellen"
@@ -1212,6 +1256,7 @@ msgstr "Kan afbeeldingen niet lezen"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1287,6 +1332,10 @@ msgstr "Model wijzigen"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "Wachtwoord wijzigen"
+
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "Server wijzigen"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
@@ -1642,8 +1691,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr "Computers zijn beschikbaar. Herlaad of open een bot om verder te gaan."
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "Computers staan uit. Stel SANDBOX_PROVIDER=docker in met SANDBOX_SUPERVISOR_TOKEN, of stel SANDBOX_PROVIDER in op e2b, novita, daytona of boat met de bijbehorende API-sleutel. Bouw de stack opnieuw op nadat je .env hebt gewijzigd."
+msgid "Computers are off on this server."
+msgstr "Computers staan uit op deze server."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1826,7 +1875,6 @@ msgstr "Doorgaan met {0}"
 msgid "Conversations"
 msgstr ""
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1844,10 +1892,6 @@ msgstr "Gekopieerd"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Kopiëren"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr ".env-voorbeeld kopiëren"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2308,6 +2352,10 @@ msgstr "Regel opslaan mislukt"
 msgid "Could not save skill"
 msgstr "Skill opslaan mislukt"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Could not save spending limit"
+msgstr "Kon de bestedingslimiet niet opslaan"
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "Could not save that choice"
 msgstr "Die keuze opslaan mislukt"
@@ -2532,6 +2580,10 @@ msgstr "Inloggegevens: {names}"
 msgid "Credit amount"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "Tegoed"
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
 msgstr ""
@@ -2543,6 +2595,10 @@ msgstr "Cron"
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron expression"
 msgstr "Cron-expressie"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Currency"
+msgstr "Valuta"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2568,6 +2624,10 @@ msgstr "{label} aanpassen"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
 msgstr "Botavatar aanpassen"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Daily"
+msgstr "Dagelijks"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
@@ -2845,10 +2905,6 @@ msgstr "Gesloten. Je kunt altijd opnieuw verbinden via de MCP-instellingen."
 msgid "Docker"
 msgstr "Docker"
 
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr "Docker is geconfigureerd, maar computers reageren niet. Controleer of de sandbox-supervisor draait en bouw de stack daarna opnieuw op nadat je .env hebt gewijzigd."
-
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker beperkt de toegang tot je computer voor extra veiligheid. Met {hostLabel} kunnen bots met je lokale bestanden en tools werken."
@@ -2922,6 +2978,7 @@ msgid "Each name can be used once."
 msgstr "Elke naam kan maar één keer worden gebruikt."
 
 #: src/components/AskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -4155,6 +4212,7 @@ msgid "month"
 msgstr "maand"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Maandelijks"
@@ -4460,6 +4518,10 @@ msgstr "Geen externe MCP-servers gevonden"
 msgid "No reply"
 msgstr "Geen antwoord"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "No reset"
+msgstr "Niet resetten"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx
@@ -4495,6 +4557,7 @@ msgstr "Nog geen tickets"
 msgid "No trigger"
 msgstr "Geen trigger"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr ""
@@ -4608,6 +4671,10 @@ msgstr "op dag {day} om {time}"
 #: src/lib/cron.ts
 msgid "on the 1st at {0}"
 msgstr "op de 1e om {0}"
+
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "Op de knop"
 
 #: src/lib/cron.ts
 msgid "One-time"
@@ -5058,7 +5125,6 @@ msgstr "In wachtrij"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
@@ -5074,6 +5140,10 @@ msgstr "Reageren"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Reactions"
 msgstr "Reacties"
+
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "Van de pagina gelezen, niet gecontroleerd"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
@@ -5107,6 +5177,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "Recent"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "Recente betalingen"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -5244,6 +5318,7 @@ msgstr "Herladen"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -5414,6 +5489,10 @@ msgstr "Wachtwoord opnieuw instellen"
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "Je wachtwoord opnieuw instellen"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Resets"
+msgstr "Reset"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5587,6 +5666,7 @@ msgstr "zaterdag"
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5828,6 +5908,10 @@ msgstr "Servernaam"
 msgid "Server URL"
 msgstr "Server-URL"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Set"
+msgstr "Instellen"
+
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5857,6 +5941,7 @@ msgstr "Instellingen: gebruik"
 msgid "Setup complete"
 msgstr "Instellen voltooid"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "Installatiehulp"
@@ -5899,6 +5984,7 @@ msgstr "Gedeeld geheugen"
 msgid "Show"
 msgstr "Tonen"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr "Alles tonen"
@@ -6108,6 +6194,10 @@ msgstr "Spreekt"
 msgid "Speech model"
 msgstr "Spraakmodel"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Spending limit"
+msgstr "Bestedingslimiet"
+
 #: src/components/AccountAccess.tsx
 msgid "SSO"
 msgstr ""
@@ -6244,8 +6334,8 @@ msgid "Subscribe for {price} / month"
 msgstr "Abonneren voor {price} / maand"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "Abonneren op Rakazo-tegoed"
+msgid "Subscribe to credits"
+msgstr "Abonneren op tegoed"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"
@@ -6447,6 +6537,10 @@ msgstr "Denkt"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Thinking: {0}"
 msgstr "Denken: {0}"
+
+#: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "Dit account is gedeactiveerd"
 
 #: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
@@ -6673,6 +6767,10 @@ msgstr "Toolnaam"
 msgid "Tools"
 msgstr "Tools"
 
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "Totaal"
+
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
 msgstr "Bezig met transcriberen…"
@@ -6712,6 +6810,10 @@ msgstr "Proefperiode eindigt op {day}"
 #: src/components/ModelCredits.tsx
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "Proefperiodes krijgen minder uren om misbruik te voorkomen."
+
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
@@ -7049,6 +7151,10 @@ msgstr "Werkdagen"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "Weekenden"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Weekly"
+msgstr "Wekelijks"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

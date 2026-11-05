@@ -52,7 +52,8 @@ const OPERATION_WAIT_SECONDS = 20;
 // SIGTERM first. The `timeout` wrapper passes it to the whole process group and kills the group
 // if it is still there after its kill-after delay, so the streams stay open past that.
 const TERMINATE_GRACE_MS = COMMAND_KILL_AFTER_MS + 2_000;
-// The computer image runs as `USER 1000:1000`; Incus runs exec as root unless told otherwise.
+// The uid and gid the computer image declares (`USER 1000:1000`). Incus runs the start
+// command and exec as root unless told otherwise, so both set it explicitly.
 const IMAGE_USER = 1000;
 // The computer image's own command (its Dockerfile CMD). The instance starts it without privilege
 // escalation, as Docker and Kubernetes computers start, which a restricted project cannot set on
@@ -431,6 +432,11 @@ export class IncusSandboxProvider implements SandboxProvider {
         "security.privileged": "false",
         "security.nesting": "false",
         "security.idmap.isolated": "true",
+        // Enforced like the Docker computer's `User`, instead of trusting the image's
+        // `USER`: a custom image without one would start its command as the container's
+        // root.
+        "oci.uid": String(IMAGE_USER),
+        "oci.gid": String(IMAGE_USER),
         "oci.entrypoint": `setpriv --no-new-privs -- ${IMAGE_COMMAND}`,
         ...Object.fromEntries(
           Object.entries(environment).map(([key, value]) => [`environment.${key}`, value]),

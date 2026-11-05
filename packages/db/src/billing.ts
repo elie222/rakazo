@@ -32,6 +32,8 @@ export function byokFreeUntil(credits: { byokFreeUntil: Date | null }, now = new
 }
 
 export const FREE_MONTH_DAYS = 30;
+/** How long an open checkout session holds the owner's trial; sessions live about a day. */
+const BYOK_TRIAL_CHECKOUT_HOLD_MS = 24 * 60 * 60 * 1000;
 
 /** One statement, so concurrent grants each add their days. */
 export async function extendByokFreePeriod(
@@ -43,6 +45,8 @@ export async function extendByokFreePeriod(
     UPDATE model_credit_accounts
     SET "byokFreeUntil" = GREATEST(COALESCE("byokFreeUntil", now()), now()) + make_interval(days => ${days}::int)
     WHERE "organizationId" = ${organizationId}`;
+  // The free days are the owners' own-key trial, used even if the organization later goes away.
+  await markOwnersByokTrialUsed(tx, { id: organizationId });
 }
 
 const SUBSCRIBED: Prisma.OrganizationWhereInput = {
@@ -63,6 +67,117 @@ async function markOwnersTrialUsed(
       members: { some: { organization, role: { contains: "owner" } } },
     },
     data: { billingTrialUsedAt: new Date() },
+  });
+}
+
+/** Free own-key days use up only the own-key trial, and survive the organization they belonged to. */
+async function markOwnersByokTrialUsed(
+  db: Pick<PrismaClient, "user"> | Prisma.TransactionClient,
+  organization: Prisma.OrganizationWhereInput,
+) {
+  await db.user.updateMany({
+    where: {
+      byokTrialUsedAt: null,
+      members: { some: { organization, role: { contains: "owner" } } },
+    },
+    data: { byokTrialUsedAt: new Date() },
+  });
+}
+
+/** A hold one checkout attempt took on the owners' one own-key trial. */
+export type ByokTrialCheckoutHold = {
+  /** Identifies this attempt's hold, so giving it back cannot touch another session's. */
+  expiresAt: Date;
+  /** The hold an earlier open session of the same organization still had, to fall back to. */
+  previousExpiresAt: Date | null;
+};
+
+/**
+ * Takes the owners' one own-key trial for this organization's checkout session, so another
+ * organization of theirs cannot take it while the session is open. The hold lasts as long as
+ * the session can still be paid, and moving to the same organization's newest session renews
+ * it. Returns null when a fresh hold for another organization wins the race.
+ */
+export async function reserveByokTrialCheckout(
+  prisma: PrismaClient,
+  organizationId: string,
+): Promise<ByokTrialCheckoutHold | null> {
+  const owners = await prisma.member.findMany({
+    where: { organizationId, role: { contains: "owner" } },
+    select: { userId: true, role: true },
+  });
+  const ownerIds = owners.filter((owner) => isOwnerRole(owner.role)).map((owner) => owner.userId);
+  if (ownerIds.length === 0) return null;
+  // The same organization's earlier open session keeps its hold while this attempt runs.
+  const previous = await prisma.user.findFirst({
+    where: { id: { in: ownerIds }, byokTrialCheckoutOrganizationId: organizationId },
+    select: { byokTrialCheckoutExpiresAt: true },
+  });
+  const expiresAt = new Date(Date.now() + BYOK_TRIAL_CHECKOUT_HOLD_MS);
+  const { count } = await prisma.user.updateMany({
+    where: {
+      id: { in: ownerIds },
+      billingTrialUsedAt: null,
+      byokTrialUsedAt: null,
+      OR: [
+        { byokTrialCheckoutOrganizationId: null },
+        { byokTrialCheckoutOrganizationId: organizationId },
+        { byokTrialCheckoutExpiresAt: { lte: new Date() } },
+      ],
+    },
+    data: {
+      byokTrialCheckoutOrganizationId: organizationId,
+      byokTrialCheckoutExpiresAt: expiresAt,
+    },
+  });
+  return count === ownerIds.length
+    ? { expiresAt, previousExpiresAt: previous?.byokTrialCheckoutExpiresAt ?? null }
+    : null;
+}
+
+/**
+ * Gives back a hold `reserveByokTrialCheckout` returned once the provider refused to create
+ * the session: this attempt's hold goes, and an earlier open session's hold is restored.
+ */
+export async function releaseByokTrialCheckout(
+  prisma: PrismaClient,
+  organizationId: string,
+  hold: ByokTrialCheckoutHold,
+): Promise<void> {
+  await prisma.user.updateMany({
+    where: {
+      byokTrialCheckoutOrganizationId: organizationId,
+      byokTrialCheckoutExpiresAt: hold.expiresAt,
+    },
+    data: hold.previousExpiresAt
+      ? { byokTrialCheckoutExpiresAt: hold.previousExpiresAt }
+      : { byokTrialCheckoutOrganizationId: null, byokTrialCheckoutExpiresAt: null },
+  });
+}
+
+/** Moves the hold to the moment the session was created, which is when it starts expiring. */
+export async function extendByokTrialCheckout(
+  prisma: PrismaClient,
+  organizationId: string,
+  hold: ByokTrialCheckoutHold,
+): Promise<void> {
+  await prisma.user.updateMany({
+    where: {
+      byokTrialCheckoutOrganizationId: organizationId,
+      byokTrialCheckoutExpiresAt: hold.expiresAt,
+    },
+    data: { byokTrialCheckoutExpiresAt: new Date(Date.now() + BYOK_TRIAL_CHECKOUT_HOLD_MS) },
+  });
+}
+
+/** Releases every hold the organization's open checkout sessions had on their owners' trial. */
+export async function releaseByokTrialCheckouts(
+  prisma: PrismaClient,
+  organizationId: string,
+): Promise<void> {
+  await prisma.user.updateMany({
+    where: { byokTrialCheckoutOrganizationId: organizationId },
+    data: { byokTrialCheckoutOrganizationId: null, byokTrialCheckoutExpiresAt: null },
   });
 }
 
@@ -184,6 +299,41 @@ export async function releaseCheckoutLease(
   });
 }
 
+/**
+ * Extends the lease while its holder is still the recorded owner and the lease has not lapsed;
+ * a lapsed lease is left to the next claimant instead of being resurrected.
+ */
+export async function renewCheckoutLease(
+  prisma: PrismaClient,
+  organizationId: string,
+  leaseId: string,
+  ttlMs: number,
+): Promise<boolean> {
+  const now = new Date();
+  const { count } = await prisma.billingAccount.updateMany({
+    where: {
+      organizationId,
+      checkoutLeaseId: leaseId,
+      checkoutLeaseExpiresAt: { gt: now },
+    },
+    data: { checkoutLeaseExpiresAt: new Date(now.getTime() + ttlMs) },
+  });
+  return count > 0;
+}
+
+/** Whether the checkout lease is still recorded for this holder. */
+export async function checkoutLeaseHeld(
+  prisma: PrismaClient,
+  organizationId: string,
+  leaseId: string,
+): Promise<boolean> {
+  const held = await prisma.billingAccount.findFirst({
+    where: { organizationId, checkoutLeaseId: leaseId },
+    select: { organizationId: true },
+  });
+  return held !== null;
+}
+
 /** The subscription exists but has no access until the owner settles it in the billing portal. */
 export function needsBillingPortal(status: string | null): boolean {
   return status === "unpaid" || status === "paused";
@@ -289,23 +439,42 @@ export async function ownedBillingAccounts(
 /** Before an organization's billing rows go, so a subscription that predates the user-level mark still counts. */
 export async function keepOrganizationTrialUse(prisma: PrismaClient, organizationId: string) {
   await markOwnersTrialUsed(prisma, { id: organizationId, ...SUBSCRIBED });
+  // Free own-key days granted before the owner-level mark existed also outlast the rows.
+  await markOwnersByokTrialUsed(prisma, { id: organizationId, ...HAD_FREE_DAYS });
 }
 
 /**
  * One trial per person: any subscription uses it up. Free own-key days also use up the own-key
- * trial, but not the managed plan's. Organizations that subscribed before the user-level mark
- * existed still count, so older accounts need no backfill.
+ * trial, but not the managed plan's, and so does another organization's still-open trial
+ * checkout. Organizations that subscribed before the user-level mark existed still count, so
+ * older accounts need no backfill.
  */
 export async function ownerHadTrial(
   prisma: PrismaClient,
   userId: string,
   plan: "byok" | "managed",
+  forOrganizationId?: string,
 ): Promise<boolean> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { billingTrialUsedAt: true },
+    select: {
+      billingTrialUsedAt: true,
+      byokTrialUsedAt: true,
+      byokTrialCheckoutOrganizationId: true,
+      byokTrialCheckoutExpiresAt: true,
+    },
   });
   if (user?.billingTrialUsedAt) return true;
+  if (plan === "byok") {
+    if (user?.byokTrialUsedAt) return true;
+    // The owner's own open session keeps their trial available; another organization's holds it.
+    if (
+      user?.byokTrialCheckoutExpiresAt &&
+      user.byokTrialCheckoutExpiresAt > new Date() &&
+      user.byokTrialCheckoutOrganizationId !== forOrganizationId
+    )
+      return true;
+  }
   const used = await prisma.member.findFirst({
     where: {
       userId,
@@ -328,7 +497,11 @@ export async function organizationOwnerHadTrial(
     select: { userId: true, role: true },
   });
   for (const member of members) {
-    if (isOwnerRole(member.role) && (await ownerHadTrial(prisma, member.userId, plan))) return true;
+    if (
+      isOwnerRole(member.role) &&
+      (await ownerHadTrial(prisma, member.userId, plan, organizationId))
+    )
+      return true;
   }
   return false;
 }

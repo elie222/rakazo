@@ -121,21 +121,27 @@ export async function pickFromLibrary(
       previewUri: asset.uri,
     };
     if (existingCount + attachments.length < maxCount) {
-      const prepared = await prepareImage(
-        asset.uri,
-        originalName,
-        asset.mimeType,
-        asset.width,
-        asset.height,
-      );
-      const { contentBase64, size } = await readUriAsBase64(prepared.uri, maxBytes);
-      candidate = {
-        name: prepared.name,
-        mimeType: prepared.mimeType,
-        size,
-        contentBase64,
-        previewUri: prepared.uri,
-      };
+      try {
+        const prepared = await prepareImage(
+          asset.uri,
+          originalName,
+          asset.mimeType,
+          asset.width,
+          asset.height,
+        );
+        const { contentBase64, size } = await readUriAsBase64(prepared.uri, maxBytes);
+        candidate = {
+          name: prepared.name,
+          mimeType: prepared.mimeType,
+          size,
+          contentBase64,
+          previewUri: prepared.uri,
+        };
+      } catch {
+        // One unreadable photo must not discard the rest of the selection.
+        skipped.push({ name: originalName, reason: "could not read" });
+        continue;
+      }
     }
     const filtered = filterPickedAttachments(
       existingCount + attachments.length,
@@ -173,21 +179,26 @@ export async function takePhoto(
     asset.width,
     asset.height,
   );
-  const { contentBase64, size } = await readUriAsBase64(prepared.uri, maxBytes);
-  return filterPickedAttachments(
-    existingCount,
-    [
-      {
-        name: prepared.name,
-        mimeType: prepared.mimeType,
-        size,
-        contentBase64,
-        previewUri: prepared.uri,
-      },
-    ],
-    maxBytes,
-    maxCount,
-  );
+  try {
+    const { contentBase64, size } = await readUriAsBase64(prepared.uri, maxBytes);
+    return filterPickedAttachments(
+      existingCount,
+      [
+        {
+          name: prepared.name,
+          mimeType: prepared.mimeType,
+          size,
+          contentBase64,
+          previewUri: prepared.uri,
+        },
+      ],
+      maxBytes,
+      maxCount,
+    );
+  } catch {
+    // The camera delivered a photo this build cannot read; report it instead of throwing.
+    return { attachments: [], skipped: [{ name: prepared.name, reason: "could not read" }] };
+  }
 }
 
 export async function pickDocuments(
@@ -212,7 +223,15 @@ export async function pickDocuments(
       continue;
     }
     const mimeType = inferAttachmentMimeType(name, asset.mimeType ?? undefined);
-    const { contentBase64, size } = await readUriAsBase64(asset.uri, maxBytes);
+    let contentBase64: string;
+    let size: number;
+    try {
+      ({ contentBase64, size } = await readUriAsBase64(asset.uri, maxBytes));
+    } catch {
+      // One unreadable document must not discard the rest of the selection.
+      skipped.push({ name, reason: "could not read" });
+      continue;
+    }
     const filtered = filterPickedAttachments(
       existingCount + attachments.length,
       [{ name, mimeType, size, contentBase64 }],
@@ -317,6 +336,8 @@ export async function readSharedFiles(
   const attachments: PickedAttachment[] = [];
   const skipped: PickSkip[] = [];
   const failedFiles: typeof files = [];
+  // The source share file of each attachment, so its copy can follow the attachment around.
+  const sources: string[] = [];
   for (const file of files) {
     if (existingCount + attachments.length >= maxCount) {
       skipped.push({ name: file.name, reason: attachmentCountSkipReason(maxCount) });
@@ -342,11 +363,12 @@ export async function readSharedFiles(
         continue;
       }
       attachments.push(...result.attachments);
+      if (result.attachments.length) sources.push(file.uri);
       skipped.push(...result.skipped);
     } catch {
       skipped.push({ name: file.name, reason: "could not read" });
       failedFiles.push(file);
     }
   }
-  return { attachments, skipped, failedFiles };
+  return { attachments, skipped, failedFiles, sources };
 }
