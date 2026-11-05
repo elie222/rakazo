@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   loadDevice: vi.fn(),
   reads: [] as string[],
   rpc: null as null | ((method: string) => Promise<unknown>),
+  typed: {} as Record<string, (value: string) => void>,
   t: (text: string) => text,
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
@@ -97,13 +98,17 @@ vi.mock("react-native", () => {
       accessibilityLabel?: string;
       value?: string;
       onChangeText?: (value: string) => void;
-    }) => (
-      <input
-        aria-label={props.accessibilityLabel}
-        value={props.value ?? ""}
-        onChange={(event) => props.onChangeText?.(event.target.value)}
-      />
-    ),
+    }) => {
+      if (props.accessibilityLabel && props.onChangeText)
+        mocks.typed[props.accessibilityLabel] = props.onChangeText;
+      return (
+        <input
+          aria-label={props.accessibilityLabel}
+          value={props.value ?? ""}
+          onChange={(event) => props.onChangeText?.(event.target.value)}
+        />
+      );
+    },
     Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) => (
       <button type="button" onClick={onPress}>
         {children}
@@ -315,7 +320,11 @@ it("drops a speech model typed for the provider an opening refresh replaces", as
     field().dispatchEvent(new Event("input", { bubbles: true }));
   });
   expect(field().value).toBe("s2");
+  // The handler of the field as it showed Fish Audio, for typing that lands after the switch.
+  const typeIntoFish = mocks.typed["Speech model"]!;
 
   await act(async () => switched({ configured: true, ready: true, provider: "elevenlabs" }));
+  expect(field().value).toBe("eleven_v3");
+  await act(async () => typeIntoFish("s3"));
   expect(field().value).toBe("eleven_v3");
 });
