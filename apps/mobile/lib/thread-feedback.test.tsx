@@ -147,7 +147,7 @@ describe("scoped mobile outbox", () => {
   const request = vi.fn();
   const disk = {
     admit: vi.fn((_attempt: SendAttempt) => true),
-    hydrate: vi.fn(async () => undefined),
+    hydrate: vi.fn(async (_attempt: SendAttempt) => undefined),
     forget: vi.fn(),
     load: vi.fn((): SendAttempt[] => []),
     save: vi.fn(),
@@ -256,6 +256,56 @@ describe("scoped mobile outbox", () => {
     expect(disk.admit).toHaveBeenCalledTimes(2);
     expect(disk.save).toHaveBeenLastCalledWith([attempt]);
   });
+  it.each(["admission", "index save"])(
+    "drops a queued send's bytes from memory once its %s recovers, and sends it from disk",
+    async (failing) => {
+      reachable = false;
+      const written = new Map<string, string[]>();
+      // Admission writes the files and clears the in-memory bytes, as the disk implementation does.
+      disk.admit.mockImplementation((attempt: SendAttempt) => {
+        written.set(
+          attempt.clientNonce,
+          attempt.payload.attachments.map((attachment) => attachment.contentBase64),
+        );
+        for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
+        return true;
+      });
+      const fail = () => {
+        throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+      };
+      if (failing === "admission") disk.admit.mockImplementationOnce(fail);
+      else disk.save.mockImplementationOnce(fail);
+      disk.hydrate.mockImplementation(async (attempt: SendAttempt) => {
+        attempt.payload.attachments.forEach((attachment, index) => {
+          attachment.contentBase64 ||= written.get(attempt.clientNonce)?.[index] ?? "";
+        });
+      });
+      const attempt = feedback.sendAttempt(payload());
+      expect(attempt.payload.attachments[0]?.contentBase64).toBe("fake");
+      await act(async () => {
+        await feedback.send(attempt);
+      });
+      expect(attempt.state).toBe("queued");
+      expect(disk.save).toHaveBeenLastCalledWith([attempt]);
+      // The index lists the message and its files hold the bytes; memory no longer does.
+      expect(written.get(attempt.clientNonce)).toEqual(["fake"]);
+      expect(attempt.payload.attachments[0]?.contentBase64).toBe("");
+      reachable = true;
+      await act(async () => {
+        await sendWaitingMessages();
+      });
+      expect(disk.hydrate).toHaveBeenCalledWith(attempt);
+      expect(request).toHaveBeenCalledWith(
+        "artifacts/create",
+        expect.objectContaining({ contentBase64: "fake" }),
+        expect.anything(),
+        "space-a",
+      );
+      expect(attempt.acceptedSeq).toBe(42);
+      disk.admit.mockImplementation(() => true);
+      disk.hydrate.mockImplementation(async () => undefined);
+    },
+  );
   it("keeps a send's bytes when a recovery admission's index save fails", async () => {
     const folders = new Set<string>();
     disk.admit.mockImplementationOnce(() => {

@@ -217,11 +217,14 @@ function save(attempts: SendAttempt[]) {
     );
     config!.disk.save(listed);
     // Only now does the index on disk list them; until it does, memory stays their only copy.
+    // A running delivery keeps the bytes it captured until it finishes; the rest read from disk.
     for (const attempt of listed) {
       if (!memoryOnly.has(attempt)) continue;
       memoryOnly.delete(attempt);
       writtenFiles.delete(attempt);
       removed.delete(attempt);
+      if (attempt.state !== "pending")
+        for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
     }
     for (const attempt of removed) {
       removed.delete(attempt);
