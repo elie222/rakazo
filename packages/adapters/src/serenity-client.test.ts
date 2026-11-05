@@ -395,6 +395,7 @@ describe("serenity SSRF fetch path", () => {
       });
     }
   });
+
   it("refuses a private-hostname redirect without waiting on its body", async () => {
     // Larger than undici buffers, so an unread body holds the per-request Agent open.
     const server = createServer((_request, response) => {
@@ -525,7 +526,7 @@ describe("serenity verbs", () => {
   it("rejects facts over the hosted byte limit before connecting", async () => {
     const server = fakeSerenityFetch(() => ({}));
     const result = await rememberSerenity(
-      "��".repeat(MAX_SERENITY_FACT_BYTES / 2 + 1),
+      "é".repeat(MAX_SERENITY_FACT_BYTES / 2 + 1),
       "rakazo",
       LOOPBACK,
       { network: { fetch: server.fetch } },
@@ -623,6 +624,7 @@ describe("serenity verbs", () => {
       expect(cancels).toBe(1);
     },
   );
+
   it("reports gateway rate limits with the retry delay", async () => {
     const fetch = vi.fn(
       async () => new Response("slow down", { status: 429, headers: { "retry-after": "30" } }),
