@@ -370,6 +370,9 @@ export function computerRoutes(ctx: RouterContext) {
           bot = await repos.getBot(context.actor, input.botId);
           if (!bot.computer) throw new IsolationError();
         }
+        // Read again: someone else may have taken the screen since the first check, and their
+        // live lease is never expired here.
+        assertNotAnotherPersonsControl(bot.computer, context.actor);
         if (bot.computer.controlLeaseId) {
           await expireComputerControl(deps, bot.computer.id, bot.computer.controlLeaseId);
           bot = await repos.getBot(context.actor, input.botId);

@@ -18,7 +18,8 @@ export async function finishRoutineHandover(
   } catch (error) {
     getLogger().error("routine.handover", error);
   }
-  await clearRoutineBackoff(deps, { routineId: routine.id });
+  // Only while the routine is still theirs, like the move above.
+  await clearRoutineBackoff(deps, { routineId: routine.id, userId: routine.userId });
 }
 
 async function moveQueuedRuns(
