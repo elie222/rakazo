@@ -387,6 +387,8 @@ describe("claim_email_address", () => {
       domain?: string;
       runUserId?: string;
       raceTo?: string;
+      tainted?: boolean;
+      approved?: boolean;
     } = {},
   ) {
     // localPart → botId, as bot_email_addresses keeps them.
@@ -395,6 +397,8 @@ describe("claim_email_address", () => {
       deps: {
         inboundEmailDomain: "domain" in options ? options.domain : "bots.test",
         prisma: {
+          // This is the run's first attempt.
+          attempt: { count: async () => 1 },
           botEmailAddress: {
             findUnique: async ({ where }: { where: { botId?: string; localPart?: string } }) => {
               if (where.localPart) {
@@ -416,6 +420,9 @@ describe("claim_email_address", () => {
       },
       bot: { id: "bot-1", userId: "owner-1" },
       run: { userId: options.runUserId ?? "owner-1" },
+      state: { tainted: Boolean(options.tainted) },
+      runId: "run-1",
+      trust: { receivedOutsideMessage: async () => false },
     };
     const call = (args: Record<string, unknown>) =>
       emailTools.claim_email_address!(
@@ -424,6 +431,7 @@ describe("claim_email_address", () => {
           name: "claim_email_address",
           args,
           executionId: "c",
+          nextApprovedTool: options.approved ? "claim_email_address" : undefined,
           finish: async (r: unknown) => r,
         } as never,
       ) as Promise<Record<string, unknown>>;
@@ -439,6 +447,15 @@ describe("claim_email_address", () => {
       error: "You already have an address, and it can't change.",
       address: "scout@bots.test",
     });
+  });
+
+  it("claims after outside content only when the owner approved this call", async () => {
+    const steered = claimRun({ tainted: true });
+    const approved = claimRun({ tainted: true, approved: true });
+
+    expect((await steered.call({ name: "scout" })).error).toContain("read outside content");
+    expect(steered.names.size).toBe(0);
+    expect(await approved.call({ name: "scout" })).toEqual({ address: "scout@bots.test" });
   });
 
   it("tells a claim that lost a race to another name what the bot got", async () => {
