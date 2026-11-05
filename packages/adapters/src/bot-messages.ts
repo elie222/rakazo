@@ -80,6 +80,8 @@ export async function messageBot(
     message: string;
     intent?: BotMessageIntent;
     deliveryKey?: string;
+    /** Saved attachments, shown on both sides and copied to the recipient's computer. */
+    files?: Array<Extract<MessageBlock, { kind: "image" | "file" }>>;
   },
   options?: { allowTerminalSource?: boolean; forceUnread?: boolean },
 ) {
@@ -146,6 +148,8 @@ export async function messageBot(
     text: message,
     intent,
   };
+  const files = input.files ?? [];
+  const outboundBlocks: MessageBlock[] = [outboundBlock, ...files];
 
   let committed:
     | {
@@ -213,7 +217,7 @@ export async function messageBot(
         const outbound = await createThreadMessageInTransaction(tx, {
           threadId: run.threadId,
           role: "bot",
-          blocks: [outboundBlock],
+          blocks: outboundBlocks,
           botId: run.botId,
           runId: run.id,
           markUnread: options?.forceUnread === true,
@@ -232,7 +236,7 @@ export async function messageBot(
         const inbound = await createThreadMessageInTransaction(tx, {
           threadId: targetThreadId,
           role: "user",
-          blocks: [inboundBlock],
+          blocks: [inboundBlock, ...files],
           replyToMessageId:
             sourceContext?.fromBotId === target.id && intent !== "fyi"
               ? sourceContext.returnToMessageId
@@ -270,7 +274,7 @@ export async function messageBot(
           botId: target.id,
           type: "thread.message.created",
           runId: nextRun.id,
-          payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock] },
+          payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock, ...files] },
         });
         const outboundEvent = await appendEventInTransaction(tx, {
           spaceId: run.spaceId,
@@ -280,7 +284,7 @@ export async function messageBot(
           runId: run.id,
           allowCancelledRun: options?.allowTerminalSource === true,
           lease: runLeaseFor(deps, run.id),
-          payload: { messageId: outbound.id, role: "bot", blocks: [outboundBlock] },
+          payload: { messageId: outbound.id, role: "bot", blocks: outboundBlocks },
         });
         return {
           ok: true as const,

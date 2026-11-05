@@ -1,4 +1,6 @@
-import { isBackgroundRunTrigger, redactSecrets } from "@rakazo/core";
+import { posix } from "node:path";
+import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import { isBackgroundRunTrigger, redactSecrets, resolveBotAddress } from "@rakazo/core";
 import {
   connectAgent,
   messageConnectedAgent,
@@ -6,7 +8,9 @@ import {
 } from "./agent-connections.js";
 import { messageBot } from "./bot-messages.js";
 import { endCallFromTool, requestUserCall } from "./call-request.js";
+import { normalizeWorkspacePath, resolveBotWorkspacePath } from "./computer-support.js";
 import { handoffToGroupBot } from "./group-handoff.js";
+import type { RunContext } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
 import {
   canPostLongTaskHeadsUp,
@@ -17,7 +21,9 @@ import {
   publishMidTurnNarration,
   showNarrationStatus,
 } from "./run-progress.js";
-import type { ToolHandlers } from "./run-tool-gate.js";
+import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import type { AttachmentBlock } from "./run-tools-files.js";
+import { storeWorkspaceFile } from "./run-tools-files.js";
 import {
   clampUserProgressMessage,
   isProgressMessageTruncated,
@@ -25,6 +31,99 @@ import {
   messageUserMaxLength,
   midTurnProgressBudgetUsed,
 } from "./user-progress.js";
+
+const ZIP_HELPS = new Set(["file not found or unreadable", "unsupported attachment type"]);
+
+type SentFiles = { files: AttachmentBlock[]; sharedPaths: string[] };
+
+/**
+ * Files a bot passes by path to another bot. A recipient on the same computer reads them
+ * where they are; one elsewhere, or one that cannot be told apart, gets a saved copy.
+ */
+async function prepareSentFiles(
+  ctx: RunContext,
+  call: ToolCall,
+  recipient: { botId?: string; name?: string; groupId?: string },
+): Promise<{ error: string } | SentFiles> {
+  const raw = call.args.files;
+  if (raw === undefined || raw === null) return { files: [], sharedPaths: [] };
+  if (!Array.isArray(raw) || raw.some((path) => typeof path !== "string" || !path.trim())) {
+    return { error: "files must be a list of file paths" };
+  }
+  const paths = [...new Set(raw.map((path: string) => path.trim()))];
+  if (paths.length > ATTACHMENT_MAX_COUNT) {
+    return { error: `send at most ${ATTACHMENT_MAX_COUNT} files; zip the rest into one file` };
+  }
+  if (await sharesComputer(ctx, recipient)) return sharedFiles(ctx, call, paths);
+  const files: AttachmentBlock[] = [];
+  for (const path of paths) {
+    const stored = await storeWorkspaceFile(ctx, call, path);
+    if ("error" in stored) {
+      // The recipient has its own computer, so a folder or raw source file has to travel zipped.
+      const hint = ZIP_HELPS.has(stored.error) ? "; zip it and send the zip" : "";
+      return { error: `${path}: ${stored.error}${hint}. Nothing was sent.` };
+    }
+    files.push(stored.block);
+  }
+  return { files, sharedPaths: [] };
+}
+
+async function sharesComputer(
+  ctx: RunContext,
+  recipient: { botId?: string; name?: string; groupId?: string },
+): Promise<boolean> {
+  const { bot, run, deps } = ctx;
+  if (!bot.computerId || bot.computerSwitching) return false;
+  const candidates = await deps.prisma.bot.findMany({
+    where: {
+      spaceId: run.spaceId,
+      userId: run.userId,
+      archivedAt: null,
+      ...(recipient.groupId ? { groupMembers: { some: { groupId: recipient.groupId } } } : {}),
+    },
+    select: { id: true, name: true, computerId: true, computerSwitching: true },
+  });
+  const target = resolveBotAddress(candidates, recipient);
+  return Boolean(
+    target &&
+      target.id !== bot.id &&
+      !target.computerSwitching &&
+      target.computerId === bot.computerId,
+  );
+}
+
+/** Paths on the shared computer, checked to exist, as any bot on it can address them. */
+async function sharedFiles(
+  ctx: RunContext,
+  call: ToolCall,
+  paths: string[],
+): Promise<{ error: string } | SentFiles> {
+  const computer = await ctx.computer.get("tool", call.name);
+  const sharedPaths: string[] = [];
+  for (const path of paths) {
+    let stored: string;
+    try {
+      stored = normalizeWorkspacePath(resolveBotWorkspacePath(ctx.computer.mode, ctx.bot.id, path));
+    } catch {
+      return { error: `${path}: path is outside the computer. Nothing was sent.` };
+    }
+    const parent = posix.dirname(stored);
+    const entries = await ctx.deps.sandbox
+      .listFiles(computer, parent === "." ? "" : parent, ctx.context)
+      .catch(() => []);
+    if (!stored || !entries.some((entry) => normalizeWorkspacePath(entry.path) === stored)) {
+      return { error: `${path}: not found. Nothing was sent.` };
+    }
+    sharedPaths.push(stored);
+  }
+  return { files: [], sharedPaths };
+}
+
+/** The message as delivered: shared paths are listed where the recipient reads its task. */
+function withSharedPaths(message: string, sharedPaths: string[]): string {
+  if (!sharedPaths.length) return message;
+  return `${message}\n\nFiles on our shared computer:\n${sharedPaths.map((path) => `- ${path}`).join("\n")}`;
+}
 
 /** Messages to the user, other bots and connected agents, and calls. */
 export const messagingTools: ToolHandlers = {
@@ -112,6 +211,11 @@ export const messagingTools: ToolHandlers = {
   async message_bot(ctx, call) {
     const { deps, run, bot } = ctx;
     const { args, effectKey } = call;
+    const stored = await prepareSentFiles(ctx, call, {
+      botId: args.bot_id ? String(args.bot_id) : undefined,
+      name: args.confirm_name ? String(args.confirm_name) : undefined,
+    });
+    if ("error" in stored) return call.finish({ error: stored.error });
     const sent = await messageBot(
       deps,
       { ...run, sourceMessageId: run.sourceMessageId },
@@ -119,9 +223,13 @@ export const messagingTools: ToolHandlers = {
       {
         bot_id: args.bot_id ? String(args.bot_id) : undefined,
         confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
-        message: redactSecrets(String(args.message ?? ""), ctx.secrets),
+        message: withSharedPaths(
+          redactSecrets(String(args.message ?? ""), ctx.secrets),
+          stored.sharedPaths,
+        ),
         intent: args.intent as "request" | "result" | "question" | "status" | "fyi" | undefined,
         deliveryKey: effectKey,
+        files: stored.files,
       },
     );
     if (!sent.ok) return call.finish({ error: sent.error });
@@ -181,11 +289,21 @@ export const messagingTools: ToolHandlers = {
     const { args, effectKey } = call;
     const groupId = args.group_id ? String(args.group_id).trim() : thread.groupId;
     if (!groupId) return call.finish({ error: "group_id is required outside a group chat" });
+    const stored = await prepareSentFiles(ctx, call, {
+      botId: args.bot_id ? String(args.bot_id) : undefined,
+      name: args.confirm_name ? String(args.confirm_name) : undefined,
+      groupId,
+    });
+    if ("error" in stored) return call.finish({ error: stored.error });
     const result = await handoffToGroupBot(deps, run, groupId, {
       bot_id: args.bot_id ? String(args.bot_id) : undefined,
       confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
-      message: redactSecrets(String(args.message ?? ""), ctx.secrets),
+      message: withSharedPaths(
+        redactSecrets(String(args.message ?? ""), ctx.secrets),
+        stored.sharedPaths,
+      ),
       deliveryKey: effectKey,
+      files: stored.files,
     });
     if ("ok" in result && result.ok && thread.groupId) ctx.state.handedOff = true;
     return call.finish(result);
