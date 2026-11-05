@@ -83,8 +83,6 @@ export default defineConfig({
   // and wall clock drops more from extra shards (separate machines) than from packing one box.
   fullyParallel: !realSandbox,
   workers: realSandbox ? 1 : process.env.CI ? 2 : undefined,
-  // One retry absorbs the rare race that shows up when many shards share the Actions pool.
-  retries: process.env.CI && !realSandbox ? 1 : 0,
   timeout: boatSandbox ? 600_000 : realSandbox ? 300_000 : 120_000,
   expect: { timeout: boatSandbox ? 300_000 : realSandbox ? 90_000 : 20_000 },
   reporter: reporters,
@@ -92,7 +90,8 @@ export default defineConfig({
     baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
-    video: "retain-on-failure",
+    // Video encodes every test on CI; screenshots and the failure trace are enough to debug.
+    video: process.env.CI ? "off" : "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {

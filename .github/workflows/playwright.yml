@@ -41,17 +41,17 @@ env:
   TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: mirror.gcr.io/
 
 jobs:
-  # Pull-request and nightly CI: eight shards × two Playwright workers. Fixed per-shard setup
-  # (install, Postgres, Chromium) stays ~40s; more shards cut the ~4 minute test body that
-  # dominates wall clock on a typical web PR. Two workers avoid starving Chromium on 4-vCPU runners.
+  # Twelve shards × two workers. Long page-browser and pages specs otherwise pile onto one shard
+  # and set the floor. Postgres is a workflow service so it boots beside checkout and install
+  # instead of inside the Playwright step via Testcontainers.
   shard:
-    name: Web E2E (${{ matrix.shard }}/8)
+    name: Web E2E (${{ matrix.shard }}/12)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     # Checks its own changed areas instead of waiting for ci.yml's Changed areas job, so the shards
     # start with the first jobs; the steps skip and the combining job reports skipped when the
     # pull request cannot affect the suite.
@@ -65,6 +65,18 @@ jobs:
       - id: areas
         if: inputs.changed_areas
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
+      # Boots beside pnpm install so the harness does not wait on Testcontainers after install.
+      - name: Start Postgres
+        if: steps.areas.outputs.e2e != 'false'
+        run: |
+          docker run -d --name ci-postgres \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=rakazo \
+            -p 5432:5432 \
+            mirror.gcr.io/library/postgres:18-alpine \
+            postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500
+          echo "CI_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/rakazo" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         if: steps.areas.outputs.e2e != 'false'
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -92,11 +104,23 @@ jobs:
         run: |
           infra/sandboxes/computer/install-agent-browser.sh "$RUNNER_TEMP/agent-browser"
           echo "RAKAZO_AGENT_BROWSER=$RUNNER_TEMP/agent-browser/agent-browser" >> "$GITHUB_ENV"
+      - name: Wait for Postgres
+        if: steps.areas.outputs.e2e != 'false'
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec ci-postgres pg_isready -U postgres -d rakazo; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Postgres did not become ready" >&2
+          docker logs ci-postgres >&2 || true
+          exit 1
       - name: Run Playwright tests
         if: steps.areas.outputs.e2e != 'false'
         id: playwright_tests
         env:
-          SHARD: ${{ matrix.shard }}/8
+          SHARD: ${{ matrix.shard }}/12
           E2E_SKIP_NIGHTLY: ${{ !inputs.nightly && '1' || '' }}
         run: pnpm test:e2e -- --shard="$SHARD"
       - name: Upload shard results
@@ -192,7 +216,7 @@ jobs:
         env:
           SHARDS: ${{ runner.temp }}/shards
           WWW: ${{ runner.temp }}/www
-          SHARD_TOTAL: 8
+          SHARD_TOTAL: 12
         run: |
           set -euo pipefail
           mkdir -p blob-report apps/web/test-results
