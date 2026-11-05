@@ -1445,6 +1445,7 @@ class CdpClient(page_secrets.CdpClient):
         self.download_links: list[float] = []
 
     def _skipped_event(self, head: bytes) -> None:
+        super()._skipped_event(head)
         # A download of a huge data: URL still begins: Chromium sends its guid before the url.
         begun = re.match(rb'\{"method":"Browser.downloadWillBegin","params":\{"frameId":"[^"]*","guid":"([0-9A-Fa-f-]+)"', head)
         if begun:

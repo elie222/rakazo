@@ -2010,6 +2010,14 @@ class CdpFrameTest(unittest.TestCase):
         self.assertEqual(client._read_frame(), b"{}")
         self.assertEqual(list(client.downloads), ["0a1b-2c3d"])
 
+    def test_an_oversized_navigation_counts_for_every_frame(self):
+        navigated = json.dumps({"method": "Page.frameNavigated", "params": {
+            "frame": {"id": "F1", "url": "data:text/html;base64," + "A" * self.BIG}}}, separators=(",", ":")).encode()
+        client = self.client(ws_frame(navigated), ws_frame(b"{}"))
+        before = client.navigations("S1", "F2")
+        self.assertEqual(client._read_frame(), b"{}")
+        self.assertEqual(client.navigations("S1", "F2"), before + 1)
+
     def test_a_frame_just_under_the_limit_is_still_read(self):
         payload = self.event(secrets.MAX_FRAME_BYTES - 200)
         self.assertEqual(self.client(ws_frame(payload))._read_frame(), payload)

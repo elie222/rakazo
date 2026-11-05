@@ -104,6 +104,8 @@ class CdpClient:
         # Navigations to another document started or committed in each frame, per CDP session.
         self._navigations: dict[tuple[Any, str], int] = {}
         self._frame_sessions: dict[str, Any] = {}
+        # Navigations too large to read, which could have been in any frame.
+        self._skipped_navigations = 0
         # What is left of an oversized frame being skipped, and the request it answers, if any.
         self._discard = 0
         self._discarded_reply: int | None = None
@@ -230,6 +232,9 @@ class CdpClient:
 
     def _skipped_event(self, head: bytes) -> None:
         """The first bytes of an event too large to read."""
+        method = re.match(rb'\{"method":"([^"]+)"', head)
+        if method and method.group(1).decode() in NAVIGATION_EVENTS:
+            self._skipped_navigations += 1
 
     def _handle_event(self, message: dict[str, Any]) -> None:
         method = message.get("method")
@@ -261,7 +266,7 @@ class CdpClient:
         return [child for child, parent in self._frame_sessions.items() if parent == parent_session_id]
 
     def navigations(self, session_id: str, frame_id: str) -> int:
-        return self._navigations.get((session_id, frame_id), 0)
+        return self._navigations.get((session_id, frame_id), 0) + self._skipped_navigations
 
     def find_world_context(self, world_name: str, frame_id: str, session_id: str) -> int | None:
         for context_id, context in self._contexts.items():
