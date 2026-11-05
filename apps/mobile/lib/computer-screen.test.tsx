@@ -97,6 +97,7 @@ vi.mock("react-native", () => {
       },
     },
     Modal: MockModal,
+    StyleSheet: { create: <T,>(styles: T) => styles },
     Pressable: MockPressable,
     ScrollView: MockView,
     Text: MockView,
