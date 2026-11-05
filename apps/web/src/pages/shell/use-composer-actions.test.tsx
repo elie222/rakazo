@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { Bot, ComputerStatus, Me, ThreadSnapshot } from "@rakazo/contracts";
+import type { Bot, ComputerStatus, Me, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -365,4 +365,98 @@ it("names the open page only on text the chat itself sends", async () => {
   expect(rpc.threads.sendWithRoutines).toHaveBeenLastCalledWith(
     expect.objectContaining({ botId: "bot-1", text: "[Sales](page:p1)\nand notes" }),
   );
+});
+
+function replyCandidate(id: string): ThreadMessage {
+  return { id, role: "user", blocks: [] } as unknown as ThreadMessage;
+}
+
+it("keeps a reply picked while an older message send is in flight", async () => {
+  act(() => latest.setReplyTarget(replyCandidate("m-1")));
+  let finishSend!: () => void;
+  rpc.threads.send.mockReturnValue(
+    new Promise((resolve) => {
+      finishSend = () => resolve({ runId: "run-1", taskId: "task-1" });
+    }),
+  );
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("hello", [], "nonce-1");
+  });
+  await flush();
+  const pickedMeanwhile = replyCandidate("m-2");
+  act(() => {
+    latest.setReplyTarget(pickedMeanwhile);
+    latest.setReplyQuote("picked while sending");
+  });
+
+  finishSend();
+  await act(async () => void (await sent));
+
+  expect(rpc.threads.send).toHaveBeenCalledWith(
+    expect.objectContaining({ replyToMessageId: "m-1" }),
+  );
+  expect(latest.replyTarget).toBe(pickedMeanwhile);
+});
+
+it("keeps a reply picked while a routines-only send is in flight", async () => {
+  act(() => latest.setReplyTarget(replyCandidate("m-1")));
+  let finishSend!: () => void;
+  rpc.threads.sendWithRoutines.mockReturnValue(
+    new Promise((resolve) => {
+      finishSend = () => resolve({ routineRunIds: ["routine-run"] });
+    }),
+  );
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("@digest", [digest], "nonce-1");
+  });
+  await flush();
+  const pickedMeanwhile = replyCandidate("m-2");
+  act(() => latest.setReplyTarget(pickedMeanwhile));
+
+  finishSend();
+  await act(async () => void (await sent));
+
+  expect(latest.replyTarget).toBe(pickedMeanwhile);
+});
+
+it("clears the reply a finished send used when no newer one was picked", async () => {
+  act(() => latest.setReplyTarget(replyCandidate("m-1")));
+  rpc.threads.send.mockResolvedValue({ runId: "run-1", taskId: "task-1" });
+
+  await act(async () => void (await latest.sendMessage("hello", [], "nonce-1")));
+
+  expect(latest.replyTarget).toBeNull();
+});
+
+it("keeps a newer excerpt of the same message picked while its older send is in flight", async () => {
+  const message = replyCandidate("m-1");
+  act(() => {
+    latest.setReplyTarget(message);
+    latest.setReplyQuote("first excerpt");
+  });
+  let finishSend!: () => void;
+  rpc.threads.send.mockReturnValue(
+    new Promise((resolve) => {
+      finishSend = () => resolve({ runId: "run-1", taskId: "task-1" });
+    }),
+  );
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("hello", [], "nonce-1");
+  });
+  await flush();
+  // Re-arming the same message object with a different excerpt must read as
+  // a newer pick, not as the reply the in-flight send still holds.
+  act(() => {
+    latest.setReplyTarget(message);
+    latest.setReplyQuote("second excerpt");
+  });
+
+  finishSend();
+  await act(async () => void (await sent));
+
+  expect(latest.replyTarget).toBe(message);
+  expect(latest.replyQuote).toBe("second excerpt");
 });

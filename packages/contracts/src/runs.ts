@@ -21,6 +21,7 @@ export const RUN_TRIGGERS = [
   "messaging",
   "cloud_agent",
   "purchase",
+  "media",
   "created",
   "tickets",
 ] as const;

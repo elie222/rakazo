@@ -134,9 +134,20 @@ export function useComposerActions({
   // reply instead of failing the send.
   const activeReplyTarget = replyTarget;
   const activeReplyQuote = replyTarget ? replyQuote : null;
+  // The armed reply as one value: a newer pick of the same message with a
+  // different excerpt is still a newer pick.
+  const armedReply = useRef({ target: activeReplyTarget, quote: activeReplyQuote });
+  armedReply.current = { target: activeReplyTarget, quote: activeReplyQuote };
   const clearReply = useCallback(() => {
     setReplyTarget(null);
     setReplyQuote(null);
+  }, []);
+  /** Clears the reply a send carried; one picked while it was in flight stays armed. */
+  const clearSentReply = useCallback((sent: ThreadMessage | null, sentQuote: string | null) => {
+    if (armedReply.current.target === sent && armedReply.current.quote === sentQuote) {
+      setReplyTarget(null);
+      setReplyQuote(null);
+    }
   }, []);
   const runError = threadRunError(activeSnapshot, dismissedRunErrorIds);
   const displayedRunError = !sendError ? runError : null;
@@ -333,6 +344,9 @@ export function useComposerActions({
       const initialGroupTarget = activeGroupId.current;
       if ((!initialBotTarget && !initialGroupTarget) || sending) return false;
       const editsAtSend = draftEdits.current;
+      // The reply this send carries; a reply picked after this point is for the next message.
+      const replyAtSend = activeReplyTarget;
+      const replyQuoteAtSend = activeReplyQuote;
       const originThreadKey = initialGroupTarget ?? initialBotTarget;
       const attachments = attachmentsForThread(pendingAttachments, originThreadKey);
       const plan = resolveComposerSendPlan({
@@ -384,7 +398,7 @@ export function useComposerActions({
             accepted = true;
           }
           dropDelayedSetup();
-          clearReply();
+          clearSentReply(replyAtSend, replyQuoteAtSend);
           revokePendingAttachmentPreviews(attachments);
           setPendingAttachments((current) =>
             current.filter((attachment) => !attachments.includes(attachment)),
@@ -459,7 +473,7 @@ export function useComposerActions({
         }
         uploadedSendArtifacts.current.delete(clientNonce);
         dropDelayedSetup();
-        clearReply();
+        clearSentReply(replyAtSend, replyQuoteAtSend);
         revokePendingAttachmentPreviews(attachments);
         // Keep files picked while this send was in flight.
         setPendingAttachments((current) =>
@@ -507,7 +521,7 @@ export function useComposerActions({
       activeReplyQuote,
       activeSnapshot?.messages,
       pageSession,
-      clearReply,
+      clearSentReply,
       flushPendingBrowserNotifications,
       navigate,
       pendingAttachments,

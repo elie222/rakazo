@@ -1186,6 +1186,7 @@ model ExternalEffect {
   @@unique([idempotencyKey])
   @@index([runId, status])
   @@index([spaceId, kind, status])
+  @@index([kind, status, updatedAt])
   @@map("external_effects")
 }
 

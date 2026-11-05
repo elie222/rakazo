@@ -177,11 +177,12 @@ fal queue API and Flux/Wan input and output shapes. Credentials stay on the serv
 your deployment secret configuration; never commit actual credentials.
 
 Bots use `generate_image` to attach one PNG or `generate_video` to submit a
-four-second MP4. The video tool returns a job ID and queued/running status; call it
-again with `jobId` to check progress and attach the completed video. Saved jobs
-can be polled after worker restarts by the same owner/bot/thread. The first version
-requires polling through the bot; it does not automatically deliver jobs in the
-background. Use the existing per-bot tool switches and action approval rules to
+four-second MP4. The video tool returns a job ID and queued/running status. The
+worker keeps checking the job in the background, including after a restart, and
+posts the finished video to the chat that asked for it, once; the bot then gets a
+turn to follow up. A video that fails, or is still unfinished after an hour, is
+marked failed and the bot gets a turn to say so. The bot can also call the tool
+again with `jobId` to check progress. Use the existing per-bot tool switches and action approval rules to
 control access. Both tools require approval by default. Ticket board runs keep
 these chat-only media tools unavailable so ticket work stays on the board.
 
