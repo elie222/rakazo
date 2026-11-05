@@ -661,3 +661,22 @@ it("stacks option buttons in a non-wrapping full-width column and keeps approval
     expect(row.style.flexWrap).toBe(approval ? "wrap" : "nowrap");
   }
 });
+
+it.each([undefined, "pending", "answered"] as const)(
+  "only widens option questions while their buttons are displayed (status: %s)",
+  (status) => {
+    const layout = messageRowLayout(
+      [
+        {
+          kind: "ask",
+          text: "Which one?",
+          status,
+          actions: [{ id: "choice-1", label: "Plan a trip" }],
+        },
+      ],
+      { inGroup: false, columnWidth: 400 },
+    );
+    expect(layout.width).toBe(status === "answered" ? undefined : "90%");
+    expect(layout.menuFullWidth).toBe(status !== "answered");
+  },
+);
