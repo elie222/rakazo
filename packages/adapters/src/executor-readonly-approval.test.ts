@@ -478,7 +478,9 @@ function fixture({
   };
   const transactionalPrisma = Object.assign(prisma, {
     $queryRaw: vi.fn(async () => []),
-    $transaction: async (action: (tx: typeof prisma) => unknown) => action(prisma),
+    $transaction: vi.fn(async (action: (tx: typeof prisma) => unknown, _options?: unknown) =>
+      action(prisma),
+    ),
   });
   const pauseRunForInput = vi.fn(async () => {
     run.status = "waiting_input";
@@ -1519,6 +1521,7 @@ describe("own instructions through update_bot", () => {
     expect(f.instructionState.instructionHistory).toEqual([
       expect.objectContaining({ instructions: "Draft only", reason: "Set in chat" }),
     ]);
+    expect(f.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
   });
   it("sets them after a profile edit earlier in the run", async () => {
     const f = emptyBot({ autoReview: true });

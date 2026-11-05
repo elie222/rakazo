@@ -7,6 +7,7 @@ import {
   InvalidSpaceNameError,
   runAsSystem,
   SpaceLimitError,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   writeBotInstructions,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -128,7 +129,7 @@ async function commitOwnInstructions(
       type: "bot.updated",
       payload: { botId, name: bot.name, description: bot.description },
     });
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (committed && "error" in committed) return committed;
   if (committed)
     await deps.events
