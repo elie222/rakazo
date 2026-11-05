@@ -1216,30 +1216,43 @@ async function savePendingSignOut(record: PendingSignOut): Promise<boolean> {
   });
 }
 
-/** Removes the captured record, preserving a newer sign-out that replaced a provisional one. */
-async function removePendingSignOut(record: PendingSignOut): Promise<void> {
+/**
+ * Rewrites the stored records in the write queue, leaving an unreadable store alone. `transform`
+ * returns the new list, or nothing when no record changes. A write that changes how many records
+ * are stored also updates `pendingSignOutAbsent`.
+ */
+async function updatePendingSignOuts(
+  transform: (records: PendingSignOut[]) => PendingSignOut[] | undefined,
+): Promise<void> {
   await queuePendingSignOutWrite(async () => {
     const read = await readPendingSignOuts();
     if (!read.ok) return;
-    const kept = read.records.filter(
+    const updated = transform(read.records);
+    if (!updated) return;
+    if ((await writePendingSignOuts(updated)) && updated.length !== read.records.length) {
+      pendingSignOutAbsent = updated.length === 0;
+    }
+  });
+}
+
+/** Removes the captured record, preserving a newer sign-out that replaced a provisional one. */
+async function removePendingSignOut(record: PendingSignOut): Promise<void> {
+  await updatePendingSignOuts((records) => {
+    const kept = records.filter(
       (existing) =>
         !samePendingSignOut(existing, record) ||
         existing.recordedAt !== record.recordedAt ||
         Boolean(existing.provisional) !== Boolean(record.provisional),
     );
-    if (kept.length === read.records.length) return;
-    if (await writePendingSignOuts(kept)) pendingSignOutAbsent = kept.length === 0;
+    return kept.length === records.length ? undefined : kept;
   });
 }
 
 /** Retires records whose session cannot be alive on any server anymore. */
 async function prunePendingSignOuts(): Promise<void> {
-  await queuePendingSignOutWrite(async () => {
-    const read = await readPendingSignOuts();
-    if (!read.ok) return;
-    const kept = livePendingSignOuts(read.records);
-    if (kept.length === read.records.length) return;
-    if (await writePendingSignOuts(kept)) pendingSignOutAbsent = kept.length === 0;
+  await updatePendingSignOuts((records) => {
+    const kept = livePendingSignOuts(records);
+    return kept.length === records.length ? undefined : kept;
   });
 }
 
@@ -1248,32 +1261,28 @@ async function markPendingSignOutProgress(
   record: PendingSignOut,
   progress: { renewedAt: number; unregistered?: true },
 ): Promise<void> {
-  await queuePendingSignOutWrite(async () => {
-    const read = await readPendingSignOuts();
-    if (!read.ok) return;
+  await updatePendingSignOuts((records) => {
     let updated = false;
-    const kept = read.records.map((existing) => {
+    const kept = records.map((existing) => {
       if (!samePendingSignOut(existing, record)) return existing;
       updated = true;
       return { ...existing, ...progress };
     });
-    if (updated) await writePendingSignOuts(kept);
+    return updated ? kept : undefined;
   });
 }
 
 /** Marks a switch's provisional record deliverable, once the switch has committed. */
 async function promotePendingSignOut(record: PendingSignOut): Promise<void> {
-  await queuePendingSignOutWrite(async () => {
-    const read = await readPendingSignOuts();
-    if (!read.ok) return;
+  await updatePendingSignOuts((records) => {
     let promoted = false;
-    const kept = read.records.map((existing) => {
+    const kept = records.map((existing) => {
       if (!existing.provisional || !samePendingSignOut(existing, record)) return existing;
       promoted = true;
       const { provisional, ...committed } = existing;
       return committed;
     });
-    if (promoted) await writePendingSignOuts(kept);
+    return promoted ? kept : undefined;
   });
 }
 
