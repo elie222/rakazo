@@ -78,6 +78,8 @@ export type SpaceDeparture = {
   /** Runs queued for other members' follow-ups that waited behind a cancelled run. */
   continuationRunIds: string[];
   computers: RunTeardownTarget[];
+  /** Screens they held, their leases already ended, for the usual expiry to release. */
+  heldControls: Array<{ computerId: string; leaseId: string }>;
   /** Newest run.cancelled seq per thread, for realtime fanout. */
   events: Array<{ threadId: string; seq: number }>;
 };
@@ -497,6 +499,17 @@ async function departSpace(
           await tx.chatGroup.updateMany(reassign);
           // Their computers go with the bots, so the computer limit counts them for the owner.
           await tx.computer.updateMany(reassign);
+          // A screen they hold is no one's to release now: end the lease so others can take it.
+          const held = await tx.computer.findMany({
+            where: { spaceId, controlHolder: "user", controlUserId: userId },
+            select: { id: true, controlLeaseId: true },
+          });
+          if (held.length) {
+            await tx.computer.updateMany({
+              where: { id: { in: held.map((computer) => computer.id) } },
+              data: { controlLeaseExpiresAt: new Date() },
+            });
+          }
           // A team computer is found by its person. A departing owner's is the Space's one Team
           // Computer, so it is found by the next owner's key from now on; any other is retired
           // so someone who rejoins starts fresh. The home key, and with it the files, stays.
@@ -568,6 +581,11 @@ async function departSpace(
             cancelledRunIds,
             continuationRunIds,
             computers: targets,
+            heldControls: held.flatMap((computer) =>
+              computer.controlLeaseId
+                ? [{ computerId: computer.id, leaseId: computer.controlLeaseId }]
+                : [],
+            ),
             events: [...latestSeq].map(([threadId, seq]) => ({ threadId, seq })),
           };
         },

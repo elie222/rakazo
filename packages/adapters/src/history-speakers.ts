@@ -13,10 +13,7 @@ export const UNKNOWN_BOT_SPEAKER = "another bot";
  * a `[Name]:` label), and never the human's label (a bot called "user" reads as "User (bot)").
  */
 export function speakerName(name: string): string {
-  const clean = name
-    .replace(/[[\]]/g, (bracket) => (bracket === "[" ? "(" : ")"))
-    .replace(/\s+/g, " ")
-    .trim();
+  const clean = labelText(name);
   if (!clean) return UNKNOWN_BOT_SPEAKER;
   return clean.toLowerCase() === USER_SPEAKER.toLowerCase() ? `${USER_SPEAKER} (bot)` : clean;
 }
@@ -29,13 +26,15 @@ const PERSON_NAME_MAX = 64;
  * as a bot's, so a name cannot fake another speaker's label.
  */
 export function personSpeakerName(name: string): string {
-  return (
-    name
-      .replace(/[[\]]/g, (bracket) => (bracket === "[" ? "(" : ")"))
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, PERSON_NAME_MAX) || USER_SPEAKER
-  );
+  return labelText(name).slice(0, PERSON_NAME_MAX) || USER_SPEAKER;
+}
+
+/** One line with no brackets, so a name can never close or fake a `[Name]:` label. */
+function labelText(name: string): string {
+  return name
+    .replace(/[[\]]/g, (bracket) => (bracket === "[" ? "(" : ")"))
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**

@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import { runContinueJob } from "@rakazo/adapter-kit";
-import { stopCancelledGroupRuns } from "@rakazo/adapters";
+import { expireComputerControl, stopCancelledGroupRuns } from "@rakazo/adapters";
 import type { Actor, SpaceNavigation } from "@rakazo/contracts";
 import type { createGroupRepos, createRepos, PrismaClient, SpaceDeparture } from "@rakazo/db";
 import {
@@ -87,6 +87,14 @@ async function afterSpaceDeparture(
   await stopCancelledGroupRuns(deps, actor, departure).catch((error) => {
     getLogger().error("space departure run teardown", error);
   });
+  // Their leases already ended; this revokes the screens and tells everyone watching.
+  await Promise.all(
+    departure.heldControls.map(({ computerId, leaseId }) =>
+      expireComputerControl(deps, computerId, leaseId).catch((error) => {
+        getLogger().error("space departure control release", error);
+      }),
+    ),
+  );
   // The job reconciler retries a failed enqueue: the runs are already queued.
   await Promise.all(
     departure.continuationRunIds.map((runId) =>

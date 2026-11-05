@@ -8,6 +8,7 @@ import {
   claimSpacesLeavingWithAccount,
   computerHomeKey,
   createDb,
+  createThreadEvents,
   ensureComputerRecord,
   installAuditEventStore,
   MAX_OPEN_SPACE_INVITES,
@@ -126,7 +127,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       prisma,
       billing: { syncSeats },
       jobs: { cancel: cancelJob, enqueue: enqueueJob },
-      events: { notify },
+      events: { ...createThreadEvents(prisma), notify },
       env: {
         agentRuntime: "scripted",
         defaultProvider: "fake",
@@ -939,6 +940,27 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(
       call(asInvitee, "skills/start", { botId: otherBot.id, goal: "Book a table" }),
     ).resolves.toMatchObject({ status: 409 });
+
+    // A member removed while holding the screen frees it at once, not when the lease runs out.
+    await system.computer.update({
+      where: { id: computer.id },
+      data: {
+        controlHolder: "user",
+        controlLeaseId: randomUUID(),
+        controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+        controlBotId: otherBot.id,
+        controlUserId: invitee.id,
+      },
+    });
+    await expect(
+      call(inSpace(owner.actor, home), "spaces/members/remove", {
+        spaceId: home,
+        userId: invitee.id,
+      }),
+    ).resolves.toMatchObject({ status: 200 });
+    await expect(
+      system.computer.findUniqueOrThrow({ where: { id: computer.id } }),
+    ).resolves.toMatchObject({ controlHolder: "none", controlUserId: null, controlLeaseId: null });
   });
 
   it("gives a shared space one team computer, whoever creates the bot", async () => {

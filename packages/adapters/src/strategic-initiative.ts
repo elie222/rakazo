@@ -8,8 +8,8 @@ import {
 } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
+  memberHasModelAccess,
   STRATEGIC_INITIATIVE_NONCE_PREFIX,
-  spaceHasModelAccess,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -163,7 +163,8 @@ export async function reconcileStrategicInitiatives(deps: {
         select: { id: true },
       });
       if (!membership) continue;
-      if (deps.billingEnabled && !(await spaceHasModelAccess(deps.prisma, bot.spaceId))) continue;
+      // The bot's person pays: a guest's run is decided by their own plan, not the space's.
+      if (deps.billingEnabled && !(await memberHasModelAccess(deps.prisma, bot))) continue;
       if (!bot.thread) continue;
       const scratchpadItems = bot.scratchpadItems
         .filter((item) => !bot.routines.some((routine) => item.notes.includes(routine.id)))
