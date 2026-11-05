@@ -6754,7 +6754,7 @@ msgstr "輸入你的回答"
 
 #: src/pages/shell/transcript.tsx
 msgid "Typing…"
-msgstr "{'pt-BR': 'Digitando…', 'fr': 'Écrit…', 'es': 'Escribiendo…', 'ru': 'Печатает…', 'de': 'Schreibt…', 'hi': 'टाइप कर रहा है…', 'nl': 'Typt…', 'ko': '입력 중…', 'pl': 'Pisze…', 'ja': '入力中…', 'he': 'מקליד…', 'zh-CN': '正在输入…', 'zh-TW': '正在輸入…', 'tr': 'Yazıyor…'}"
+msgstr "正在輸入…"
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/Shell.tsx

@@ -37,6 +37,19 @@ describe("lingui catalogs", () => {
     }
   });
 
+  it("gives the status line's Typing… a single translation in every language", () => {
+    for (const locale of UI_LOCALES.filter((value) => value !== "en")) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      const entry = catalog.split("\n\n").find((block) => block.includes('msgid "Typing…"\n'));
+      const translated = entry?.split("msgstr ")[1]?.trim() ?? "";
+      expect(translated, locale).toMatch(/^"[^"{}]+"$/);
+      expect(translated, locale).not.toBe('"Typing…"');
+    }
+  });
+
   it("translates dictation and voice errors into Spanish", () => {
     const catalog = readFileSync(
       fileURLToPath(new URL("../locales/es/messages.po", import.meta.url)),

@@ -84,7 +84,10 @@ export function useSwipeTimes(scrollRef: RefObject<HTMLDivElement | null>) {
     };
 
     const onWheel = (event: WheelEvent) => {
-      if (Math.abs(event.deltaX) <= Math.abs(event.deltaY) * 1.2) return;
+      // Only a clearly sideways gesture reveals the times; anything with real vertical travel
+      // stays a native scroll, so a diagonal trackpad swipe never stalls the thread.
+      if (Math.abs(event.deltaX) <= Math.abs(event.deltaY) * 2 || Math.abs(event.deltaY) > 4)
+        return;
       if (insideSideScroller(event.target)) return;
       event.preventDefault();
       cancelAnimationFrame(frame);
@@ -99,6 +102,12 @@ export function useSwipeTimes(scrollRef: RefObject<HTMLDivElement | null>) {
       const target = event.target as Element;
       if (target.closest("a, button, input, textarea, [contenteditable], [role='button']")) return;
       if (insideSideScroller(target)) return;
+      // A second finger (a pinch, or a two-finger pan) ends any swipe instead of starting one.
+      if (drag) {
+        if (drag.on) settle();
+        drag = null;
+        return;
+      }
       // A mouse drag over text selects it; only a drag that starts beside the bubbles swipes.
       if (event.pointerType === "mouse" && target.closest("[data-testid='message-bubble-frame']"))
         return;
@@ -106,7 +115,7 @@ export function useSwipeTimes(scrollRef: RefObject<HTMLDivElement | null>) {
       drag = { x: event.clientX, y: event.clientY, id: event.pointerId, on: false };
     };
     const onPointerMove = (event: PointerEvent) => {
-      if (!drag) return;
+      if (!drag || event.pointerId !== drag.id) return;
       const along = (event.clientX - drag.x) * inward();
       const across = event.clientY - drag.y;
       if (!drag.on) {
@@ -119,8 +128,9 @@ export function useSwipeTimes(scrollRef: RefObject<HTMLDivElement | null>) {
       }
       apply(resist(Math.max(0, along)));
     };
-    const onPointerEnd = () => {
-      if (drag?.on) settle();
+    const onPointerEnd = (event: PointerEvent) => {
+      if (!drag || event.pointerId !== drag.id) return;
+      if (drag.on) settle();
       drag = null;
     };
 

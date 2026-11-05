@@ -1087,6 +1087,15 @@ function SpaceShell() {
         aria-hidden={mobileSidebarOpen || undefined}
         inert={mobileSidebarOpen}
         className="isolate flex min-w-0 flex-1 flex-col bg-background"
+        // The bot's colour paints the user's bubbles and the composer's send button.
+        style={
+          userBubble
+            ? ({
+                "--chat-user": userBubble.background,
+                "--chat-user-foreground": userBubble.foreground,
+              } as CSSProperties)
+            : undefined
+        }
       >
         {/* Inside main so the composer and its menus stay above it. */}
         {!mobileSidebarOpen ? (
@@ -1098,19 +1107,7 @@ function SpaceShell() {
         ) : null}
         <CallReturnBar />
         {/* The header floats so the transcript scrolls under its buttons. */}
-        <div
-          ref={chatColumnRef}
-          className="relative flex min-h-0 flex-1 flex-col"
-          // The bot's colour paints the user's bubbles and the send button.
-          style={
-            userBubble
-              ? ({
-                  "--chat-user": userBubble.background,
-                  "--chat-user-foreground": userBubble.foreground,
-                } as CSSProperties)
-              : undefined
-          }
-        >
+        <div ref={chatColumnRef} className="relative flex min-h-0 flex-1 flex-col">
           {/* Only the pills take input; the gaps pass clicks and scrolling to the transcript. */}
           <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />
           {findOpen ? (

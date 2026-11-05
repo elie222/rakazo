@@ -35,6 +35,22 @@ test("the refreshed look holds at every width, in both themes, with Vietnamese a
 
   const composer = page.getByTestId("composer-field").locator("textarea");
   await composer.fill("Tiếng Việt: ơ ư ạ ấ ề ộ ữ đ — עברית שלום");
+  // The send button wears the bot's colour, the same one that fills the user's bubbles.
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  await expect(send).toBeEnabled();
+  const botColour = await page
+    .locator('[data-space-switch="main"]')
+    .evaluate((main) => getComputedStyle(main).getPropertyValue("--chat-user").trim());
+  expect(botColour).not.toBe("");
+  const probe = await page.evaluate((colour) => {
+    const element = document.createElement("div");
+    element.style.backgroundColor = colour;
+    document.body.append(element);
+    const value = getComputedStyle(element).backgroundColor;
+    element.remove();
+    return value;
+  }, botColour);
+  await expect(send).toHaveCSS("background-color", probe);
 
   for (const theme of ["dark", "light"] as const) {
     await page.emulateMedia({ colorScheme: theme });

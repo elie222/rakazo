@@ -143,24 +143,46 @@ function onLeave() {
   hovered = null;
 }
 
+let reducedMotion: MediaQueryList | undefined;
+
+function startListening() {
+  if (listening) return;
+  window.addEventListener("pointermove", onPointerMove, { passive: true });
+  document.documentElement.addEventListener("mouseleave", onLeave);
+  listening = true;
+}
+
+function stopListening() {
+  if (!listening) return;
+  window.removeEventListener("pointermove", onPointerMove);
+  document.documentElement.removeEventListener("mouseleave", onLeave);
+  listening = false;
+  hovered = null;
+  if (frame) cancelAnimationFrame(frame);
+  frame = 0;
+  for (const face of springs.keys()) rest(face);
+  springs.clear();
+}
+
+/** Turning reduced motion on stills every face at once; turning it off brings the look back. */
+function onMotionPreference() {
+  if (reducedMotion?.matches) stopListening();
+  else if (faces > 0) startListening();
+}
+
 /** Called by each face while mounted; the page listens only while a face is on it. */
 export function watchAvatarLook(): () => void {
   faces++;
-  if (!listening && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    window.addEventListener("pointermove", onPointerMove, { passive: true });
-    document.documentElement.addEventListener("mouseleave", onLeave);
-    listening = true;
+  if (!reducedMotion) {
+    reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    reducedMotion.addEventListener("change", onMotionPreference);
   }
+  if (!reducedMotion.matches) startListening();
   return () => {
     faces--;
-    if (faces > 0 || !listening) return;
-    window.removeEventListener("pointermove", onPointerMove);
-    document.documentElement.removeEventListener("mouseleave", onLeave);
-    listening = false;
-    hovered = null;
-    if (frame) cancelAnimationFrame(frame);
-    frame = 0;
-    for (const face of springs.keys()) rest(face);
-    springs.clear();
+    if (faces > 0) return;
+    stopListening();
+    reducedMotion?.removeEventListener("change", onMotionPreference);
+    reducedMotion = undefined;
   };
 }

@@ -170,9 +170,11 @@ export const Transcript = memo(function Transcript({
     liveShown.current = transcript.messages.some((message) => message.id.startsWith("progress:"));
   });
   useSwipeTimes(scrollRef);
+  // Rebuilt when the interface language changes, like the time separators.
+  const locale = i18n.locale || "en";
   const sendTime = useMemo(
-    () => new Intl.DateTimeFormat(i18n.locale || "en", { hour: "numeric", minute: "2-digit" }),
-    [],
+    () => new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }),
+    [locale],
   );
   const following = useRef(true);
   const jumpScrolling = useRef(false);
@@ -258,9 +260,9 @@ export const Transcript = memo(function Transcript({
   const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor);
   const activityLine = liveActivityLine(messages);
   // One status row walks the run's phases: working, then each tool line, then typing the reply.
-  const composing = messages.some(
-    (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
-  );
+  // The newest live message decides the phase, as it does for the activity line.
+  const newestLive = messages.findLast((message) => message.id.startsWith("progress:"));
+  const composing = Boolean(newestLive && liveMessageComposing(newestLive.blocks));
   const workingLabel = composing ? t`Typing…` : (activityLine ?? t`Working…`);
   const [quoteDraft, setQuoteDraft] = useState<{
     message: ThreadMessage;

@@ -1,11 +1,13 @@
+import { DESKTOP_LAYOUT_QUERY } from "@rakazo/ui-web/hooks/use-mobile";
 import type { TouchEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 
 const MOBILE_SIDEBAR_SWIPE_EDGE_PX = 32;
 const MOBILE_SIDEBAR_SWIPE_DISTANCE_PX = 56;
 
+// The same boundary as the `desk:` variant: wide windows, and narrower mouse or trackpad ones.
 function isDesktop() {
-  return window.matchMedia("(min-width: 768px)").matches;
+  return window.matchMedia(DESKTOP_LAYOUT_QUERY).matches;
 }
 
 function isRtl() {
@@ -18,7 +20,7 @@ export function useMobileSidebar() {
   const swipeRef = useRef<{ startX: number; startY: number } | null>(null);
 
   useEffect(() => {
-    const desktop = window.matchMedia("(min-width: 768px)");
+    const desktop = window.matchMedia(DESKTOP_LAYOUT_QUERY);
     function closeMobileSidebar() {
       if (desktop.matches) setMobileSidebarOpen(false);
     }
