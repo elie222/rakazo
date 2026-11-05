@@ -40,7 +40,8 @@ import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 import { speakText } from "../../lib/voice";
 
-type VoiceField = "voiceId" | "speechModel" | "baseUrl" | "sttBaseUrl" | "ttsModel" | "sttModel";
+const CONNECTION_FIELDS = ["speechModel", "baseUrl", "ttsModel", "sttModel", "sttBaseUrl"] as const;
+type VoiceField = "voiceId" | (typeof CONNECTION_FIELDS)[number];
 
 /** A Space's override is read from that Space even when another one is selected. */
 const targetSpace = (target: SettingsTarget) =>
@@ -105,6 +106,9 @@ export default function VoiceSettings() {
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const [sttApiKey, setSttApiKey] = useState("");
+  // The connection fields as last rendered, read when a connect finishes.
+  const connection = useRef({ speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl });
+  connection.current = { speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl };
   // Fields typed into since the last load; an opening refresh keeps them.
   const edited = useRef(new Set<VoiceField>());
   // Every load and action bumps this, so an older refresh never lands over a newer choice.
@@ -129,18 +133,19 @@ export default function VoiceSettings() {
 
   /**
    * Opening keeps fields typed into meanwhile and may share a read already in flight; after a
-   * change, every field takes the server's value from a read sent afterwards.
+   * change, fields take the server's value from a read sent afterwards, except those `keepForm`
+   * keeps because they were typed into meanwhile.
    */
   const load = useCallback(
-    async (nextProvider?: string, opening = false) => {
+    async (nextProvider?: string, { keepForm = false, reuse = false } = {}) => {
       const revision = ++loadRevision.current;
-      if (!opening) edited.current.clear();
+      if (!keepForm) edited.current.clear();
       const reads = voiceReads(target);
-      const reuse = { reuse: opening };
+      const fresh = { reuse };
       const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
-        fetchFresh(queryClient, reads.catalog, reuse),
-        fetchFresh(queryClient, reads.credentials, reuse),
-        fetchFresh(queryClient, reads.status, reuse),
+        fetchFresh(queryClient, reads.catalog, fresh),
+        fetchFresh(queryClient, reads.credentials, fresh),
+        fetchFresh(queryClient, reads.status, fresh),
       ]);
       if (revision !== loadRevision.current) return;
       setLoadError(null);
@@ -160,7 +165,7 @@ export default function VoiceSettings() {
       ];
       for (const [field, set, value] of fields) if (!edited.current.has(field)) set(value ?? "");
       if (cred) {
-        const nextVoices = await fetchFresh(queryClient, voicesRead(target, selected), reuse);
+        const nextVoices = await fetchFresh(queryClient, voicesRead(target, selected), fresh);
         if (revision === loadRevision.current) setVoices(nextVoices);
       } else {
         setVoices([]);
@@ -175,7 +180,7 @@ export default function VoiceSettings() {
   };
 
   const open = useCallback(() => {
-    void load(undefined, true)
+    void load(undefined, { keepForm: true, reuse: true })
       .catch((err: unknown) => {
         // A newer read replaced this one and reports for both.
         if (!isCancelledError(err))
@@ -338,6 +343,10 @@ export default function VoiceSettings() {
 
   async function connect() {
     if (!selected || !canConnect) return;
+    // What this connect carries; anything typed after this point was not saved.
+    const sentApiKey = apiKey;
+    const sentSttApiKey = sttApiKey;
+    const sent = connection.current;
     setPending("connect");
     setError(null);
     if (status) setLoadError(null);
@@ -345,7 +354,7 @@ export default function VoiceSettings() {
       await rpc("voice/connect", {
         provider: selected.id,
         scope,
-        apiKey: apiKey.trim(),
+        apiKey: sentApiKey.trim(),
         // The server drops this voice when the address or speech model really changed.
         voiceId: voiceId || undefined,
         ...(selected.id === "fish-audio" ? { speechModel: speechModel.trim() } : {}),
@@ -355,13 +364,19 @@ export default function VoiceSettings() {
               ttsModel: ttsModel.trim() || undefined,
               sttModel: sttModel.trim() || undefined,
               sttBaseUrl: sttBaseUrl.trim(),
-              sttApiKey: sttApiKey.trim(),
+              sttApiKey: sentSttApiKey.trim(),
             }
           : {}),
       });
-      setApiKey("");
-      setSttApiKey("");
-      await load(selected.id);
+      // A key typed while the connect ran was not saved; keep it for the next try.
+      setApiKey((current) => (current === sentApiKey ? "" : current));
+      setSttApiKey((current) => (current === sentSttApiKey ? "" : current));
+      // The connect saved the values it carried, which the server may have normalized or
+      // filled in; fields typed meanwhile keep theirs.
+      for (const field of CONNECTION_FIELDS) {
+        if (connection.current[field] === sent[field]) edited.current.delete(field);
+      }
+      await load(selected.id, { keepForm: true });
     } catch (err) {
       setError(errorText(err, t("Could not connect")));
     } finally {
@@ -409,7 +424,7 @@ export default function VoiceSettings() {
       setSpeechModel(saved.speechModel ?? "");
       setCredentials(merge);
       await writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge);
-      void load(selected.id, true).catch(() => undefined);
+      void load(selected.id, { keepForm: true, reuse: true }).catch(() => undefined);
     } catch (err) {
       setError(errorText(err, t("Could not save that speech model")));
     } finally {

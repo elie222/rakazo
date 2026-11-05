@@ -99,6 +99,10 @@ export function serializeOpenAiCompatibleVoiceSecret(
   const sttUrl = sttInput ? assertAllowedOpenAiCompatibleUrl(sttInput, policy) : undefined;
   const sttBaseUrl = sttInput ? normalizeOpenAiCompatibleBaseUrl(sttInput) : undefined;
   const separateStt = sttBaseUrl && sttBaseUrl !== baseUrl ? sttBaseUrl : undefined;
+  const sameStt =
+    previous && (previous.sttBaseUrl ?? previous.baseUrl) === (separateStt ?? baseUrl)
+      ? previous
+      : undefined;
   const apiKey = input.apiKey?.trim() || same?.apiKey;
   const sttApiKey = separateStt
     ? input.sttApiKey?.trim() ||
@@ -123,7 +127,7 @@ export function serializeOpenAiCompatibleVoiceSecret(
       "Speech",
     ),
     sttModel: modelIdOrDefault(
-      input.sttModel || same?.sttModel,
+      input.sttModel || sameStt?.sttModel,
       DEFAULT_COMPATIBLE_STT_MODEL,
       "Transcription",
     ),

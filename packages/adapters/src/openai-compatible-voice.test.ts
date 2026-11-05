@@ -121,6 +121,29 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
     expect(moved.ttsModel).toBe(DEFAULT_COMPATIBLE_TTS_MODEL);
   });
 
+  it("keeps the saved transcription model only for the same transcription server", () => {
+    const newStt = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner(
+        { baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "http://192.168.1.30:9000" },
+        keyed,
+      ),
+    );
+    expect(newStt).toMatchObject({ ttsModel: "kokoro", sttModel: DEFAULT_COMPATIBLE_STT_MODEL });
+    const split = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.30:9000",
+      sttModel: "whisper-large",
+    });
+    const mainMoved = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.21:8880" }, split),
+    );
+    expect(mainMoved.sttModel).toBe("whisper-large");
+    const backToMain = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "" }, split),
+    );
+    expect(backToMain.sttModel).toBe(DEFAULT_COMPATIBLE_STT_MODEL);
+  });
+
   it("stores a separate transcription server only when it differs from the main one", () => {
     const split = serializeAsOwner({
       baseUrl: "http://192.168.1.20:8880",

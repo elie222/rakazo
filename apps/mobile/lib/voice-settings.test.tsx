@@ -440,6 +440,64 @@ it("keeps a typed transcription key with the address it was typed for", async ()
   expect(field().value).toBe("http://127.0.0.1:9000/v1");
 });
 
+it("keeps edits typed while a reconnect runs and shows the saved values for the rest", async () => {
+  state.load.mockResolvedValue(false);
+  activeProvider = "openai-compatible";
+  const saved = {
+    id: "self-hosted",
+    provider: "openai-compatible",
+    voiceId: "voice",
+    endpoint: "http://127.0.0.1:8000/v1",
+    sttEndpoint: "",
+    sttModel: "old-model",
+  };
+  let releaseConnect!: () => void;
+  const connectHeld = new Promise<void>((resolve) => {
+    releaseConnect = resolve;
+  });
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc: string, args?: { provider: string }) => {
+    if (proc === "voice/catalog")
+      return [{ id: "openai-compatible", name: "Self-hosted", transcribe: true }];
+    if (proc === "voice/credentials") return [saved];
+    if (proc === "voice/connect") {
+      await connectHeld;
+      Object.assign(saved, { sttEndpoint: "http://127.0.0.1:9200/v1", sttModel: "sent-model" });
+      return { ok: true };
+    }
+    return original(proc, args);
+  });
+  await render();
+  const field = (label: string) =>
+    container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  const type = async (label: string, value: string) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        field(label),
+        value,
+      );
+      field(label).dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  await type("Transcription server URL", "http://127.0.0.1:9200");
+  await type("Transcription model", "sent-model");
+  await type("Transcription API key", "sent-key");
+  await click("Reconnect");
+  expect(state.rpc).toHaveBeenCalledWith(
+    "voice/connect",
+    expect.objectContaining({ sttBaseUrl: "http://127.0.0.1:9200", sttApiKey: "sent-key" }),
+  );
+  await type("Transcription API key", "newer-key");
+  await type("Speech model", "newer-tts");
+  await act(async () => releaseConnect());
+  await vi.waitFor(() =>
+    expect(field("Transcription server URL").value).toBe("http://127.0.0.1:9200/v1"),
+  );
+  expect(field("Transcription model").value).toBe("sent-model");
+  expect(field("Transcription API key").value).toBe("newer-key");
+  expect(field("Speech model").value).toBe("newer-tts");
+});
+
 it("keeps a saved speech model when an opening read started before the save lands after it", async () => {
   state.load.mockResolvedValue(false);
   await render();
