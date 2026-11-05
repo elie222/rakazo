@@ -230,9 +230,10 @@ export async function detectPurchase(
     found = { ...unchecked, steps: [] };
   }
   if (!found) return undefined;
-  // Page text is stored with the approval: a value the run must keep secret never goes with it.
+  // Page text is stored with the approval: a value the run must keep secret never goes with it, not even
+  // the start of one, so the whole text is redacted before it is cut.
   const shown = (text: string, max: number) =>
-    String(redactConnectorPayload(pageText(text, max), ctx.secrets));
+    pageText(String(redactConnectorPayload(pageText(text, 1_000), ctx.secrets)), max);
   return {
     steps: found.steps,
     site: found.site,

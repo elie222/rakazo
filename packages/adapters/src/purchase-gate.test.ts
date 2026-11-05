@@ -421,17 +421,20 @@ describe("purchase detection for the page tools", () => {
   it("stores the page's order lines bounded, without a value the run keeps secret", async () => {
     const items = [
       { name: "Gift for 4242424242424242", amount: "$5" },
+      { name: `Note ${"a".repeat(70)}${"9".repeat(30)}`, amount: "$5" },
       { name: `Tax ${"a".repeat(100)}`, amount: "$1" },
       ...Array.from({ length: 40 }, () => ({ name: "Gum", amount: "$1" })),
     ];
     const ctx = contextWith(async () => ({ purchase: { ...found, items } }) as never, {
-      secrets: ["4242424242424242"],
+      secrets: ["4242424242424242", "9".repeat(30)],
     });
     const purchase = await detectPurchase(ctx, "computer_act", {
       actions: [{ kind: "click", x: 1, y: 2 }],
     });
     expect(JSON.stringify(purchase)).not.toContain("4242424242424242");
-    expect(purchase?.items?.[1]).toEqual({ name: `Tax ${"a".repeat(76)}`, amount: "$1" });
+    // A secret the name limit would cut is still redacted whole: not even its start is kept.
+    expect(purchase?.items?.[1]?.name).not.toMatch(/9{5}/);
+    expect(purchase?.items?.[2]).toEqual({ name: `Tax ${"a".repeat(76)}`, amount: "$1" });
     expect(purchase?.items).toHaveLength(30);
   });
 

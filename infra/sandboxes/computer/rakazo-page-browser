@@ -1975,26 +1975,36 @@ PURCHASE_HELPERS = r"""
   // at its end, such as an item with its quantity and price, delivery or tax. Read back from the total no further
   // than a card field, so a summary beside the card form is not mixed with the page above it. None without a total.
   function orderItems() {
-    const elements = [...(document.body?.querySelectorAll("*") || [])].slice(0, 5000);
+    const all = [...(document.body?.querySelectorAll("*") || [])];
     const small = (el, max) => (el.textContent || "").length <= max && !el.closest(CONTROLS) && !el.closest(PAGE_EDGES);
-    const totals = elements.filter((el) => small(el, 200) && TOTAL.test(el.textContent)
-      && !SUBTOTAL.test(el.textContent) && visible(el)).slice(-5);
+    // The last totals of the page, found from its end, and the stretch of the page just above them.
+    const totals = [];
+    let last = -1;
+    for (let i = all.length - 1; i >= Math.max(0, all.length - 20000) && totals.length < 5; i--) {
+      const el = all[i];
+      if (small(el, 200) && TOTAL.test(el.textContent) && !SUBTOTAL.test(el.textContent) && visible(el)) {
+        totals.push(el);
+        if (last < 0) last = i;
+      }
+    }
     if (!totals.length) return [];
     const rows = [];
-    for (const el of elements) {
-      if (rows.length >= 400 || !small(el, 400) || !ANY_AMOUNT.test(el.textContent) || el.querySelector(CHOICES)
+    for (const el of all.slice(Math.max(0, last - 3000), last + 1).reverse()) {
+      if (rows.length >= 400) break;
+      if (!small(el, 400) || !ANY_AMOUNT.test(el.textContent) || el.querySelector(CHOICES)
           || !visible(el) || offers(el)) continue;
       const text = shownText(el);
       const amount = text.length <= 160 ? text.match(LINE_AMOUNT)?.[0] : "";
       const name = amount ? text.slice(0, -amount.length).replace(/[\s:·•–—-]+$/u, "") : "";
-      if (/\p{L}/u.test(name)) rows.push({ el, name: cut(name, 80), amount: cut(amount, 40) });
+      // Whole, so the bot's secrets are found and hidden before the card cuts the name short.
+      if (/\p{L}/u.test(name)) rows.unshift({ el, name, amount });
     }
     // The line itself, not the list or row group around it.
     const lines = rows.filter((row) => !rows.some((other) => other !== row && row.el.contains(other.el)));
     const cards = pageCards();
     const before = (a, b) => Boolean(b.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_PRECEDING);
     // The last total first; an earlier one when the last has nothing listed above it.
-    for (const total of totals.reverse()) {
+    for (const total of totals) {
       const found = [];
       for (const line of [...lines].reverse()) {
         if (!before(line.el, total) || line.el.contains(total)) continue;

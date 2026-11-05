@@ -618,6 +618,13 @@ describe("a key on the screen", () => {
     expect(noTotal.intent("Pay $3")).not.toHaveProperty("items");
   });
 
+  it("finds the order summary at the end of a long page", () => {
+    const { intent } = page(`<div>${"<span>Item</span>".repeat(8000)}</div>
+      <p><span>Bananas × 6</span> <span>$3.00</span></p>
+      <p>Total: $3.00</p><button>Place order</button>`);
+    expect(intent("Place order")?.items).toEqual([{ name: "Bananas × 6", amount: "$3.00" }]);
+  });
+
   it("lists a line with a quantity picker, but not a choice or an offer to add", () => {
     const { intent } = page(`
       <ul>
@@ -635,12 +642,12 @@ describe("a key on the screen", () => {
     ]);
   });
 
-  it("keeps an order line's visible words only, and cuts them short", () => {
+  it("keeps an order line's visible words only, whole for the adapter to redact and cut", () => {
     const { intent } = page(`
       <p><span>Ban​anas‮ ${"x".repeat(100)}</span> <span>$3.00</span></p>
       <p>Total: $3.00</p><button>Place order</button>`);
     expect(intent("Place order")?.items).toEqual([
-      { name: `Bananas ${"x".repeat(72)}`, amount: "$3.00" },
+      { name: `Bananas ${"x".repeat(100)}`, amount: "$3.00" },
     ]);
   });
 });
