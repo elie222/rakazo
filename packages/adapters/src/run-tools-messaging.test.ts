@@ -268,4 +268,33 @@ describe("sending files to another bot", () => {
     expect(mocks.messageBot).not.toHaveBeenCalled();
     expect(mocks.handoffToGroupBot).not.toHaveBeenCalled();
   });
+
+  it("refuses a message the shared file list would push over the limit", async () => {
+    const { ctx } = context("computer-team");
+    const list = "\n\nFiles on our shared computer:\n- bots/bot-coder/site";
+    const room = 8_000 - list.length;
+    await expect(
+      messagingTools.message_bot!(
+        ctx,
+        callWith("message_bot", { message: "x".repeat(room + 1), files: ["site"] }),
+      ),
+    ).resolves.toEqual({
+      error: `with the file list added, the message must stay under ${room} characters. Nothing was sent.`,
+    });
+    await messagingTools.message_bot!(
+      ctx,
+      callWith("message_bot", { message: "x".repeat(room), files: ["site"] }),
+    );
+    expect(mocks.messageBot).toHaveBeenCalledTimes(1);
+  });
+
+  it("names an unreadable computer as well as a wrong path when listing fails", async () => {
+    const { ctx, listFiles } = context("computer-team");
+    listFiles.mockRejectedValueOnce(new Error("timed out"));
+    await expect(
+      messagingTools.message_bot!(ctx, callWith("message_bot", { files: ["site"] })),
+    ).resolves.toEqual({
+      error: "site: not found, or your computer could not be read. Nothing was sent.",
+    });
+  });
 });

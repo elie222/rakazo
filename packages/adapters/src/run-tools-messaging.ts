@@ -1,6 +1,11 @@
 import { posix } from "node:path";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
-import { isBackgroundRunTrigger, redactSecrets, resolveBotAddress } from "@rakazo/core";
+import {
+  BOT_MESSAGE_MAX_LENGTH,
+  isBackgroundRunTrigger,
+  redactSecrets,
+  resolveBotAddress,
+} from "@rakazo/core";
 import {
   connectAgent,
   messageConnectedAgent,
@@ -137,9 +142,16 @@ async function sharedFiles(
       return { error: `${path}: path is outside the computer. Nothing was sent.` };
     }
     const parent = posix.dirname(stored);
+    // A folder that does not exist fails to list on real computers too, so a listing error
+    // cannot be told apart from a wrong path; the error names both.
     const entries = await ctx.deps.sandbox
       .listFiles(computer, parent === "." ? "" : parent, ctx.context)
-      .catch(() => []);
+      .catch(() => undefined);
+    if (!entries) {
+      return {
+        error: `${path}: not found, or your computer could not be read. Nothing was sent.`,
+      };
+    }
     if (!stored || !entries.some((entry) => normalizeWorkspacePath(entry.path) === stored)) {
       return { error: `${path}: not found. Nothing was sent.` };
     }
@@ -152,10 +164,25 @@ async function sharedFiles(
   return { files: [], sharedPaths };
 }
 
-/** The message as delivered: shared paths are listed where the recipient reads its task. */
-function withSharedPaths(message: string, sharedPaths: string[]): string {
-  if (!sharedPaths.length) return message;
-  return `${message}\n\nFiles on our shared computer:\n${sharedPaths.map((path) => `- ${path}`).join("\n")}`;
+/**
+ * The message as delivered: shared paths are listed where the recipient reads its task. The list
+ * counts toward the message limit, so a message it would push over is refused with the room left.
+ */
+function deliveredMessage(
+  ctx: RunContext,
+  message: unknown,
+  sharedPaths: string[],
+): { error: string } | { message: string } {
+  const text = redactSecrets(String(message ?? ""), ctx.secrets);
+  if (!sharedPaths.length) return { message: text };
+  const list = `\n\nFiles on our shared computer:\n${sharedPaths.map((path) => `- ${path}`).join("\n")}`;
+  const room = BOT_MESSAGE_MAX_LENGTH - list.length;
+  if (text.trim().length > room) {
+    return {
+      error: `with the file list added, the message must stay under ${Math.max(room, 0)} characters. Nothing was sent.`,
+    };
+  }
+  return { message: `${text.trim()}${list}` };
 }
 
 /** Messages to the user, other bots and connected agents, and calls. */
@@ -251,6 +278,8 @@ export const messagingTools: ToolHandlers = {
       name: args.confirm_name ? String(args.confirm_name) : undefined,
     });
     if ("error" in stored) return call.finish({ error: stored.error });
+    const delivered = deliveredMessage(ctx, args.message, stored.sharedPaths);
+    if ("error" in delivered) return call.finish({ error: delivered.error });
     const sent = await messageBot(
       deps,
       { ...run, sourceMessageId: run.sourceMessageId },
@@ -262,10 +291,7 @@ export const messagingTools: ToolHandlers = {
           : args.confirm_name
             ? String(args.confirm_name)
             : undefined,
-        message: withSharedPaths(
-          redactSecrets(String(args.message ?? ""), ctx.secrets),
-          stored.sharedPaths,
-        ),
+        message: delivered.message,
         intent: args.intent as "request" | "result" | "question" | "status" | "fyi" | undefined,
         deliveryKey: effectKey,
         files: stored.files,
@@ -336,6 +362,8 @@ export const messagingTools: ToolHandlers = {
       groupId,
     });
     if ("error" in stored) return call.finish({ error: stored.error });
+    const delivered = deliveredMessage(ctx, args.message, stored.sharedPaths);
+    if ("error" in delivered) return call.finish({ error: delivered.error });
     const result = await handoffToGroupBot(deps, run, groupId, {
       bot_id: stored.recipientId ?? (args.bot_id ? String(args.bot_id) : undefined),
       confirm_name: stored.recipientId
@@ -343,10 +371,7 @@ export const messagingTools: ToolHandlers = {
         : args.confirm_name
           ? String(args.confirm_name)
           : undefined,
-      message: withSharedPaths(
-        redactSecrets(String(args.message ?? ""), ctx.secrets),
-        stored.sharedPaths,
-      ),
+      message: delivered.message,
       deliveryKey: effectKey,
       files: stored.files,
     });
