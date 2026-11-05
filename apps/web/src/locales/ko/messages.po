@@ -3042,7 +3042,11 @@ msgstr "Bot 정보 수정"
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
+msgid "Email"
+msgstr "이메일"
+
 #: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
 msgid "Email"
 msgstr "이메일"
 

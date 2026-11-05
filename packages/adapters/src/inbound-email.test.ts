@@ -8,9 +8,12 @@ const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 20
 const privatePem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
 const publicDer = publicKey.export({ type: "spki", format: "der" }).toString("base64");
 
-/** DNS with one DKIM key, published for example.test under selector "s1". */
+/** DNS with one DKIM key, published for example.test and news.example.test as selector "s1". */
 const resolver: InboundEmailResolver = async (domain, rrtype) => {
-  if (rrtype === "TXT" && domain === "s1._domainkey.example.test") {
+  if (
+    rrtype === "TXT" &&
+    (domain === "s1._domainkey.example.test" || domain === "s1._domainkey.news.example.test")
+  ) {
     return [[`v=DKIM1; k=rsa; p=${publicDer}`]];
   }
   throw Object.assign(new Error(`no ${rrtype} for ${domain}`), { code: "ENOTFOUND" });
@@ -46,8 +49,8 @@ describe("readInboundEmail", () => {
   it("authenticates a message signed by its From domain", async () => {
     const email = await readInboundEmail(bytes(await signed(message(plain))), { resolver });
 
+    expect(email.key).toMatch(/^dkim:/);
     expect(email).toMatchObject({
-      key: "<weekly-1@example.test>",
       from: { address: "ada@example.test", name: "Ada Lovelace" },
       authenticated: true,
       to: ["helper@bots.test"],
@@ -82,6 +85,25 @@ describe("readInboundEmail", () => {
     });
   });
 
+  it("does not authenticate a subdomain signing for its parent's addresses", async () => {
+    const email = await readInboundEmail(bytes(await signed(message(plain), "news.example.test")), {
+      resolver,
+    });
+
+    expect(email.authenticated).toBe(false);
+  });
+
+  it("keys a resent copy by its signature, whatever Message-ID it is given", async () => {
+    const original = await signed(message(plain), "example.test", "From:To:Cc:Subject:Date");
+    const resent = original.replace("<weekly-1@example.test>", "<another@example.test>");
+
+    const first = await readInboundEmail(bytes(original), { resolver });
+    const second = await readInboundEmail(bytes(resent), { resolver });
+
+    expect(second.authenticated).toBe(true);
+    expect(second.key).toBe(first.key);
+  });
+
   it("does not authenticate recipients the signature leaves out or a To added on top", async () => {
     const toUnsigned = await readInboundEmail(
       bytes(await signed(message(plain), "example.test", "From:Subject:Date:Message-ID")),
@@ -108,6 +130,11 @@ describe("readInboundEmail", () => {
       const email = await readInboundEmail(bytes(message([...plain, extra])), { resolver });
       expect(email.automated, extra).toBe(true);
     }
+    const hidden = await readInboundEmail(
+      bytes(message([...plain, "Auto-Submitted: no", "Auto-Submitted: auto-replied"])),
+      { resolver },
+    );
+    expect(hidden.automated).toBe(true);
     const human = await readInboundEmail(bytes(message([...plain, "Auto-Submitted: no"])), {
       resolver,
     });

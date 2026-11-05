@@ -240,7 +240,7 @@ export function routineTriggerSummary(
   if (routine.messageProvider === "slack") parts.push(t`Slack message`);
   else if (routine.messageProvider === "teams") parts.push(t`Teams message`);
   else if (routine.messageProvider) parts.push(t`Message event`);
-  if (routine.emailSenders) parts.push(t`Email`);
+  if (routine.emailSenders) parts.push(t({ message: "Email", context: "routine trigger" }));
   for (const cron of routine.crons) parts.push(formatCron(cron, labels));
   if (routine.watch) parts.push(t`When something changes`);
   return parts.length > 0 ? parts.join(", ") : t`No trigger`;
@@ -764,7 +764,7 @@ export function RoutineEditor({
                 onClick={() => onChange({ ...draft, emailSenders: "owner" })}
               >
                 <Mail />
-                <Trans>Email</Trans>
+                {t({ message: "Email", context: "routine trigger" })}
               </DropdownMenuItem>
             ) : null}
 

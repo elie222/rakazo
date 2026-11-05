@@ -3042,9 +3042,13 @@ msgstr "プロフィールを編集"
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/RoutineEditor.tsx
 msgid "Email"
 msgstr "メールアドレス"
+
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "メール"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Email address"

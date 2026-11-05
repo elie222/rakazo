@@ -500,6 +500,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Git event": "Gitイベント",
   "Message event": "メッセージイベント",
   "When something changes": "変更があったとき",
+  "When an email arrives": "メールを受信したとき",
   "Open conversation": "会話を開く",
   Paused: "一時停止中",
   Prompt: "プロンプト",

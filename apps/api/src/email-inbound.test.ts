@@ -41,7 +41,7 @@ function setup(
     message?: InboundEmail;
     bot?: Record<string, unknown> | null;
     routines?: Array<Record<string, unknown>>;
-    owner?: { email: string; emailVerified: boolean };
+    owner?: { email: string };
     storeAttachment?: EmailInboundDeps["storeAttachment"];
   } = {},
 ) {
@@ -55,6 +55,7 @@ function setup(
           thread: { id: "thread-1" },
         }
       : options.bot;
+  const routines = options.routines ?? [OWNER_ROUTINE];
   const sendUserMessage = vi.fn(async (_input: unknown) => ({
     messageId: "msg-1",
     runId: "run-1",
@@ -66,11 +67,16 @@ function setup(
   const deps: EmailInboundDeps = {
     prisma: {
       botEmailAddress: { findUnique: findAddress },
-      routine: { findMany: vi.fn(async () => options.routines ?? [OWNER_ROUTINE]) },
-      user: {
-        findUnique: vi.fn(
-          async () => options.owner ?? { email: "Owner@Example.test", emailVerified: true },
+      routine: {
+        findFirst: vi.fn(async () => (routines.length ? { id: "any" } : null)),
+        findMany: vi.fn(async ({ where }: { where: { emailSenders: { in: string[] } } }) =>
+          routines.filter((routine) =>
+            where.emailSenders.in.includes(String(routine.emailSenders)),
+          ),
         ),
+      },
+      user: {
+        findUnique: vi.fn(async () => options.owner ?? { email: "Owner@Example.test" }),
       },
     } as unknown as EmailInboundDeps["prisma"],
     events: { sendUserMessage },
@@ -173,11 +179,6 @@ describe("inbound email route", () => {
       { message: email({ from: { address: "colleague@example.test", name: "" } }) },
       "sender not allowed",
     ],
-    [
-      "an owner whose email is unverified",
-      { owner: { email: "owner@example.test", emailVerified: false } },
-      "sender not allowed",
-    ],
   ] as const)("accepts and drops %s", async (_label, options, reason) => {
     const { to, ...rest } = options as { to?: string } & Parameters<typeof setup>[0];
     const { post, sendUserMessage } = setup(rest);
@@ -201,6 +202,39 @@ describe("inbound email route", () => {
       ?.prompt;
     expect(prompt).toContain('Run routine "Team inbox"');
     expect(prompt).not.toContain('Run routine "Triage"');
+  });
+
+  it("cuts long subjects and recipient lists before they reach the bot", async () => {
+    const crowd = Array.from({ length: 400 }, (_, index) => `person${index}@example.test`);
+    const { post, sendUserMessage } = setup({
+      message: email({ subject: "s".repeat(5_000), cc: crowd }),
+    });
+
+    await post();
+
+    const prompt =
+      (sendUserMessage.mock.calls[0]?.[0] as unknown as { prompt: string } | undefined)?.prompt ??
+      "";
+    expect(prompt).not.toContain("s".repeat(501));
+    expect(prompt).toContain("person49@example.test");
+    expect(prompt).not.toContain("person50@example.test");
+    expect(prompt).toContain("[350 more]");
+  });
+
+  it("starts a matching routine however many routines the sender cannot start", async () => {
+    const others = Array.from({ length: 8 }, (_, index) => ({
+      ...OWNER_ROUTINE,
+      id: `r-${index}`,
+      name: `Mine ${index}`,
+    }));
+    const { post, sendUserMessage } = setup({
+      routines: [...others, DOMAIN_ROUTINE],
+      message: email({ from: { address: "colleague@example.test", name: "" } }),
+    });
+
+    await post();
+
+    expect(sendUserMessage).toHaveBeenCalledTimes(1);
   });
 
   it("stores attachments and names the ones it could not keep", async () => {

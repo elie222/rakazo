@@ -3042,7 +3042,11 @@ msgstr "Profil bearbeiten"
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
+msgid "Email"
+msgstr "E-Mail"
+
 #: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
 msgid "Email"
 msgstr "E-Mail"
 

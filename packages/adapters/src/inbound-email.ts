@@ -15,13 +15,16 @@ export type InboundEmailResolver = (
 ) => Promise<string[][] | string[]>;
 
 export type InboundEmail = {
-  /** Message-ID, or a hash of the raw message when it has none: the same message gets one key. */
+  /**
+   * The same message always gets the same key: its verified DKIM signature, which a resent copy
+   * cannot change, else its Message-ID or a hash of the raw bytes.
+   */
   key: string;
   /** The single From mailbox, lowercased; null when the From field is missing or malformed. */
   from: { address: string; name: string } | null;
   /**
-   * A DKIM signature that passed, aligns with the From domain and covers the one From, To and
-   * Cc field, so the sender's domain vouches for the From address and the recipients.
+   * A DKIM signature that passed, was made by the From address's own domain and covers the one
+   * From, To and Cc field, so that domain vouches for the From address and the recipients.
    */
   authenticated: boolean;
   to: string[];
@@ -51,11 +54,10 @@ export async function readInboundEmail(
   ]);
 
   const fieldCount = (name: string) => email.headerLines.filter((line) => line.key === name).length;
-  const header = (name: string) =>
+  const values = (name: string) =>
     email.headers
-      .find((line) => line.key === name)
-      ?.value.trim()
-      .toLowerCase() ?? "";
+      .filter((line) => line.key === name)
+      .map((line) => line.value.split(";")[0]?.trim().toLowerCase() ?? "");
 
   const fromAddress =
     dkim.fromFields === 1 && dkim.fromSyntax === "valid" && dkim.headerFrom.length === 1
@@ -65,31 +67,32 @@ export async function readInboundEmail(
   const cc = addresses(email.cc);
   // An extra To or Cc added above the signed one would be read but not verified.
   const singleFields = fieldCount("to") <= 1 && fieldCount("cc") <= 1;
-  const authenticated =
-    fromAddress !== null &&
-    singleFields &&
-    dkim.results.some((result) => {
-      const status = result.status;
-      if (status.result !== "pass" || !status.aligned) return false;
-      // l= leaves trailing body bytes unsigned; anything could be appended there.
-      if ((status.underSized ?? 0) > 0 || result.signatureTimeValid === false) return false;
-      const signed = new Set(
-        (result.signingHeaders?.keys ?? "").split(":").map((key) => key.trim().toLowerCase()),
-      );
-      return (
-        signed.has("from") &&
-        (fieldCount("to") === 0 || signed.has("to")) &&
-        (fieldCount("cc") === 0 || signed.has("cc"))
-      );
-    });
+  const fromDomain = fromAddress?.slice(fromAddress.lastIndexOf("@") + 1);
+  const signature =
+    fromAddress === null || !singleFields
+      ? undefined
+      : dkim.results.find((result) => {
+          const status = result.status;
+          // Exactly the From domain: a subdomain (often run by a sending service) would align too.
+          if (status.result !== "pass" || result.signingDomain?.toLowerCase() !== fromDomain) {
+            return false;
+          }
+          // l= leaves trailing body bytes unsigned; anything could be appended there.
+          if ((status.underSized ?? 0) > 0 || result.signatureTimeValid === false) return false;
+          const signed = new Set(
+            (result.signingHeaders?.keys ?? "").split(":").map((key) => key.trim().toLowerCase()),
+          );
+          return (
+            signed.has("from") &&
+            (fieldCount("to") === 0 || signed.has("to")) &&
+            (fieldCount("cc") === 0 || signed.has("cc"))
+          );
+        });
 
-  const precedence = header("precedence");
-  const autoSubmitted = header("auto-submitted").split(";")[0]?.trim() ?? "";
+  // Every copy of a header counts, so an extra "Auto-Submitted: no" cannot hide an auto-reply.
   const automated =
-    (autoSubmitted !== "" && autoSubmitted !== "no") ||
-    precedence === "bulk" ||
-    precedence === "junk" ||
-    precedence === "list" ||
+    values("auto-submitted").some((value) => value !== "no") ||
+    values("precedence").some((value) => ["bulk", "junk", "list"].includes(value)) ||
     fieldCount("list-id") > 0;
 
   const body = email.text?.trim() || (email.html ? htmlToPlainText(email.html) : "");
@@ -103,11 +106,12 @@ export async function readInboundEmail(
       : "";
 
   return {
-    key:
-      email.messageId?.trim() ||
-      `sha256:${createHash("sha256").update(buffer).digest("base64url")}`,
+    key: signature?.id
+      ? `dkim:${signature.id}`
+      : email.messageId?.trim() ||
+        `sha256:${createHash("sha256").update(buffer).digest("base64url")}`,
     from: fromAddress ? { address: fromAddress, name: fromName } : null,
-    authenticated,
+    authenticated: signature !== undefined,
     to,
     cc,
     subject: email.subject?.trim() ?? "",

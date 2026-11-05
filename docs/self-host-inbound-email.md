@@ -76,17 +76,31 @@ rakazo  unix  -  n  n  -  -  pipe
   flags=Rq user=nobody argv=/usr/local/bin/rakazo-inbound-email ${recipient}
 ```
 
-Route the domain to it with `relay_domains = bots.example.com` and a `transport_maps` entry of
-`bots.example.com rakazo:`. The script exits with 75 when Rakazo does not answer, so Postfix keeps
-the message and tries again:
+In `main.cf`, route the domain to it and hand it one recipient at a time:
+
+```text
+relay_domains = bots.example.com
+transport_maps = hash:/etc/postfix/transport
+rakazo_destination_recipient_limit = 1
+```
+
+with `bots.example.com rakazo:` in `/etc/postfix/transport` (run `postmap` on it). The script
+bounces a message that is too large and exits with 75 for anything else that fails, so Postfix
+keeps the message and tries again:
 
 ```sh
 #!/bin/sh
-curl -sf --max-time 60 \
+recipient=$(printf %s "$1" | jq -sRr @uri)
+status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 \
   -H "Authorization: Bearer $(cat /etc/rakazo/inbound-email-secret)" \
   -H "Content-Type: message/rfc822" \
   --data-binary @- \
-  "https://rakazo.example.com/api/v1/email/inbound?to=$1" >/dev/null || exit 75
+  "https://rakazo.example.com/api/v1/email/inbound?to=$recipient")
+case "$status" in
+  2??) exit 0 ;;
+  413) exit 69 ;;
+  *) exit 75 ;;
+esac
 ```
 
 ## Who can start work
@@ -97,7 +111,7 @@ covers its **To** and **Cc**, which must name the bot. Mail that fails, mail sen
 replies and mailing-list mail are dropped.
 
 Each email trigger then starts only for its owner's own address, or for anyone at the owner's
-email domain when the routine allows it. The owner's account email must be verified.
+email domain when the routine allows it.
 
 The message reaches the bot as outside data, never as instructions, and runs it starts follow the
 stricter [approval](./approvals.md) rules for outside events. Up to four attachments are kept,

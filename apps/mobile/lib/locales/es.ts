@@ -496,6 +496,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Git event": "Evento de Git",
   "Message event": "Evento de mensaje",
   "When something changes": "Cuando algo cambie",
+  "When an email arrives": "Cuando llega un correo",
   "Open conversation": "Abrir conversación",
   Paused: "En pausa",
   Prompt: "Instrucción",

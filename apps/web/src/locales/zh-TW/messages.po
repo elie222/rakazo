@@ -3043,9 +3043,13 @@ msgstr "編輯資料"
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/RoutineEditor.tsx
 msgid "Email"
 msgstr "電子信箱"
+
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "電子郵件"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Email address"

@@ -3042,9 +3042,13 @@ msgstr "编辑资料"
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/RoutineEditor.tsx
 msgid "Email"
 msgstr "邮箱"
+
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "邮件"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Email address"

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { MessagingInboundAttachment } from "@rakazo/adapter-kit";
 import type { InboundEmail } from "@rakazo/adapters";
 import { INBOUND_EMAIL_MAX_BYTES, readInboundEmail } from "@rakazo/adapters";
+import type { RoutineEmailSenders } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { hasValidBearerToken, sanitizeMessagingLabel } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
@@ -65,21 +66,13 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   const bot = claimed?.bot;
   if (!bot || bot.archivedAt || !bot.thread) return ignored("no such bot");
 
-  const routines = await deps.prisma.routine.findMany({
-    where: { botId: bot.id, spaceId: bot.spaceId, active: true, emailSenders: { not: null } },
-    select: {
-      id: true,
-      name: true,
-      prompt: true,
-      emailSenders: true,
-      modelProvider: true,
-      modelId: true,
-      thinkingLevel: true,
-    },
-    orderBy: { updatedAt: "desc" },
-    take: 5,
+  const emailRoutine = { botId: bot.id, spaceId: bot.spaceId, active: true };
+  // Cheap check first: most mail to a bot without an email routine is never parsed.
+  const any = await deps.prisma.routine.findFirst({
+    where: { ...emailRoutine, emailSenders: { not: null } },
+    select: { id: true },
   });
-  if (routines.length === 0) return ignored("no email routine");
+  if (!any) return ignored("no email routine");
 
   let email: InboundEmail;
   try {
@@ -101,18 +94,36 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     return ignored("not addressed to this bot");
   }
 
+  // The rule only decides who may start the owner's own bot, so an address the owner never
+  // verified can expose nothing but that owner's account; servers without email verify no one.
   const owner = await deps.prisma.user.findUnique({
     where: { id: bot.userId },
-    select: { email: true, emailVerified: true },
+    select: { email: true },
   });
-  const ownerEmail = owner?.emailVerified ? owner.email.trim().toLowerCase() : null;
-  const matched = routines.filter((routine) =>
-    routine.emailSenders === "owner"
-      ? sender === ownerEmail
-      : routine.emailSenders === "domain" &&
-        ownerEmail !== null &&
-        domainOf(sender) === domainOf(ownerEmail),
-  );
+  const ownerEmail = owner?.email.trim().toLowerCase() || null;
+  const allowed: RoutineEmailSenders[] =
+    ownerEmail === null
+      ? []
+      : sender === ownerEmail
+        ? ["owner", "domain"]
+        : domainOf(sender) === domainOf(ownerEmail)
+          ? ["domain"]
+          : [];
+  // Filtered in the query, so routines this sender cannot start never crowd out ones it can.
+  const matched = allowed.length
+    ? await deps.prisma.routine.findMany({
+        where: { ...emailRoutine, emailSenders: { in: allowed } },
+        select: {
+          name: true,
+          prompt: true,
+          modelProvider: true,
+          modelId: true,
+          thinkingLevel: true,
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 5,
+      })
+    : [];
   if (matched.length === 0) return ignored("sender not allowed");
 
   const keyHash = createHash("sha256").update(email.key).digest("base64url");
@@ -146,17 +157,18 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     }
   }
 
+  const name = email.from.name.slice(0, HEADER_MAX_CHARS);
   const prompt = formatUntrustedDeliveryPayload("[Email]", {
-    from: email.from.name ? `${email.from.name} <${sender}>` : sender,
-    to: email.to,
-    ...(email.cc.length ? { cc: email.cc } : {}),
-    subject: email.subject,
+    from: name ? `${name} <${sender}>` : sender,
+    to: listed(email.to),
+    ...(email.cc.length ? { cc: listed(email.cc) } : {}),
+    subject: email.subject.slice(0, HEADER_MAX_CHARS),
     ...(email.date ? { date: email.date } : {}),
     text: email.text,
     ...(artifacts.length
       ? { files: artifacts.map(({ name, mimeType, size }) => ({ name, mimeType, size })) }
       : {}),
-    ...(unavailable.length ? { unavailable } : {}),
+    ...(unavailable.length ? { unavailable: listed(unavailable) } : {}),
   });
 
   return deliverWebhookEvent(
@@ -164,6 +176,17 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     { bot: { id: bot.id, spaceId: bot.spaceId, userId: bot.userId }, threadId: bot.thread.id },
     { prompt, artifacts, routines: matched, source: "email", idempotencyKey: email.key },
   );
+}
+
+/** Longest subject or sender name the bot sees; only the body has its own, larger cap. */
+const HEADER_MAX_CHARS = 500;
+const LIST_MAX_ENTRIES = 50;
+
+/** A long recipient or file list, cut so it cannot crowd out the email itself. */
+function listed(items: string[]): string[] {
+  return items.length > LIST_MAX_ENTRIES
+    ? [...items.slice(0, LIST_MAX_ENTRIES), `[${items.length - LIST_MAX_ENTRIES} more]`]
+    : items;
 }
 
 /** The bot name an address on this domain reaches; a +tag reaches the same bot. */

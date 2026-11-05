@@ -3042,9 +3042,13 @@ msgstr "Редактировать профиль"
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
-#: src/pages/RoutineEditor.tsx
 msgid "Email"
 msgstr "Электронная почта"
+
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "Почта"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Email address"
