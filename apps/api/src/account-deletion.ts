@@ -14,8 +14,11 @@ import {
   deleteEmptyOrganization,
   deletePageShareSecrets,
   keepOrganizationTrialUse,
+  recordAuditEvent,
   recordComputerRunEnd,
   releaseOrganizationDeletionClaim,
+  runAsSystem,
+  takeStalledOrganizationDeletion,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { BillingService } from "./billing.js";
@@ -61,16 +64,26 @@ export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: stri
   );
 }
 
+type OrganizationDeletionDeps = SpaceDeletionDeps & {
+  billing?: Pick<BillingService, "cancelForDeletedOrganization">;
+};
+
 /**
  * Claiming hides the organization from the owner's list. Its subscriptions are cancelled before
  * anything is destroyed, and a billing failure releases the claim, so the organization stays as it
- * was; any later failure leaves the Spaces claimed, and deleting again finishes.
+ * was; any later failure leaves the Spaces claimed, and deleting again, or the sweep once the claim
+ * goes stale, finishes. Audit events keep no foreign key to their organization, so the record
+ * outlives it.
  */
 export async function deleteOrganization(
-  deps: SpaceDeletionDeps & { billing?: Pick<BillingService, "cancelForDeletedOrganization"> },
+  deps: OrganizationDeletionDeps,
   userId: string,
   organizationId: string,
 ): Promise<void> {
+  const organization = await deps.prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { name: true },
+  });
   const { claimId, spaceIds, fresh } = await claimOrganizationForDeletion(deps.prisma, {
     userId,
     organizationId,
@@ -106,6 +119,31 @@ export async function deleteOrganization(
     computers: inOrganization,
   });
   await deleteEmptyOrganization(deps.prisma, organizationId);
+  await recordAuditEvent({
+    action: "organization.deleted",
+    actor: { type: "user", id: userId },
+    organizationId,
+    target: { type: "organization", id: organizationId, label: organization?.name ?? null },
+  });
+}
+
+/** Finishes organization deletions that stopped part way, such as on a provider failure or restart. */
+export function finishStalledOrganizationDeletions(
+  deps: OrganizationDeletionDeps,
+): (signal: AbortSignal) => Promise<void> {
+  return (signal) =>
+    runAsSystem("finish stalled organization deletions", async () => {
+      while (!signal.aborted) {
+        const stalled = await takeStalledOrganizationDeletion(deps.prisma);
+        if (!stalled) return;
+        try {
+          if (!stalled.ownerId) throw new Error(`organization ${stalled.id} has no owner`);
+          await deleteOrganization(deps, stalled.ownerId, stalled.id);
+        } catch (error) {
+          getLogger().error("stalled organization deletion failed", error);
+        }
+      }
+    });
 }
 
 /** Tears down the bots and computers matched, then deletes the claimed Spaces and their files. */

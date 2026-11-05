@@ -28,7 +28,7 @@ import {
 } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryObjectStorage } from "../../../packages/adapters/src/object-storage.test-support.js";
-import { deleteAccountContent } from "./account-deletion.js";
+import { deleteAccountContent, finishStalledOrganizationDeletions } from "./account-deletion.js";
 import { createBillingService } from "./billing.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
@@ -362,6 +362,38 @@ describePostgres("organizations (PostgreSQL)", () => {
 
     await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
     expect(sandbox.destroyed).toEqual([`sb-retry-${suffix}`]);
+  });
+
+  it("finishes a deletion that stopped part way in the background once its claim goes stale", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    await botWithComputer(work.id, ada.userId, `sb-sweep-${suffix}`);
+    sandbox.failDestroy.add(`sb-sweep-${suffix}`);
+    await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
+      "provider unavailable",
+    );
+    sandbox.failDestroy.clear();
+    const sweep = () => finishStalledOrganizationDeletions(deps())(new AbortController().signal);
+
+    // A claim still fresh may belong to a deletion in progress.
+    await sweep();
+    await expect(
+      system.organization.findUnique({ where: { id: work.id } }),
+    ).resolves.not.toBeNull();
+
+    await system.space.updateMany({
+      where: { organizationId: work.id },
+      data: { deletingAt: new Date(Date.now() - 10 * 60_000) },
+    });
+    await sweep();
+
+    await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
+    expect(sandbox.destroyed).toEqual([`sb-sweep-${suffix}`]);
+    await expect(
+      system.auditEvent.count({
+        where: { organizationId: work.id, action: "organization.deleted" },
+      }),
+    ).resolves.toBe(1);
   });
 
   it("keeps a Space whose files could not be removed, and removes them on a retry", async () => {

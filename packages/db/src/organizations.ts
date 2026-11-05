@@ -8,6 +8,7 @@ import {
   claimSpaceForDeletion,
   lockOrganizationSpaces,
   normalizeSpaceName,
+  SPACE_DELETION_CLAIM_TIMEOUT_MS,
   SpaceDeletionInProgressError,
 } from "./spaces.js";
 import { withTransactionRetry } from "./transaction-retry.js";
@@ -191,6 +192,42 @@ export async function releaseOrganizationDeletionClaim(
     where: { organizationId: input.organizationId, deletionClaimId: input.claimId },
     data: { deletingAt: null, deletionClaimId: null },
   });
+}
+
+/**
+ * An organization whose deletion stopped part way and whose claim has gone stale, with the owner
+ * who asked for it. Renewing the claim first lets only one sweep resume it.
+ */
+export async function takeStalledOrganizationDeletion(
+  prisma: PrismaClient,
+): Promise<{ id: string; ownerId: string | undefined } | null> {
+  for (;;) {
+    const stale = new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS);
+    const space = await prisma.space.findFirst({
+      where: {
+        deletionClaimId: { startsWith: "organization-deletion:" },
+        deletingAt: { lt: stale },
+      },
+      select: {
+        organizationId: true,
+        deletionClaimId: true,
+        organization: {
+          select: { members: { where: { role: OWNER }, select: { userId: true }, take: 1 } },
+        },
+      },
+    });
+    if (!space) return null;
+    const { count } = await prisma.space.updateMany({
+      where: {
+        organizationId: space.organizationId,
+        deletionClaimId: space.deletionClaimId,
+        deletingAt: { lt: stale },
+      },
+      data: { deletingAt: new Date() },
+    });
+    if (count > 0)
+      return { id: space.organizationId, ownerId: space.organization.members[0]?.userId };
+  }
 }
 
 /** Deletes the organization once its Spaces are gone; the rest of its rows go by cascade. */
