@@ -416,7 +416,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Connect API key": "连接 API 密钥",
   "Connect Executor": "连接 Executor",
   "Connect MCP server {name}": "连接 MCP 服务器 {name}",
-  "Connect Treg": "连接 Treg",
   Connected: "已连接",
   "Connected.": "已连接。",
   "Connected. Its tools are available from your next message.":
@@ -832,7 +831,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   Thread: "对话",
   Title: "标题",
   "Try again.": "请重试。",
-  "Treg token": "Treg 令牌",
   "Type your answer": "输入你的回答",
   Pinned: "置顶",
   Unassigned: "未分组",

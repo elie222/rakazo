@@ -391,7 +391,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Connect API key": "連線 API 金鑰",
   "Connect Executor": "連線 Executor",
   "Connect MCP server {name}": "連線 MCP 伺服器 {name}",
-  "Connect Treg": "連線 Treg",
   Connected: "已連線",
   "Connected. Its tools are available from your next message.":
     "已連線。從你的下一條訊息起即可使用它的工具。",
@@ -793,7 +792,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Thread: "對話",
   Title: "標題",
   "Try again.": "請重試。",
-  "Treg token": "Treg 權杖",
   "Type your answer": "輸入你的回答",
   Pinned: "置頂",
   Unassigned: "未分組",

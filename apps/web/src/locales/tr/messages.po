@@ -7162,10 +7162,6 @@ msgstr "Transkripsiyon yanıtı çok büyük."
 msgid "Treat like a person"
 msgstr "Bir insan gibi davran"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "Treg token'ı"
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"
 msgstr "Deneme"
