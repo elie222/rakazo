@@ -12,6 +12,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
+import { batchActions, humanizeToolName } from "@rakazo/core";
 import {
   isInternalTermination,
   isTerminatingReplyResult,
@@ -172,10 +173,29 @@ export function normalizeAgentToolName(name: string): string {
 
 const ACTIVITY_DETAIL_LIMIT = 90;
 
+/**
+ * What a call's steps show: the actions a batch runs, else the tool's label. Empty when neither
+ * applies, so callers fall back to the tool name.
+ */
+export function connectorStepNames(tool: ConnectorTool | undefined, args: unknown): string[] {
+  const actions = tool?.batch ? batchActions(tool.batch, args).actions : [];
+  if (actions.length > 0) return actions.map(humanizeToolName);
+  return tool?.label ? [tool.label] : [];
+}
+
 /** One human-readable line describing a tool call, shown live in the thread. */
-export function describeToolActivity(toolName: string, args: unknown): string {
+export function describeToolActivity(
+  toolName: string,
+  args: unknown,
+  findTool?: (name: string) => ConnectorTool | undefined,
+): string {
   const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
-  if (toolName === USE_TOOL) return describeToolActivity(String(record.name), record.arguments);
+  if (toolName === USE_TOOL)
+    return describeToolActivity(String(record.name), record.arguments, findTool);
+  const tool = findTool?.(toolName);
+  const actions = tool?.batch ? batchActions(tool.batch, args).actions : [];
+  if (actions.length > 0) return `Using ${actions.map(humanizeToolName).join(", ")}`;
+  if (tool?.label) return tool.label;
   if (toolName === FIND_TOOL) return "Finding a tool";
   const detail = (value: unknown): string => {
     const text = sanitizeSensitiveText(String(value ?? ""))

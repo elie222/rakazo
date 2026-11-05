@@ -803,7 +803,9 @@ export class PiAgentRuntime implements AgentRuntime {
             toolActivityShowing = true;
             queue.push({
               type: "progress",
-              text: describeToolActivity(event.toolName, event.args),
+              text: describeToolActivity(event.toolName, event.args, (name) =>
+                toolDefs.find((tool) => tool.name === name),
+              ),
               activity: true,
             });
           }

@@ -1,5 +1,37 @@
+import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { describeToolActivity } from "./pi-runtime-tools.js";
+import { connectorStepNames, describeToolActivity } from "./pi-runtime-tools.js";
+
+describe("connector tool labels", () => {
+  const search: ConnectorTool = {
+    name: "VENDOR_SEARCH_TOOLS",
+    label: "Finding tools",
+    description: "",
+    inputSchema: {},
+  };
+  const batch: ConnectorTool = {
+    name: "VENDOR_MULTI_EXECUTE",
+    label: "Running tools",
+    description: "",
+    inputSchema: {},
+    batch: { items: "tools", action: "tool_slug", arguments: "arguments" },
+  };
+  const tools = new Map([search, batch].map((tool) => [tool.name, tool]));
+  const args = { tools: [{ tool_slug: "POSTIZ_LIST_POSTS", arguments: {} }] };
+
+  it("shows a label or the actions a batch runs instead of the model's tool name", () => {
+    expect(describeToolActivity(search.name, { queries: [] }, (name) => tools.get(name))).toBe(
+      "Finding tools",
+    );
+    expect(describeToolActivity(batch.name, args, (name) => tools.get(name))).toBe(
+      "Using Postiz list posts",
+    );
+    expect(connectorStepNames(search, {})).toEqual(["Finding tools"]);
+    expect(connectorStepNames(batch, args)).toEqual(["Postiz list posts"]);
+    expect(connectorStepNames(batch, {})).toEqual(["Running tools"]);
+    expect(connectorStepNames(undefined, {})).toEqual([]);
+  });
+});
 
 describe("describeToolActivity", () => {
   it("summarizes builtin tools with their most informative argument", () => {
