@@ -35,8 +35,9 @@ Linux 默认不提供相同的 `host.docker.internal` 行为。
 
 | `PI_DEFAULT_PROVIDER` | 密钥 | 默认模型 |
 | --- | --- | --- |
-| `openrouter`（默认） | `OPENROUTER_API_KEY` | `openai/gpt-6-luna` |
+| `openrouter`（默认） | `OPENROUTER_API_KEY` | `anthropic/claude-haiku-5.5` |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-5` |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-flash` |
 
 需要截图计算机工具时，选择支持视觉的模型。
 Compose 也会将运行时支持的标准提供商密钥（例如 `OPENAI_API_KEY`、`GEMINI_API_KEY`）传给 API 和 worker，
@@ -98,8 +99,9 @@ Ollama Cloud 可直接在“设置 → 模型”中填写其 API 密钥并查找
 默认关闭。需要启用时，在 worker（内联执行时还包括 API）配置媒体提供商及其通用 HTTP 连接。
 密钥保留在服务器，不能提交到仓库。完整配置示例见[媒体生成（英文）](../self-host-models.md#image-and-video-generation)。
 
-图片工具生成 PNG；视频工具提交四秒 MP4，并返回任务 ID，机器人需再次查询该 ID 才能取得结果。
-相同所有者、机器人和聊天可在 worker 重启后继续查询。首版不自动在后台交付结果。
+图片工具生成 PNG；视频工具提交四秒 MP4，并返回任务 ID 和排队或运行状态。
+worker 会在后台持续检查任务，重启后也会继续，并将完成的视频发送到原聊天一次，再让机器人跟进。
+视频失败或一小时后仍未完成时，会标记为失败并让机器人说明。机器人也可通过 `jobId` 查询进度。
 两种工具默认都需要审批，且每次运行最多提交两次（失败也计入），工单运行不可使用这些聊天媒体工具。
 提交不会自动重试，因为提供商可能已经接受并计费；应在提供商处配置预算和限流。
 输出还必须同时满足 10 MiB 媒体上限和部署附件上限。
