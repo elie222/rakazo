@@ -810,10 +810,6 @@ msgstr "金額"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "此供應商儲存的是 API 金鑰，不是訂閱登入。"
 
-#: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "An existing Honcho peer to read from. Rakazo never writes to it."
-msgstr "用於讀取資料的現有 Honcho peer。Rakazo 絕不會向其寫入資料。"
-
 #: src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "無法檢查匯入的 API 金鑰。請再試一次。"
@@ -5163,6 +5159,10 @@ msgstr "推理強度"
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr "回想與寫入"
+
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "Recall from this peer; save to Rakazo’s own peers."
+msgstr "從此 peer 讀取；儲存至 Rakazo 自己的 peer。"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"

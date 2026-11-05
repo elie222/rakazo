@@ -33,7 +33,9 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
 
 - **Supermemory**: its cloud service, or your own instance.
 - **Serenity**: choose **Recall and write**, or **Recall only** to keep it read-only.
-- **Honcho**: reads from an existing Honcho peer and never writes to it.
+- **Honcho**: saves and recalls facts using Rakazo’s own peers. Optionally, enter a workspace
+  and **User peer** to also recall what Honcho already knows about you. That existing peer stays
+  read-only; Rakazo writes new facts to its own peers in the same workspace.
 
 Once connected, **Default scope** decides what bots share in the provider:
 

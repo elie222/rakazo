@@ -809,10 +809,6 @@ msgstr "Bedrag"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "Voor deze aanbieder is een API-sleutel opgeslagen, geen abonnementsaanmelding."
 
-#: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "An existing Honcho peer to read from. Rakazo never writes to it."
-msgstr "Een bestaande Honcho-peer om uit te lezen. Rakazo schrijft er nooit naar."
-
 #: src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "Een geïmporteerde API-sleutel kon niet worden gecontroleerd. Probeer het opnieuw."
@@ -5162,6 +5158,10 @@ msgstr "Redeneerinspanning"
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr "Ophalen en schrijven"
+
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "Recall from this peer; save to Rakazo’s own peers."
+msgstr "Ophalen uit deze peer; opslaan in Rakazo’s eigen peers."
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
