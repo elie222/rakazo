@@ -78,7 +78,7 @@ function callable(item: Endpoint): boolean {
   const method = item.method.toUpperCase();
   return (
     (item.kind === "data" || item.kind === "routed") &&
-    item.scope !== "own_account" &&
+    (item.scope === "" || item.scope === "any_account") &&
     item.platform_eligible !== false &&
     !item.platform_blocked &&
     !item.async &&

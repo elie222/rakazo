@@ -40,6 +40,8 @@ const direct = {
 const blocked = [
   { ...direct, id: "linkedin.post.create", kind: "action", method: "POST" },
   { ...direct, id: "meta-ads.campaigns", scope: "own_account" },
+  { ...direct, id: "ads.unlabeled", scope: undefined },
+  { ...direct, id: "ads.future", scope: "team_connection" },
   { ...direct, id: "replicate.flux", async: { poll: {} } },
   { ...direct, id: "minimax.image", platform: "image-gen" },
   { ...direct, id: "hunter.recipients.remove", method: "DELETE" },
