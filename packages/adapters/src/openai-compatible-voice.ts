@@ -93,7 +93,8 @@ export function serializeOpenAiCompatibleVoiceSecret(
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
   const previous = previousPlaintext ? tryParseSecret(previousPlaintext) : undefined;
   const same = previous?.baseUrl === baseUrl ? previous : undefined;
-  const sttInput = input.sttBaseUrl === undefined ? same?.sttBaseUrl : input.sttBaseUrl.trim();
+  // The transcription server and its key belong together, whatever happens to the main one.
+  const sttInput = input.sttBaseUrl === undefined ? previous?.sttBaseUrl : input.sttBaseUrl.trim();
   const sttUrl = sttInput ? assertAllowedOpenAiCompatibleUrl(sttInput, policy) : undefined;
   const sttBaseUrl = sttInput ? normalizeOpenAiCompatibleBaseUrl(sttInput) : undefined;
   const separateStt = sttBaseUrl && sttBaseUrl !== baseUrl ? sttBaseUrl : undefined;

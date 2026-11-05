@@ -163,6 +163,16 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
       sttBaseUrl: "http://192.168.1.30:9000/v1",
       sttApiKey: "stt-test-key",
     });
+    // Moving only the main server leaves the transcription server and its key alone.
+    const mainMoved = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.21:8880" }, split),
+    );
+    expect(mainMoved).toMatchObject({
+      baseUrl: "http://192.168.1.21:8880/v1",
+      sttBaseUrl: "http://192.168.1.30:9000/v1",
+      sttApiKey: "stt-test-key",
+    });
+    expect(mainMoved.apiKey).toBeUndefined();
     const moved = parseOpenAiCompatibleVoiceSecret(
       serializeAsOwner(
         { baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "http://192.168.1.31:9000" },
