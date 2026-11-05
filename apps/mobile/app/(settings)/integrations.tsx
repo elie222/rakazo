@@ -268,6 +268,8 @@ export default function Integrations() {
     setCatalogReady(false);
     setSources([]);
     setPluginInstalls([]);
+    setPluginEntries([]);
+    setPluginsState("loading");
     setMcpServers([]);
     setMcpError(null);
     setDetailKey(null);
@@ -279,6 +281,7 @@ export default function Integrations() {
   async function refresh() {
     const focus = focusGeneration.current;
     clearStaleScope();
+    setPluginsState("loading");
     let scope: IntegrationsCacheScope;
     try {
       scope = await integrationsCacheScope();
@@ -301,6 +304,7 @@ export default function Integrations() {
       setCatalogReady(false);
       setSources([]);
       setPluginInstalls([]);
+      setPluginEntries([]);
       setMcpServers([]);
       setMcpError(null);
       setDetailKey(null);

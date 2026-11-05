@@ -494,6 +494,39 @@ it("keeps sources loading when a rename cancels the catalog refresh", async () =
   );
 });
 
+it.each([true, false])(
+  "waits for new plugins after a scope switch with a cached empty catalog (stale scope: %s)",
+  async (staleScope) => {
+    const guidance = "Configure a plugin catalog on the server to connect apps.";
+    await render();
+    await act(async () => resolveCatalog([]));
+    expect(container.textContent).toContain(guidance);
+    state.focused = false;
+    await render();
+    state.current = !staleScope;
+    state.scope.mockImplementation(async () => {
+      state.current = true;
+      return { userId: "user-a", spaceId: "space-b" };
+    });
+    state.read.mockReturnValue({ catalog: [], connections: [] });
+    let finishPlugins!: (value: unknown) => void;
+    state.marketplace.mockReturnValue(
+      new Promise((resolve) => {
+        finishPlugins = resolve;
+      }),
+    );
+    state.rpc.mockResolvedValue([]);
+    state.focused = true;
+    await render();
+    expect(container.querySelector('[data-testid="integrations-loading"]')).toBeNull();
+    expect(container.textContent).not.toContain(guidance);
+    await act(async () =>
+      finishPlugins({ entries: [], unavailableRegistries: [], skippedEntries: 0 }),
+    );
+    expect(container.textContent).toContain(guidance);
+  },
+);
+
 it("refreshes a different space on focus return and rejects the blurred refresh", async () => {
   state.read.mockReturnValue({ catalog: [item], connections: [account] });
   await render();
