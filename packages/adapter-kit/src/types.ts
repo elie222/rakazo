@@ -271,6 +271,8 @@ export interface ConnectorTool {
   batch?: ToolBatch;
   /** In-process routing metadata. It is never exposed to the model. */
   route?: ConnectorRoute;
+  /** The `ui://` resource an MCP server shows this tool's result with (MCP Apps). */
+  appResourceUri?: string;
 }
 
 /**
@@ -293,6 +295,8 @@ export interface ConnectorRoute {
   connectionId?: string;
   /** Source label for lazy catalog name indexes. Never exposed as a model schema field. */
   catalogGroup?: string;
+  /** The `ui://` resource that shows this tool's result; see ConnectorApp. */
+  appResourceUri?: string;
 }
 
 export interface ConnectorCall {
@@ -303,9 +307,22 @@ export interface ConnectorCall {
   route?: ConnectorRoute;
 }
 
+/**
+ * An MCP server's app for one successful call (MCP Apps): HTML the client shows sandboxed with
+ * the call's input and result. Declared domains are already narrowed to the ones allowed.
+ */
+export interface ConnectorApp {
+  server: string;
+  html: string;
+  csp: { connectDomains?: string[]; resourceDomains?: string[] };
+  prefersBorder?: boolean;
+}
+
 export type ConnectorEvent =
   | { type: "log"; message: string }
   | { type: "result"; data: unknown }
+  /** Follows the call's `result` when its tool has an app. */
+  | { type: "app"; app: ConnectorApp }
   | { type: "error"; message: string; logIds?: string[] };
 
 export interface ConnectorCapabilities {

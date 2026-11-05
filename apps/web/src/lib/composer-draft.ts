@@ -196,3 +196,31 @@ export function writeComposerDraft(
     // Quota or private-mode failures: the draft still lives in memory.
   }
 }
+
+const offerListeners = new Map<string, Set<(text: string) => void>>();
+
+/** The composer key for a chat: one bot's chat or a group's. */
+export function composerDraftKey(target: { botId: string } | { groupId: string }): string {
+  return "botId" in target ? `bot:${target.botId}` : `group:${target.groupId}`;
+}
+
+/** Text a card in the chat hands to that chat's composer; the person still sends it. */
+export function offerComposerText(threadKey: string, text: string): void {
+  for (const listener of offerListeners.get(threadKey) ?? []) listener(text);
+}
+
+export function subscribeComposerOffer(
+  threadKey: string,
+  listener: (text: string) => void,
+): () => void {
+  let listeners = offerListeners.get(threadKey);
+  if (!listeners) {
+    listeners = new Set();
+    offerListeners.set(threadKey, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) offerListeners.delete(threadKey);
+  };
+}

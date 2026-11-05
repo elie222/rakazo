@@ -1,5 +1,11 @@
+import { MCP_APP_MIME_TYPE } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+
+/** Files people and bots see: an MCP app's HTML is kept as an artifact only for its chat card. */
+export const LISTED_ARTIFACT = {
+  mimeType: { not: MCP_APP_MIME_TYPE },
+} satisfies Prisma.ArtifactWhereInput;
 
 export async function resolveNextArtifactVersion(
   prisma: Pick<PrismaClient, "artifact">,
