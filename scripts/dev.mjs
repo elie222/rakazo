@@ -381,7 +381,9 @@ function shareOnTailnet(webPort) {
     stop() {
       try {
         run(cli, ["serve", `--https=${webPort}`, "off"]);
-      } catch {}
+      } catch {
+        log(`Could not stop sharing port ${webPort}; run: tailscale serve --https=${webPort} off`);
+      }
     },
   };
 }
@@ -440,7 +442,14 @@ try {
 
 let tailnet = null;
 if (/^(1|true)$/i.test(setting("RAKAZO_DEV_TAILNET") ?? "")) {
+  // The emulator's inbox has no sign-in check; it is safe only while nothing but this machine
+  // can reach the web server.
+  if (setting("EMAIL_EMULATOR") === "true") {
+    throw new Error("RAKAZO_DEV_TAILNET cannot be used with EMAIL_EMULATOR=true.");
+  }
   tailnet = shareOnTailnet(Number(env.WEB_PORT ?? setting("WEB_PORT") ?? 5173));
+  // Every way this process ends, including a failed launch, turns sharing off.
+  process.on("exit", () => tailnet.stop());
   // Sign-in cookies and links follow this origin, so use the tailnet URL on this machine too.
   env.WEB_ORIGIN = tailnet.origin;
   env.BETTER_AUTH_URL = tailnet.origin;
@@ -457,7 +466,6 @@ const turbo = spawnPnpm(
 );
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => turbo.kill(signal));
 turbo.on("exit", (code, signal) => {
-  tailnet?.stop();
   if (signal) process.kill(process.pid, signal);
   else process.exit(code ?? 0);
 });
