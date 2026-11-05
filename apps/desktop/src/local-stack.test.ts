@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunDocker, RunDockerResult } from "./docker-cli.js";
 import type { LocalStackDeps } from "./local-stack.js";
 import {
@@ -720,8 +720,8 @@ describe("LocalStackController", () => {
     expect(stack.managedStackRunning()).toBe(true);
 
     const retry = stack.start();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(stack.state().phase).toBe("pulling");
+    // The retry's checks before `compose pull` can outlast any fixed delay on a busy runner.
+    await vi.waitFor(() => expect(stack.state().phase).toBe("pulling"));
     expect(stack.managedStackRunning()).toBe(true);
     releasePull();
     expect((await retry).phase).toBe("failed");
