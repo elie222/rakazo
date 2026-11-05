@@ -870,7 +870,9 @@ export async function signOut() {
 }
 
 export async function deleteAccount(password?: string, token?: string) {
-  await rpc("notifications/unregisterPush").catch(() => undefined);
+  // No push unregistration: deleting the user removes the registrations on the server,
+  // and unregistering first would silently end this device's notifications and calls
+  // whenever the deletion is refused (wrong password, throttling, server error).
   const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/delete-user`,
     {
