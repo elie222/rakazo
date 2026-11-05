@@ -284,6 +284,27 @@ describe("offline monthly credit renewals", () => {
   });
 });
 
+describe("offline checkout cancellation", () => {
+  it("expires every kind of open checkout session when canceling", async () => {
+    const provider = new BillingEmulator({ modelCredits: true, now });
+    const { customerId } = await provider.createCustomer({
+      email: "billing@example.test",
+      organizationId: "fixture",
+    });
+    const urls = {
+      successUrl: "https://example.test/success",
+      cancelUrl: "https://example.test/cancel",
+    };
+    await provider.createByokCheckout({ customerId, amountCents: 4900, ...urls });
+    await provider.createCreditCheckout({ customerId, amountCents: 1000, monthly: true, ...urls });
+    await provider.cancelCustomerSubscriptions(customerId);
+    expect(() => provider.completeByokCheckout(customerId)).toThrow();
+    expect(() => provider.completeCreditCheckout(customerId)).toThrow();
+    expect(await provider.listCreditPurchases(customerId)).toEqual([]);
+    expect(await provider.getCustomerSubscription(customerId)).toBeNull();
+  });
+});
+
 describe("offline own-key tiers", () => {
   it("subscribes to a tier and moves to another only from the plan the caller saw", async () => {
     const provider = new BillingEmulator({ modelCredits: true, now });
