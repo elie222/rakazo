@@ -25,6 +25,7 @@ import {
   stackFailureMessage,
   stackResourceDir,
 } from "./local-stack.js";
+import { stackStopAvailable } from "./stop-local-stack.js";
 
 const COMPOSE_DIR = path.resolve(import.meta.dirname, "..", "..", "..", "infra", "compose");
 const fakeHex = (bytes: number) => "ab".repeat(bytes);
@@ -845,6 +846,33 @@ describe("LocalStackController", () => {
     expect(notifiedRunning).toEqual([true]);
     await expect(stack.matchesDesiredStack()).resolves.toBe(true);
     expect(notifiedRunning).toEqual([true]);
+  });
+
+  it("shows the off-switch to a saved external server when a restart rediscovers the stack", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    const stack = controller({
+      probe: (_url, _signal, supplied) => Promise.resolve(supplied === token ? "v1.2.3" : null),
+    });
+    expect(stackStopAvailable("existing", stack.managedStackRunning())).toBe(false);
+
+    // The startup path for a saved external server: probe only, never start or stop.
+    await expect(stack.matchesDesiredStack()).resolves.toBe(true);
+    expect(stackStopAvailable("existing", stack.managedStackRunning())).toBe(true);
+  });
+
+  it("probes nothing on startup when no local stack files exist", async () => {
+    let probes = 0;
+    const stack = controller({
+      probe: () => {
+        probes += 1;
+        return Promise.resolve("v1.2.3");
+      },
+    });
+    await expect(stack.matchesDesiredStack()).resolves.toBe(false);
+    expect(probes).toBe(0);
+    expect(stack.managedStackRunning()).toBe(false);
   });
 
   it("reuses only the privately identified stack on the desired image", async () => {
