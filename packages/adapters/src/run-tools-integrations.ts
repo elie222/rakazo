@@ -130,6 +130,20 @@ async function showConnectorApp(
 }
 
 /** Web, cloud agents, MCP servers, app connections and connector tools. */
+/** Idempotent on the call's effect key, so an interrupted call can be replayed to settle its hold. */
+export async function callPaidService(ctx: RunContext, call: ToolCall) {
+  const { deps, run, bot, context } = ctx;
+  const provider = ctx.providers.paidServices;
+  if (!provider) return { error: "Paid services are unavailable." };
+  return serviceCallFromTool(
+    { prisma: deps.prisma, provider, billing: await modelCreditBillingEnabled(deps) },
+    { userId: run.userId, spaceId: run.spaceId, runId: run.id, botId: bot.id },
+    call.args,
+    call.effectKey,
+    context,
+  );
+}
+
 export const integrationTools: ToolHandlers = {
   async web_search(ctx, call) {
     const { context } = ctx;
@@ -160,18 +174,7 @@ export const integrationTools: ToolHandlers = {
     );
   },
   async service_call(ctx, call) {
-    const { deps, run, bot, context } = ctx;
-    const provider = ctx.providers.paidServices;
-    if (!provider) return call.finish({ error: "Paid services are unavailable." });
-    return call.finish(
-      await serviceCallFromTool(
-        { prisma: deps.prisma, provider, billing: await modelCreditBillingEnabled(deps) },
-        { userId: run.userId, spaceId: run.spaceId, runId: run.id, botId: bot.id },
-        call.args,
-        call.effectKey,
-        context,
-      ),
-    );
+    return call.finish(await callPaidService(ctx, call));
   },
   async add_mcp_server(ctx, call) {
     const { deps, run, bot } = ctx;

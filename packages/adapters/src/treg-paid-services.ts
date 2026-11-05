@@ -77,7 +77,8 @@ function neutralJson(value: unknown): unknown {
 function callable(item: Endpoint): boolean {
   const method = item.method.toUpperCase();
   return (
-    (item.kind === "data" || item.kind === "routed") &&
+    (item.kind === "routed" ||
+      (item.kind === "data" && !item.id.startsWith(PUBLIC_ROUTED_PREFIX))) &&
     (item.scope === "" || item.scope === "any_account") &&
     item.platform_eligible !== false &&
     !item.platform_blocked &&
