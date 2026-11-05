@@ -62,8 +62,19 @@ const CHECKOUT_LEASE_MS = 120_000;
 const CHECKOUT_LEASE_POLL_MS = 250;
 /** Keeps a held lease valid through a provider operation longer than one lease period. */
 const CHECKOUT_LEASE_RENEW_MS = CHECKOUT_LEASE_MS / 4;
+/**
+ * Renewal stops after this, well past any expected provider call, and a checkout's provider
+ * call is aborted, so a slow call cannot block the organization's billing; the lease lapses
+ * one lease period later.
+ */
+const CHECKOUT_LEASE_MAX_RENEW_MS = 10 * 60_000;
+const LATE_CHECKOUT_EXPIRE_ATTEMPTS = 3;
+const LATE_CHECKOUT_EXPIRE_RETRY_MS = 250;
 /** Stripe returns here after checkout; served by the API through the web origin. */
 export const BILLING_RETURN_PATH = "/api/v1/billing/return";
+
+const checkoutBusy = () =>
+  new ORPCError("CONFLICT", { message: "Billing is busy; try again shortly" });
 
 /** Where checkout was opened; the mobile app's in-app browser closes on the return. */
 export type BillingClient = "mobile" | undefined;
@@ -290,10 +301,13 @@ export function createBillingService(deps: {
     });
   }
 
-  async function cancel(account: BillingAccount) {
+  async function cancel(organizationId: string) {
     // Holds the organization's checkout lease, so a checkout still opening finishes first and
     // the session it leaves is expired here instead of outliving the cancellation.
-    await withCheckoutLease(account.organizationId, async () => {
+    await withCheckoutLease(organizationId, async () => {
+      // That checkout may have replaced the customer, so read it only now.
+      const account = await billingAccountForOrganization(prisma, organizationId);
+      if (!account) return;
       await provider.cancelCustomerSubscriptions(account.customerId);
       await sync(account.customerId);
     });
@@ -326,21 +340,67 @@ export function createBillingService(deps: {
   async function openCheckout(
     actor: Actor,
     account: BillingAccount,
-    call: (customerId: string) => Promise<{ url: string }>,
+    call: (customerId: string, signal: AbortSignal) => Promise<{ id: string; url: string }>,
   ) {
     // Opening another recurring checkout expires the old one.
-    return withCheckoutLease(account.organizationId, async () => {
-      // The entry check ran before this request waited for the lease, and a deletion's
-      // cancellation holds the same lease: re-check, so no session opens that the
-      // cancellation cannot see and the organization cannot outlive.
-      if (await organizationBeingDeleted(account.organizationId))
-        throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
-      return withLiveCustomer(actor, account, call);
-    });
+    const session = await withCheckoutLease(
+      account.organizationId,
+      async (signal) => {
+        // The entry check ran before this request waited for the lease, and a deletion's
+        // cancellation holds the same lease: re-check, so no session opens that the
+        // cancellation cannot see and the organization cannot outlive.
+        if (await organizationBeingDeleted(account.organizationId))
+          throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
+        let session: { id: string; url: string };
+        try {
+          session = await withLiveCustomer(actor, account, (customerId) =>
+            call(customerId, signal),
+          );
+        } catch (error) {
+          // The hold's deadline stopped the provider's work: answer like a lost lease.
+          if (signal.aborted) throw checkoutBusy();
+          throw error;
+        }
+        if (signal.aborted) {
+          // Finished past the deadline, which counts as a lost lease too.
+          await expireLateCheckout(session.id);
+          throw checkoutBusy();
+        }
+        return session;
+      },
+      (late) => expireLateCheckout(late.id),
+    );
+    return { url: session.url };
   }
 
-  /** Runs `work` holding the organization's checkout lease, one at a time across API instances. */
-  async function withCheckoutLease<T>(organizationId: string, work: () => Promise<T>) {
+  /** Expires a session opened without the lease; one that stays open is only logged. */
+  async function expireLateCheckout(id: string) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await provider.expireCheckout(id);
+        return;
+      } catch (error) {
+        if (attempt >= LATE_CHECKOUT_EXPIRE_ATTEMPTS) {
+          getLogger().error("late checkout session left open", error, {
+            "billing.checkout_session_id": id,
+          });
+          return;
+        }
+        await sleep(LATE_CHECKOUT_EXPIRE_RETRY_MS * attempt);
+      }
+    }
+  }
+
+  /**
+   * Runs `work` holding the organization's checkout lease, one at a time across API instances.
+   * When the lease was lost before `work` finished, `discard` undoes its result. The signal
+   * passed to `work` aborts when renewal stops.
+   */
+  async function withCheckoutLease<T>(
+    organizationId: string,
+    work: (signal: AbortSignal) => Promise<T>,
+    discard?: (result: T) => Promise<void>,
+  ) {
     const deadline = Date.now() + CHECKOUT_LEASE_MS;
     let leaseId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
     while (!leaseId) {
@@ -351,19 +411,34 @@ export function createBillingService(deps: {
     // A provider operation can outlast the lease's validity, so renew it while work runs; a
     // deletion's cancellation then waits for the operation instead of taking the lease over
     // mid-flight. A renewal that finds the lease lapsed leaves it to the next claimant.
-    const renew = setInterval(
-      () =>
-        void renewCheckoutLease(prisma, organizationId, leaseId, CHECKOUT_LEASE_MS).catch(() => {}),
-      CHECKOUT_LEASE_RENEW_MS,
-    );
+    const renewUntil = Date.now() + CHECKOUT_LEASE_MAX_RENEW_MS;
+    const hold = new AbortController();
+    const renew = setInterval(() => {
+      if (Date.now() >= renewUntil) {
+        clearInterval(renew);
+        hold.abort();
+        return;
+      }
+      void renewCheckoutLease(prisma, organizationId, leaseId, CHECKOUT_LEASE_MS).catch(() => {});
+    }, CHECKOUT_LEASE_RENEW_MS);
     renew.unref();
     try {
-      const result = await work();
+      const result = await work(hold.signal);
       // Renewal keeps the lease unless the database refused every attempt for a whole lease
-      // period. A cancellation that still took the lease over expired the sessions open at
-      // that moment, so a session created after it must not be handed back.
-      if (!(await checkoutLeaseHeld(prisma, organizationId, leaseId)))
-        throw new ORPCError("CONFLICT", { message: "Billing is busy; try again shortly" });
+      // period or renewal hit its limit. A cancellation that took the lease over expired the
+      // sessions open at that moment, so a session created after it must not stay payable.
+      let held: boolean;
+      try {
+        held = await checkoutLeaseHeld(prisma, organizationId, leaseId);
+      } catch (error) {
+        // Unknown ownership counts as lost: undo, then report the failure.
+        await discard?.(result);
+        throw error;
+      }
+      if (!held) {
+        await discard?.(result);
+        throw checkoutBusy();
+      }
       return result;
     } finally {
       clearInterval(renew);
@@ -401,24 +476,27 @@ export function createBillingService(deps: {
       organizationOwnerHadTrial(prisma, organizationId, "byok"),
     ]);
     try {
-      return await openCheckout(actor, account, async (customerId) => {
+      return await openCheckout(actor, account, async (customerId, signal) => {
         // One trial per owner: reserve inside the organization's checkout lease, so overlapping
         // requests of the same organization cannot interleave their holds; the lease already
         // serializes their provider calls.
         const hold = byokTrialAvailable(account, credits, hadTrial)
           ? await reserveByokTrialCheckout(prisma, organizationId)
           : null;
-        let session: { url: string };
+        let session: { id: string; url: string };
         try {
-          session = await provider.createByokCheckout!({
-            customerId,
-            amountCents,
-            interval,
-            tier,
-            ...(hold ? { trialDays: days } : {}),
-            successUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
-            cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
-          });
+          session = await provider.createByokCheckout!(
+            {
+              customerId,
+              amountCents,
+              interval,
+              tier,
+              ...(hold ? { trialDays: days } : {}),
+              successUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
+              cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
+            },
+            signal,
+          );
         } catch (error) {
           // No session came out of this attempt, so its hold goes back; an earlier or newer
           // payable session's hold keeps its own expiry and survives.
@@ -531,13 +609,16 @@ export function createBillingService(deps: {
       const account = await billingAccountFor(actor, organizationId);
       await creditAccount(prisma, organizationId);
       try {
-        const checkout = await openCheckout(actor, account, (customerId) =>
-          provider.createCreditCheckout!({
-            customerId,
-            ...input,
-            successUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
-            cancelUrl: client === "mobile" ? mobileReturnUrl : `${appUrl}?billing=canceled`,
-          }),
+        const checkout = await openCheckout(actor, account, (customerId, signal) =>
+          provider.createCreditCheckout!(
+            {
+              customerId,
+              ...input,
+              successUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
+              cancelUrl: client === "mobile" ? mobileReturnUrl : `${appUrl}?billing=canceled`,
+            },
+            signal,
+          ),
         );
         await prisma.modelCreditAccount.update({
           where: { organizationId },
@@ -685,14 +766,17 @@ export function createBillingService(deps: {
           ? {}
           : { trialDays: await trialDays(organizationId) };
       try {
-        return await openCheckout(actor, account, (customerId) =>
-          provider.createCheckout({
-            customerId,
-            seats,
-            ...trial,
-            successUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
-            cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
-          }),
+        return await openCheckout(actor, account, (customerId, signal) =>
+          provider.createCheckout(
+            {
+              customerId,
+              seats,
+              ...trial,
+              successUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
+              cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
+            },
+            signal,
+          ),
         );
       } catch (error) {
         if (!(error instanceof BillingCheckoutCompletedError)) throw error;
@@ -766,13 +850,14 @@ export function createBillingService(deps: {
     },
 
     async cancelForDeletedUser(userId) {
-      for (const account of await ownedBillingAccounts(prisma, userId)) await cancel(account);
+      for (const account of await ownedBillingAccounts(prisma, userId))
+        await cancel(account.organizationId);
     },
 
     async cancelForDeletedOrganization(organizationId) {
       const account = await billingAccountForOrganization(prisma, organizationId);
       if (!account) return;
-      await cancel(account);
+      await cancel(organizationId);
       // The cancellation expired the organization's open checkout sessions, so their hold on
       // the owners' trial goes; a failed cancellation keeps it until a retry succeeds.
       await releaseByokTrialCheckouts(prisma, organizationId);

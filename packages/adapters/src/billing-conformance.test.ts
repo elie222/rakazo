@@ -11,6 +11,10 @@ const now = () => NOW;
 interface Harness {
   provider: BillingProvider;
   completeCheckout(customerId: string, status?: BillingSubscriptionStatus): void;
+  /** The customer pays their open own-key or credit checkout. */
+  completeSession(kind: "byok" | "credits", customerId: string): void;
+  /** The wire emulator serves no price lookups, which own-key checkouts need. */
+  byokCheckouts: boolean;
   setStatus(customerId: string, status: BillingSubscriptionStatus): void;
   deleteCustomer(customerId: string): void;
   sign(event: object, timestamp?: number): { body: string; headers: Headers };
@@ -22,6 +26,11 @@ const factories: Record<string, () => Harness> = {
     return {
       provider,
       completeCheckout: (customerId, status) => provider.completeCheckout(customerId, status),
+      completeSession: (kind, customerId) =>
+        kind === "byok"
+          ? provider.completeByokCheckout(customerId)
+          : provider.completeCreditCheckout(customerId),
+      byokCheckouts: true,
       setStatus: (customerId, status) => provider.setStatus(customerId, status),
       deleteCustomer: (customerId) => provider.deleteCustomer(customerId),
       sign: (event, timestamp) => provider.signWebhook(event, timestamp),
@@ -40,6 +49,8 @@ const factories: Record<string, () => Harness> = {
     return {
       provider,
       completeCheckout: (customerId, status) => wire.completeCheckout(customerId, status),
+      completeSession: (_kind, customerId) => wire.completeCheckout(customerId),
+      byokCheckouts: false,
       setStatus: (customerId, status) => wire.setStatus(customerId, status),
       deleteCustomer: (customerId) => wire.deleteCustomer(customerId),
       sign(event, timestamp = Math.floor(NOW / 1000)) {
@@ -145,6 +156,72 @@ for (const [name, create] of Object.entries(factories)) {
       await harness.provider.createCheckout({ customerId, seats: 1, ...urls });
       await harness.provider.cancelCustomerSubscriptions(customerId);
       expect(() => harness.completeCheckout(customerId)).toThrow();
+    });
+
+    it("expires one checkout by id and leaves a newer one payable", async () => {
+      const harness = create();
+      const { customerId } = await harness.provider.createCustomer({
+        email: "owner@example.com",
+        organizationId: "org_5",
+      });
+      const first = await harness.provider.createCheckout({ customerId, seats: 1, ...urls });
+      await harness.provider.expireCheckout(first.id);
+      expect(() => harness.completeCheckout(customerId)).toThrow();
+      await harness.provider.expireCheckout(first.id);
+      const second = await harness.provider.createCheckout({ customerId, seats: 2, ...urls });
+      expect(second.id).not.toBe(first.id);
+      await harness.provider.expireCheckout(first.id);
+      harness.completeCheckout(customerId);
+      expect(await harness.provider.getCustomerSubscription(customerId)).toMatchObject({
+        status: "active",
+        seats: 2,
+      });
+    });
+
+    it("expires own-key and credit checkouts by id when a newer one reuses the request", async () => {
+      for (const kind of ["byok", "credits"] as const) {
+        const harness = create();
+        if (kind === "byok" && !harness.byokCheckouts) continue;
+        const { customerId } = await harness.provider.createCustomer({
+          email: "owner@example.com",
+          organizationId: `org_6_${kind}`,
+        });
+        const request = { customerId, amountCents: 1000, monthly: false, ...urls };
+        const open = () =>
+          kind === "byok"
+            ? harness.provider.createByokCheckout!(request)
+            : harness.provider.createCreditCheckout!(request);
+        const first = await open();
+        await open();
+        await harness.provider.expireCheckout(first.id);
+        harness.completeSession(kind, customerId);
+      }
+    });
+
+    it("opens no session and expires none once the checkout's signal has aborted", async () => {
+      const harness = create();
+      const { customerId } = await harness.provider.createCustomer({
+        email: "owner@example.com",
+        organizationId: "org_7",
+      });
+      await harness.provider.createCheckout({ customerId, seats: 1, ...urls });
+      const aborted = AbortSignal.abort();
+      await expect(
+        harness.provider.createCheckout({ customerId, seats: 2, ...urls }, aborted),
+      ).rejects.toThrow();
+      await expect(
+        harness.provider.createByokCheckout!({ customerId, amountCents: 1000, ...urls }, aborted),
+      ).rejects.toThrow();
+      await expect(
+        harness.provider.createCreditCheckout!(
+          { customerId, amountCents: 1000, monthly: true, ...urls },
+          aborted,
+        ),
+      ).rejects.toThrow();
+      harness.completeCheckout(customerId);
+      expect(await harness.provider.getCustomerSubscription(customerId)).toMatchObject({
+        seats: 1,
+      });
     });
 
     it("replaces an unfinished checkout so only the latest one can be paid", async () => {

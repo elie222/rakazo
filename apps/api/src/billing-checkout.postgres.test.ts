@@ -309,5 +309,49 @@ dbTests("checkout and organization deletion", () => {
     provider.releaseCheckout();
     await expect(pending).rejects.toMatchObject({ code: "CONFLICT" });
     await canceling;
+    // The cancellation ran before the session existed, so the checkout expires it itself.
+    expect(provider.openSessions()).toBe(0);
+  });
+
+  it("refuses a session created after the checkout lease lapsed with no successor", async () => {
+    const { organizationId, actor } = await organizationFor("lapse-alone");
+    const provider = new GatedCheckoutEmulator(`deletion-lapse-alone-${stamp}`, false);
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    provider.releaseCustomer();
+    const pending = service.checkout(actor);
+    await provider.providerCallStarted;
+    // The lease lapses while the provider call is pending and nothing claims it.
+    await prisma.billingAccount.update({
+      where: { organizationId },
+      data: { checkoutLeaseExpiresAt: new Date(Date.now() - 1000) },
+    });
+    provider.releaseCheckout();
+    await expect(pending).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(provider.openSessions()).toBe(0);
+  });
+
+  it("cancels the customer a checkout swapped in while the cancellation waited", async () => {
+    const { organizationId, actor } = await organizationFor("swap");
+    const provider = new GatedCheckoutEmulator(`deletion-swap-${stamp}`, false);
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    provider.releaseCustomer();
+    const { customerId: deleted } = await provider.createCustomer({
+      email: actor.email,
+      organizationId,
+    });
+    await prisma.billingAccount.create({ data: { organizationId, customerId: deleted } });
+    // The provider lost the customer, so the checkout replaces it under the lease.
+    provider.deleteCustomer(deleted);
+    const pending = service.checkout(actor);
+    await provider.providerCallStarted;
+    // The cancellation reads the account, still on the lost customer, then waits for the lease.
+    const canceling = service.cancelForDeletedOrganization(organizationId);
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    provider.releaseCheckout();
+    await expect(pending).resolves.toMatchObject({ url: expect.any(String) });
+    await canceling;
+    const { customerId } = (await billingAccountForOrganization(prisma, organizationId))!;
+    expect(customerId).not.toBe(deleted);
+    expect(() => provider.completeCheckout(customerId)).toThrow();
   });
 });
