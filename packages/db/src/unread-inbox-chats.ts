@@ -1,17 +1,26 @@
 import { GROUP_MEMBER_MIN } from "@rakazo/contracts";
+import { GUEST_ROLE } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { runAsSystem } from "./row-security.js";
+import { homeOrganizationId } from "./spaces.js";
 
-/** Counts the unread chats the inbox lists: every chat in each Space the user belongs to. */
+/**
+ * Counts the unread chats the inbox lists: every chat in each Space the sidebar shows around
+ * this one, those of the user's own organization and those shared with them as a guest.
+ */
 export function countUnreadInboxChats(
   prisma: PrismaClient,
-  { userId }: { userId: string },
+  { userId, spaceId }: { userId: string; spaceId: string },
 ): Promise<number> {
   // Cross-Space RLS bypass is restricted to this user's memberships.
   return runAsSystem("count unread inbox chats across the member's Spaces", async () => {
+    const organizationId = await homeOrganizationId(prisma, { userId, spaceId });
     const [result] = await prisma.$queryRaw<Array<{ count: number }>>`
       WITH member_spaces AS (
-        SELECT m."spaceId" FROM space_members m WHERE m."userId" = ${userId}
+        SELECT m."spaceId" FROM space_members m
+        JOIN member o ON o."organizationId" = m."organizationId" AND o."userId" = m."userId"
+        WHERE m."userId" = ${userId}
+          AND (m."organizationId" = ${organizationId} OR o.role = ${GUEST_ROLE})
       )
       SELECT count(*)::int AS count FROM threads t
       JOIN member_spaces m ON m."spaceId" = t."spaceId"

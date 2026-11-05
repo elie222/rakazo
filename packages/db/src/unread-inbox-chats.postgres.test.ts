@@ -138,7 +138,15 @@ describePostgres("unread inbox chat count (PostgreSQL)", () => {
       },
     });
     await expect(
-      runAsTenant({ spaceId, userId }, () => countUnreadInboxChats(prisma, { userId })),
-    ).resolves.toBe(7);
+      runAsTenant({ spaceId, userId }, () => countUnreadInboxChats(prisma, { spaceId, userId })),
+    ).resolves.toBe(6);
+    // Another organization's chats count only there, like its Spaces in the sidebar.
+    await expect(countUnreadInboxChats(prisma, { spaceId: spaceIds[2]!, userId })).resolves.toBe(1);
+    // A Space shared with them as a guest shows, and counts, wherever they are.
+    await asSystem(prisma).member.updateMany({
+      where: { organizationId: organizationIds[1], userId },
+      data: { role: "guest" },
+    });
+    await expect(countUnreadInboxChats(prisma, { spaceId, userId })).resolves.toBe(7);
   });
 });

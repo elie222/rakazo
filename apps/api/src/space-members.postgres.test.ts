@@ -807,6 +807,12 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(
       call(owner.actor, "spaces/invites/create", { spaceId: home }),
     ).resolves.toMatchObject({ status: 400 });
+    // Nor does a Space being deleted hand out a link that cannot be opened.
+    const leaving = await sharedSpace(owner, "Leaving");
+    await system.space.update({ where: { id: leaving }, data: { deletingAt: new Date() } });
+    await expect(
+      call(owner.actor, "spaces/invites/create", { spaceId: leaving }),
+    ).resolves.toMatchObject({ status: 404 });
   });
 
   it("never hands one member's computer control to another", async () => {

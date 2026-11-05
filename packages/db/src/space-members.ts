@@ -161,6 +161,12 @@ export async function createSpaceInvite(
   await prisma.$transaction(async (tx) => {
     // Serializes concurrent links for one Space, so the cap holds.
     await lockSpaceDeletion(tx, input.spaceId);
+    // A Space being deleted would refuse the link the moment it is opened.
+    const space = await tx.space.findUnique({
+      where: { id: input.spaceId },
+      select: { deletingAt: true },
+    });
+    if (!space || space.deletingAt) throw new SpaceNotFoundError();
     const open = await tx.spaceInvite.count({
       where: { spaceId: input.spaceId, acceptedAt: null, expiresAt: { gt: new Date() } },
     });
