@@ -155,12 +155,13 @@ export async function createSpaceInvite(
   prisma: PrismaClient,
   input: SpaceRef,
 ): Promise<{ token: string; expiresAt: Date }> {
-  await requireSpaceOwner(prisma, input);
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SPACE_INVITE_TTL_MS);
   await prisma.$transaction(async (tx) => {
-    // Serializes concurrent links for one Space, so the cap holds.
+    // Serializes concurrent links for one Space, so the cap holds, and checks the owner under
+    // the same lock a handover takes.
     await lockSpaceDeletion(tx, input.spaceId);
+    await requireSpaceOwner(tx, input);
     // A Space being deleted would refuse the link the moment it is opened.
     const space = await tx.space.findUnique({
       where: { id: input.spaceId },
@@ -185,8 +186,11 @@ export async function createSpaceInvite(
 
 /** Every link not yet used stops working. */
 export async function cancelSpaceInvites(prisma: PrismaClient, input: SpaceRef): Promise<void> {
-  await requireSpaceOwner(prisma, input);
-  await prisma.spaceInvite.deleteMany({ where: { spaceId: input.spaceId, acceptedAt: null } });
+  await prisma.$transaction(async (tx) => {
+    await lockSpaceDeletion(tx, input.spaceId);
+    await requireSpaceOwner(tx, input);
+    await tx.spaceInvite.deleteMany({ where: { spaceId: input.spaceId, acceptedAt: null } });
+  });
 }
 
 type InviteRow = {
