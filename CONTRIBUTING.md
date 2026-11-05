@@ -17,8 +17,8 @@ Settings such as `RAKAZO_DEV_TAILNET=1` are inherited only when you enabled them
 the setup command does not enable sharing or change any settings. If the main checkout
 has no `.env`, development uses its usual defaults.
 
-In T3 Code, add `pnpm setup:worktree` as a project setup action that runs on worktree
-creation, with setup completing before the agent starts. Existing worktrees keep their
+In T3 Code, import the worktree setup action from the repository's `t3.json` in project
+settings. It runs on worktree creation with T3's default timing. Existing worktrees keep their
 own settings; later changes to the main `.env` are not copied automatically.
 Run `pnpm install --frozen-lockfile` when you need to run or test the worktree.
 
