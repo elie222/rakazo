@@ -241,6 +241,60 @@ class DelayedByokEmulator extends BillingEmulator {
   }
 }
 
+/** Holds the own-key checkout call at a gate, then fails it on demand. */
+class GatedFailingByokEmulator extends BillingEmulator {
+  private readonly entered = deferred();
+  private readonly gate = deferred();
+  fail = true;
+
+  constructor(namespace: string) {
+    super({ modelCredits: true, namespace });
+  }
+
+  get byokCallStarted() {
+    return this.entered.promise;
+  }
+
+  failAndUngate() {
+    this.gate.resolve();
+  }
+
+  override async createByokCheckout(input: Parameters<BillingEmulator["createByokCheckout"]>[0]) {
+    this.entered.resolve();
+    await this.gate.promise;
+    if (this.fail) throw new Error("provider unavailable");
+    return super.createByokCheckout(input);
+  }
+}
+
+/** A database whose own-key hold extension fails, while every other write works. */
+function extendFailingPrisma(prisma: PrismaClient): PrismaClient {
+  return new Proxy(prisma, {
+    get(target, property, receiver) {
+      if (property !== "user") return Reflect.get(target, property, receiver);
+      return new Proxy(target.user, {
+        get(user, method, receiver) {
+          if (method !== "updateMany") return Reflect.get(user, method, receiver);
+          return async (args: {
+            data: {
+              byokTrialCheckoutOrganizationId?: string | null;
+              byokTrialCheckoutExpiresAt?: Date | null;
+            };
+          }) => {
+            // The extension is the only hold write that touches the expiry alone.
+            if (
+              args.data.byokTrialCheckoutExpiresAt &&
+              args.data.byokTrialCheckoutOrganizationId === undefined
+            )
+              throw new Error("db unavailable");
+            return user.updateMany(args);
+          };
+        },
+      });
+    },
+  });
+}
+
 dbTests("own-key trial hold lifecycle", () => {
   const stamp = `${process.pid}-${Date.now()}`;
   const userIds: string[] = [];
@@ -356,5 +410,44 @@ dbTests("own-key trial hold lifecycle", () => {
     // The successful cancellation expired that session, so its hold went with it.
     await service.selectFunding(owner.second.actor, "byok");
     expect(provider.byokCheckouts.get(second)?.trialDays).toBe(TRIAL_DAYS);
+  });
+
+  it("keeps the hold when moving it to the session's creation fails", async () => {
+    const owner = await ownerWith("extendfail");
+    const provider = new BillingEmulator({ modelCredits: true, namespace: `hold-extend-${stamp}` });
+    const service = createBillingService({
+      prisma: extendFailingPrisma(prisma),
+      provider,
+      webOrigin: "https://example.test",
+    });
+    await expect(service.selectFunding(owner.first.actor, "byok")).rejects.toThrow(
+      "db unavailable",
+    );
+    // The session was created and stays payable, so the owner's trial remains held.
+    const first = await customerOf(owner.first.organizationId);
+    expect(provider.byokCheckouts.get(first)?.trialDays).toBe(TRIAL_DAYS);
+    await service.selectFunding(owner.second.actor, "byok");
+    const second = await customerOf(owner.second.organizationId);
+    expect(provider.byokCheckouts.get(second)?.trialDays).toBeUndefined();
+  });
+
+  it("serializes overlapping checkout attempts of one organization under its lease", async () => {
+    const owner = await ownerWith("overlap");
+    const provider = new GatedFailingByokEmulator(`hold-overlap-${stamp}`);
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    const first = service.selectFunding(owner.first.actor, "byok");
+    await provider.byokCallStarted; // The first attempt holds the lease, at the provider.
+    const second = service.selectFunding(owner.first.actor, "byok");
+    // Both attempts fail at the provider; before the fix the second reserved its hold while
+    // the first was still creating its session, and their rollbacks resurrected it.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    provider.failAndUngate();
+    await expect(first).rejects.toThrow("provider unavailable");
+    await expect(second).rejects.toThrow("provider unavailable");
+    provider.fail = false;
+    // Neither attempt left a session, so nothing may hold the owner's trial.
+    await service.selectFunding(owner.second.actor, "byok");
+    const second2 = await customerOf(owner.second.organizationId);
+    expect(provider.byokCheckouts.get(second2)?.trialDays).toBe(TRIAL_DAYS);
   });
 });

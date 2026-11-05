@@ -366,31 +366,38 @@ export function createBillingService(deps: {
       trialDays(organizationId),
       organizationOwnerHadTrial(prisma, organizationId, "byok"),
     ]);
-    // One trial per owner: the session this opens holds it while it can still be paid, so
-    // another organization of the same owner cannot take it in the meantime.
-    const hold = byokTrialAvailable(account, credits, hadTrial)
-      ? await reserveByokTrialCheckout(prisma, organizationId)
-      : null;
     try {
-      const checkout = await openCheckout(actor, account, true, (customerId) =>
-        provider.createByokCheckout!({
-          customerId,
-          amountCents,
-          interval,
-          tier,
-          ...(hold ? { trialDays: days } : {}),
-          successUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
-          cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
-        }),
-      );
-      // The session starts expiring at its creation, so the hold lasts from there too.
-      if (hold) await extendByokTrialCheckout(prisma, organizationId, hold);
-      return checkout;
+      return await openCheckout(actor, account, true, async (customerId) => {
+        // One trial per owner: reserve inside the organization's checkout lease, so overlapping
+        // requests of the same organization cannot interleave their holds; the lease already
+        // serializes their provider calls.
+        const hold = byokTrialAvailable(account, credits, hadTrial)
+          ? await reserveByokTrialCheckout(prisma, organizationId)
+          : null;
+        let session: { url: string };
+        try {
+          session = await provider.createByokCheckout!({
+            customerId,
+            amountCents,
+            interval,
+            tier,
+            ...(hold ? { trialDays: days } : {}),
+            successUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
+            cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
+          });
+        } catch (error) {
+          // No session came out of this attempt, so its hold goes back; an earlier or newer
+          // payable session's hold keeps its own expiry and survives.
+          if (hold && !(error instanceof BillingCheckoutCompletedError))
+            await releaseByokTrialCheckout(prisma, organizationId, hold);
+          throw error;
+        }
+        // The session starts expiring at its creation, so the hold lasts from there too. A
+        // failure here must not give the hold back: the session exists and stays payable.
+        if (hold) await extendByokTrialCheckout(prisma, organizationId, hold);
+        return session;
+      });
     } catch (error) {
-      // No session came out of this attempt, so its hold goes back; an earlier or newer
-      // payable session's hold keeps its own expiry and survives.
-      if (hold && !(error instanceof BillingCheckoutCompletedError))
-        await releaseByokTrialCheckout(prisma, organizationId, hold);
       if (!(error instanceof BillingCheckoutCompletedError)) throw error;
       await sync(account.customerId);
       throw new ORPCError("CONFLICT", { message: "Manage your existing subscription in Billing" });
