@@ -1117,7 +1117,7 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
-    it("passes update_bot's read offset through the use_tool wrapper", async () => {
+  it("passes update_bot's read offset through the use_tool wrapper", async () => {
     const updateBotTool = builtinAgentTools.find((tool) => tool.name === "update_bot");
     if (!updateBotTool) throw new Error("missing update_bot");
     fakeAgentState.invoke = {
