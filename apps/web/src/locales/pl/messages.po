@@ -1063,6 +1063,7 @@ msgstr "Studio awatara"
 #: src/components/vault/VaultPageHeader.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -1182,10 +1183,6 @@ msgstr "Model bota"
 #: src/components/SignupSurvey.tsx
 msgid "Both"
 msgstr "Oba"
-
-#: src/pages/Artifacts.tsx
-msgid "Bots"
-msgstr "Boty"
 
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
@@ -1499,6 +1496,10 @@ msgstr "Wyczyść rozmowę"
 #: src/pages/ActivityList.tsx
 msgid "Clear filter {label}"
 msgstr "Wyczyść filtr {label}"
+
+#: src/pages/Artifacts.tsx
+msgid "Clear filters"
+msgstr "Wyczyść filtry"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clearing…"
@@ -3248,9 +3249,17 @@ msgstr "Pliki lub foldery na komputerze"
 msgid "Files or folders, one per line"
 msgstr "Pliki lub foldery, po jednym w wierszu"
 
+#: src/pages/Artifacts.tsx
+msgid "Files your bots create, like reports, docs and images, collect here."
+msgstr "Pliki tworzone przez Twoje boty, takie jak raporty, dokumenty i obrazy, trafiają tutaj."
+
 #: src/pages/GroupPanel.tsx
 msgid "Filter bots"
 msgstr "Filtruj boty"
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by bot"
+msgstr "Filtruj według bota"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -3260,7 +3269,6 @@ msgstr "Filtruj według daty"
 msgid "Filter by who made it"
 msgstr "Filtruj według autora"
 
-#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "Filtry"
@@ -4451,8 +4459,8 @@ msgid "No apps match your search."
 msgstr "Żadna aplikacja nie pasuje do wyszukiwania."
 
 #: src/pages/Artifacts.tsx
-msgid "No artifacts found."
-msgstr "Nie znaleziono artefaktów."
+msgid "No artifacts yet"
+msgstr "Brak artefaktów"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No auth"
@@ -4479,6 +4487,10 @@ msgstr "Już nieaktywne"
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr "Brak dopasowań"
+
+#: src/pages/Artifacts.tsx
+msgid "No matching artifacts"
+msgstr "Brak pasujących artefaktów"
 
 #: src/pages/Artifacts.tsx
 msgid "No matching artifacts on this page."
@@ -5758,6 +5770,7 @@ msgstr "Ekran nie jest połączony"
 
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5774,6 +5787,10 @@ msgstr "Szukaj"
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
 msgstr "Szukaj aplikacji"
+
+#: src/pages/Artifacts.tsx
+msgid "Search artifacts"
+msgstr "Szukaj artefaktów"
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
