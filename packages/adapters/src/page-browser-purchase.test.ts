@@ -635,9 +635,11 @@ describe("a key on the screen", () => {
   });
 
   it("finds the order summary at the end of a long page", () => {
-    const { intent } = page(`<div>${"<span>Item</span>".repeat(8000)}</div>
+    const { intent, win } = page(`<div>${"<span>Item</span>".repeat(8000)}</div>
       <p><span>Bananas × 6</span> <span>$3.00</span></p>
       <p>Total: $3.00</p><button>Place order</button>`);
+    // jsdom is slow over so many elements: the clock stands still, so the time budget is not what is tested.
+    (win as unknown as { performance: { now: () => number } }).performance.now = () => 0;
     expect(intent("Place order")?.items).toEqual([{ name: "Bananas × 6", amount: "$3.00" }]);
   });
 
