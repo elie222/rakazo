@@ -13,13 +13,9 @@ export interface AccountStatusDeps {
   events: Pick<ThreadEvents, "notify">;
 }
 
-/** Who turned an account off or on: the identity provider over SCIM, or the operator's command. */
-export type AccountStatusActor = "directory" | "operator";
-
 /**
  * Finishes a directory change once its SCIM request committed. The account row says what
  * happened: a change in a request that rolled back finds it as before and does nothing.
- * Ending a deactivated account's access is repeatable; only a real change is recorded.
  */
 export async function settleDirectoryChange(
   deps: AccountStatusDeps,
@@ -31,59 +27,60 @@ export async function settleDirectoryChange(
       select: { deactivatedAt: true },
     });
     if (!user || change.active === Boolean(user.deactivatedAt)) return;
-    // Recorded first: a failed cleanup fails the request, and its retry is no change.
-    if (change.changed) await recordAccountStatus(change.userId, change.active, "directory");
-    if (!change.active) await endDeactivatedAccess(deps, change.userId);
-    else if (change.changed) await clearSessionsFromWhileOff(deps, change.userId);
+    await finishStatusChange(deps, change.userId, change.active, change.changed, "directory");
   });
 }
 
 /**
- * Turns an account off or back on outside the directory. Deactivating an account that already
- * is off still finishes ending its access. The identity provider owns the accounts it
- * provisions: one it has on is turned off there, and one it turned off or deleted is turned
- * back on there. Either refusal is `"directory"`.
+ * The operator turns an account off or back on. Deactivating an account that already is off
+ * still finishes ending its access. The identity provider owns the accounts it provisions: one
+ * it has on is turned off there, and one it turned off or deleted is turned back on there.
+ * Either refusal is `"directory"`.
  */
 export async function setAccountActive(
   deps: AccountStatusDeps,
   userId: string,
   active: boolean,
-  by: AccountStatusActor,
 ): Promise<"changed" | "unchanged" | "directory"> {
   return runAsSystem("change an account's status", async () => {
-    const [provisioned, deleted, on] = await Promise.all([
-      deps.prisma.scimUser.count({ where: { userId } }),
+    const [links, deleted] = await Promise.all([
+      deps.prisma.scimUser.findMany({ where: { userId }, select: { active: true } }),
       deps.prisma.scimIdentityTombstone.count({ where: { userId } }),
-      deps.prisma.scimUser.count({ where: { userId, active: true } }),
     ]);
     // The directory has it on, so its next update would undo turning it off here; or the
     // directory turned it off or deleted it (a tombstone) and has not added it back.
-    if (on > 0 ? !active : active && provisioned + deleted > 0) return "directory";
+    const on = links.some((link) => link.active);
+    if (on ? !active : active && links.length + deleted > 0) return "directory";
     const { count } = await deps.prisma.user.updateMany({
       where: { id: userId, deactivatedAt: active ? { not: null } : null },
       data: { deactivatedAt: active ? null : new Date() },
     });
-    if (count) await recordAccountStatus(userId, active, by);
-    if (!active) await endDeactivatedAccess(deps, userId);
-    else if (count) await clearSessionsFromWhileOff(deps, userId);
+    await finishStatusChange(deps, userId, active, count > 0, "operator");
     return count ? "changed" : "unchanged";
   });
 }
 
 /**
- * No sign-in is admitted while an account is off, so any session left at reactivation slipped
- * in around the deactivation. It goes rather than come back to life: the person signs in again.
+ * Records a real change first, so a failed cleanup can be retried as no change. Ending a
+ * deactivated account's access is repeatable. No sign-in is admitted while an account is off,
+ * so any session left at reactivation slipped in around the deactivation; it goes rather than
+ * come back to life.
  */
-function clearSessionsFromWhileOff(deps: AccountStatusDeps, userId: string) {
-  return deps.prisma.session.deleteMany({ where: { userId } });
-}
-
-function recordAccountStatus(userId: string, active: boolean, by: AccountStatusActor) {
-  return recordSecurityEvent({
-    type: active ? "auth.account.reactivated" : "auth.account.deactivated",
-    userId,
-    metadata: { by },
-  });
+async function finishStatusChange(
+  deps: AccountStatusDeps,
+  userId: string,
+  active: boolean,
+  changed: boolean,
+  by: "directory" | "operator",
+) {
+  if (changed)
+    await recordSecurityEvent({
+      type: active ? "auth.account.reactivated" : "auth.account.deactivated",
+      userId,
+      metadata: { by },
+    });
+  if (!active) await endDeactivatedAccess(deps, userId);
+  else if (changed) await deps.prisma.session.deleteMany({ where: { userId } });
 }
 
 /**

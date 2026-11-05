@@ -67,7 +67,6 @@ try {
       },
       user.id,
       active,
-      "operator",
     );
     if (outcome === "directory") {
       process.stderr.write("The identity provider manages this account; turn it off or on there\n");
