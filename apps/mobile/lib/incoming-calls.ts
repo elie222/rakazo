@@ -208,9 +208,16 @@ async function callerFor(
     const late = fromStream() ?? roster.get(botId);
     if (late) return late;
   }
-  await rostered;
+  // The stream may name the caller after an empty snapshot, so a failed load throws only after it.
+  const failure = await rostered.then(
+    () => null,
+    (error: unknown) => ({ error }),
+  );
   if (stale()) return undefined;
-  return fromStream() ?? roster.get(botId) ?? null;
+  const caller = fromStream() ?? roster.get(botId);
+  if (caller) return caller;
+  if (failure) throw failure.error;
+  return null;
 }
 
 export async function respondToMobileCall(call: IncomingBotCall, action: "answer" | "decline") {

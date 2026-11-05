@@ -302,6 +302,29 @@ describe("mobile incoming calls", () => {
     await vi.advanceTimersByTimeAsync(4100);
     expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-1"));
   });
+  it("answers a caller the stream names after an empty snapshot when the roster load fails", async () => {
+    const answer = fake.rpc.getMockImplementation()!;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) => {
+      if (path === "spaces/list") {
+        await new Promise((resolve) => setTimeout(resolve, 4000));
+        throw new Error("offline");
+      }
+      return answer(path, ...rest);
+    });
+    fake.lastResponse = {
+      actionIdentifier: "answer",
+      notification: {
+        request: { content: { data: { ...block(), kind: "incoming_call", botId: orgBot.id } } },
+      },
+    };
+    stop = startIncomingCalls();
+    await tick();
+    fake.onEvent?.([]);
+    await vi.advanceTimersByTimeAsync(1000);
+    fake.onEvent?.([{ ...orgBot, incomingCall: block() }]);
+    await vi.advanceTimersByTimeAsync(4100);
+    expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-1"));
+  });
   it("ignores a frame from a stopped feed while a restarted feed's answer waits", async () => {
     stop = startIncomingCalls();
     await tick();
