@@ -439,6 +439,66 @@ it("keeps self-hosted edits typed while a reconnect is in flight", async () => {
   }
 });
 
+it("follows the voice a reconnect saves when the voice field was edited and reverted", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const saved = {
+    ...fish,
+    provider: "openai-compatible",
+    voiceId: "af_heart",
+    endpoint: "http://127.0.0.1:8000/v1",
+    ttsModel: "saved-speech",
+    sttModel: "saved-transcription",
+  };
+  voice.catalog
+    .mockReset()
+    .mockResolvedValue([
+      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
+    ]);
+  // The connect on a new endpoint drops the old voice; the server picks another.
+  voice.credentials
+    .mockReset()
+    .mockResolvedValueOnce([saved])
+    .mockResolvedValue([{ ...saved, voiceId: "voice_new", endpoint: "http://127.0.0.1:7000/v1" }]);
+  voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
+  voice.voices.mockReset().mockResolvedValue([{ id: "voice_new", label: "November" }]);
+  voice.connect.mockReset().mockResolvedValue(saved);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const type = async (input: HTMLInputElement, value: string) => {
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  try {
+    await act(async () => {
+      root.render(
+        withQueries(<VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />),
+      );
+    });
+    await vi.waitFor(() => expect(labelledInput(container, "Voice").value).toBe("af_heart"));
+    // Edit the voice and put the saved one back; the field still counts as edited.
+    await type(labelledInput(container, "Voice"), "am_custom");
+    await type(labelledInput(container, "Voice"), "af_heart");
+    const reconnect = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Reconnect",
+    );
+    if (!reconnect) throw new Error("Missing reconnect button");
+    await act(async () => {
+      reconnect.click();
+    });
+
+    await vi.waitFor(() => expect(voice.credentials).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(labelledInput(container, "Voice").value).toBe("voice_new"));
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it.each([null, "space-edited"])("plays a sample for the bound space %s", async (spaceId) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   speak.mockClear();

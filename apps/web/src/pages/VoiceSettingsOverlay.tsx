@@ -254,6 +254,9 @@ export function VoiceSettingsOverlay({
       });
       // A key typed while the connect ran was not saved; keep it for the next try.
       setApiKey((current) => (current === sentApiKey ? "" : current));
+      // The connect saved the voice the server kept for these values, and the
+      // disabled field cannot hold a newer edit, so the voice follows the saved one.
+      edited.current.delete("voiceId");
       // The connect saved the values it carried; fields typed meanwhile keep theirs.
       await refresh(selected.id, { keepForm: true });
       setNotice(t`Connected ${selected.name}.`);
