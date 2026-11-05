@@ -110,6 +110,38 @@ describe("readInboundEmail", () => {
     expect(reused.key).not.toBe(first.key);
   });
 
+  it("tells apart unsigned messages that differ only in their files", async () => {
+    const withFile = (content: string) =>
+      readInboundEmail(
+        bytes(
+          message(
+            [
+              ...plain.filter((line) => !line.startsWith("Content-Type")),
+              'Content-Type: multipart/mixed; boundary="b"',
+            ],
+            [
+              "--b",
+              "Content-Type: text/plain",
+              "",
+              "Invoice attached.",
+              "--b",
+              "Content-Type: application/pdf",
+              'Content-Disposition: attachment; filename="invoice.pdf"',
+              "",
+              content,
+              "--b--",
+              "",
+            ].join("\r\n"),
+          ),
+        ),
+        { resolver },
+      );
+
+    const [first, second] = await Promise.all([withFile("first"), withFile("second")]);
+
+    expect(second.key).not.toBe(first.key);
+  });
+
   it("does not authenticate unsigned, tampered or unaligned mail", async () => {
     const unsigned = await readInboundEmail(bytes(message(plain)), { resolver });
     const tampered = await readInboundEmail(

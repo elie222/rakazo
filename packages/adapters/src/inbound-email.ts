@@ -132,6 +132,18 @@ export async function readInboundEmail(
       ? email.from.name
       : "";
 
+  const attachments = email.attachments
+    // Inline parts are images an HTML body shows, such as signature logos.
+    .filter((attachment) => !attachment.related)
+    .map((attachment) => ({
+      name: attachment.filename?.trim() || "attachment",
+      mimeType: attachment.mimeType,
+      bytes:
+        typeof attachment.content === "string"
+          ? new TextEncoder().encode(attachment.content)
+          : new Uint8Array(attachment.content),
+    }));
+
   return {
     // Anyone can reuse an unsigned message's Message-ID, so its key is its content: a different
     // message under the same ID is a different message, and a relay's retry is the same one.
@@ -147,6 +159,10 @@ export async function readInboundEmail(
               email.subject ?? "",
               email.date ?? "",
               text,
+              attachments.map((file) => [
+                file.name,
+                createHash("sha256").update(file.bytes).digest("base64url"),
+              ]),
             ]),
           )
           .digest("base64url")}`,
@@ -172,17 +188,7 @@ export async function readInboundEmail(
     date: email.date?.slice(0, 100) ?? null,
     text,
     automated,
-    attachments: email.attachments
-      // Inline parts are images an HTML body shows, such as signature logos.
-      .filter((attachment) => !attachment.related)
-      .map((attachment) => ({
-        name: attachment.filename?.trim() || "attachment",
-        mimeType: attachment.mimeType,
-        bytes:
-          typeof attachment.content === "string"
-            ? new TextEncoder().encode(attachment.content)
-            : new Uint8Array(attachment.content),
-      })),
+    attachments,
   };
 }
 
