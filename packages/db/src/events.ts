@@ -462,7 +462,7 @@ export async function clearThread(
       cancelledRunIds: runIds,
       historyCompactionGeneration: thread.historyCompactionGeneration,
     };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   await notifyRealtime(realtime, committed.event.threadId, committed.event.seq);
   if (!input.groupId && committed.userId)
     await realtime?.publish(`incoming-calls:${committed.userId}`, "").catch(() => undefined);
@@ -1175,8 +1175,9 @@ export async function answerRunInput(
   runSecretWriter?: RunSecretWriter,
 ): Promise<boolean> {
   const commit = (writer = runSecretWriter) =>
-    prisma.$transaction(async (tx: Prisma.TransactionClient) =>
-      commitAnswerRunInput(tx, input, writer),
+    prisma.$transaction(
+      async (tx: Prisma.TransactionClient) => commitAnswerRunInput(tx, input, writer),
+      THREAD_LOCK_TRANSACTION_OPTIONS,
     );
   // Unwrapping space keys can wait on the key manager; keep that wait outside the transaction.
   await contentEncryptionOf(prisma)?.ring.all(input.spaceId);
@@ -1420,7 +1421,7 @@ export async function pauseRunForInput(
       continuationRunId,
       firstResponseRunId: response.firstResponse ? input.runId : undefined,
     };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
 
   if (!committed) return false;
   await notifyCommittedEvent(
@@ -1815,6 +1816,13 @@ export function completedRunBlocks(
       : block,
   );
 }
+
+// Transactions that lock the thread row before writing run state share the body budget: the
+// lock is held up to 15s by snapshot reads, Prisma's 5s default counts that wait, and expiring
+// fails a user stop, clear or card answer, or a run whose work already finished. Only the
+// timeout is shared; an explicit maxWait would override the client's longer connection wait,
+// so a saturated pool that frees a connection late would fail the checkout instead of waiting.
+export const THREAD_LOCK_TRANSACTION_OPTIONS = { timeout: 20_000 };
 
 // The thread lock is shared with snapshot reads that may hold it for up to 15s. Prisma's 5s
 // default counts that wait, and expiring would fail a run whose work already finished.
