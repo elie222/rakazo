@@ -1,7 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 import * as Speech from "expo-speech";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { saveApiBase } from "./api";
+import { saveApiBase, selectSpace } from "./api";
 import { DEVICE_VOICE_KEY } from "./device-voice";
 import { clearSessionToken, restoreSessionToken, saveSessionToken } from "./session";
 import { getVoicePlaybackState, speakQueue } from "./voice";
@@ -159,6 +159,58 @@ describe("read-aloud across session changes", () => {
       `${serverA}/api/voice/speak`,
     ]);
     expect(requests.filter((url) => url.startsWith(serverB))).toEqual([]);
+  });
+
+  it("stops the on-device queue when the selection moves to another Space", async () => {
+    await savedApiBase("https://a.example.test");
+    await saveSessionToken("token-a");
+    await selectSpace("space-a");
+    secureStore.set(DEVICE_VOICE_KEY, "1");
+    const utterances: Array<{ text: string; options: Parameters<typeof Speech.speak>[1] }> = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      utterances.push({ text, options });
+    });
+
+    const queued = speakQueue([
+      { text: "First reply.", botId: "bot-a", messageId: "m1" },
+      { text: "Second reply.", botId: "bot-a", messageId: "m2" },
+    ]);
+    await vi.waitFor(() => expect(utterances).toHaveLength(1));
+    expect(getVoicePlaybackState()).toMatchObject({ status: "playing", botId: "bot-a" });
+
+    await selectSpace("space-b");
+
+    expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
+    utterances[0]?.options?.onStopped?.();
+    await expect(queued).resolves.toBe(true);
+    expect(utterances.map((spoken) => spoken.text)).toEqual(["First reply."]);
+  });
+
+  it("keeps the queue when the same Space is selected again", async () => {
+    await savedApiBase("https://a.example.test");
+    await saveSessionToken("token-a");
+    await selectSpace("space-a");
+    secureStore.set(DEVICE_VOICE_KEY, "1");
+    const utterances: Array<{ text: string; options: Parameters<typeof Speech.speak>[1] }> = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      utterances.push({ text, options });
+    });
+
+    const queued = speakQueue([
+      { text: "First reply.", botId: "bot-a", messageId: "m1" },
+      { text: "Second reply.", botId: "bot-a", messageId: "m2" },
+    ]);
+    await vi.waitFor(() => expect(utterances).toHaveLength(1));
+    expect(getVoicePlaybackState()).toMatchObject({ status: "playing", messageId: "m1" });
+
+    await selectSpace("space-a");
+
+    expect(getVoicePlaybackState()).toMatchObject({ status: "playing", messageId: "m1" });
+    utterances[0]?.options?.onDone?.();
+    await vi.waitFor(() => expect(utterances).toHaveLength(2));
+    utterances[1]?.options?.onDone?.();
+    await expect(queued).resolves.toBe(true);
+    expect(utterances.map((spoken) => spoken.text)).toEqual(["First reply.", "Second reply."]);
   });
 
   it("stops the on-device queue when another account signs in", async () => {

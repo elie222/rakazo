@@ -138,6 +138,21 @@ function bumpSpaceSelectionGeneration(): void {
   selectedSpaceChanged();
 }
 
+const confirmedSpaceSwitchListeners = new Set<() => void>();
+
+/** Fires when a selection change to another Space is confirmed durable; a
+ * rollback after a failed switch, or selecting the same Space again, does not. */
+export function subscribeConfirmedSpaceSwitch(listener: () => void): () => void {
+  confirmedSpaceSwitchListeners.add(listener);
+  return () => {
+    confirmedSpaceSwitchListeners.delete(listener);
+  };
+}
+
+function noteConfirmedSpaceSwitch(): void {
+  for (const listener of [...confirmedSpaceSwitchListeners]) listener();
+}
+
 /** Keeps a timeout or cancel reason; turns transport and parsing detail into copy. */
 function requestError(error: unknown, signal: AbortSignal): unknown {
   return signal.aborted ? (signal.reason ?? error) : new Error(errorText(error), { cause: error });
@@ -239,6 +254,9 @@ export async function selectSpace(id: string) {
     }
     return false;
   }
+  // Playback belongs to the conversation being left; the listener in voice.ts
+  // stops it once a switch to another Space is confirmed.
+  if (previousSpaceId !== id) noteConfirmedSpaceSwitch();
   await resumeSelectedSpaceNotifications(id, claimGeneration);
   return true;
 }
