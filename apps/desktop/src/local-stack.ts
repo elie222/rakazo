@@ -396,6 +396,23 @@ export class LocalStackController {
 
   /** Fast path for launch: only a stack with our private token and desired image may be reused. */
   async matchesDesiredStack(url = this.currentWebUrl): Promise<boolean> {
+    return this.probeStack((probed) => probed === this.deps.imageTag, url);
+  }
+
+  /**
+   * Startup rediscovery behind a saved external server: the stack may be an older release
+   * this app must not reuse, so any answer under our token records it. Only the menu's
+   * off-switch follows from this; nothing starts or stops.
+   */
+  async rediscoverManagedStack(url = this.currentWebUrl): Promise<boolean> {
+    return this.probeStack((probed) => probed !== null, url);
+  }
+
+  /** One probe through the private identity; `matches` decides what counts and is returned. */
+  private async probeStack(
+    matches: (probed: string | null) => boolean,
+    url: string,
+  ): Promise<boolean> {
     // Captured before the first await, so a stop that succeeds during the token read
     // still counts as later than this probe.
     const stopGeneration = this.stopGeneration;
@@ -411,10 +428,13 @@ export class LocalStackController {
     if (token === null) return false;
     this.currentStackToken = token;
     try {
-      const matched =
-        (await this.deps.probe(url, AbortSignal.timeout(HEALTH_POLL_INTERVAL_MS), token)) ===
-        this.deps.imageTag;
-      // A stop that began while the probe was pending may have stopped the stack it saw.
+      const probed = await this.deps.probe(
+        url,
+        AbortSignal.timeout(HEALTH_POLL_INTERVAL_MS),
+        token,
+      );
+      const matched = matches(probed);
+      // A stop that succeeded while the probe was pending may have stopped the stack it saw.
       if (matched && stopGeneration === this.stopGeneration && !this.managedStackMayRun) {
         this.managedStackMayRun = true;
         // The phase stays idle, so no lifecycle event follows; announce the flip itself.

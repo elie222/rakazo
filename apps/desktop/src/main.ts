@@ -1824,9 +1824,10 @@ app.whenReady().then(async () => {
       }
     } else {
       // The saved server is external, but the app-managed stack may still be running from
-      // before the switch; rediscover it so the menu keeps its off-switch. Probe only:
-      // with no stack files this returns before any request, and nothing starts or stops.
-      void localStack.matchesDesiredStack();
+      // before the switch — possibly on an older release, which must not be reused but
+      // still needs the off-switch. Probe only: with no stack files this returns before
+      // any request, and nothing starts or stops.
+      void localStack.rediscoverManagedStack();
       const reachability = await probeServer(target.url, undefined, currentSetup?.headers);
       if (reachability.ok) {
         if (await appOpener.open(target.url)) {

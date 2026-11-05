@@ -875,6 +875,84 @@ describe("LocalStackController", () => {
     expect(stack.managedStackRunning()).toBe(false);
   });
 
+  it("redisplays the off-switch for a stack left on an older release", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    let notified = 0;
+    const stack = controller({
+      onReuseConfirmed: () => {
+        notified += 1;
+      },
+      probe: (_url, _signal, supplied) => Promise.resolve(supplied === token ? "v1.2.2" : null),
+    });
+    expect(stackStopAvailable("existing", stack.managedStackRunning())).toBe(false);
+
+    await expect(stack.rediscoverManagedStack()).resolves.toBe(true);
+    expect(stack.managedStackRunning()).toBe(true);
+    expect(stackStopAvailable("existing", stack.managedStackRunning())).toBe(true);
+    expect(notified).toBe(1);
+    // Reuse stays strict: an older release is never adopted as the desired stack.
+    await expect(stack.matchesDesiredStack()).resolves.toBe(false);
+    expect(notified).toBe(1);
+  });
+
+  it("does not rediscover through a probe that a successful stop outruns", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    let releaseStop: () => void = () => undefined;
+    const stopGate = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    let stopping: Promise<unknown> = Promise.resolve();
+    const stack = controller(
+      {
+        // The probe answers only after the stop settles, still claiming an older release.
+        probe: (_url, _signal, supplied) =>
+          supplied === token
+            ? Promise.resolve(stopping).then(() => "v1.2.2" as string | null)
+            : Promise.resolve(null),
+      },
+      (args) => (args[7] === "stop" ? { wait: stopGate } : ok(args)),
+    );
+
+    const rediscovered = stack.rediscoverManagedStack();
+    stopping = stack.stop();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    releaseStop();
+    await stopping;
+    await expect(rediscovered).resolves.toBe(true);
+    expect(stack.managedStackRunning()).toBe(false);
+  });
+
+  it("does not rediscover while a stop is pending", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    let releaseStop: () => void = () => undefined;
+    const stopGate = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    let probes = 0;
+    const stack = controller(
+      {
+        probe: (_url, _signal, supplied) => {
+          probes += 1;
+          return Promise.resolve(supplied === token ? ("v1.2.2" as string | null) : null);
+        },
+      },
+      (args) => (args[7] === "stop" ? { wait: stopGate } : ok(args)),
+    );
+
+    const stopping = stack.stop();
+    await expect(stack.rediscoverManagedStack()).resolves.toBe(false);
+    releaseStop();
+    await stopping;
+    expect(probes).toBe(0);
+    expect(stack.managedStackRunning()).toBe(false);
+  });
+
   it("reuses only the privately identified stack on the desired image", async () => {
     const stackPath = path.join(root, "stack");
     await mkdir(stackPath, { recursive: true });
