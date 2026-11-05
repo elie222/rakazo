@@ -385,9 +385,10 @@ export async function prepareAccountDeletion(
 }
 
 /**
- * Whether a departing owner's Space stays for its other members: another owner keeps it, or the
- * longest-standing full member is made its owner. With only guests left it goes with the
- * account (claimSpacesLeavingWithAccount), and the account's own things in it go too.
+ * Whether the longest-standing full member was made the departing owner's Space's owner, so the
+ * account can leave it like anyone else. False when another owner already keeps it, or when only
+ * guests are left and the Space goes with the account (claimSpacesLeavingWithAccount): either way
+ * the account's own things in it go with the account.
  */
 async function handOwnership(prisma: PrismaClient, input: SpaceRef): Promise<boolean> {
   const { spaceId, userId } = input;
