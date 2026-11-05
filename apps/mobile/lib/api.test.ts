@@ -1654,6 +1654,44 @@ describe("mobile API authentication", () => {
     expect(pendingSignOutRecords(store)).toEqual([]);
   });
 
+  it("retries a stored revocation on an answered request after the launch could not read it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const record = {
+      apiBase: "http://127.0.0.1:3100",
+      token: "token-a",
+      headers: {},
+      recordedAt: Date.now(),
+    };
+    const store = new Map<string, string>([["rakazo.pending_sign_out", JSON.stringify([record])]]);
+    mockSecureStore(store);
+    let storeLocked = true;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.pending_sign_out" && storeLocked) throw new Error("device locked");
+      return store.get(key) ?? null;
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ json: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.resetModules();
+    const restartedApi = await import("./api.js");
+    await restartedApi.loadApiBase();
+    // Joins the launch retry, which cannot read the store.
+    await restartedApi.flushPendingSignOut(true);
+    storeLocked = false;
+
+    vi.setSystemTime(Date.now() + 61_000);
+    await restartedApi.rpc("bots/list");
+    await vi.waitFor(() => {
+      const signOuts = fetchMock.mock.calls.filter(([url]) =>
+        String(url).endsWith("/api/auth/sign-out"),
+      );
+      expect(signOuts).toHaveLength(1);
+      const [, init] = signOuts[0] as [string, RequestInit];
+      expect(init.headers).toMatchObject({ authorization: "Bearer token-a" });
+    });
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    vi.useRealTimers();
+  });
+
   it("spaces non-forced retries, keeping launch retries immediate", async () => {
     vi.useFakeTimers();
     const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);

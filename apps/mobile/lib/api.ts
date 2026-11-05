@@ -1103,8 +1103,11 @@ function livePendingSignOuts(records: PendingSignOut[], now = Date.now()): Pendi
   });
 }
 
-/** True once a retry confirmed no record is stored, so answered requests stop re-reading the store. */
-let pendingSignOutAbsent = true;
+/**
+ * True once a retry confirmed no record is stored, so answered requests stop re-reading the store.
+ * Unknown until then: a launch that cannot read the store leaves answered requests to retry it.
+ */
+let pendingSignOutAbsent = false;
 /** When the last answered-request retry started; launch retries ignore it. */
 let lastPendingSignOutFlushAt = 0;
 /** The one in-flight flush; triggers that arrive meanwhile join it instead of starting their own. */
@@ -1465,7 +1468,7 @@ async function pendingSignOutPass(): Promise<void> {
     // Delivery stays outside the queue, like every network call.
     const read = await queuePendingSignOutWrite(async () => {
       const current = await readPendingSignOuts();
-      if (current.ok) pendingSignOutAbsent = current.records.length === 0;
+      pendingSignOutAbsent = current.ok && current.records.length === 0;
       return current;
     });
     if (!read.ok) return;
