@@ -183,6 +183,10 @@ msgstr "{count} 天"
 msgid "{count} months"
 msgstr "{count} 個月"
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "還有 {count} 項"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr "{count} 週"
@@ -364,6 +368,38 @@ msgstr "剩餘 {remaining}"
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {# 個席位} other {# 個席位}}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a day"
+msgstr "每天 {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a month"
+msgstr "每月 {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a week"
+msgstr "每週 {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} in total"
+msgstr "總計 {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent"
+msgstr "已花費 {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this month"
+msgstr "本月已花費 {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this week"
+msgstr "本週已花費 {shown}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent today"
+msgstr "今天已花費 {shown}"
 
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
@@ -761,6 +797,10 @@ msgstr "一律允許"
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
 msgstr "一律開啟 {site}"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Amount"
+msgstr "金額"
 
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
@@ -1168,6 +1208,10 @@ msgstr "瀏覽 MCP 伺服器"
 msgid "Built-in"
 msgstr "內建"
 
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "按鈕「{button}」· 讀取自頁面，未核實"
+
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
 msgstr "通話"
@@ -1212,6 +1256,7 @@ msgstr "無法讀取影像"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1646,8 +1691,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr "電腦已可使用。請重新載入或開啟機器人以繼續。"
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "電腦未開啟。請設定 SANDBOX_PROVIDER=docker 並提供 SANDBOX_SUPERVISOR_TOKEN，或將 SANDBOX_PROVIDER 設為 e2b、novita、daytona 或 boat 並提供對應 API 金鑰。更改 .env 後請重建環境。"
+msgid "Computers are off on this server."
+msgstr "此伺服器未開啟電腦。"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1830,7 +1875,6 @@ msgstr "透過 {0} 繼續"
 msgid "Conversations"
 msgstr "對話"
 
-#: src/components/ComputersUnavailableHint.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -1848,10 +1892,6 @@ msgstr "已複製"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "複製"
-
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Copy .env example"
-msgstr "複製 .env 範例"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2312,6 +2352,10 @@ msgstr "無法儲存規則"
 msgid "Could not save skill"
 msgstr "無法儲存技能"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Could not save spending limit"
+msgstr "無法儲存支出上限"
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "Could not save that choice"
 msgstr "無法儲存該選擇"
@@ -2532,6 +2576,10 @@ msgstr "憑證：{names}"
 msgid "Credit amount"
 msgstr "額度金額"
 
+#: src/components/ModelCredits.tsx
+msgid "Credits"
+msgstr "額度"
+
 #: src/pages/AdminAccessPage.tsx
 msgid "Credits ($)"
 msgstr ""
@@ -2543,6 +2591,10 @@ msgstr "Cron"
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron expression"
 msgstr "Cron 表示式"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Currency"
+msgstr "幣別"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2568,6 +2620,10 @@ msgstr "自訂{label}"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
 msgstr "自訂機器人頭像"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Daily"
+msgstr "每天"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
@@ -2601,6 +2657,7 @@ msgstr "天"
 msgid "Decline"
 msgstr "拒絕"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2718,11 +2775,6 @@ msgstr "已拒絕"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "拒絕"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -2845,10 +2897,6 @@ msgstr "已關閉，可隨時在 MCP 設定中重新連線。"
 msgid "Docker"
 msgstr "Docker"
 
-#: src/components/ComputersUnavailableHint.tsx
-msgid "Docker is configured but computers are not responding. Confirm the sandbox supervisor is running, then recreate the stack after changing .env."
-msgstr "Docker 已設定，但電腦沒有回應。請確認沙箱管理服務正在執行，並在修改 .env 後重新建立服務。"
-
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker 限制對你電腦的存取，以提高安全性。使用 {hostLabel} 時，機器人可以處理你的本機檔案並使用本機工具。"
@@ -2922,6 +2970,7 @@ msgid "Each name can be used once."
 msgstr "每個名稱只能使用一次。"
 
 #: src/components/AskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -4155,6 +4204,7 @@ msgid "month"
 msgstr "月"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "每月"
@@ -4461,6 +4511,10 @@ msgstr "找不到遠端 MCP 伺服器"
 msgid "No reply"
 msgstr "未回覆"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "No reset"
+msgstr "不重設"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx
@@ -4496,6 +4550,7 @@ msgstr "尚無工作項目"
 msgid "No trigger"
 msgstr "無觸發器"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr ""
@@ -4606,6 +4661,10 @@ msgstr "{day} 日 {time}"
 #: src/lib/cron.ts
 msgid "on the 1st at {0}"
 msgstr "每月 1 日 {0}"
+
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "按鈕上的金額"
 
 #: src/lib/cron.ts
 msgid "One-time"
@@ -5056,7 +5115,6 @@ msgstr "排隊中"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr "Rakazo 額度"
@@ -5072,6 +5130,10 @@ msgstr "回應"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Reactions"
 msgstr "表情回應"
+
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "讀取自頁面，未核實"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
@@ -5105,6 +5167,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "最近"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "最近付款"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -5242,6 +5308,7 @@ msgstr "重新載入"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -5412,6 +5479,10 @@ msgstr "重設密碼"
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "重設你的密碼"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Resets"
+msgstr "重設"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5585,6 +5656,7 @@ msgstr "週六"
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5826,6 +5898,10 @@ msgstr "伺服器名稱"
 msgid "Server URL"
 msgstr "伺服器 URL"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Set"
+msgstr "設定"
+
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5855,6 +5931,7 @@ msgstr "設定：用量"
 msgid "Setup complete"
 msgstr "設定完成"
 
+#: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "設定說明"
@@ -5897,6 +5974,7 @@ msgstr "共用記憶"
 msgid "Show"
 msgstr "顯示"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr "顯示全部"
@@ -6106,6 +6184,10 @@ msgstr "說話中"
 msgid "Speech model"
 msgstr "語音模型"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Spending limit"
+msgstr "支出上限"
+
 #: src/components/AccountAccess.tsx
 msgid "SSO"
 msgstr ""
@@ -6242,8 +6324,8 @@ msgid "Subscribe for {price} / month"
 msgstr "以每月 {price} 訂閱"
 
 #: src/components/ModelCredits.tsx
-msgid "Subscribe to Rakazo credits"
-msgstr "訂閱 Rakazo 額度"
+msgid "Subscribe to credits"
+msgstr "訂閱額度"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe with your own AI"
@@ -6445,6 +6527,10 @@ msgstr "思考"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Thinking: {0}"
 msgstr "思考：{0}"
+
+#: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "此帳戶已停用"
 
 #: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
@@ -6670,6 +6756,10 @@ msgstr "工具名稱"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "工具"
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "合計"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
@@ -7051,6 +7141,10 @@ msgstr "工作日"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "週末"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Weekly"
+msgstr "每週"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

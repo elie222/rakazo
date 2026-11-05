@@ -42,6 +42,8 @@ function createDeps(
       spaceId: string;
     } | null;
     load?: (ciphertext: string) => string | Promise<string>;
+    /** The bot owner's account is deactivated. */
+    deactivated?: boolean;
     routines?: Array<{
       id: string;
       name: string;
@@ -87,6 +89,11 @@ function createDeps(
 
   return {
     prisma: {
+      user: {
+        findUnique: vi.fn(async () => ({
+          deactivatedAt: overrides.deactivated ? new Date() : null,
+        })),
+      },
       bot: {
         findUnique: vi.fn(async () => bot),
       },
@@ -236,6 +243,18 @@ describe("inbound webhook HTTP route", () => {
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "Unauthorized" });
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("refuses a deactivated owner's bot with the same unauthorized response", async () => {
+    const deps = createDeps({ deactivated: true });
+    const res = await mount(deps).request("/api/v1/bots/bot-1/webhook", {
+      method: "POST",
+      headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
+      body: JSON.stringify({ text: "hi" }),
+    });
+    expect(res.status).toBe(401);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.enqueue).not.toHaveBeenCalled();
   });
 
   it("rejects unknown bots with the same unauthorized response", async () => {
@@ -1171,6 +1190,7 @@ describe("webhook secret cache", () => {
     );
     const deps = {
       prisma: {
+        user: { findUnique: vi.fn(async () => ({ deactivatedAt: null })) },
         bot: {
           findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
             const webhookSecretId = bots.get(where.id);

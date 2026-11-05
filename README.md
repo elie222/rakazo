@@ -42,6 +42,7 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 - [CodeRabbit](https://www.coderabbit.ai/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [Greptile](https://www.greptile.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [Snyk](https://snyk.io/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Incredibuild](https://www.incredibuild.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 
 ## Stack
 
@@ -146,6 +147,12 @@ doesn't have gets its own database on the same server, copied from the shared on
 so unmerged schema changes stay out of it. When the default ports are taken, for example by
 another git worktree, it moves to the next free block and prints the URL. Set `WEB_PORT` and
 `API_PORT` to choose ports yourself.
+
+To try a checkout from your phone or another computer, install [Tailscale](https://tailscale.com)
+on each device and set `RAKAZO_DEV_TAILNET=1` in `.env`. `pnpm dev` then serves the web app over
+HTTPS at `https://<machine>.<tailnet>.ts.net:<web port>`, reachable only from devices on your
+tailnet, and stops serving it when you quit. Sign in at that URL on every device, including the
+one running it. The first run may ask you to turn on HTTPS certificates for your tailnet.
 
 To run Postgres from the Compose file instead, start it with the `postgres-host` overlay, which
 publishes loopback `127.0.0.1:5433`, and point `DATABASE_URL` and `DATABASE_MIGRATION_URL` at it:

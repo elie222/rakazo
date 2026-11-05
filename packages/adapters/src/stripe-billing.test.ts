@@ -1,5 +1,5 @@
 import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   encodeStripeForm,
   mapStripeSubscriptionStatus,
@@ -465,6 +465,21 @@ describe("Stripe billing HTTP boundary", () => {
     );
     expect(error.message).toBe("Stripe request failed (400): Bad key [redacted] rejected");
     expect(error.message).not.toContain(wire.secretKey);
+  });
+
+  it("does not read an oversized Stripe response", async () => {
+    let cancel: unknown;
+    const { provider } = setup((wire) => async (input, init) => {
+      const response = await wire.fetch(input, init);
+      const oversized = new Response(response.body, {
+        status: response.status,
+        headers: { "content-length": String(1024 * 1024 * 1024) },
+      });
+      cancel = vi.spyOn(oversized.body!, "cancel");
+      return oversized;
+    });
+    await expect(provider.getPrice()).rejects.toThrow("Invalid Stripe response");
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it("re-syncs the customer when Stripe reports it deleted", () => {

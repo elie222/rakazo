@@ -4,6 +4,7 @@ import { attachmentsForThread } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ThreadComposerHandle } from "../components/thread-composer";
+import type { ComposerDraftScope } from "./composer-draft";
 import { t, useI18n } from "./i18n";
 import {
   isIncomingShareCurrent,
@@ -20,10 +21,48 @@ import {
   takePhoto,
 } from "./pick-attachments";
 import { attachmentCountSkipReason } from "./pick-attachments-filter";
+import { registerSessionDiskCache } from "./session";
 import { useFileDrop } from "./use-file-drop";
 import { errorText } from "./user-error";
 
 export type PendingAttachment = PickedAttachment & { threadKey: string };
+
+/** Retained drafts for inactive chats stay within this many full messages' worth of bytes;
+ * past that the least recently saved chat's draft is dropped, releasing its share copies. */
+const RETAINED_DRAFT_BUDGET_MESSAGES = 2;
+
+function retainedScopeKey(scope: ComposerDraftScope): string {
+  return `${scope.apiBase}\n${scope.userId}\n${scope.threadKey}`;
+}
+
+/** A chat's unsent attachments, kept while its screen is away so leaving without sending does
+ * not lose them. The text draft persists on disk; attachment bytes do not fit that file. */
+const retainedDraftAttachments = new Map<string, PendingAttachment[]>();
+
+/** The iOS share copy an imported attachment came from, released only when that attachment is
+ * sent or removed. Until then an unsent share is never without its file. */
+const retainedShareCopies = new Map<string, string>();
+
+function releaseShareCopy(uri: string) {
+  releaseIncomingShareFiles([{ uri, name: "", mimeType: null }]);
+}
+
+function retainedDraftBytes(list: readonly PendingAttachment[]): number {
+  let total = 0;
+  for (const item of list) total += Math.floor((item.contentBase64.length * 3) / 4);
+  return total;
+}
+
+/** Every session change (sign-in, sign-out, server switch) deletes retained drafts and their
+ * share copies, so another account inherits none of them. */
+function clearRetainedAttachments() {
+  retainedDraftAttachments.clear();
+  for (const [id, uri] of retainedShareCopies) {
+    retainedShareCopies.delete(id);
+    releaseShareCopy(uri);
+  }
+}
+registerSessionDiskCache(clearRetainedAttachments);
 
 function formatAttachmentSkip(item: { name: string; reason: string }): string {
   const name = item.name === "camera" ? t("Camera") : item.name;
@@ -44,15 +83,20 @@ export function useThreadAttachments({
   groupId,
   readOnly,
   uploadConfig,
+  draftScope,
 }: {
   botId?: string;
   groupId?: string;
   readOnly: boolean;
   uploadConfig?: { maxUploadSizeBytes?: number; maxAttachmentsPerMessage?: number };
+  /** The chat's draft key; unsent attachments stay under it between visits to the chat. */
+  draftScope?: ComposerDraftScope;
 }) {
   const { t } = useI18n();
   const threadKey = groupId ?? botId;
-  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>(() =>
+    draftScope ? (retainedDraftAttachments.get(retainedScopeKey(draftScope)) ?? []) : [],
+  );
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
   // Read by a second drop that starts before the first one commits.
@@ -60,6 +104,44 @@ export function useThreadAttachments({
   pendingAttachmentsRef.current = pendingAttachments;
   const importingShare = useRef(false);
   const [shareImporting, setShareImporting] = useState(false);
+  // The chat whose draft this state holds; a warm link to another chat reuses the screen, so
+  // the state swaps to that chat's draft instead of writing this chat's over it.
+  const liveScopeKey = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    const key = draftScope ? retainedScopeKey(draftScope) : null;
+    if (liveScopeKey.current !== key) {
+      liveScopeKey.current = key;
+      if (key !== null) setPendingAttachments(retainedDraftAttachments.get(key) ?? []);
+      return;
+    }
+    if (key !== null) {
+      // Re-save at the end, so the bound below drops the oldest chats' drafts first.
+      retainedDraftAttachments.delete(key);
+      if (pendingAttachments.length) retainedDraftAttachments.set(key, pendingAttachments);
+      const budget =
+        RETAINED_DRAFT_BUDGET_MESSAGES *
+        attachmentMaxBytes(uploadConfig) *
+        attachmentMaxCount(uploadConfig);
+      let total = 0;
+      for (const list of retainedDraftAttachments.values()) total += retainedDraftBytes(list);
+      for (const [oldest, list] of retainedDraftAttachments) {
+        // This chat's own draft never goes; only the inactive chats' do.
+        if (total <= budget || oldest === key) break;
+        retainedDraftAttachments.delete(oldest);
+        total -= retainedDraftBytes(list);
+      }
+    }
+    // A share copy goes only once its attachment does: sent, removed, or dropped for another chat.
+    const unsent = new Set(pendingAttachments.map((item) => item.id));
+    for (const list of retainedDraftAttachments.values())
+      for (const item of list) unsent.add(item.id);
+    for (const [id, uri] of retainedShareCopies) {
+      if (unsent.has(id)) continue;
+      retainedShareCopies.delete(id);
+      releaseShareCopy(uri);
+    }
+  }, [pendingAttachments, draftScope, uploadConfig]);
 
   const attachActions: MenuAction[] = [
     { id: "library", title: t("Photo library"), image: "photo.on.rectangle" },
@@ -218,8 +300,14 @@ export function useIncomingShareImport({
             : null,
         );
         if (share.text) composerRef.current?.insert(share.text);
-        // The files put back for another attempt are the pending share's, so they stay.
-        releaseIncomingShareFiles(share.files);
+        // A file that became an attachment keeps its share copy until that attachment is sent
+        // or removed; the rest are done (a retried one stays with its share).
+        result.sources.forEach((uri, index) => {
+          const id = result.attachments[index]?.id;
+          if (id) retainedShareCopies.set(id, uri);
+        });
+        const imported = new Set(result.sources);
+        releaseIncomingShareFiles(share.files.filter((file) => !imported.has(file.uri)));
       } finally {
         importingShare.current = false;
         setShareImporting(false);

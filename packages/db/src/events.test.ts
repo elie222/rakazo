@@ -6,6 +6,7 @@ import {
   TAKEOVER_COMPUTER_SKIPPED_STATE,
 } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
+import { commitBotUpdate } from "./bot-update.js";
 import type { PrismaClient } from "./client.js";
 import { CrossSpaceCommunicationBlockedError } from "./cross-space-communication.js";
 import type { AnswerRunInput } from "./events.js";
@@ -27,6 +28,7 @@ import {
   sendUserMessage,
   settleReleasedTakeoverCards,
 } from "./events.js";
+import { endTakeoverWaits } from "./expire-stuck-run.js";
 import { partialReplyClientNonce, RunHistoryWriteError } from "./messages.js";
 import { installSecurityEventStore } from "./security-events.js";
 
@@ -690,6 +692,35 @@ describe("thread lock transaction budget", () => {
       runId: "run-1",
       reason: "done",
     });
+
+    expect($transaction).toHaveBeenCalledWith(expect.any(Function), budget);
+  });
+
+  it.each([
+    [
+      "commits a bot update",
+      (prisma: PrismaClient) =>
+        commitBotUpdate({
+          prisma,
+          notify: vi.fn(),
+          spaceId: "space-1",
+          threadId: "thread-1",
+          botId: "bot-1",
+          data: { name: "Ada" },
+          emitBotUpdated: true,
+        }),
+    ],
+    ["ends a takeover wait", (prisma: PrismaClient) => endTakeoverWaits(prisma, ["run-1"])],
+  ])("%s with the explicit budget", async (_name, act) => {
+    const unreachable = new Error("transaction body not under test");
+    const $transaction = vi.fn().mockRejectedValue(unreachable);
+    const run = {
+      findMany: vi
+        .fn()
+        .mockResolvedValue([{ id: "run-1", threadId: "thread-1", updatedAt: new Date(0) }]),
+    };
+
+    await expect(act({ $transaction, run } as unknown as PrismaClient)).rejects.toBe(unreachable);
 
     expect($transaction).toHaveBeenCalledWith(expect.any(Function), budget);
   });
