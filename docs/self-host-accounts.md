@@ -214,11 +214,11 @@ invalid, expired or wrong-account codes fail. No password needs to be created fo
 
 ## Directory provisioning (SCIM)
 
-Your identity provider can add people to Rakazo and remove them over SCIM 2.0. Generate a token of
-at least 32 random characters and set it on the API:
+Your identity provider can add people to Rakazo and remove them over SCIM 2.0. Generate a token
+(`openssl rand -hex 32`) and set it on the API:
 
 ```env
-SCIM_BEARER_TOKEN=replace-with-a-long-random-token
+SCIM_BEARER_TOKEN=<your generated token>
 ```
 
 In the identity provider, set the SCIM base URL to `https://app.example.com/api/auth/scim/v2`
