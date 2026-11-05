@@ -840,8 +840,7 @@ async function handleChannelEvent(
             data: { identityId: identity.id },
           });
           if (member.status === "invited") {
-            await queueInvite(tx, channel, identity);
-            invited.push(identity);
+            if (await queueInvite(tx, channel, identity)) invited.push(identity);
           }
         }
         if (member.status === "left") {
@@ -851,8 +850,7 @@ async function handleChannelEvent(
             data: { status: "invited" },
           });
           if (identity) {
-            await queueInvite(tx, channel, identity);
-            invited.push(identity);
+            if (await queueInvite(tx, channel, identity)) invited.push(identity);
           }
         }
         if (!identity) hasUnlinked = true;
@@ -870,8 +868,7 @@ async function handleChannelEvent(
         update: {},
       });
       if (identity) {
-        await queueInvite(tx, channel, identity);
-        invited.push(identity);
+        if (await queueInvite(tx, channel, identity)) invited.push(identity);
       } else hasUnlinked = true;
     }
 
@@ -978,12 +975,12 @@ async function handleChannelEvent(
 }
 
 async function queueInvite(
-  db: Pick<PrismaClient, "messagingOutbound">,
+  db: Pick<PrismaClient, "messagingOutbound" | "user">,
   channel: { id: string; name: string | null },
   identity: IdentityRow,
-): Promise<void> {
+): Promise<boolean> {
   // A deactivated person is not invited anywhere.
-  if (await accountDeactivated(deps.prisma, identity.userId)) return;
+  if (await accountDeactivated(db, identity.userId)) return false;
   const name = channel.name ?? "a group chat";
   // A returning member restarts the approval cycle; clear the prior invite
   // row or skipDuplicates would leave them with no prompt to answer.
@@ -1001,6 +998,7 @@ async function queueInvite(
     ],
     skipDuplicates: true,
   });
+  return true;
 }
 
 async function announceInvite(

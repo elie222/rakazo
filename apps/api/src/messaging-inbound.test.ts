@@ -333,6 +333,7 @@ function createDeps(
         messagingChannelMember: prisma.messagingChannelMember,
         messagingOutbound: prisma.messagingOutbound,
         messagingIdentity: prisma.messagingIdentity,
+        user: prisma.user,
         messagingLinkCode,
         bot: prisma.bot,
       }),
