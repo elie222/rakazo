@@ -121,6 +121,19 @@ describe("email languages", () => {
     expect(emailLocale(null, headers("fr;q=0.,de;q=1."))).toBe("de");
   });
 
+  it.each([
+    ["zh_Hans_CN", "zh-CN"],
+    ["zh_Hans_CN;q=0.9,en;q=0.8", "zh-CN"],
+    ["zh_Hant_TW;q=0.9,fr;q=0.8", "zh-TW"],
+    ["pt_BR;q=0.9,fr;q=0.8", "pt-BR"],
+    ["en_US;q=1,fr;q=0.5", "en"],
+    ["zh_Hans_CN;q=0,fr;q=0.5", "fr"],
+    ["zh_Hans_CN;q=bogus,fr;q=0.5", "fr"],
+    ["zh__Hans_CN;q=1,fr;q=0.5", "fr"],
+  ])("matches underscored request tags in %s to %s", (request, locale) => {
+    expect(emailLocale(null, headers(request))).toBe(locale);
+  });
+
   it("ignores malformed weights and falls back when no supported language is acceptable", () => {
     for (const invalid of ["-0.1", "1.1", "0.1234", "bogus", "0.5junk", ""]) {
       expect(emailLocale(null, headers(`de;q=${invalid},fr;q=0.1`))).toBe("fr");

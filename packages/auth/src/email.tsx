@@ -59,14 +59,16 @@ export function emailLocale(saved: string | null | undefined, headers?: Headers 
   let bestLocale = "en";
   let bestQuality = 0;
   for (const part of headers?.get("accept-language")?.split(",") ?? []) {
-    const match = part.trim().match(
-      /^([a-z]{1,8}(?:-[a-z0-9]{1,8})*|\*)(?:\s*;\s*q\s*=\s*(0(?:\.\d{0,3})?|1(?:\.0{0,3})?))?$/i,
-    );
+    const match = part
+      .trim()
+      .match(
+        /^([a-z]{1,8}(?:[-_][a-z0-9]{1,8})*|\*)(?:\s*;\s*q\s*=\s*(0(?:\.\d{0,3})?|1(?:\.0{0,3})?))?$/i,
+      );
     if (!match) continue;
     const tag = match[1] ?? "";
     const quality = match[2] === undefined ? 1 : Number(match[2]);
     if (quality <= bestQuality) continue;
-    const isEnglish = /^en(?:-|$)/i.test(tag);
+    const isEnglish = /^en(?:[-_]|$)/i.test(tag);
     const locale = isEnglish ? "en" : matchUiLocale(tag, LOCALES);
     // matchUiLocale also returns English for unsupported tags (including *).
     if (locale === "en" && !isEnglish) continue;
