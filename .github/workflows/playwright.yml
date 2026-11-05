@@ -67,6 +67,19 @@ jobs:
         if: inputs.changed_areas
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
       # Boots beside pnpm install so the harness does not wait on Testcontainers after install.
+      - name: Postgres cache week
+        if: steps.areas.outputs.e2e != 'false'
+        id: postgres-cache-week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Restore Postgres image cache
+        if: steps.areas.outputs.e2e != 'false'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/docker-postgres-cache
+          key: docker-postgres-18-alpine-v2-${{ steps.postgres-cache-week.outputs.week }}
+      - name: Load or pull Postgres image
+        if: steps.areas.outputs.e2e != 'false'
+        run: bash .github/scripts/restore-postgres-image.sh
       - name: Start Postgres
         if: steps.areas.outputs.e2e != 'false'
         run: |
@@ -78,20 +91,10 @@ jobs:
             mirror.gcr.io/library/postgres:18-alpine \
             postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500
           echo "CI_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/rakazo" >> "$GITHUB_ENV"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-        if: steps.areas.outputs.e2e != 'false'
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: ./.github/actions/setup-workspace
         if: steps.areas.outputs.e2e != 'false'
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-        if: steps.areas.outputs.e2e != 'false'
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        if: steps.areas.outputs.e2e != 'false'
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+          playwright: "true"
       - name: Install Chromium
         if: steps.areas.outputs.e2e != 'false'
         timeout-minutes: 5
@@ -163,6 +166,19 @@ jobs:
       - id: areas
         if: inputs.changed_areas
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
+      - name: Postgres cache week
+        if: steps.areas.outputs.e2e != 'false'
+        id: postgres-cache-week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Restore Postgres image cache
+        if: steps.areas.outputs.e2e != 'false'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/docker-postgres-cache
+          key: docker-postgres-18-alpine-v2-${{ steps.postgres-cache-week.outputs.week }}
+      - name: Load or pull Postgres image
+        if: steps.areas.outputs.e2e != 'false'
+        run: bash .github/scripts/restore-postgres-image.sh
       - name: Start Postgres
         if: steps.areas.outputs.e2e != 'false'
         run: |
@@ -174,20 +190,10 @@ jobs:
             mirror.gcr.io/library/postgres:18-alpine \
             postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500
           echo "CI_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/rakazo" >> "$GITHUB_ENV"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-        if: steps.areas.outputs.e2e != 'false'
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: ./.github/actions/setup-workspace
         if: steps.areas.outputs.e2e != 'false'
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-        if: steps.areas.outputs.e2e != 'false'
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        if: steps.areas.outputs.e2e != 'false'
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+          playwright: "true"
       - name: Install Chromium
         if: steps.areas.outputs.e2e != 'false'
         timeout-minutes: 5
@@ -243,20 +249,10 @@ jobs:
       - id: areas
         if: inputs.changed_areas
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-        if: steps.areas.outputs.e2e != 'false'
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: ./.github/actions/setup-workspace
         if: steps.areas.outputs.e2e != 'false'
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-        if: steps.areas.outputs.e2e != 'false'
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        if: steps.areas.outputs.e2e != 'false'
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+          playwright: "true"
       - name: Install Chromium
         if: steps.areas.outputs.e2e != 'false'
         timeout-minutes: 5
