@@ -147,6 +147,8 @@ let diskReadable = true;
 const memoryOnly = new WeakSet<SendAttempt>();
 /** Memory-only sends whose files were already written; the next save lists them again. */
 const writtenFiles = new WeakSet<SendAttempt>();
+/** Memory-only sends that may have files no index lists: a failed admission or deletion left them. */
+const unlistedFiles = new WeakSet<SendAttempt>();
 let running: Promise<void> | undefined;
 /** A retry that arrived while a drain was in progress, run once that drain stops. */
 let pendingForce: boolean | null = null;
@@ -204,6 +206,22 @@ function detachedForAdmission(attempt: SendAttempt): SendAttempt {
   };
 }
 
+/** Admits a memory-only send again, first deleting files no index lists if they block it. */
+function admitAgain(attempt: SendAttempt, attempts: SendAttempt[]) {
+  if (config!.disk.admit(detachedForAdmission(attempt))) return true;
+  if (!unlistedFiles.has(attempt)) return false;
+  // The folder belongs to another send with this nonce whose files are listed or written.
+  const owned = [...attempts, ...unsentSends].some(
+    (other) =>
+      other !== attempt &&
+      other.clientNonce === attempt.clientNonce &&
+      (!memoryOnly.has(other) || writtenFiles.has(other)),
+  );
+  if (owned) return false;
+  config!.disk.forget(attempt);
+  return config!.disk.admit(detachedForAdmission(attempt));
+}
+
 /** Saves the index, then deletes files only once it no longer lists them. */
 function save(attempts: SendAttempt[]) {
   return tryDisk(() => {
@@ -211,10 +229,14 @@ function save(attempts: SendAttempt[]) {
     // A write error left these in memory only. Ones whose files were written join this index
     // directly; the others admit again on a detached copy, and a successful admission is
     // recorded at once, so a later save lists it rather than re-admitting over its own
-    // files. What still cannot reach disk waits for a later save.
+    // files. What still cannot reach disk waits for a later save without blocking the others.
     for (const attempt of attempts) {
       if (!memoryOnly.has(attempt) || writtenFiles.has(attempt)) continue;
-      if (config!.disk.admit(detachedForAdmission(attempt))) writtenFiles.add(attempt);
+      const admitted = tryDisk(() => admitAgain(attempt, attempts), undefined);
+      if (admitted) {
+        writtenFiles.add(attempt);
+        unlistedFiles.delete(attempt);
+      } else if (admitted === undefined) unlistedFiles.add(attempt);
     }
     const listed = attempts.filter(
       (attempt) => !memoryOnly.has(attempt) || writtenFiles.has(attempt),
@@ -232,7 +254,11 @@ function save(attempts: SendAttempt[]) {
     }
     for (const attempt of removed) {
       removed.delete(attempt);
-      if (!listed.some((a) => a.clientNonce === attempt.clientNonce)) config!.disk.forget(attempt);
+      if (listed.some((a) => a.clientNonce === attempt.clientNonce)) continue;
+      config!.disk.forget(attempt);
+      // Sent again, it keeps its bytes in memory until a new admission and index save succeed.
+      writtenFiles.delete(attempt);
+      unlistedFiles.add(attempt);
     }
     return true;
   }, false);
@@ -488,6 +514,7 @@ export function useThreadFeedback(
         removed.add(attempt);
         memoryOnly.add(attempt);
         if (admitted === true) writtenFiles.add(attempt);
+        else unlistedFiles.add(attempt);
         attempt.payload.attachments = payload.attachments.map((a) => ({ ...a }));
       }
       return attempt;

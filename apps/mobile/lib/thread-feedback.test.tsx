@@ -407,13 +407,11 @@ describe("scoped mobile outbox", () => {
   it("persists a pending send once the disk answers during its delivery", async () => {
     const folders = new Set<string>();
     const written = new Map<string, string[]>();
-    const admissions = new Map<string, number>();
+    let admissions = 0;
     // The sending attempt's own admission and the saves while it queues and turns pending
     // fail; the disk answers afterwards, clearing the in-memory bytes, as it does.
     disk.admit.mockImplementation((attempt: SendAttempt) => {
-      const seen = (admissions.get(attempt.clientNonce) ?? 0) + 1;
-      admissions.set(attempt.clientNonce, seen);
-      if (seen <= 3) throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+      if (++admissions <= 3) throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
       if (folders.has(attempt.clientNonce)) return false;
       folders.add(attempt.clientNonce);
       written.set(
@@ -446,9 +444,9 @@ describe("scoped mobile outbox", () => {
     await vi.waitFor(() => expect(request).toHaveBeenCalled());
     // The disk answers while the upload runs: the next save writes the send's files and
     // lists it in the index, so a process kill during the upload loses nothing.
-    feedback.sendAttempt(payload("Second"));
+    const second = feedback.sendAttempt(payload("Second"));
     expect(written.get(attempt.clientNonce)).toEqual(["fake"]);
-    expect(disk.save).toHaveBeenCalledWith([attempt]);
+    expect(disk.save).toHaveBeenCalledWith([attempt, second]);
     await act(async () => {
       releaseUpload({ id: "artifact-a" });
       await sending;
@@ -517,6 +515,125 @@ describe("scoped mobile outbox", () => {
       await feedback.send(discarded);
     });
     expect(disk.forget).not.toHaveBeenCalled();
+  });
+  /** Folders on a fake disk: admission writes one and clears the bytes, as the disk does. */
+  function diskFolders() {
+    const folders = new Map<string, string[]>();
+    disk.admit.mockImplementation((attempt: SendAttempt) => {
+      if (folders.has(attempt.clientNonce)) return false;
+      folders.set(
+        attempt.clientNonce,
+        attempt.payload.attachments.map((attachment) => attachment.contentBase64),
+      );
+      for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
+      return true;
+    });
+    disk.forget.mockImplementation((attempt: SendAttempt) => folders.delete(attempt.clientNonce));
+    disk.hydrate.mockImplementation(async (attempt: SendAttempt) => {
+      const files = folders.get(attempt.clientNonce);
+      if (!files) throw new Error("ATTACHMENT_UNAVAILABLE");
+      attempt.payload.attachments.forEach((attachment, index) => {
+        attachment.contentBase64 ||= files[index] ?? "";
+      });
+    });
+    return folders;
+  }
+  function resetDisk() {
+    disk.admit.mockImplementation(() => true);
+    disk.forget.mockImplementation(() => undefined);
+    disk.hydrate.mockImplementation(async () => undefined);
+  }
+  it("saves other sends and deletes removed files while one recovery admission fails", async () => {
+    reachable = false;
+    let stuck: string | undefined;
+    disk.admit.mockImplementation((attempt: SendAttempt) => {
+      stuck ??= attempt.clientNonce;
+      if (attempt.clientNonce === stuck) throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+      return true;
+    });
+    const first = feedback.sendAttempt(payload("First"));
+    await act(async () => {
+      await feedback.send(first);
+    });
+    const discarded = feedback.sendAttempt(payload("Old"));
+    act(() => feedback.discard(discarded));
+    expect(disk.forget).toHaveBeenCalledWith(discarded);
+    const next = feedback.sendAttempt(payload("Second"));
+    expect(disk.save).toHaveBeenLastCalledWith([next]);
+    expect(first.payload.attachments[0]?.contentBase64).toBe("fake");
+    resetDisk();
+  });
+  it("deletes a folder a failed admission left behind before admitting the send again", async () => {
+    reachable = false;
+    const folders = diskFolders();
+    const forget = disk.forget.getMockImplementation()!;
+    // The write fails partway, and deleting the folder fails until the disk recovers.
+    disk.admit.mockImplementationOnce((attempt: SendAttempt) => {
+      folders.set(attempt.clientNonce, []);
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    disk.forget.mockImplementation(() => undefined);
+    const first = feedback.sendAttempt(payload("First"));
+    await act(async () => {
+      await feedback.send(first);
+    });
+    disk.forget.mockImplementation(forget);
+    const second = feedback.sendAttempt(payload("Second"));
+    expect(disk.save).toHaveBeenLastCalledWith([first, second]);
+    expect(folders.get(first.clientNonce)).toEqual(["fake"]);
+    resetDisk();
+  });
+  it("keeps another send's files when a resent message with its nonce cannot be admitted", async () => {
+    reachable = false;
+    const folders = diskFolders();
+    const admit = disk.admit.getMockImplementation()!;
+    disk.admit.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const resent = feedback.sendAttempt(payload("First"));
+    act(() => feedback.discard(resent));
+    disk.admit.mockImplementation(admit);
+    nonces -= 1;
+    const owner = feedback.sendAttempt({
+      ...payload("Second"),
+      attachments: [
+        { id: "attachment-1", name: "photo.png", mimeType: "image/png", contentBase64: "owned" },
+      ],
+    });
+    expect(owner.clientNonce).toBe(resent.clientNonce);
+    await act(async () => {
+      await feedback.send(owner);
+      await feedback.send(resent);
+    });
+    expect(folders.get(owner.clientNonce)).toEqual(["owned"]);
+    reachable = true;
+    await act(async () => {
+      await sendWaitingMessages();
+    });
+    const uploads = request.mock.calls
+      .filter(([proc]) => proc === "artifacts/create")
+      .map(([, body]) => (body as { contentBase64: string }).contentBase64);
+    expect(uploads[0]).toBe("owned");
+    resetDisk();
+  });
+  it("writes a resent message's files again after a removal deleted them", async () => {
+    const folders = diskFolders();
+    disk.save.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const attempt = feedback.sendAttempt(payload());
+    act(() => feedback.discard(attempt));
+    expect(folders.has(attempt.clientNonce)).toBe(false);
+    await act(async () => {
+      expect(await feedback.send(attempt)).toBe(true);
+    });
+    expect(request).toHaveBeenCalledWith(
+      "artifacts/create",
+      expect.objectContaining({ contentBase64: "fake" }),
+      expect.anything(),
+      "space-a",
+    );
+    resetDisk();
   });
   it.each(["Read failed", "OUTBOX_STORAGE_UNAVAILABLE"])(
     "finishes a failed restore (%s) without overwriting recoverable messages",
