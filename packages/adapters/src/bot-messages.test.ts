@@ -638,6 +638,10 @@ describe("hardening", () => {
     });
     expect(sent.ok).toBe(true);
     expect(harness.deps.prisma.$transaction).toHaveBeenCalledTimes(2);
+    // The retried delivery keeps the thread-lock budget.
+    expect(harness.deps.prisma.$transaction).toHaveBeenLastCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
     expect(harness.enqueue).toHaveBeenCalledOnce();
   });
 });
