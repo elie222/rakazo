@@ -12,7 +12,7 @@ import { z } from "zod";
 import { asRecord, readBoundedText } from "./connector-http.js";
 
 const SEARCH_LIMIT = 25;
-const MAX_RESULTS = 10;
+const SERVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,299}$/;
 const CATALOG_MAX_BYTES = 1_000_000;
 const ANSWER_MAX_BYTES = 2_000_000;
 /** Treg names its routed jobs `treg.<job>`; the agent sees `auto.<job>`. */
@@ -33,7 +33,7 @@ const paramSpec = z
 const paramMap = z.record(z.string(), paramSpec).nullish();
 const endpoint = z
   .object({
-    id: z.string().min(1).max(300),
+    id: z.string().regex(SERVICE_ID),
     name: z.string().default(""),
     summary: z.string().nullish(),
     kind: z.string().nullish(),
@@ -218,17 +218,15 @@ export class TregPaidServiceProvider implements PaidServiceProvider {
       .object({ results: z.array(z.unknown()).default([]) })
       .passthrough()
       .parse(await this.catalog(`/catalog/search?${params}`, context));
-    return found.results
-      .flatMap((raw) => {
-        const parsed = endpoint.safeParse(raw);
-        return parsed.success && callable(parsed.data) ? [toService(parsed.data)] : [];
-      })
-      .slice(0, MAX_RESULTS);
+    return found.results.flatMap((raw) => {
+      const parsed = endpoint.safeParse(raw);
+      return parsed.success && callable(parsed.data) ? [toService(parsed.data)] : [];
+    });
   }
 
   async describe(serviceId: string, context: AdapterContext): Promise<PaidService | null> {
     const id = providerId(serviceId);
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,299}$/.test(id)) return null;
+    if (!SERVICE_ID.test(id)) return null;
     const found = await this.catalog(`/catalog/endpoints/${encodeURIComponent(id)}`, context);
     const parsed = endpoint.safeParse(asRecord(found)?.endpoint);
     if (!parsed.success || parsed.data.id !== id || !callable(parsed.data)) return null;

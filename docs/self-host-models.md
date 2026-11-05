@@ -183,8 +183,8 @@ accounts, generation tasks, and services that need the account's own connections
 Each call has a cost ceiling (by default three times the listed price, at most $2) that the
 provider enforces before it charges. When model credits are on, a call first holds that ceiling
 from the organization's credits and then settles to what the provider charged plus 20%, never
-above the ceiling; failed
-calls are free. A call that may have run without an answer keeps its hold for the credit
+above the ceiling; calls the provider does not bill are
+free. A call that may have run without an answer keeps its hold for the credit
 reconciler to flag. Every call appears in Usage under the `services` provider.
 
 ## Image and video generation
