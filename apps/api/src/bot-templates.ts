@@ -20,6 +20,7 @@ import {
   buildSkillMd,
   findBotTemplate,
 } from "@rakazo/core";
+import { availableInSpace } from "@rakazo/db";
 import type { AgentImportServices, Built } from "./agent-import.js";
 import { requestDigest, savedTimeZone, writeImportedBot } from "./agent-import.js";
 
@@ -160,7 +161,23 @@ export async function createBotFromTemplate<PreparedKey>(
         });
       }
       request.cards = templateAppCards(template, template.apps.length ? await appCatalog() : []);
-      return templatePlan(template, await savedTimeZone(services.prisma, actor));
+      const built = templatePlan(template, await savedTimeZone(services.prisma, actor));
+      // A skill an earlier copy of this bot added, still unchanged, is reused rather than
+      // added again under a new name; the routine's mention already points at it.
+      const kept = await services.prisma.agentSkill.findMany({
+        where: { ...availableInSpace(actor), name: { in: template.skills.map((s) => s.name) } },
+        select: { name: true, content: true },
+      });
+      const reused = new Set(
+        template.skills
+          .filter((skill) =>
+            kept.some((row) => row.name === skill.name && row.content === buildSkillMd(skill)),
+          )
+          .map((skill) => skill.name),
+      );
+      built.plan.skills = built.plan.skills.filter((skill) => !reused.has(skill.id));
+      request.selection.skills = built.plan.skills.map((skill) => skill.id);
+      return built;
     },
   };
   // An archived bot no longer counts as the template's bot: its record makes way for a new one.

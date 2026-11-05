@@ -144,6 +144,11 @@ describeIntegration("bot templates", () => {
     const fresh = await rpc<Created>(app, cookie, "bots/createFromTemplate", input);
     expect(fresh.created).toBe(true);
     expect(fresh.bot.id).not.toBe(replacement.bot.id);
+    // Each new copy reuses the unchanged skill the first one added instead of adding another.
+    const skills = await db.agentSkill.findMany({ where: owner, select: { name: true } });
+    expect(skills.map((row) => row.name)).toEqual(["inbox-triage"]);
+    const routine = await db.routine.findFirstOrThrow({ where: { botId: fresh.bot.id } });
+    expect(routine.prompt).toBe("Triage my new email with @inbox-triage.");
   });
 
   it("renames its skill on a clash and points the routine at the new name", async () => {
