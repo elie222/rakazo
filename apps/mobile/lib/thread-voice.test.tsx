@@ -141,8 +141,12 @@ describe("read-aloud while a call is active", () => {
     return { id, role: "bot", blocks: [{ kind: "text", text }] } as unknown as MobileMessage;
   }
 
-  function snapshot(messages: MobileMessage[]): MobileSnapshot {
-    return { botId: "bot-b", messages, run: null } as unknown as MobileSnapshot;
+  function snapshot(messages: MobileMessage[], runStatus?: string): MobileSnapshot {
+    return {
+      botId: "bot-b",
+      messages,
+      run: runStatus ? { id: "run-1", status: runStatus } : null,
+    } as unknown as MobileSnapshot;
   }
 
   function AutoSpeakHarness({ snap }: { snap: MobileSnapshot }) {
@@ -225,6 +229,33 @@ describe("read-aloud while a call is active", () => {
       "third reply",
       expect.objectContaining({ botId: "bot-b" }),
     );
+  });
+
+  it("keeps a reply that streamed during a call silent when it completes after hang-up", () => {
+    vi.mocked(getCallSnapshot).mockReturnValue(activeCall());
+    act(() =>
+      root.render(
+        createElement(AutoSpeakHarness, { snap: snapshot([message("m1", "first reply")]) }),
+      ),
+    );
+    act(() =>
+      root.render(
+        createElement(AutoSpeakHarness, {
+          snap: snapshot([message("m1", "first reply"), message("m2", "second reply")], "running"),
+        }),
+      ),
+    );
+    expect(speakText).not.toHaveBeenCalled();
+
+    vi.mocked(getCallSnapshot).mockReturnValue(null);
+    act(() =>
+      root.render(
+        createElement(AutoSpeakHarness, {
+          snap: snapshot([message("m1", "first reply"), message("m2", "second reply")]),
+        }),
+      ),
+    );
+    expect(speakText).not.toHaveBeenCalled();
   });
 
   it("auto-speaks a finished reply when no call is active", () => {

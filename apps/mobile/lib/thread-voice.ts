@@ -62,6 +62,8 @@ export function useAutoSpeakReply({
     const decision = nextAutoSpeakAction({
       botId: currentBot.id,
       autoSpeak: currentBot.autoSpeak,
+      // An active call owns the speaker; the gate only seeds while it lasts.
+      callActive: getCallSnapshot() !== null,
       focused: AppState.currentState === "active" && navigation.isFocused(),
       snapshotReady: snap?.botId === currentBot.id && !showingSaved,
       lastSpokenBotId: autoSpokenBotId.current,
@@ -77,8 +79,6 @@ export function useAutoSpeakReply({
     if (decision.action !== "speak") return;
     autoSpokenBotId.current = currentBot.id;
     autoSpoken.current = decision.messageId;
-    // An active call owns the speaker; another chat's reply must not cut into it.
-    if (getCallSnapshot()) return;
     void speakText(decision.text, {
       botId: currentBot.id,
       speaker: {
