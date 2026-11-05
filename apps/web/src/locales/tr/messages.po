@@ -2653,6 +2653,7 @@ msgstr "gün"
 msgid "Decline"
 msgstr "Reddet"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2770,11 +2771,6 @@ msgstr "Reddedildi"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "Reddet"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr "Dağıtım varsayılanı ({0})"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx

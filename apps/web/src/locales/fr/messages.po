@@ -2653,6 +2653,7 @@ msgstr "jours"
 msgid "Decline"
 msgstr "Refuser"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2770,11 +2771,6 @@ msgstr "Refusé"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "Refuser"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
