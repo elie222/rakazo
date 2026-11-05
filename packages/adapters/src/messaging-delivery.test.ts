@@ -134,7 +134,15 @@ function createDeps(overrides: {
     overrides.identity === null ? null : { ...identity, ...(overrides.identity ?? {}) };
   const prisma = {
     user: {
-      findUnique: vi.fn(async (): Promise<{ deactivatedAt: Date | null } | null> => null),
+      findUnique: vi.fn(
+        async (_query: { where: { id: string } }): Promise<{ deactivatedAt: Date | null } | null> =>
+          null,
+      ),
+    },
+    bot: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
+        userId: `owner-of-${where.id}`,
+      })),
     },
     run: {
       findUnique: vi.fn(async () => overrides.run ?? messagingRun),
@@ -701,6 +709,31 @@ describe("deliverMessagingOutbound", () => {
       where: { id: "mi-1" },
       data: { outboundSinceInbound: { increment: 1 } },
     });
+  });
+
+  it("does not send a connect invite queued by a person who has since been deactivated", async () => {
+    const deps = createDeps({
+      run: null,
+      connectionStatus: "pending",
+      outboundRows: [
+        {
+          id: "out-connect",
+          idempotencyKey: "connect:bot-1:bot-9",
+          kind: "dm",
+          identityId: "mi-1",
+          body: "wants to connect. Reply YES to allow, NO to decline.",
+          status: "pending",
+          providerHandle: null,
+        },
+      ],
+    });
+    deps.prisma.user.findUnique.mockImplementation(async ({ where }) => ({
+      deactivatedAt: where.id === "owner-of-bot-1" ? new Date() : null,
+    }));
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
   });
 
   it("does not re-queue a connect invite when the provider send fails", async () => {

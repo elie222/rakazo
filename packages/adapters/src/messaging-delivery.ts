@@ -426,7 +426,13 @@ async function sendConnectInvite(
             AND "targetBotId" = ${pair.targetBotId}
           FOR UPDATE
         `;
-        if (locked[0]?.status !== "pending" || !communicationAllowed) {
+        // An invite queued before its requester was deactivated is not sent for them.
+        const requester = await tx.bot.findUnique({
+          where: { id: pair.requesterBotId },
+          select: { userId: true },
+        });
+        const requesterDeactivated = requester && (await accountDeactivated(tx, requester.userId));
+        if (locked[0]?.status !== "pending" || !communicationAllowed || requesterDeactivated) {
           await tx.messagingOutbound.updateMany({
             where: { id: row.id },
             data: { status: "failed" },
