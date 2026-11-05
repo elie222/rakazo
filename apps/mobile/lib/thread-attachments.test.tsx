@@ -4,9 +4,10 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { releaseIncomingShareFiles, takeIncomingShare } from "./incoming-share";
 import type { PickedAttachment } from "./pick-attachments";
-import { pickDocuments } from "./pick-attachments";
-import { useThreadAttachments } from "./thread-attachments";
+import { pickDocuments, readSharedFiles } from "./pick-attachments";
+import { useIncomingShareImport, useThreadAttachments } from "./thread-attachments";
 
 vi.mock("./i18n", () => ({
   t: (text: string) => text,
@@ -21,7 +22,8 @@ vi.mock("./pick-attachments", () => ({
 }));
 vi.mock("./use-file-drop", () => ({ useFileDrop: () => undefined }));
 vi.mock("./incoming-share", () => ({
-  isIncomingShareCurrent: () => false,
+  isIncomingShareCurrent: vi.fn(() => true),
+  releaseIncomingShareFiles: vi.fn(),
   retryIncomingShare: vi.fn(),
   takeIncomingShare: vi.fn(),
 }));
@@ -30,9 +32,48 @@ vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fa
 let root: Root;
 let attachments: ReturnType<typeof useThreadAttachments>;
 
-function Probe({ botId }: { botId: string }) {
-  attachments = useThreadAttachments({ botId, readOnly: false });
+/** A chat reopened after leaving it: a fresh screen instance on a fresh root. */
+function mount(node: React.ReactNode) {
+  root = createRoot(document.createElement("div"));
+  act(() => root.render(node));
+}
+
+function unmount() {
+  act(() => root.unmount());
+}
+
+function Probe({
+  botId,
+  draftScope,
+}: {
+  botId: string;
+  draftScope?: { apiBase: string; userId: string; threadKey: string };
+}) {
+  attachments = useThreadAttachments({ botId, readOnly: false, draftScope });
   return null;
+}
+
+const uploadConfig = {};
+
+function ImportProbe({ botId }: { botId: string }) {
+  attachments = useThreadAttachments({
+    botId,
+    readOnly: false,
+    uploadConfig,
+    draftScope: { apiBase: "https://example.test", userId: "user-1", threadKey: botId },
+  });
+  useIncomingShareImport({
+    attachments,
+    composerRef: { current: null },
+    readOnly: false,
+    threadKey: botId,
+    uploadConfig,
+  });
+  return null;
+}
+
+function attachment(id: string, threadKey: string): PickedAttachment & { threadKey: string } {
+  return { id, name: `${id}.txt`, mimeType: "text/plain", contentBase64: "aGk=", threadKey };
 }
 
 beforeEach(() => {
@@ -41,7 +82,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  act(() => root.unmount());
+  unmount();
   vi.unstubAllGlobals();
 });
 
@@ -87,4 +128,53 @@ it("counts a read that settles before the next render against the attachment lim
   ]);
   // The identity i18n mock leaves the placeholder; before the fix there was no notice at all.
   expect(attachments.attachmentNotice).toBe("Skipped {items}");
+});
+
+it("keeps a chat's unsent attachments when the chat is left and reopened", () => {
+  const scope = { apiBase: "https://example.test", userId: "user-1", threadKey: "bot-a" };
+  mount(<Probe botId="bot-a" draftScope={scope} />);
+  act(() => attachments.setPendingAttachments([attachment("a1", "bot-a")]));
+  unmount();
+
+  mount(<Probe botId="bot-a" draftScope={scope} />);
+
+  expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["a1"]);
+
+  // Another chat, or another account in the same chat, starts without them.
+  unmount();
+  mount(<Probe botId="bot-b" draftScope={{ ...scope, threadKey: "bot-b" }} />);
+  expect(attachments.activePendingAttachments).toEqual([]);
+  unmount();
+  mount(<Probe botId="bot-a" draftScope={{ ...scope, userId: "user-2" }} />);
+  expect(attachments.activePendingAttachments).toEqual([]);
+});
+
+it("keeps the iOS share copy until its attachment is sent or removed", async () => {
+  const files = [{ uri: "file:///group/a1.txt", name: "a1.txt", mimeType: "text/plain" }];
+  vi.mocked(takeIncomingShare).mockReturnValueOnce({
+    text: "",
+    files,
+    arrivedAt: Date.now(),
+    generation: 1,
+  });
+  vi.mocked(readSharedFiles).mockResolvedValueOnce({
+    attachments: [attachment("s1", "bot-c")],
+    skipped: [],
+    failedFiles: [],
+    sources: [files[0]!.uri],
+  });
+  mount(<ImportProbe botId="bot-c" />);
+
+  await act(async () => {});
+
+  expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["s1"]);
+  expect(releaseIncomingShareFiles).toHaveBeenCalledWith([]);
+
+  act(() =>
+    attachments.setPendingAttachments((current) => current.filter((item) => item.id !== "s1")),
+  );
+
+  expect(releaseIncomingShareFiles).toHaveBeenCalledWith([
+    { uri: "file:///group/a1.txt", name: "", mimeType: null },
+  ]);
 });
