@@ -8,7 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("react-native", async () => {
   const { createElement } = await import("react");
   const flatten = (style: unknown): Record<string, unknown> =>
-    Array.isArray(style) ? Object.assign({}, ...style.map(flatten)) : ((style as object) ?? {});
+    Array.isArray(style) ? Object.assign({}, ...style.map(flatten)) : ((style as Record<string, unknown>) ?? {});
   return {
     StyleSheet: { hairlineWidth: 1 },
     View: ({ children }: { children?: ReactNode }) => createElement("div", {}, children),
