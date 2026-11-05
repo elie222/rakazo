@@ -1383,6 +1383,38 @@ it("sends a dictation that finishes while an earlier send is in flight", async (
   }
 });
 
+it("does not auto-send a draft typed over a dictation queued behind an earlier send", async () => {
+  let finish!: (accepted: boolean) => void;
+  const onSend = vi.fn(
+    (_text: string) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    const textarea = renderComposer(onSend, { phoneCallsEnabled: true });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("first words"));
+    await act(async () => {});
+    rerenderComposer({ sending: true });
+    act(() => onFinal("second words"));
+    await act(async () => {});
+    type(textarea, "half typed");
+    await act(async () => finish(true));
+    rerenderComposer({ sending: false });
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(textarea.value).toBe("half typed");
+  } finally {
+    listen.mockRestore();
+  }
+});
+
 it("does not keep the nonce when a reopened chat rebinds the same mention text", async () => {
   const nonces: string[] = [];
   let fail!: (error: Error) => void;

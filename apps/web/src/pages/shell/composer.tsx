@@ -199,17 +199,19 @@ const ComposerBody = memo(function Composer({
       const clientNonce = newClientId();
       appendDictation(text);
       retryNonce.current = clientNonce;
-      setDictationSendDue(true);
+      setDictationSendDue(editRevision.current);
     },
   });
   // The words must reach the committed draft before send() reads it, so the
   // send waits one render for the state appendDictation just queued.
-  const [dictationSendDue, setDictationSendDue] = useState(false);
-  // A dictation that finishes while an earlier send is in flight waits for it.
+  // The due send holds the edit revision the dictation left.
+  const [dictationSendDue, setDictationSendDue] = useState<number | null>(null);
+  // A dictation that finishes while an earlier send is in flight waits for it;
+  // any edit in the meantime cancels the automatic send.
   useEffect(() => {
-    if (!dictationSendDue || sending) return;
-    setDictationSendDue(false);
-    void send();
+    if (dictationSendDue === null || sending) return;
+    setDictationSendDue(null);
+    if (editRevision.current === dictationSendDue) void send();
   }, [dictationSendDue, sending]);
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const editRevision = useRef(0);
