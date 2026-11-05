@@ -809,6 +809,8 @@ function createChannelDeps(
     messages?: unknown[];
     posterProvider?: string;
     runs?: Array<{ id: string; messages: unknown[] }>;
+    /** Accounts that are deactivated. */
+    deactivated?: string[];
   } = {},
 ) {
   const text = overrides.text ?? "found it";
@@ -977,7 +979,13 @@ function createChannelDeps(
         },
       ),
     },
-    user: { findUnique: vi.fn(async () => ({ id: "user-1", name: "Alice Owner" })) },
+    user: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
+        id: where.id,
+        name: "Alice Owner",
+        deactivatedAt: overrides.deactivated?.includes(where.id) ? new Date() : null,
+      })),
+    },
     $queryRaw: vi.fn(async () =>
       ["bot-1", "bot-2"].map((id) => ({
         id,
@@ -1225,6 +1233,26 @@ describe("deliverMessagingOutbound channel runs", () => {
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({ botId: "bot-2", clientNonce: "messaging-peer:m-1:bot-2" }),
     );
+  });
+
+  it("keeps a reply by a since-deactivated person's bot out of the group and its peers", async () => {
+    const deps = createChannelDeps({ text: "@Helper what do you think?", deactivated: ["user-1"] });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.rows).toEqual([]);
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.contextMessages).toEqual([]);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("leaves a deactivated peer's bot out of the fan-out", async () => {
+    const deps = createChannelDeps({ text: "@Helper what do you think?", deactivated: ["user-2"] });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledOnce();
+    expect(deps.contextMessages).toEqual([]);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.enqueue).not.toHaveBeenCalled();
   });
 
   it("does not wake anyone when the hop budget is exhausted", async () => {

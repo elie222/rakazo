@@ -209,7 +209,8 @@ async function mirrorChannelRun(
   const identity = await deps.prisma.messagingIdentity.findUnique({
     where: { botId: run.botId },
   });
-  if (!identity) return;
+  // A deactivated person's bot neither posts to the group nor reaches its other bots.
+  if (!identity || (await accountDeactivated(deps.prisma, identity.userId))) return;
   const channel = await deps.prisma.messagingChannel.findUnique({
     where: { id: channelBlock.channelId },
   });
@@ -299,7 +300,7 @@ async function fanOutToPeers(
       const peerIdentity = await deps.prisma.messagingIdentity.findUnique({
         where: { id: peer.identityId! },
       });
-      if (!peerIdentity) continue;
+      if (!peerIdentity || (await accountDeactivated(deps.prisma, peerIdentity.userId))) continue;
       if (!(await crossSpaceCommunicationAllowed(deps.prisma, identity.botId, peerIdentity.botId)))
         continue;
       const peerThread = await deps.prisma.thread.findFirst({
