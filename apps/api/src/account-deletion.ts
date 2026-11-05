@@ -6,7 +6,7 @@ import {
   removeDeletedBotsFromLegacyTeamHome,
   toComputerRef,
 } from "@rakazo/adapters";
-import { requestDeadline, withAbort } from "@rakazo/core";
+import { anySignal, requestDeadline, withAbort } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   claimOrganizationForDeletion,
@@ -74,6 +74,8 @@ type OrganizationDeletionDeps = SpaceDeletionDeps & {
 /** Bounds one attempt. Providers may ignore the abort signal, so without it a hung teardown would
  * keep renewing the lease and no later attempt could resume. */
 const ORGANIZATION_DELETION_TIMEOUT_MS = 15 * 60_000;
+const LEASE_RENEWAL_MS = SPACE_DELETION_CLAIM_TIMEOUT_MS / 5;
+const LEASE_KEPT_MS = SPACE_DELETION_CLAIM_TIMEOUT_MS - LEASE_RENEWAL_MS;
 
 /**
  * Claiming hides the organization from the owner's list. Its subscriptions are cancelled before
@@ -96,10 +98,26 @@ export async function deleteOrganization(
     userId,
     organizationId,
   });
+  // Once another attempt may take the claim over, this one is cancelled: when a renewal finds the
+  // claim taken, or when no renewal has landed for nearly the whole lease, one interval short of it.
+  const lease = new AbortController();
+  const loseLease = () => lease.abort(new Error("Organization deletion lost its claim"));
+  let expiry: ReturnType<typeof setTimeout> | undefined;
+  const keepLeaseFor = (from: number) => {
+    clearTimeout(expiry);
+    expiry = setTimeout(loseLease, from + LEASE_KEPT_MS - Date.now());
+  };
+  keepLeaseFor(Date.now());
   let renewing: Promise<void> | undefined;
   const renew = async () => {
-    const lease = { organizationId, claimId, at: new Date() };
-    if (!(await setOrganizationDeletionLease(deps.prisma, lease))) clearInterval(renewal);
+    const at = new Date();
+    if (await setOrganizationDeletionLease(deps.prisma, { organizationId, claimId, at })) {
+      keepLeaseFor(at.getTime());
+      return;
+    }
+    clearInterval(renewal);
+    // No Space left means this attempt deleted them; any left are another attempt's.
+    if (await deps.prisma.space.count({ where: { organizationId } })) loseLease();
   };
   const renewal = setInterval(() => {
     renewing ??= renew()
@@ -107,15 +125,16 @@ export async function deleteOrganization(
       .finally(() => {
         renewing = undefined;
       });
-  }, SPACE_DELETION_CLAIM_TIMEOUT_MS / 5);
+  }, LEASE_RENEWAL_MS);
   const deadline = requestDeadline(
     ORGANIZATION_DELETION_TIMEOUT_MS,
     "Organization deletion timed out",
-    signal,
+    signal ? anySignal([signal, lease.signal]) : lease.signal,
   );
   const operationId = `organization-delete:${organizationId}`;
   let billingCancelled = false;
-  // Work cut off by the deadline that resumes later starts nothing new: a later attempt may own it.
+  // Work cut off by the deadline or a lost lease that resumes later starts nothing new: a later
+  // attempt may own it.
   const stillLeased = () => deadline.signal.throwIfAborted();
   const work = async () => {
     await keepOrganizationTrialUse(deps.prisma, organizationId);
@@ -163,8 +182,9 @@ export async function deleteOrganization(
   } catch (error) {
     clearInterval(renewal);
     await renewing;
-    // Work cut off by the deadline may still be running, so its lease lapses on its own. Otherwise
-    // nothing is left running and the next attempt may start at once.
+    // Work cut off by the deadline or a lost lease may still be running, so the lease is left to
+    // lapse or to the attempt that took it. Otherwise nothing is left running and the next attempt
+    // may start at once.
     if (!deadline.signal.aborted) {
       if (fresh && !billingCancelled)
         await releaseOrganizationDeletionClaim(deps.prisma, { organizationId, claimId });
@@ -178,6 +198,7 @@ export async function deleteOrganization(
     throw error;
   } finally {
     clearInterval(renewal);
+    clearTimeout(expiry);
     deadline.dispose();
   }
 }

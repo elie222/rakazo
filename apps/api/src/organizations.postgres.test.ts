@@ -557,6 +557,64 @@ describePostgres("organizations (PostgreSQL)", () => {
     expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
   });
 
+  it("starts no teardown from an attempt whose claim another attempt took while billing waited", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const ref = `sb-lost-${suffix}`;
+    await botWithComputer(work.id, ada.userId, ref);
+    let billingCalled!: () => void;
+    const called = new Promise<void>((resolve) => {
+      billingCalled = resolve;
+    });
+    let returnBilling!: () => void;
+    const held = new Promise<void>((resolve) => {
+      returnBilling = resolve;
+    });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const stale = runAsSystem("an attempt whose renewals stopped landing", () =>
+        deleteOrganization(
+          {
+            ...deps(),
+            billing: {
+              cancelForDeletedOrganization: async () => {
+                billingCalled();
+                await held;
+              },
+            },
+          } as Parameters<typeof deleteOrganization>[0],
+          ada.userId,
+          work.id,
+        ),
+      );
+      stale.catch(() => undefined);
+      await called;
+      // Its lease lapses, and a retry takes the claim over and starts tearing the bot down.
+      await system.space.updateMany({
+        where: { organizationId: work.id },
+        data: { deletingAt: new Date(Date.now() - 10 * 60_000) },
+      });
+      const release = sandbox.hold(ref);
+      const retry = client(ada).organizations.remove({ organizationId: work.id });
+      await until(() => sandbox.started.includes(ref));
+
+      // The first attempt's next renewal finds the claim taken; then its billing call returns.
+      await vi.advanceTimersByTimeAsync(60_000);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      returnBilling();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
+      release();
+      await retry;
+      await expect(stale).rejects.toThrow("lost its claim");
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
+    expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
+  });
+
   it("takes over a claim the previous release left, keeping it when billing fails", async () => {
     const ada = await signup();
     const work = await client(ada).organizations.create({ name: "Work" });
