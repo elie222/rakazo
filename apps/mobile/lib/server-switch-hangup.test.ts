@@ -29,6 +29,7 @@ vi.mock("./call-sounds", () => ({
 }));
 vi.mock("./voice", () => ({
   createSpeechOwner: () => Symbol("SpeechOwner"),
+  setCallAudio: vi.fn(async () => undefined),
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),
 }));
