@@ -78,7 +78,9 @@ import {
   PluginLogo,
   PluginRow,
   pluginSelection,
+  ROW_BUTTON,
   ROW_HOVER,
+  ROW_SHELL,
 } from "../components/integrations/plugin-marketplace";
 import {
   AvailabilityControl,
@@ -741,14 +743,10 @@ export function PluginsOverlay({
       <div
         key={catalogItemKey(item)}
         data-testid={tileTestId ? `connection-tile-${item.slug.toLowerCase()}` : undefined}
-        className={`flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2${openable ? ` ${ROW_HOVER}` : ""}`}
+        className={`${ROW_SHELL}${openable ? ` ${ROW_HOVER}` : ""}`}
       >
         {openable ? (
-          <button
-            type="button"
-            className="flex min-w-0 flex-1 items-center gap-3 text-start focus-visible:outline-none"
-            onClick={() => openApp(item)}
-          >
+          <button type="button" className={ROW_BUTTON} onClick={() => openApp(item)}>
             {icon}
             {title}
           </button>
@@ -1004,10 +1002,10 @@ export function PluginsOverlay({
   /** Nothing leaves for the public catalog until the person picks this row. */
   function renderPublicCatalogRow(query: string) {
     return (
-      <div className={`mt-2 flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 ${ROW_HOVER}`}>
+      <div className={`mt-2 ${ROW_SHELL} ${ROW_HOVER}`}>
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-3 text-start focus-visible:outline-none"
+          className={ROW_BUTTON}
           onClick={() => {
             setPublicCatalogQuery(query);
             openAddView("browseMcp");
@@ -1388,13 +1386,9 @@ export function PluginsOverlay({
       <div
         key={`${install.id}:${part}`}
         data-testid="installed-plugin"
-        className={`flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 ${ROW_HOVER}`}
+        className={`${ROW_SHELL} ${ROW_HOVER}`}
       >
-        <button
-          type="button"
-          className="flex min-w-0 flex-1 items-center gap-3 text-start focus-visible:outline-none"
-          onClick={() => openPlugin(selection)}
-        >
+        <button type="button" className={ROW_BUTTON} onClick={() => openPlugin(selection)}>
           <PluginLogo name={selection.name} logo={selection.logo} site={selection.site} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[15px] font-medium">{selection.name}</span>
