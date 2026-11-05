@@ -1288,6 +1288,10 @@ msgstr "Modeli değiştir"
 msgid "Change password"
 msgstr "Parolayı değiştir"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "Sunucuyu değiştir"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "Değiştiriliyor…"
@@ -6712,6 +6716,10 @@ msgstr "Deneme {day} tarihinde sona eriyor"
 #: src/components/ModelCredits.tsx
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "Kötüye kullanımı önlemek için denemelerde daha az saat verilir."
+
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"

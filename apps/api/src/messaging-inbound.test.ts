@@ -271,6 +271,25 @@ function createDeps(
         }
         return { count };
       }),
+      aggregate: vi.fn(
+        async ({
+          where,
+          _max,
+        }: {
+          where?: { threadId?: string };
+          _max?: { createdAt?: boolean };
+        }) => {
+          const times = outboundRows
+            .filter((row) => !where?.threadId || row.threadId === where.threadId)
+            .map((row) => (row.createdAt as Date | undefined)?.getTime())
+            .filter((time): time is number => time !== undefined);
+          return {
+            _max: {
+              createdAt: _max?.createdAt && times.length ? new Date(Math.max(...times)) : null,
+            },
+          };
+        },
+      ),
       deleteMany: vi.fn(async ({ where }: { where: { idempotencyKey?: string } }) => {
         let count = 0;
         for (let i = outboundRows.length - 1; i >= 0; i -= 1) {

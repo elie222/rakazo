@@ -1288,6 +1288,10 @@ msgstr "Modell wechseln"
 msgid "Change password"
 msgstr "Passwort ändern"
 
+#: src/pages/Auth.tsx
+msgid "Change server"
+msgstr "Server wechseln"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "Wird geändert…"
@@ -6712,6 +6716,10 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 msgid "Trials get fewer hours to prevent abuse."
 msgstr "Testzeiträume erhalten weniger Stunden, um Missbrauch zu verhindern."
+
+#: src/components/ErrorNotice.tsx
+msgid "Troubleshoot"
+msgstr ""
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
