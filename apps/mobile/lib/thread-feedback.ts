@@ -66,17 +66,16 @@ export async function deliverSend(
   request: typeof rpc,
 ): Promise<number | undefined> {
   const { plan, groupTarget, botTarget, reroutedToGroup, attachments } = payload;
-  if (plan.shouldRunRoutines) {
-    await Promise.all(
-      plan.routineIds.map((routineId) =>
-        request("routines/testRun", {
-          routineId,
-          clientNonce: `routine-mention:${attempt.clientNonce}:${routineId}`,
-        }),
-      ),
-    );
+  const target = groupTarget ? { groupId: groupTarget } : { botId: botTarget! };
+  if (!plan.shouldSend) {
+    if (plan.shouldRunRoutines)
+      await request("threads/sendWithRoutines", {
+        ...target,
+        clientNonce: attempt.clientNonce,
+        routineIds: plan.routineIds,
+      });
+    return undefined;
   }
-  if (!plan.shouldSend) return undefined;
   const artifactIds: string[] = [];
   for (const [index, pending] of attachments.entries()) {
     let id = attempt.artifactIds.get(pending.id);
@@ -84,7 +83,7 @@ export async function deliverSend(
       const artifact = await request(
         "artifacts/create",
         {
-          ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
+          ...target,
           name: pending.name,
           mimeType: pending.mimeType,
           contentBase64: pending.contentBase64,
@@ -97,8 +96,8 @@ export async function deliverSend(
     }
     artifactIds.push(id);
   }
-  const sent = await request("threads/send", {
-    ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
+  const message = {
+    ...target,
     clientNonce: attempt.clientNonce,
     imageHandling: attempt.imageHandling ?? "confirm",
     text: plan.trimmed || undefined,
@@ -107,8 +106,13 @@ export async function deliverSend(
     replyToMessageId: reroutedToGroup ? undefined : payload.replyTargetId,
     replyQuote: reroutedToGroup ? undefined : (payload.replyQuote ?? undefined),
     fromPage: reroutedToGroup ? undefined : payload.fromPage,
-  });
-  return sent.seq;
+  } as const;
+  // The routines run in the same server operation as the message: both or neither.
+  const sent = plan.shouldRunRoutines
+    ? (await request("threads/sendWithRoutines", { ...message, routineIds: plan.routineIds })).send
+    : undefined;
+  // Runs already saved for this nonce return no message; the plain send saves or replays it.
+  return (sent ?? (await request("threads/send", message))).seq;
 }
 
 export type OutboxScope = Pick<SendAttempt, "apiBase" | "spaceId" | "userId" | "cacheSession">;

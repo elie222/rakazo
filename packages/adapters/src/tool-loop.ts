@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ToolCallStreak } from "@rakazo/core";
 import { trackToolCallStreak } from "@rakazo/core";
+import { stableJsonValue } from "@rakazo/core/node/approval-effect-key";
 import { toolResultError } from "./tool-result-error.js";
 
 const LOOP_GUARD_STOP_PREFIX = "I got stuck calling ";
@@ -116,14 +117,19 @@ export function advanceToolCallLoopGuard(
   previousResult?: string,
   response?: number,
 ): { streak: LoopGuardStreak; stuck: boolean } {
-  let next = trackToolCallStreak(streak, name, args);
+  // Preserve JSON's optional-field handling, then compare objects independently of field order.
+  const serialized = JSON.stringify(args);
+  const canonicalArgs =
+    serialized === undefined ? undefined : JSON.parse(stableJsonValue(JSON.parse(serialized)));
+  let next = trackToolCallStreak(streak, name, canonicalArgs);
   if (response !== undefined && response === streak.response && next.shape === streak.shape)
     return { streak, stuck: false };
   const same = next.key === streak.key;
   const seen = (same && streak.results) || [];
   const fresh = previousResult !== undefined && !seen.includes(previousResult);
   const restart = same && fresh && seen.length > 0;
-  if (restart) next = trackToolCallStreak({ ...streak, count: 1, shapeCount: 1 }, name, args);
+  if (restart)
+    next = trackToolCallStreak({ ...streak, count: 1, shapeCount: 1 }, name, canonicalArgs);
   const results = fresh
     ? [...seen, previousResult].slice(-MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS)
     : seen;

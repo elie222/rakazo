@@ -707,7 +707,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [openChat, refreshBots, t],
   );
 
-  // A heading's New bot: switch to that space first, so the chat opens inside it.
   const createBotInSpace = useCallback(
     async (spaceId: string) => {
       if (creatingBotRef.current || spaceActionRef.current.recoveryId) return;

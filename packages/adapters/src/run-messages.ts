@@ -43,9 +43,11 @@ export function redactBlocks(blocks: MessageBlock[], secrets: string[]): Message
     if (block.kind === "steps") {
       return {
         ...block,
-        steps: block.steps.map((step) =>
-          step.note === undefined ? step : { ...step, note: redactSecrets(step.note, secrets) },
-        ),
+        steps: block.steps.map((step) => ({
+          ...step,
+          label: redactSecrets(step.label, secrets),
+          ...(step.note === undefined ? {} : { note: redactSecrets(step.note, secrets) }),
+        })),
       };
     }
     return block;

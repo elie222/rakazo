@@ -141,9 +141,7 @@ export function ComputerProviderSettings({
               }
               className="w-full"
             >
-              <NativeSelectOption value="default">
-                {t`Deployment default (${settings.defaultProvider})`}
-              </NativeSelectOption>
+              <NativeSelectOption value="default">{t`Default`}</NativeSelectOption>
               {settings.providers.map((provider) => (
                 <NativeSelectOption key={provider.id} value={provider.id}>
                   {provider.displayName}

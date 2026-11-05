@@ -58,6 +58,13 @@ let responding = false;
 let activeNativeCall: string | undefined;
 /** Native calls that ended while their answer was still joining. */
 let nativeEnded = new Set<string>();
+/** Resolves when the account stream has delivered its first snapshot, which covers every organization. */
+let streamSnapshot: Promise<void> | undefined;
+let snapshotArrived: (() => void) | undefined;
+/** Cold-start waits for that snapshot, cancelled by stopIncomingCalls so none outlives its feed. */
+const snapshotWaiters = new Set<() => void>();
+/** How long a native or notification answer waits for that snapshot on a cold start. */
+const SNAPSHOT_WAIT_MS = 5_000;
 
 export function subscribeIncomingCalls(listener: () => void) {
   listeners.add(listener);
@@ -116,6 +123,9 @@ async function follow(controller: AbortController) {
   while (!controller.signal.aborted && generation === currentSessionGeneration()) {
     try {
       await subscribeIncomingCallEvents((incoming) => {
+        // Ignore events from an aborted feed so a late callback cannot resolve a newer wait.
+        if (controller.signal.aborted || feed !== controller) return;
+        snapshotArrived?.();
         for (const previous of calls) {
           if (!incoming.some((call) => call.incomingCall.callId === previous.incomingCall.callId))
             update(previous, null);
@@ -145,6 +155,71 @@ async function loadRoster() {
   if (running && generation === currentSessionGeneration()) setIncomingCallRoster(navigation);
 }
 
+/**
+ * Resolves the caller for a native or notification answer. The account stream knows callers
+ * across every organization; the roster covers only the active one. A cached roster entry
+ * answers at once. Otherwise the roster load races the stream's first snapshot, which a cold
+ * start may not have yet, for a few seconds, and the first source to name the caller answers.
+ * Returns undefined when the lookup's feed or session is gone: the answer belongs to neither,
+ * so its caller abandons it without answering or completing the native action.
+ */
+async function callerFor(
+  botId: string,
+  callId: string,
+): Promise<Pick<SpaceBot, "id" | "spaceId" | "name" | "color" | "avatarSet"> | null | undefined> {
+  const generation = currentSessionGeneration();
+  const startedFeed = feed;
+  const stale = () => feed !== startedFeed || !running || generation !== currentSessionGeneration();
+  const fromStream = () =>
+    calls.find((entry) => entry.id === botId && entry.incomingCall.callId === callId) ?? null;
+  const known = fromStream() ?? roster.get(botId);
+  if (known) return known;
+  // Whichever source names the caller first answers; a failed load surfaces only if neither does.
+  const rostered = loadRoster();
+  rostered.catch(() => undefined);
+  if (streamSnapshot) {
+    let stopWaiting: (() => void) | undefined;
+    let giveUp: ReturnType<typeof setTimeout> | undefined;
+    const stopped = new Promise<void>((resolve) => {
+      stopWaiting = () => resolve();
+      snapshotWaiters.add(stopWaiting);
+    });
+    try {
+      await Promise.race([
+        streamSnapshot,
+        stopped,
+        new Promise<void>((resolve) => {
+          giveUp = setTimeout(resolve, SNAPSHOT_WAIT_MS);
+        }),
+        new Promise<void>((resolve) => {
+          rostered.then(
+            () => {
+              if (roster.has(botId)) resolve();
+            },
+            () => undefined,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(giveUp);
+      if (stopWaiting) snapshotWaiters.delete(stopWaiting);
+    }
+    if (stale()) return undefined;
+    const late = fromStream() ?? roster.get(botId);
+    if (late) return late;
+  }
+  // The stream may name the caller after an empty snapshot, so a failed load throws only after it.
+  const failure = await rostered.then(
+    () => null,
+    (error: unknown) => ({ error }),
+  );
+  if (stale()) return undefined;
+  const caller = fromStream() ?? roster.get(botId);
+  if (caller) return caller;
+  if (failure) throw failure.error;
+  return null;
+}
+
 export async function respondToMobileCall(call: IncomingBotCall, action: "answer" | "decline") {
   if (responding) return;
   responding = true;
@@ -167,7 +242,8 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
         rpc("threads/answerCall", target, { requestContext: context }),
       );
       answered = true;
-      // A sign-out or server switch mid-answer hangs up below with the answer's own session.
+      // The session changed mid-answer: rpc drops the hang-up below locally, because its
+      // context belongs to the old generation, so the server keeps the call answered.
       if (generation !== currentSessionGeneration())
         throw new Error(t("Something went wrong. Try again."));
       const voice = await rpc("voice/status", {}, { requestContext: context });
@@ -236,8 +312,9 @@ async function drainNative() {
       await native?.finishAnswer(action.callId, false);
       continue;
     }
-    if (!roster.has(action.botId)) await loadRoster();
-    const bot = roster.get(action.botId);
+    const bot = await callerFor(action.botId, action.callId);
+    // A stale lookup answers nothing and completes no native action: a newer feed owns it.
+    if (bot === undefined) continue;
     if (!bot) {
       await native?.finishAnswer(action.callId, false);
       continue;
@@ -266,8 +343,9 @@ async function notificationResponse(response: Notifications.NotificationResponse
   if (notificationActions.has(key)) return;
   notificationActions.add(key);
   try {
-    await loadRoster();
-    const bot = roster.get(data.botId);
+    const bot = await callerFor(data.botId, data.callId);
+    // A stale lookup answers nothing and completes no native action: a newer feed owns it.
+    if (bot === undefined) return;
     if (!bot) throw new Error("Unknown caller");
     await respondToMobileCall(
       {
@@ -286,6 +364,11 @@ export function stopIncomingCalls() {
   running = false;
   feed?.abort();
   feed = undefined;
+  streamSnapshot = undefined;
+  snapshotArrived = undefined;
+  // Cancel cold-start waits now; a continuation from this feed must not resume later.
+  for (const stopWaiting of snapshotWaiters) stopWaiting();
+  snapshotWaiters.clear();
   roster.clear();
   notificationActions.clear();
   calls = [];
@@ -306,6 +389,9 @@ export function startIncomingCalls() {
   running = true;
   const controller = new AbortController();
   feed = controller;
+  streamSnapshot = new Promise((resolve) => {
+    snapshotArrived = resolve;
+  });
   let started = false;
   void Notifications.setNotificationCategoryAsync?.("incoming-call", [
     {

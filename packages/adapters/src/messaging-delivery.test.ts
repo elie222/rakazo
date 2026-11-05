@@ -133,11 +133,23 @@ function createDeps(overrides: {
   const identityRow =
     overrides.identity === null ? null : { ...identity, ...(overrides.identity ?? {}) };
   const prisma = {
+    user: {
+      findUnique: vi.fn(
+        async (_query: { where: { id: string } }): Promise<{ deactivatedAt: Date | null } | null> =>
+          null,
+      ),
+    },
+    bot: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
+        userId: `owner-of-${where.id}`,
+      })),
+    },
     run: {
       findUnique: vi.fn(async () => overrides.run ?? messagingRun),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     message: {
+      findUnique: vi.fn(async (): Promise<{ thread: { userId: string } } | null> => null),
       findMany: vi.fn(
         async () =>
           overrides.messages ?? [
@@ -572,6 +584,55 @@ describe("deliverMessagingOutbound", () => {
     expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
   });
 
+  it("drops what was queued for a person who has since been deactivated", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [
+        {
+          id: "out-late",
+          idempotencyKey: "late:1",
+          kind: "dm",
+          identityId: "mi-1",
+          body: "a reply queued before deactivation",
+          status: "pending",
+          providerHandle: null,
+        },
+      ],
+    });
+    deps.prisma.user.findUnique.mockResolvedValue({ deactivatedAt: new Date() });
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.openDirectThread).not.toHaveBeenCalled();
+    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
+  });
+
+  it("does not post a group reply queued by a person who has since been deactivated", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [
+        {
+          id: "out-group",
+          idempotencyKey: "group:1",
+          kind: "group",
+          threadId: "group-thread",
+          sourceMessageId: "m-1",
+          body: "a group reply queued before deactivation",
+          status: "pending",
+          providerHandle: null,
+        },
+      ],
+    });
+    vi.mocked(deps.prisma.message.findUnique).mockResolvedValue({
+      thread: { userId: "user-1" },
+    } as never);
+    deps.prisma.user.findUnique.mockResolvedValue({ deactivatedAt: new Date() });
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
+  });
+
   it("does not send a connect invite after the connection was revoked", async () => {
     const deps = createDeps({
       run: null,
@@ -648,6 +709,31 @@ describe("deliverMessagingOutbound", () => {
       where: { id: "mi-1" },
       data: { outboundSinceInbound: { increment: 1 } },
     });
+  });
+
+  it("does not send a connect invite queued by a person who has since been deactivated", async () => {
+    const deps = createDeps({
+      run: null,
+      connectionStatus: "pending",
+      outboundRows: [
+        {
+          id: "out-connect",
+          idempotencyKey: "connect:bot-1:bot-9",
+          kind: "dm",
+          identityId: "mi-1",
+          body: "wants to connect. Reply YES to allow, NO to decline.",
+          status: "pending",
+          providerHandle: null,
+        },
+      ],
+    });
+    deps.prisma.user.findUnique.mockImplementation(async ({ where }) => ({
+      deactivatedAt: where.id === "owner-of-bot-1" ? new Date() : null,
+    }));
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
   });
 
   it("does not re-queue a connect invite when the provider send fails", async () => {
@@ -756,6 +842,8 @@ function createChannelDeps(
     messages?: unknown[];
     posterProvider?: string;
     runs?: Array<{ id: string; messages: unknown[] }>;
+    /** Accounts that are deactivated. */
+    deactivated?: string[];
   } = {},
 ) {
   const text = overrides.text ?? "found it";
@@ -808,6 +896,7 @@ function createChannelDeps(
   const txMock = {
     thread: { update: vi.fn(async () => ({ nextMessageSeq: 5, nextEventSeq: 10 })) },
     message: {
+      findUnique: vi.fn(async (): Promise<{ thread: { userId: string } } | null> => null),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const message = { id: `ctx-${contextMessages.length + 1}`, seq: 4, ...data };
         contextMessages.push(message);
@@ -923,7 +1012,13 @@ function createChannelDeps(
         },
       ),
     },
-    user: { findUnique: vi.fn(async () => ({ id: "user-1", name: "Alice Owner" })) },
+    user: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
+        id: where.id,
+        name: "Alice Owner",
+        deactivatedAt: overrides.deactivated?.includes(where.id) ? new Date() : null,
+      })),
+    },
     $queryRaw: vi.fn(async () =>
       ["bot-1", "bot-2"].map((id) => ({
         id,
@@ -1171,6 +1266,26 @@ describe("deliverMessagingOutbound channel runs", () => {
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({ botId: "bot-2", clientNonce: "messaging-peer:m-1:bot-2" }),
     );
+  });
+
+  it("keeps a reply by a since-deactivated person's bot out of the group and its peers", async () => {
+    const deps = createChannelDeps({ text: "@Helper what do you think?", deactivated: ["user-1"] });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.rows).toEqual([]);
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.contextMessages).toEqual([]);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("leaves a deactivated peer's bot out of the fan-out", async () => {
+    const deps = createChannelDeps({ text: "@Helper what do you think?", deactivated: ["user-2"] });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledOnce();
+    expect(deps.contextMessages).toEqual([]);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.enqueue).not.toHaveBeenCalled();
   });
 
   it("does not wake anyone when the hop budget is exhausted", async () => {

@@ -25,6 +25,7 @@ const settingsScreens = new Set([
   "skill",
   "skills",
   "space",
+  "spending-limit",
   "team-conversation",
   "vault",
   "voice",

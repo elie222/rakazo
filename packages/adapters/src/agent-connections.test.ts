@@ -374,6 +374,9 @@ describe("messageConnectedAgent", () => {
       }),
     );
     expect(deps.enqueue).toHaveBeenCalled();
+    expect(deps.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
   });
 
   it("does not deliver from an attempt a newer claim superseded", async () => {

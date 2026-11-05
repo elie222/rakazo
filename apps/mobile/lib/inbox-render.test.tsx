@@ -33,6 +33,10 @@ const ui = vi.hoisted(() => ({
   chevronStarts: [] as number[],
   chevronTargets: [] as number[],
   rpc: vi.fn(),
+  alert: vi.fn(),
+  spaceId: "space-a",
+  spaceSeq: 0,
+  sameSession: true,
   setSearchInbox: vi.fn(),
   addToSearchInbox: vi.fn(),
   searchInboxSession: vi.fn(),
@@ -44,6 +48,7 @@ vi.mock("react-native", () => {
   const flatten = (style: unknown): CSSProperties =>
     Object.assign({}, ...[style].flat(Number.POSITIVE_INFINITY).filter(Boolean));
   return {
+    Alert: { alert: ui.alert },
     AppState: {
       addEventListener: (_event: string, listener: (state: string) => void) => {
         ui.appStateListener = listener;
@@ -112,6 +117,7 @@ vi.mock("@expo/ui/community/menu", () => ({
 vi.mock("expo-router", () => {
   const router = { push: ui.push };
   return {
+    router,
     useRouter: () => router,
     // The inbox's focus: expo-router reruns the effect when focus returns.
     useFocusEffect: (effect: () => (() => void) | undefined) => {
@@ -122,10 +128,11 @@ vi.mock("expo-router", () => {
 });
 vi.mock("./api", () => ({
   rpc: ui.rpc,
-  // The request context carries only the headers a space pin changes.
   captureApiRequestContext: async (spaceId: string | null = "space-selected") => ({
     headers: { "x-rakazo-space-id": spaceId },
   }),
+  selectedSpaceId: () => ui.spaceId,
+  spaceSelectionSeq: () => ui.spaceSeq,
 }));
 vi.mock("./native", () => ({
   native: {},
@@ -158,6 +165,7 @@ vi.mock("./search-inbox", () => ({
   setSearchInbox: ui.setSearchInbox,
   addToSearchInbox: ui.addToSearchInbox,
   searchInboxSession: ui.searchInboxSession,
+  isSearchInboxSession: () => ui.sameSession,
 }));
 vi.mock("./focus-prompt", () => ({ allowFocusPrompt: vi.fn(), scheduleFocusPrompt: vi.fn() }));
 vi.mock("../components/bot-avatar", () => ({
@@ -662,21 +670,154 @@ it("pins a bot made for a space to that space while another is selected", async 
     openChat: vi.fn(),
     spaceId: "space-work",
   });
-  await vi.waitFor(() => expect(ui.rpc).toHaveBeenCalledTimes(3));
+  await vi.waitFor(() => expect(ui.rpc).toHaveBeenCalledTimes(4));
   expect(spaces()).toEqual([
     ["bots/list", "space-work"],
+    ["me", "space-work"],
     ["bots/create", "space-work"],
     ["onboarding/start", "space-work"],
   ]);
   // The Create menu's bot sends no pin, so it follows the selected space as before.
   ui.rpc.mockClear();
   await createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() });
-  await vi.waitFor(() => expect(ui.rpc).toHaveBeenCalledTimes(3));
+  await vi.waitFor(() => expect(ui.rpc).toHaveBeenCalledTimes(4));
   expect(spaces()).toEqual([
     ["bots/list", undefined],
+    ["me", undefined],
     ["bots/create", undefined],
     ["onboarding/start", undefined],
   ]);
+});
+
+it("opens a heading-created bot in its space after the selection changes during creation", async () => {
+  const bot = { id: "bot-new", name: "New Bot", spaceId: "space-work" };
+  let complete!: (value: typeof bot) => void;
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    if (method === "bots/create") return new Promise<typeof bot>((resolve) => (complete = resolve));
+    return method === "bots/list" ? [{ id: "bot-existing" }] : {};
+  });
+  const openChat = vi.fn();
+  const creating = createInboxBot({
+    refreshBots: async () => undefined,
+    openChat,
+    spaceId: "space-work",
+  });
+  await vi.waitFor(() => expect(complete).toBeDefined());
+  ui.spaceId = "space-other";
+  ui.spaceSeq++;
+  complete(bot);
+  await creating;
+  expect(openChat).toHaveBeenCalledWith({
+    pathname: "/thread",
+    params: { botId: bot.id, name: bot.name, spaceId: "space-work" },
+  });
+});
+
+it("asks for a model instead of making the first bot when the account has none", async () => {
+  let me: Promise<unknown> = Promise.resolve({ needsModel: true });
+  let bots: unknown[] = [];
+  ui.push.mockReset();
+  ui.alert.mockReset();
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    if (method === "me") return me;
+    return method === "bots/list" ? bots : { id: "bot-new", name: "New Bot" };
+  });
+  const openChat = vi.fn();
+  const create = () => createInboxBot({ refreshBots: async () => undefined, openChat });
+  const buttons = () =>
+    ui.alert.mock.lastCall?.[2] as { text: string; onPress?: () => void }[] | undefined;
+  const select = (spaceId: string) => {
+    ui.spaceId = spaceId;
+    ui.spaceSeq++;
+  };
+
+  await create();
+  expect(ui.alert).toHaveBeenCalledWith("Add an AI model to keep chatting", undefined, [
+    expect.objectContaining({ text: "Not Now" }),
+    expect.objectContaining({ text: "Add model" }),
+  ]);
+  buttons()?.[0]?.onPress?.();
+  expect(ui.push).not.toHaveBeenCalled();
+  buttons()?.[1]?.onPress?.();
+  expect(ui.push).toHaveBeenCalledWith("/(settings)/models");
+  expect(ui.rpc).not.toHaveBeenCalledWith("bots/create", expect.anything(), undefined);
+  expect(openChat).not.toHaveBeenCalled();
+
+  // A read that lands after a switch of account or Space neither asks nor creates there.
+  ui.alert.mockReset();
+  const answers = [
+    () => Promise.resolve({ needsModel: true }),
+    () => Promise.resolve({ needsModel: false }),
+    () => Promise.reject(new Error("down")),
+  ];
+  for (const answer of answers) {
+    const leaves = [
+      () => (ui.sameSession = false),
+      () => select("space-b"),
+      // A fallback after the Space is deleted elsewhere changes it without a selection.
+      () => (ui.spaceId = "space-c"),
+      // Back in A, the answer may still be B's: each read follows the Space selected when sent.
+      () => {
+        select("space-b");
+        select("space-a");
+      },
+    ];
+    for (const leave of leaves) {
+      let land!: () => void;
+      me = new Promise<void>((resolve) => (land = resolve)).then(answer);
+      const moved = create();
+      leave();
+      land();
+      await moved;
+      ui.sameSession = true;
+      select("space-a");
+    }
+  }
+  expect(ui.alert).not.toHaveBeenCalled();
+  expect(ui.rpc).not.toHaveBeenCalledWith("bots/create", expect.anything(), undefined);
+  expect(openChat).not.toHaveBeenCalled();
+
+  // Once a model is connected, or when `me` can't be read, Create makes the bot as before.
+  for (const answer of [
+    Promise.resolve({ needsModel: false }),
+    Promise.reject(new Error("down")),
+  ]) {
+    me = answer;
+    ui.rpc.mockClear();
+    openChat.mockClear();
+    await create();
+    expect(ui.rpc).toHaveBeenCalledWith("bots/create", expect.anything(), undefined);
+    expect(openChat).toHaveBeenCalledTimes(1);
+  }
+
+  // A list that fails isn't known to be empty, so Create makes the bot without asking.
+  me = Promise.resolve({ needsModel: true });
+  ui.rpc.mockClear();
+  openChat.mockClear();
+  const listed = ui.rpc.getMockImplementation();
+  ui.rpc.mockImplementation(async (method: string, ...rest: unknown[]) =>
+    method === "bots/list" ? Promise.reject(new Error("down")) : listed?.(method, ...rest),
+  );
+  await create();
+  ui.rpc.mockImplementation(listed!);
+  expect(ui.rpc).not.toHaveBeenCalledWith("me", undefined, undefined);
+  expect(ui.alert).not.toHaveBeenCalled();
+  expect(ui.rpc).toHaveBeenCalledWith("bots/create", expect.anything(), undefined);
+  expect(openChat).toHaveBeenCalledTimes(1);
+
+  // A later bot opens its chat, where the missing-model send error offers Add model.
+  bots = [{ id: "bot-1" }];
+  ui.rpc.mockClear();
+  await create();
+  expect(ui.rpc).toHaveBeenCalledWith("bots/create", expect.anything(), undefined);
+  expect(ui.alert).not.toHaveBeenCalled();
+  // Nor is a later bot made in the Space switched to while the list loaded.
+  ui.rpc.mockClear();
+  const moved = create();
+  select("space-b");
+  await moved;
+  select("space-a");
+  expect(ui.rpc).not.toHaveBeenCalledWith("bots/create", expect.anything(), undefined);
 });
 
 it("adds a bot made from the inbox's Create menu to the inbox roster before opening its chat", async () => {
@@ -685,6 +826,8 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
   const calls: string[] = [];
   ui.rpc.mockReset().mockImplementation(async (method: string) => {
     calls.push(method);
+    // A server that predates `needsModel` leaves it out of `me`.
+    if (method === "me") return {};
     return method === "bots/create" ? bot : [];
   });
   ui.searchInboxSession.mockReset().mockImplementation(() => {
@@ -707,9 +850,10 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
     undefined,
   );
   // The session is taken before the requests, so a bot that lands after a switch is dropped.
-  expect(calls.slice(0, 5)).toEqual([
+  expect(calls.slice(0, 6)).toEqual([
     "session",
     "bots/list",
+    "me",
     "bots/create",
     `roster ${JSON.stringify({ kind: "bot", bot })} ${JSON.stringify(askedIn)}`,
     `open ${JSON.stringify({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })}`,

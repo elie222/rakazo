@@ -227,6 +227,85 @@ describe("SmtpEmailProvider", () => {
     expect(sendMail).not.toHaveBeenCalled();
   });
 
+  it.each(["succeeds", "fails"])(
+    "closes once after an in-flight delivery %s, even with repeated drains",
+    async (outcome) => {
+      let finish!: () => void;
+      const sendMail = vi.fn(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = () =>
+              outcome === "succeeds"
+                ? resolve({ messageId: "message-1" })
+                : reject(new Error("failed"));
+          }),
+      );
+      const close = vi.fn();
+      const provider = new SmtpEmailProvider(
+        { url: "smtp://smtp.example.test", from: "a@example.test" },
+        { transport: { sendMail, close } as never, retryDelaysMs: [] },
+      );
+
+      const delivery = provider.send({ to: "ada@example.test", subject: "Hi", text: "Hello" });
+      const delivered =
+        outcome === "succeeds"
+          ? expect(delivery).resolves.toBeUndefined()
+          : expect(delivery).rejects.toThrow("failed");
+      const firstDrain = provider.drain();
+      const secondDrain = provider.drain();
+      expect(close).not.toHaveBeenCalled();
+      await expect(
+        provider.send({ to: "ada@example.test", subject: "Hi", text: "Hello" }),
+      ).rejects.toThrow("SMTP provider is shutting down");
+      expect(sendMail).toHaveBeenCalledOnce();
+
+      finish();
+      await delivered;
+      await Promise.all([firstDrain, secondDrain]);
+      await provider.drain();
+      expect(close).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("closes an idle transport and ignores a close failure", async () => {
+    const close = vi.fn(() => {
+      throw new Error("close failed");
+    });
+    const provider = new SmtpEmailProvider(
+      { url: "smtp://smtp.example.test", from: "a@example.test" },
+      { transport: { close } as never },
+    );
+
+    await expect(provider.drain()).resolves.toBeUndefined();
+    await expect(provider.drain()).resolves.toBeUndefined();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("closes an idle pooled SMTP connection after delivery", async () => {
+    const server = await scriptedSmtpServer({});
+    const transport = nodemailer.createTransport({
+      pool: true,
+      host: "127.0.0.1",
+      port: server.port,
+      ignoreTLS: true,
+    });
+    const provider = new SmtpEmailProvider(
+      { url: "smtp://smtp.example.test", from: "a@example.test" },
+      { transport },
+    );
+    try {
+      await provider.send({ to: "ada@example.test", subject: "Hi", text: "Hello" });
+      expect(server.messages()).toBe(1);
+      expect(server.connections()).toBe(1);
+
+      await provider.drain();
+      await vi.waitFor(() => expect(server.connections()).toBe(0), { timeout: 1_000 });
+    } finally {
+      transport.close();
+      await server.close();
+    }
+  });
+
   it("bounds graceful shutdown when delivery never settles", async () => {
     vi.useFakeTimers();
     try {
@@ -245,9 +324,12 @@ describe("SmtpEmailProvider", () => {
         .send({ to: "ada@example.test", subject: "Reset password", text: "Use this link" })
         .catch(() => undefined);
       const draining = provider.drain();
+      const alsoDraining = provider.drain();
       await vi.advanceTimersByTimeAsync(100);
 
       await expect(draining).resolves.toBeUndefined();
+      await expect(alsoDraining).resolves.toBeUndefined();
+      await provider.drain();
       expect(close).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
@@ -451,6 +533,7 @@ async function scriptedSmtpServer(script: SmtpScript) {
   let closed = false;
   return {
     port: address.port,
+    connections: () => sockets.size,
     sessions: () => sessions,
     rcptReplies: () => rcptReplies,
     endReplies: () => endReplies,
