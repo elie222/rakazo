@@ -16,6 +16,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   act(() => root.unmount());
+  vi.useRealTimers();
   container.remove();
   Reflect.deleteProperty(document, "execCommand");
   vi.unstubAllGlobals();
@@ -102,6 +103,8 @@ it("Copy rows starts no feedback timers when the copy settles after the table is
 });
 
 it("Copy rows drops an earlier Copied confirmation when the next copy fails", async () => {
+  // The confirmation must not expire on a slow worker between the two clicks.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const writeText = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error());
   Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
   document.execCommand = vi.fn(() => false);
