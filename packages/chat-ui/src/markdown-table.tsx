@@ -154,10 +154,14 @@ export const TableCard = memo(function TableCard({
       // A newer click or a dismissed dialog superseded this attempt.
       if (attempt !== copyAttempt.current) return;
       setCopyFailedText(ok ? null : text);
-      if (!ok) return;
+      window.clearTimeout(copiedTimer.current);
+      if (!ok) {
+        // An earlier success must not still read as Copied beside the failure.
+        setCopiedSignature(null);
+        return;
+      }
       setCopiedSignature(dataSignature);
       announce(copy.copied);
-      window.clearTimeout(copiedTimer.current);
       copiedTimer.current = window.setTimeout(() => setCopiedSignature(null), 1500);
     });
   };

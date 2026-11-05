@@ -100,3 +100,21 @@ it("Copy rows starts no feedback timers when the copy settles after the table is
   expect(setTimeout).not.toHaveBeenCalled();
   setTimeout.mockRestore();
 });
+
+it("Copy rows drops an earlier Copied confirmation when the next copy fails", async () => {
+  const writeText = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error());
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  document.execCommand = vi.fn(() => false);
+  await act(async () => root.render(<ChatMarkdown>{"| Item |\n| --- |\n| apple |"}</ChatMarkdown>));
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Copy rows"]')?.click(),
+  );
+  expect(container.querySelector('button[aria-label="Copied"]')).not.toBeNull();
+
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Copied"]')?.click(),
+  );
+
+  expect(document.querySelector('[role="dialog"] textarea')).not.toBeNull();
+  expect(container.querySelector('button[aria-label="Copied"]')).toBeNull();
+});
