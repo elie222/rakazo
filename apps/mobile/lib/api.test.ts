@@ -1388,6 +1388,49 @@ describe("mobile API authentication", () => {
     }
   });
 
+  it("asks about every mentioned routine's recipients before a combined send", async () => {
+    vi.mocked(promptAiConsent).mockClear();
+    vi.mocked(promptAiConsent).mockResolvedValue(false);
+    // A paused routine on another bot is reported only by a check for that routine.
+    const recipient = {
+      key: "routine-model",
+      name: "Example AI",
+      use: "model",
+      detail: "",
+      allowed: false,
+    };
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const query = JSON.parse(String(init?.body)).json;
+      return jsonResponse({
+        json: {
+          scope: "account-space",
+          version: "2026-09-14",
+          recipients: query.routineId === "routine-paused" ? [recipient] : [],
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      rpc("threads/sendWithRoutines", {
+        botId: "bot-1",
+        clientNonce: "nonce-1",
+        text: "private content",
+        routineIds: ["routine-active", "routine-paused"],
+      }),
+    ).rejects.toThrow("AI data sharing");
+    expect(promptAiConsent).toHaveBeenCalledWith(recipient, undefined);
+    expect(fetchMock.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
+      "/rpc/aiConsent/status",
+      "/rpc/aiConsent/status",
+      "/rpc/aiConsent/status",
+    ]);
+    expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).json)).toEqual([
+      { uses: ["model", "memory"], botId: "bot-1" },
+      { uses: ["model", "memory"], routineId: "routine-active" },
+      { uses: ["model", "memory"], routineId: "routine-paused" },
+    ]);
+  });
+
   it.each([true, false])("explains the mobile upgrade requirement with JSON=%s", async (json) => {
     const fetchMock = vi.fn(async () =>
       json

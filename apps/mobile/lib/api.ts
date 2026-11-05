@@ -30,7 +30,7 @@ import {
 } from "@rakazo/contracts";
 import type { ThreadHistory } from "@rakazo/core";
 import {
-  aiConsentTarget,
+  aiConsentTargets,
   aiDataUsesForProcedure,
   cancelResponseBody,
   displayIdentityEvent,
@@ -940,24 +940,25 @@ async function request(
   const requestSessionGeneration = currentSessionGeneration();
   const requestApiBase = options.requestContext?.apiBase ?? currentApiBase();
   const uses = aiDataUsesForProcedure(proc, body);
-  const consentTarget = aiConsentTarget(body);
   const consentContext =
     options.requestContext ?? (uses.length ? await captureApiRequestContext() : undefined);
-  await ensureAiDataConsent({
-    uses,
-    status: () =>
-      rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
-    prompt: promptAiConsent,
-    allow: (input) =>
-      rpc(
-        "aiConsent/allow",
-        consentTarget.settingsScope
-          ? { ...input, settingsScope: consentTarget.settingsScope }
-          : input,
-        { requestContext: consentContext },
-      ),
-    coalesceKey: consentContext ? aiConsentCoalesceKey(consentContext) : undefined,
-  });
+  for (const consentTarget of aiConsentTargets(body)) {
+    await ensureAiDataConsent({
+      uses,
+      status: () =>
+        rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
+      prompt: promptAiConsent,
+      allow: (input) =>
+        rpc(
+          "aiConsent/allow",
+          consentTarget.settingsScope
+            ? { ...input, settingsScope: consentTarget.settingsScope }
+            : input,
+          { requestContext: consentContext },
+        ),
+      coalesceKey: consentContext ? aiConsentCoalesceKey(consentContext) : undefined,
+    });
+  }
   // Abort with an explicit reason so every consumer of the signal (the fetch, the bounded body
   // read, and nested recovery calls that share this signal) reports the same cause.
   const controller = new AbortController();
