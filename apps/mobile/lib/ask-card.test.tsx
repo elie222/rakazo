@@ -74,8 +74,11 @@ vi.mock("react-native", async () => {
 });
 
 vi.mock("./native", () => ({
+  native: { fill: "fill" },
   useMobileTokens: () => ({ success: "success", mutedForeground: "muted" }),
 }));
+
+vi.mock("./appearance", () => ({ mobileTokens: () => ({ foreground: "foreground" }) }));
 
 vi.mock("./i18n", () => ({
   t: (text: string) => text,
@@ -548,6 +551,14 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
       },
     ],
     mcpApproval: [{ kind: "mcp_approval", serverId: "server-1", name: "Example" }],
+    options: [
+      {
+        kind: "ask",
+        text: "Which one?",
+        status: "pending",
+        actions: [{ id: "choice-1", label: "A longer option than the question" }],
+      },
+    ],
   };
   const measure = (kind: keyof typeof blocks, avatar: boolean, inGroup: boolean) =>
     messageRowLayout(blocks[kind] as MobileMessage["blocks"], {
@@ -569,13 +580,29 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
     expect(regular.maxWidth).toBe(avatar ? undefined : "90%");
     expect(regular.menuMaxWidth).toBe(avatar ? 360 - gutter : 324);
   }
-  // Connect cards take the full bubble width rather than shrinking to their button.
-  for (const kind of ["appConnect", "mcpApproval"] as const) {
+  // Connect cards and option buttons take the full bubble width rather than shrinking to
+  // their button or a short question.
+  for (const kind of ["appConnect", "mcpApproval", "options"] as const) {
     const card = measure(kind, false, false);
     expect(card.width).toBe("90%");
     expect(card.maxWidth).toBe("90%");
     expect(card.menuMaxWidth).toBe(324);
     expect(card.menuFullWidth).toBe(true);
+  }
+  const allow = [
+    { id: "allow", label: "Allow" },
+    { id: "deny", label: "Deny" },
+  ];
+  for (const ask of [
+    { approvalEffectId: "approval-1" },
+    { instructionUpdate: { botId: "bot-1", before: "", after: "Be brief", reason: "" } },
+  ]) {
+    const layout = messageRowLayout(
+      [{ kind: "ask", text: "Allow?", status: "pending", actions: allow, ...ask }],
+      { inGroup: false, columnWidth: 400 },
+    );
+    expect(layout.menuFullWidth).toBe(false);
+    expect(layout.width).toBeUndefined();
   }
 });
 
@@ -614,3 +641,25 @@ it.each([
     expect(container.querySelectorAll("button").length).toBeGreaterThan(0);
   },
 );
+
+it("stacks option buttons in a non-wrapping full-width column and keeps approvals in a wrapping row", async () => {
+  const { AskActions } = await import("../components/AskActions");
+  const actions = [
+    { id: "choice-1", label: "Plan a trip" },
+    { id: "choice-2", label: "Write something" },
+  ];
+  for (const approval of [false, true]) {
+    await act(async () =>
+      root.render(
+        <AskActions actions={actions} approval={approval} onAnswer={async () => undefined} />,
+      ),
+    );
+    const buttons = [...container.querySelectorAll("button")];
+    const row = buttons[0]!.parentElement!;
+    expect(buttons.map((b) => b.getAttribute("data-fill"))).toEqual(
+      approval ? ["false", "false"] : ["true", "true"],
+    );
+    expect(row.style.flexDirection).toBe(approval ? "row" : "column");
+    expect(row.style.flexWrap).toBe(approval ? "wrap" : "nowrap");
+  }
+});
