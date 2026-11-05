@@ -495,10 +495,12 @@ async function departSpace(prisma: PrismaClient, input: SpaceRef): Promise<Space
           // Model, voice and role preferences, setting overrides and AI consents cascade from here.
           await tx.spaceMember.delete({ where: { id: departing.id } });
           await rehomeSharedItems(tx, { spaceId, userId });
+          // A guest belonged only through its Spaces; a full member keeps their organization.
           await tx.member.deleteMany({
             where: {
               organizationId: departing.organizationId,
               userId,
+              role: GUEST_ROLE,
               spaceMemberships: { none: {} },
             },
           });

@@ -976,4 +976,64 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       system.mcpServer.findUniqueOrThrow({ where: { id: everywhere.id } }),
     ).resolves.toMatchObject({ spaceId: invitee.spaceId, userId: invitee.id });
   });
+  it("leaves a live recording to its teacher and an organization member in their organization", async () => {
+    const owner = await person("owner");
+    const invitee = await person("invitee");
+    const colleague = await person("colleague");
+    const home = await sharedSpace(owner, "Home");
+    await call(invitee.actor, "spaces/invites/accept", { token: await invite(owner, home) });
+    const bot = await system.bot.create({
+      data: { spaceId: home, userId: owner.id, name: "Shopper", color: "test" },
+    });
+    const recording = await system.taughtSkill.create({
+      data: { spaceId: home, botId: bot.id, userId: owner.id, goal: "Book", status: "recording" },
+    });
+    const asInvitee = inSpace(invitee.actor, home);
+    await expect(call(asInvitee, "skills/stop", { skillId: recording.id })).resolves.toMatchObject({
+      status: 404,
+    });
+    await expect(
+      call(asInvitee, "skills/remove", { skillId: recording.id }),
+    ).resolves.toMatchObject({ status: 409 });
+    await expect(
+      system.taughtSkill.findUniqueOrThrow({ where: { id: recording.id } }),
+    ).resolves.toMatchObject({ status: "recording" });
+
+    // A full member of the owner's organization, not a guest, keeps it when removed from a Space.
+    const createdAt = new Date();
+    await system.member.create({
+      data: {
+        id: `m-${colleague.id}-org`,
+        organizationId: owner.organizationId,
+        userId: colleague.id,
+        role: "member",
+        createdAt,
+      },
+    });
+    await system.spaceMember.upsert({
+      where: { spaceId_userId: { spaceId: home, userId: colleague.id } },
+      create: {
+        id: randomUUID(),
+        spaceId: home,
+        organizationId: owner.organizationId,
+        userId: colleague.id,
+        role: "member",
+        createdAt,
+      },
+      update: {},
+    });
+    await system.spaceMember.deleteMany({
+      where: { userId: colleague.id, organizationId: owner.organizationId, spaceId: { not: home } },
+    });
+    await expect(
+      call(owner.actor, "spaces/members/remove", { spaceId: home, userId: colleague.id }),
+    ).resolves.toMatchObject({ status: 200 });
+    await expect(
+      system.member.findUnique({
+        where: {
+          organizationId_userId: { organizationId: owner.organizationId, userId: colleague.id },
+        },
+      }),
+    ).resolves.not.toBeNull();
+  });
 });

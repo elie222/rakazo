@@ -3330,15 +3330,17 @@ description: Prepare standup notes
       connection: { findMany: vi.fn(async () => []) },
       space: {
         findFirst: vi.fn(async () => ({ organization: { modelCredits: { mode: "byok" } } })),
+        findUnique: vi.fn(async () => ({ organizationId: "org-1" })),
+      },
+      member: { findUnique: vi.fn(async () => ({ role: "owner" })) },
+      organization: {
         findUnique: vi.fn(async () => ({
-          organization: {
-            modelCredits: {
-              mode: "byok",
-              balanceMicros: 0n,
-              byokFreeUntil: new Date(Date.now() - 1000),
-            },
-            billing: null,
+          modelCredits: {
+            mode: "byok",
+            balanceMicros: 0n,
+            byokFreeUntil: new Date(Date.now() - 1000),
           },
+          billing: null,
         })),
       },
       userModelPreference: {

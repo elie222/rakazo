@@ -277,7 +277,8 @@ export async function stopTeachingSession(
   actor: Actor,
   skillId: string,
 ): Promise<TaughtSkill> {
-  await getOwnedSkill(deps, actor, skillId);
+  // Stopping releases the recorder's control of the computer, so it is theirs to do.
+  await getOwnedSkill(deps, actor, skillId, { recorder: true });
   await expireTeachingSessionIfNeeded(deps, skillId);
   const current = await deps.prisma.taughtSkill.findUniqueOrThrow({ where: { id: skillId } });
   if (current.status === "draft" || current.status === "saved") {
@@ -544,6 +545,10 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
 
     async remove(actor: Actor, skillId: string): Promise<{ ok: true }> {
       const skill = await getOwnedSkill(deps, actor, skillId);
+      // A saved skill is the space's; a live recording belongs to whoever is teaching it.
+      if (skill.status === "recording" && skill.userId !== actor.userId) {
+        throw new ORPCError("CONFLICT", { message: "Someone else is teaching this skill" });
+      }
       if (skill.status === "recording") {
         await deps.jobs.cancel(skillTeachingExpireJobKey(skill.id));
         await releaseTeachingComputerControlForBot(

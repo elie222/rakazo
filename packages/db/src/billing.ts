@@ -67,24 +67,41 @@ async function markOwnersTrialUsed(
   });
 }
 
+const MODEL_ACCESS_SELECT = {
+  modelCredits: { select: { mode: true, balanceMicros: true, byokFreeUntil: true } },
+  billing: { select: { status: true } },
+} as const;
+
+function organizationModelAccess(organization: {
+  modelCredits: { mode: string | null; balanceMicros: bigint; byokFreeUntil: Date | null } | null;
+  billing: { status: string | null } | null;
+}) {
+  return hasModelAccess(
+    organization.modelCredits ?? { mode: null, balanceMicros: 0n, byokFreeUntil: null },
+    organization.billing?.status ?? null,
+  );
+}
+
 export async function spaceHasModelAccess(prisma: PrismaClient, spaceId: string) {
   const space = await prisma.space.findUnique({
     where: { id: spaceId },
-    select: {
-      organization: {
-        select: {
-          modelCredits: { select: { mode: true, balanceMicros: true, byokFreeUntil: true } },
-          billing: { select: { status: true } },
-        },
-      },
-    },
+    select: { organization: { select: MODEL_ACCESS_SELECT } },
   });
-  if (!space) return false;
-  const { modelCredits, billing } = space.organization;
-  return hasModelAccess(
-    modelCredits ?? { mode: null, balanceMicros: 0n, byokFreeUntil: null },
-    billing?.status ?? null,
-  );
+  return space ? organizationModelAccess(space.organization) : false;
+}
+
+/** Access for one person's run: their own organization's plan when they are a guest. */
+export async function memberHasModelAccess(
+  prisma: PrismaClient,
+  scope: { spaceId: string; userId: string },
+) {
+  const payer = await organizationForMember(prisma, scope);
+  if (!payer) return false;
+  const organization = await prisma.organization.findUnique({
+    where: { id: payer.organizationId },
+    select: MODEL_ACCESS_SELECT,
+  });
+  return organization ? organizationModelAccess(organization) : false;
 }
 
 export function billingAccountForOrganization(

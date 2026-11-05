@@ -1514,10 +1514,12 @@ async function startReactionTurn(
       await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
       return [active];
     }
+    // A question waits for the person whose run asked it, as with a typed answer.
     if (
       (input.reaction === "👍" || input.reaction === "👎") &&
       active.status === "waiting_input" &&
-      active.id === parent.runId
+      active.id === parent.runId &&
+      active.userId === actor.userId
     ) {
       const answered = await answerWaitingRunWithTextInTransaction(tx, {
         spaceId: actor.spaceId,

@@ -43,12 +43,12 @@ import {
   isTooManyDatabaseConnections,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
+  memberHasModelAccess,
   parseComputerMode,
   RunHistoryWriteError,
   readRunTimingFields,
   recordUsage,
   settleReleasedTakeoverCards,
-  spaceHasModelAccess,
   teamChatRunFromOwner,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
@@ -998,7 +998,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         }
         const modelAccessDenied = async () =>
           (await modelCreditBillingEnabled(deps)) &&
-          !(await spaceHasModelAccess(deps.prisma, run.spaceId));
+          !(await memberHasModelAccess(deps.prisma, run));
         const scripted = deps.runtime.describe().capabilities.scripted;
         let backupChoices: Promise<ModelRoleChoice[]> | undefined;
         const loadBackups = () =>
