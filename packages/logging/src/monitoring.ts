@@ -224,6 +224,7 @@ export type ClientOperation =
   | "desktop.update"
   | "desktop.renderer"
   | "desktop.child"
+  | "desktop.menu"
   | "desktop.unresponsive";
 
 export interface ClientErrorReporter {

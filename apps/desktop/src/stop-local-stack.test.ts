@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { reportDesktopError } from "./monitoring.js";
 import {
   StackStopMenuAvailability,
   stackStopAvailable,
   stopLocalStackItem,
 } from "./stop-local-stack.js";
+
+vi.mock("./monitoring.js", () => ({ reportDesktopError: vi.fn() }));
 
 describe("stop local stack menu item", () => {
   it("offers the off-switch while the app is connected to its local stack", () => {
@@ -65,6 +68,27 @@ describe("stop local stack menu item", () => {
     settle();
     await vi.waitFor(() => expect(rebuildMenu).toHaveBeenCalledTimes(2));
   });
+
+  it("rebuilds the menu and reports a rejected stop, without an unhandled rejection", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    const rebuildMenu = vi.fn();
+    const stop = vi.fn(() => Promise.reject(new Error("docker went away")));
+    const item = stopLocalStackItem({ mode: "existing", stackRunning: true, stop, rebuildMenu });
+
+    try {
+      item.click?.(undefined as never, undefined as never, undefined as never);
+      expect(rebuildMenu).toHaveBeenCalledOnce();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(rebuildMenu).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(reportDesktopError)).toHaveBeenCalledWith(expect.any(Error), "desktop.menu");
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+      vi.mocked(reportDesktopError).mockClear();
+    }
+  });
 });
 
 describe("stack stop menu availability", () => {
@@ -83,5 +107,15 @@ describe("stack stop menu availability", () => {
     availability.stackChanged("pulling");
 
     expect(rebuildMenu).toHaveBeenCalledTimes(4);
+  });
+
+  it("rebuilds when a confirmed reuse changes no phase", () => {
+    const rebuildMenu = vi.fn();
+    const availability = new StackStopMenuAvailability(rebuildMenu);
+
+    availability.stackChanged("idle");
+    expect(rebuildMenu).toHaveBeenCalledOnce();
+    availability.reuseConfirmed();
+    expect(rebuildMenu).toHaveBeenCalledTimes(2);
   });
 });

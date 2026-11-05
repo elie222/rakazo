@@ -1,6 +1,7 @@
 import type { DesktopInstanceMode, DesktopLocalStackPhase } from "@rakazo/contracts";
 import type { MenuItemConstructorOptions } from "electron";
 import { t } from "./i18n.js";
+import { reportDesktopError } from "./monitoring.js";
 
 /**
  * The menu's stack off-switch applies whenever the app manages a local stack: connected
@@ -31,8 +32,11 @@ export function stopLocalStackItem(input: {
       // Immediate rebuild: deactivating computer access changes other menu items.
       input.rebuildMenu();
       // A stop that only ended a reused stack changes no phase, so no lifecycle event
-      // follows; the settled state decides the item's visibility.
-      void stopped.finally(() => input.rebuildMenu());
+      // follows; the settled state decides the item's visibility. A rejected stop is
+      // reported, so the menu's click handler never leaks an unhandled rejection.
+      void stopped
+        .catch((error: unknown) => reportDesktopError(error, "desktop.menu"))
+        .finally(() => input.rebuildMenu());
     },
   };
 }
@@ -53,6 +57,11 @@ export class StackStopMenuAvailability {
   stackChanged(phase: DesktopLocalStackPhase): void {
     if (phase === this.phase) return;
     this.phase = phase;
+    this.rebuildMenu();
+  }
+
+  /** A confirmed reuse changes no phase; rebuild around the new running state. */
+  reuseConfirmed(): void {
     this.rebuildMenu();
   }
 }

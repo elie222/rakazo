@@ -331,6 +331,8 @@ export interface LocalStackDeps {
   randomHex: (bytes: number) => string;
   /** Called on every state change so the setup window is pushed progress instead of polling for it. */
   onState?: (state: DesktopLocalStackState) => void;
+  /** Called when a reuse probe confirms a running stack without a phase change, so dependent UI can refresh. */
+  onReuseConfirmed?: () => void;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   healthTimeoutMs?: number;
 }
@@ -393,6 +395,9 @@ export class LocalStackController {
 
   /** Fast path for launch: only a stack with our private token and desired image may be reused. */
   async matchesDesiredStack(url = this.currentWebUrl): Promise<boolean> {
+    // Captured before the first await, so a stop beginning during the token read still
+    // counts as later than this probe.
+    const stopGeneration = this.stopGeneration;
     // A stop still in flight is tearing the stack down, so its answer would already be stale.
     if (this.stopping !== null) return false;
     if (
@@ -404,13 +409,16 @@ export class LocalStackController {
     const token = await readStackToken(this.deps.stackDir);
     if (token === null) return false;
     this.currentStackToken = token;
-    const stopGeneration = this.stopGeneration;
     try {
       const matched =
         (await this.deps.probe(url, AbortSignal.timeout(HEALTH_POLL_INTERVAL_MS), token)) ===
         this.deps.imageTag;
       // A stop that began while the probe was pending may have stopped the stack it saw.
-      if (matched && stopGeneration === this.stopGeneration) this.managedStackMayRun = true;
+      if (matched && stopGeneration === this.stopGeneration && !this.managedStackMayRun) {
+        this.managedStackMayRun = true;
+        // The phase stays idle, so no lifecycle event follows; announce the flip itself.
+        this.deps.onReuseConfirmed?.();
+      }
       return matched;
     } catch {
       return false;
@@ -586,13 +594,14 @@ export class LocalStackController {
       }
     }
 
-    this.push({ type: "up-start" });
-    // `compose up` may leave containers running even when it fails or is aborted midway.
-    this.managedStackMayRun = true;
     const upArgs = composeSupportsWaitTimeout(version.stdout)
       ? ["up", "-d", "--wait", "--wait-timeout", String(COMPOSE_WAIT_TIMEOUT_S)]
       : ["up", "-d"];
     await writePrivateFile(path.join(this.deps.stackDir, STACK_WEB_URL_FILE), this.currentWebUrl);
+    // `compose up` may leave containers running even when it fails or is aborted midway;
+    // set before the up-start push so the menu that push rebuilds already sees it.
+    this.managedStackMayRun = true;
+    this.push({ type: "up-start" });
     let up = await this.compose(binary, upArgs, UP_TIMEOUT_MS, signal);
     for (
       let retry = 0;

@@ -20,6 +20,7 @@ import {
   STACK_OUTPUT_LINES,
   STACK_PROJECT_NAME,
   STACK_TOKEN_FILE,
+  STACK_WEB_URL_FILE,
   stackDir,
   stackFailureMessage,
   stackResourceDir,
@@ -741,6 +742,76 @@ describe("LocalStackController", () => {
     await stack.start();
     await stack.stop();
     expect(stack.managedStackRunning()).toBe(true);
+  });
+
+  it("has the running flag set before the menu rebuild the up-start push triggers", async () => {
+    const seenDuringStarting: boolean[] = [];
+    const stack = controller({
+      onState: (state) => {
+        if (state.phase === "starting") seenDuringStarting.push(stack.managedStackRunning());
+      },
+    });
+    await stack.start();
+    expect(seenDuringStarting.length).toBeGreaterThan(0);
+    expect(seenDuringStarting.every((running) => running)).toBe(true);
+  });
+
+  it("leaves the stop item hidden when the web-url write fails before compose up", async () => {
+    // A directory where the URL file belongs makes the write's rename fail (e.g. ENOSPC).
+    await mkdir(path.join(root, "stack", STACK_WEB_URL_FILE), { recursive: true });
+    const stack = controller();
+    expect((await stack.start()).phase).toBe("failed");
+    expect(calls.filter((call) => call.args[7] === "up")).toHaveLength(0);
+    expect(stack.managedStackRunning()).toBe(false);
+  });
+
+  it("does not restore the running flag when a stop begins during the token read", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    let releaseStop: () => void = () => undefined;
+    const stopGate = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    let stopping: Promise<unknown> = Promise.resolve();
+    let probes = 0;
+    const stack = controller(
+      {
+        // The first probe is the health wait of the start below; a later one must not
+        // answer before the stop that began during the token read has settled.
+        probe: (_url, _signal, supplied) => {
+          probes += 1;
+          if (supplied !== token || probes === 1) return Promise.resolve("v1.2.3");
+          return Promise.resolve(stopping).then(() => "v1.2.3" as string | null);
+        },
+      },
+      (args) => (args[7] === "stop" ? { wait: stopGate } : ok(args)),
+    );
+
+    await stack.start();
+    const reuse = stack.matchesDesiredStack();
+    stopping = stack.stop();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    releaseStop();
+    await stopping;
+    await expect(reuse).resolves.toBe(true);
+    expect(stack.managedStackRunning()).toBe(false);
+  });
+
+  it("tells dependent UI when a reuse probe first records a running stack", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    const notifiedRunning: boolean[] = [];
+    const stack = controller({
+      onReuseConfirmed: () => notifiedRunning.push(stack.managedStackRunning()),
+      probe: (_url, _signal, supplied) => Promise.resolve(supplied === token ? "v1.2.3" : null),
+    });
+
+    await expect(stack.matchesDesiredStack()).resolves.toBe(true);
+    expect(notifiedRunning).toEqual([true]);
+    await expect(stack.matchesDesiredStack()).resolves.toBe(true);
+    expect(notifiedRunning).toEqual([true]);
   });
 
   it("reuses only the privately identified stack on the desired image", async () => {

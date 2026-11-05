@@ -1437,6 +1437,8 @@ app.whenReady().then(async () => {
       // the stop item.
       stopStackMenu.stackChanged(state.phase);
     },
+    // A confirmed reuse changes no phase; the menu must hear about it separately.
+    onReuseConfirmed: () => stopStackMenu.reuseConfirmed(),
   });
   currentSetup = await readSetup(userDataDir);
   const target = resolveStartupTarget({
