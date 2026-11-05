@@ -52,10 +52,28 @@ test("opens Artifacts from the account menu and lists created files", async ({
     mimeType: "text/markdown",
     contentBase64: Buffer.from("# Artifacts tab").toString("base64"),
   });
-  await page.reload();
+  await page.goto(`/app/${chiefId}`);
+  await page
+    .getByPlaceholder(/Message/)
+    .fill("write path reports/weekly.md and attach it to the thread says # Weekly report");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Preview weekly.md" })).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.goto("/app/artifacts");
   await expect(page.getByRole("heading", { name: "Artifacts", exact: true })).toBeVisible();
   await expect(page.getByText("notes/artifacts-tab.md")).toBeVisible();
+  await expect(page.getByRole("link", { name: /weekly\.md/ })).toBeVisible();
   await captureScreenshot(page, testInfo, "artifacts-list");
+
+  await page.getByRole("button", { name: "Filters" }).click();
+  const source = page.getByRole("combobox", { name: "Filter by who made it" });
+  await source.selectOption({ label: "Made by bots" });
+  await expect(page.getByText("notes/artifacts-tab.md")).toBeHidden();
+  await expect(page.getByRole("link", { name: /weekly\.md/ })).toBeVisible();
+  await captureScreenshot(page, testInfo, "artifacts-made-by-bots");
+  await source.selectOption({ label: "All files" });
+  await expect(page.getByText("notes/artifacts-tab.md")).toBeVisible();
 
   await page.getByRole("link", { name: /notes\/artifacts-tab\.md/ }).click();
   await expect(page).toHaveURL(/\/app\/artifacts\/[^/]+$/);
