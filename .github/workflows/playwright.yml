@@ -41,17 +41,18 @@ env:
   TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: mirror.gcr.io/
 
 jobs:
-  # Ten shards × two workers for the lighter product specs. page-browser and pages each get their
-  # own job below so they cannot land on the same shard and set the floor. Postgres boots beside
-  # checkout and install instead of inside the Playwright step via Testcontainers.
+  # Six light shards × two workers. page-browser and pages each get their own job below so they
+  # cannot land on the same shard and set the floor. Six (not ten) keeps runner minutes down while
+  # the dedicated heavy jobs still own the E2E wall. Postgres boots beside checkout and install
+  # instead of inside the Playwright step via Testcontainers.
   shard:
-    name: Web E2E (${{ matrix.shard }}/10)
+    name: Web E2E (${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: [1, 2, 3, 4, 5, 6]
     # Checks its own changed areas instead of waiting for ci.yml's Changed areas job, so the shards
     # start with the first jobs; the steps skip and the combining job reports skipped when the
     # pull request cannot affect the suite.
@@ -113,7 +114,7 @@ jobs:
         if: steps.areas.outputs.e2e != 'false'
         id: playwright_tests
         env:
-          SHARD: ${{ matrix.shard }}/10
+          SHARD: ${{ matrix.shard }}/6
           E2E_SKIP_NIGHTLY: ${{ !inputs.nightly && '1' || '' }}
           E2E_SKIP_HEAVY: "1"
         run: pnpm test:e2e -- --shard="$SHARD"
@@ -305,7 +306,7 @@ jobs:
           SHARDS: ${{ runner.temp }}/shards
           HEAVY: ${{ runner.temp }}/heavy
           WWW: ${{ runner.temp }}/www
-          SHARD_TOTAL: 10
+          SHARD_TOTAL: 6
           HEAVY_SPECS: page-browser pages
         run: |
           set -euo pipefail

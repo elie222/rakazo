@@ -61,13 +61,38 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # Reuse prior build outputs across PRs; first hit still compiles cold packages.
+      - name: Restore turbo build cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .turbo/cache
+          key: turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-build-
+      - name: Cache Electron binary
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/electron-cache
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
       - run: pnpm build
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
           BETTER_AUTH_SECRET: ci-build-auth-secret-at-least-32-characters
           ENCRYPTION_KEY: ci-build-encryption-key-at-least-32-characters
+      - name: Save turbo build cache
+        if: success()
+        continue-on-error: true
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .turbo/cache
+          key: turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
       - name: Electron smoke
+        env:
+          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
         run: xvfb-run --auto-servernum pnpm --filter @rakazo/desktop exec playwright test --config e2e/playwright.config.ts
       - name: Upload desktop setup screenshots
         if: always()
@@ -216,6 +241,9 @@ jobs:
     steps:
       - run: test "${{ needs.static-checks.result }}" = success && test "${{ needs.unit-tests-shard.result }}" = success
 
+  # Desktop + its workspace deps only. A full-workspace install on Windows also links supervisor
+  # (dockerode → cpu-features) and spends ~1 minute on a node-gyp rebuild that fails without VS and
+  # is unused by these tests. Electron's binary is cached separately from the pnpm store.
   native-computer:
     name: Native computer (${{ matrix.os }})
     needs: changes
@@ -235,14 +263,24 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Cache Electron binary
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/electron-cache
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Windows pnpm launcher test
         if: runner.os == 'Windows'
         run: node --test scripts/pnpm.test.mjs
-      - run: pnpm install --frozen-lockfile
+      - name: Install desktop workspace
+        env:
+          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+        run: pnpm install --frozen-lockfile --filter "@rakazo/desktop..."
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - run: pnpm --filter @rakazo/desktop build
+        env:
+          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
       - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/host-computer.test.ts
       - name: Screen control on a real Windows desktop
         if: runner.os == 'Windows'
@@ -251,6 +289,7 @@ jobs:
         run: pnpm --filter @rakazo/desktop exec electron ../../node_modules/vitest/vitest.mjs run --root ../.. packages/adapters/src/host-computer.test.ts apps/desktop/src/host-computer.test.ts
         env:
           ELECTRON_RUN_AS_NODE: "1"
+          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
 
   # Checks its own changed areas instead of needing `changes`: a deploy needs this job, and on main
   # it must reach its lock in push order so an older revision cannot replace a newer waiting one.
