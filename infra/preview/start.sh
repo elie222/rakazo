@@ -110,10 +110,13 @@ OWNER_EMAIL=$OWNER_EMAIL OWNER_PASSWORD=$OWNER_PASSWORD \
 
 gosu node bash -c 'cd "$1/apps/api" && exec node --enable-source-maps dist/index.js' _ "$ROOT" &
 gosu node bash -c 'cd "$1/apps/worker" && exec node --enable-source-maps dist/index.js' _ "$ROOT" &
+ready=
 for _ in $(seq 1 120); do
-  curl -sf -o /dev/null --max-time 2 http://127.0.0.1:3100/ready && break
+  curl -sf -o /dev/null --max-time 2 http://127.0.0.1:3100/ready && { ready=1; break; }
   sleep 1
 done
+# Exit rather than serve a page whose API never came up; the host restarts the machine.
+[[ -n $ready ]] || { log "The API did not become ready"; exit 1; }
 kill "$waiting"
 wait "$waiting" 2> /dev/null || true
 (

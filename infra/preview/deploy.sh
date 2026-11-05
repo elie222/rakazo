@@ -35,3 +35,8 @@ if [[ -n $existing ]]; then
 else
   gh api "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
 fi
+
+# A close that arrived while this deployed found nothing to delete yet.
+if [[ $(gh api "repos/$REPO/pulls/$PR" --jq .state) == closed ]]; then
+  bash "$here/cleanup.sh"
+fi
