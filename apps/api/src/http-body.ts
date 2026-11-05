@@ -1,10 +1,41 @@
 /** Reads a request body without buffering more than maxBytes. */
 export async function readBoundedBody(request: Request, maxBytes: number): Promise<string | null> {
-  const bytes = await readBoundedBytes(request, maxBytes);
-  return bytes === null ? null : new TextDecoder().decode(bytes);
+  const contentLengthHeader = request.headers.get("content-length");
+  if (contentLengthHeader !== null) {
+    const contentLength = Number(contentLengthHeader);
+    if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > maxBytes) {
+      cancelBody(request.body);
+      return null;
+    }
+  }
+
+  if (!request.body) return "";
+
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let body = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > maxBytes) {
+        cancelBody(reader);
+        return null;
+      }
+      body += decoder.decode(value, { stream: true });
+    }
+    return body + decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
 }
 
-/** Reads a request body as bytes without buffering more than maxBytes. */
+/**
+ * Reads a request body as bytes without buffering more than maxBytes. A declared length is
+ * allocated before any byte arrives, so call this only after the caller is authenticated.
+ */
 export async function readBoundedBytes(
   request: Request,
   maxBytes: number,
