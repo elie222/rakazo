@@ -55,7 +55,11 @@ function setup(
           thread: { id: "thread-1" },
         }
       : options.bot;
-  const sendUserMessage = vi.fn(async (_input: unknown) => ({ messageId: "msg-1", runId: "run-1", seq: 1 }));
+  const sendUserMessage = vi.fn(async (_input: unknown) => ({
+    messageId: "msg-1",
+    runId: "run-1",
+    seq: 1,
+  }));
   const enqueue = vi.fn(async () => undefined);
   const findAddress = vi.fn(async () => (bot ? { bot } : null));
   const readEmail = vi.fn(async () => options.message ?? email());

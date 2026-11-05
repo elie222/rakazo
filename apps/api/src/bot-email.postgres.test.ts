@@ -124,7 +124,11 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     await routine(target.id, "scheduled", null);
     await routine(other.id, "elsewhere", "owner");
 
-    const sendUserMessage = vi.fn(async (_input: unknown) => ({ messageId: "m", runId: "r", seq: 1 }));
+    const sendUserMessage = vi.fn(async (_input: unknown) => ({
+      messageId: "m",
+      runId: "r",
+      seq: 1,
+    }));
     const message: InboundEmail = {
       key: `<${suffix}@example.test>`,
       from: { address: `colleague-${suffix}@example.test`, name: "" },
