@@ -16,7 +16,10 @@ import {
   modelIdSupportsImages,
   updateModelImageCapabilities,
 } from "./model-vision.js";
-import { normalizeOpenAiCompatibleBaseUrl } from "./openai-compatible-url.js";
+import {
+  compatibleEndpointPreset,
+  normalizeOpenAiCompatibleBaseUrl,
+} from "./openai-compatible-url.js";
 import { modelCredentialAuthKind } from "./pi-catalog-availability.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
 import { CHATGPT_OAUTH_PROVIDER, parseModelSecret, serializeModelSecret } from "./pi-oauth.js";
@@ -271,6 +274,11 @@ function connectMaxTokens(
   return previous;
 }
 
+function endpointName(baseUrl: string): { endpointName?: string } {
+  const preset = compatibleEndpointPreset(baseUrl);
+  return preset ? { endpointName: preset.name } : {};
+}
+
 export function modelCredentialDto(
   row: {
     id: string;
@@ -330,6 +338,7 @@ export function modelCredentialDto(
         ? modelIdSupportsImages(parsed.visionModelIds, row.defaultModel)
         : compatibleCredential.supportsImages,
     baseUrl: parsed.baseUrl,
+    ...endpointName(parsed.baseUrl),
     ...(parsed.apiProtocol !== undefined ? { apiProtocol: parsed.apiProtocol } : {}),
     ...(parsed.headers !== undefined ? { headerNames: Object.keys(parsed.headers) } : {}),
     reasoning: parsed.reasoning ?? false,

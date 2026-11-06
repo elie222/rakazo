@@ -108,8 +108,6 @@ export const PL_MESSAGES: Record<string, string> = {
     "{summary} Żaden model zapasowy nie mógł obsłużyć tego żądania.",
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Modele zapasowe zawiodły lub były niedostępne dla tego żądania.",
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "Klucz API Ollama",
   "Show password": "Pokaż hasło",
   "Hide password": "Ukryj hasło",
   Export: "Eksportuj",

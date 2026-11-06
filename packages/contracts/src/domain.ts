@@ -1587,6 +1587,8 @@ export const ModelCredentialSchema = z.object({
   isDefault: z.boolean(),
   headerNames: z.array(z.string()).optional(),
   baseUrl: z.string().optional(),
+  /** The hosted service at `baseUrl`, when it is one the catalog offers by name. */
+  endpointName: z.string().optional(),
   apiProtocol: ModelApiProtocolSchema.optional(),
   accountId: z.string().optional(),
   gatewayId: z.string().optional(),
@@ -1778,6 +1780,10 @@ export const SpaceMemoryConfigSchema = z.object({
 });
 export type SpaceMemoryConfig = z.infer<typeof SpaceMemoryConfigSchema>;
 
+/** A hosted OpenAI-compatible service offered by name. It always needs a key. */
+export const CompatibleEndpointPresetSchema = z.object({ name: z.string(), baseUrl: z.string() });
+export type CompatibleEndpointPreset = z.infer<typeof CompatibleEndpointPresetSchema>;
+
 export const ModelCatalogEntrySchema = z.object({
   /** Omitted by older servers and ordinary chat connections. */
   protocol: z.enum(["chat", "decisions"]).optional(),
@@ -1805,6 +1811,8 @@ export const ModelCatalogEntrySchema = z.object({
   placeholder: z.boolean().optional(),
   /** Models share one pinned HTTPS models-list URL that can be probed. */
   catalogProbe: z.boolean().optional(),
+  /** Hosted services this connection type offers by name. */
+  endpointPresets: z.array(CompatibleEndpointPresetSchema).optional(),
   /** Listed by the provider's live models list but not in the bundled catalog. */
   live: z.literal(true).optional(),
 });

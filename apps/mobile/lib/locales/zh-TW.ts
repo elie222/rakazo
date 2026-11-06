@@ -95,8 +95,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} 備援模型失敗或無法用於此請求。",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "Ollama API 金鑰",
   "Show password": "顯示密碼",
   "Hide password": "隱藏密碼",
   Export: "匯出",

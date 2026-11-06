@@ -4737,16 +4737,6 @@ msgstr "חיבור OAuth נכשל"
 msgid "Offline"
 msgstr ""
 
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama API key"
-msgstr ""
-
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama Cloud"
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
 msgstr "לפי תזמון"

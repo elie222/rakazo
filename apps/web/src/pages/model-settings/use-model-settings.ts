@@ -9,13 +9,14 @@ import type {
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   cloudflareModelRouting,
-  compatibleConnectionName,
+  compatibleEndpointPresets,
   connectionDisplayName,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
   isCloudflareModelProvider,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
+  matchCompatibleEndpointPreset,
   modelHeadersInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleProbeSuccessMessage,
@@ -287,10 +288,11 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   selectedLabelRef.current = selected?.label;
-  const selectedProviderName = compatibleConnectionName(
-    baseUrl,
-    groups.find((group) => group.id === provider)?.name ?? provider,
-  );
+  const endpointPresets = useMemo(() => compatibleEndpointPresets(catalog), [catalog]);
+  // A hosted preset needs its key, so the form asks for it up front.
+  const endpointPreset = matchCompatibleEndpointPreset(endpointPresets, baseUrl);
+  const selectedProviderName =
+    endpointPreset?.name ?? groups.find((group) => group.id === provider)?.name ?? provider;
   const credential = credentialId
     ? credentials.find((entry) => entry.id === credentialId)
     : undefined;
@@ -330,6 +332,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     modelId,
     headerRows,
     credential,
+    keyRequired: Boolean(endpointPreset),
   });
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
@@ -685,6 +688,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     defaultModelOptions,
     disconnectCredential,
     disconnectName,
+    endpointPreset,
+    endpointPresets,
     effectiveBaseUrl,
     enabledModelIds,
     error,

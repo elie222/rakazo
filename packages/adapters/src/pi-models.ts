@@ -1,12 +1,17 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { ModelOAuthSignInMode, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  CompatibleEndpointPreset,
+  ModelOAuthSignInMode,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   assertHeaderSafeApiKey,
   canonicalPiProviderId,
   MODEL_KEY_REJECTED_ERROR,
 } from "@rakazo/contracts";
+import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import { loadProviderOAuth, SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
@@ -38,6 +43,7 @@ export type PiCatalogEntry = {
   placeholder?: boolean;
   /** Provider models share one pinned HTTPS models-list base URL. */
   catalogProbe?: boolean;
+  endpointPresets?: CompatibleEndpointPreset[];
   live?: true;
 };
 
@@ -317,7 +323,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
         // endpoint. Keep each custom connection scoped to its entered model ID.
         // Its image support is the connection's own setting, not the catalog's.
         ...(provider.id === OPENAI_COMPATIBLE_PROVIDER_ID
-          ? { placeholder: true }
+          ? { placeholder: true, endpointPresets: COMPATIBLE_ENDPOINT_PRESETS }
           : { images: model.input.includes("image") }),
         ...(probeBaseUrl ? { catalogProbe: true } : {}),
       });

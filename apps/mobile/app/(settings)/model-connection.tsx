@@ -7,14 +7,14 @@ import type {
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   cloudflareModelRouting,
-  compatibleConnectionName,
+  compatibleEndpointPresets,
   connectionDisplayName,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
   isCloudflareModelProvider,
-  isOllamaCloudBaseUrl,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
+  matchCompatibleEndpointPreset,
   modelHeadersInput,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -259,9 +259,13 @@ export default function ModelConnection() {
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const credential = credentials.find((entry) => entry.id === credentialId);
   const providerName = selected?.providerName ?? selected?.provider ?? "";
+  const endpointPreset =
+    provider === OPENAI_COMPATIBLE_PROVIDER_ID
+      ? matchCompatibleEndpointPreset(compatibleEndpointPresets(catalog), baseUrl)
+      : undefined;
   const selectedProviderLabel = credential
     ? connectionDisplayName(credential, providerName)
-    : compatibleConnectionName(baseUrl, providerName);
+    : (endpointPreset?.name ?? providerName);
   useLayoutEffect(() => {
     if (selectedProviderLabel) navigation.setOptions({ title: selectedProviderLabel });
   }, [navigation, selectedProviderLabel]);
@@ -296,6 +300,7 @@ export default function ModelConnection() {
     modelId,
     headerRows,
     credential,
+    keyRequired: Boolean(endpointPreset),
   });
   const limitsDirty = maxTokens !== connectionMaxTokensField(provider, credential?.maxTokens);
   const gatewayDirty =
@@ -673,7 +678,7 @@ export default function ModelConnection() {
         prominence="secondary"
         style={{ marginTop: 12 }}
       />
-      {!isOllamaCloudBaseUrl(baseUrl) ? (
+      {!endpointPreset ? (
         <>
           {disclosureRow(t("Setup help"), showEndpointHelp, () =>
             setShowEndpointHelp((visible) => !visible),
@@ -882,12 +887,12 @@ export default function ModelConnection() {
   const compatKeySection =
     isOpenAiCompatible && acceptsKey ? (
       <View style={styles.keySection}>
-        {isOllamaCloudBaseUrl(baseUrl) ? (
+        {endpointPreset ? (
           <Text style={styles.sectionTitle}>{t("API key")}</Text>
         ) : (
           disclosureRow(t("API key"), showApiKey, () => setShowApiKey((visible) => !visible))
         )}
-        {showApiKey || isOllamaCloudBaseUrl(baseUrl) ? (
+        {showApiKey || endpointPreset ? (
           <TextInput
             accessibilityLabel={t("API key")}
             autoCapitalize="none"
@@ -897,10 +902,10 @@ export default function ModelConnection() {
             importantForAutofill="no"
             onChangeText={updateApiKey}
             placeholder={
-              isOllamaCloudBaseUrl(baseUrl)
-                ? t("Ollama API key")
-                : credential?.hasKey
-                  ? t("Paste a replacement key")
+              credential?.hasKey
+                ? t("Paste a replacement key")
+                : endpointPreset
+                  ? undefined
                   : t("Optional")
             }
             placeholderTextColor={native.tertiaryLabel}

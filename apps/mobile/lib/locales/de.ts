@@ -112,8 +112,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Ersatzmodelle sind fehlgeschlagen oder waren für diese Anfrage nicht verfügbar.",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "Ollama API-Schlüssel",
   "Show password": "Passwort anzeigen",
   "Hide password": "Passwort verbergen",
   Export: "Exportieren",

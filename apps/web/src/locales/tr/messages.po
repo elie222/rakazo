@@ -4737,16 +4737,6 @@ msgstr "OAuth bağlantısı başarısız"
 msgid "Offline"
 msgstr "Çevrimdışı"
 
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama API key"
-msgstr "Ollama API anahtarı"
-
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama Cloud"
-msgstr "Ollama Cloud"
-
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
 msgstr "Zamanlamayla"

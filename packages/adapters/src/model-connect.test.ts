@@ -11,6 +11,7 @@ import {
   modelCredentialDto,
   storedOpenAiCompatibleProbeKey,
 } from "./model-connect.js";
+import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import { parseModelSecret, serializeModelSecret } from "./pi-oauth.js";
 
 /** Fixtures connect as the deployment owner, who may use local model servers. */
@@ -206,6 +207,18 @@ describe("built-in provider output limits", () => {
     expect(
       parseModelSecret(connectAsOwner({ provider: "openai-codex", maxTokens: 8192 }, previous)),
     ).toEqual({ kind: "oauth", reconnectRequired: true, maxTokens: 8192 });
+  });
+
+  it("names a compatible connection at a hosted preset and nowhere else", () => {
+    const dto = (baseUrl: string) =>
+      modelCredentialDto(
+        { id: "cred-compat", provider: "openai-compatible", label: "Compatible" },
+        serializeModelSecret({ kind: "openai_compatible", baseUrl }),
+      );
+    expect(dto(COMPATIBLE_ENDPOINT_PRESETS[0]!.baseUrl).endpointName).toBe(
+      COMPATIBLE_ENDPOINT_PRESETS[0]!.name,
+    );
+    expect(dto("http://127.0.0.1:8000/v1").endpointName).toBeUndefined();
   });
 
   it("rejects a limit update when no credential exists", () => {

@@ -1,10 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SettingsScope } from "@rakazo/contracts";
 import {
-  compatibleConnectionName,
   connectionDisplayName,
-  isOllamaCloudBaseUrl,
-  OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
@@ -67,6 +64,7 @@ export function ModelSettingsOverlay({
     credentials,
     disconnectCredential,
     disconnectName,
+    endpointPresets,
     error,
     groups,
     handleClose,
@@ -101,13 +99,11 @@ export function ModelSettingsOverlay({
     [
       ...groups.map((group) => ({ id: group.id, name: group.name })),
       ...(groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID)
-        ? [
-            {
-              id: OPENAI_COMPATIBLE_PROVIDER_ID,
-              name: t`Ollama Cloud`,
-              baseUrl: OLLAMA_CLOUD_BASE_URL,
-            },
-          ]
+        ? endpointPresets.map((preset) => ({
+            id: OPENAI_COMPATIBLE_PROVIDER_ID,
+            name: preset.name,
+            baseUrl: preset.baseUrl,
+          }))
         : []),
     ],
     (entry) => entry.id,
@@ -115,7 +111,10 @@ export function ModelSettingsOverlay({
   );
   const providers = allProviders.filter((entry) =>
     entry.baseUrl
-      ? !isOllamaCloudBaseUrl(credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl)
+      ? !savedCompatibleEndpointMatches(
+          credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl ?? "",
+          entry.baseUrl,
+        )
       : !credentialByProvider.has(entry.id),
   );
   const connectionName = (entry: ModelCredential) => {
@@ -127,11 +126,10 @@ export function ModelSettingsOverlay({
     );
   };
   const providerLabel = (id: string) =>
-    compatibleConnectionName(
-      credentialByProvider.get(id)?.baseUrl,
-      groups.find((group) => group.id === id)?.name ?? id,
-    );
-  // The Ollama Cloud preset shares the compatible provider id with a saved local server.
+    credentialByProvider.get(id)?.endpointName ??
+    groups.find((group) => group.id === id)?.name ??
+    id;
+  // A hosted preset shares the compatible provider id with a saved local server.
   const connected = Boolean(
     credential &&
       (!isOpenAiCompatible || savedCompatibleEndpointMatches(baseUrl, credential.baseUrl)),
