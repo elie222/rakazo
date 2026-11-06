@@ -147,6 +147,35 @@ test("leaves a review-ready version with a different build unchanged", async () 
   assert.deepEqual(summary(store.calls), []);
 });
 
+test("finds the matching draft and its version on later pages", async () => {
+  const store = fakeAppStore({
+    existingVersion: { id: "version-old", attributes: { appStoreState: "READY_FOR_REVIEW" } },
+  });
+  const draftPage = "https://api.appstoreconnect.apple.com/v1/apps/app-1/reviewSubmissions?page=2";
+  const itemPage =
+    "https://api.appstoreconnect.apple.com/v1/reviewSubmissions/sub-later/items?page=2";
+  const responses = new Map([
+    ["/v1/apps/app-1/reviewSubmissions", { data: [], links: { next: draftPage } }],
+    [
+      draftPage,
+      { data: [{ id: "sub-later", attributes: { platform: "IOS", state: "READY_FOR_REVIEW" } }] },
+    ],
+    [
+      "/v1/reviewSubmissions/sub-later/items?include=appStoreVersion",
+      { data: [], links: { next: itemPage } },
+    ],
+    [itemPage, { data: [{ relationships: { appStoreVersion: { data: { id: "version-old" } } } }] }],
+  ]);
+  await submitForReview(async (method, path, data) => {
+    if (responses.has(path)) {
+      store.calls.push({ method, path, data });
+      return responses.get(path);
+    }
+    return store.request(method, path, data);
+  }, options);
+  assert.deepEqual(summary(store.calls), ["PATCH /v1/reviewSubmissions/sub-later"]);
+});
+
 test("does not submit another version's review items", async () => {
   const store = fakeAppStore({
     draftItems: [
@@ -222,4 +251,11 @@ test("signs requests with an ES256 token Apple can verify", async () => {
     associatedRequest("POST", "/v1/reviewSubmissionItems"),
     /This resource cannot be reviewed; Copyright is required/,
   );
+
+  let fetched = false;
+  const guardedRequest = appStoreClient(credentials, async () => {
+    fetched = true;
+  });
+  await assert.rejects(guardedRequest("GET", "https://example.invalid/next"), /outside Apple/);
+  assert.equal(fetched, false);
 });
