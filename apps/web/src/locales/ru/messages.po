@@ -999,7 +999,6 @@ msgstr "Все, у кого есть ссылка"
 msgid "API key"
 msgstr "API-ключ"
 
-#: src/lib/compatible-preset.ts
 #: src/pages/shell/import-status.ts
 msgid "API key for {provider}"
 msgstr "API-ключ для {provider}"
@@ -3817,7 +3816,7 @@ msgstr "Ввод изображений не настроен для этой м
 msgid "Image upload area"
 msgstr "Область загрузки изображения"
 
-#: src/lib/compatible-preset.ts
+#: src/lib/model-capability-hint.ts
 msgid "Images"
 msgstr "Изображения"
 
@@ -6908,7 +6907,7 @@ msgid "They get {weeks} weeks free."
 msgstr "Друг получает {weeks} недели бесплатно."
 
 #: src/components/call/CallCard.tsx
-#: src/lib/compatible-preset.ts
+#: src/lib/model-capability-hint.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx

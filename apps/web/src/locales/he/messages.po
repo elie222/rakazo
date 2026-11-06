@@ -999,7 +999,6 @@ msgstr "כל מי שיש לו את הקישור"
 msgid "API key"
 msgstr "מפתח API"
 
-#: src/lib/compatible-preset.ts
 #: src/pages/shell/import-status.ts
 msgid "API key for {provider}"
 msgstr "מפתח API עבור {provider}"
@@ -3817,7 +3816,7 @@ msgstr "קלט תמונה לא מוגדר עבור המודל הזה."
 msgid "Image upload area"
 msgstr "אזור העלאת תמונה"
 
-#: src/lib/compatible-preset.ts
+#: src/lib/model-capability-hint.ts
 msgid "Images"
 msgstr "תמונות"
 
@@ -6908,7 +6907,7 @@ msgid "They get {weeks} weeks free."
 msgstr "הם מקבלים {weeks} שבועות בחינם."
 
 #: src/components/call/CallCard.tsx
-#: src/lib/compatible-preset.ts
+#: src/lib/model-capability-hint.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx

@@ -999,7 +999,6 @@ msgstr "Każdy, kto ma link"
 msgid "API key"
 msgstr "Klucz API"
 
-#: src/lib/compatible-preset.ts
 #: src/pages/shell/import-status.ts
 msgid "API key for {provider}"
 msgstr "Klucz API dostawcy {provider}"
@@ -3817,7 +3816,7 @@ msgstr "Ten model nie ma skonfigurowanej obsługi obrazów."
 msgid "Image upload area"
 msgstr "Obszar przesyłania obrazów"
 
-#: src/lib/compatible-preset.ts
+#: src/lib/model-capability-hint.ts
 msgid "Images"
 msgstr "Obrazy"
 
@@ -6908,7 +6907,7 @@ msgid "They get {weeks} weeks free."
 msgstr "Otrzymają {weeks} tyg. za darmo."
 
 #: src/components/call/CallCard.tsx
-#: src/lib/compatible-preset.ts
+#: src/lib/model-capability-hint.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx

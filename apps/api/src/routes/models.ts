@@ -1,11 +1,10 @@
 import { ORPCError } from "@orpc/server";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
-  hostedPresetFor,
+  compatibleEndpointPreset,
   listPiCatalog,
   ModelSignInError,
   modelCredentialDto,
-  OPENAI_COMPATIBLE_PRESETS,
   oauthCredentialEmail,
   prepareStoredModelAuth,
   probeCatalogProviderModels,
@@ -215,7 +214,6 @@ export function modelsRoutes(ctx: RouterContext) {
           throw error;
         }
       }),
-      presets: authed.models.presets.handler(() => [...OPENAI_COMPATIBLE_PRESETS]),
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
           let apiKey = input.apiKey;
@@ -274,7 +272,7 @@ export function modelsRoutes(ctx: RouterContext) {
             // URL always goes out through the default fetch.
             const { models, details } = await probeOpenAiCompatibleModelList(
               { ...input, apiKey, headers },
-              hostedPresetFor(input.baseUrl) ? deps.modelConnectionFetch : undefined,
+              compatibleEndpointPreset(input.baseUrl) ? deps.modelConnectionFetch : undefined,
               context.signal,
               { allowPrivate: mayUsePrivateEndpoint(deps) },
             );

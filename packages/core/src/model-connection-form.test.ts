@@ -215,19 +215,7 @@ describe("connectionFormFields", () => {
 });
 
 describe("compatibleConnectionReady", () => {
-  const hosted = {
-    id: "hosted",
-    name: "Hosted Example",
-    baseUrl: "https://hosted.example.test/v1",
-    keyRequired: true,
-  };
-  const ready = {
-    presets: [hosted],
-    apiKey: "",
-    baseUrl: " http://h/v1 ",
-    modelId: "m",
-    headerRows: null,
-  };
+  const ready = { apiKey: "", baseUrl: " http://h/v1 ", modelId: "m", headerRows: null };
 
   it("needs a URL and a model", () => {
     expect(compatibleConnectionReady(ready)).toBe(true);
@@ -241,17 +229,17 @@ describe("compatibleConnectionReady", () => {
     ).toBe(false);
   });
 
-  it("waits for a key at a hosted preset, from the typed one or the saved one", () => {
-    const atPreset = { ...ready, baseUrl: " https://hosted.example.test " };
+  it("waits for a required key, from the typed one or the saved one", () => {
+    const atPreset = { ...ready, baseUrl: " https://hosted.example.test/v1 ", keyRequired: true };
     expect(compatibleConnectionReady(atPreset)).toBe(false);
     expect(compatibleConnectionReady({ ...atPreset, apiKey: "fake-key" })).toBe(true);
     expect(
       compatibleConnectionReady({
         ...atPreset,
-        credential: { hasKey: true, baseUrl: hosted.baseUrl },
+        credential: { hasKey: true, baseUrl: "https://hosted.example.test/v1" },
       }),
     ).toBe(true);
-    expect(compatibleConnectionReady({ ...atPreset, presets: [] })).toBe(true);
+    expect(compatibleConnectionReady({ ...atPreset, keyRequired: false })).toBe(true);
   });
 });
 

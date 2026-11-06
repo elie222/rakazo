@@ -1,22 +1,39 @@
+import type { CompatibleEndpointPreset } from "@rakazo/contracts";
 import {
   ipVersion,
   isCloudMetadataHost,
   isLinkLocalAddress,
   isLoopbackHost,
   isNonPublicAddress,
+  matchCompatibleEndpointPreset,
   normalizeHost,
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 
-import { OPENAI_COMPATIBLE_PRESETS } from "./openai-compatible-presets.js";
-
 export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
+
+/** DeepInfra serves its OpenAI-compatible API under /v1/openai. */
+export const DEEPINFRA_BASE_URL = "https://api.deepinfra.com/v1/openai";
+
+/** Hosted compatible services the catalog offers by name. Each one needs a key. */
+export const COMPATIBLE_ENDPOINT_PRESETS: CompatibleEndpointPreset[] = [
+  { name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+  { name: "DeepInfra", baseUrl: DEEPINFRA_BASE_URL },
+];
 
 /** Hosts of the hosted presets, reachable even with public hosts off. */
 const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(
-  OPENAI_COMPATIBLE_PRESETS.map((preset) => new URL(preset.baseUrl).hostname),
+  COMPATIBLE_ENDPOINT_PRESETS.map((preset) => new URL(preset.baseUrl).hostname),
 );
+
+export function compatibleEndpointPreset(baseUrl: string | undefined) {
+  return matchCompatibleEndpointPreset(COMPATIBLE_ENDPOINT_PRESETS, baseUrl);
+}
+
+export function isDeepInfraBaseUrl(baseUrl: string | undefined): boolean {
+  return compatibleEndpointPreset(baseUrl)?.baseUrl === DEEPINFRA_BASE_URL;
+}
 
 export function openAiCompatAllowPublicHosts(): boolean {
   return process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC !== "0";

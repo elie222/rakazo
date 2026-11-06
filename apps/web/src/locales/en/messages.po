@@ -999,7 +999,6 @@ msgstr "Anyone with the link"
 msgid "API key"
 msgstr "API key"
 
-#: src/lib/compatible-preset.ts
 #: src/pages/shell/import-status.ts
 msgid "API key for {provider}"
 msgstr "API key for {provider}"
@@ -3817,7 +3816,7 @@ msgstr "Image input is not configured for this model."
 msgid "Image upload area"
 msgstr "Image upload area"
 
-#: src/lib/compatible-preset.ts
+#: src/lib/model-capability-hint.ts
 msgid "Images"
 msgstr "Images"
 
@@ -6908,7 +6907,7 @@ msgid "They get {weeks} weeks free."
 msgstr "They get {weeks} weeks free."
 
 #: src/components/call/CallCard.tsx
-#: src/lib/compatible-preset.ts
+#: src/lib/model-capability-hint.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx

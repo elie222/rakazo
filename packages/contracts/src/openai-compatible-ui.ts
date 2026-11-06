@@ -1,66 +1,56 @@
-import type { OpenAiCompatiblePreset } from "./domain.js";
+import type { CompatibleEndpointPreset, ModelCatalogEntry } from "./domain.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./domain.js";
 
-function matchesPresetBaseUrl(baseUrl: string | undefined, presetBaseUrl: string): boolean {
+/** Every hosted service the catalog offers for compatible connections. */
+export function compatibleEndpointPresets(
+  catalog: readonly Pick<ModelCatalogEntry, "endpointPresets">[],
+): CompatibleEndpointPreset[] {
+  // Every compatible catalog entry carries the same presets: offer each address once.
+  const presets = catalog.flatMap((entry) => entry.endpointPresets ?? []);
+  return presets.filter(
+    (preset, index) => presets.findIndex((other) => other.baseUrl === preset.baseUrl) === index,
+  );
+}
+
+/** The offered hosted service at this address, if any. */
+export function matchCompatibleEndpointPreset(
+  presets: readonly CompatibleEndpointPreset[],
+  baseUrl: string | undefined,
+): CompatibleEndpointPreset | undefined {
+  let normalized: string;
   try {
-    return normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "") === presetBaseUrl;
+    normalized = normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "");
   } catch {
-    return false;
+    return undefined;
   }
+  return presets.find((preset) => preset.baseUrl === normalized);
 }
 
 /**
- * The hosted preset a base URL points at, if any. The server owns the preset list and sends it
- * to every app, so no app names a service itself.
+ * Base URLs of the offered hosted services that already have a saved connection. A service is
+ * offered again only until one is saved, however many other compatible connections there are.
  */
-export function openAiCompatiblePresetFor(
-  presets: readonly OpenAiCompatiblePreset[],
-  baseUrl: string | undefined,
-): OpenAiCompatiblePreset | undefined {
-  return presets.find((preset) => matchesPresetBaseUrl(baseUrl, preset.baseUrl));
-}
-
-/** Base URLs of the hosted presets that already have a saved connection, one per preset. */
-export function connectedPresetBaseUrls(
-  presets: readonly OpenAiCompatiblePreset[],
+export function savedCompatibleEndpointPresets(
+  presets: readonly CompatibleEndpointPreset[],
   credentials: readonly { provider: string; baseUrl?: string }[],
 ): Set<string> {
-  const connected = new Set<string>();
+  const saved = new Set<string>();
   for (const credential of credentials) {
-    const preset =
-      credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? openAiCompatiblePresetFor(presets, credential.baseUrl)
-        : undefined;
-    if (preset) connected.add(preset.baseUrl);
+    if (credential.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) continue;
+    const preset = matchCompatibleEndpointPreset(presets, credential.baseUrl);
+    if (preset) saved.add(preset.baseUrl);
   }
-  return connected;
-}
-
-/** Hosted presets refuse keyless requests, so their key field is required. */
-export function openAiCompatibleKeyRequired(
-  presets: readonly OpenAiCompatiblePreset[],
-  baseUrl: string | undefined,
-): boolean {
-  return openAiCompatiblePresetFor(presets, baseUrl)?.keyRequired ?? false;
-}
-
-export function compatibleConnectionName(
-  presets: readonly OpenAiCompatiblePreset[],
-  baseUrl: string | undefined,
-  fallback: string,
-): string {
-  return openAiCompatiblePresetFor(presets, baseUrl)?.name ?? fallback;
+  return saved;
 }
 
 export const OPENAI_COMPATIBLE_BASE_URL_HINT =
   "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.";
 
-/** Connect when base URL and model id are set. */
+/** Connect when base URL and model id are set, and a key when the endpoint needs one. */
 export function openAiCompatibleConnectReady(input: {
   baseUrl: string;
   modelId: string;
   apiKey?: string;
-  /** The endpoint is a hosted preset that refuses requests without a key. */
   keyRequired?: boolean;
 }): boolean {
   return Boolean(

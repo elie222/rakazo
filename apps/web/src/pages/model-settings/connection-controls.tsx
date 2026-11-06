@@ -6,7 +6,6 @@ import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
 } from "../../components/ModelConnectionPreflightNotice";
-import { presetApiKeyPlaceholder } from "../../lib/compatible-preset";
 import { CompatibleKeyField } from "./compatible-key-field";
 
 import type { ModelSettingsState } from "./use-model-settings";
@@ -366,9 +365,8 @@ export function CompatibleKeyControls({
   busy,
   connectKey,
   credential,
-  hostedPreset,
+  endpointPreset,
   isOpenAiCompatible,
-  keyRequired,
   openAiCompatibleReady,
   pending,
   updateApiKey,
@@ -378,9 +376,8 @@ export function CompatibleKeyControls({
   | "busy"
   | "connectKey"
   | "credential"
-  | "hostedPreset"
+  | "endpointPreset"
   | "isOpenAiCompatible"
-  | "keyRequired"
   | "openAiCompatibleReady"
   | "pending"
   | "updateApiKey"
@@ -388,15 +385,21 @@ export function CompatibleKeyControls({
   const { t } = useLingui();
   return isOpenAiCompatible ? (
     <div className="mt-5">
-      <CompatibleKeyField required={keyRequired} className="block text-body text-muted-foreground">
+      <CompatibleKeyField
+        keyRequired={Boolean(endpointPreset)}
+        className="block text-body text-muted-foreground"
+      >
         <Input
           aria-label={t`API key`}
           value={apiKey}
           onChange={(event) => updateApiKey(event.target.value)}
-          required={keyRequired}
+          required={Boolean(endpointPreset)}
           placeholder={
-            presetApiKeyPlaceholder(hostedPreset) ??
-            (credential?.hasKey ? t`Paste a replacement key` : t`Optional`)
+            credential?.hasKey
+              ? t`Paste a replacement key`
+              : endpointPreset
+                ? undefined
+                : t`Optional`
           }
           type="password"
           autoComplete="new-password"

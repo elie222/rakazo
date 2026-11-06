@@ -999,7 +999,6 @@ msgstr "링크가 있는 모든 사용자"
 msgid "API key"
 msgstr "API 키"
 
-#: src/lib/compatible-preset.ts
 #: src/pages/shell/import-status.ts
 msgid "API key for {provider}"
 msgstr "{provider}용 API 키"
@@ -3817,7 +3816,7 @@ msgstr "이 모델에는 이미지 입력이 설정되어 있지 않습니다."
 msgid "Image upload area"
 msgstr "이미지 업로드 영역"
 
-#: src/lib/compatible-preset.ts
+#: src/lib/model-capability-hint.ts
 msgid "Images"
 msgstr "이미지"
 
@@ -6908,7 +6907,7 @@ msgid "They get {weeks} weeks free."
 msgstr "친구는 {weeks}주 동안 무료로 사용해요."
 
 #: src/components/call/CallCard.tsx
-#: src/lib/compatible-preset.ts
+#: src/lib/model-capability-hint.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx

@@ -94,7 +94,7 @@ test("DeepInfra onboarding requires a key and prefills the picked model's capabi
     "https://api.deepinfra.com/v1/openai",
   );
   const continueButton = page.getByRole("button", { name: "Continue", exact: true });
-  const apiKey = page.getByPlaceholder("API key for DeepInfra");
+  const apiKey = page.getByLabel("API key", { exact: true });
   await expect(continueButton).toBeDisabled();
   await apiKey.fill("fake-test-key");
   await page.getByRole("button", { name: "Find models", exact: true }).click();

@@ -10,6 +10,7 @@ import {
   modelCredentialDto,
   storedOpenAiCompatibleProbeKey,
 } from "./model-connect.js";
+import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import { modelCacheCapabilities, parseModelSecret, serializeModelSecret } from "./pi-oauth.js";
 
 /** Fixtures connect as the deployment owner, who may use local model servers. */
@@ -207,6 +208,18 @@ describe("built-in provider output limits", () => {
     ).toEqual({ kind: "oauth", reconnectRequired: true, maxTokens: 8192 });
   });
 
+  it("names a compatible connection at a hosted preset and nowhere else", () => {
+    const dto = (baseUrl: string) =>
+      modelCredentialDto(
+        { id: "cred-compat", provider: "openai-compatible", label: "Compatible" },
+        serializeModelSecret({ kind: "openai_compatible", baseUrl }),
+      );
+    expect(dto(COMPATIBLE_ENDPOINT_PRESETS[0]!.baseUrl).endpointName).toBe(
+      COMPATIBLE_ENDPOINT_PRESETS[0]!.name,
+    );
+    expect(dto("http://127.0.0.1:8000/v1").endpointName).toBeUndefined();
+  });
+
   it("rejects a limit update when no credential exists", () => {
     expect(() => connectAsOwner({ provider: "anthropic", maxTokens: 8192 })).toThrow(/API key/);
   });
@@ -375,20 +388,12 @@ describe("modelCredentialDto", () => {
   it.each([
     ["https://ollama.com/", "Ollama Cloud"],
     ["https://api.deepinfra.com/v1/openai", "DeepInfra"],
-  ])("names the hosted preset a connection at %s uses", (baseUrl, presetName) => {
+  ])("names the hosted preset a connection at %s uses", (baseUrl, endpointName) => {
     const credential = modelCredentialDto(
       { id: "cred-1", provider: "openai-compatible", label: "openai-compatible" },
       serializeModelSecret({ kind: "openai_compatible", baseUrl }),
     );
-    expect(credential.presetName).toBe(presetName);
-  });
-
-  it("names no preset for an ordinary server", () => {
-    const credential = modelCredentialDto(
-      { id: "cred-1", provider: "openai-compatible", label: "Local MLX" },
-      serializeModelSecret({ kind: "openai_compatible", baseUrl: "https://example.invalid/v1" }),
-    );
-    expect(credential).not.toHaveProperty("presetName");
+    expect(credential.endpointName).toBe(endpointName);
   });
 
   it("returns stored baseUrl and modelId for openai-compatible credentials", () => {

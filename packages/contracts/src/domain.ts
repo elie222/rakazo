@@ -1637,8 +1637,6 @@ export const ModelCredentialSchema = z.object({
   ...ModelContextLimitsSchema.shape,
   /** Openai-compatible only: cache capabilities of the models that declare their own. */
   cacheCapabilitiesByModel: CacheCapabilitiesByModelSchema.optional(),
-  /** Openai-compatible only: the hosted preset's name when `baseUrl` points at one. */
-  presetName: z.string().optional(),
   id: Id,
   provider: z.string(),
   label: z.string(),
@@ -1646,6 +1644,8 @@ export const ModelCredentialSchema = z.object({
   isDefault: z.boolean(),
   headerNames: z.array(z.string()).optional(),
   baseUrl: z.string().optional(),
+  /** The hosted service at `baseUrl`, when it is one the catalog offers by name. */
+  endpointName: z.string().optional(),
   apiProtocol: ModelApiProtocolSchema.optional(),
   accountId: z.string().optional(),
   gatewayId: z.string().optional(),
@@ -1716,19 +1716,6 @@ export const OpenAiCompatibleModelInfoSchema = z.object({
   cacheCapabilities: CacheCapabilitiesSchema.optional(),
 });
 export type OpenAiCompatibleModelInfo = z.infer<typeof OpenAiCompatibleModelInfoSchema>;
-
-/**
- * A hosted OpenAI-compatible service offered as a one-tap choice. The connection is still saved
- * under the OpenAI-compatible provider with the preset's base URL; the server owns the list.
- */
-export const OpenAiCompatiblePresetSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  baseUrl: z.string(),
-  /** The service refuses requests without an API key. */
-  keyRequired: z.boolean(),
-});
-export type OpenAiCompatiblePreset = z.infer<typeof OpenAiCompatiblePresetSchema>;
 
 export const OPENAI_COMPATIBLE_PROVIDER_ID = "openai-compatible";
 
@@ -1903,6 +1890,10 @@ export const SpaceMemoryConfigSchema = z.object({
 });
 export type SpaceMemoryConfig = z.infer<typeof SpaceMemoryConfigSchema>;
 
+/** A hosted OpenAI-compatible service offered by name. It always needs a key. */
+export const CompatibleEndpointPresetSchema = z.object({ name: z.string(), baseUrl: z.string() });
+export type CompatibleEndpointPreset = z.infer<typeof CompatibleEndpointPresetSchema>;
+
 export const ModelCatalogEntrySchema = z.object({
   /** Omitted by older servers and ordinary chat connections. */
   protocol: z.enum(["chat", "decisions"]).optional(),
@@ -1932,6 +1923,8 @@ export const ModelCatalogEntrySchema = z.object({
   catalogProbe: z.boolean().optional(),
   /** Ids the provider needs besides a key; a connection cannot save without them. */
   routingFields: z.array(ModelRoutingFieldSchema).optional(),
+  /** Hosted services this connection type offers by name. */
+  endpointPresets: z.array(CompatibleEndpointPresetSchema).optional(),
   /** Listed by the provider's live models list but not in the bundled catalog. */
   live: z.literal(true).optional(),
 });

@@ -1,12 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
-import type { Me, OpenAiCompatiblePreset, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
+import type { Me, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import {
-  compatibleConnectionName,
+  compatibleEndpointPresets,
   connectionDisplayName,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
-  openAiCompatibleKeyRequired,
-  openAiCompatiblePresetFor,
+  matchCompatibleEndpointPreset,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -38,7 +37,6 @@ import { useModelConnectionForm } from "./use-model-connection-form";
 
 const NO_CATALOG: ModelCatalogEntry[] = [];
 const NO_CREDENTIALS: never[] = [];
-const NO_PRESETS: OpenAiCompatiblePreset[] = [];
 
 export type ModelConnectIntent = {
   /** False keeps the current main model; the connection is for a fallback or another role. */
@@ -72,13 +70,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     queryFn: () => rpc.models.credentials(),
   };
   const meQuery = { queryKey: queries.me.queryKey(), queryFn: () => rpc.me() };
-  // The hosted services the server offers never change within a session.
-  const presets =
-    useQuery({
-      queryKey: queries.models.presets.queryKey(),
-      queryFn: () => rpc.models.presets(),
-      staleTime: Number.POSITIVE_INFINITY,
-    }).data ?? NO_PRESETS;
   const catalog = useQuery(catalogQuery).data ?? NO_CATALOG;
   const credentials = useQuery(credentialsQuery).data ?? NO_CREDENTIALS;
   const me: Me | null = useQuery(meQuery).data ?? null;
@@ -271,11 +262,11 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     [credentials],
   );
   selectedLabelRef.current = selected?.label;
-  const selectedProviderName = compatibleConnectionName(
-    presets,
-    baseUrl,
-    groups.find((group) => group.id === provider)?.name ?? provider,
-  );
+  const endpointPresets = useMemo(() => compatibleEndpointPresets(catalog), [catalog]);
+  // A hosted preset needs its key, so the form asks for it up front.
+  const endpointPreset = matchCompatibleEndpointPreset(endpointPresets, baseUrl);
+  const selectedProviderName =
+    endpointPreset?.name ?? groups.find((group) => group.id === provider)?.name ?? provider;
   const selectedConnectionName = credential
     ? connectionDisplayName(
         credential,
@@ -301,15 +292,13 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   const busy = pending !== null || oauthPending;
   const savedHeaderEndpointMatches = savedCompatibleEndpointMatches(baseUrl, credential?.baseUrl);
   const effectiveBaseUrl = baseUrl.trim();
-  const hostedPreset = openAiCompatiblePresetFor(presets, baseUrl);
-  const keyRequired = openAiCompatibleKeyRequired(presets, baseUrl);
   const openAiCompatibleReady = compatibleConnectionReady({
-    presets,
     apiKey,
     baseUrl,
     modelId,
     headerRows,
     credential,
+    keyRequired: Boolean(endpointPreset),
   });
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
@@ -526,12 +515,12 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     defaultModelOptions,
     disconnectCredential,
     disconnectName,
+    endpointPreset,
+    endpointPresets,
     effectiveBaseUrl,
     groups,
     handleClose,
     hostCredentialSource,
-    hostedPreset,
-    keyRequired,
     loading,
     me,
     oauth,
@@ -540,7 +529,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     pasteCode,
     pending,
     popupBlocked,
-    presets,
     selectedConnectionName,
     selectedProviderName,
     selectionRevisionRef,

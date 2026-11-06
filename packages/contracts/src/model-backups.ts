@@ -32,14 +32,14 @@ export function modelRoleChoiceKey(
  * does not already say which provider it is (a renamed key or a signed-in account).
  */
 export function connectionDisplayName(
-  credential: Pick<ModelCredential, "provider" | "label" | "presetName">,
+  credential: Pick<ModelCredential, "provider" | "label" | "endpointName">,
   providerName: string,
   /** Other names a default label may carry, such as the catalog's "Anthropic" for "Claude subscription". */
   defaultNames: readonly string[] = [],
 ): string {
   const provider =
     credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-      ? (credential.presetName ?? providerName)
+      ? (credential.endpointName ?? providerName)
       : providerName;
   const label = credential.label.trim();
   if (

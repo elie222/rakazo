@@ -1,8 +1,8 @@
-import type { OpenAiCompatiblePreset } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
-  connectedPresetBaseUrls,
+  compatibleEndpointPresets,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  savedCompatibleEndpointPresets,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
@@ -35,7 +35,6 @@ import { errorText } from "../../lib/user-error";
 const noModels: MobileModel[] = [];
 const noCredentials: MobileModelCredential[] = [];
 const noBots: MobileBot[] = [];
-const noPresets: OpenAiCompatiblePreset[] = [];
 
 /**
  * The main and approval model lists; connecting a provider opens its own screen. Opened with a
@@ -63,9 +62,6 @@ export default function Models() {
       },
       queryClient,
     ).data ?? noCredentials;
-  const presets =
-    useQuery({ ...rpcQuery("models/presets", undefined, spaceId), enabled: false }, queryClient)
-      .data ?? noPresets;
   const bots =
     useQuery({ ...rpcQuery("bots/list", undefined, spaceId), enabled: false }, queryClient).data ??
     noBots;
@@ -96,10 +92,6 @@ export default function Models() {
           fetchFresh(queryClient, rpcQuery("models/credentials", undefined, spaceId), {
             reuse,
           }),
-          // Without the preset list only the hosted presets are not offered.
-          fetchFresh(queryClient, rpcQuery("models/presets", undefined, spaceId), { reuse }).catch(
-            () => undefined,
-          ),
           // Without the bot list only the bot model notice is missing.
           fetchFresh(queryClient, rpcQuery("bots/list", undefined, spaceId), { reuse }).catch(
             () => undefined,
@@ -167,7 +159,8 @@ export default function Models() {
       }),
     );
 
-  /** Every provider, popular first, plus a preset per hosted compatible service. */
+  const endpointPresets = useMemo(() => compatibleEndpointPresets(catalog), [catalog]);
+  /** Every provider, popular first, plus the hosted presets of the compatible one. */
   const allProviders = useMemo(() => {
     const grouped = new Map<string, ConnectableProvider>();
     for (const entry of catalog) {
@@ -178,31 +171,26 @@ export default function Models() {
       });
     }
     const all = [...grouped.values()];
-    if (catalog.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID))
-      for (const preset of presets)
-        all.push({
-          id: OPENAI_COMPATIBLE_PROVIDER_ID,
-          name: preset.name,
-          baseUrl: preset.baseUrl,
-        });
+    for (const preset of endpointPresets)
+      all.push({ id: OPENAI_COMPATIBLE_PROVIDER_ID, name: preset.name, baseUrl: preset.baseUrl });
     return popularModelProvidersFirst(
       all,
       (provider) => provider.id,
       (provider) => provider.name,
     );
-  }, [catalog, presets]);
+  }, [catalog, endpointPresets]);
 
   // Deployment-funded providers stay listed so people can still add their own key.
   const providers = useMemo(() => {
     const connected = new Set(credentials.map((entry) => canonicalPiProviderId(entry.provider)));
     // A hosted preset is offered once, until a connection to its endpoint is saved.
-    const connectedPresets = connectedPresetBaseUrls(presets, credentials);
+    const savedPresets = savedCompatibleEndpointPresets(endpointPresets, credentials);
     return allProviders.filter((provider) =>
       provider.baseUrl
-        ? !connectedPresets.has(provider.baseUrl)
+        ? !savedPresets.has(provider.baseUrl)
         : !connected.has(canonicalPiProviderId(provider.id)),
     );
-  }, [allProviders, credentials, presets]);
+  }, [allProviders, credentials, endpointPresets]);
 
   const providerKey = (provider: ConnectableProvider) =>
     `connect:${provider.id}:${provider.baseUrl ?? ""}`;

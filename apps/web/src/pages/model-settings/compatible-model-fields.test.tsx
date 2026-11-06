@@ -43,6 +43,7 @@ function props(compatibleRows: string[], enabledModelIds: string[], modelId = ""
     savedHeaderEndpointMatches: false,
     credential: undefined,
     baseUrl: "http://127.0.0.1:8000/v1",
+    endpointPreset: undefined,
     busy: false,
     cancelOAuthAttempt: () => {},
     compatibleRows,
@@ -50,7 +51,6 @@ function props(compatibleRows: string[], enabledModelIds: string[], modelId = ""
     defaultModelOptions: [],
     effectiveBaseUrl: "http://127.0.0.1:8000/v1",
     enabledModelIds,
-    hostedPreset: undefined,
     invalidatePreflight: () => {},
     maxImagesPerPrompt: "",
     maxTokens: "4096",
@@ -273,22 +273,17 @@ it("keeps the server URL and setup help only for a custom server", async () => {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const hostedPreset = {
-    id: "hosted",
-    name: "Hosted Example",
-    baseUrl: "https://hosted.example.test/v1",
-    keyRequired: true,
-  };
-  const render = (baseUrl: string, preset?: typeof hostedPreset) =>
+  const endpointPreset = { name: "Hosted Example", baseUrl: "https://hosted.example.test/v1" };
+  const render = (baseUrl: string, preset?: typeof endpointPreset) =>
     act(async () =>
       root.render(
-        <CompatibleModelFields {...props([], [])} baseUrl={baseUrl} hostedPreset={preset} />,
+        <CompatibleModelFields {...props([], [])} baseUrl={baseUrl} endpointPreset={preset} />,
       ),
     );
   try {
     await render("http://127.0.0.1:8000/v1");
     expect(container.textContent).toContain("Setup help");
-    await render(hostedPreset.baseUrl, hostedPreset);
+    await render(endpointPreset.baseUrl, endpointPreset);
     expect(container.textContent).not.toContain("Setup help");
   } finally {
     await act(async () => root.unmount());

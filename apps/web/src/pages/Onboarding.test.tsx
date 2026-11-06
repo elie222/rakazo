@@ -25,20 +25,10 @@ vi.mock("../lib/rpc", () => ({
           id: "",
           label: "Custom",
           billing: "API key",
-        },
-      ]),
-      presets: vi.fn(async () => [
-        {
-          id: "ollama-cloud",
-          name: "Ollama Cloud",
-          baseUrl: "https://ollama.com/v1",
-          keyRequired: true,
-        },
-        {
-          id: "deepinfra",
-          name: "DeepInfra",
-          baseUrl: "https://api.deepinfra.com/v1/openai",
-          keyRequired: true,
+          endpointPresets: [
+            { name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+            { name: "DeepInfra", baseUrl: "https://api.deepinfra.com/v1/openai" },
+          ],
         },
       ]),
       probeOpenAiCompatible: vi.fn(async () => ({
@@ -163,6 +153,7 @@ it("connects DeepInfra with a required key and the model's discovered capabiliti
       id: "",
       label: "Custom",
       billing: "API key",
+      endpointPresets: [{ name: "DeepInfra", baseUrl: "https://api.deepinfra.com/v1/openai" }],
     },
   ] as never);
   vi.mocked(rpc.models.probeOpenAiCompatible).mockResolvedValueOnce({
@@ -213,7 +204,7 @@ it("connects DeepInfra with a required key and the model's discovered capabiliti
     "https://api.deepinfra.com/v1/openai",
   );
   expect(document.body.textContent).not.toContain("Setup help");
-  const key = input('input[placeholder="API key for DeepInfra"]');
+  const key = input('input[aria-label="API key"]');
   expect(key.required).toBe(true);
   await change(key, "fake-fixture-key");
   await act(async () => button("Find models").click());
@@ -267,7 +258,9 @@ it("keeps Continue disabled for a hosted preset until its key is entered", async
   const continueButton = [...document.querySelectorAll("button")].find(
     (entry) => entry.textContent === "Continue",
   )!;
-  expect(document.querySelector('input[placeholder="API key for Ollama Cloud"]')).not.toBeNull();
+  expect(document.querySelector<HTMLInputElement>('input[aria-label="API key"]')?.required).toBe(
+    true,
+  );
   expect(continueButton.disabled).toBe(true);
   await act(async () => root.unmount());
 });

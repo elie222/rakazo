@@ -14,7 +14,7 @@ import {
 } from "@rakazo/ui-web";
 import { ModelPreflightFeedback } from "../../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
-import { modelCapabilityHint } from "../../lib/compatible-preset";
+import { modelCapabilityHint } from "../../lib/model-capability-hint";
 import { useListSearch } from "../../lib/use-list-search";
 
 import type { ModelSettingsState } from "./use-model-settings";
@@ -34,7 +34,7 @@ export function CompatibleModelFields({
   defaultModelOptions,
   effectiveBaseUrl,
   enabledModelIds,
-  hostedPreset,
+  endpointPreset,
   invalidatePreflight,
   maxImagesPerPrompt,
   maxTokens,
@@ -77,7 +77,7 @@ export function CompatibleModelFields({
   | "defaultModelOptions"
   | "effectiveBaseUrl"
   | "enabledModelIds"
-  | "hostedPreset"
+  | "endpointPreset"
   | "invalidatePreflight"
   | "maxImagesPerPrompt"
   | "maxTokens"
@@ -151,7 +151,7 @@ export function CompatibleModelFields({
           {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
         </Button>
       </div>
-      {!hostedPreset ? (
+      {!endpointPreset ? (
         <Disclosure
           className="mt-3 text-body text-muted-foreground"
           summary={<Trans>Setup help</Trans>}

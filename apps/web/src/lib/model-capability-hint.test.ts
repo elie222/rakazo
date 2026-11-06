@@ -1,10 +1,5 @@
 import { expect, it } from "vitest";
-import { modelCapabilityHint, presetApiKeyPlaceholder } from "./compatible-preset";
-
-it("labels the key field of a hosted preset with its name and leaves ordinary servers alone", () => {
-  expect(presetApiKeyPlaceholder({ name: "Hosted Example" })).toBe("API key for Hosted Example");
-  expect(presetApiKeyPlaceholder(undefined)).toBeUndefined();
-});
+import { modelCapabilityHint } from "./model-capability-hint";
 
 it("summarizes only the capabilities a model listing confirms", () => {
   expect(modelCapabilityHint(undefined)).toBe("");

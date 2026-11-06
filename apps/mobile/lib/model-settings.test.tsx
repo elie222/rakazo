@@ -85,21 +85,6 @@ vi.mock("./api", () => ({
         ...(saved.probeDetails ? { details: saved.probeDetails } : {}),
       };
     }
-    if (procedure === "models/presets")
-      return [
-        {
-          id: "ollama-cloud",
-          name: "Ollama Cloud",
-          baseUrl: "https://ollama.com/v1",
-          keyRequired: true,
-        },
-        {
-          id: "deepinfra",
-          name: "DeepInfra",
-          baseUrl: "https://api.deepinfra.com/v1/openai",
-          keyRequired: true,
-        },
-      ];
     if (procedure === "models/role") return { primary: null, backups: [] };
     if (procedure === "bots/list") {
       if (saved.failBotList) throw new Error("offline");
@@ -119,7 +104,15 @@ vi.mock("./api", () => ({
     if (procedure === "models/forRole") return [];
     if (procedure === "models/list")
       return [
-        { provider: "openai-compatible", id: "model-fixture", label: "Fixture" },
+        {
+          provider: "openai-compatible",
+          id: "model-fixture",
+          label: "Fixture",
+          endpointPresets: [
+            { name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+            { name: "DeepInfra", baseUrl: "https://api.deepinfra.com/v1/openai" },
+          ],
+        },
         { provider: "anthropic", providerName: "Anthropic", id: "claude-fixture", label: "Claude" },
         // Deployment-funded models still leave room for a personal key.
         {
@@ -432,7 +425,7 @@ it("opens the DeepInfra preset through the compatible form with a visible key fi
     renderConnection({ baseUrl: "https://api.deepinfra.com/v1/openai", credentialId: null }),
   );
   expect(field("OpenAI-compatible server URL")?.value).toBe("https://api.deepinfra.com/v1/openai");
-  expect(field("API key")?.placeholder).toBe("API key for DeepInfra");
+  expect(field("API key")?.placeholder).toBe("");
   expect(field("API key")?.type).toBe("password");
   expect(
     [...container.querySelectorAll("button")].filter((button) =>
@@ -614,7 +607,7 @@ describe("DeepInfra capability prefill", () => {
 it("opens the Ollama preset through the compatible form with a visible key field", async () => {
   await remount(() => renderConnection({ baseUrl: "https://ollama.com/v1", credentialId: null }));
   expect(field("OpenAI-compatible server URL")?.value).toBe("https://ollama.com/v1");
-  expect(field("API key")?.placeholder).toBe("API key for Ollama Cloud");
+  expect(field("API key")?.placeholder).toBe("");
   expect(field("API key")?.type).toBe("password");
   expect(
     [...container.querySelectorAll("button")].filter((button) =>

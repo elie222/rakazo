@@ -546,8 +546,9 @@ export async function sendUserMessage(
   const commit = () =>
     prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Webhooks, texts and other bots can reach a Space until its teardown finishes; one being
-      // deleted takes no new turns.
-      if (!(await spaceTakesWork(tx, input.spaceId))) throw new SpaceDeletionInProgressError();
+      // deleted takes no new turns. A transcript copy that starts none is still kept.
+      if (input.createRun !== false && !(await spaceTakesWork(tx, input.spaceId)))
+        throw new SpaceDeletionInProgressError();
       // Message first: its thread-row lock serializes the whole send against clearThread, so a
       // concurrent clear either sees the committed run and cancels it, or strictly precedes this
       // transaction. Created in separate transactions, the run could land inside the clear's

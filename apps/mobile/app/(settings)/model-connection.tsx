@@ -3,22 +3,20 @@ import type {
   ModelHeaderRow,
   ModelOAuthBegin,
   OpenAiCompatibleModelInfo,
-  OpenAiCompatiblePreset,
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
-  compatibleConnectionName,
+  compatibleEndpointPresets,
   connectionDisplayName,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
+  matchCompatibleEndpointPreset,
   modelHeadersInput,
   modelRoutingForm,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
-  openAiCompatibleKeyRequired,
-  openAiCompatiblePresetFor,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -102,7 +100,6 @@ export default function ModelConnection() {
   const { t } = useI18n();
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
-  const [presets, setPresets] = useState<OpenAiCompatiblePreset[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
   const provider = request?.provider ?? "";
   // The provider whose optional personal-key form is open.
@@ -206,12 +203,10 @@ export default function ModelConnection() {
     async (preferred: ModelSelection = {}) => {
       if (!request) throw new Error(t("Could not load model settings"));
       setError(null);
-      const [nextMe, nextCatalog, nextCredentials, nextPresets] = await Promise.all([
+      const [nextMe, nextCatalog, nextCredentials] = await Promise.all([
         rpc("me"),
         rpc("models/list"),
         rpc("models/credentials"),
-        // Without the list only the hosted presets go unrecognized.
-        rpc("models/presets").catch((): OpenAiCompatiblePreset[] => []),
       ]);
       const nextProvider = request.provider;
       const nextCredential = nextCredentials.find((entry) => entry.id === credentialIdRef.current);
@@ -233,7 +228,6 @@ export default function ModelConnection() {
       setMe(nextMe);
       setCatalog(nextCatalog);
       setCredentials(nextCredentials);
-      setPresets(nextPresets);
       resetOpenAiCompatibleProbe();
       setModelId(nextModel);
       setHeaderRows(null);
@@ -270,16 +264,17 @@ export default function ModelConnection() {
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const credential = credentials.find((entry) => entry.id === credentialId);
   const providerName = selected?.providerName ?? selected?.provider ?? "";
+  const endpointPreset =
+    provider === OPENAI_COMPATIBLE_PROVIDER_ID
+      ? matchCompatibleEndpointPreset(compatibleEndpointPresets(catalog), baseUrl)
+      : undefined;
   const selectedProviderLabel = credential
     ? connectionDisplayName(credential, providerName)
-    : compatibleConnectionName(presets, baseUrl, providerName);
+    : (endpointPreset?.name ?? providerName);
   useLayoutEffect(() => {
     if (selectedProviderLabel) navigation.setOptions({ title: selectedProviderLabel });
   }, [navigation, selectedProviderLabel]);
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  // A hosted preset needs a key and has no setup to explain.
-  const hostedPreset = isOpenAiCompatible ? openAiCompatiblePresetFor(presets, baseUrl) : undefined;
-  const keyRequired = isOpenAiCompatible && openAiCompatibleKeyRequired(presets, baseUrl);
   const { needsRouting, needsGateway, routingReady } = modelRoutingForm(selected?.routingFields, {
     accountId,
     gatewayId,
@@ -305,12 +300,12 @@ export default function ModelConnection() {
   const busy = pending !== null || oauthPending;
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = compatibleConnectionReady({
-    presets,
     apiKey,
     baseUrl,
     modelId,
     headerRows,
     credential,
+    keyRequired: Boolean(endpointPreset),
   });
   const limitsDirty = maxTokens !== connectionMaxTokensField(provider, credential?.maxTokens);
   const gatewayDirty =
@@ -714,7 +709,7 @@ export default function ModelConnection() {
         prominence="secondary"
         style={{ marginTop: 12 }}
       />
-      {!hostedPreset ? (
+      {!endpointPreset ? (
         <>
           {disclosureRow(t("Setup help"), showEndpointHelp, () =>
             setShowEndpointHelp((visible) => !visible),
@@ -923,12 +918,12 @@ export default function ModelConnection() {
   const compatKeySection =
     isOpenAiCompatible && acceptsKey ? (
       <View style={styles.keySection}>
-        {keyRequired ? (
+        {endpointPreset ? (
           <Text style={styles.sectionTitle}>{t("API key")}</Text>
         ) : (
           disclosureRow(t("API key"), showApiKey, () => setShowApiKey((visible) => !visible))
         )}
-        {showApiKey || keyRequired ? (
+        {showApiKey || endpointPreset ? (
           <TextInput
             accessibilityLabel={t("API key")}
             autoCapitalize="none"
@@ -938,10 +933,10 @@ export default function ModelConnection() {
             importantForAutofill="no"
             onChangeText={updateApiKey}
             placeholder={
-              hostedPreset
-                ? t("API key for {provider}", { provider: hostedPreset.name })
-                : credential?.hasKey
-                  ? t("Paste a replacement key")
+              credential?.hasKey
+                ? t("Paste a replacement key")
+                : endpointPreset
+                  ? undefined
                   : t("Optional")
             }
             placeholderTextColor={native.tertiaryLabel}

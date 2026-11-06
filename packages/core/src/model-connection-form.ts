@@ -6,7 +6,6 @@ import type {
   ModelCredential,
   ModelHeaderRow,
   OpenAiCompatibleModelInfo,
-  OpenAiCompatiblePreset,
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
@@ -17,7 +16,6 @@ import {
   modelOutputLeavesInputRoom,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
-  openAiCompatibleKeyRequired,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
@@ -160,15 +158,15 @@ export function probedModelFields(
 
 /** Whether an OpenAI-compatible form can save: a URL, a model, valid headers, and a key if one is needed. */
 export function compatibleConnectionReady(input: {
-  /** The hosted presets the server offers; a preset's endpoint needs a key. */
-  presets: readonly OpenAiCompatiblePreset[];
   apiKey: string;
   baseUrl: string;
   modelId: string;
   headerRows: ModelHeaderRow[] | null;
   credential?: Pick<ModelCredential, "hasKey" | "baseUrl">;
+  /** The endpoint is a hosted preset, which always needs a key. */
+  keyRequired?: boolean;
 }): boolean {
-  const { apiKey, credential, headerRows, modelId } = input;
+  const { apiKey, credential, headerRows, keyRequired, modelId } = input;
   const baseUrl = input.baseUrl.trim();
   return openAiCompatibleConnectReady({
     apiKey:
@@ -179,7 +177,7 @@ export function compatibleConnectionReady(input: {
     baseUrl,
     modelId:
       headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
-    keyRequired: openAiCompatibleKeyRequired(input.presets, baseUrl),
+    keyRequired,
   });
 }
 

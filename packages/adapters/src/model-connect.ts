@@ -24,8 +24,10 @@ import {
   modelIdSupportsImages,
   updateModelImageCapabilities,
 } from "./model-vision.js";
-import { hostedPresetFor } from "./openai-compatible-presets.js";
-import { normalizeOpenAiCompatibleBaseUrl } from "./openai-compatible-url.js";
+import {
+  compatibleEndpointPreset,
+  normalizeOpenAiCompatibleBaseUrl,
+} from "./openai-compatible-url.js";
 import { modelCredentialAuthKind } from "./pi-catalog-availability.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
 import {
@@ -329,6 +331,11 @@ function connectMaxTokens(
   return previous;
 }
 
+function endpointName(baseUrl: string): { endpointName?: string } {
+  const preset = compatibleEndpointPreset(baseUrl);
+  return preset ? { endpointName: preset.name } : {};
+}
+
 export function modelCredentialDto(
   row: {
     id: string;
@@ -380,7 +387,6 @@ export function modelCredentialDto(
   if (parsed.kind !== "openai_compatible") {
     return { ...compatibleCredential, authKind: modelCredentialAuthKind(parsed) };
   }
-  const preset = hostedPresetFor(parsed.baseUrl);
   return {
     ...compatibleCredential,
     authKind: "openai_compatible",
@@ -389,6 +395,7 @@ export function modelCredentialDto(
         ? modelIdSupportsImages(parsed.visionModelIds, row.defaultModel)
         : compatibleCredential.supportsImages,
     baseUrl: parsed.baseUrl,
+    ...endpointName(parsed.baseUrl),
     ...(parsed.apiProtocol !== undefined ? { apiProtocol: parsed.apiProtocol } : {}),
     ...(parsed.headers !== undefined ? { headerNames: Object.keys(parsed.headers) } : {}),
     reasoning: parsed.reasoning ?? false,
@@ -397,7 +404,6 @@ export function modelCredentialDto(
       : {}),
     ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
     ...(parsed.contextWindow !== undefined ? { contextWindow: parsed.contextWindow } : {}),
-    ...(preset ? { presetName: preset.name } : {}),
     cacheCapabilities: modelCacheCapabilities(parsed, row.defaultModel ?? ""),
     ...(parsed.cacheCapabilitiesByModel !== undefined
       ? { cacheCapabilitiesByModel: parsed.cacheCapabilitiesByModel }

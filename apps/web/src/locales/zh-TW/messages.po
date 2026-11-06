@@ -1000,7 +1000,6 @@ msgstr "任何擁有連結的人"
 msgid "API key"
 msgstr "API 金鑰"
 
-#: src/lib/compatible-preset.ts
 #: src/pages/shell/import-status.ts
 msgid "API key for {provider}"
 msgstr "{provider} 的 API 金鑰"
@@ -3818,7 +3817,7 @@ msgstr "此模型尚未設定圖片輸入。"
 msgid "Image upload area"
 msgstr "圖片上傳區域"
 
-#: src/lib/compatible-preset.ts
+#: src/lib/model-capability-hint.ts
 msgid "Images"
 msgstr "圖片"
 
@@ -6909,7 +6908,7 @@ msgid "They get {weeks} weeks free."
 msgstr "對方可免費使用 {weeks} 週。"
 
 #: src/components/call/CallCard.tsx
-#: src/lib/compatible-preset.ts
+#: src/lib/model-capability-hint.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx

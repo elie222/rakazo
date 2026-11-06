@@ -1,11 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SettingsScope } from "@rakazo/contracts";
 import {
-  connectedPresetBaseUrls,
   connectionDisplayName,
   modelRoleChoiceKey,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
+  savedCompatibleEndpointPresets,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
 import {
@@ -62,6 +62,7 @@ export function ModelSettingsOverlay({
     credentials,
     disconnectCredential,
     disconnectName,
+    endpointPresets,
     error,
     groups,
     handleClose,
@@ -73,7 +74,6 @@ export function ModelSettingsOverlay({
     me,
     notice,
     pending,
-    presets,
     provider,
     refresh,
     selected,
@@ -97,7 +97,7 @@ export function ModelSettingsOverlay({
     [
       ...groups.map((group) => ({ id: group.id, name: group.name })),
       ...(groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID)
-        ? presets.map((preset) => ({
+        ? endpointPresets.map((preset) => ({
             id: OPENAI_COMPATIBLE_PROVIDER_ID,
             name: preset.name,
             baseUrl: preset.baseUrl,
@@ -109,9 +109,9 @@ export function ModelSettingsOverlay({
   );
   // A hosted preset is offered until a connection to its endpoint is saved, however many
   // other compatible connections there are.
-  const connectedPresets = connectedPresetBaseUrls(presets, credentials);
+  const savedPresets = savedCompatibleEndpointPresets(endpointPresets, credentials);
   const providers = allProviders.filter((entry) =>
-    entry.baseUrl ? !connectedPresets.has(entry.baseUrl) : !credentialByProvider.has(entry.id),
+    entry.baseUrl ? !savedPresets.has(entry.baseUrl) : !credentialByProvider.has(entry.id),
   );
   const connectionName = (entry: ModelCredential) => {
     const group = groups.find((item) => item.id === entry.provider);
@@ -122,7 +122,9 @@ export function ModelSettingsOverlay({
     );
   };
   const providerLabel = (id: string) =>
-    credentialByProvider.get(id)?.presetName ?? groups.find((group) => group.id === id)?.name ?? id;
+    credentialByProvider.get(id)?.endpointName ??
+    groups.find((group) => group.id === id)?.name ??
+    id;
   // The approval model only judges actions in Auto, so it shows only then. A Space may
   // inherit Approvals from the account, so its page asks for whichever copy applies there.
   const queries = useSpaceQueries();

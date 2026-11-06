@@ -2,17 +2,17 @@ import { Trans } from "@lingui/react/macro";
 import { Disclosure } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 
+/** A hosted endpoint needs its key, so the field shows; elsewhere it stays tucked away. */
 export function CompatibleKeyField({
-  required,
+  keyRequired,
   className,
   children,
 }: {
-  /** The endpoint is a hosted preset that refuses requests without a key. */
-  required: boolean;
+  keyRequired: boolean;
   className?: string;
   children: ReactNode;
 }) {
-  return required ? (
+  return keyRequired ? (
     <div className={className}>
       <span>
         <Trans>API key</Trans>
