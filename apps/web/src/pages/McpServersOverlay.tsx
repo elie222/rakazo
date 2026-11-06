@@ -23,6 +23,7 @@ import {
   FieldLabel,
   FieldTitle,
   Input,
+  SectionHeading,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -495,9 +496,9 @@ export function McpServersOverlay({
               <ChevronLeft />
             </Button>
           ) : null}
-          <h3 className="text-heading3 font-medium text-foreground">
+          <SectionHeading variant="heading">
             {editing ? editing.name : <Trans>Add server</Trans>}
-          </h3>
+          </SectionHeading>
         </div>
         <FieldGroup className="gap-4">
           <Field>
