@@ -44,6 +44,7 @@ import { enrichLogContext, getLogger } from "@rakazo/logging";
 import { formatAgentEnvironmentInstruction } from "./agent-environment.js";
 import { createApprovedEffectReplayQueue } from "./approval-effect.js";
 import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
+import { backgroundHelpersAllowed } from "./background-helpers.js";
 import { loadBotMessageContext } from "./bot-messages.js";
 import {
   commandCredentialRedactions,
@@ -1818,6 +1819,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                     : disabledBuiltinTools,
                 offeredFleetTools: offeredFleetTools(strategicBuiltins),
                 followUpsOffered: followUpsOffered(strategicBuiltins, ownerStartedRun),
+                backgroundHelpersAllowed: backgroundHelpersAllowed({
+                  threadBotId: thread.botId,
+                  botId: bot.id,
+                  trigger: run.trigger,
+                }),
                 userComputer,
               })
                 .filter((instruction): instruction is string => Boolean(instruction))

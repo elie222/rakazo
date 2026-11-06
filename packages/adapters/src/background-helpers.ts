@@ -37,6 +37,24 @@ type HelperBlock = Extract<MessageBlock, { kind: "subagent" }>;
  * Start run_subagent with background true: a helper run in a thread of its own, so this chat
  * stays free, and a running card here that its result settles later.
  */
+/**
+ * A helper reads the bot's memory and its result comes back only to the app chat, so only a turn
+ * in the bot's own app chat may start one, by whichever space member sent it; a result coming
+ * back never starts the next.
+ */
+export function backgroundHelpersAllowed(turn: {
+  threadBotId: string | null;
+  botId: string;
+  trigger: string;
+}): boolean {
+  return (
+    turn.threadBotId === turn.botId &&
+    turn.trigger !== "messaging" &&
+    turn.trigger !== HELPER_RESULT_TRIGGER &&
+    isConversationalRun(turn.trigger)
+  );
+}
+
 export async function startBackgroundHelper(
   ctx: RunContext,
   input: {
@@ -50,14 +68,8 @@ export async function startBackgroundHelper(
   },
 ) {
   const { deps, run, runId, bot, thread } = ctx;
-  // A helper reads the bot's memory and its result comes back only to the app chat, so only a
-  // turn in the bot's own app chat may start one, by whichever space member sent it; a result
-  // coming back never starts the next.
   if (
-    thread.botId !== bot.id ||
-    run.trigger === "messaging" ||
-    run.trigger === HELPER_RESULT_TRIGGER ||
-    !isConversationalRun(run.trigger)
+    !backgroundHelpersAllowed({ threadBotId: thread.botId, botId: bot.id, trigger: run.trigger })
   ) {
     return {
       error:

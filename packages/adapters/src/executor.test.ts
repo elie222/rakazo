@@ -1473,6 +1473,7 @@ describe("userTurnInstructions", () => {
 
   it("places stable guidance before volatile context when every optional context is present", () => {
     const instructions = userTurnInstructions({
+      backgroundHelpersAllowed: true,
       ...base,
       groupContext: "Group context",
       messagingContext: "Messaging context",
@@ -1509,6 +1510,7 @@ describe("userTurnInstructions", () => {
 
   it("ends with the untrusted-content block when no optional context exists", () => {
     const instructions = userTurnInstructions({
+      backgroundHelpersAllowed: true,
       ...base,
       groupContext: undefined,
       messagingContext: undefined,
@@ -1534,8 +1536,29 @@ describe("userTurnInstructions", () => {
     expect(instructions.join("\n\n")).not.toContain("Current date and time:");
   });
 
+  it("leaves background helpers out of the guidance where a turn cannot start one", () => {
+    const instructions = userTurnInstructions({
+      ...base,
+      groupContext: undefined,
+      messagingContext: undefined,
+      redactedMemoryContext: undefined,
+      redactedScratchpadContext: undefined,
+      hasHistoricalContext: false,
+      agentEnvironmentInstruction: undefined,
+      botDirectory: undefined,
+      pluginLine: undefined,
+      agentSkillsLine: undefined,
+      taughtSkillsLine: undefined,
+    });
+    expect(instructions.some((line) => line?.includes("background true"))).toBe(false);
+    expect(instructions).toContain(
+      "run_subagent is a short helper. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
+    );
+  });
+
   it("inserts task catalog guidance after the computer line", () => {
     const instructions = userTurnInstructions({
+      backgroundHelpersAllowed: true,
       ...base,
       groupContext: undefined,
       messagingContext: undefined,
