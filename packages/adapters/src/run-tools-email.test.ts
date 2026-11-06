@@ -69,13 +69,25 @@ function fakeRun(
         botEmailMessage: {
           findFirst: async ({ where }: { where: { id: string; botId: string } }) =>
             inbox.find((email) => email.id === where.id && email.botId === where.botId) ?? null,
-          findMany: async ({ where, take }: { where: Record<string, unknown>; take?: number }) => {
+          findMany: async ({
+            where,
+            take,
+            orderBy,
+          }: {
+            where: Record<string, unknown>;
+            take?: number;
+            orderBy: { receivedAt: "asc" | "desc" };
+          }) => {
             listed += 1;
             // Mail that arrives while the bot waits shows up on the second look.
             if (listed === 2 && options.arriving) inbox.push(options.arriving);
             return inbox
               .filter((email) => matches(email, where))
-              .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime())
+              .sort(
+                (a, b) =>
+                  (orderBy.receivedAt === "asc" ? 1 : -1) *
+                  (a.receivedAt.getTime() - b.receivedAt.getTime()),
+              )
               .slice(0, take);
           },
           deleteMany: async ({
@@ -160,6 +172,20 @@ describe("read_email", () => {
     expect(waited.emails).toEqual([expect.objectContaining({ id: "late" })]);
     expect(again.emails).toEqual([]);
     expect(again.nextSince).toBe(waited.nextSince);
+  });
+
+  it("reads every new email in order by following nextSince", async () => {
+    const { call } = fakeRun([
+      row({ id: "a", receivedAt: new Date("2026-11-01T00:00:00.000Z") }),
+      row({ id: "b", receivedAt: new Date("2026-11-02T00:00:00.000Z") }),
+      row({ id: "c", receivedAt: new Date("2026-11-03T00:00:00.000Z") }),
+    ]);
+
+    const first = await call({ since: "2026-10-31T00:00:00.000Z", limit: 2 });
+    const rest = await call({ since: first.nextSince, limit: 2 });
+
+    expect((first.emails as Array<{ id: string }>).map((email) => email.id)).toEqual(["a", "b"]);
+    expect((rest.emails as Array<{ id: string }>).map((email) => email.id)).toEqual(["c"]);
   });
 
   it("pages back to older mail", async () => {

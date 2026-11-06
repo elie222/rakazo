@@ -132,7 +132,8 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
   const list = () =>
     deps.prisma.botEmailMessage.findMany({
       where,
-      orderBy: { receivedAt: "desc" },
+      // After since, oldest first, so following nextSince reads every new email in order.
+      orderBy: { receivedAt: input.since ? ("asc" as const) : ("desc" as const) },
       take: input.limit ?? 10,
       select: {
         id: true,
@@ -158,7 +159,8 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
   }
   // Where the next look starts, on the inbox's own clock: the newest email shown here, or the
   // caller's since when nothing new arrived.
-  const nextSince = emails[0]?.receivedAt.toISOString() ?? input.since;
+  const newest = input.since ? emails.at(-1) : emails[0];
+  const nextSince = newest?.receivedAt.toISOString() ?? input.since;
   const listed = emails.map((email) => ({
     id: email.id,
     from: sender(email),
