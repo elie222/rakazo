@@ -421,9 +421,12 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     expect((await system.run.findUniqueOrThrow({ where: { id: running.id } })).status).toBe(
       "cancelled",
     );
+    // Started for the owner; the worker may already have picked it up.
     expect(
-      await system.run.findFirstOrThrow({ where: { threadId: thread.id, status: "queued" } }),
-    ).toMatchObject({ userId: owner.id, sourceMessageId: waiting.id });
+      await system.run.findFirstOrThrow({
+        where: { threadId: thread.id, sourceMessageId: waiting.id },
+      }),
+    ).toMatchObject({ userId: owner.id });
 
     // Turning them back on restores sign-in, not the membership: the owner invites them again.
     const on = await scim("PATCH", `/Users/${resource.id}`, {
