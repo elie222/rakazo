@@ -1327,14 +1327,19 @@ describe("LocalStackController", () => {
     const stopGate = new Promise<void>((resolve) => {
       releaseStop = resolve;
     });
-    const stack = controller({}, (args) => {
+    const pushed: string[] = [];
+    const stack = controller({ onState: (state) => pushed.push(state.phase) }, (args) => {
       if (args[7] === "stop") return { wait: stopGate };
       return ok(args);
     });
     await stack.start();
     const stopping = stack.stop();
+    await vi.waitFor(() => expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]));
+    pushed.length = 0;
     const restarted = stack.start();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // A start that ran now would announce its check before any I/O, within these microtasks.
+    await new Promise(setImmediate);
+    expect(pushed).not.toContain("checking-docker");
     expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]);
     releaseStop();
     await stopping;
@@ -1403,14 +1408,20 @@ describe("LocalStackController", () => {
   });
 
   it("does not wait out a slow health probe when stopped", async () => {
+    let markProbeStarted: () => void = () => undefined;
+    const probeStarted = new Promise<void>((resolve) => {
+      markProbeStarted = resolve;
+    });
     const stack = controller({
-      probe: (_url, signal) =>
-        signal.aborted
+      probe: (_url, signal) => {
+        markProbeStarted();
+        return signal.aborted
           ? Promise.resolve(null)
-          : new Promise((resolve) => signal.addEventListener("abort", () => resolve(null))),
+          : new Promise((resolve) => signal.addEventListener("abort", () => resolve(null)));
+      },
     });
     const started = stack.start();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await probeStarted;
     const stopped = await stack.stop();
     expect(stopped).toEqual(initialStackState("v1.2.3"));
     expect((await started).message).toBe("The start was interrupted. Retry to continue.");
