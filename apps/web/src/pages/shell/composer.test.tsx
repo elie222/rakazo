@@ -107,12 +107,12 @@ it("colors the send button like the bot's user bubbles", () => {
     sendColors: { background: "#9C47E9", foreground: "#FFFFFF" },
   });
   const send = () => container?.querySelector<HTMLButtonElement>('button[aria-label="Send"]');
-  expect(send()?.style.getPropertyValue("--send")).toBe("#9C47E9");
-  expect(send()?.className).toContain("bg-(--send)");
+  expect(send()?.style.getPropertyValue("--chat-user")).toBe("#9C47E9");
+  expect(send()?.className).toContain("bg-chat-user");
 
   rerenderComposer({ sendColors: undefined });
-  expect(send()?.style.getPropertyValue("--send")).toBe("");
-  expect(send()?.className).not.toContain("bg-(--send)");
+  expect(send()?.style.getPropertyValue("--chat-user")).toBe("");
+  expect(send()?.className).not.toContain("bg-chat-user");
 });
 
 it("shows a readable run error with raw details, while preserving send errors", () => {

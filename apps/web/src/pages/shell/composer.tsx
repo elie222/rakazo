@@ -688,14 +688,15 @@ const ComposerBody = memo(function Composer({
     }
   }, [replyTarget, replyName, t]);
 
+  // The same chat-user colors your bubbles in this chat wear (set the same way in the transcript).
   const sendStyle = sendColors
     ? ({
-        "--send": sendColors.background,
-        "--send-foreground": sendColors.foreground,
+        "--chat-user": sendColors.background,
+        "--chat-user-foreground": sendColors.foreground,
       } as CSSProperties)
     : undefined;
   // An empty draft keeps the quiet disabled look either way; the bot's color shows once it can go.
-  const sendClassName = `size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100 ${sendColors ? "bg-(--send) text-(--send-foreground) hover:bg-(--send)/90" : ""}`;
+  const sendClassName = `size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100 ${sendColors ? "bg-chat-user text-chat-user-foreground hover:bg-chat-user/90" : ""}`;
   return (
     <fieldset
       aria-label={t`Message composer`}
