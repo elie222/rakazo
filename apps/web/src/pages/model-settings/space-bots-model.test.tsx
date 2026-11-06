@@ -122,6 +122,30 @@ it("asks only when the main model changes and some bots would not follow", async
   unmount();
 });
 
+it("drops switched bots even when the refresh after the switch fails", async () => {
+  bots.list.mockResolvedValueOnce(list).mockRejectedValue(new Error("offline"));
+  bots.update.mockResolvedValue({});
+  const { host, unmount } = await render();
+  await act(async () => {
+    button("Use main model")!.click();
+  });
+  expect(host.textContent).toBe("");
+  unmount();
+});
+
+it("ignores a bot list that a newer one replaced", async () => {
+  let finishFirst: (value: typeof list) => void = () => {};
+  bots.list
+    .mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)))
+    .mockResolvedValue(following);
+  const { host, rerender, unmount } = await render();
+  await rerender("s:a:two");
+  await act(async () => finishFirst(list));
+  expect(host.textContent).toBe("");
+  expect(toast).not.toHaveBeenCalled();
+  unmount();
+});
+
 it("names the bots that did not switch", async () => {
   bots.list.mockResolvedValue(list);
   bots.update.mockImplementation(async ({ botId }: { botId: string }) => {

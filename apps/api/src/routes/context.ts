@@ -223,16 +223,17 @@ export function createRouterContext(deps: RouterDeps) {
     if (!choice) return view;
     try {
       const [credential, catalog] = await Promise.all([
-        findConnectedModelCredential(
-          deps.prisma,
-          deps.secrets,
-          actor,
-          choice.provider,
-          choice.modelId,
-          {
-            credentialId: choice.credentialId,
-          },
-        ),
+        // The deployment's model runs on the deployment's key, never a member's connection.
+        view.primary
+          ? findConnectedModelCredential(
+              deps.prisma,
+              deps.secrets,
+              actor,
+              choice.provider,
+              choice.modelId,
+              { credentialId: choice.credentialId },
+            )
+          : null,
         chatCatalog(actor),
       ]);
       const entry = catalog.find(

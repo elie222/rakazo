@@ -384,6 +384,7 @@ beforeEach(() => {
     return {
       primary: connected ? { provider: me.defaultProvider, modelId: me.defaultModel } : null,
       backups: [],
+      ...(connected ? { seesImages: true } : {}),
     };
   });
 });
@@ -618,6 +619,23 @@ it("keeps the computer-use model out of sight while the main model can see", asy
     expect(
       section("computer").querySelector('[data-testid="model-role-default"]')?.textContent,
     ).toBe("Same as main model");
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("shows the computer-use model when the server could not tell whether the main model sees", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  const role = models.role.getMockImplementation()!;
+  models.role.mockImplementation(async (input: { role: string }) => {
+    const { seesImages: _unknown, ...view } = (await role(input)) as Record<string, unknown>;
+    return view;
+  });
+  const view = await renderSettings();
+  try {
+    await vi.waitFor(() =>
+      expect(view.container.querySelector('[data-testid="model-role-computer"]')).not.toBeNull(),
+    );
   } finally {
     await view.unmount();
   }

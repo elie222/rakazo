@@ -147,8 +147,8 @@ export function ModelSettingsOverlay({
   const mainRole = useModelRole(me, scope, "main");
   const computerRole = useModelRole(me, scope, "computer");
   const mainChoice = mainRole?.primary ?? mainRole?.deploymentPrimary ?? null;
-  // The server answers as runs do; until it has, nothing is known yet.
-  const mainSeesImages = mainRole?.seesImages !== false;
+  // The server answers as runs do. A model it could not check may not see, so the list shows.
+  const mainSeesImages = !mainChoice || mainRole?.seesImages === true;
   const showComputer =
     computerOpened ||
     !mainSeesImages ||
