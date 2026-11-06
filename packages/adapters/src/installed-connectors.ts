@@ -80,19 +80,17 @@ export function applyMcpSourcePreset(
   config: Record<string, unknown>,
 ): { source: string; config: Record<string, unknown> } {
   const preset = MCP_SOURCE_PRESETS.find((entry) => entry.id === config.preset);
-  if (!preset) return { source, config };
+  if (!preset) return { source, config: { ...config, preset: "custom" } };
   return {
     source: preset.url ?? source,
     config: { ...config, preset: preset.url ? preset.id : "custom", auth: { type: "bearer" } },
   };
 }
 
-const FIXED_URL_PRESET_IDS = MCP_SOURCE_PRESETS.flatMap((preset) =>
-  preset.url ? [preset.id] : [],
-);
-
 const McpConfigSchema = z.object({
-  preset: z.enum(["custom", ...FIXED_URL_PRESET_IDS]).default("custom"),
+  // Installs keep the preset id they were made with, even after it leaves MCP_SOURCE_PRESETS;
+  // nothing reads it back, so any stored id stays valid.
+  preset: z.string().min(1).max(64).default("custom"),
   auth: McpAuthSchema,
   headers: PublicHeadersSchema,
 });

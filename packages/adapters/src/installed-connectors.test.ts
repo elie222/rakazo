@@ -39,6 +39,12 @@ describe("MCP source presets", () => {
     });
   });
 
+  it("stores an unknown preset id as custom", () => {
+    expect(
+      applyMcpSourcePreset("https://mine.example/mcp", { preset: "not-offered" }).config,
+    ).toEqual({ preset: "custom" });
+  });
+
   it("leaves custom sources untouched", () => {
     const config = { preset: "custom", auth: { type: "header", name: "x-api-key" } };
     expect(applyMcpSourcePreset("https://mine.example/mcp", config)).toEqual({
