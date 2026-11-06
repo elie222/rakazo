@@ -89,8 +89,6 @@ async function markOwnersByokTrialUsed(
 export type ByokTrialCheckoutHold = {
   /** Identifies this attempt's hold, so giving it back cannot touch another session's. */
   expiresAt: Date;
-  /** The hold an earlier open session of the same organization still had, to fall back to. */
-  previousExpiresAt: Date | null;
 };
 
 /**
@@ -109,11 +107,6 @@ export async function reserveByokTrialCheckout(
   });
   const ownerIds = owners.filter((owner) => isOwnerRole(owner.role)).map((owner) => owner.userId);
   if (ownerIds.length === 0) return null;
-  // The same organization's earlier open session keeps its hold while this attempt runs.
-  const previous = await prisma.user.findFirst({
-    where: { id: { in: ownerIds }, byokTrialCheckoutOrganizationId: organizationId },
-    select: { byokTrialCheckoutExpiresAt: true },
-  });
   const expiresAt = new Date(Date.now() + BYOK_TRIAL_CHECKOUT_HOLD_MS);
   const { count } = await prisma.user.updateMany({
     where: {
@@ -131,14 +124,12 @@ export async function reserveByokTrialCheckout(
       byokTrialCheckoutExpiresAt: expiresAt,
     },
   });
-  return count === ownerIds.length
-    ? { expiresAt, previousExpiresAt: previous?.byokTrialCheckoutExpiresAt ?? null }
-    : null;
+  return count === ownerIds.length ? { expiresAt } : null;
 }
 
 /**
  * Gives back a hold `reserveByokTrialCheckout` returned once the provider refused to create
- * the session: this attempt's hold goes, and an earlier open session's hold is restored.
+ * the session. A newer attempt's hold has another expiry and stays.
  */
 export async function releaseByokTrialCheckout(
   prisma: PrismaClient,
@@ -150,9 +141,7 @@ export async function releaseByokTrialCheckout(
       byokTrialCheckoutOrganizationId: organizationId,
       byokTrialCheckoutExpiresAt: hold.expiresAt,
     },
-    data: hold.previousExpiresAt
-      ? { byokTrialCheckoutExpiresAt: hold.previousExpiresAt }
-      : { byokTrialCheckoutOrganizationId: null, byokTrialCheckoutExpiresAt: null },
+    data: { byokTrialCheckoutOrganizationId: null, byokTrialCheckoutExpiresAt: null },
   });
 }
 

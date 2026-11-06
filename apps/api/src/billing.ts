@@ -402,6 +402,11 @@ export function createBillingService(deps: {
     ]);
     try {
       return await openCheckout(actor, account, async (customerId) => {
+        // Expire the open sessions first: once none is payable none holds the trial, so a
+        // failure after this step gives this attempt's hold back in full. A failure while
+        // expiring keeps the earlier hold, since its session may still be payable.
+        await provider.expireOpenCheckouts(customerId);
+        await releaseByokTrialCheckouts(prisma, organizationId);
         // One trial per owner: reserve inside the organization's checkout lease, so overlapping
         // requests of the same organization cannot interleave their holds; the lease already
         // serializes their provider calls.
@@ -420,8 +425,8 @@ export function createBillingService(deps: {
             cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
           });
         } catch (error) {
-          // No session came out of this attempt, so its hold goes back; an earlier or newer
-          // payable session's hold keeps its own expiry and survives.
+          // No session came out of this attempt, so its hold goes back; a newer payable
+          // session's hold keeps its own expiry and survives.
           if (hold && !(error instanceof BillingCheckoutCompletedError))
             await releaseByokTrialCheckout(prisma, organizationId, hold);
           throw error;

@@ -195,6 +195,17 @@ class FlakyByokEmulator extends BillingEmulator {
   }
 }
 
+/**
+ * Like a hosted provider, opening an own-key checkout first expires the customer's open
+ * sessions, so a creation that then fails leaves none payable.
+ */
+class ExpiringFlakyByokEmulator extends FlakyByokEmulator {
+  override async createByokCheckout(input: Parameters<BillingEmulator["createByokCheckout"]>[0]) {
+    this.byokCheckouts.delete(input.customerId);
+    return super.createByokCheckout(input);
+  }
+}
+
 /** A provider whose cancellation fails on demand. */
 class FlakyCancelEmulator extends BillingEmulator {
   failCancellation = false;
@@ -342,9 +353,9 @@ dbTests("own-key trial hold lifecycle", () => {
     expect(provider.byokCheckouts.get(second)?.trialDays).toBe(TRIAL_DAYS);
   });
 
-  it("keeps an earlier open session's hold when a reopened checkout fails", async () => {
+  it("frees the trial when a reopened checkout fails after the earlier session expired", async () => {
     const owner = await ownerWith("reopenfail");
-    const provider = new FlakyByokEmulator(`hold-reopen-${stamp}`);
+    const provider = new ExpiringFlakyByokEmulator(`hold-reopen-${stamp}`);
     const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
     await service.selectFunding(owner.first.actor, "byok");
     provider.failByokCheckout = true;
@@ -352,7 +363,29 @@ dbTests("own-key trial hold lifecycle", () => {
       "provider unavailable",
     );
     provider.failByokCheckout = false;
+    // Opening the second session expired the first, so no session holds the owner's trial.
+    const first = await customerOf(owner.first.organizationId);
+    expect(provider.byokCheckouts.get(first)).toBeUndefined();
+    await service.selectFunding(owner.second.actor, "byok");
+    const second = await customerOf(owner.second.organizationId);
+    expect(provider.byokCheckouts.get(second)?.trialDays).toBe(TRIAL_DAYS);
+  });
+
+  it("keeps an earlier open session's hold when expiring it fails", async () => {
+    const owner = await ownerWith("expirefail");
+    const provider = new BillingEmulator({ modelCredits: true, namespace: `hold-expire-${stamp}` });
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    await service.selectFunding(owner.first.actor, "byok");
+    const expire = vi
+      .spyOn(provider, "expireOpenCheckouts")
+      .mockRejectedValue(new Error("provider unavailable"));
+    await expect(service.selectFunding(owner.first.actor, "byok")).rejects.toThrow(
+      "provider unavailable",
+    );
+    expire.mockRestore();
     // The first session is still payable, so it keeps holding the owner's trial.
+    const first = await customerOf(owner.first.organizationId);
+    expect(provider.byokCheckouts.get(first)?.trialDays).toBe(TRIAL_DAYS);
     await service.selectFunding(owner.second.actor, "byok");
     const second = await customerOf(owner.second.organizationId);
     expect(provider.byokCheckouts.get(second)?.trialDays).toBeUndefined();
