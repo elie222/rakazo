@@ -94,6 +94,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   rpc.mockReset();
+  rpc.mockResolvedValue([]);
 });
 
 afterEach(() => {
