@@ -11,11 +11,14 @@ import {
   sanitizeMessagingLabel,
 } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  isUniqueViolation,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
 import { cancelBody, readBoundedBytes } from "./http-body.js";
-import { isUniqueViolation } from "./routes/shared.js";
 import type { WebhookDeps } from "./webhook-inbound.js";
 import { deliverWebhookEvent, formatUntrustedDeliveryPayload } from "./webhook-inbound.js";
 

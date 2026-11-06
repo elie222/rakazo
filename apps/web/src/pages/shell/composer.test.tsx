@@ -16,6 +16,7 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 
+import { replaceComposerDraft } from "../../lib/composer-draft";
 import { dictation } from "../../lib/dictation";
 import { createPageSession, PagesProvider } from "../../lib/pages";
 import { Composer } from "./composer";
@@ -101,6 +102,19 @@ function rerenderComposer(overrides: Partial<ComponentProps<typeof Composer>>) {
   composerProps = { ...composerProps, ...overrides };
   act(() => root?.render(<Composer {...composerProps} />));
 }
+
+it("colors the send button like the bot's user bubbles", () => {
+  renderComposer(async () => true, {
+    sendColors: { background: "#9C47E9", foreground: "#FFFFFF" },
+  });
+  const send = () => container?.querySelector<HTMLButtonElement>('button[aria-label="Send"]');
+  expect(send()?.style.getPropertyValue("--chat-user")).toBe("#9C47E9");
+  expect(send()?.className).toContain("bg-chat-user");
+
+  rerenderComposer({ sendColors: undefined });
+  expect(send()?.style.getPropertyValue("--chat-user")).toBe("");
+  expect(send()?.className).not.toContain("bg-chat-user");
+});
 
 it("shows a readable run error with raw details, while preserving send errors", () => {
   const runError = '429: {"message":"Too many requests","metadata":{"provider":"OpenRouter"}}';
@@ -1157,6 +1171,190 @@ it("restores dictation to the previous chat after switching draft keys", async (
   }
 });
 
+it("keeps a dictation still being transcribed in the chat it was recorded in", async () => {
+  const onSend = vi.fn(async () => true);
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  const stop = vi.spyOn(dictation, "stop");
+  const state = vi
+    .spyOn(dictation, "state", "get")
+    .mockReturnValue({ status: "transcribing", transcript: "" });
+  try {
+    renderComposer(onSend, { phoneCallsEnabled: true });
+    localStorage.setItem("rakazo.composerDraft.bot:bot-1", "earlier draft");
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    // The user opens another chat while the recording is on its way to the server.
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-2" draftKey="bot:bot-2" />));
+    expect(stop).not.toHaveBeenCalledWith("cancel");
+    act(() => onFinal("and a hotel"));
+    await act(async () => {});
+    expect(onSend).not.toHaveBeenCalled();
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe(
+      "earlier draft and a hotel",
+    );
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-2")).toBeNull();
+  } finally {
+    state.mockRestore();
+    stop.mockRestore();
+    listen.mockRestore();
+  }
+});
+
+it("shows late dictated words in the chat's composer when the user came back first", async () => {
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  const state = vi
+    .spyOn(dictation, "state", "get")
+    .mockReturnValue({ status: "transcribing", transcript: "" });
+  try {
+    renderComposer(
+      vi.fn(async () => true),
+      { phoneCallsEnabled: true },
+    );
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-2" draftKey="bot:bot-2" />));
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-1:again" />));
+    const returned = container?.querySelector("textarea");
+    if (!returned) throw new Error("composer textarea not found");
+    act(() => onFinal("and a hotel"));
+    await act(async () => {});
+    expect(returned.value).toBe("and a hotel");
+    // The next edit keeps the words instead of writing over them.
+    type(returned, "and a hotel please");
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("and a hotel please");
+  } finally {
+    state.mockRestore();
+    listen.mockRestore();
+  }
+});
+
+it("keeps only the late dictated words once the earlier send is accepted", async () => {
+  let finish!: (accepted: boolean) => void;
+  const onSend = vi.fn(
+    (_text: string) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  const state = vi
+    .spyOn(dictation, "state", "get")
+    .mockReturnValue({ status: "transcribing", transcript: "" });
+  try {
+    const textarea = renderComposer(onSend, { phoneCallsEnabled: true });
+    type(textarea, "already sent");
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-2" draftKey="bot:bot-2" />));
+    act(() => onFinal("new words"));
+    await act(async () => finish(true));
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("new words");
+  } finally {
+    state.mockRestore();
+    listen.mockRestore();
+  }
+});
+
+it("keeps the failed send's text with the late dictated words", async () => {
+  let finish!: (accepted: boolean) => void;
+  const onSend = vi.fn(
+    (_text: string) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  const state = vi
+    .spyOn(dictation, "state", "get")
+    .mockReturnValue({ status: "transcribing", transcript: "" });
+  try {
+    const textarea = renderComposer(onSend, { phoneCallsEnabled: true });
+    type(textarea, "not sent");
+    pressEnter(textarea);
+    await act(async () => {});
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-2" draftKey="bot:bot-2" />));
+    act(() => onFinal("new words"));
+    await act(async () => finish(false));
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("not sent new words");
+  } finally {
+    state.mockRestore();
+    listen.mockRestore();
+  }
+});
+
+it("keeps late dictated words that landed during a send that then fails", async () => {
+  let finish!: (accepted: boolean) => void;
+  const onSend = vi.fn(
+    (_text: string) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  const state = vi
+    .spyOn(dictation, "state", "get")
+    .mockReturnValue({ status: "transcribing", transcript: "" });
+  try {
+    renderComposer(onSend, { phoneCallsEnabled: true });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-2" draftKey="bot:bot-2" />));
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-1:again" />));
+    const returned = container?.querySelector("textarea");
+    if (!returned) throw new Error("composer textarea not found");
+    type(returned, "not sent");
+    pressEnter(returned);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+    act(() => onFinal("new words"));
+    expect(returned.value).toBe("not sent new words");
+    await act(async () => finish(false));
+    expect(returned.value).toBe("not sent new words");
+    type(returned, "not sent new words please");
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe(
+      "not sent new words please",
+    );
+  } finally {
+    state.mockRestore();
+    listen.mockRestore();
+  }
+});
+
+it("still cancels a recording that is listening when the chat changes", () => {
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async () => {});
+  const stop = vi.spyOn(dictation, "stop");
+  try {
+    renderComposer(vi.fn(), { phoneCallsEnabled: true });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-2" draftKey="bot:bot-2" />));
+    expect(stop).toHaveBeenCalledWith("cancel");
+  } finally {
+    stop.mockRestore();
+    listen.mockRestore();
+  }
+});
+
 it("retries an unchanged dictation with the same nonce after a failed send", async () => {
   const nonces: string[] = [];
   const onSend = vi.fn(async (_text: string, _mentions: unknown[], clientNonce: string) => {
@@ -1468,6 +1666,163 @@ it("sends a dictation that finishes while an earlier send is in flight", async (
     await act(async () => {});
     expect(onSend).toHaveBeenCalledTimes(2);
     expect(onSend.mock.calls[1]?.[0]).toBe("second words");
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it("keeps a dictation queued behind a send that fails with that send's words", async () => {
+  let finish!: (accepted: boolean) => void;
+  const onSend = vi.fn(
+    (_text: string) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    const textarea = renderComposer(onSend, { phoneCallsEnabled: true });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("please book the flight"));
+    await act(async () => {});
+    rerenderComposer({ sending: true });
+    act(() => onFinal("and a hotel"));
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+    // The first send fails; the dictation queued behind it must not go out alone.
+    await act(async () => finish(false));
+    rerenderComposer({ sending: false });
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(textarea.value).toBe("please book the flight and a hotel");
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe(
+      "please book the flight and a hotel",
+    );
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it("keeps a newer draft typed after returning to the chat when the queued send fails", async () => {
+  let finish!: (accepted: boolean) => void;
+  const onSend = vi.fn(
+    (_text: string) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    renderComposer(onSend, { phoneCallsEnabled: true });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("please book the flight"));
+    await act(async () => {});
+    rerenderComposer({ sending: true });
+    act(() => onFinal("and a hotel"));
+    await act(async () => {});
+    // The user leaves the chat, comes back and types a newer draft before the send fails.
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-2" draftKey="bot:bot-2" />));
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-1:again" />));
+    const returned = container?.querySelector("textarea");
+    if (!returned) throw new Error("composer textarea not found");
+    type(returned, "newer draft");
+    await act(async () => finish(false));
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(returned.value).toBe("newer draft");
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("newer draft");
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it("recovers a queued dictation's failed send for a chat that was left and not edited", async () => {
+  let finish!: (accepted: boolean) => void;
+  const onSend = vi.fn(
+    (_text: string) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    renderComposer(onSend, { phoneCallsEnabled: true });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("please book the flight"));
+    await act(async () => {});
+    rerenderComposer({ sending: true });
+    act(() => onFinal("and a hotel"));
+    await act(async () => {});
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-2" draftKey="bot:bot-2" />));
+    // The user comes back without editing; the open field follows the recovered draft.
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-1:again" sending={false} />));
+    const returned = container?.querySelector("textarea");
+    if (!returned) throw new Error("composer textarea not found");
+    expect(returned.value).toBe("and a hotel");
+    await act(async () => finish(false));
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(returned.value).toBe("please book the flight and a hotel");
+    type(returned, "please book the flight and a hotel tonight");
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe(
+      "please book the flight and a hotel tonight",
+    );
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it("keeps a mention bound after reopening the chat when the queued send fails", async () => {
+  let finish!: (accepted: boolean) => void;
+  const onSend = vi.fn(
+    (_text: string) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    renderComposer(onSend, { phoneCallsEnabled: true });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("please book the flight"));
+    await act(async () => {});
+    rerenderComposer({ sending: true });
+    act(() => onFinal("@Bob"));
+    await act(async () => {});
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-2" draftKey="bot:bot-2" />));
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-1:again" sending={false} />));
+    const returned = container?.querySelector("textarea");
+    if (!returned) throw new Error("composer textarea not found");
+    // The user binds the dictated name to Bob through the picker, keeping its spelling.
+    type(returned, "@Bo");
+    pressEnter(returned);
+    type(returned, "@Bob");
+    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(1);
+    const saved = localStorage.getItem("rakazo.composerDraft.bot:bot-1");
+    const bindings = localStorage.getItem("rakazo.composerBindings.bot:bot-1");
+    expect(saved).toBe("@Bob");
+    expect(bindings).not.toBeNull();
+
+    await act(async () => finish(false));
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe(saved);
+    expect(localStorage.getItem("rakazo.composerBindings.bot:bot-1")).toBe(bindings);
+    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(1);
   } finally {
     listen.mockRestore();
   }
@@ -2032,3 +2387,26 @@ it("answers the page, not an earlier picked message, when the page's reply butto
   expect(onClearReply).toHaveBeenCalledTimes(1);
   expect(container?.querySelector("textarea")?.value).toBe("Mark task 3 done");
 });
+
+it.each([
+  { name: "mention", typed: "@Bo", picker: "mention-picker" },
+  { name: "slash", typed: "/sum", picker: "slash-picker" },
+])(
+  "closes an open $name picker when the draft is rewritten from elsewhere",
+  async ({ typed, picker }) => {
+    const onSend = vi.fn(async (_text: string) => true);
+    const textarea = renderComposer(onSend);
+    type(textarea, typed);
+    expect(container?.querySelector(`[data-testid="${picker}"]`)).not.toBeNull();
+
+    // A recovered send rewrites this chat's draft while the picker is open.
+    act(() => replaceComposerDraft("bot:bot-1", "please book the flight and a hotel", []));
+    expect(textarea.value).toBe("please book the flight and a hotel");
+    expect(container?.querySelector(`[data-testid="${picker}"]`)).toBeNull();
+
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend.mock.calls[0]?.[0]).toBe("please book the flight and a hotel");
+  },
+);

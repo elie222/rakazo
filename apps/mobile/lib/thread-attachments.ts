@@ -229,6 +229,7 @@ export function useThreadAttachments({
 
   return {
     pendingAttachments,
+    pendingAttachmentsRef,
     setPendingAttachments,
     activePendingAttachments,
     attachmentNotice,
@@ -255,8 +256,13 @@ export function useIncomingShareImport({
   threadKey: string | undefined;
   uploadConfig?: { maxUploadSizeBytes?: number; maxAttachmentsPerMessage?: number };
 }) {
-  const { importingShare, setShareImporting, setPendingAttachments, setAttachmentNotice } =
-    attachments;
+  const {
+    importingShare,
+    pendingAttachmentsRef,
+    setShareImporting,
+    setPendingAttachments,
+    setAttachmentNotice,
+  } = attachments;
   // The share a settings refresh interrupted. It is retried on its own, so a
   // share that arrived in the meantime is left for the picker, not taken here.
   const interruptedShare = useRef<{ generation: number } | null>(null);
@@ -288,26 +294,46 @@ export function useIncomingShareImport({
         }
         if (result.failedFiles.length)
           retryIncomingShare({ ...share, text: "", files: result.failedFiles });
-        setPendingAttachments((current) => [
-          ...current,
-          ...result.attachments.map((attachment) => ({ ...attachment, threadKey })),
-        ]);
+        // A drop or a picker opened before the import can add files while it reads, so the
+        // room left is settled against the draft as it is now, as in addAttachments.
+        const maxCount = attachmentMaxCount(uploadConfig);
+        const room = Math.max(
+          0,
+          maxCount - attachmentsForThread(pendingAttachmentsRef.current, threadKey).length,
+        );
+        const accepted = result.attachments
+          .slice(0, room)
+          .map((attachment) => ({ ...attachment, threadKey }));
+        if (accepted.length) {
+          pendingAttachmentsRef.current = [...pendingAttachmentsRef.current, ...accepted];
+          setPendingAttachments((current) => [...current, ...accepted]);
+        }
+        const skipped = [
+          ...result.skipped,
+          ...result.attachments.slice(room).map((attachment) => ({
+            name: attachment.name,
+            reason: attachmentCountSkipReason(maxCount),
+          })),
+        ];
         setAttachmentNotice(
-          result.skipped.length
+          skipped.length
             ? t("Skipped {items}", {
-                items: result.skipped.map((item) => formatAttachmentSkip(item)).join(", "),
+                items: skipped.map((item) => formatAttachmentSkip(item)).join(", "),
               })
             : null,
         );
         if (share.text) composerRef.current?.insert(share.text);
         // A file that became an attachment keeps its share copy until that attachment is sent
         // or removed; the rest are done (a retried one stays with its share).
-        result.sources.forEach((uri, index) => {
-          const id = result.attachments[index]?.id;
+        const sources = result.sources.slice(0, accepted.length);
+        sources.forEach((uri, index) => {
+          const id = accepted[index]?.id;
           if (id) retainedShareCopies.set(id, uri);
         });
-        const imported = new Set(result.sources);
-        releaseIncomingShareFiles(share.files.filter((file) => !imported.has(file.uri)));
+        // A copy an unsent attachment still owns stays, even when this share left its file out:
+        // the share extension reuses a file's name for its copy.
+        const owned = new Set(retainedShareCopies.values());
+        releaseIncomingShareFiles(share.files.filter((file) => !owned.has(file.uri)));
       } finally {
         importingShare.current = false;
         setShareImporting(false);

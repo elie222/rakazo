@@ -22,6 +22,7 @@ import {
   findDefaultVoiceCredential,
   findModelCredential,
   findModelCredentialById,
+  isRecordNotFound,
   listApprovalRules,
   listAuditEvents,
   listVoicePreferences,
@@ -35,6 +36,7 @@ import {
   saveAutoReviewPreference,
   selectVoicePreference,
   voicePreferenceTarget,
+  withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../access-grants.js";
@@ -43,7 +45,6 @@ import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
 import type { BillingService } from "../billing.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import type { RouterDeps } from "../router.js";
-import { withSerializableRetry } from "../serializable-retry.js";
 import {
   disconnectVoiceCredential,
   listVoiceCatalog,
@@ -213,10 +214,7 @@ export function accountRoutes(ctx: RouterContext) {
                 data: { avatarSet: botAvatarSet },
               }),
             ).catch((error) => {
-              if (
-                !(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025")
-              )
-                getLogger().error("bot style restyle", error);
+              if (!isRecordNotFound(error)) getLogger().error("bot style restyle", error);
             });
           }
         }
@@ -471,8 +469,12 @@ export function accountRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       unregisterPush: authed.notifications.unregisterPush.handler(async ({ context }) => {
-        if (context.sessionId)
+        if (context.sessionId) {
+          // Only the calling session's registration: another device of this account,
+          // which registered from its own session, keeps its notifications.
           await deps.pushTokens.endSession(context.actor.userId, context.sessionId);
+          return { ok: true as const };
+        }
         await deps.pushTokens.remove(context.actor.userId);
         return { ok: true as const };
       }),
@@ -524,7 +526,7 @@ export function accountRoutes(ctx: RouterContext) {
         disconnectVoiceCredential(deps, context.actor, { provider: input.provider }),
       ),
       setVoice: authed.voice.setVoice.handler(async ({ context, input }) => {
-        const cred = await withSerializableRetry(() =>
+        const cred = await withTransactionRetry(() =>
           deps.prisma.$transaction(
             async (tx) => {
               await lockSpaceSettings(tx, context.actor);

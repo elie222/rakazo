@@ -5,6 +5,7 @@ import {
   createSpaceForMember,
   InstructionConflictError,
   InvalidSpaceNameError,
+  isRecordNotFound,
   runAsSystem,
   SpaceLimitError,
   THREAD_LOCK_TRANSACTION_OPTIONS,
@@ -217,7 +218,7 @@ export const fleetTools: ToolHandlers = {
   async list_fleet(ctx, call) {
     const { deps } = ctx;
     const { args } = call;
-    return call.finish(await listFleet(deps, ctx.fleetRun, args));
+    return call.finish(await listFleet(await fleetPrepareDeps(deps, ctx.run), ctx.fleetRun, args));
   },
   async organize_bot(ctx, call) {
     const { deps } = ctx;
@@ -355,8 +356,7 @@ export const fleetTools: ToolHandlers = {
           data: settings.data,
         });
       } catch (error) {
-        if (!(error && typeof error === "object" && "code" in error && error.code === "P2025"))
-          throw error;
+        if (!isRecordNotFound(error)) throw error;
         return call.finish({ error: "Your settings changed meanwhile; read them and try again." });
       }
       await publishMessage(deps, run, "bot", [

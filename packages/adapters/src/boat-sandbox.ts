@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type {
+  BoatApi,
   Sandbox as BoatMachine,
   Command200Response,
   CommandResponse,
@@ -10,7 +11,6 @@ import type {
   SandboxTypeEnum,
   SavedSnapshot,
 } from "@boatdev/sdk";
-import { BoatApi, Configuration, FetchError, followCommand } from "@boatdev/sdk";
 import type {
   AdapterContext,
   CommandRequest,
@@ -46,10 +46,16 @@ import {
   BoatApiError,
   BoatRequestGate,
   boatResponseError,
+  boatSdk,
   callerSignal,
   wrapBoatCall,
 } from "./boat-errors.js";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import {
+  normalizeWorkspacePath,
+  shellQuote,
+  workspaceCwd,
+  workspacePath,
+} from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import {
   LinuxDesktop,
@@ -70,7 +76,8 @@ import {
 
 const DISPLAY_START = 20;
 const BOAT_API_BASE = "https://boat.dev/api/v1";
-const BOAT_WORKSPACE = "/home/user/rakazo-home";
+const BOAT_HOME = "/home/user";
+const BOAT_WORKSPACE = `${BOAT_HOME}/rakazo-home`;
 const BOAT_BROWSER_PROFILES = `${BOAT_WORKSPACE}/.browser-profiles`;
 /** Outside the workspace so checkpoints never carry it. Boat runs every command as `user`. */
 const BOAT_COMMAND_ENV = "/home/user/.rakazo-command-env";
@@ -112,26 +119,27 @@ const BOAT_MACHINE_TYPES: Record<ComputerSize, SandboxTypeEnum> = {
   xlarge: "xlarge",
 };
 
+const BOAT_API_METHODS = [
+  "artifactRaw",
+  "attachCommandRaw",
+  "command",
+  "commandStatus",
+  "create",
+  "createDownloadUrl",
+  "createUploadUrl",
+  "get",
+  "getSavedSnapshot",
+  "hostPort",
+  "recover",
+  "resume",
+  "saveSavedSnapshot",
+  "stop",
+  "update",
+  "writeFile",
+] as const;
+
 /** The Boat API surface the adapter uses. Failures are the SDK's raw `ResponseError`s. */
-export type BoatSandboxSdk = Pick<
-  BoatApi,
-  | "artifactRaw"
-  | "attachCommandRaw"
-  | "command"
-  | "commandStatus"
-  | "create"
-  | "createDownloadUrl"
-  | "createUploadUrl"
-  | "get"
-  | "getSavedSnapshot"
-  | "hostPort"
-  | "recover"
-  | "resume"
-  | "saveSavedSnapshot"
-  | "stop"
-  | "update"
-  | "writeFile"
-> & {
+export type BoatSandboxSdk = Pick<BoatApi, (typeof BOAT_API_METHODS)[number]> & {
   /** Resolves once the sandbox no longer exists, including when it never did. */
   deleteSandbox(sandboxId: string): Promise<void>;
 };
@@ -554,7 +562,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       const result = await this.runCommand(
         id,
         envFile ? sourceEnvironmentCommand(envFile, argv) : argv,
-        boatCwd(request.cwd),
+        path.posix.relative(BOAT_HOME, workspaceCwd(BOAT_WORKSPACE, request.cwd, [BOAT_HOME])),
         timeoutMs,
         context.signal,
       );
@@ -1361,6 +1369,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     deadline: number,
     signal?: AbortSignal,
   ): Promise<BoatCommandResult | undefined> {
+    const { FetchError, followCommand } = await boatSdk();
     const timeout = AbortSignal.timeout(Math.max(deadline - Date.now(), 0));
     const output = { stdout: "", stderr: "" };
     try {
@@ -1596,15 +1605,30 @@ function createBoatSdk(
   gate: BoatRequestGate,
 ): BoatSandboxSdk {
   const apiUrl = (config.apiUrl ?? BOAT_API_BASE).replace(/\/$/, "");
-  const api = new BoatApi(
-    new Configuration({
-      basePath: apiUrl,
-      accessToken: config.apiKey,
-      // The SDK defaults to its own HTTP/2 client; keep requests on the runtime fetch.
-      fetchApi: (input, init) => fetch(input, init),
-    }),
-  );
-  return Object.assign(api, {
+  // The SDK loads on the first call, so a process without Boat configured never loads it.
+  let api: Promise<BoatApi> | undefined;
+  const loadApi = () =>
+    (api ??= boatSdk().then(
+      ({ BoatApi, Configuration }) =>
+        new BoatApi(
+          new Configuration({
+            basePath: apiUrl,
+            accessToken: config.apiKey,
+            // The SDK defaults to its own HTTP/2 client; keep requests on the runtime fetch.
+            fetchApi: (input, init) => fetch(input, init),
+          }),
+        ),
+    ));
+  const methods = Object.fromEntries(
+    BOAT_API_METHODS.map((name) => [
+      name,
+      async (...args: unknown[]) => {
+        const loaded = await loadApi();
+        return (loaded[name] as (...args: unknown[]) => unknown).apply(loaded, args);
+      },
+    ]),
+  ) as Pick<BoatApi, (typeof BOAT_API_METHODS)[number]>;
+  return Object.assign(methods, {
     deleteSandbox: async (sandboxId: string) => {
       const url = `${apiUrl}/sandboxes/${encodeURIComponent(sandboxId)}`;
       const headers = { Authorization: `Bearer ${config.apiKey}` };
@@ -1711,25 +1735,6 @@ function commandResponse(response: CommandResponse): BoatCommandResult {
     exitCode: response.exitCode ?? 1,
     timedOut: response.timedOut,
   };
-}
-
-function boatCwd(cwd: string | undefined): string {
-  if (
-    !cwd ||
-    cwd === "." ||
-    cwd === "/" ||
-    cwd === "/home/rakazo" ||
-    cwd === "/home/user" ||
-    cwd === BOAT_WORKSPACE
-  ) {
-    return "rakazo-home";
-  }
-  const relative = cwd.startsWith(`${BOAT_WORKSPACE}/`)
-    ? cwd.slice(BOAT_WORKSPACE.length + 1)
-    : cwd.startsWith("/home/rakazo/")
-      ? cwd.slice("/home/rakazo/".length)
-      : cwd;
-  return path.posix.join("rakazo-home", normalizeWorkspacePath(relative));
 }
 
 function configureBoatWorkspaceCommand(): string {

@@ -46,6 +46,11 @@ import {
   VaultRevealInput,
 } from "./bot-secrets.js";
 import {
+  BotTemplateListingSchema,
+  CreateBotFromTemplateInput,
+  CreateBotFromTemplateOutput,
+} from "./bot-template.js";
+import {
   AccessGrantInputSchema,
   AccessGrantSchema,
   AccountItemSchema,
@@ -588,6 +593,8 @@ export const appContract = {
     importPreview: oc.input(AgentImportPreviewInput).output(AgentImportPlanSchema),
     importCreate: oc.input(AgentImportCreateInput).output(BotSchema),
     importSetupState: oc.input(AgentImportSetupStateInput).output(AgentImportSetupStateSchema),
+    templates: oc.output(z.array(BotTemplateListingSchema)),
+    createFromTemplate: oc.input(CreateBotFromTemplateInput).output(CreateBotFromTemplateOutput),
     duplicate: oc.input(botId).output(BotSchema),
     reorder: oc.input(ReorderBotsInput).output(z.object({ ok: z.literal(true) })),
     update: oc.input(UpdateBotInput).output(BotSchema),
