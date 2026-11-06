@@ -261,6 +261,10 @@ export function useIncomingShareImport({
   // share that arrived in the meantime is left for the picker, not taken here.
   const interruptedShare = useRef<{ generation: number } | null>(null);
   const [retryTick, setRetryTick] = useState(0);
+  // A warm link to another chat commits before this effect's cleanup runs; a read that settles
+  // in between must not land in the state the new chat is about to replace.
+  const renderedThread = useRef(threadKey);
+  renderedThread.current = threadKey;
   useEffect(() => {
     if (!threadKey || readOnly || !uploadConfig || importingShare.current) return;
     const interrupted = interruptedShare.current;
@@ -282,7 +286,7 @@ export function useIncomingShareImport({
           attachmentMaxBytes(uploadConfig),
           attachmentMaxCount(uploadConfig),
         );
-        if (!active || !isIncomingShareCurrent(share)) {
+        if (!active || renderedThread.current !== threadKey || !isIncomingShareCurrent(share)) {
           retryIncomingShare(share);
           return;
         }

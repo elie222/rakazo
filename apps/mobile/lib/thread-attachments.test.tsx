@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
+import { act, useLayoutEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { releaseIncomingShareFiles, takeIncomingShare } from "./incoming-share";
+import { releaseIncomingShareFiles, retryIncomingShare, takeIncomingShare } from "./incoming-share";
 import type { PickedAttachment } from "./pick-attachments";
 import { pickDocuments, readSharedFiles } from "./pick-attachments";
 import { useIncomingShareImport, useThreadAttachments } from "./thread-attachments";
@@ -253,4 +253,51 @@ it("clears retained drafts and share copies on a session change", async () => {
   expect(releaseIncomingShareFiles).toHaveBeenCalledWith([
     { uri: "file:///group/s1.txt", name: "", mimeType: null },
   ]);
+});
+
+it("keeps a share whose read settles between a warm link's commit and its effects", async () => {
+  const files = [{ uri: "file:///group/w1.txt", name: "w1.txt", mimeType: "text/plain" }];
+  const share = { text: "", files, arrivedAt: Date.now(), generation: 1 };
+  vi.mocked(takeIncomingShare).mockReturnValueOnce(share);
+  let settle!: () => void;
+  vi.mocked(readSharedFiles).mockReturnValueOnce(
+    new Promise((resolve) => {
+      settle = () =>
+        resolve({
+          attachments: [
+            { id: "w1", name: "w1.txt", mimeType: "text/plain", contentBase64: "aGk=" },
+          ],
+          skipped: [],
+          failedFiles: [],
+          sources: [files[0]!.uri],
+        });
+    }),
+  );
+  /** Settles the read in the warm link's layout phase, after its commit and before its effects. */
+  function SettleOnCommit({ botId }: { botId: string }) {
+    useLayoutEffect(() => {
+      if (botId === "bot-warm-b") settle();
+    }, [botId]);
+    return null;
+  }
+  vi.mocked(retryIncomingShare).mockClear();
+  vi.mocked(releaseIncomingShareFiles).mockClear();
+  mount(<ImportProbe botId="bot-warm-a" />);
+
+  // Outside act, so React schedules the passive effects as it does on a device.
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", false);
+  root.render(
+    <>
+      <ImportProbe botId="bot-warm-b" />
+      <SettleOnCommit botId="bot-warm-b" />
+    </>,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+
+  // The share goes back to the queue, as when the read settles after the switch; it is not dropped.
+  expect(retryIncomingShare).toHaveBeenCalledWith(share);
+  expect(releaseIncomingShareFiles).not.toHaveBeenCalledWith(
+    expect.arrayContaining([expect.objectContaining({ uri: files[0]!.uri })]),
+  );
 });
