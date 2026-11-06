@@ -207,6 +207,49 @@ export function oauthCredentialAccountId(credential: OAuthCredential): string | 
 }
 
 /**
+ * The retirement detail when a refresh returned a token for a different account than the
+ * stored one. Either side without an account id disables the comparison.
+ */
+export function oauthAccountChange(
+  stored: OAuthCredential | undefined,
+  refreshed: OAuthCredential,
+): string | undefined {
+  const storedAccountId = stored ? oauthCredentialAccountId(stored) : undefined;
+  const refreshedAccountId = oauthCredentialAccountId(refreshed);
+  return storedAccountId && refreshedAccountId && storedAccountId !== refreshedAccountId
+    ? `stored account ${storedAccountId}, refreshed account ${refreshedAccountId}`
+    : undefined;
+}
+
+export type RetireModelCredential = (
+  reason: ModelCredentialRetireReason,
+  detail?: string,
+  failed?: ModelCredentialFailedState,
+) => Promise<boolean | undefined>;
+
+/**
+ * Retires a stored credential after a failed refresh; true only when this call retired it.
+ * Retirement fences on `failed`, the stored material, so a concurrently persisted newer
+ * credential survives and false means a retry may succeed. A retirement that throws is
+ * logged and reported as false, leaving the credential unmarked so a later attempt can
+ * retry after a database outage.
+ */
+export async function tryRetireModelCredential(
+  retire: RetireModelCredential | undefined,
+  reason: ModelCredentialRetireReason,
+  detail: string,
+  failed: ModelCredentialFailedState | undefined,
+): Promise<boolean> {
+  if (!retire) return false;
+  try {
+    return (await retire(reason, detail, failed)) === true;
+  } catch (retireError) {
+    getLogger().error("model credential retirement failed", retireError);
+    return false;
+  }
+}
+
+/**
  * The email an OAuth credential's access token names, for telling two signed-in accounts
  * apart. Read from the stored token only; never logged.
  */
@@ -411,11 +454,7 @@ function providerCatalog() {
 
 export type ResolveModelOpts = {
   persist?: (next: string) => Promise<void>;
-  retire?: (
-    reason: ModelCredentialRetireReason,
-    detail?: string,
-    failed?: ModelCredentialFailedState,
-  ) => Promise<boolean | undefined>;
+  retire?: RetireModelCredential;
   now?: number;
   oauth?: Pick<OAuthAuth, "refresh" | "toAuth">;
   signal?: AbortSignal;
@@ -446,47 +485,32 @@ export async function resolveModelAuth(
       credential = await oauth.refresh(credential, opts?.signal ?? new AbortController().signal);
     } catch (error) {
       const marker = terminalOAuthRefreshErrorMarker(error);
-      if (marker && opts?.retire) {
-        let deleted = false;
-        try {
-          // Retirement fences on the stored material so a concurrently persisted
-          // newer credential survives the delete.
-          deleted = (await opts.retire("terminal-refresh-failure", marker, credential)) === true;
-        } catch (retireError) {
-          // Leave the error unmarked so setup can retry after a database outage.
-          getLogger().error("model credential retirement failed", retireError);
-          throw error;
-        }
-        // A skipped replacement means a newer credential won the race and a retry may succeed.
-        // The provider error can quote response text, so a confirmed failure is reported
-        // with a fixed message that contains no token material.
-        if (deleted) throw new RetiredModelCredentialError(OAUTH_RECONNECT_REQUIRED_ERROR);
-      }
+      // The provider error can quote response text, so a confirmed failure is reported
+      // with a fixed message that contains no token material.
+      if (
+        marker &&
+        (await tryRetireModelCredential(
+          opts?.retire,
+          "terminal-refresh-failure",
+          marker,
+          credential,
+        ))
+      )
+        throw new RetiredModelCredentialError(OAUTH_RECONNECT_REQUIRED_ERROR);
       throw error;
     }
     // Compare before persist so a token for a different account is never stored.
-    // Either side without an account id disables the comparison.
-    const storedAccountId = oauthCredentialAccountId(parsed.credential);
-    const refreshedAccountId = oauthCredentialAccountId(credential);
-    if (storedAccountId && refreshedAccountId && storedAccountId !== refreshedAccountId) {
-      let deleted = false;
-      if (opts?.retire) {
-        try {
-          // Retirement fences on the stored material so a concurrently persisted
-          // newer credential survives the delete.
-          deleted =
-            (await opts.retire(
-              "account-changed",
-              `stored account ${storedAccountId}, refreshed account ${refreshedAccountId}`,
-              parsed.credential,
-            )) === true;
-        } catch (retireError) {
-          // Leave it unmarked so setup can retry after a database outage.
-          getLogger().error("model credential retirement failed", retireError);
-        }
-      }
-      // A skipped delete means a newer credential survived and a retry may succeed.
-      if (deleted) throw new RetiredModelCredentialError(OAUTH_ACCOUNT_CHANGED_ERROR);
+    const accountChange = oauthAccountChange(parsed.credential, credential);
+    if (accountChange) {
+      if (
+        await tryRetireModelCredential(
+          opts?.retire,
+          "account-changed",
+          accountChange,
+          parsed.credential,
+        )
+      )
+        throw new RetiredModelCredentialError(OAUTH_ACCOUNT_CHANGED_ERROR);
       throw new Error(OAUTH_ACCOUNT_CHANGED_ERROR);
     }
     await opts?.persist?.(

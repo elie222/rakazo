@@ -14,7 +14,6 @@ import {
   reachesOtherSpaces,
   useOwnSpaces,
 } from "../components/integrations/space-availability";
-import { SettingsSectionHeading } from "../components/SettingsSectionHeading";
 import { downloadArtifactBytes } from "../lib/artifact-open";
 import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
@@ -50,9 +49,9 @@ export function SpaceMemorySection() {
       className="rounded-xl border border-border px-4 py-4"
       data-testid="space-memory-documents"
     >
-      <SettingsSectionHeading className="mb-0">
+      <SectionHeading variant="heading">
         <Trans>Shared memory</Trans>
-      </SettingsSectionHeading>
+      </SectionHeading>
       <p className="mt-1 text-body-sm text-muted-foreground">
         <Trans>Every bot in this space reads these notes and keeps them up to date.</Trans>
       </p>

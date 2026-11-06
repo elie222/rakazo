@@ -7,6 +7,7 @@ import type {
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { retireModelCredential } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { advisoryLock } from "./advisory-lock.js";
 import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import type { ResolveModelOpts } from "./pi-oauth.js";
 import {
@@ -126,8 +127,8 @@ function oauthRefreshDue(plaintext: string, now: number): boolean {
   }
 }
 
-function lockModelCredential(tx: Prisma.TransactionClient, secretId: string): Promise<number> {
-  return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('model-credential'), hashtext(${secretId}))`;
+function lockModelCredential(tx: Prisma.TransactionClient, secretId: string): Promise<unknown> {
+  return advisoryLock(tx, "model-credential", secretId);
 }
 
 /**

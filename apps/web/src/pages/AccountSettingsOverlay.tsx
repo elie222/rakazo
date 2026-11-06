@@ -16,6 +16,7 @@ import {
   NativeSelect,
   NativeSelectOption,
   OptionSelect,
+  SectionHeading,
   Switch,
   ToggleGroup,
   ToggleGroupItem,
@@ -591,9 +592,9 @@ export function ComputerSettingsPanel({
       data-testid="computers-setup-settings"
       className="rounded-xl border border-border px-4 py-4"
     >
-      <h3 className="text-heading3 font-medium text-foreground">
+      <SectionHeading variant="heading">
         <Trans>Computers</Trans>
-      </h3>
+      </SectionHeading>
       {hintShown ? (
         <ComputersUnavailableHint
           className="mt-3 text-body-sm leading-relaxed text-muted-foreground"
