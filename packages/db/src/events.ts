@@ -443,19 +443,15 @@ export async function clearThread(
     const runIds = (await cancelRunsInTransaction(tx, activeRuns, now)).map((run) => run.id);
     // Expire as tombstones so a still-open provider screen claim cannot reset fencing to 1.
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
-    // What the helpers this chat started wrote in their own threads goes with it, before the
-    // cards that link them are deleted.
+    // Helpers start only from the bot's own chat, so every thread the bot's helpers wrote goes
+    // with it, including imported ones that have no runs.
     const helperThreads = input.groupId
       ? []
-      : await tx.run.findMany({
-          where: {
-            trigger: BACKGROUND_HELPER_TRIGGER,
-            sourceMessage: { threadId: input.threadId },
-          },
-          select: { threadId: true },
-          distinct: ["threadId"],
+      : await tx.thread.findMany({
+          where: { spaceId: input.spaceId, helperBotId: input.botId },
+          select: { id: true },
         });
-    const cleared = { in: [input.threadId, ...helperThreads.map((run) => run.threadId)] };
+    const cleared = { in: [input.threadId, ...helperThreads.map((helper) => helper.id)] };
     await tx.message.deleteMany({ where: { threadId: cleared } });
     await tx.event.deleteMany({ where: { threadId: cleared } });
     if (thread.nextMessageSeq > 0) {

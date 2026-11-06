@@ -2270,6 +2270,18 @@ describeJourneys("required product journeys", () => {
         prisma.event.count({ where: { threadId: done.threadId } }),
       ]);
     expect((await written())[1]).toBeGreaterThan(0);
+    // An imported helper thread arrives without the runs that started it.
+    const owner = await prisma.thread.findUniqueOrThrow({
+      where: { id: done.threadId },
+      select: { spaceId: true, userId: true },
+    });
+    const imported = await prisma.thread.create({
+      data: {
+        ...owner,
+        helperBotId: bot.id,
+        messages: { create: { seq: 0, role: "bot", blocks: [{ kind: "text", text: "venues" }] } },
+      },
+    });
     await startHelper(cookie, bot.id, "keep working on the venue list");
     const helper = await waitForHelper(bot.id, "running");
     await rpc(app, cookie, "threads/clear", { botId: bot.id });
@@ -2277,6 +2289,7 @@ describeJourneys("required product journeys", () => {
       "cancelled",
     );
     expect(await written()).toEqual([0, 0]);
+    expect(await prisma.message.count({ where: { threadId: imported.id } })).toBe(0);
     await reconcile();
     // The finished helper came back before the clear; the stopped one never does.
     expect(await prisma.run.count({ where: { clientNonce: `helper-result:${helper.id}` } })).toBe(
