@@ -843,12 +843,18 @@ export function redactedAskUserDetail(
  * nested object verbatim). */
 function askUserScrubTarget(call: {
   name?: string;
-  arguments?: Record<string, unknown>;
+  arguments?: unknown;
 }): Record<string, unknown> | undefined {
-  if (call.name === "ask_user") return call.arguments;
-  if (call.name !== USE_TOOL || call.arguments?.name !== "ask_user") return undefined;
-  const nested = call.arguments.arguments;
-  return nested && typeof nested === "object" ? (nested as Record<string, unknown>) : undefined;
+  // A provider can stream malformed arguments (a bare string or number); argument
+  // preparation rejects those later, so there is nothing to scrub here.
+  const args = asObject(call.arguments);
+  if (call.name === "ask_user") return args;
+  if (call.name !== USE_TOOL || args?.name !== "ask_user") return undefined;
+  return asObject(args.arguments);
+}
+
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
 }
 
 /** Redacts the ask card's detail in a streamed assistant message, in place, so the session
@@ -859,7 +865,7 @@ export function redactAskUserDetailInMessage(
 ): void {
   if (message.role !== "assistant" || !Array.isArray(message.content)) return;
   for (const part of message.content) {
-    const call = part as { type?: string; name?: string; arguments?: Record<string, unknown> };
+    const call = part as { type?: string; name?: string; arguments?: unknown };
     if (call?.type !== "toolCall") continue;
     const args = askUserScrubTarget(call);
     if (!args) continue;
