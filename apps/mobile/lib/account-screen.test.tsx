@@ -432,17 +432,13 @@ it("navigates to sign-in while a silent server still owes the sign-out delivery"
     vi.useFakeTimers();
     await view.press("Sign out");
 
-    // The screen leaves before either request timeout fires; the device is signed out.
+    // The screen leaves before the request timeout fires; the device is signed out.
     expect(replaceWithSignIn).toHaveBeenCalled();
     expect(store.has("rakazo.session_token")).toBe(false);
     expect(JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]")).toHaveLength(1);
 
-    // The delivery still runs: both halves time out and the record waits for retry.
-    await vi.advanceTimersByTimeAsync(16_000);
-    expect(fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
-      expect.anything(),
-    );
+    // The delivery still runs: it times out and the record waits for retry.
+    await vi.advanceTimersByTimeAsync(8_000);
     expect(fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:3100/api/auth/sign-out",
       expect.anything(),

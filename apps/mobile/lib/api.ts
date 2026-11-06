@@ -1039,15 +1039,10 @@ export async function fetchMobileJson<T>(
 
 const PENDING_SIGN_OUT_KEY = "rakazo.pending_sign_out";
 /**
- * An undelivered record normally ages from its last possible server contact. Better-auth expires a
- * session 7 days after its last use. Older servers refresh the authenticated unregistration;
- * a same-origin redirect can also follow a request that refreshed the session. This record
- * conservatively ages from the later of its writing and a possible renewal; 30 days covers
- * both and longer overrides.
+ * Better-auth expires a session 7 days after its last use, and the signed-out session is not used
+ * again; 30 days also covers longer server overrides.
  */
 const PENDING_SIGN_OUT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-/** Bounds token retention from the original writing, even if a server keeps redirecting retries. */
-const PENDING_SIGN_OUT_HARD_MAX_AGE_MS = 2 * PENDING_SIGN_OUT_MAX_AGE_MS;
 /** Answered-request retries wait at least this long, so a dead old server is not retried per request. */
 const PENDING_SIGN_OUT_FLUSH_SPACING_MS = 60_000;
 /** Storage safety cap for the record list; with everything unexpired, the oldest go first. */
@@ -1065,10 +1060,6 @@ type PendingSignOut = {
   recordedAt: number;
   /** A server switch's record is deliverable only once the switch has committed. */
   provisional?: boolean;
-  /** Set once the unregistration was answered with success or 401; that half is not sent again. */
-  unregistered?: boolean;
-  /** When an unregistration or same-origin redirect may last have renewed the session. */
-  renewedAt?: number;
 };
 
 /** Records are keyed by server and session, so each signed-out account keeps its own revocation. */
@@ -1078,15 +1069,10 @@ function samePendingSignOut(left: PendingSignOut, right: PendingSignOut): boolea
 
 type PendingSignOutRead = { ok: true; records: PendingSignOut[] } | { ok: false };
 
-/** Records within both the renewal window and the total retention limit. */
-function livePendingSignOuts(records: PendingSignOut[], now = Date.now()): PendingSignOut[] {
-  return records.filter((record) => {
-    const lastServerContact = Math.max(record.recordedAt, record.renewedAt ?? 0);
-    return (
-      now - record.recordedAt < PENDING_SIGN_OUT_HARD_MAX_AGE_MS &&
-      now - lastServerContact < PENDING_SIGN_OUT_MAX_AGE_MS
-    );
-  });
+/** Records whose session may still be alive on its server. */
+function livePendingSignOuts(records: PendingSignOut[]): PendingSignOut[] {
+  const now = Date.now();
+  return records.filter((record) => now - record.recordedAt < PENDING_SIGN_OUT_MAX_AGE_MS);
 }
 
 /**
@@ -1135,8 +1121,6 @@ async function readPendingSignOuts(): Promise<PendingSignOutRead> {
         headers?: unknown;
         recordedAt?: unknown;
         provisional?: unknown;
-        unregistered?: unknown;
-        renewedAt?: unknown;
       };
       if (typeof record.apiBase !== "string" || !record.apiBase) continue;
       if (typeof record.token !== "string" || !record.token) continue;
@@ -1147,10 +1131,6 @@ async function readPendingSignOuts(): Promise<PendingSignOutRead> {
         headers: parseServerHeaders(record.headers) ?? {},
         recordedAt: record.recordedAt,
         ...(record.provisional === true ? { provisional: true } : {}),
-        ...(record.unregistered === true ? { unregistered: true } : {}),
-        ...(typeof record.renewedAt === "number" && Number.isFinite(record.renewedAt)
-          ? { renewedAt: record.renewedAt }
-          : {}),
       });
     }
     return { ok: true, records };
@@ -1214,36 +1194,18 @@ async function removePendingSignOut(record: PendingSignOut): Promise<void> {
   });
 }
 
-/** Rewrites the stored record for the same session; `change` returns nothing to leave it. */
-async function updatePendingSignOut(
-  record: PendingSignOut,
-  change: (existing: PendingSignOut) => PendingSignOut | undefined,
-): Promise<void> {
-  await updatePendingSignOuts((records) => {
-    let updated = false;
-    const kept = records.map((existing) => {
-      const changed = samePendingSignOut(existing, record) ? change(existing) : undefined;
-      if (!changed) return existing;
-      updated = true;
-      return changed;
-    });
-    return updated ? kept : undefined;
-  });
-}
-
-/** Records possible renewal separately from confirmed unregistration delivery. */
-function markPendingSignOutProgress(
-  record: PendingSignOut,
-  progress: { renewedAt: number; unregistered?: true },
-): Promise<void> {
-  return updatePendingSignOut(record, (existing) => ({ ...existing, ...progress }));
-}
-
 /** Marks a switch's provisional record deliverable, once the switch has committed. */
-function promotePendingSignOut(record: PendingSignOut): Promise<void> {
-  return updatePendingSignOut(record, ({ provisional, ...committed }) =>
-    provisional ? committed : undefined,
-  );
+async function promotePendingSignOut(record: PendingSignOut): Promise<void> {
+  await updatePendingSignOuts((records) => {
+    let promoted = false;
+    const kept = records.map((existing) => {
+      if (!existing.provisional || !samePendingSignOut(existing, record)) return existing;
+      promoted = true;
+      const { provisional, ...committed } = existing;
+      return committed;
+    });
+    return promoted ? kept : undefined;
+  });
 }
 
 /**
@@ -1298,82 +1260,64 @@ async function reconcileProvisionalSignOuts(): Promise<void> {
 }
 
 /**
- * Delivers a pending revocation to its server: the push unregistration, then the session
- * revocation. A half with a hard answer is never sent again — on older servers the
- * authenticated unregistration renews the session, so repeating it could keep the session
- * alive. The unregistration's 401 can also mean missing membership, so only the sign-out's
- * success or 401 proves the session is gone; both halves must have a hard answer to complete.
+ * Sends a pending revocation to its server. Success or 401 (the session is already invalid)
+ * completes it; the server's sign-out also ends that session's push registration. Everything
+ * else — a refusing proxy, throttling, a server failure, no connection — retries.
  */
 async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered" | "retry"> {
-  const send = async (path: string, body: string) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
-    try {
-      const response = await withAbort(
-        // Not fetchServer: it reads the headers configured for the current server, and after
-        // a switch those belong to the new one — only the record still carries this server's.
-        fetch(`${record.apiBase}${path}`, {
-          method: "POST",
-          // Reject redirects where supported; native fetch also needs response validation below.
-          redirect: "error",
-          // Bearer only: this server's cookie must not reach the jar other servers share.
-          credentials: "omit",
-          headers: {
-            "content-type": "application/json",
-            origin: "rakazo://",
-            authorization: `Bearer ${record.token}`,
-            ...clientBuild.headers(),
-            ...record.headers,
-          },
-          body,
-          signal: controller.signal,
-        }),
-        controller.signal,
-        "Request timed out",
-      );
-      // Native fetch can follow redirects. Only the intended endpoint confirms delivery;
-      // another path on this server may have renewed the session before redirecting to login.
-      if (response.url) {
-        const requested = new URL(`${record.apiBase}${path}`);
-        const answered = new URL(response.url);
-        if (answered.origin !== requested.origin) return "retry";
-        if (answered.pathname.replace(/\/$/, "") !== requested.pathname.replace(/\/$/, "")) {
-          await markPendingSignOutProgress(record, { renewedAt: Date.now() });
-          return "retry";
-        }
-      } else if (response.redirected) {
+  const url = `${record.apiBase}/api/auth/sign-out`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
+  try {
+    const response = await withAbort(
+      // Not fetchServer: it reads the headers configured for the current server, and after
+      // a switch those belong to the new one — only the record still carries this server's.
+      fetch(url, {
+        method: "POST",
+        // Reject redirects where supported; native fetch also needs response validation below.
+        redirect: "error",
+        // Bearer only: this server's cookie must not reach the jar other servers share.
+        credentials: "omit",
+        headers: {
+          "content-type": "application/json",
+          origin: "rakazo://",
+          authorization: `Bearer ${record.token}`,
+          ...clientBuild.headers(),
+          ...record.headers,
+        },
+        body: "{}",
+        signal: controller.signal,
+      }),
+      controller.signal,
+      "Request timed out",
+    );
+    // Native fetch can follow redirects; only the sign-out endpoint itself confirms delivery.
+    if (response.url) {
+      const requested = new URL(url);
+      const answered = new URL(response.url);
+      if (
+        answered.origin !== requested.origin ||
+        answered.pathname.replace(/\/$/, "") !== requested.pathname
+      ) {
         return "retry";
       }
-      if (response.status >= 200 && response.status < 300) return "delivered";
-      // A sign-out 401 means the session is invalid; the RPC also uses it for missing membership.
-      // Other answers — a refusing proxy, throttling, a server failure — retry.
-      return response.status === 401 ? "final" : "retry";
-    } catch {
+    } else if (response.redirected) {
       return "retry";
-    } finally {
-      clearTimeout(timer);
     }
-  };
-  let retrying = false;
-  if (!record.unregistered) {
-    const unregistered = await send("/rpc/notifications/unregisterPush", '{"json":{}}');
-    // Servers that still refresh this RPC's session can renew it even without a membership.
-    if (unregistered !== "retry")
-      await markPendingSignOutProgress(record, { renewedAt: Date.now(), unregistered: true });
-    retrying = unregistered === "retry";
+    return response.ok || response.status === 401 ? "delivered" : "retry";
+  } catch {
+    return "retry";
+  } finally {
+    clearTimeout(timer);
   }
-  // The sign-out is attempted even when the unregistration could not get through, like the
-  // sign-out they both belong to.
-  const signedOut = await send("/api/auth/sign-out", "{}");
-  return retrying || signedOut === "retry" ? "retry" : "delivered";
 }
 
 /**
  * Delivers a record once at a time: callers share the attempt in flight for the same session
  * (server base, token), so the revocation is never sent twice; unrelated records deliver
- * independently. A persisted record is delivered as the store holds it now, so progress another
- * attempt persisted is never repeated and an absent record is not sent again; an unreadable store
- * falls back to the captured record, as does one that could not be persisted.
+ * independently. A persisted record is delivered only while the store still holds it, so one an
+ * earlier attempt completed is not sent again; an unreadable store falls back to the captured
+ * record, as does one that could not be persisted.
  */
 function deliverSignOutRecord(record: PendingSignOut, persisted = true): Promise<void> {
   const key = `${record.apiBase}\n${record.token}`;
@@ -1433,7 +1377,7 @@ async function pendingSignOutPass(): Promise<void> {
 }
 
 /**
- * Retries revocations that could not be delivered, until each server answers both its requests.
+ * Retries revocations that could not be delivered, until each server answers.
  * `force` reads the store even when the last attempt found nothing, for launch. Every attempt
  * first resolves provisional records a switch left behind by dying mid-change.
  */
@@ -1479,7 +1423,7 @@ export async function signOut() {
     throw new Error(t("Could not clear the local session"));
   }
   // The local session clears first: a server that accepts the connection but never answers
-  // must not keep this device signed in for the delivery's two request timeouts.
+  // must not keep this device signed in for the delivery's request timeout.
   const sessionCleared = await clearSessionToken();
   const spaceCleared = await clearSpace();
   if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));

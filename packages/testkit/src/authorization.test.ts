@@ -874,36 +874,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
     ).not.toBeNull();
   });
 
-  it("reads the session without refreshing it when unregistering push", async () => {
-    const user = await signup(app, `push-refresh-${stamp}@rakazo.test`, "Push Refresh");
-    const actor = await rpc<Actor>(app, user, "me");
-    const session = await db.session.findFirstOrThrow({
-      where: { userId: actor.userId },
-      select: { id: true, expiresAt: true },
-    });
-    // Inside better-auth's update window (6 of 7 days; updates after 1 day of use).
-    const nearExpiry = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
-    const setExpiry = async (expiresAt: Date) => {
-      await db.session.update({ where: { id: session.id }, data: { expiresAt } });
-    };
-
-    await setExpiry(nearExpiry);
-    await rpc(app, user, "notifications/unregisterPush");
-    const unregistered = await db.session.findUniqueOrThrow({
-      where: { id: session.id },
-      select: { expiresAt: true },
-    });
-    expect(unregistered.expiresAt.getTime()).toBe(nearExpiry.getTime());
-
-    // The control: a normal RPC in the same window refreshes the same session.
-    await rpc(app, user, "me");
-    const refreshed = await db.session.findUniqueOrThrow({
-      where: { id: session.id },
-      select: { expiresAt: true },
-    });
-    expect(refreshed.expiresAt.getTime()).toBeGreaterThan(nearExpiry.getTime());
-  });
-
   it("hands a device's push token to the account that registers it last", async () => {
     const first = await signup(app, `push-first-${stamp}@rakazo.test`, "Push First");
     const second = await signup(app, `push-second-${stamp}@rakazo.test`, "Push Second");

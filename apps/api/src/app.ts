@@ -1073,14 +1073,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const requestSession = async (request: Request) => {
     // The bearer plugin turns a signed `Authorization: Bearer` into the session cookie.
-    // A sign-out's deferred push unregistration retries until its server answers; a normal
-    // read would refresh the session it is about to end and keep it alive, so this one
-    // RPC reads its session without refreshing it.
-    const unregisteringPush = new URL(request.url).pathname === "/rpc/notifications/unregisterPush";
-    const session = await auth.api.getSession({
-      headers: request.headers,
-      ...(unregisteringPush ? { query: { disableRefresh: true } } : {}),
-    });
+    const session = await auth.api.getSession({ headers: request.headers });
     if (!session?.user) return null;
     const actor = await actorFromMembership(
       requireMembership(
