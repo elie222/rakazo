@@ -562,7 +562,11 @@ dbTests("own-key trial hold lifecycle", () => {
           );
       await expect.poll(leaseRowFree, { interval: 50, timeout: 4_000 }).toBe(true);
       await blocker.query("COMMIT");
-      await expect(reopen).resolves.toBeInstanceOf(Error);
+      const error = await reopen;
+      expect(error).toMatchObject({
+        code: "CONFLICT",
+        message: "Billing is busy; try again shortly",
+      });
       // The reopen wrote nothing, so the first session keeps holding the owner's trial.
       await service.selectFunding(owner.second.actor, "byok");
       const second = await customerOf(owner.second.organizationId);

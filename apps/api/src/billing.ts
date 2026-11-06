@@ -35,6 +35,7 @@ import {
   extendByokTrialCheckout,
   hasBillingAccess,
   hasModelAccess,
+  isLockTimeout,
   lockCheckoutLease,
   MICROS_PER_DOLLAR,
   needsBillingPortal,
@@ -368,12 +369,18 @@ export function createBillingService(deps: {
     );
     renew.unref();
     // The lease row stays locked until the writes commit, so no claimant takes it meanwhile.
+    const busy = () => new ORPCError("CONFLICT", { message: "Billing is busy; try again shortly" });
     const underLease: UnderLease = (write) =>
-      prisma.$transaction(async (tx) => {
-        if (!(await lockCheckoutLease(tx, organizationId, leaseId)))
-          throw new ORPCError("CONFLICT", { message: "Billing is busy; try again shortly" });
-        return write(tx);
-      });
+      prisma
+        .$transaction(async (tx) => {
+          if (!(await lockCheckoutLease(tx, organizationId, leaseId))) throw busy();
+          return write(tx);
+        })
+        .catch((error: unknown) => {
+          // A write that waited too long on another lock rolled back: busy, like a lost lease.
+          if (isLockTimeout(error)) throw busy();
+          throw error;
+        });
     try {
       const result = await work(underLease);
       // Renewal keeps the lease unless the database refused every attempt for a whole lease

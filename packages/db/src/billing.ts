@@ -357,6 +357,13 @@ export async function lockCheckoutLease(
   return rows.length > 0;
 }
 
+/** Whether `error` is a lock wait that ran past the bound `lockCheckoutLease` sets. */
+export function isLockTimeout(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  const meta = error.meta as { driverAdapterError?: { cause?: { originalCode?: string } } };
+  return meta?.driverAdapterError?.cause?.originalCode === "55P03";
+}
+
 /** Whether the checkout lease is still recorded for this holder. */
 export async function checkoutLeaseHeld(
   prisma: PrismaClient,
