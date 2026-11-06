@@ -106,6 +106,10 @@ function committedIndex() {
   if (previous) backup().moveSync(file(), { overwrite: true });
   return previous;
 }
+/** True when the saved index lists any unsent message, whoever owns it. Read errors propagate. */
+export function hasSavedUnsentSends(): boolean {
+  return (committedIndex()?.length ?? 0) > 0;
+}
 function storedEntry(attempt: SendAttempt) {
   return {
     ...attempt,

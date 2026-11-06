@@ -1,6 +1,6 @@
 import { resolveComposerSendPlan } from "@rakazo/core";
 import { beforeEach, expect, it, vi } from "vitest";
-import { OUTBOX_MAX_BYTES, outboxDisk } from "./outbox-disk";
+import { hasSavedUnsentSends, OUTBOX_MAX_BYTES, outboxDisk } from "./outbox-disk";
 import type { SendAttempt } from "./thread-feedback";
 import { OUTBOX_MAX_ENTRIES } from "./thread-feedback";
 
@@ -193,6 +193,15 @@ it("caps the persisted count and wipes every entry", () => {
   expect(outboxDisk.load(2, scope)).toHaveLength(OUTBOX_MAX_ENTRIES);
   outboxDisk.clear();
   expect(files.size).toBe(0);
+});
+it("reports a saved queue whoever owns it, and none once cleared", () => {
+  expect(hasSavedUnsentSends()).toBe(false);
+  outboxDisk.save([]);
+  expect(hasSavedUnsentSends()).toBe(false);
+  outboxDisk.save([attempt()]);
+  expect(hasSavedUnsentSends()).toBe(true);
+  outboxDisk.clear();
+  expect(hasSavedUnsentSends()).toBe(false);
 });
 it("treats corrupt storage as an empty outbox", () => {
   files.set("document/outbox/sends-v4.json", "{");
