@@ -236,6 +236,28 @@ export class LarkAdapter extends LarkAdapterBase implements Adapter {
     if (!id) throw new Error("Lark did not return a message ID");
     return { id, threadId, raw: { message_id: id } };
   }
+  /** Bots have no typing bubble; a reaction marks this message until its run settles. */
+  async acknowledge(messageId: string, signal: AbortSignal) {
+    const result = checked(
+      await this.client.im.messageReaction.create({
+        path: { message_id: messageId },
+        data: { reaction_type: { emoji_type: "Typing" } },
+      }),
+    );
+    const reactionId = result.data?.reaction_id;
+    if (!reactionId) return;
+    const clear = async () => {
+      checked(
+        await this.client.im.messageReaction.delete({
+          path: { message_id: messageId, reaction_id: reactionId },
+        }),
+      );
+    };
+    // A timed-out create can still finish: don't leave its reaction behind.
+    if (signal.aborted) await clear();
+    else return clear;
+  }
+
   async editMessage(threadId: string, messageId: string, message: AdapterPostableMessage) {
     const { msgType, content } = this.payload(message);
     checked(

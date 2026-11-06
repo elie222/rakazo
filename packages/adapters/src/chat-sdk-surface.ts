@@ -73,6 +73,8 @@ export interface MessagingPlatform {
   provider: string;
   capabilities: MessagingCapabilities;
   adapter: Adapter;
+  /** A temporary receipt can return cleanup owned by the inbound process. */
+  acknowledge?: (handle: string, context: AdapterContext) => Promise<void | (() => Promise<void>)>;
   /**
    * The adapter's own thread-id prefix when it differs from `provider`, so
    * one adapter type can mount more than once (one Telegram bot per space:
@@ -316,12 +318,18 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     }
   }
 
-  async acknowledge(threadId: string, handle: string, context: AdapterContext): Promise<void> {
+  async acknowledge(
+    threadId: string,
+    handle: string,
+    context: AdapterContext,
+  ): Promise<void | (() => Promise<void>)> {
     const mounted = this.byProvider.get(providerOfThreadId(threadId));
     const receipt = mounted?.platform.capabilities.receipt;
     if (!mounted || !receipt) return;
     await this.ensureInitialized();
     const { platform } = mounted;
+    if (platform.acknowledge)
+      return raceWithSignal(platform.acknowledge(handle, context), context.signal);
     const adapterThreadId = toAdapterThreadId(mounted, threadId);
     const sends: Record<MessagingReceipt, () => Promise<void>> = {
       typing: () => platform.adapter.startTyping(adapterThreadId),

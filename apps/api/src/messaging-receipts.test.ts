@@ -141,3 +141,74 @@ describe("createMessagingReceipts", () => {
     expect(messaging.acknowledge.mock.calls[0]![2].signal.aborted).toBe(false);
   });
 });
+
+describe("temporary receipt lifecycle", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+  function temporary() {
+    const clear = vi.fn(async () => {});
+    return { clear, messaging: { ...fakeMessaging(), acknowledge: vi.fn(async () => clear) } };
+  }
+  it("removes a receipt once the worker has delivered its reply", async () => {
+    const { clear, messaging } = temporary();
+    let delivered = false;
+    const receipts = createMessagingReceipts(messaging);
+    receipts.acknowledge("sendblue:dm-1", "h-1", async () => delivered);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(clear).not.toHaveBeenCalled();
+    delivered = true;
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(clear).toHaveBeenCalledOnce();
+    receipts.stop();
+    expect(clear).toHaveBeenCalledOnce();
+  });
+  it("cleans up when a run has already failed or been cancelled", async () => {
+    const { clear, messaging } = temporary();
+    createMessagingReceipts(messaging).acknowledge("sendblue:dm-1", "h-1", async () => true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(clear).toHaveBeenCalledOnce();
+  });
+  it("expires a receipt for a run that never settles", async () => {
+    const { clear, messaging } = temporary();
+    createMessagingReceipts(messaging).acknowledge("sendblue:dm-1", "h-1", unhandled);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(clear).toHaveBeenCalledOnce();
+  });
+  it("cleans up on shutdown, including a create that finishes after shutdown", async () => {
+    const clear = vi.fn(async () => {});
+    let release = () => {};
+    const messaging = {
+      ...fakeMessaging(),
+      acknowledge: vi.fn(
+        () =>
+          new Promise<() => Promise<void>>((resolve) => {
+            release = () => resolve(clear);
+          }),
+      ),
+    };
+    const receipts = createMessagingReceipts(messaging);
+    receipts.acknowledge("sendblue:dm-1", "h-1", unhandled);
+    receipts.stop();
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(clear).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("retries a failed completion check and logs a failed cleanup", async () => {
+    const error = vi.spyOn(getLogger(), "error");
+    const { clear, messaging } = temporary();
+    clear.mockRejectedValue(new Error("reaction unavailable"));
+    const handled = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("database unavailable"))
+      .mockResolvedValue(true);
+    createMessagingReceipts(messaging).acknowledge("sendblue:dm-1", "h-1", handled);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(clear).toHaveBeenCalledOnce();
+    expect(error).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

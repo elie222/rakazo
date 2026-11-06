@@ -106,6 +106,8 @@ function encryptedWebhook(payload: unknown, validSignature = true, pretty = fals
 beforeEach(() => {
   request.mockReset();
   request.mockImplementation(async ({ url }: { url: string }) => {
+    const reaction = /\/im\/v1\/messages\/([^/]+)\/reactions(?:\/[^/]+)?$/.exec(url);
+    if (reaction) return { code: 0, data: { reaction_id: `re-${reaction[1]}` } };
     if (url.endsWith("/auth/v3/tenant_access_token/internal")) {
       return { code: 0, tenant_access_token: "test-access-token", expire: 7200 };
     }
@@ -732,5 +734,75 @@ describe("Lark messaging conformance", () => {
       expect.objectContaining({ url: "https://open.larksuite.com/open-apis/im/v1/chats" }),
     );
     expect(adapter.isDM(encodeThreadId({ chatId: "oc-test" }))).toBe(true);
+  });
+});
+
+describe("Lark working receipts", () => {
+  it("acknowledges the requested message without depending on an inbound webhook", async () => {
+    const { surface } = createSurface();
+    const clear = await surface.acknowledge(
+      encodeThreadId({ chatId: "oc-test" }),
+      "om-original",
+      context,
+    );
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "POST",
+        url: expect.stringMatching(/messages\/om-original\/reactions$/),
+        data: { reaction_type: { emoji_type: "Typing" } },
+      }),
+    );
+    expect(typeof clear).toBe("function");
+    if (clear) await clear();
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "DELETE",
+        url: expect.stringMatching(/messages\/om-original\/reactions\/re-om-original$/),
+      }),
+    );
+  });
+
+  it("clears a reaction created after the receipt timed out", async () => {
+    const { surface } = createSurface();
+    // Initialize before delaying only the create-reaction call.
+    await surface.handleWebhook(
+      "lark",
+      webhook({ type: "url_verification", token, challenge: "test" }),
+    );
+    const controller = new AbortController();
+    const respond = request.getMockImplementation()!;
+    request.mockImplementation(async (call: { url: string; method?: string }) => {
+      if (call.method === "POST" && call.url.endsWith("/reactions")) controller.abort();
+      return respond(call);
+    });
+    await expect(
+      surface.acknowledge(encodeThreadId({ chatId: "oc-test" }), "om-late", {
+        ...context,
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow();
+    await vi.waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "DELETE",
+          url: expect.stringMatching(/messages\/om-late\/reactions\/re-om-late$/),
+        }),
+      ),
+    );
+  });
+
+  it("keeps messages independent when receipts overlap", async () => {
+    const { surface } = createSurface();
+    const threadId = encodeThreadId({ chatId: "oc-test" });
+    const clears = await Promise.all([
+      surface.acknowledge(threadId, "om-first", context),
+      surface.acknowledge(threadId, "om-second", context),
+    ]);
+    for (const clear of clears) if (clear) await clear();
+    const calls = request.mock.calls.map(([call]) => call as { method?: string; url: string });
+    expect(calls.filter((call) => call.method === "DELETE").map((call) => call.url)).toEqual([
+      expect.stringMatching(/messages\/om-first\/reactions\/re-om-first$/),
+      expect.stringMatching(/messages\/om-second\/reactions\/re-om-second$/),
+    ]);
   });
 });
