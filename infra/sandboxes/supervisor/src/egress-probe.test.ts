@@ -13,6 +13,9 @@ import {
   verifyRestrictedEgress,
 } from "./egress-probe.js";
 
+// The attestation image name is irrelevant to these tests: fakeDocker answers any image.
+const ensureAttestImage = async () => "attest:test";
+
 // A valid attestation dump; egress-attest.test.ts owns the verification logic.
 function validAttestation() {
   const rules = (drops: string[]) =>
@@ -162,7 +165,9 @@ describe("egress probe", () => {
 
   it("probes from a named rakazo-c bridge and cleans up", async () => {
     const { docker, raw, container, network } = fakeDocker();
-    await expect(verifyRestrictedEgress(docker, "computer:test")).resolves.toBeUndefined();
+    await expect(
+      verifyRestrictedEgress(docker, "computer:test", undefined, ensureAttestImage),
+    ).resolves.toBeUndefined();
     expect(
       raw.createNetwork.mock.calls[0]?.[0].Options["com.docker.network.bridge.name"],
     ).toHaveLength(15);
@@ -190,23 +195,33 @@ describe("egress probe", () => {
 
   it("checks the computers' configured IPv4 DNS servers", async () => {
     const { docker, raw } = fakeDocker();
-    await verifyRestrictedEgress(docker, "computer:test", ["1.1.1.1"]);
+    await verifyRestrictedEgress(docker, "computer:test", ["1.1.1.1"], ensureAttestImage);
     const script: string = raw.createContainer.mock.calls[0]?.[0].Entrypoint[2];
     expect(script).toBe(egressProbeScript("172.30.0.1", ["1.1.1.1"]));
     expect(script).toMatch(/' 1\.1\.1\.1 2>\/dev\/null && exit 0; done\nexit 5$/);
     // More than three servers is a configuration error, not a silent truncation.
     await expect(
-      verifyRestrictedEgress(docker, "computer:test", ["1.1.1.1", "1.0.0.1", "9.9.9.9", "8.8.8.8"]),
+      verifyRestrictedEgress(
+        docker,
+        "computer:test",
+        ["1.1.1.1", "1.0.0.1", "9.9.9.9", "8.8.8.8"],
+        ensureAttestImage,
+      ),
     ).rejects.toThrow("more than three servers");
   });
 
   it("refuses IPv6 DNS servers instead of skipping them silently", async () => {
     const { docker } = fakeDocker();
     await expect(
-      verifyRestrictedEgress(docker, "computer:test", ["2606:4700::1111"]),
+      verifyRestrictedEgress(docker, "computer:test", ["2606:4700::1111"], ensureAttestImage),
     ).rejects.toThrow("SANDBOX_COMPUTER_DNS must list IPv4 servers");
     await expect(
-      verifyRestrictedEgress(docker, "computer:test", ["1.1.1.1", "2606:4700::1111"]),
+      verifyRestrictedEgress(
+        docker,
+        "computer:test",
+        ["1.1.1.1", "2606:4700::1111"],
+        ensureAttestImage,
+      ),
     ).rejects.toThrow("SANDBOX_COMPUTER_DNS must list IPv4 servers");
   });
 
@@ -215,10 +230,15 @@ describe("egress probe", () => {
     // so a pre-ruleset install with a long or IPv6 DNS list keeps working.
     const { docker } = fakeDocker({ statusCode: 3 });
     await expect(
-      verifyRestrictedEgress(docker, "computer:test", ["2606:4700::1111"]),
+      verifyRestrictedEgress(docker, "computer:test", ["2606:4700::1111"], ensureAttestImage),
     ).rejects.toBeInstanceOf(EgressNotEnforced);
     await expect(
-      verifyRestrictedEgress(docker, "computer:test", ["1.1.1.1", "1.0.0.1", "9.9.9.9", "8.8.8.8"]),
+      verifyRestrictedEgress(
+        docker,
+        "computer:test",
+        ["1.1.1.1", "1.0.0.1", "9.9.9.9", "8.8.8.8"],
+        ensureAttestImage,
+      ),
     ).rejects.toBeInstanceOf(EgressNotEnforced);
   });
 
@@ -257,9 +277,12 @@ describe("egress probe", () => {
 
   it("refuses failed DNS without falling back to open egress", async () => {
     const { docker, container, network } = fakeDocker({ statusCode: 5 });
-    const error = await verifyRestrictedEgress(docker, "computer:test", ["1.1.1.1"]).catch(
-      (error) => error,
-    );
+    const error = await verifyRestrictedEgress(
+      docker,
+      "computer:test",
+      ["1.1.1.1"],
+      ensureAttestImage,
+    ).catch((error) => error);
     expect(error.constructor).toBe(Error);
     expect(error.message).toBe(
       "No SANDBOX_COMPUTER_DNS server answered from a restricted computer network; set servers reachable from there, such as public resolvers (see docs/self-host-docker-computers.md)",
@@ -270,7 +293,9 @@ describe("egress probe", () => {
 
   it("refuses a probe network name collision", async () => {
     const { docker } = fakeDocker({ createNetworkError: new Error("network already exists") });
-    await expect(verifyRestrictedEgress(docker, "computer:test")).rejects.toThrow("already exists");
+    await expect(
+      verifyRestrictedEgress(docker, "computer:test", undefined, ensureAttestImage),
+    ).rejects.toThrow("already exists");
   });
 
   it.each([
@@ -286,7 +311,7 @@ describe("egress probe", () => {
     ["the bridge is unnamed", { options: {} }, /lacks the named bridge/],
   ])("refuses when %s", async (_label, input, detail) => {
     const { docker, network } = fakeDocker(input);
-    const result = verifyRestrictedEgress(docker, "computer:test");
+    const result = verifyRestrictedEgress(docker, "computer:test", undefined, ensureAttestImage);
     await expect(result).rejects.toThrow(
       /restrict-computer-egress\.sh|could not verify|cannot verify|attestation|could not read/,
     );

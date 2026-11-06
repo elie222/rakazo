@@ -70,11 +70,15 @@ recreate the supervisor. Firewall changes after the check can still expose runni
 Tools that insert their own rules at the top of the `FORWARD` chain (Tailscale, libvirt, and
 similar) push the `DOCKER-USER` jump down; the supervisor then refuses restricted starts rather
 than guess whether the rules above it could bypass the managed drops, because the installer does
-not manage `FORWARD`. To restore the expected order, move the jump back to the first rule:
+not manage `FORWARD`. To restore the expected order, move the jump back to the first rule — with
+the backend that actually holds Docker's chains, i.e. the variant of `iptables-nft`/
+`iptables-legacy` whose `FORWARD` chain lists the `DOCKER-USER` jump
+(`sudo iptables-nft -S FORWARD` / `sudo iptables-legacy -S FORWARD`; the installer's
+`RAKAZO_IPTABLES`/`RAKAZO_IP6TABLES` settings select the same backend):
 
 ```bash
-sudo iptables -D FORWARD -j DOCKER-USER && sudo iptables -I FORWARD 1 -j DOCKER-USER
-sudo ip6tables -D FORWARD -j DOCKER-USER && sudo ip6tables -I FORWARD 1 -j DOCKER-USER
+sudo iptables-nft -D FORWARD -j DOCKER-USER && sudo iptables-nft -I FORWARD 1 -j DOCKER-USER
+sudo ip6tables-nft -D FORWARD -j DOCKER-USER && sudo ip6tables-nft -I FORWARD 1 -j DOCKER-USER
 ```
 
 When `SANDBOX_COMPUTER_EGRESS` is unset, the Compose files use `auto`: the supervisor runs the

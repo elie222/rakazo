@@ -92,8 +92,8 @@ export function egressProbeVerdict(statusCode: number | undefined): EgressProbeV
 export async function verifyRestrictedEgress(
   docker: Docker,
   image: string,
-  dns?: string[],
-  ensureAttestImage: () => Promise<string> = async () => "rakazo/egress-attest:prebuilt",
+  dns: string[] | undefined,
+  ensureAttestImage: () => Promise<string>,
 ) {
   const suffix = randomBytes(4).toString("hex").slice(0, 7);
   const name = `${EGRESS_PROBE_NETWORK}-${suffix}`;
