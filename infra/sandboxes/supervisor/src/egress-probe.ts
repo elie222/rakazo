@@ -143,6 +143,12 @@ export async function verifyRestrictedEgress(
     if (verdict === "metadata-reachable") {
       throw new EgressNotEnforced("a computer bridge reached the metadata endpoint");
     }
+    // Behavioral checks passed; attest the live firewall itself, so a partially
+    // removed ruleset cannot pass as verified. The attestation runs the
+    // supervisor-built probe image, never the configurable computer image, and
+    // runs before the DNS checks: a removed forwarded drop must surface as the
+    // rules-missing result even when the DNS configuration is also wrong.
+    await attestRestrictedEgress(docker, await ensureAttestImage());
     // The DNS list is validated only now, after the rules are known to be in
     // place: `auto` on a host without the ruleset must still fall back to open
     // egress instead of failing every start on a DNS misconfiguration.
@@ -174,10 +180,6 @@ export async function verifyRestrictedEgress(
         `could not verify restricted egress: the probe exited ${result?.StatusCode ?? "late"}; see the supervisor log`,
       );
     }
-    // Behavioral checks passed; now attest the live firewall itself, so a
-    // partially removed ruleset cannot pass as verified. The attestation runs
-    // the supervisor-built probe image, never the configurable computer image.
-    await attestRestrictedEgress(docker, await ensureAttestImage());
   } finally {
     await container?.remove({ force: true }).catch(() => undefined);
     await network.remove().catch(() => undefined);

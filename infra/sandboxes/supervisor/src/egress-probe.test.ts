@@ -275,6 +275,20 @@ describe("egress probe", () => {
     });
   });
 
+  it("reports a partially removed ruleset even when the DNS check also fails", async () => {
+    // The behavioral probe passes with a forwarded drop removed, and the DNS
+    // verdict would say "no server answered" — but the firewall attestation
+    // must run first, so the operator (and auto mode) sees the real problem.
+    const partialRuleset = validAttestation().replace(
+      "-A DOCKER-USER -i rakazo-c+ -d 10.0.0.0/8 -j DROP\n",
+      "",
+    );
+    const { docker } = fakeDocker({ statusCode: 5, attestOutput: partialRuleset });
+    await expect(
+      verifyRestrictedEgress(docker, "computer:test", ["1.1.1.1"], ensureAttestImage),
+    ).rejects.toBeInstanceOf(EgressNotEnforced);
+  });
+
   it("refuses failed DNS without falling back to open egress", async () => {
     const { docker, container, network } = fakeDocker({ statusCode: 5 });
     const error = await verifyRestrictedEgress(
