@@ -524,6 +524,8 @@ async function handleTranscript(raw: string): Promise<void> {
   if (next.kind === "approve_on_screen") {
     // Its card was already on screen; only what its run says after the tap is spoken.
     spokenMessageId = next.messageId;
+    // A new turn: an earlier request still in flight must not replace the run it expects.
+    ++turnSeq;
     callRunId = next.runId;
     if (closing) hangUpAfterReply = true;
     void listen();
@@ -601,6 +603,8 @@ async function handleTranscript(raw: string): Promise<void> {
       blockForConsent(error);
       return;
     }
+    // A newer turn already owns the call's state; an older request's failure must not reset it.
+    if (turnSeq !== cueTurn) return;
     failTurn(error);
   } finally {
     releasePendingSend?.();
