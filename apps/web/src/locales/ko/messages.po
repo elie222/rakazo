@@ -5759,6 +5759,10 @@ msgstr "실행 중"
 msgid "Running"
 msgstr "실행 중"
 
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "{workingRoutine} 실행 중…"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "실행 중…"

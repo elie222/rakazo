@@ -3624,6 +3624,26 @@ describe("mobile thread event reduction", () => {
     expect(next.olderCursor).toBeNull();
   });
 
+  it("keeps the routine behind a started run", () => {
+    const started = applyMobileThreadEvent(snapshot(), {
+      type: "run.started",
+      seq: 9,
+      runId: "routine-run",
+      botId: "bot-1",
+      payload: { trigger: "routine", routineName: "Daily check" },
+    });
+    expect(started?.run).toMatchObject({ trigger: "routine", routineName: "Daily check" });
+
+    const resumed = applyMobileThreadEvent(started, {
+      type: "run.started",
+      seq: 10,
+      runId: "routine-run",
+      botId: "bot-1",
+      payload: { trigger: "routine" },
+    });
+    expect(resumed?.run).toMatchObject({ trigger: "routine", routineName: "Daily check" });
+  });
+
   it("shows peer-started group work without hiding a waiting member", () => {
     const initial: MobileSnapshot = {
       ...snapshot(),
@@ -3645,10 +3665,16 @@ describe("mobile thread event reduction", () => {
     });
 
     expect(next?.cursor).toBe(9);
-    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "running", error: null });
+    expect(next?.run).toEqual({
+      id: "peer-run",
+      botId: "bot-2",
+      status: "running",
+      trigger: "user_message",
+      error: null,
+    });
     expect(next?.activeRuns).toEqual([
       { id: "waiting-run", botId: "bot-1", status: "waiting_input" },
-      { id: "peer-run", botId: "bot-2", status: "running", error: null },
+      { id: "peer-run", botId: "bot-2", status: "running", trigger: "user_message", error: null },
     ]);
     expect(next?.members?.map((member) => member.status)).toEqual(["waiting_input", "running"]);
   });
@@ -4683,6 +4709,7 @@ describe("mobile thread event reduction", () => {
       id: "run-remote",
       botId: "bot-1",
       status: "running",
+      trigger: "routine",
       error: null,
     });
     expect(started?.activeRuns).toEqual([started?.run]);

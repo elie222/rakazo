@@ -35,6 +35,7 @@ vi.mock("./device-voice", () => ({
   saveDeviceVoiceEnabled: state.save,
 }));
 vi.mock("./call-sounds", () => ({
+  loadCallGreetingEnabled: async () => true,
   loadCallSoundsEnabled: async () => true,
   loadWaitSoundEnabled: async () => true,
   saveCallSoundsEnabled: vi.fn(),
