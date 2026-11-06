@@ -134,6 +134,36 @@ describeRunsList("runs.list activity tracker", () => {
     expect(recent.runs.length).toBe(1);
   });
 
+  it("lists each chat's latest finished run, so a busy chat leaves room for the rest", async () => {
+    const cookie = await signup(app, `runs-busy-${stamp}@rakazo.test`, "Busy User");
+    const busy = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Busy",
+      title: "Busy",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const quiet = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Quiet",
+      title: "Quiet",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await seedRun(prisma, quiet.id, "completed", "quiet run", new Date(Date.now() - 86_400_000));
+    for (let i = 0; i < 21; i += 1) {
+      await seedRun(prisma, busy.id, "completed", `busy ${i}`, new Date(Date.now() - i * 1_000));
+    }
+
+    const recent = await rpc<{ runs: RunActivityRow[] }>(app, cookie, "runs/list", {
+      filter: "recent",
+    });
+    expect(recent.runs.map((run) => [run.botName, run.promptSnippet])).toEqual([
+      ["Busy", "busy 0"],
+      ["Quiet", "quiet run"],
+    ]);
+  });
+
   it("returns legacy labels alongside structured agent messages", async () => {
     const cookie = await signup(app, `runs-message-${stamp}@rakazo.test`, "Runs User");
     const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
