@@ -579,7 +579,7 @@ export class TeamChatBridge {
    */
   async resolveDeferredMessage(
     externalMessageId: string,
-    resolution: "routine" | "agent",
+    resolution: "routine" | "agent" | "ignored",
     kind: TeamChatInboundMessage["kind"],
   ): Promise<boolean> {
     const target = this.target;
@@ -598,11 +598,14 @@ export class TeamChatBridge {
               engagementReason: "message_routine_wake",
               nextAttemptAt: null,
             }
-          : {
-              status: kind === "ambient" ? "observed" : "received",
-              engagementReason: null,
-              nextAttemptAt: null,
-            },
+          : resolution === "ignored"
+            ? // Nobody answers it; its transcript copy stays.
+              { status: "ignored", engagementReason: null, nextAttemptAt: null }
+            : {
+                status: kind === "ambient" ? "observed" : "received",
+                engagementReason: null,
+                nextAttemptAt: null,
+              },
     });
     return result.count === 1;
   }
