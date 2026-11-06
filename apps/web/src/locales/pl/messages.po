@@ -1896,7 +1896,6 @@ msgstr "Rozmowy"
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1904,7 +1903,6 @@ msgstr "Rozmowy"
 msgid "Copied"
 msgstr "Skopiowano"
 
-#: src/components/ToolActivityDisclosure.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1929,10 +1927,6 @@ msgstr "Kopiuj link z zaproszeniem"
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
 msgstr "Kopiuj link"
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "Copy output"
-msgstr "Kopiuj wynik"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"

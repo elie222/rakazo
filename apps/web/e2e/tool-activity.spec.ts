@@ -65,7 +65,7 @@ async function tourToolActivity(page: Page, testInfo: TestInfo, viewport: typeof
 
   // A running row opens to the output it has printed so far.
   await page.getByTestId("tool-step").last().click();
-  await expect(page.getByTestId("tool-step-output")).toContainText("Checking 3 calendars");
+  await expect(page.getByTestId("tool-step-code")).toContainText("Checking 3 calendars");
   await expect(page.getByTestId("tool-step-exit")).toHaveCount(0);
   await expect(page.locator("body")).toHaveJSProperty("scrollWidth", viewport.width);
   await captureScreenshot(page, testInfo, `default-live-step-open-${viewport.name}`);
@@ -98,17 +98,18 @@ async function tourToolActivity(page: Page, testInfo: TestInfo, viewport: typeof
   await shellRow.click();
   await expect(shellRow).toHaveAttribute("aria-expanded", "true");
   const panel = page.getByTestId("tool-step-panel");
-  await expect(panel.getByTestId("tool-step-command")).toHaveText(
-    "TZ=Europe/Berlin date -d '2026-08-18 14:00 America/New_York'",
+  // The chat's own code block: the command, its output, and the block's copy control.
+  await expect(panel.getByTestId("tool-step-code").locator("pre")).toHaveText(
+    "$ TZ=Europe/Berlin date -d '2026-08-18 14:00 America/New_York'\nTue Aug 18 20:00:00 CEST 2026\n",
   );
-  await expect(panel.getByTestId("tool-step-output")).toHaveText("Tue Aug 18 20:00:00 CEST 2026");
   await expect(panel.getByTestId("tool-step-exit")).toHaveText("exit 0");
-  await expect(panel.getByTestId("tool-step-copy")).toHaveText("Copy");
-  await expect(panel.getByTestId("tool-step-copy-output")).toHaveText("Copy output");
+  await expect(panel.getByRole("button", { name: "Copy code" })).toHaveCount(1);
   // A structured call shows its arguments instead of a command line.
   const searchRow = page.getByTestId("tool-step").filter({ hasText: "Search inbox" });
   await searchRow.click();
-  await expect(page.getByTestId("tool-step-input")).toContainText('"query": "from:anna tuesday"');
+  await expect(
+    page.getByTestId("tool-step-code").filter({ hasText: '"query": "from:anna tuesday"' }),
+  ).toHaveCount(1);
   const failedRow = page.getByTestId("tool-step").filter({ hasText: "Compare calendars" });
   await expect(failedRow.getByRole("img")).toHaveAccessibleName("Failed");
   await failedRow.click();

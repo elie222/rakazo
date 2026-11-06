@@ -146,3 +146,29 @@ export function createToolCallRecordStore() {
     },
   };
 }
+
+/** A fenced code block whose fence outruns any backtick run inside the code. */
+export function fencedCode(code: string, language: string): string {
+  const longest = Math.max(2, ...[...code.matchAll(/`+/g)].map((run) => run[0].length));
+  const fence = "`".repeat(longest + 1);
+  return `${fence}${language}\n${code.replace(/\n$/, "")}\n${fence}`;
+}
+
+/**
+ * What a call ran and returned, as the markdown the chat's own code blocks draw: a shell
+ * command and its output share one console block; another tool shows its arguments as JSON
+ * and its result as JSON when it parses, else as text. Nothing when the record has neither.
+ */
+export function toolCallMarkdown(
+  record: Pick<ToolCallRecord, "command" | "input" | "output">,
+): string {
+  const output = prettyToolText(record.output ?? "");
+  if (record.command !== undefined) {
+    const prompt = `$ ${record.command}`;
+    return fencedCode(output ? `${prompt}\n${output}` : prompt, "console");
+  }
+  const blocks: string[] = [];
+  if (record.input) blocks.push(fencedCode(record.input, "json"));
+  if (output) blocks.push(fencedCode(output, output !== record.output ? "json" : "text"));
+  return blocks.join("\n\n");
+}

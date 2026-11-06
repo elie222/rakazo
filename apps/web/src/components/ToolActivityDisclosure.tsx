@@ -2,8 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage, ToolCallRecord, ToolStep } from "@rakazo/contracts";
-import { formatCompactDuration, prettyToolText } from "@rakazo/core";
-import { Button } from "@rakazo/ui-web/components/ui/button";
+import { formatCompactDuration, toolCallMarkdown } from "@rakazo/core";
 import {
   Collapsible,
   CollapsibleContent,
@@ -13,7 +12,6 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { useCopyText } from "../lib/copy-text";
 import { useSpaceQueries } from "../lib/query";
 import type { ToolStepStatus } from "../lib/tool-activity-view";
 import { toolStepCount, toolStepStatus } from "../lib/tool-activity-view";
@@ -179,8 +177,8 @@ function useToolCallRecord(source: ToolStepSource, executionId: string) {
 }
 
 /**
- * The call as a code card: what ran in the header, its arguments and what came back below, and
- * the exit code or error at the foot. A shell command's output follows live.
+ * The call opened: a line naming it, the chat's own code block with what it ran and what came
+ * back (following live while a shell command runs), and the exit code or error under it.
  */
 function ToolStepDetail({
   step,
@@ -194,89 +192,31 @@ function ToolStepDetail({
   status: ToolStepStatus;
 }) {
   const { record, loading, failed } = useToolCallRecord(source, executionId);
-  const [copied, copy] = useCopyText();
-  const [copiedOutput, copyOutput] = useCopyText();
-  const outputRef = useRef<HTMLPreElement>(null);
-  const output = prettyToolText(record?.output ?? "");
   const running = record?.status === "running" || status === "running";
-  // Follow new output like a terminal, unless the reader scrolled up to look at something.
-  useEffect(() => {
-    const element = outputRef.current;
-    if (!element) return;
-    const nearEnd = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
-    if (nearEnd) element.scrollTop = element.scrollHeight;
-  }, [output]);
-  const command = record?.command;
+  const markdown = record ? toolCallMarkdown(record) : "";
   const exit =
     record?.exitCode === undefined || record.exitCode === null ? null : t`exit ${record.exitCode}`;
   const duration = formatCompactDuration(record?.durationMs ?? step.durationMs);
   const dot = status === "error" ? "bg-destructive" : running ? "bg-warning" : "bg-success";
   return (
-    <div
-      data-testid="tool-step-panel"
-      dir="ltr"
-      className="my-1 min-w-0 overflow-hidden rounded-lg border border-border bg-background font-mono text-label leading-5 text-foreground"
-    >
-      <div className="border-b border-border px-2.5 py-1.5">
-        <div className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className={`size-1.5 shrink-0 rounded-full ${dot}`}
-            style={{ animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined }}
-          />
-          <span className="shrink-0 text-muted-foreground">{step.label}</span>
-          {command ? null : (
-            <span className="min-w-0 flex-1 truncate text-muted-foreground/80">{step.detail}</span>
-          )}
-          {command ? (
-            <Button
-              variant="text"
-              size="xs"
-              className="-my-0.5 -me-1 ms-auto shrink-0 font-sans font-normal text-muted-foreground"
-              data-testid="tool-step-copy"
-              onClick={() => copy(command)}
-            >
-              {copied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
-            </Button>
-          ) : null}
-        </div>
-        {command ? (
-          <code
-            className="mt-0.5 block whitespace-pre-wrap break-words"
-            data-testid="tool-step-command"
-          >
-            {command}
-          </code>
+    <div data-testid="tool-step-panel" dir="ltr" className="my-1.5 min-w-0 space-y-1.5">
+      <div className="flex items-center gap-2 text-label text-muted-foreground">
+        <span
+          aria-hidden
+          className={`size-1.5 shrink-0 rounded-full ${dot}`}
+          style={{ animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined }}
+        />
+        <span className="shrink-0">{step.label}</span>
+        {record?.command === undefined && step.detail ? (
+          <span className="min-w-0 flex-1 truncate font-mono">{step.detail}</span>
         ) : null}
       </div>
-      {record?.input ? (
-        <pre
-          data-testid="tool-step-input"
-          className="max-h-40 overflow-auto whitespace-pre-wrap break-words border-b border-border px-2.5 py-1.5 text-muted-foreground"
-        >
-          {record.input}
-        </pre>
-      ) : null}
-      {output || running ? (
-        <pre
-          ref={outputRef}
-          data-testid="tool-step-output"
-          className="max-h-64 overflow-auto whitespace-pre-wrap break-words px-2.5 py-1.5"
-        >
-          {output}
-          {running ? (
-            <span
-              aria-hidden
-              className="inline-block h-[1.1em] w-[0.55em] translate-y-[0.2em] bg-foreground/70 align-baseline"
-              style={{ animation: "rkPulse 1s steps(2, start) infinite" }}
-            />
-          ) : null}
-        </pre>
+      {markdown ? (
+        <div className="max-h-80 overflow-y-auto" data-testid="tool-step-code">
+          <ChatMarkdown streaming={running}>{markdown}</ChatMarkdown>
+        </div>
       ) : record?.error || exit ? null : (
-        <div
-          className="px-2.5 py-1.5 font-sans text-muted-foreground"
-          data-testid="tool-step-empty"
-        >
+        <div className="text-label text-muted-foreground" data-testid="tool-step-empty">
           {loading ? (
             <Trans>Loading…</Trans>
           ) : failed ? (
@@ -286,8 +226,8 @@ function ToolStepDetail({
           )}
         </div>
       )}
-      {record?.error || exit || duration || output ? (
-        <div className="flex flex-wrap items-center gap-x-3 border-t border-border px-2.5 py-1 text-caption text-muted-foreground">
+      {record?.error || exit || duration ? (
+        <div className="flex flex-wrap gap-x-3 font-mono text-caption text-muted-foreground">
           {record?.error ? (
             <span className="min-w-0 break-words text-destructive" data-testid="tool-step-error">
               {record.error}
@@ -295,17 +235,6 @@ function ToolStepDetail({
           ) : null}
           {exit ? <span data-testid="tool-step-exit">{exit}</span> : null}
           {duration ? <span>{duration}</span> : null}
-          {output ? (
-            <Button
-              variant="text"
-              size="xs"
-              className="-my-1 -me-1.5 ms-auto h-5 font-sans font-normal text-muted-foreground"
-              data-testid="tool-step-copy-output"
-              onClick={() => copyOutput(output)}
-            >
-              {copiedOutput ? <Trans>Copied</Trans> : <Trans>Copy output</Trans>}
-            </Button>
-          ) : null}
         </div>
       ) : null}
     </div>

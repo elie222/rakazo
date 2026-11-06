@@ -15,9 +15,10 @@ bot called during the run.
 - Each step shows the tool, the call's main argument (the shell command, path, query or
   similar, bounded and with secrets taken out), how long it took, and whether it succeeded,
   failed, or is still running.
-- A step opens to a code card: the full shell command when there is one, otherwise the call's
-  arguments as JSON, then what the call returned or printed (JSON indented, secrets taken out),
-  its exit code or error, and Copy buttons for the command and the output.
+- A step opens to the chat's own code block: a shell command and its output as one console
+  block (following live while it runs), otherwise the call's arguments as JSON and what it
+  returned (JSON indented, secrets taken out), with the block's copy control, and the exit
+  code or error under it.
 - A call shows as a step as soon as it starts. Only a call that lands mid-sentence in the bot's
   own text waits for that sentence to end; a tool status line never holds one back.
   A running shell command's output follows live. Rows of a finished run read their results

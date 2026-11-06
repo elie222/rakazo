@@ -1,12 +1,12 @@
+import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { MessageBlock, ToolCallRecord, ToolStep } from "@rakazo/contracts";
-import { formatCompactDuration, prettyToolText } from "@rakazo/core";
+import { formatCompactDuration, toolCallMarkdown } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
-import * as Clipboard from "expo-clipboard";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { rpc } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
-import { native, useMobileTokens } from "../../lib/native";
+import { native, useMobileTokens, useResolvedAppearance } from "../../lib/native";
 import { toolCallRecords } from "../../lib/tool-call-records";
 import { NativeSymbol } from "../native-symbol";
 
@@ -214,8 +214,8 @@ function useToolCallRecord(runId: string, executionId: string, threadId: string 
 }
 
 /**
- * The call as a code card: what ran in the header, its arguments and what came back below, and
- * the exit code or error at the foot. A shell command's output follows live.
+ * The call opened: a line naming it, the chat's own code block with what it ran and what came
+ * back (following live while a shell command runs), and the exit code or error under it.
  */
 function StepPanel({
   step,
@@ -232,103 +232,43 @@ function StepPanel({
 }) {
   const { t } = useI18n();
   const tokens = useMobileTokens();
+  const colorScheme = useResolvedAppearance();
   const { record, loading, failed } = useToolCallRecord(runId, executionId, threadId);
-  const [copied, setCopied] = useState<"command" | "output" | null>(null);
-  const scrollRef = useRef<ScrollView>(null);
-  const output = prettyToolText(record?.output ?? "");
   const running = record?.status === "running" || status === "running";
-  const command = record?.command;
+  const markdown = record ? toolCallMarkdown(record) : "";
   const exit =
     record?.exitCode === undefined || record.exitCode === null
       ? null
       : t("exit {code}", { code: record.exitCode });
   const duration = formatCompactDuration(record?.durationMs ?? step.durationMs);
-  const copy = (what: "command" | "output", text: string) => {
-    void Clipboard.setStringAsync(text)
-      .then(() => {
-        setCopied(what);
-        setTimeout(() => setCopied(null), 2000);
-      })
-      .catch(() => undefined);
-  };
-  const mono = [styles.mono, { color: tokens.foreground }];
   const muted = { color: tokens.mutedForeground };
   return (
-    <View
-      testID="tool-step-panel"
-      style={[styles.panel, { backgroundColor: tokens.background, borderColor: tokens.border }]}
-    >
-      <View style={[styles.section, styles.divider, { borderColor: tokens.border }]}>
-        <View style={styles.panelHeader}>
-          <View
-            style={[
-              styles.dot,
-              {
-                backgroundColor:
-                  status === "error"
-                    ? tokens.destructive
-                    : running
-                      ? tokens.warning
-                      : tokens.success,
-              },
-            ]}
-          />
-          <Text style={[styles.mono, muted]}>{step.label}</Text>
-          {command ? (
-            <View style={styles.grow} />
-          ) : (
-            <Text numberOfLines={1} style={[styles.mono, styles.grow, muted]}>
-              {step.detail}
-            </Text>
-          )}
-          {command ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => copy("command", command)}
-              hitSlop={8}
-            >
-              <Text style={[styles.meta, muted]}>
-                {copied === "command" ? t("Copied") : t("Copy")}
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
-        {command ? (
-          <Text testID="tool-step-command" selectable style={[mono, styles.command]}>
-            {command}
+    <View testID="tool-step-panel" style={styles.panel}>
+      <View style={styles.panelHeader}>
+        <View
+          style={[
+            styles.dot,
+            {
+              backgroundColor:
+                status === "error" ? tokens.destructive : running ? tokens.warning : tokens.success,
+            },
+          ]}
+        />
+        <Text style={[styles.meta, muted]}>{step.label}</Text>
+        {record?.command === undefined && step.detail ? (
+          <Text numberOfLines={1} style={[styles.mono, styles.grow, muted]}>
+            {step.detail}
           </Text>
         ) : null}
       </View>
-      {record?.input ? (
-        <Text
-          testID="tool-step-input"
-          selectable
-          style={[
-            styles.mono,
-            styles.section,
-            styles.divider,
-            muted,
-            { borderColor: tokens.border },
-          ]}
-        >
-          {record.input}
-        </Text>
-      ) : null}
-      {output || running ? (
-        <ScrollView
-          ref={scrollRef}
-          nestedScrollEnabled
-          style={styles.output}
-          // Follow new output like a terminal.
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
-        >
-          <Text testID="tool-step-output" selectable style={[mono, styles.section]}>
-            {output}
-            {running ? "▍" : ""}
-          </Text>
+      {markdown ? (
+        <ScrollView nestedScrollEnabled style={styles.code} testID="tool-step-code">
+          <ChatMarkdown palette={tokens} colorScheme={colorScheme} streaming={running}>
+            {markdown}
+          </ChatMarkdown>
         </ScrollView>
       ) : record?.error || exit ? null : (
-        <Text style={[styles.section, styles.empty, muted]}>
+        <Text style={[styles.empty, muted]}>
           {loading
             ? t("Loading…")
             : failed
@@ -336,8 +276,8 @@ function StepPanel({
               : t("No output recorded.")}
         </Text>
       )}
-      {record?.error || exit || duration || output ? (
-        <View style={[styles.footer, { borderColor: tokens.border }]}>
+      {record?.error || exit || duration ? (
+        <View style={styles.footer}>
           {record?.error ? (
             <Text selectable style={[styles.meta, styles.error, { color: tokens.destructive }]}>
               {record.error}
@@ -345,18 +285,6 @@ function StepPanel({
           ) : null}
           {exit ? <Text style={[styles.meta, muted]}>{exit}</Text> : null}
           {duration ? <Text style={[styles.meta, muted]}>{duration}</Text> : null}
-          {output ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => copy("output", output)}
-              hitSlop={8}
-              style={styles.copy}
-            >
-              <Text style={[styles.meta, muted]}>
-                {copied === "output" ? t("Copied") : t("Copy output")}
-              </Text>
-            </Pressable>
-          ) : null}
         </View>
       ) : null}
     </View>
@@ -388,31 +316,14 @@ const styles = StyleSheet.create({
   detail: { ...typeScale.footnote, fontFamily: MONO, flex: 1, minWidth: 0 },
   spacer: { flex: 1 },
   duration: { ...typeScale.footnote, fontFamily: MONO },
-  panel: {
-    marginVertical: 4,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: "hidden",
-  },
-  section: { paddingHorizontal: 10, paddingVertical: 6 },
+  panel: { marginVertical: 4, gap: 6 },
   panelHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
   dot: { width: 6, height: 6, borderRadius: 3 },
-  command: { marginTop: 2 },
   grow: { flex: 1, minWidth: 0 },
-  divider: { borderBottomWidth: StyleSheet.hairlineWidth },
   mono: { ...typeScale.footnote, fontFamily: MONO },
-  output: { maxHeight: 240 },
+  code: { maxHeight: 320 },
   empty: { ...typeScale.footnote },
-  footer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    columnGap: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
+  footer: { flexDirection: "row", flexWrap: "wrap", columnGap: 12 },
   meta: { ...typeScale.footnote, fontFamily: MONO },
   error: { flexShrink: 1 },
-  copy: { marginStart: "auto" },
 });

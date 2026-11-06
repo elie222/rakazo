@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { foldToolCallRecords, prettyToolText, reduceToolCallRecord } from "./tool-call-records.js";
+import {
+  fencedCode,
+  foldToolCallRecords,
+  prettyToolText,
+  reduceToolCallRecord,
+  toolCallMarkdown,
+} from "./tool-call-records.js";
 
 describe("foldToolCallRecords", () => {
   it("gives one record per call with its outcome, duration and result text", () => {
@@ -149,6 +155,22 @@ describe("foldToolCallRecords", () => {
     expect(prettyToolText("[1,2]")).toBe("[\n  1,\n  2\n]");
     expect(prettyToolText("{not json")).toBe("{not json");
     expect(prettyToolText("plain text\n")).toBe("plain text\n");
+  });
+
+  it("draws a shell call as one console block and a structured call as its JSON", () => {
+    expect(toolCallMarkdown({ command: "ls -la", output: "a\nb\n" })).toBe(
+      "```console\n$ ls -la\na\nb\n```",
+    );
+    expect(toolCallMarkdown({ command: "sleep 9" })).toBe("```console\n$ sleep 9\n```");
+    expect(toolCallMarkdown({ input: '{"q":1}', output: '{"a":[1]}' })).toBe(
+      '```json\n{"q":1}\n```\n\n```json\n{\n  "a": [\n    1\n  ]\n}\n```',
+    );
+    expect(toolCallMarkdown({ output: "Two results." })).toBe("```text\nTwo results.\n```");
+    expect(toolCallMarkdown({})).toBe("");
+  });
+
+  it("outruns backticks inside the code with a longer fence", () => {
+    expect(fencedCode("a ``` b", "text")).toBe("````text\na ``` b\n````");
   });
 
   it("ignores malformed command events", () => {

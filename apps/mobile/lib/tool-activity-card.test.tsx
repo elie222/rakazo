@@ -9,19 +9,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToolActivityCard } from "../components/thread/tool-activity-card";
 import { toolCallRecords } from "./tool-call-records";
 
-const { rpc, setStringAsync } = vi.hoisted(() => ({
-  rpc: vi.fn(),
-  setStringAsync: vi.fn(async () => true),
-}));
+const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock("./api", () => ({ rpc }));
-vi.mock("expo-clipboard", () => ({ setStringAsync }));
+// The chat's markdown draws the code block; here its source is enough to check.
+vi.mock("@rakazo/chat-ui/native", () => ({
+  ChatMarkdown: ({ children }: { children: string }) =>
+    createElement("pre", { "data-testid": "markdown" }, children),
+}));
 vi.mock("./i18n", () => ({
   useI18n: () => ({
     t: (text: string, values?: Record<string, string | number>) =>
       text.replace(/\{(\w+)\}/g, (_, key: string) => String(values?.[key] ?? "")),
   }),
 }));
-vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
+vi.mock("./native", () => ({
+  native: {},
+  useMobileTokens: () => ({}),
+  useResolvedAppearance: () => "dark",
+}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("react-native", () => {
   const view = ({ children, testID }: { children?: ReactNode; testID?: string }) =>
@@ -115,7 +120,7 @@ describe("mobile tool activity card", () => {
     expect(rows()[2]?.disabled).toBe(true);
   });
 
-  it("opens a row to the live command, output and exit code, and copies the output", async () => {
+  it("opens a row to the live command and output, which follow the run's records", () => {
     toolCallRecords.seed("run-1", [
       { executionId: "x1", name: "shell", status: "running", command: "pnpm test", output: "RUN" },
     ]);
@@ -125,7 +130,8 @@ describe("mobile tool activity card", () => {
     expect(rows()).toHaveLength(3);
     act(() => rows()[0]!.click());
     expect(rows()[0]?.getAttribute("aria-expanded")).toBe("true");
-    expect(container.querySelector('[data-testid="tool-step-output"]')?.textContent).toBe("RUN▍");
+    const code = () => container.querySelector('[data-testid="markdown"]')?.textContent;
+    expect(code()).toBe("```console\n$ pnpm test\nRUN\n```");
     expect(rpc).not.toHaveBeenCalled();
 
     act(() =>
@@ -140,21 +146,8 @@ describe("mobile tool activity card", () => {
         },
       ]),
     );
+    expect(code()).toBe("```console\n$ pnpm test\nRUN\n1 failed\n```");
     expect(container.textContent).toContain("exit 1");
-    const buttons = () => [...container.querySelectorAll("button")];
-    await act(async () =>
-      buttons()
-        .find((b) => b.textContent === "Copy")
-        ?.click(),
-    );
-    expect(setStringAsync).toHaveBeenCalledWith("pnpm test");
-    await act(async () =>
-      buttons()
-        .find((b) => b.textContent === "Copy output")
-        ?.click(),
-    );
-    expect(setStringAsync).toHaveBeenCalledWith("RUN\n1 failed");
-    expect(container.textContent).toContain("Copied");
   });
 
   it("reads a finished run's results once when the thread's events did not carry them", async () => {

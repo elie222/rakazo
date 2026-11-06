@@ -1897,7 +1897,6 @@ msgstr "對話"
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1905,7 +1904,6 @@ msgstr "對話"
 msgid "Copied"
 msgstr "已複製"
 
-#: src/components/ToolActivityDisclosure.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1930,10 +1928,6 @@ msgstr ""
 #: src/components/pages/SharePopover.tsx
 msgid "Copy link"
 msgstr "複製連結"
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "Copy output"
-msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"

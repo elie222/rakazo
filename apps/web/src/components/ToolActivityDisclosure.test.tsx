@@ -211,12 +211,9 @@ describe("ToolSteps", () => {
 
     flushSync(() => row?.click());
     expect(row?.getAttribute("aria-expanded")).toBe("true");
-    expect(container.querySelector('[data-testid="tool-step-command"]')?.textContent).toBe(
-      "pnpm test --filter web",
-    );
-    expect(container.querySelector('[data-testid="tool-step-output"]')?.textContent).toBe(
-      "RUN v4\n",
-    );
+    // The chat's own code block draws the command and its output as one console block.
+    const code = () => container.querySelector('[data-testid="tool-step-code"] pre')?.textContent;
+    expect(code()).toBe("$ pnpm test --filter web\nRUN v4\n");
     expect(container.querySelector('[data-testid="tool-step-exit"]')).toBeNull();
 
     // The command finishes: its exit code and final output land without reopening the row.
@@ -234,14 +231,8 @@ describe("ToolSteps", () => {
         },
       ]),
     );
-    expect(container.querySelector('[data-testid="tool-step-output"]')?.textContent).toBe(
-      "RUN v4\n1 failed",
-    );
+    expect(code()).toBe("$ pnpm test --filter web\nRUN v4\n1 failed\n");
     expect(container.querySelector('[data-testid="tool-step-exit"]')?.textContent).toBe("exit 1");
-    expect(container.querySelector('[data-testid="tool-step-copy"]')?.textContent).toBe("Copy");
-    expect(container.querySelector('[data-testid="tool-step-copy-output"]')?.textContent).toBe(
-      "Copy output",
-    );
 
     flushSync(() => row?.click());
     expect(container.querySelector('[data-testid="tool-step-panel"]')).toBeNull();
@@ -273,13 +264,14 @@ describe("ToolSteps", () => {
     flushSync(() =>
       container.querySelector<HTMLButtonElement>('[data-testid="tool-step"]')?.click(),
     );
-    expect(container.querySelector('[data-testid="tool-step-input"]')?.textContent).toBe(
-      '{\n  "query": "weather"\n}',
+    const blocks = [...container.querySelectorAll('[data-testid="tool-step-code"] pre')].map(
+      (pre) => pre.textContent,
     );
-    expect(container.querySelector('[data-testid="tool-step-output"]')?.textContent).toBe(
-      '{\n  "results": [\n    {\n      "title": "Sunny"\n    }\n  ]\n}',
-    );
-    expect(container.querySelector('[data-testid="tool-step-command"]')).toBeNull();
+    expect(blocks).toEqual([
+      '{\n  "query": "weather"\n}\n',
+      '{\n  "results": [\n    {\n      "title": "Sunny"\n    }\n  ]\n}\n',
+    ]);
+    expect(container.textContent).not.toContain("$ ");
     root.unmount();
   });
 
