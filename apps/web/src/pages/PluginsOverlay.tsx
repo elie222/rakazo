@@ -1636,7 +1636,7 @@ export function PluginsOverlay({
             {browsing && onOpenTemplates ? (
               <Button
                 variant="ghost"
-                className="-my-1 h-9 gap-2 px-2.5 text-[14px] text-muted-foreground"
+                className="-my-1 h-9 gap-2 px-2.5 text-body text-muted-foreground"
                 data-testid="open-bot-templates"
                 onClick={onOpenTemplates}
               >

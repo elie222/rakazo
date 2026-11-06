@@ -63,7 +63,7 @@ function TemplateIcon({ id, large = false }: { id: string; large?: boolean }) {
 
 function Sample({ text }: { text: string }) {
   return (
-    <div className="rounded-xl border border-border/60 bg-background px-4 py-3 text-[14px]">
+    <div className="rounded-xl border border-border/60 bg-background px-4 py-3 text-body">
       <ChatMarkdown>{text}</ChatMarkdown>
     </div>
   );
@@ -122,10 +122,10 @@ export function BotTemplatesDialog({
           <span className="flex items-center gap-3">
             <TemplateIcon id={featured.id} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[15px] font-medium text-foreground">
+              <span className="block truncate text-body-lg font-medium text-foreground">
                 {featuredCopy.name}
               </span>
-              <span className="block truncate text-[13px] text-muted-foreground">
+              <span className="block truncate text-body-sm text-muted-foreground">
                 {featuredCopy.summary}
               </span>
             </span>
@@ -146,10 +146,10 @@ export function BotTemplatesDialog({
               >
                 <TemplateIcon id={template.id} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-medium text-foreground">
+                  <span className="block truncate text-body-lg font-medium text-foreground">
                     {name}
                   </span>
-                  <span className="block truncate text-[13px] text-muted-foreground">
+                  <span className="block truncate text-body-sm text-muted-foreground">
                     {summary}
                   </span>
                 </span>
@@ -287,8 +287,8 @@ function TemplateDetail({
         </Button>
         <TemplateIcon id={template.id} large />
         <div className="min-w-0 flex-1 pt-1">
-          <h2 className="truncate text-[20px] font-semibold text-foreground">{name}</h2>
-          <p className="truncate text-[13.5px] text-muted-foreground">{summary}</p>
+          <h2 className="truncate text-heading2 font-semibold text-foreground">{name}</h2>
+          <p className="truncate text-body text-muted-foreground">{summary}</p>
         </div>
         <div className="shrink-0 pt-2">
           {template.botId ? (
@@ -329,8 +329,8 @@ function TemplateDetail({
                 >
                   <Icon size={16} className="shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14.5px] font-medium">{row.title}</span>
-                    <span className="block truncate text-[12.5px] text-muted-foreground">
+                    <span className="block truncate text-body-lg font-medium">{row.title}</span>
+                    <span className="block truncate text-body-sm text-muted-foreground">
                       {row.detail}
                     </span>
                   </span>
@@ -342,7 +342,7 @@ function TemplateDetail({
                   />
                 </button>
                 {isOpen && row.body ? (
-                  <pre className="mx-4 mb-3 max-h-64 overflow-auto rounded-lg bg-muted/60 p-3 font-sans text-[13px] whitespace-pre-wrap text-muted-foreground">
+                  <pre className="mx-4 mb-3 max-h-64 overflow-auto rounded-lg bg-muted/60 p-3 font-sans text-body-sm whitespace-pre-wrap text-muted-foreground">
                     {row.body}
                   </pre>
                 ) : null}
@@ -368,7 +368,7 @@ function AppsSection({ apps }: { apps: ConnectionCatalogItem[] }) {
         {apps.map((app) => (
           <li key={app.slug} className="flex items-center gap-3 px-4 py-3">
             <PluginLogo name={app.name} logo={app.logo} />
-            <span className="min-w-0 flex-1 truncate text-[14.5px] font-medium">{app.name}</span>
+            <span className="min-w-0 flex-1 truncate text-body-lg font-medium">{app.name}</span>
             {app.connected ? (
               <Check role="img" aria-label={t`Connected`} className="size-4 text-success" />
             ) : null}
