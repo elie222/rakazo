@@ -606,7 +606,7 @@ msgstr "Token de acceso (opcional)"
 msgid "Account"
 msgstr "Cuenta"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Account default"
 msgstr "Predeterminado de la cuenta"
 
@@ -859,7 +859,7 @@ msgstr "Todo el tiempo"
 msgid "Allow"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Allow cross-space bot communication"
 msgstr "Permitir la comunicación entre bots de distintos espacios"
 
@@ -1497,7 +1497,7 @@ msgid "Chart failed to render: {error}"
 msgstr "No se pudo renderizar el gráfico: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1652,7 +1652,7 @@ msgid "Clear {0}’s conversation?"
 msgstr "¿Borrar la conversación de {0}?"
 
 #: src/pages/BotContextMenu.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Clear conversation"
 msgstr "Borrar conversación"
 
@@ -1819,6 +1819,7 @@ msgstr "Completado"
 
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "Computadora"
@@ -2851,7 +2852,7 @@ msgstr "Personalizar avatar del bot"
 msgid "Daily"
 msgstr "Diario"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "Seguimiento diario del trabajo pendiente"
 
@@ -2894,7 +2895,7 @@ msgstr "Predeterminado"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Default ({0})"
 msgstr "Predeterminado ({0})"
 
@@ -3056,7 +3057,7 @@ msgstr "¿Quisiste decir <0>{emailSuggestion}</0>?"
 msgid "Didn't catch that."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Disable a tool"
 msgstr "Desactivar una herramienta"
 
@@ -3249,7 +3250,7 @@ msgid "Email verification required"
 msgstr "Se requiere verificar el correo"
 
 #. placeholder {0}: humanizeTool(toolName)
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Enable {0}"
 msgstr "Activar {0}"
 
@@ -3410,7 +3411,7 @@ msgid "Expiry"
 msgstr ""
 
 #: src/components/AccountDataSettings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Export"
 msgstr "Exportar"
 
@@ -3779,7 +3780,7 @@ msgstr "¿Cómo nos conociste?"
 msgid "How often"
 msgstr "Con qué frecuencia"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "How other bots see it"
 msgstr "Cómo lo ven otros bots"
 
@@ -3865,7 +3866,7 @@ msgstr "Incluir claves de API"
 msgid "Incoming call"
 msgstr "Llamada entrante"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Inherit default"
 msgstr "Heredar predeterminado"
 
@@ -3968,7 +3969,7 @@ msgid "Invite link copied"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Isolated"
 msgstr "Aislado"
 
@@ -4242,7 +4243,7 @@ msgstr "Administrar facturación"
 msgid "Manage MCP servers"
 msgstr "Gestionar servidores MCP"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Manage other bots"
 msgstr "Gestionar otros bots"
 
@@ -4350,7 +4351,7 @@ msgstr "Memoria {position}"
 msgid "Memory for {title}"
 msgstr "Memoria para {title}"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Memory scope"
 msgstr "Alcance de memoria"
 
@@ -4410,7 +4411,7 @@ msgstr "Mensaje…"
 msgid "Messaged {peer}"
 msgstr "Mensaje enviado a {peer}"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Messages"
 msgstr ""
 
@@ -4467,7 +4468,7 @@ msgstr "Modo"
 #: src/pages/Onboarding.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model"
 msgstr "Modelo"
 
@@ -4475,7 +4476,7 @@ msgstr "Modelo"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "El modelo \"{modelId}\" no aparece en la lista."
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model connections"
 msgstr "Conexiones de modelos"
 
@@ -4930,7 +4931,7 @@ msgstr "No funciona"
 msgid "Nothing remembered yet"
 msgstr "Aún no hay recuerdos"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Notifications"
 msgstr "Notificaciones"
 
@@ -5261,7 +5262,7 @@ msgstr "En pausa"
 msgid "Pending"
 msgstr "Pendiente"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Permissions"
 msgstr "Permisos"
 
@@ -5388,7 +5389,7 @@ msgstr "Secciones de configuración anteriores"
 msgid "Priority"
 msgstr "Prioridad"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Private"
 msgstr "Privado"
 
@@ -5455,7 +5456,7 @@ msgstr "Reacciones"
 msgid "Read from the page, not checked"
 msgstr "Leído de la página, sin verificar"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Read replies aloud"
 msgstr "Leer respuestas en voz alta"
 
@@ -5764,7 +5765,7 @@ msgstr "Reemplazar clave"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Replies"
 msgstr ""
 
@@ -6324,7 +6325,7 @@ msgstr "Compartir, cualquiera con el enlace puede verla"
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Shared"
 msgstr "Compartido"
 
@@ -6771,7 +6772,7 @@ msgstr "Enseñar una tarea"
 msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "Enseñanza en curso: detén la enseñanza antes de enviar un nuevo mensaje."
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Team"
 msgstr "Equipo"
 
@@ -6909,7 +6910,7 @@ msgstr "Recibe {weeks} semanas gratis."
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Thinking"
 msgstr "Pensando"
 
@@ -7151,7 +7152,7 @@ msgstr "Nombre de la herramienta"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr "Herramientas"
 
@@ -7497,7 +7498,7 @@ msgid "View source"
 msgstr "Ver código fuente"
 
 #: src/pages/settings-nav.ts
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
@@ -7589,7 +7590,7 @@ msgstr "¿Qué resultado demostrarás?"
 msgid "What should this routine do each time it runs?"
 msgstr "¿Qué debe hacer esta rutina cada vez que se ejecute?"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "Para qué es este bot"
 
@@ -7618,7 +7619,7 @@ msgstr "Cuando llega un correo"
 msgid "When bots check with you before acting."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "When it finishes or needs input"
 msgstr "Cuando termine o necesite una respuesta"
 

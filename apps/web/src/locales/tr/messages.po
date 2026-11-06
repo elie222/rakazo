@@ -606,7 +606,7 @@ msgstr "Erişim token'ı (isteğe bağlı)"
 msgid "Account"
 msgstr "Hesap"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Account default"
 msgstr "Hesap varsayılanı"
 
@@ -859,7 +859,7 @@ msgstr "Tüm zamanlar"
 msgid "Allow"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Allow cross-space bot communication"
 msgstr "Alanlar arası bot iletişimine izin ver"
 
@@ -1497,7 +1497,7 @@ msgid "Chart failed to render: {error}"
 msgstr "Grafik çizilemedi: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Chat"
 msgstr "Sohbet"
 
@@ -1652,7 +1652,7 @@ msgid "Clear {0}’s conversation?"
 msgstr "{0} sohbeti temizlensin mi?"
 
 #: src/pages/BotContextMenu.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Clear conversation"
 msgstr "Sohbeti temizle"
 
@@ -1819,6 +1819,7 @@ msgstr "Tamamlandı"
 
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "Bilgisayar"
@@ -2851,7 +2852,7 @@ msgstr "Bot avatarını özelleştir"
 msgid "Daily"
 msgstr "Günlük"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "Tamamlanmamış işler için günlük takip"
 
@@ -2894,7 +2895,7 @@ msgstr "Varsayılan"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Default ({0})"
 msgstr "Varsayılan ({0})"
 
@@ -3056,7 +3057,7 @@ msgstr "<0>{emailSuggestion}</0> mi demek istediniz?"
 msgid "Didn't catch that."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Disable a tool"
 msgstr "Bir aracı devre dışı bırak"
 
@@ -3249,7 +3250,7 @@ msgid "Email verification required"
 msgstr "E-posta doğrulaması gerekiyor"
 
 #. placeholder {0}: humanizeTool(toolName)
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Enable {0}"
 msgstr "{0} etkinleştir"
 
@@ -3410,7 +3411,7 @@ msgid "Expiry"
 msgstr "Son kullanma tarihi"
 
 #: src/components/AccountDataSettings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Export"
 msgstr "Dışa aktar"
 
@@ -3779,7 +3780,7 @@ msgstr "Bizi nereden duydun?"
 msgid "How often"
 msgstr "Ne sıklıkla"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "How other bots see it"
 msgstr "Diğer botlar onu nasıl görüyor"
 
@@ -3865,7 +3866,7 @@ msgstr "API anahtarlarını dahil et"
 msgid "Incoming call"
 msgstr "Gelen arama"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Inherit default"
 msgstr "Varsayılanı devral"
 
@@ -3968,7 +3969,7 @@ msgid "Invite link copied"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Isolated"
 msgstr "Yalıtılmış"
 
@@ -4242,7 +4243,7 @@ msgstr "Faturalandırmayı yönet"
 msgid "Manage MCP servers"
 msgstr "MCP sunucularını yönet"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Manage other bots"
 msgstr "Diğer botları yönet"
 
@@ -4350,7 +4351,7 @@ msgstr "Hafıza {position}"
 msgid "Memory for {title}"
 msgstr "{title} için hafıza"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Memory scope"
 msgstr "Hafıza kapsamı"
 
@@ -4410,7 +4411,7 @@ msgstr "Mesaj…"
 msgid "Messaged {peer}"
 msgstr "{peer} botuna mesaj gönderildi"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Messages"
 msgstr ""
 
@@ -4467,7 +4468,7 @@ msgstr "Mod"
 #: src/pages/Onboarding.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model"
 msgstr "Model"
 
@@ -4475,7 +4476,7 @@ msgstr "Model"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "\"{modelId}\" modeli listelenmedi."
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model connections"
 msgstr "Model bağlantıları"
 
@@ -4930,7 +4931,7 @@ msgstr "Çalışmıyor"
 msgid "Nothing remembered yet"
 msgstr "Henüz hatırlanan bir şey yok"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Notifications"
 msgstr "Bildirimler"
 
@@ -5261,7 +5262,7 @@ msgstr "Duraklatıldı"
 msgid "Pending"
 msgstr "Beklemede"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Permissions"
 msgstr "İzinler"
 
@@ -5388,7 +5389,7 @@ msgstr "Önceki ayar bölümleri"
 msgid "Priority"
 msgstr "Öncelik"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Private"
 msgstr "Özel"
 
@@ -5455,7 +5456,7 @@ msgstr "Tepkiler"
 msgid "Read from the page, not checked"
 msgstr "Sayfadan okundu, kontrol edilmedi"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Read replies aloud"
 msgstr "Yanıtları sesli oku"
 
@@ -5764,7 +5765,7 @@ msgstr "Anahtarı değiştir"
 msgid "Replaces the login saved for {0}"
 msgstr "{0} için kayıtlı girişin yerini alır"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Replies"
 msgstr ""
 
@@ -6324,7 +6325,7 @@ msgstr "Paylaş, bağlantıya sahip herkes görüntüleyebilir"
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Shared"
 msgstr "Ortak"
 
@@ -6771,7 +6772,7 @@ msgstr "Görev öğret"
 msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "Öğretme sürüyor. Yeni mesaj göndermeden önce öğretmeyi durdur."
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Team"
 msgstr "Takım"
 
@@ -6909,7 +6910,7 @@ msgstr "Arkadaşın {weeks} hafta ücretsiz kullanır."
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Thinking"
 msgstr "Düşünüyor"
 
@@ -7151,7 +7152,7 @@ msgstr "Araç adı"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr "Araçlar"
 
@@ -7497,7 +7498,7 @@ msgid "View source"
 msgstr "Kaynağı görüntüle"
 
 #: src/pages/settings-nav.ts
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
@@ -7589,7 +7590,7 @@ msgstr "Hangi sonucu göstereceksin?"
 msgid "What should this routine do each time it runs?"
 msgstr "Bu rutin her çalıştığında ne yapmalı?"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "Bu botun amacı"
 
@@ -7618,7 +7619,7 @@ msgstr "E-posta geldiğinde"
 msgid "When bots check with you before acting."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "When it finishes or needs input"
 msgstr "Tamamladığında veya yanıt gerektiğinde"
 

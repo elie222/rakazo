@@ -606,7 +606,7 @@ msgstr "טוקן גישה (אופציונלי)"
 msgid "Account"
 msgstr "חשבון"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Account default"
 msgstr "ברירת המחדל של החשבון"
 
@@ -859,7 +859,7 @@ msgstr "כל הזמנים"
 msgid "Allow"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Allow cross-space bot communication"
 msgstr ""
 
@@ -1497,7 +1497,7 @@ msgid "Chart failed to render: {error}"
 msgstr "לא ניתן להציג את התרשים: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1652,7 +1652,7 @@ msgid "Clear {0}’s conversation?"
 msgstr "לנקות את השיחה של {0}?"
 
 #: src/pages/BotContextMenu.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Clear conversation"
 msgstr "ניקוי השיחה"
 
@@ -1819,6 +1819,7 @@ msgstr "הושלם"
 
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "מחשב"
@@ -2851,7 +2852,7 @@ msgstr "התאמת תמונת הבוט"
 msgid "Daily"
 msgstr "יומי"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "מעקב יומי אחר עבודה שלא הושלמה"
 
@@ -2894,7 +2895,7 @@ msgstr "ברירת מחדל"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Default ({0})"
 msgstr "ברירת מחדל ({0})"
 
@@ -3056,7 +3057,7 @@ msgstr "האם התכוונת ל-<0>{emailSuggestion}</0>?"
 msgid "Didn't catch that."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Disable a tool"
 msgstr "השבתת כלי"
 
@@ -3249,7 +3250,7 @@ msgid "Email verification required"
 msgstr "נדרש אימות אימייל"
 
 #. placeholder {0}: humanizeTool(toolName)
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Enable {0}"
 msgstr "הפעלת {0}"
 
@@ -3410,7 +3411,7 @@ msgid "Expiry"
 msgstr ""
 
 #: src/components/AccountDataSettings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Export"
 msgstr "ייצוא"
 
@@ -3779,7 +3780,7 @@ msgstr ""
 msgid "How often"
 msgstr "תדירות"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "How other bots see it"
 msgstr "איך בוטים אחרים רואים אותו"
 
@@ -3865,7 +3866,7 @@ msgstr "לכלול מפתחות API"
 msgid "Incoming call"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Inherit default"
 msgstr "ירושה מברירת המחדל"
 
@@ -3968,7 +3969,7 @@ msgid "Invite link copied"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Isolated"
 msgstr "מבודד"
 
@@ -4242,7 +4243,7 @@ msgstr "ניהול חיוב"
 msgid "Manage MCP servers"
 msgstr "ניהול שרתי MCP"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Manage other bots"
 msgstr "ניהול בוטים אחרים"
 
@@ -4350,7 +4351,7 @@ msgstr "זיכרון {position}"
 msgid "Memory for {title}"
 msgstr "זיכרון עבור {title}"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Memory scope"
 msgstr "היקף הזיכרון"
 
@@ -4410,7 +4411,7 @@ msgstr "הודעה…"
 msgid "Messaged {peer}"
 msgstr "נשלחה הודעה אל {peer}"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Messages"
 msgstr ""
 
@@ -4467,7 +4468,7 @@ msgstr "מצב"
 #: src/pages/Onboarding.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model"
 msgstr "מודל"
 
@@ -4475,7 +4476,7 @@ msgstr "מודל"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "המודל \"{modelId}\" לא הופיע ברשימה."
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model connections"
 msgstr "חיבורים למודלים"
 
@@ -4930,7 +4931,7 @@ msgstr "לא עובד"
 msgid "Nothing remembered yet"
 msgstr "עדיין אין זיכרונות"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Notifications"
 msgstr "התראות"
 
@@ -5261,7 +5262,7 @@ msgstr "מושהה"
 msgid "Pending"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Permissions"
 msgstr "הרשאות"
 
@@ -5388,7 +5389,7 @@ msgstr ""
 msgid "Priority"
 msgstr "עדיפות"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Private"
 msgstr "פרטי"
 
@@ -5455,7 +5456,7 @@ msgstr "אמוג׳י"
 msgid "Read from the page, not checked"
 msgstr "נקרא מהדף, לא נבדק"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Read replies aloud"
 msgstr "הקראת תשובות בקול"
 
@@ -5764,7 +5765,7 @@ msgstr "החלפת מפתח"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Replies"
 msgstr ""
 
@@ -6324,7 +6325,7 @@ msgstr "שיתוף, כל מי שיש לו את הקישור יכול לצפות"
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Shared"
 msgstr "משותף"
 
@@ -6771,7 +6772,7 @@ msgstr "לימוד משימה"
 msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "לימוד בתהליך. יש להפסיק את הלימוד לפני שליחת הודעה חדשה."
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Team"
 msgstr "צוות"
 
@@ -6909,7 +6910,7 @@ msgstr "הם מקבלים {weeks} שבועות בחינם."
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Thinking"
 msgstr "חשיבה"
 
@@ -7151,7 +7152,7 @@ msgstr "שם הכלי"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr "כלים"
 
@@ -7497,7 +7498,7 @@ msgid "View source"
 msgstr ""
 
 #: src/pages/settings-nav.ts
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
@@ -7589,7 +7590,7 @@ msgstr "איזו תוצאה תודגם?"
 msgid "What should this routine do each time it runs?"
 msgstr "מה הרוטינה הזו צריכה לעשות בכל הרצה?"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "למה הבוט הזה משמש"
 
@@ -7618,7 +7619,7 @@ msgstr "כשמגיע אימייל"
 msgid "When bots check with you before acting."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "When it finishes or needs input"
 msgstr "כשהוא מסיים או זקוק לקלט"
 

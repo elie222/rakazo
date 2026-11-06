@@ -607,7 +607,7 @@ msgstr "存取權杖（選填）"
 msgid "Account"
 msgstr "帳號"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Account default"
 msgstr "帳號預設"
 
@@ -860,7 +860,7 @@ msgstr "不限時間"
 msgid "Allow"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Allow cross-space bot communication"
 msgstr "允許跨空間機器人通訊"
 
@@ -1498,7 +1498,7 @@ msgid "Chart failed to render: {error}"
 msgstr "圖表渲染失敗：{error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Chat"
 msgstr "聊天"
 
@@ -1653,7 +1653,7 @@ msgid "Clear {0}’s conversation?"
 msgstr "清空與 {0} 的對話？"
 
 #: src/pages/BotContextMenu.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Clear conversation"
 msgstr "清空對話"
 
@@ -1820,6 +1820,7 @@ msgstr "已完成"
 
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "電腦"
@@ -2852,7 +2853,7 @@ msgstr "自訂機器人頭像"
 msgid "Daily"
 msgstr "每天"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "每天追蹤未完成的工作"
 
@@ -2895,7 +2896,7 @@ msgstr "預設"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Default ({0})"
 msgstr "預設（{0}）"
 
@@ -3057,7 +3058,7 @@ msgstr "你是指 <0>{emailSuggestion}</0> 嗎？"
 msgid "Didn't catch that."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Disable a tool"
 msgstr "停用工具"
 
@@ -3250,7 +3251,7 @@ msgid "Email verification required"
 msgstr "需要驗證電子信箱"
 
 #. placeholder {0}: humanizeTool(toolName)
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Enable {0}"
 msgstr "啟用 {0}"
 
@@ -3411,7 +3412,7 @@ msgid "Expiry"
 msgstr ""
 
 #: src/components/AccountDataSettings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Export"
 msgstr "匯出"
 
@@ -3780,7 +3781,7 @@ msgstr "你是如何知道我們的？"
 msgid "How often"
 msgstr "頻率"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "How other bots see it"
 msgstr "其他機器人如何瞭解它"
 
@@ -3866,7 +3867,7 @@ msgstr "包含 API 金鑰"
 msgid "Incoming call"
 msgstr "來電"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Inherit default"
 msgstr "沿用預設"
 
@@ -3969,7 +3970,7 @@ msgid "Invite link copied"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Isolated"
 msgstr "隔離"
 
@@ -4243,7 +4244,7 @@ msgstr "管理帳務"
 msgid "Manage MCP servers"
 msgstr "管理 MCP 伺服器"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Manage other bots"
 msgstr "管理其他機器人"
 
@@ -4351,7 +4352,7 @@ msgstr "記憶 {position}"
 msgid "Memory for {title}"
 msgstr "{title} 的記憶"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Memory scope"
 msgstr "記憶範圍"
 
@@ -4411,7 +4412,7 @@ msgstr "訊息…"
 msgid "Messaged {peer}"
 msgstr "已發給 {peer}"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Messages"
 msgstr ""
 
@@ -4468,7 +4469,7 @@ msgstr "模式"
 #: src/pages/Onboarding.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model"
 msgstr "模型"
 
@@ -4476,7 +4477,7 @@ msgstr "模型"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "模型「{modelId}」未列出。"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model connections"
 msgstr "模型連線"
 
@@ -4931,7 +4932,7 @@ msgstr "無法正常工作"
 msgid "Nothing remembered yet"
 msgstr "尚無記憶"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Notifications"
 msgstr "通知"
 
@@ -5262,7 +5263,7 @@ msgstr "已暫停"
 msgid "Pending"
 msgstr "待處理"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Permissions"
 msgstr "權限"
 
@@ -5389,7 +5390,7 @@ msgstr "上一組設定區段"
 msgid "Priority"
 msgstr "優先順序"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Private"
 msgstr "私人"
 
@@ -5456,7 +5457,7 @@ msgstr "表情回應"
 msgid "Read from the page, not checked"
 msgstr "讀取自頁面，未核實"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Read replies aloud"
 msgstr "朗讀回覆"
 
@@ -5765,7 +5766,7 @@ msgstr "替換金鑰"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Replies"
 msgstr ""
 
@@ -6325,7 +6326,7 @@ msgstr "共用，任何擁有連結的人都能檢視"
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Shared"
 msgstr "共享"
 
@@ -6772,7 +6773,7 @@ msgstr "示範任務"
 msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "正在示範，傳送新訊息前請先停止示範。"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Team"
 msgstr "團隊"
 
@@ -6910,7 +6911,7 @@ msgstr "對方可免費使用 {weeks} 週。"
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Thinking"
 msgstr "思考"
 
@@ -7152,7 +7153,7 @@ msgstr "工具名稱"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr "工具"
 
@@ -7498,7 +7499,7 @@ msgid "View source"
 msgstr "檢視來源"
 
 #: src/pages/settings-nav.ts
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
@@ -7590,7 +7591,7 @@ msgstr "你要示範什麼結果？"
 msgid "What should this routine do each time it runs?"
 msgstr "每次執行時，這個例行任務應做什麼？"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "這個機器人是做什麼的"
 
@@ -7619,7 +7620,7 @@ msgstr "收到電子郵件時"
 msgid "When bots check with you before acting."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "When it finishes or needs input"
 msgstr "完成任務或需要輸入時"
 
