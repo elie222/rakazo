@@ -7,7 +7,7 @@ import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
-import { isFailedToolResult, toolResultError } from "./tool-result-error.js";
+import { isFailedToolResult, toolCallFailed, toolResultError } from "./tool-result-error.js";
 
 function isAuditableToolResult(value: unknown): value is {
   kind: "agent_tool_result";
@@ -44,7 +44,12 @@ export function toolCompletionAuditPayload(
     name: redactSecrets(completion.name, secrets),
     executionId: redactSecrets(completion.executionId, secrets),
     durationMs,
-    outcome: completion.paused ? "paused" : error === undefined ? "succeeded" : "error",
+    // The same verdict the step shows, so the live mark never changes once the reply lands.
+    outcome: completion.paused
+      ? "paused"
+      : toolCallFailed(completion.error, completion.result)
+        ? "error"
+        : "succeeded",
   };
   if (error !== undefined) {
     payload.error = sanitizeConnectorError(error, secrets);

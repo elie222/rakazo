@@ -50,8 +50,9 @@ export function ToolSteps({
       ) : null}
       {shown.map((step, offset) => {
         const index = hidden + offset;
-        // Rows keyed by call so a row stays open while the live window slides past it.
-        const key = step.executionId ?? `step-${index}`;
+        // Rows keyed by their place in the block, which a repeated call joining the row or the
+        // live window sliding past it never changes, so an open row stays open.
+        const key = `step-${index}`;
         const expanded = open.has(key);
         const expandable = Boolean(step.executionId && source);
         return (

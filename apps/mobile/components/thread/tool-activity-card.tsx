@@ -87,7 +87,8 @@ export function ToolActivityCard({
             <Text style={[styles.hidden, { color: tokens.mutedForeground }]}>+{hidden}</Text>
           ) : null}
           {shown.map((step, offset) => {
-            const key = step.executionId ?? `step-${hidden + offset}`;
+            // Keyed by place in the block, so a repeated call joining the row keeps it open.
+            const key = `step-${hidden + offset}`;
             const expandable = Boolean(step.executionId && runId);
             const expanded = expandable && openRows.has(key);
             return (

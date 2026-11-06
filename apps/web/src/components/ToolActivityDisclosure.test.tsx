@@ -298,6 +298,34 @@ describe("ToolSteps", () => {
     root.unmount();
   });
 
+  it("keeps a row open when a repeated call joins it under a new call id", () => {
+    seedToolCallRecords("run-1", [
+      { executionId: "x1", name: "shell", status: "done", command: "ls", output: "a" },
+      { executionId: "x2", name: "shell", status: "running", command: "ls", output: "" },
+    ]);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const render = (executionId: string, count: number) =>
+      flushSync(() =>
+        root.render(
+          <ToolSteps
+            live
+            source={MESSAGE}
+            steps={[{ label: "Shell", count, executionId, detail: "ls" }]}
+          />,
+        ),
+      );
+    render("x1", 1);
+    flushSync(() =>
+      container.querySelector<HTMLButtonElement>('[data-testid="tool-step"]')?.click(),
+    );
+    expect(container.querySelector('[data-testid="tool-step-panel"]')).not.toBeNull();
+    render("x2", 2);
+    expect(container.querySelector('[data-testid="tool-step-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="tool-step"]')?.textContent).toContain("Shell ×2");
+    root.unmount();
+  });
+
   it("shows nothing but the running mark for a call that has not printed yet", () => {
     seedToolCallRecords("run-1", [{ executionId: "x1", name: "shell", status: "running" }]);
     const container = document.createElement("div");

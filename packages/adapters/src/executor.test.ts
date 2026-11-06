@@ -316,6 +316,17 @@ describe("tool completion audit", () => {
     ).toBe('{\n  "path": "/tmp/a.py",\n  "bytes": 12\n}');
   });
 
+  it("audits a shell command that exited nonzero as an error", () => {
+    expect(
+      toolCompletionAuditPayload({
+        name: "shell",
+        executionId: "c",
+        durationMs: 1,
+        result: { stdout: "", stderr: "boom", code: 1 },
+      }).outcome,
+    ).toBe("error");
+  });
+
   it("counts a shell command that exited nonzero as failed, but not one still running", async () => {
     const { toolCallFailed } = await import("./tool-result-error.js");
     expect(toolCallFailed(undefined, { stdout: "", stderr: "boom", code: 1 })).toBe(true);
