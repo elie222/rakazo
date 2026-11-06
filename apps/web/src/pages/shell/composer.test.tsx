@@ -670,6 +670,18 @@ describe("Composer", () => {
     expect(send?.className).not.toContain("disabled:opacity-50");
   });
 
+  it("keeps keyboard focus on the shared button when a draft arrives from outside", () => {
+    renderComposer(vi.fn(), { running: true });
+    const stop = container?.querySelector<HTMLButtonElement>('button[aria-label="Stop"]');
+    stop?.focus();
+    expect(document.activeElement).toBe(stop);
+    // Late dictation for this chat lands in its draft while Stop has focus.
+    act(() => replaceComposerDraft("bot:bot-1", "and the invoices", []));
+    const send = container?.querySelector<HTMLButtonElement>('button[aria-label="Send"]');
+    expect(send).toBe(stop);
+    expect(document.activeElement).toBe(send);
+  });
+
   it("shares one button for Send and Stop while a bot works, leaving the microphone as is", async () => {
     const onSend = vi.fn().mockResolvedValue(true);
     const textarea = renderComposer(onSend, { running: true, phoneCallsEnabled: true });
