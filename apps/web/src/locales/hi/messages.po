@@ -445,7 +445,7 @@ msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
 msgstr "{vcpus} vCPU, {memoryGb} GB, हर महीने {hours} कंप्यूटर घंटे"
 
 #. placeholder {0}: mention.name
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "@{0}"
 msgstr "@{0}"
 
@@ -4360,7 +4360,7 @@ msgstr "{title} के लिए मेमोरी"
 msgid "Memory scope"
 msgstr "मेमोरी स्कोप"
 
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Mentions"
 msgstr ""
 
@@ -5654,7 +5654,7 @@ msgstr "हटाएं"
 #. placeholder {0}: attachment.file.name
 #. placeholder {0}: device.name
 #: src/components/ComputerDeviceSettings.tsx
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Remove {0}"
 msgstr "{0} हटाएं"
 
@@ -6206,7 +6206,7 @@ msgstr "एक बॉट चुनें"
 msgid "Self-hosted"
 msgstr "सेल्फ़-होस्टेड"
 
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Send"
 msgstr "भेजें"
 
@@ -6451,7 +6451,7 @@ msgid "Skill"
 msgstr "स्किल"
 
 #. placeholder {0}: skill.name
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Skill {0}"
 msgstr "स्किल {0}"
 
@@ -6652,7 +6652,7 @@ msgstr "चरण"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/RoutineList.tsx
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"

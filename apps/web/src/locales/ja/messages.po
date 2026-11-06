@@ -445,7 +445,7 @@ msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
 msgstr "{vcpus} vCPU、{memoryGb} GB、月 {hours} 時間のコンピューター"
 
 #. placeholder {0}: mention.name
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "@{0}"
 msgstr "@{0}"
 
@@ -4360,7 +4360,7 @@ msgstr "{title}のメモリ"
 msgid "Memory scope"
 msgstr "メモリの範囲"
 
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Mentions"
 msgstr "メンション"
 
@@ -5654,7 +5654,7 @@ msgstr "削除"
 #. placeholder {0}: attachment.file.name
 #. placeholder {0}: device.name
 #: src/components/ComputerDeviceSettings.tsx
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Remove {0}"
 msgstr "{0}を削除"
 
@@ -6206,7 +6206,7 @@ msgstr "ボットを選択"
 msgid "Self-hosted"
 msgstr "セルフホスト"
 
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Send"
 msgstr "送信"
 
@@ -6451,7 +6451,7 @@ msgid "Skill"
 msgstr "スキル"
 
 #. placeholder {0}: skill.name
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Skill {0}"
 msgstr "スキル{0}"
 
@@ -6652,7 +6652,7 @@ msgstr "手順"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/RoutineList.tsx
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"

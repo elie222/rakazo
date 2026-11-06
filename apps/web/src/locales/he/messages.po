@@ -445,7 +445,7 @@ msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
 msgstr "{vcpus} vCPU, {memoryGb} GB, {hours} שעות מחשב בחודש"
 
 #. placeholder {0}: mention.name
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "@{0}"
 msgstr "@{0}"
 
@@ -4360,7 +4360,7 @@ msgstr "זיכרון עבור {title}"
 msgid "Memory scope"
 msgstr "היקף הזיכרון"
 
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Mentions"
 msgstr "אזכורים"
 
@@ -5654,7 +5654,7 @@ msgstr "הסרה"
 #. placeholder {0}: attachment.file.name
 #. placeholder {0}: device.name
 #: src/components/ComputerDeviceSettings.tsx
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Remove {0}"
 msgstr "הסרת {0}"
 
@@ -6206,7 +6206,7 @@ msgstr "בחירת בוט"
 msgid "Self-hosted"
 msgstr "באירוח עצמי"
 
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Send"
 msgstr "שליחה"
 
@@ -6451,7 +6451,7 @@ msgid "Skill"
 msgstr "מיומנות"
 
 #. placeholder {0}: skill.name
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Skill {0}"
 msgstr "מיומנות {0}"
 
@@ -6652,7 +6652,7 @@ msgstr "שלבים"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/RoutineList.tsx
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
