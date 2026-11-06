@@ -562,6 +562,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Slack message": "Slack 訊息",
   "Message event": "訊息事件",
   "When something changes": "有變化時",
+  "When an email arrives": "收到電子郵件時",
   "Teams not enabled": "未啟用 Teams",
   "Slack not enabled": "未啟用 Slack",
   "Teams message": "Teams 訊息",
@@ -793,6 +794,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "What this bot is for": "這個機器人的用途",
   Working: "工作中",
   "Working…": "處理中…",
+  "Running {name}…": "正在執行 {name}…",
   "Work stopped, but the thread could not refresh: {detail}":
     "工作已停止，但無法重新整理對話串：{detail}",
   "You have control": "你已接管控制",

@@ -70,6 +70,7 @@ export const DOCS_NAV = [
       { slug: "self-host-accounts", label: "Sign-in and accounts" },
       { slug: "self-host-models", label: "Models" },
       { slug: "self-host-integrations", label: "Tools and integrations" },
+      { slug: "self-host-inbound-email", label: "Bot email addresses" },
       { slug: "self-host-sandbox-providers", label: "Computer providers" },
       { slug: "self-host-docker-computers", label: "Docker computers" },
       { slug: "computer-runtime", label: "Computer runtime" },

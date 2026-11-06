@@ -1292,7 +1292,8 @@ function speakerText(speaker: string, text: string): string {
 /**
  * Replays stored messages with their real roles. This bot's own replies are assistant turns;
  * a message with a `speaker` (another bot, or the human in a group) is a user turn that starts
- * with "[speaker]: ". The label exists only here: it is never stored or shown in the app.
+ * with "[speaker]: ". A system line (a stop or expiry note) is a user turn that starts with
+ * "System note: ". These labels exist only here: they are never stored or shown in the app.
  * Content is a pure function of the message, so replayed history is stable for prompt caching.
  */
 function toHistory(
@@ -1315,41 +1316,45 @@ function toHistory(
     duplicatePromptIndex < 0
       ? history
       : history.filter((_, index) => index !== duplicatePromptIndex);
-  return prior
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .flatMap((m): HistoryMessage[] => {
-      const created = m.createdAt ? Date.parse(m.createdAt) : Number.NaN;
-      const common = {
-        timestamp: Number.isNaN(created) ? 0 : created,
-        rakazoHistory: true as const,
-        rakazoMessageId: m.id,
-        rakazoCreatedAt: m.createdAt,
-      };
-      if (m.role === "assistant" && !m.speaker) {
-        // A reply that holds only tool work has no text to replay.
-        if (!m.content.trim()) return [];
-        return [
-          {
-            role: "assistant" as const,
-            content: [{ type: "text" as const, text: m.content }],
-            ...HISTORY_ASSISTANT,
-            usage: NO_USAGE,
-            stopReason: "stop" as const,
-            ...common,
-          },
-        ];
-      }
-      const text = m.speaker ? speakerText(m.speaker, m.content) : m.content;
-      // Pictures ride on the human's turn only, never on a bot's.
-      const images = m.role === "assistant" ? [] : toPiImages(m.images);
+  return prior.flatMap((m): HistoryMessage[] => {
+    const created = m.createdAt ? Date.parse(m.createdAt) : Number.NaN;
+    const common = {
+      timestamp: Number.isNaN(created) ? 0 : created,
+      rakazoHistory: true as const,
+      rakazoMessageId: m.id,
+      rakazoCreatedAt: m.createdAt,
+    };
+    if (m.role === "assistant" && !m.speaker) {
+      // A reply that holds only tool work has no text to replay.
+      if (!m.content.trim()) return [];
       return [
         {
-          role: "user" as const,
-          content: images.length ? [{ type: "text" as const, text }, ...images] : text,
+          role: "assistant" as const,
+          content: [{ type: "text" as const, text: m.content }],
+          ...HISTORY_ASSISTANT,
+          usage: NO_USAGE,
+          stopReason: "stop" as const,
           ...common,
         },
       ];
-    });
+    }
+    if (m.role === "system" && !m.content.trim()) return [];
+    const text =
+      m.role === "system"
+        ? `System note: ${neutralizeSpeakerLabels(m.content)}`
+        : m.speaker
+          ? speakerText(m.speaker, m.content)
+          : m.content;
+    // Pictures ride on the human's turn only, never on a bot's.
+    const images = m.role === "assistant" ? [] : toPiImages(m.images);
+    return [
+      {
+        role: "user" as const,
+        content: images.length ? [{ type: "text" as const, text }, ...images] : text,
+        ...common,
+      },
+    ];
+  });
 }
 
 function isHistoryReply(message: Message | undefined): boolean {

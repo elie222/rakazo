@@ -249,6 +249,7 @@ const routine = (id: string, name: string, partial: Partial<Routine> = {}) => ({
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
+  emailSenders: null,
   nextRunAt: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   ...partial,

@@ -614,6 +614,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Slack message": "Сообщение Slack",
   "Message event": "Событие сообщения",
   "When something changes": "Когда что-то меняется",
+  "When an email arrives": "Когда приходит письмо",
   "Teams not enabled": "Teams не настроен",
   "Slack not enabled": "Slack не включен",
   "Teams message": "Сообщение Teams",
@@ -850,6 +851,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "What this bot is for": "Для чего нужен этот бот",
   Working: "Выполняется",
   "Working…": "Выполняется…",
+  "Running {name}…": "Выполняется {name}…",
   "Work stopped, but the thread could not refresh: {detail}":
     "Работа остановлена, но диалог не удалось обновить: {detail}",
   "You have control": "Вы управляете",

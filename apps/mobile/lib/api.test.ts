@@ -3637,6 +3637,7 @@ describe("mobile thread event reduction", () => {
       id: "run-remote",
       botId: "bot-1",
       status: "running",
+      trigger: "routine",
       error: null,
     });
     expect(started?.activeRuns).toEqual([started?.run]);

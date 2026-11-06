@@ -351,6 +351,7 @@ function runFromStartedEvent(
 ): LiveThreadRun {
   const trigger = event.payload?.trigger;
   const routineId = event.payload?.routineId;
+  const routineName = event.payload?.routineName;
   return {
     ...previous,
     id: runId,
@@ -363,6 +364,7 @@ function runFromStartedEvent(
         ? (trigger as RunTrigger)
         : (previous?.trigger ?? "user"),
     routineId: typeof routineId === "string" ? routineId : (previous?.routineId ?? null),
+    ...(typeof routineName === "string" ? { routineName } : {}),
     modelProvider: previous?.modelProvider ?? null,
     modelId: previous?.modelId ?? null,
     error: null,
