@@ -18,8 +18,8 @@ const ANSWER_MAX_BYTES = 2_000_000;
 /** Treg names its routed jobs `treg.<job>`; the agent sees `auto.<job>`. */
 const ROUTED_PREFIX = "treg.";
 const PUBLIC_ROUTED_PREFIX = "auto.";
-/** Generation runs as a billed background task; the deployment media tools cover it. */
 const ACCOUNT_ERROR_CODES = new Set(["insufficient_balance", "platform_daily_cap_reached"]);
+/** Generation runs as a billed background task; the deployment media tools cover it. */
 const GENERATION_PLATFORMS = new Set(["image-gen", "video-gen", "voice-gen", "music-gen"]);
 
 const paramSpec = z
