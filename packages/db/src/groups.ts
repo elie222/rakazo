@@ -644,7 +644,7 @@ export function createGroupRepos(prisma: PrismaClient) {
 
     async removeGroup(actor: Actor, groupId: string) {
       return prisma.$transaction(async (tx) => {
-        await lockOwnedGroup(tx, actor, groupId, { forDelete: true });
+        await lockOwnedGroup(tx, actor, groupId);
         const group = await tx.chatGroup.findUnique({
           where: { id: groupId },
           select: {
@@ -655,6 +655,11 @@ export function createGroupRepos(prisma: PrismaClient) {
         });
         const contextBotId = group?.members[0]?.botId;
         if (!contextBotId) throw new IsolationError();
+        // Wait out the thread's writers before the delete takes the group row exclusively:
+        // their foreign-key share on the group would otherwise wait on this transaction.
+        if (group.thread) {
+          await tx.$queryRaw`SELECT id FROM threads WHERE id = ${group.thread.id} FOR UPDATE`;
+        }
         // The thread's runs cascade away with the group, but their computer leases don't:
         // cancel them first so the route can stop their work and release the leases.
         const activeRuns = group.thread
@@ -687,32 +692,22 @@ export function createGroupRepos(prisma: PrismaClient) {
  * Serializes writers of one group. Callers lock the group before its thread, while a
  * thread writer that writes the thread row twice (message, then event counter) takes a
  * foreign-key share on the group row under its thread lock. FOR NO KEY UPDATE lets that
- * share through so the two orders cannot deadlock; only deleting the group needs
- * FOR UPDATE, which also keeps new rows from referencing it.
+ * share through so the two orders cannot deadlock. Deleting the group locks its thread
+ * next, so the delete's exclusive row lock comes only after the thread's writers finish.
  */
 export async function lockOwnedGroup(
   prisma: Pick<Prisma.TransactionClient, "$queryRaw">,
   actor: Pick<Actor, "spaceId" | "userId">,
   groupId: string,
-  options: { forDelete?: boolean } = {},
 ) {
-  const locked = options.forDelete
-    ? await prisma.$queryRaw<Array<{ id: string }>>`
-        SELECT id
-        FROM chat_groups
-        WHERE id = ${groupId}
-          AND "spaceId" = ${actor.spaceId}
-          AND "userId" = ${actor.userId}
-        FOR UPDATE
-      `
-    : await prisma.$queryRaw<Array<{ id: string }>>`
-        SELECT id
-        FROM chat_groups
-        WHERE id = ${groupId}
-          AND "spaceId" = ${actor.spaceId}
-          AND "userId" = ${actor.userId}
-        FOR NO KEY UPDATE
-      `;
+  const locked = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id
+    FROM chat_groups
+    WHERE id = ${groupId}
+      AND "spaceId" = ${actor.spaceId}
+      AND "userId" = ${actor.userId}
+    FOR NO KEY UPDATE
+  `;
   if (locked.length !== 1) throw new IsolationError();
 }
 
