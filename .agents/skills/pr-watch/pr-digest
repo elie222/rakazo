@@ -52,9 +52,13 @@ check_runs() {
     --jq '.check_runs[] | {name, status, conclusion, html_url}' | jq -s .
 }
 
+# Fork PRs always carry Vercel's "Authorization required to deploy." failure,
+# which AGENTS.md says to ignore; counting it would wake every watch at once.
 commit_statuses() {
   api --paginate "repos/$1/commits/$2/status?per_page=100" \
-    --jq '.statuses[] | {context, state}' | jq -s .
+    --jq '.statuses[] | {context, state, description}' |
+    jq -s '[.[] | select(.context == "Vercel" and .description == "Authorization required to deploy." | not)
+      | {context, state}]'
 }
 
 logs() {

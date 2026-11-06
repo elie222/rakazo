@@ -318,6 +318,22 @@ describe("pr-digest", () => {
       expect(result.status).toBe(10);
     });
 
+    it("ignores the deploy authorization failure fork PRs always get", () => {
+      const forkDeploy = {
+        context: "Vercel",
+        state: "failure",
+        description: "Authorization required to deploy.",
+      };
+      const passed = { ...running, status: "completed", conclusion: "success" };
+      const result = runDigest(
+        { checks: [running, running, passed], statuses: [[], [forkDeploy]] },
+        "--watch",
+        "1",
+      );
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain("STATUS Vercel");
+    });
+
     it("keeps waiting on a failure that was already there", () => {
       const started = Date.now();
       const result = runDigest({ checks: [[failed, running]], deadline: 3 }, "--watch", "1");
