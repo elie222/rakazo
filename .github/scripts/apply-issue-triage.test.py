@@ -19,7 +19,7 @@ done
 case "$*" in
   *"--json labels"*) jq -c "$jq_filter" <<<"{\"labels\": $LABELS}" ;;
   *"--json comments"*) jq -r "$jq_filter" <<<"{\"comments\": $COMMENTS}" ;;
-  *"--json url"*) [[ "$3" == 5 ]] && echo "https://github.com/o/r/issues/5" || echo "https://github.com/o/r/pull/$3" ;;
+  *"--json url"*) [[ "$3" == 5 || "$3" == 10 ]] && echo "https://github.com/o/r/issues/5" || echo "https://github.com/o/r/pull/$3" ;;
 esac
 """
 
@@ -77,6 +77,7 @@ class ApplyIssueTriageTests(unittest.TestCase):
 
     def test_duplicate_must_be_another_real_issue_not_already_noted(self):
         self.assertEqual(run(result(duplicate_of=9), labels=["bug", "size:small"])[0], [])
+        self.assertEqual(run(result(duplicate_of=10), labels=["bug", "size:small"])[0], [])
         self.assertEqual(run(result(duplicate_of=7), labels=["bug", "size:small"])[0], [])
         noted = run(result(duplicate_of=5), labels=["bug", "size:small"], comments=["Possibly a duplicate of #5."])
         self.assertEqual(noted[0], [])

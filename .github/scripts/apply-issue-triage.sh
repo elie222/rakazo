@@ -4,7 +4,7 @@
 set -euo pipefail
 type=$(jq -r '.type | select(IN("bug","enhancement","question","documentation","self-host"))' <<<"$RESULT")
 size=$(jq -r '.size | select(IN("small","medium","large"))' <<<"$RESULT")
-duplicate=$(jq -r --argjson issue "$ISSUE" '.duplicate_of | numbers | select(. > 0 and . != $issue)' <<<"$RESULT")
+duplicate=$(jq -r --argjson issue "$ISSUE" '.duplicate_of | numbers | select(. > 0 and . < $issue)' <<<"$RESULT")
 # The summary is not parsed for workflow commands; the log is.
 jq -r '.reason | tostring | .[:500]' <<<"$RESULT" >> "$GITHUB_STEP_SUMMARY"
 
