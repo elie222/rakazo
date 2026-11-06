@@ -149,6 +149,9 @@ jobs:
       - name: Issue triage labeling tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/apply-issue-triage.test.py
+      - name: PR screenshot section tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 .github/scripts/pr-screenshots.test.py
       - name: Changed-area classification tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/changed-areas.test.py

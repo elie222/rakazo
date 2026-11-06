@@ -23,6 +23,9 @@ is billed only while running. See [Fly pricing](https://fly.io/docs/about/pricin
   image and pushes it to Fly; it never runs the pull request's code or scripts.
 - A preview generates its own secrets on first boot and holds no credential for anything else. Its
   machine size comes from this directory's `fly.toml` on the default branch, not the pull request.
+- After a deploy that touches the web UI, an agent screenshots the change in the preview and a
+  separate trusted job adds the images to the pull request description. The agent has only
+  browser tools, and the browser runs as its own user, so neither can read the model login.
 - Previews live in a Fly organization used for nothing else: machines in one organization share a
   private network, and any pull request can run code in its preview.
 - The demo login is public, so never connect a real model key or account to a preview.
