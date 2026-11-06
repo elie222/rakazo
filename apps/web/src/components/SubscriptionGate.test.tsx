@@ -187,3 +187,24 @@ it("keeps the plans dialog over the open app on this tab's organization", async 
   expect(document.body.textContent).not.toContain("paywall space-b");
   act(() => root.unmount());
 });
+
+it("pins billing to the space the account opened in when nothing is selected yet", async () => {
+  // A fresh sign-in: no saved selection, so the server picked space-a for this window.
+  space.selected = null;
+  api.me.mockResolvedValue({ billingEnabled: true, spaceId: "space-a" });
+  api.status.mockResolvedValue({ access: false });
+  const { container, root } = await renderGate(true);
+  expect(space.reads).toEqual(["space-a"]);
+  expect(container.textContent).toBe("paywall space-a");
+
+  // Another tab deletes that organization; a recheck still names it, so the server rejects it
+  // instead of answering for another organization.
+  api.status.mockRejectedValue(new Error("Space unavailable"));
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(space.reads).toEqual(["space-a", "space-a"]);
+  expect(container.textContent).toBe("paywall space-a");
+  act(() => root.unmount());
+});

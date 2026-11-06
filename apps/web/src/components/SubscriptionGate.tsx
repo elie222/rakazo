@@ -82,7 +82,9 @@ export function SubscriptionGate({
         if (!capabilities.billing) return { kind: "open" };
         const me = await loadMe();
         if (!me.billingEnabled) return { kind: "open" };
-        tabSpaceId.current = selectedSpaceId();
+        // Without a saved selection the server picked `me.spaceId`; naming it keeps billing on
+        // it, so a deleted or left organization is rejected rather than resolved to another one.
+        tabSpaceId.current = selectedSpaceId() ?? me.spaceId;
         const client = createSpaceRpc(tabSpaceId.current);
         const status = await loadBillingStatus(client);
         if (active && capabilities.crispWebsiteId) {
