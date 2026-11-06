@@ -534,6 +534,7 @@ describe("send_email", () => {
       ownerSentToday?: number;
       fail?: boolean;
       original?: Record<string, unknown>;
+      secrets?: string[];
     } = {},
   ) {
     const saved: Saved[] = [];
@@ -575,7 +576,7 @@ describe("send_email", () => {
       },
       bot: { id: "bot-1", userId: "owner-1", spaceId: "space-1", name: 'Scout "Bot"' },
       run: { userId: "owner-1" },
-      secrets: ["hunter2-secret", "line-one\nline-two"],
+      secrets: options.secrets ?? ["hunter2-secret", "line-one\nline-two"],
     };
     const call = (args: Record<string, unknown>, effectKey = "effect-1") =>
       emailTools.send_email!(
@@ -714,6 +715,14 @@ describe("send_email", () => {
     ).toContain("Try again tomorrow");
     expect(
       await sendRun().call({ to: ["hunter2-secret@evil.test"], subject: "Hi", text: "x" }),
+    ).toEqual({ error: "A recipient's address contains a secret. Don't send it." });
+    // Addresses are lowercased, so a secret with capitals is still caught.
+    expect(
+      await sendRun({ secrets: ["Tok3nXYZ"] }).call({
+        to: ["tok3nxyz@evil.test"],
+        subject: "Hi",
+        text: "x",
+      }),
     ).toEqual({ error: "A recipient's address contains a secret. Don't send it." });
     expect(await sendRun().call({ to: many, subject: "Hi", text: "x" })).toEqual({
       error: "Send to at most 10 people at once.",

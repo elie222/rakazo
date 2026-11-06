@@ -271,20 +271,16 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
   if (!deps.email || !domain) return call.finish({ error: "This server can't send email." });
   if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });
   const parsed = SendEmailSchema.safeParse(call.args);
-  if (!parsed.success) {
-    return call.finish({
-      error: parsed.error.issues
-        .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
-        .join(" "),
-    });
-  }
+  if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
   const input = parsed.data;
   const cc = input.cc ?? [];
   if (input.to.length + cc.length > SEND_RECIPIENTS_MAX) {
     return call.finish({ error: `Send to at most ${SEND_RECIPIENTS_MAX} people at once.` });
   }
   // An address can carry a secret out as surely as the body, and can't be redacted into another.
-  if ([...input.to, ...cc].some((address) => redactSecrets(address, ctx.secrets) !== address)) {
+  // Addresses are lowercased, so secrets are compared lowercased too.
+  const secrets = ctx.secrets.map((secret) => secret.toLowerCase());
+  if ([...input.to, ...cc].some((address) => redactSecrets(address, secrets) !== address)) {
     return call.finish({ error: "A recipient's address contains a secret. Don't send it." });
   }
   const name = await deps.prisma.botEmailAddress.findUnique({
