@@ -1,6 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
-import type { ComposerMention, ComposerMentionRange, SlashActionId } from "@rakazo/core";
+import type {
+  ComposerMention,
+  ComposerMentionBinding,
+  ComposerMentionRange,
+  SlashActionId,
+} from "@rakazo/core";
 import {
   bindComposerMention,
   clampMentionHighlightIndex,
@@ -234,14 +239,19 @@ const ComposerBody = memo(function Composer({
   // A draft rewritten from elsewhere (late dictation or a left chat's recovered send) shows
   // here, so the next edit keeps it.
   useEffect(
-    () =>
-      subscribeComposerDraftReplaced(draftKey, (text) => {
-        // An edit like typing: a send still in flight must not restore its older text over it.
-        markEdited();
-        commitComposition({ text, bindings: readComposerDraftBindings(draftKey) }, false);
-      }),
+    () => subscribeComposerDraftReplaced(draftKey, (text) => showReplacedDraft.current(text)),
     [draftKey],
   );
+  // Read through a ref: the subscription outlives the render whose pickers state it would see.
+  const showReplacedDraft = useRef((_text: string) => {});
+  showReplacedDraft.current = (text) => {
+    // An edit like typing: a send still in flight must not restore its older text over it.
+    markEdited();
+    const bindings = readComposerDraftBindings(draftKey);
+    commitComposition({ text, bindings }, false);
+    // The pickers follow the new text, as after an edit, with the caret at its end.
+    updatePickers(text, text.length, text.length, bindings);
+  };
   // An open page rewrites what this chat sends (pageReply), so it is part of the payload.
   const pageSession = usePageSession();
   const dock = pageSession?.dock ?? noDock;
@@ -449,8 +459,17 @@ const ComposerBody = memo(function Composer({
     const end = edit.caret ?? nativeEnd;
     if (edit.caret !== null) pendingCaret.current = { start: caret, end };
     commitComposition({ text: value, bindings: edit.bindings });
+    updatePickers(value, caret, end, edit.bindings);
+  }
+
+  function updatePickers(
+    value: string,
+    caret: number,
+    end: number,
+    bindings: ComposerMentionBinding[],
+  ) {
     setMentionQuery(
-      composerMentionQuery(value, caret, end, knownMentions, edit.bindings)?.query ?? null,
+      composerMentionQuery(value, caret, end, knownMentions, bindings)?.query ?? null,
     );
     // `/` only at the start of the draft so forced skills expand (`Use skill:` / `/Name` prefix).
     const slashMatch = selectedSkill === null ? /^\/([^\n]*)$/.exec(value) : null;

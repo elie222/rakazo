@@ -16,6 +16,7 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 
+import { replaceComposerDraft } from "../../lib/composer-draft";
 import { dictation } from "../../lib/dictation";
 import { createPageSession, PagesProvider } from "../../lib/pages";
 import { Composer } from "./composer";
@@ -2373,3 +2374,26 @@ it("answers the page, not an earlier picked message, when the page's reply butto
   expect(onClearReply).toHaveBeenCalledTimes(1);
   expect(container?.querySelector("textarea")?.value).toBe("Mark task 3 done");
 });
+
+it.each([
+  { name: "mention", typed: "@Bo", picker: "mention-picker" },
+  { name: "slash", typed: "/sum", picker: "slash-picker" },
+])(
+  "closes an open $name picker when the draft is rewritten from elsewhere",
+  async ({ typed, picker }) => {
+    const onSend = vi.fn(async (_text: string) => true);
+    const textarea = renderComposer(onSend);
+    type(textarea, typed);
+    expect(container?.querySelector(`[data-testid="${picker}"]`)).not.toBeNull();
+
+    // A recovered send rewrites this chat's draft while the picker is open.
+    act(() => replaceComposerDraft("bot:bot-1", "please book the flight and a hotel", []));
+    expect(textarea.value).toBe("please book the flight and a hotel");
+    expect(container?.querySelector(`[data-testid="${picker}"]`)).toBeNull();
+
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend.mock.calls[0]?.[0]).toBe("please book the flight and a hotel");
+  },
+);
