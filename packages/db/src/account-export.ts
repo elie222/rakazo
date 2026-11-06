@@ -223,7 +223,6 @@ async function* spaceRecords(
           yield {
             type: "page_version",
             ...row,
-            ...(page.format === "html" ? { format: "html" as const } : {}),
             pageId: page.id,
             createdAt: iso(row.createdAt),
           };

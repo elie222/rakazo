@@ -71,10 +71,15 @@ export function pageViewerDocument(input: {
 
 /**
  * What a raw HTML page needs before its own markup: the reader's theme, so a script that picks
- * colours as it starts already sees it. The parser keeps these on the page's own `<html>` tag.
+ * colours as it starts already sees it, and room at its end for a composer docked over it. The
+ * parser keeps these on the page's own `<html>` tag.
  */
-function htmlPageTheme(theme: "light" | "dark"): string {
-  return `<meta name="color-scheme" content="${theme}"><script>document.documentElement.dataset.theme=${JSON.stringify(theme)}</script>`;
+function htmlPageHead(theme: "light" | "dark", bottomInset: number | undefined): string {
+  const inset =
+    bottomInset !== undefined && Number.isFinite(bottomInset) && bottomInset > 0
+      ? `<style>:root{padding-bottom:${Math.round(bottomInset)}px}</style>`
+      : "";
+  return `<meta name="color-scheme" content="${theme}"><script>document.documentElement.dataset.theme=${JSON.stringify(theme)}</script>${inset}`;
 }
 
 /**
@@ -103,10 +108,12 @@ export function htmlPageViewerDocument(input: {
   theme: "light" | "dark";
   /** The reader's app language, unless the page declares its own. */
   lang?: string;
+  /** Pixels the host covers at the bottom (a docked composer); the page's end clears it. */
+  bottomInset?: number;
 }): string {
   return withSandboxedArtifactCsp(
     input.html + htmlPageBridge(input.lang),
-    htmlPageTheme(input.theme),
+    htmlPageHead(input.theme, input.bottomInset),
   );
 }
 

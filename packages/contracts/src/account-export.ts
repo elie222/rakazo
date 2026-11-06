@@ -137,8 +137,6 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     pageId: Id,
     version: PageVersionNumber,
     title: PageTitleSchema,
-    /** Absent in an archive written before HTML pages existed; read it as "jsx". */
-    format: PageFormatSchema.optional(),
     source: PageSourceSchema,
     createdAt: IsoDate,
   }),

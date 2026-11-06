@@ -94,7 +94,7 @@ export function usePageDocument(
   const viewerDocument = useMemo(() => {
     if (page === undefined) return null;
     if (format === "html") {
-      return htmlPageViewerDocument({ html: page.code, theme, lang: i18n.locale });
+      return htmlPageViewerDocument({ html: page.code, theme, lang: i18n.locale, bottomInset });
     }
     return runtime.data === undefined
       ? null
