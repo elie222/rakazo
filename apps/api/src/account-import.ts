@@ -573,6 +573,25 @@ class AccountImporter implements ArchiveSink {
         return;
       }
       case "thread": {
+        if (record.helperBotId) {
+          // A helper's thread is one of many per bot, so it gets a new row rather than the bot's.
+          const helperBotId = space.bots.get(record.helperBotId)?.id;
+          if (!helperBotId) throw missingRecord();
+          if (space.ids.has(record.id)) throw unreadable();
+          const thread = await prisma.thread.create({
+            data: {
+              spaceId,
+              userId,
+              helperBotId,
+              historyCompactedUpToSeq: record.historyCompactedUpToSeq,
+              historyCompactionSummary: record.historyCompactionSummary,
+              createdAt: new Date(record.createdAt),
+            },
+          });
+          space.ids.set(record.id, thread.id);
+          space.threadSeqs.set(thread.id, -1);
+          return;
+        }
         const threadId = record.botId
           ? space.bots.get(record.botId)?.threadId
           : record.groupId

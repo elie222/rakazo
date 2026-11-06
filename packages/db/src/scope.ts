@@ -114,7 +114,9 @@ async function recentOrganizationId(prisma: PrismaClient, userId: string): Promi
 
 /**
  * The Space of the user's latest finished run, for a client that has not picked one. One
- * index probe per membership, on the partial index that serves recent activity.
+ * index probe per membership, on the partial index that serves recent activity. Ticket work, a
+ * background helper and the turn that relays its result finish on their own schedule, so they
+ * are not the user's activity.
  */
 async function lastActiveSpaceId(prisma: PrismaClient, userId: string): Promise<string | null> {
   const [latest] = await prisma.$queryRaw<Array<{ spaceId: string }>>`
@@ -127,7 +129,7 @@ async function lastActiveSpaceId(prisma: PrismaClient, userId: string): Promise<
         WHERE run."spaceId" = member."spaceId"
           AND run."userId" = member."userId"
           AND run."status" IN ('completed', 'failed', 'cancelled')
-          AND run."trigger" NOT IN ('tickets')
+          AND run."trigger" NOT IN ('tickets', 'helper', 'helper_result')
           AND run."completedAt" IS NOT NULL
         ORDER BY run."completedAt" DESC
         LIMIT 1

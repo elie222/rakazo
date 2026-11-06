@@ -1,6 +1,7 @@
 import { Trans } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
+import { helperCardState } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web/components/ui/button";
 import {
   Collapsible,
@@ -32,10 +33,7 @@ export function SubagentCard({
   const [open, setOpen] = useState(() => openHelpers.has(block.agentId));
   const [stopping, setStopping] = useState(false);
   const running = block.status === "running";
-  // A stopped helper settles as failed with this result; it did not fail.
-  const stopped = block.status === "failed" && block.result === "stopped";
-  const failed = block.status === "failed" && !stopped;
-  const body = stopped ? "" : block.result || block.progress || "";
+  const { stopped, failed, body } = helperCardState(block);
   return (
     <Collapsible
       open={open}

@@ -1,6 +1,6 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { MessageBlock } from "@rakazo/contracts";
-import { cloudAgentHttpsUrl, displayName as safeDisplayName } from "@rakazo/core";
+import { cloudAgentHttpsUrl, helperCardState, displayName as safeDisplayName } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
@@ -77,10 +77,7 @@ function HelperMessageCard({
   }));
   const [stopping, setStopping] = useState(false);
   const running = special.status === "running";
-  // A stopped helper settles as failed with this result; it did not fail.
-  const stopped = special.status === "failed" && special.result === "stopped";
-  const failed = special.status === "failed" && !stopped;
-  const body = stopped ? "" : special.result || special.progress || "";
+  const { stopped, failed, body } = helperCardState(special);
   return (
     <Pressable
       {...actionProps}

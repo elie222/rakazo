@@ -4,6 +4,7 @@ import {
   ACTIVE_RUN_STATUSES,
   assertTransition,
   canTransition,
+  helperCardState,
   isActive,
   isBackgroundRunTrigger,
   isConversationalRun,
@@ -12,6 +13,7 @@ import {
   messageBypassesTakeoverWait,
   messageSteersRun,
   QUEUE_HOLDING_RUN_STATUSES,
+  STOPPED_HELPER_RESULT,
   WAITING_ON_USER_RUN_STATUSES,
   WORKING_RUN_STATUSES,
   workingRoutineName,
@@ -135,5 +137,25 @@ describe("run state machine", () => {
         },
       ),
     );
+  });
+});
+
+describe("helperCardState", () => {
+  it("reads a stopped helper as neither failed nor showing its result", () => {
+    expect(helperCardState({ status: "failed", result: STOPPED_HELPER_RESULT })).toEqual({
+      stopped: true,
+      failed: false,
+      body: "",
+    });
+    expect(helperCardState({ status: "failed", result: "no access" })).toEqual({
+      stopped: false,
+      failed: true,
+      body: "no access",
+    });
+    expect(helperCardState({ status: "running", progress: "reading" })).toEqual({
+      stopped: false,
+      failed: false,
+      body: "reading",
+    });
   });
 });

@@ -25,6 +25,7 @@ import {
   installAuditEventStore,
   LocalKeyProvider,
   personalOrganizationIds,
+  requireMembership,
   runAsSystem,
   setOrganizationDeletionLease,
 } from "@rakazo/db";
@@ -210,6 +211,54 @@ describePostgres("organizations (PostgreSQL)", () => {
     expect((await client(ada).organizations.list()).organizations.map((org) => org.id)).toEqual([
       ada.spaceId,
     ]);
+  });
+
+  it("opens where the user last worked, not where a background helper finished later", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const finishedRun = async (spaceId: string, trigger: string, completedAt: Date) => {
+      const bot = await system.bot.create({
+        data: { spaceId, userId: ada.userId, name: trigger, color: "blue" },
+      });
+      const thread = await system.thread.create({
+        data: { spaceId, userId: ada.userId, botId: bot.id },
+      });
+      const task = await system.task.create({
+        data: {
+          spaceId,
+          botId: bot.id,
+          threadId: thread.id,
+          userId: ada.userId,
+          prompt: trigger,
+          status: "completed",
+        },
+      });
+      await system.run.create({
+        data: {
+          spaceId,
+          botId: bot.id,
+          threadId: thread.id,
+          taskId: task.id,
+          userId: ada.userId,
+          status: "completed",
+          trigger,
+          completedAt,
+        },
+      });
+    };
+    const start = Date.now();
+    await finishedRun(ada.spaceId, "user", new Date(start));
+    // A helper started in Work and the turn relaying its result finish after the user moved on.
+    await finishedRun(work.id, "helper", new Date(start + 1_000));
+    await finishedRun(work.id, "helper_result", new Date(start + 2_000));
+    await expect(requireMembership(system, ada.userId)).resolves.toMatchObject({
+      spaceId: ada.spaceId,
+    });
+
+    await finishedRun(work.id, "user", new Date(start + 3_000));
+    await expect(requireMembership(system, ada.userId)).resolves.toMatchObject({
+      spaceId: work.id,
+    });
   });
 
   it("caps organizations at ten per person, even when two creates race", async () => {

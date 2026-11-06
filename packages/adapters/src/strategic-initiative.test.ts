@@ -212,6 +212,34 @@ describe("reconcileStrategicInitiatives", () => {
     );
   });
 
+  it("treats a bot whose only active run is a background helper as free", async () => {
+    const { prisma } = strategicPrisma({ bots: [] });
+    await reconcileStrategicInitiatives({
+      prisma,
+      jobs: publisher().jobs,
+      now: new Date(),
+      pageSize: 10,
+    });
+    expect(prisma.bot.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          runs: {
+            none: {
+              OR: expect.arrayContaining([
+                {
+                  status: {
+                    in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"],
+                  },
+                  trigger: { not: "helper" },
+                },
+              ]),
+            },
+          },
+        }),
+      }),
+    );
+  });
+
   it("skips bots without a thread", async () => {
     const now = new Date("2026-11-02T12:00:00.000Z");
     const stale = new Date("2026-11-01T00:00:00.000Z");

@@ -42,7 +42,8 @@ export class ScriptedAgentRuntime implements AgentRuntime {
     running.set(request.runId, controller);
     const signal = context?.signal ?? controller.signal;
     try {
-      if (shouldFail(request.prompt)) {
+      const relaysOutcome = helperOutcome(request.prompt) !== undefined;
+      if (!relaysOutcome && shouldFail(request.prompt)) {
         throw new Error(scriptedFailure(request.prompt));
       }
       // Like Pi, a run first takes the messages waiting for it. A continuation exists only to
@@ -56,7 +57,9 @@ export class ScriptedAgentRuntime implements AgentRuntime {
       const prompt = steeredPrompt ?? request.prompt;
       // A run hangs on its own words: a peer's wake on the peer's text, a reply without the
       // message it quotes.
-      const hangMs = hangDuration(peerMessage(prompt)?.text ?? prompt.replace(REPLY_CONTEXT, ""));
+      const hangMs = relaysOutcome
+        ? undefined
+        : hangDuration(peerMessage(prompt)?.text ?? prompt.replace(REPLY_CONTEXT, ""));
       if (hangMs !== undefined) {
         // Long-running work happens on the computer, which starts it like any real run would;
         // a background helper has none and works with what it was given.
@@ -183,6 +186,41 @@ export function inferScript(
   prompt: string,
   resumeFromCheckpoint?: string,
 ): NonNullable<AgentRunRequest["script"]> {
+  // A helper's brief and the result it sends back are generated prompts that quote other words,
+  // so they are recognized before any phrase inside them can pick another action.
+  if (prompt.toLowerCase().startsWith(BACKGROUND_HELPER_TASK_CUE.toLowerCase())) {
+    const task = prompt.split("Task from the bot (not from the user):\n").at(-1) ?? prompt;
+    const url = /\bfetch (https?:\/\/\S+)/i.exec(task)?.[1];
+    const write = /\bcrm\b/i.test(task);
+    return [
+      ...(url ? [{ toolCalls: [{ name: "web_fetch", args: { url } }] }] : []),
+      ...(write
+        ? [
+            {
+              toolCalls: [
+                {
+                  name: "destination.write",
+                  args: { collection: "notes", title: "Helper note", body: task },
+                },
+              ],
+            },
+          ]
+        : []),
+      { assistant: `helper result: ${summarize(task)}`, complete: true },
+    ];
+  }
+  const outcome = helperOutcome(prompt);
+  if (outcome) {
+    return [
+      {
+        assistant:
+          outcome.status === "failed"
+            ? `your helper could not finish: ${outcome.text}`
+            : `your helper finished: ${outcome.text}`,
+        complete: true,
+      },
+    ];
+  }
   // A bot-message wake embeds the sender's name and id around the peer's words, and an
   // ordinary reply opens with the quoted target; a generated id can contain a journey
   // keyword by chance ("crm" inside a cuid), so the branches key on the words alone.
@@ -650,33 +688,6 @@ code-b
       },
     ];
   }
-  if (lower.startsWith(BACKGROUND_HELPER_TASK_CUE.toLowerCase())) {
-    const task = prompt.split("Task from the bot (not from the user):\n").at(-1) ?? prompt;
-    const url = /\bfetch (https?:\/\/\S+)/i.exec(task)?.[1];
-    const write = /\bcrm\b/i.test(task);
-    return [
-      ...(url ? [{ toolCalls: [{ name: "web_fetch", args: { url } }] }] : []),
-      ...(write
-        ? [
-            {
-              toolCalls: [
-                {
-                  name: "destination.write",
-                  args: { collection: "notes", title: "Helper note", body: task },
-                },
-              ],
-            },
-          ]
-        : []),
-      { assistant: `helper result: ${summarize(task)}`, complete: true },
-    ];
-  }
-  const helperResult = /<helper_result from="[^"]*">\n([\s\S]*?)\n<\/helper_result>/.exec(
-    prompt,
-  )?.[1];
-  if (helperResult) {
-    return [{ assistant: `your helper finished: ${helperResult}`, complete: true }];
-  }
   // A peer's own reply can say it works in the background, and a question only asks about it;
   // only a person's request starts one.
   if (
@@ -829,6 +840,18 @@ code-b
       complete: true,
     },
   ];
+}
+
+/** The outcome a helper-result turn relays, from the block its prompt wraps it in. */
+function helperOutcome(
+  prompt: string,
+): { status: "completed" | "failed"; text: string } | undefined {
+  if (prompt.startsWith(BACKGROUND_HELPER_TASK_CUE)) return undefined;
+  const match =
+    /<helper_result from="[^"]*" status="(completed|failed)">\n([\s\S]*?)\n<\/helper_result>/.exec(
+      prompt,
+    );
+  return match ? { status: match[1] as "completed" | "failed", text: match[2]! } : undefined;
 }
 
 function shouldFail(prompt: string): boolean {
