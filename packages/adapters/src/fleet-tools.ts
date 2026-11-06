@@ -456,6 +456,9 @@ type FleetBot = {
   section: string | null;
   pinned: boolean;
   createdByMe: boolean;
+  /** "default" when the bot follows the space's default model and thinking level. */
+  model: string;
+  thinkingLevel: string;
 };
 type FleetGroup = {
   id: string;
@@ -511,6 +514,9 @@ export async function listFleet(
         description: true,
         pinned: true,
         section: { select: { name: true } },
+        modelProvider: true,
+        modelId: true,
+        thinkingLevel: true,
       },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: FLEET_BOT_LIMIT + 1,
@@ -542,6 +548,9 @@ export async function listFleet(
       section: bot.section ? singleLine(bot.section.name) : null,
       pinned: bot.pinned,
       createdByMe: childIds.has(bot.id),
+      // Everyone's model in one read, so nobody has to ask each bot to inspect itself.
+      model: bot.modelProvider && bot.modelId ? `${bot.modelProvider}/${bot.modelId}` : "default",
+      thinkingLevel: bot.thinkingLevel ?? "default",
     })),
     groups: groups.slice(0, FLEET_GROUP_LIMIT),
     sections: sections.slice(0, FLEET_SECTION_LIMIT).map((section) => singleLine(section.name)),
