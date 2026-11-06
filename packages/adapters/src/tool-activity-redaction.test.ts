@@ -5,6 +5,7 @@ import {
   redactToolActivityLine,
   redactToolActivityText,
   redactToolActivityValue,
+  toolActivityCallFields,
 } from "./tool-activity-redaction.js";
 
 describe("tool activity redaction", () => {
@@ -95,5 +96,18 @@ describe("tool activity redaction", () => {
     expect(redactToolActivityJson({ a: "to", b: "ken-1" }, ['"to",\n  "b": "ken-1'])).not.toContain(
       "ken-1",
     );
+  });
+
+  it("gives a call its line and JSON arguments, and a shell its whole command instead", () => {
+    expect(toolActivityCallFields("web_search", { query: "weather", api_key: "k-1" }, [])).toEqual({
+      detail: "weather",
+      input: '{\n  "query": "weather",\n  "api_key": "[redacted]"\n}',
+    });
+    const long = `echo ${"a".repeat(300)} TOKEN=s-1`;
+    const shell = toolActivityCallFields("shell", { command: long, cwd: "." }, ["s-1"]);
+    expect(shell.input).toBeUndefined();
+    expect(shell.command).toBe(`echo ${"a".repeat(300)} TOKEN=[redacted]`);
+    expect(shell.detail?.length).toBeLessThanOrEqual(200);
+    expect(toolActivityCallFields("remember", {}, [])).toEqual({});
   });
 });

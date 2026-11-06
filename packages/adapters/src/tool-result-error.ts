@@ -5,10 +5,13 @@ export function isFailedToolResult(value: unknown): value is { error: unknown } 
 }
 
 /**
- * A shell command's exit code from a tool result. Only a shell result's shape counts, so a
- * connector response that carries an HTTP `code` such as 200 is not read as a failed command.
+ * A shell command's result: what it printed and its exit code, null while it still runs. Only
+ * a shell result's shape counts, so a connector response that carries an HTTP `code` such as
+ * 200 is not read as a command.
  */
-function shellExitCode(result: unknown): number | undefined {
+export function shellCommandResult(
+  result: unknown,
+): { stdout: string; stderr: string; code: number | null } | undefined {
   const payload = (result as { details?: unknown } | null)?.details ?? result;
   if (!payload || typeof payload !== "object") return undefined;
   const { stdout, stderr, code } = payload as {
@@ -17,7 +20,12 @@ function shellExitCode(result: unknown): number | undefined {
     code?: unknown;
   };
   if (typeof stdout !== "string" || typeof stderr !== "string") return undefined;
-  return typeof code === "number" ? code : undefined;
+  if (typeof code !== "number" && code !== null) return undefined;
+  return { stdout, stderr, code };
+}
+
+function shellExitCode(result: unknown): number | undefined {
+  return shellCommandResult(result)?.code ?? undefined;
 }
 
 /**

@@ -52,11 +52,13 @@ API responses are the same with it on or off.
   their records carry `withheld`, so the panel does not claim the call printed nothing.
 - A call that finishes before its own event is written carries its `outcome` and `durationMs`
   on `agent.tool.called`, so its step never stays marked running.
-- `threads.toolCalls` reads a run's first 2,000 calls with their completion and newest
-  shell-output events, folded into one record per call for the expanded rows; a call within
-  the bound is always whole. Live runs apply the same events as they arrive and drop a run's
-  live records once it ends. A thread load leaves `input` and `preview` out of the live events
-  it reads, since the rows fetch them on demand.
+- `threads.toolCalls` reads a run's first 2,000 calls with their completions, through the
+  database client so encrypted payloads are opened, and folds them into one record per call.
+  A shell call's event carries its whole redacted command, and its completion the exit code
+  (null while it still runs past its call) and the end of what it printed, so a stored run
+  never needs its streamed output frames. Live runs apply the same events as they arrive and
+  drop a run's live records once it ends. A thread load leaves `input` and `preview` out of
+  the live events it reads, since the rows fetch them on demand.
 
 ## Platform scope
 

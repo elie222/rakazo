@@ -234,4 +234,65 @@ describe("foldToolCallRecords", () => {
       foldToolCallRecords([{ type: "computer.command", payload: { executionId: "x" } }]),
     ).toEqual([]);
   });
+
+  it("builds a shell's record from its call and completion alone", () => {
+    const called = {
+      type: "agent.tool.called",
+      payload: { name: "shell", executionId: "s1", command: "npm login" },
+    };
+    expect(
+      foldToolCallRecords([
+        called,
+        {
+          type: "agent.tool.completed",
+          payload: {
+            name: "shell",
+            executionId: "s1",
+            outcome: "succeeded",
+            exitCode: 0,
+            preview: "ok",
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        executionId: "s1",
+        name: "shell",
+        status: "done",
+        outcome: "succeeded",
+        command: "npm login",
+        exitCode: 0,
+        output: "ok",
+      },
+    ]);
+    // Still running when its call returned: it stays running, and its own exit later wins.
+    const [running] = foldToolCallRecords([
+      called,
+      {
+        type: "agent.tool.completed",
+        payload: { name: "shell", executionId: "s1", outcome: "succeeded", exitCode: null },
+      },
+    ]);
+    expect(running).toMatchObject({ status: "running", exitCode: null });
+    const [finished] = foldToolCallRecords([
+      called,
+      {
+        type: "computer.command",
+        payload: {
+          executionId: "s1",
+          kind: "shell",
+          command: "npm login",
+          cwd: ".",
+          status: "done",
+          exitCode: 1,
+          output: "denied",
+        },
+      },
+      {
+        type: "agent.tool.completed",
+        payload: { name: "shell", executionId: "s1", outcome: "error", exitCode: null },
+      },
+    ]);
+    expect(finished).toMatchObject({ status: "done", exitCode: 1, output: "denied" });
+  });
 });

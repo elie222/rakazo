@@ -1,12 +1,13 @@
 import { ORPCError } from "@orpc/server";
 import { runContinueJob, runJobKey } from "@rakazo/adapter-kit";
 import { settleCallRequest } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, RunStatus } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   CALL_CLIENT_NONCE_PREFIX,
   callClientNonce,
   expandSkillReferencesInPrompt,
+  isActive,
   MODEL_REQUIRED_SEND_ERROR,
   QUEUE_HOLDING_RUN_STATUSES,
 } from "@rakazo/core";
@@ -52,7 +53,11 @@ import {
   threadHead,
   threadSnapshot,
 } from "../thread-target.js";
-import { loadToolCallRecords, withheldToolCallRecord } from "../tool-call-records.js";
+import {
+  loadToolCallRecords,
+  settledToolCallRecord,
+  withheldToolCallRecord,
+} from "../tool-call-records.js";
 import { mapBotSecretInputError } from "./bots.js";
 import { releaseComputerControl } from "./computer.js";
 import type { RouterContext } from "./context.js";
@@ -336,13 +341,17 @@ export function threadsRoutes(ctx: RouterContext) {
         const [run, records] = await Promise.all([
           deps.prisma.run.findFirst({
             where: { id: input.runId, threadId: thread.id },
-            select: { userId: true },
+            select: { userId: true, status: true },
           }),
           loadToolCallRecords(deps.prisma, thread.id, input.runId),
         ]);
         if (!run) return [];
-        // A call's arguments, result and error go only to the person who started the run.
-        return run.userId === context.actor.userId ? records : records.map(withheldToolCallRecord);
+        const finished = !isActive(run.status as RunStatus);
+        return records.map((record) => {
+          const settled = finished ? settledToolCallRecord(record) : record;
+          // A call's arguments, result and error go only to the person who started the run.
+          return run.userId === context.actor.userId ? settled : withheldToolCallRecord(settled);
+        });
       }),
       clear: authed.threads.clear.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);

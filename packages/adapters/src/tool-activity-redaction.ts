@@ -1,4 +1,5 @@
-import { redactSecrets } from "@rakazo/core";
+import { TOOL_RESULT_PREVIEW_MAX_CHARS } from "@rakazo/contracts";
+import { boundToolStepDetail, redactSecrets, toolCallDetailLine } from "@rakazo/core";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
 
 /** Key endings that name a credential, compared without case, `_` or `-`. */
@@ -105,4 +106,50 @@ export function redactToolActivityValue(value: unknown, secrets: readonly string
 /** Text cut to `max` characters once it is redacted, so a secret is never split by the cut. */
 export function boundToolActivityText(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+const SHELL_TOOLS = new Set(["shell", "user_computer_shell"]);
+
+/**
+ * What a call's own event says about it, safe for the chat: its argument line, its arguments
+ * as JSON, and a shell's whole command line. The arguments are redacted value by value first,
+ * then each serialized form once more whole, since a run secret can span values it joins; each
+ * is cut to length only afterwards, so a secret is never split by the cut. A shell's arguments
+ * are its command, so it carries the command line instead of JSON.
+ */
+export function toolActivityCallFields(
+  name: string,
+  args: unknown,
+  secrets: readonly string[],
+): { detail?: string; input?: string; command?: string } {
+  const safeArgs = redactToolActivityValue(args, secrets);
+  const line = toolCallDetailLine(safeArgs);
+  const detail =
+    line === undefined ? undefined : boundToolStepDetail(redactToolActivityLine(line, secrets));
+  if (SHELL_TOOLS.has(name)) {
+    const command = (safeArgs as { command?: unknown } | null)?.command;
+    return {
+      ...(detail === undefined ? {} : { detail }),
+      ...(typeof command === "string" && command.trim()
+        ? {
+            command: boundToolActivityText(
+              redactToolActivityLine(command, secrets),
+              TOOL_RESULT_PREVIEW_MAX_CHARS,
+            ),
+          }
+        : {}),
+    };
+  }
+  const hasArgs = !!safeArgs && typeof safeArgs === "object" && Object.keys(safeArgs).length > 0;
+  return {
+    ...(detail === undefined ? {} : { detail }),
+    ...(hasArgs
+      ? {
+          input: boundToolActivityText(
+            redactToolActivityLine(JSON.stringify(safeArgs, null, 2), secrets),
+            TOOL_RESULT_PREVIEW_MAX_CHARS,
+          ),
+        }
+      : {}),
+  };
 }

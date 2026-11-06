@@ -9,9 +9,15 @@ import { sanitizeConnectorError } from "./connector-safety.js";
 import {
   boundToolActivityText,
   redactToolActivityJson,
+  redactToolActivityLine,
   redactToolActivityText,
 } from "./tool-activity-redaction.js";
-import { isFailedToolResult, toolCallFailed, toolResultError } from "./tool-result-error.js";
+import {
+  isFailedToolResult,
+  shellCommandResult,
+  toolCallFailed,
+  toolResultError,
+} from "./tool-result-error.js";
 
 function isAuditableToolResult(value: unknown): value is {
   kind: "agent_tool_result";
@@ -60,6 +66,9 @@ export function toolCompletionAuditPayload(
   }
   const preview = toolResultPreview(completion.result, secrets);
   if (preview) payload.preview = preview;
+  // A shell's exit code, or null while it still runs, so a stored run shows how it ended.
+  const shell = shellCommandResult(completion.result);
+  if (shell && !completion.paused) payload.exitCode = shell.code;
   if (!isAuditableToolResult(completion.result)) return payload;
 
   payload.contentTypes = completion.result.content.flatMap((part) => {
@@ -92,6 +101,12 @@ export function toolCompletionAuditPayload(
  * parts, a plain string, or a plain object (a scripted file action's path and size) as JSON.
  */
 function toolResultPreview(result: unknown, secrets: string[]): string | undefined {
+  // A shell's result is what it printed, kept from the end, where failures show.
+  const shell = shellCommandResult(result);
+  if (shell) {
+    const printed = redactToolActivityLine(`${shell.stdout}${shell.stderr}`, secrets).trim();
+    return printed ? printed.slice(-TOOL_RESULT_PREVIEW_MAX_CHARS) : undefined;
+  }
   // A structured result is redacted as it stands; text is checked for JSON first.
   if (
     result &&

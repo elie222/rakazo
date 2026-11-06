@@ -1,77 +1,77 @@
 import { describe, expect, it, vi } from "vitest";
-import { loadToolCallRecords, withheldToolCallRecord } from "./tool-call-records.js";
+import {
+  loadToolCallRecords,
+  settledToolCallRecord,
+  withheldToolCallRecord,
+} from "./tool-call-records.js";
+
+/** Events of one type, as the client returns them opened. */
+function eventTable(rows: Array<{ type: string; seq: number; payload: unknown }>) {
+  return vi.fn(async ({ where }: { where: { type: string } }) =>
+    rows.filter((row) => row.type === where.type),
+  );
+}
 
 describe("loadToolCallRecords", () => {
-  it("reads whole calls in order and only the newest frame of each shell command", async () => {
-    const findMany = vi.fn(async () => [
-      { type: "agent.tool.called", seq: 1, payload: { name: "shell", executionId: "x1" } },
+  it("folds each call with its completion, a shell's command, output and exit included", async () => {
+    const findMany = eventTable([
+      {
+        type: "agent.tool.called",
+        seq: 1,
+        payload: { name: "shell", executionId: "x1", command: "ls -la" },
+      },
+      {
+        type: "agent.tool.completed",
+        seq: 3,
+        payload: {
+          name: "shell",
+          executionId: "x1",
+          outcome: "error",
+          durationMs: 50,
+          exitCode: 2,
+          preview: "ls: denied",
+        },
+      },
+      // A completion for a call past the limit is left out with it.
+      {
+        type: "agent.tool.completed",
+        seq: 9,
+        payload: { name: "read_file", executionId: "x9", outcome: "succeeded" },
+      },
     ]);
-    const queryRaw = vi.fn(async (query: { sql: string; values: unknown[] }) =>
-      query.sql.includes("computer.command")
-        ? [
-            {
-              type: "computer.command",
-              seq: 4,
-              payload: {
-                executionId: "x1",
-                kind: "shell",
-                command: "ls",
-                cwd: ".",
-                status: "done",
-                exitCode: 0,
-                output: "a\nb",
-              },
-            },
-          ]
-        : [
-            {
-              type: "agent.tool.completed",
-              seq: 3,
-              payload: { name: "shell", executionId: "x1", outcome: "succeeded", durationMs: 50 },
-            },
-          ],
-    );
-    const prisma = { event: { findMany }, $queryRaw: queryRaw } as never;
-
+    const prisma = { event: { findMany } } as never;
     await expect(loadToolCallRecords(prisma, "thread-1", "run-1")).resolves.toEqual([
       {
         executionId: "x1",
         name: "shell",
         status: "done",
-        outcome: "succeeded",
+        outcome: "error",
         durationMs: 50,
-        command: "ls",
-        output: "a\nb",
-        exitCode: 0,
+        command: "ls -la",
+        output: "ls: denied",
+        exitCode: 2,
       },
     ]);
-    // Calls are the bounded set; their completions and commands are read for exactly them.
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { threadId: "thread-1", runId: "run-1", type: "agent.tool.called" },
+    expect(findMany).toHaveBeenCalledTimes(2);
+    for (const [query] of findMany.mock.calls) {
+      expect(query).toMatchObject({
+        where: { threadId: "thread-1", runId: "run-1" },
         orderBy: { seq: "asc" },
-        take: 2000,
-      }),
-    );
-    const queries = queryRaw.mock.calls.map((call) => call[0]);
-    expect(queries).toHaveLength(2);
-    for (const query of queries) {
-      expect(query.sql).toContain("= ANY(");
-      expect(query.sql).toContain("LIMIT");
-      expect(query.values).toContainEqual(["x1"]);
+      });
+      expect((query as { take?: number }).take).toBeGreaterThan(0);
     }
-    const commandSql = queries.find((query) => query.sql.includes("computer.command"))?.sql ?? "";
-    expect(commandSql).toContain("DISTINCT ON");
-    // The final frame wins over a streamed frame that landed after it.
-    expect(commandSql).toContain("(payload->>'status' = 'done') DESC, seq DESC");
   });
 
   it("reads nothing more for a run without calls", async () => {
-    const findMany = vi.fn(async () => []);
-    const queryRaw = vi.fn(async () => []);
-    const prisma = { event: { findMany }, $queryRaw: queryRaw } as never;
+    const prisma = { event: { findMany: eventTable([]) } } as never;
     await expect(loadToolCallRecords(prisma, "thread-1", "run-1")).resolves.toEqual([]);
-    expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("settles a call a finished run left running", () => {
+    const running = { executionId: "s1", name: "shell", status: "running" } as const;
+    expect(settledToolCallRecord(running)).toEqual({ ...running, status: "done" });
+    const done = { ...running, status: "done" } as const;
+    expect(settledToolCallRecord(done)).toBe(done);
   });
 
   it("shows someone who did not start the run the call, not its arguments, result or error", () => {
@@ -92,7 +92,7 @@ describe("loadToolCallRecords", () => {
       outcome: "error",
       withheld: true,
     });
-    // A command's own output is the computer's activity feed, which every reader already sees.
+    // A shell's command and output are the computer's activity feed, which every reader sees.
     expect(
       withheldToolCallRecord({
         executionId: "s1",
@@ -108,6 +108,26 @@ describe("loadToolCallRecords", () => {
       status: "done",
       command: "ls",
       output: "a",
+      exitCode: 0,
+      withheld: true,
+    });
+  });
+});
+
+describe("withheldToolCallRecord for file actions", () => {
+  it("drops what a file action returned, even with its exit code set", () => {
+    expect(
+      withheldToolCallRecord({
+        executionId: "w1",
+        name: "write_file",
+        status: "done",
+        exitCode: 0,
+        output: '{"ok":true,"path":"/private/notes.md"}',
+      }),
+    ).toEqual({
+      executionId: "w1",
+      name: "write_file",
+      status: "done",
       exitCode: 0,
       withheld: true,
     });

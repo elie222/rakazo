@@ -343,6 +343,43 @@ describe("tool completion audit", () => {
     expect(String(payload.preview)).toContain("again [redacted]");
   });
 
+  it("records a shell's exit code and the end of what it printed", () => {
+    const payload = toolCompletionAuditPayload(
+      {
+        name: "shell",
+        executionId: "s",
+        durationMs: 1,
+        result: {
+          content: [{ type: "text", text: "ignored" }],
+          details: {
+            stdout: `${"x".repeat(TOOL_RESULT_PREVIEW_MAX_CHARS)}tail\n`,
+            stderr: "boom",
+            code: 3,
+          },
+        },
+      },
+      [],
+    );
+    expect(payload.exitCode).toBe(3);
+    expect(String(payload.preview).endsWith("tail\nboom")).toBe(true);
+    expect(String(payload.preview)).toHaveLength(TOOL_RESULT_PREVIEW_MAX_CHARS);
+    const running = toolCompletionAuditPayload({
+      name: "shell",
+      executionId: "s",
+      durationMs: 1,
+      result: { details: { stdout: "Code: 1", stderr: "", code: null, running: true } },
+    });
+    expect(running.exitCode).toBeNull();
+    expect(
+      toolCompletionAuditPayload({
+        name: "read_file",
+        executionId: "r",
+        durationMs: 1,
+        result: { code: 200 },
+      }).exitCode,
+    ).toBeUndefined();
+  });
+
   it("reads an exit code only from a shell result, not a connector's status code", () => {
     expect(toolCallFailed(undefined, { code: 200, data: [] })).toBe(false);
     expect(toolCallFailed(undefined, { details: { code: 201, id: "x" } })).toBe(false);

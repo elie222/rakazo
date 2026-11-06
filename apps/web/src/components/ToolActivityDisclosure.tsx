@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
-import type { ThreadMessage, ToolCallRecord, ToolStep } from "@rakazo/contracts";
+import type { ThreadMessage, ToolStep } from "@rakazo/contracts";
 import type { ToolStepStatus } from "@rakazo/core";
 import {
   formatCompactDuration,

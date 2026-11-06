@@ -71,8 +71,7 @@ export function toolCallReadIsFinal(
   executionId: string,
 ): boolean {
   return (
-    records !== undefined &&
-    records.some((record) => record.executionId === executionId) &&
+    !!records?.some((record) => record.executionId === executionId) &&
     records.every((record) => record.status !== "running")
   );
 }

@@ -59,6 +59,8 @@ export function reduceToolCallRecord(
       name: typeof payload.name === "string" ? payload.name : (prior?.name ?? ""),
       status: prior?.status ?? "running",
       ...(typeof payload.input === "string" ? { input: payload.input } : {}),
+      // A shell call's whole command line, so a stored run shows what ran.
+      ...(typeof payload.command === "string" ? { command: payload.command } : {}),
       ...(payload.withheld === true ? { withheld: true as const } : {}),
     };
   }
@@ -70,11 +72,25 @@ export function reduceToolCallRecord(
       typeof payload.durationMs === "number" && Number.isFinite(payload.durationMs)
         ? Math.max(0, Math.round(payload.durationMs))
         : undefined;
+    // A shell's exit code, or null while it still ran past its call. Without one, a shell's own
+    // events decide when it is done, as they did before calls carried it.
+    const exitCode =
+      typeof payload.exitCode === "number" || payload.exitCode === null
+        ? payload.exitCode
+        : undefined;
+    const status =
+      exitCode === null
+        ? (prior?.status ?? "running")
+        : exitCode !== undefined || prior?.command === undefined
+          ? "done"
+          : prior.status;
     return {
       ...prior,
       executionId: payload.executionId,
       name: typeof payload.name === "string" ? payload.name : (prior?.name ?? ""),
-      status: prior?.command === undefined ? "done" : prior.status,
+      status,
+      // A finished command's own exit stands; the call only knew it when it returned.
+      ...(exitCode !== undefined && typeof prior?.exitCode !== "number" ? { exitCode } : {}),
       outcome:
         payload.outcome === "error" || payload.outcome === "paused" ? payload.outcome : "succeeded",
       ...(durationMs === undefined ? {} : { durationMs }),
