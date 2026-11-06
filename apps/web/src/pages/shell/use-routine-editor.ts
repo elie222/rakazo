@@ -6,16 +6,17 @@ import { useCallback, useRef, useState } from "react";
 import { localTimezone } from "../../lib/local-timezone";
 import { parseModelOptionKey } from "../../lib/model-catalog";
 import type { Panel } from "../../lib/right-panel-state";
-import type { createSpaceRpc } from "../../lib/rpc";
-import { sharedInflight } from "../../lib/shared-inflight";
-import { errorText } from "../../lib/user-error";
-import type { RoutineDraftState, RoutineEditor } from "../RoutineEditor";
+import type { RoutineDraftState } from "../../lib/routine-draft";
 import {
   draftStateFromRoutine,
   emptyRoutineDraftState,
   routineNeedsOneShotArm,
   watchFromDraft,
-} from "../RoutineEditor";
+} from "../../lib/routine-draft";
+import type { createSpaceRpc } from "../../lib/rpc";
+import { sharedInflight } from "../../lib/shared-inflight";
+import { errorText } from "../../lib/user-error";
+import type { RoutineEditor } from "../RoutineEditor";
 
 export function useRoutineEditor({
   rpc,

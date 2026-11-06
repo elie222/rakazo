@@ -78,7 +78,7 @@ import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance
 import { useDesktopBadge } from "../lib/use-desktop-badge";
 import { errorText } from "../lib/user-error";
 import { HostComputerPrompt } from "./HostComputerPrompt";
-import { RoutineList } from "./RoutineEditor";
+import { RoutineList } from "./RoutineList";
 import { useSettingsNavItems } from "./settings-nav";
 import { ArchivedChats } from "./shell/archived-chats";
 import { ChatContextMenu } from "./shell/chat-context-menu";

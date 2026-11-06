@@ -559,7 +559,7 @@ msgstr ""
 msgid "A bit of everything"
 msgstr "Van alles een beetje"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "A command's output"
 msgstr "De uitvoer van een commando"
 
@@ -663,11 +663,11 @@ msgstr "Toevoegen"
 msgid "Add {0} to the group"
 msgstr "{0} aan de groep toevoegen"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a command to run"
 msgstr "Een commando toevoegen om uit te voeren"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a file or folder to watch"
 msgstr "Een bestand of map toevoegen om te volgen"
 
@@ -773,7 +773,7 @@ msgstr ""
 msgid "Add to routine"
 msgstr "Aan routine toevoegen"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Add trigger"
 msgstr "Trigger toevoegen"
 
@@ -809,13 +809,13 @@ msgstr "Bevat"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "Geavanceerd"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Advanced..."
 msgstr "Geavanceerd..."
 
@@ -938,7 +938,7 @@ msgstr "Een geïmporteerde API-sleutel kon niet worden gecontroleerd. Probeer he
 msgid "An imported API key could not be used. Untick it and try again."
 msgstr "Een geïmporteerde API-sleutel kon niet worden gebruikt. Vink hem uit en probeer het opnieuw."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "An integration tool"
 msgstr "Een integratietool"
 
@@ -979,7 +979,7 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr "Elk model, met je eigen sleutel"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Anyone at @{ownerDomain}"
 msgstr "Iedereen bij @{ownerDomain}"
 
@@ -1166,7 +1166,7 @@ msgstr "Auto"
 msgid "Automated senders"
 msgstr "Geautomatiseerde afzenders"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Available after the routine is saved"
 msgstr "Beschikbaar zodra de routine is opgeslagen"
 
@@ -1311,7 +1311,7 @@ msgstr ""
 msgid "Bot templates"
 msgstr "Botsjablonen"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 msgid "Bot's model"
 msgstr "Model van de bot"
 
@@ -1533,12 +1533,12 @@ msgstr "Chats"
 msgid "Check again"
 msgstr "Opnieuw controleren"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check every"
 msgstr "Elke"
 
 #. placeholder {0}: state.detail ?? ""
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check failed: {0}"
 msgstr "Controle mislukt: {0}"
 
@@ -1783,7 +1783,7 @@ msgid "Comfortable"
 msgstr "Comfortabel"
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Command"
 msgstr "Commando"
 
@@ -2761,7 +2761,7 @@ msgstr "Groep aanmaken"
 msgid "Create organization"
 msgstr "Organisatie maken"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Create Routine"
 msgstr "Routine aanmaken"
 
@@ -2892,7 +2892,7 @@ msgid "Default"
 msgstr "Standaard"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "Standaard ({0})"
@@ -3225,7 +3225,8 @@ msgstr "Profiel bewerken"
 msgid "Email"
 msgstr "E-mail"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/RoutineList.tsx
 msgctxt "routine trigger"
 msgid "Email"
 msgstr "E-mail"
@@ -3336,13 +3337,13 @@ msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "Alle bots in deze space lezen deze notities en houden ze bij."
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "Elke dag"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "Elk uur"
@@ -3360,12 +3361,12 @@ msgstr "Elk bericht"
 msgid "Every Monday"
 msgstr "Elke maandag"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every month"
 msgstr "Elke maand"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every week"
 msgstr "Elke week"
@@ -3461,11 +3462,11 @@ msgstr "Mislukt."
 msgid "Failure handling"
 msgstr "Foutafhandeling"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields that mark a change"
 msgstr "Velden die een wijziging markeren"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Te vergelijken velden, bijv. id, modifiedTime (optioneel)"
 
@@ -3474,11 +3475,11 @@ msgstr "Te vergelijken velden, bijv. id, modifiedTime (optioneel)"
 msgid "File"
 msgstr "Bestand"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders on the computer"
 msgstr "Bestanden of mappen op de computer"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders, one per line"
 msgstr "Bestanden of mappen, één per regel"
 
@@ -3631,7 +3632,9 @@ msgstr "De mobiele app downloaden"
 msgid "Getting ready"
 msgstr "Aan het voorbereiden"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Git event"
 msgstr "Git-gebeurtenis"
 
@@ -3683,7 +3686,7 @@ msgstr "Hang eerst op en voer daarna de code op het scherm in."
 msgid "Hang up, then enter the code on screen."
 msgstr "Hang op en voer daarna de code op het scherm in."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "header"
 msgstr "header"
 
@@ -3925,7 +3928,7 @@ msgstr "Integratiedomein"
 msgid "Integrations"
 msgstr "Integraties"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Interval"
 msgstr "Interval"
@@ -4016,7 +4019,7 @@ msgstr "Herinneringen bewaren"
 msgid "Keep tool results whole"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "key"
 msgstr "sleutel"
 
@@ -4039,12 +4042,12 @@ msgid "Language"
 msgstr "Taal"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: changed"
 msgstr "Laatste controle {0}: gewijzigd"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: no changes"
 msgstr "Laatste controle {0}: geen wijzigingen"
 
@@ -4385,7 +4388,8 @@ msgstr "{activeName} berichten"
 msgid "Message composer"
 msgstr "Berichteditor"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Message event"
 msgstr "Berichtgebeurtenis"
 
@@ -4445,7 +4449,7 @@ msgid "minute"
 msgstr "minuut"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "minutes"
 msgstr "minuten"
 
@@ -4460,7 +4464,7 @@ msgstr "Modus"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Model"
@@ -4860,7 +4864,7 @@ msgstr ""
 msgid "No tickets yet"
 msgstr "Nog geen tickets"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "No trigger"
 msgstr "Geen trigger"
 
@@ -4953,7 +4957,7 @@ msgstr "OAuth-verbinding mislukt"
 msgid "Offline"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "On a schedule"
 msgstr "Op een schema"
 
@@ -4982,7 +4986,7 @@ msgstr ""
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "Alleen ik"
 
@@ -5245,7 +5249,7 @@ msgstr "Plak je API-sleutel"
 msgid "Paste your API key, then test again."
 msgstr "Plak je API-sleutel en test daarna opnieuw."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 #: src/pages/shell/import-status.ts
 msgid "Paused"
 msgstr "Gepauzeerd"
@@ -5294,7 +5298,7 @@ msgstr "Kies een model uit de catalogus."
 msgid "Pick a model from the list or enter a model id served by this endpoint."
 msgstr "Kies een model uit de lijst of voer een model-id in dat dit eindpunt aanbiedt."
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Pick a tool to check"
 msgstr "Kies een tool om te controleren"
 
@@ -5337,11 +5341,11 @@ msgstr ""
 msgid "Plugins"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Post \"No changes\" in chat"
 msgstr "Plaats \"No changes\" in de chat"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "POST to"
 msgstr "POST naar"
 
@@ -5666,11 +5670,11 @@ msgstr "{secretName} verwijderen? Bots kunnen het dan niet meer gebruiken."
 msgid "Remove {site}"
 msgstr "{site} verwijderen"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove change trigger"
 msgstr "Wijzigingstrigger verwijderen"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove email trigger"
 msgstr "E-mailtrigger verwijderen"
 
@@ -5681,7 +5685,7 @@ msgstr "E-mailtrigger verwijderen"
 msgid "Remove from every space?"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove Git event"
 msgstr "Git-gebeurtenis verwijderen"
 
@@ -5689,7 +5693,7 @@ msgstr "Git-gebeurtenis verwijderen"
 msgid "Remove header"
 msgstr "Header verwijderen"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove message trigger"
 msgstr "Berichttrigger verwijderen"
 
@@ -5706,7 +5710,7 @@ msgstr "Skill {0} verwijderen"
 msgid "Remove skills"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove webhook"
 msgstr "Webhook verwijderen"
 
@@ -5919,7 +5923,7 @@ msgstr ""
 msgid "Root filesystem"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Rotate key"
 msgstr "Sleutel roteren"
 
@@ -5961,7 +5965,7 @@ msgstr "draait"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Running"
 msgstr "Draait"
 
@@ -5977,7 +5981,7 @@ msgstr "Bezig met draaien…"
 msgid "Runs"
 msgstr "Uitvoeringen"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "Draait wanneer deze bot een geverifieerd bericht van deze aanbieder ontvangt."
 
@@ -6041,7 +6045,7 @@ msgstr "Opgeslagen, maar het vernieuwen van de lijst mislukte"
 msgid "Saved."
 msgstr "Opgeslagen."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Saved. Rotate to reveal."
 msgstr "Opgeslagen. Vernieuw de sleutel om deze te tonen."
 
@@ -6471,11 +6475,13 @@ msgstr ""
 msgid "Skipped {0}"
 msgstr "{0} overgeslagen"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Slack message"
 msgstr "Slack-bericht"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Slack not enabled"
 msgstr "Slack is niet ingeschakeld"
 
@@ -6631,7 +6637,7 @@ msgstr "Status"
 msgid "Steps"
 msgstr "Stappen"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 #: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
@@ -6772,7 +6778,8 @@ msgstr "Team"
 msgid "Team Computer"
 msgstr "Teamcomputer"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Teams message"
 msgstr "Teams-bericht"
 
@@ -6900,7 +6907,7 @@ msgstr "Zij krijgen {weeks} weken gratis."
 
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
 msgstr "Denkt"
@@ -7125,19 +7132,19 @@ msgstr "Zijbalk tonen/verbergen"
 msgid "Tokens"
 msgstr "Tokens"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
 msgstr "Toolargumenten (JSON)"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be a JSON object"
 msgstr "Toolargumenten moeten een JSON-object zijn"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be JSON"
 msgstr "Toolargumenten moeten JSON zijn"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool name"
 msgstr "Toolnaam"
 
@@ -7527,7 +7534,7 @@ msgstr ""
 msgid "Web, desktop and mobile apps"
 msgstr "Web-, desktop- en mobiele apps"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Webhook"
 msgstr "Webhook"
 
@@ -7540,7 +7547,7 @@ msgid "week"
 msgstr "week"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "Werkdagen"
@@ -7589,7 +7596,7 @@ msgstr "Waarvoor deze bot is"
 msgid "What to return"
 msgstr "Wat teruggeven"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "What to watch"
 msgstr "Wat volgen"
 
@@ -7597,11 +7604,12 @@ msgstr "Wat volgen"
 msgid "What your bots remember between chats."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When a webhook fires"
 msgstr "Wanneer een webhook afgaat"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "When an email arrives"
 msgstr "Als er een e-mail binnenkomt"
 
@@ -7613,7 +7621,9 @@ msgstr ""
 msgid "When it finishes or needs input"
 msgstr "Wanneer de bot klaar is of invoer nodig heeft"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When something changes"
 msgstr "Wanneer er iets verandert"
 
@@ -7643,7 +7653,7 @@ msgstr ""
 msgid "Who can open this page"
 msgstr "Wie deze pagina kan openen"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Who can start it"
 msgstr "Wie het kan starten"
 

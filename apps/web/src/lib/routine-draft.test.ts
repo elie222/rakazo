@@ -3,12 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray) => strings.join(""),
 }));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: unknown }) => children,
-  useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
-}));
 
-import { emptyWatchDraft, watchFromDraft } from "./RoutineEditor";
+import { emptyWatchDraft, watchFromDraft } from "./routine-draft";
 
 describe("watchFromDraft", () => {
   it("splits paths by line and drops blanks", () => {
