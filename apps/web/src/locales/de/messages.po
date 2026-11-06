@@ -1066,6 +1066,7 @@ msgstr "Avatar-Studio"
 #: src/components/vault/VaultPageHeader.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -1184,10 +1185,6 @@ msgstr "Modell des Bots"
 
 #: src/components/SignupSurvey.tsx
 msgid "Both"
-msgstr ""
-
-#: src/pages/Artifacts.tsx
-msgid "Bots"
 msgstr ""
 
 #: src/components/ModelCredits.tsx
@@ -1510,6 +1507,10 @@ msgstr "Unterhaltung leeren"
 
 #: src/pages/ActivityList.tsx
 msgid "Clear filter {label}"
+msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "Clear filters"
 msgstr ""
 
 #: src/pages/shell/dialogs.tsx
@@ -3288,8 +3289,16 @@ msgstr "Dateien oder Ordner auf dem Computer"
 msgid "Files or folders, one per line"
 msgstr "Dateien oder Ordner, einer pro Zeile"
 
+#: src/pages/Artifacts.tsx
+msgid "Files your bots create, like reports, docs and images, collect here."
+msgstr ""
+
 #: src/pages/GroupPanel.tsx
 msgid "Filter bots"
+msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by bot"
 msgstr ""
 
 #: src/pages/Artifacts.tsx
@@ -3300,7 +3309,6 @@ msgstr ""
 msgid "Filter by who made it"
 msgstr "Nach Ersteller filtern"
 
-#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "Filter"
@@ -4530,7 +4538,7 @@ msgid "No apps match your search."
 msgstr "Keine Apps entsprechen deiner Suche."
 
 #: src/pages/Artifacts.tsx
-msgid "No artifacts found."
+msgid "No artifacts yet"
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
@@ -4553,6 +4561,10 @@ msgstr "Nicht mehr aktiv"
 
 #: src/components/VaultSettings.tsx
 msgid "No matches"
+msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "No matching artifacts"
 msgstr ""
 
 #: src/pages/Artifacts.tsx
@@ -5842,6 +5854,7 @@ msgstr "Bildschirm nicht verbunden"
 
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5858,6 +5871,10 @@ msgstr "Suchen"
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
 msgstr "Apps suchen"
+
+#: src/pages/Artifacts.tsx
+msgid "Search artifacts"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"

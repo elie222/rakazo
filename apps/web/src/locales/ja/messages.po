@@ -1066,6 +1066,7 @@ msgstr "Avatar Studio"
 #: src/components/vault/VaultPageHeader.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -1185,10 +1186,6 @@ msgstr "ボットのモデル"
 #: src/components/SignupSurvey.tsx
 msgid "Both"
 msgstr "両方"
-
-#: src/pages/Artifacts.tsx
-msgid "Bots"
-msgstr "ボット"
 
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
@@ -1511,6 +1508,10 @@ msgstr "会話をクリア"
 #: src/pages/ActivityList.tsx
 msgid "Clear filter {label}"
 msgstr "フィルター{label}を解除"
+
+#: src/pages/Artifacts.tsx
+msgid "Clear filters"
+msgstr "フィルターをクリア"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clearing…"
@@ -3288,9 +3289,17 @@ msgstr "コンピューター上のファイルまたはフォルダ"
 msgid "Files or folders, one per line"
 msgstr "ファイルまたはフォルダ（1行に1つ）"
 
+#: src/pages/Artifacts.tsx
+msgid "Files your bots create, like reports, docs and images, collect here."
+msgstr "ボットが作成したレポート、ドキュメント、画像などのファイルがここに集まります。"
+
 #: src/pages/GroupPanel.tsx
 msgid "Filter bots"
 msgstr "ボットを絞り込む"
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by bot"
+msgstr "ボットで絞り込む"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -3300,7 +3309,6 @@ msgstr "日付で絞り込む"
 msgid "Filter by who made it"
 msgstr "作成者で絞り込む"
 
-#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "フィルター"
@@ -4530,8 +4538,8 @@ msgid "No apps match your search."
 msgstr "検索に一致するアプリはありません。"
 
 #: src/pages/Artifacts.tsx
-msgid "No artifacts found."
-msgstr "アーティファクトが見つかりません。"
+msgid "No artifacts yet"
+msgstr "まだアーティファクトはありません"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4554,6 +4562,10 @@ msgstr "現在は無効"
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "No matching artifacts"
+msgstr "一致するアーティファクトはありません"
 
 #: src/pages/Artifacts.tsx
 msgid "No matching artifacts on this page."
@@ -5842,6 +5854,7 @@ msgstr "画面が接続されていません"
 
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5858,6 +5871,10 @@ msgstr "検索"
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
 msgstr "アプリを検索"
+
+#: src/pages/Artifacts.tsx
+msgid "Search artifacts"
+msgstr "アーティファクトを検索"
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"

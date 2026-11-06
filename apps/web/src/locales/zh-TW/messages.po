@@ -1067,6 +1067,7 @@ msgstr "頭像工作室"
 #: src/components/vault/VaultPageHeader.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -1186,10 +1187,6 @@ msgstr "機器人的模型"
 #: src/components/SignupSurvey.tsx
 msgid "Both"
 msgstr "兩者都有"
-
-#: src/pages/Artifacts.tsx
-msgid "Bots"
-msgstr "機器人"
 
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
@@ -1512,6 +1509,10 @@ msgstr "清空對話"
 #: src/pages/ActivityList.tsx
 msgid "Clear filter {label}"
 msgstr "清除篩選條件 {label}"
+
+#: src/pages/Artifacts.tsx
+msgid "Clear filters"
+msgstr "清除篩選"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clearing…"
@@ -3289,9 +3290,17 @@ msgstr "電腦上的檔案或資料夾"
 msgid "Files or folders, one per line"
 msgstr "檔案或資料夾，每行一個"
 
+#: src/pages/Artifacts.tsx
+msgid "Files your bots create, like reports, docs and images, collect here."
+msgstr "你的機器人建立的檔案，例如報告、文件和圖片，都會匯集在這裡。"
+
 #: src/pages/GroupPanel.tsx
 msgid "Filter bots"
 msgstr "篩選機器人"
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by bot"
+msgstr "依機器人篩選"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -3301,7 +3310,6 @@ msgstr "依日期篩選"
 msgid "Filter by who made it"
 msgstr "依建立者篩選"
 
-#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "篩選器"
@@ -4531,8 +4539,8 @@ msgid "No apps match your search."
 msgstr "沒有符合搜尋條件的應用程式。"
 
 #: src/pages/Artifacts.tsx
-msgid "No artifacts found."
-msgstr "找不到成品。"
+msgid "No artifacts yet"
+msgstr "尚無成品"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4555,6 +4563,10 @@ msgstr "已停用"
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "No matching artifacts"
+msgstr "沒有符合的成品"
 
 #: src/pages/Artifacts.tsx
 msgid "No matching artifacts on this page."
@@ -5843,6 +5855,7 @@ msgstr "螢幕未連線"
 
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5859,6 +5872,10 @@ msgstr "搜尋"
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
 msgstr "搜尋應用程式"
+
+#: src/pages/Artifacts.tsx
+msgid "Search artifacts"
+msgstr "搜尋成品"
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"

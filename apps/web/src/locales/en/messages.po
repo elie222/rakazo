@@ -1066,6 +1066,7 @@ msgstr "Avatar Studio"
 #: src/components/vault/VaultPageHeader.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -1185,10 +1186,6 @@ msgstr "Bot's model"
 #: src/components/SignupSurvey.tsx
 msgid "Both"
 msgstr "Both"
-
-#: src/pages/Artifacts.tsx
-msgid "Bots"
-msgstr "Bots"
 
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
@@ -1511,6 +1508,10 @@ msgstr "Clear conversation"
 #: src/pages/ActivityList.tsx
 msgid "Clear filter {label}"
 msgstr "Clear filter {label}"
+
+#: src/pages/Artifacts.tsx
+msgid "Clear filters"
+msgstr "Clear filters"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clearing…"
@@ -3288,9 +3289,17 @@ msgstr "Files or folders on the computer"
 msgid "Files or folders, one per line"
 msgstr "Files or folders, one per line"
 
+#: src/pages/Artifacts.tsx
+msgid "Files your bots create, like reports, docs and images, collect here."
+msgstr "Files your bots create, like reports, docs and images, collect here."
+
 #: src/pages/GroupPanel.tsx
 msgid "Filter bots"
 msgstr "Filter bots"
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by bot"
+msgstr "Filter by bot"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -3300,7 +3309,6 @@ msgstr "Filter by date"
 msgid "Filter by who made it"
 msgstr "Filter by who made it"
 
-#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "Filters"
@@ -4530,8 +4538,8 @@ msgid "No apps match your search."
 msgstr "No apps match your search."
 
 #: src/pages/Artifacts.tsx
-msgid "No artifacts found."
-msgstr "No artifacts found."
+msgid "No artifacts yet"
+msgstr "No artifacts yet"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4554,6 +4562,10 @@ msgstr "No longer active"
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr "No matches"
+
+#: src/pages/Artifacts.tsx
+msgid "No matching artifacts"
+msgstr "No matching artifacts"
 
 #: src/pages/Artifacts.tsx
 msgid "No matching artifacts on this page."
@@ -5842,6 +5854,7 @@ msgstr "Screen not connected"
 
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5858,6 +5871,10 @@ msgstr "Search"
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
 msgstr "Search apps"
+
+#: src/pages/Artifacts.tsx
+msgid "Search artifacts"
+msgstr "Search artifacts"
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
