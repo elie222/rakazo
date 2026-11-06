@@ -380,6 +380,12 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   useForegroundPoll(loadBots, INBOX_POLL_INTERVAL_MS, hasSession && (embedded || isFocused));
 
   const archivedCount = useArchivedCount(me?.spaceId, hasSession);
+  // Each space's sections for the row menus; the selected space's are the live ones.
+  const sectionsBySpace = useMemo(() => {
+    const sections = new Map(spaces.map((space) => [space.id, space.botSections]));
+    if (me) sections.set(me.spaceId, botSections);
+    return sections;
+  }, [spaces, me?.spaceId, botSections]);
   const {
     unreadOverrides,
     archiving,
@@ -391,7 +397,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     organizeFromMenu,
     editSectionFromMenu,
     deleteSection,
-  } = useInboxChatActions({ loadBots, setBots, setGroups, setSpaces, botSections });
+  } = useInboxChatActions({ loadBots, setBots, setGroups, setSpaces, sectionsBySpace });
 
   const loadActivity = useCallback(async () => {
     if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
@@ -437,14 +443,22 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   );
   const shownSpaces = useMemo(
     () =>
-      archiving.size === 0
+      archiving.size === 0 && unreadOverrides.size === 0
         ? spaces
         : spaces.map((space) => ({
             ...space,
-            bots: withoutArchiving("bot", space.bots, archiving),
-            groups: withoutArchiving("group", space.groups, archiving),
+            bots: withoutArchiving(
+              "bot",
+              applyUnreadOverrides("bot", space.bots, unreadOverrides),
+              archiving,
+            ),
+            groups: withoutArchiving(
+              "group",
+              applyUnreadOverrides("group", space.groups, unreadOverrides),
+              archiving,
+            ),
           })),
-    [spaces, archiving],
+    [spaces, unreadOverrides, archiving],
   );
   const inboxSpaces = useMemo(
     () =>
@@ -494,7 +508,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       bots: space.bots.filter((bot) => SWIPE_ROWS || !bot.pinned),
       groups: space.groups.filter((group) => SWIPE_ROWS || !group.pinned),
     }));
-    const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed, me?.spaceId);
+    const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed);
     return !SWIPE_ROWS && pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
   }, [
     inboxSpaces,
@@ -719,14 +733,27 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [openChat, refreshBots, t],
   );
 
+  // Without a space, a bot or group chat is created in the selected one.
   const runCreateAction = useCallback(
-    (action: CreateAction) => {
+    (action: CreateAction, spaceId?: string) => {
       if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
-      if (action === "bot") void createQuickBot();
-      else if (action === "group") router.push("/new-group");
+      if (action === "bot") void createQuickBot(spaceId);
+      else if (action === "group")
+        router.push(spaceId ? { pathname: "/new-group", params: { spaceId } } : "/new-group");
       else router.push("/new-space");
     },
     [createQuickBot, router],
+  );
+  const createGroupInSpace = useCallback(
+    (spaceId: string) => runCreateAction("group", spaceId),
+    [runCreateAction],
+  );
+  // The Create menu's spaces, as the headings name and order them. Polls rebuild the spaces,
+  // so the menu changes only with a name or the order, not with every new message.
+  const createSpacesKey = JSON.stringify(inboxSpaces.map((space) => [space.id, space.name]));
+  const createSpaces = useMemo(
+    () => inboxSpaces.map(({ id, name }) => ({ id, name })),
+    [createSpacesKey],
   );
 
   const organizations = useOrganizations(hasSession && !onShareSelect).data;
@@ -744,6 +771,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     activityMode,
     toggleActivityMode,
     runCreateAction,
+    createSpaces,
     headerTitle,
   });
 
@@ -814,10 +842,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const renderItem = useInboxRenderItem({
     appearance,
     botAction,
-    botSections,
     chooseInboxSpace,
     confirmDeleteSpace,
     createBotInSpace: createQuickBot,
+    createGroupInSpace,
     day,
     deleteSection,
     editSectionFromMenu,
@@ -828,6 +856,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     organizeBot,
     organizeFromMenu,
     organizeGroup,
+    sectionsBySpace,
     spaceBusy,
     spaceRecoveryId,
     sharing: !!onShareSelect,
@@ -855,6 +884,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           activityMode={activityMode}
           toggleActivityMode={toggleActivityMode}
           runCreateAction={runCreateAction}
+          createSpaces={createSpaces}
           columnInsets={columnInsets}
           title={headerTitle?.()}
         />

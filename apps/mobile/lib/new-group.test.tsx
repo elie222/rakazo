@@ -17,6 +17,9 @@ const {
   announce,
   hardwareBack,
   nativeHeader,
+  params,
+  space,
+  alert,
   addToSearchInbox,
   groupPreview,
   hapticSuccess,
@@ -33,9 +36,19 @@ const {
   announce: vi.fn(),
   hardwareBack: { current: undefined as (() => boolean) | undefined },
   nativeHeader: { current: false },
+  params: { current: {} as { spaceId?: string } },
+  space: { selected: "space-personal", select: vi.fn(async (_id: string) => true) },
+  alert: vi.fn(),
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./api", () => ({ rpc }));
+vi.mock("./api", () => ({
+  rpc,
+  captureApiRequestContext: async (spaceId: string) => ({
+    headers: { "x-rakazo-space-id": spaceId },
+  }),
+  selectedSpaceId: () => space.selected,
+  selectSpace: (id: string) => space.select(id),
+}));
 vi.mock("./haptics", () => ({ hapticSuccess }));
 vi.mock("./search-inbox", () => ({
   addToSearchInbox,
@@ -94,7 +107,7 @@ vi.mock("expo-router", () => ({
     ),
   },
   useRouter: () => ({ back, push, replace, canDismiss: () => false, canGoBack: () => false }),
-  useLocalSearchParams: () => ({ groupId: "group-1" }),
+  useLocalSearchParams: () => params.current,
 }));
 vi.mock("react-native", () => {
   const View = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
@@ -159,7 +172,7 @@ vi.mock("react-native", () => {
       />
     ),
     StyleSheet: { create: (styles: unknown) => styles },
-    Alert: { alert: vi.fn() },
+    Alert: { alert },
   };
 });
 vi.mock("react-native-keyboard-controller", () => ({
@@ -227,6 +240,12 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.clearAllMocks();
   nativeHeader.current = false;
+  params.current = {};
+  space.selected = "space-personal";
+  space.select.mockImplementation(async (id: string) => {
+    space.selected = id;
+    return true;
+  });
   Object.assign(session, { generation: 4, apiBase: "http://api.test", focused: true });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
@@ -362,10 +381,11 @@ it("Skip posts the default name in pick order and routes to the group", async ()
   await start();
   await pickPair();
   await click("Skip");
-  expect(rpc).toHaveBeenCalledWith("groups/create", {
-    name: "Writer, Researcher",
-    botIds: ["bot-2", "bot-1"],
-  });
+  expect(rpc).toHaveBeenCalledWith(
+    "groups/create",
+    { name: "Writer, Researcher", botIds: ["bot-2", "bot-1"] },
+    undefined,
+  );
   // The new chat's title seats the members before the inbox lists the group.
   // Only into the session the group was created in.
   expect(addToSearchInbox).toHaveBeenCalledWith(
@@ -389,10 +409,11 @@ it("Create posts a trimmed name with the keyboard done action", async () => {
       .querySelector("input")!
       .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   });
-  expect(rpc).toHaveBeenCalledWith("groups/create", {
-    name: "Project Falcon",
-    botIds: ["bot-2", "bot-1"],
-  });
+  expect(rpc).toHaveBeenCalledWith(
+    "groups/create",
+    { name: "Project Falcon", botIds: ["bot-2", "bot-1"] },
+    undefined,
+  );
   expect(hapticSuccess).toHaveBeenCalledOnce();
 });
 it.each([false, true])("back keeps picks (hardware: %s)", async (hardware) => {
@@ -470,10 +491,11 @@ it.each(["header", "native header", "hardware"])(
     await pressBack();
     expect(button("Creating…")?.disabled).toBe(true);
     expect(button("Next")).toBeUndefined();
-    expect(rpc).toHaveBeenCalledWith("groups/create", {
-      name: "Writer, Researcher",
-      botIds: ["bot-2", "bot-1"],
-    });
+    expect(rpc).toHaveBeenCalledWith(
+      "groups/create",
+      { name: "Writer, Researcher", botIds: ["bot-2", "bot-1"] },
+      undefined,
+    );
     await act(async () => reject(new Error("Could not create group")));
     await pressBack();
     expect(button("Remove Writer")).toBeDefined();
@@ -501,4 +523,65 @@ it("does not confirm group creation after its screen loses focus", async () => {
   session.focused = false;
   await act(async () => finish({ id: "group-1", name: "Created" }));
   expect(hapticSuccess).not.toHaveBeenCalled();
+});
+
+it("without a space, lists and creates in the selected space and opens the group there", async () => {
+  await start();
+  await pickPair();
+  await click("Skip");
+  // No pinned request context: the default, selected-space request.
+  expect(rpc.mock.calls).toEqual([
+    ["bots/list", undefined, undefined],
+    ["groups/create", { name: "Writer, Researcher", botIds: ["bot-2", "bot-1"] }, undefined],
+  ]);
+  expect(space.select).not.toHaveBeenCalled();
+  expect(replace).toHaveBeenCalledWith({
+    pathname: "/group-thread",
+    params: { groupId: "group-1", name: "Created" },
+  });
+});
+
+it("with a space, picks from its bots, creates the group there, and opens it in that space", async () => {
+  params.current = { spaceId: "space-work" };
+  await start();
+  await pickPair();
+  expect(space.select).not.toHaveBeenCalled();
+  await click("Skip");
+  const pinned = { requestContext: { headers: { "x-rakazo-space-id": "space-work" } } };
+  expect(rpc.mock.calls).toEqual([
+    ["bots/list", undefined, pinned],
+    ["groups/create", { name: "Writer, Researcher", botIds: ["bot-2", "bot-1"] }, pinned],
+  ]);
+  // Selected before the group chat opens, so it loads in the group's space.
+  expect(space.select).toHaveBeenCalledExactlyOnceWith("space-work");
+  expect(space.select.mock.invocationCallOrder[0]).toBeLessThan(
+    replace.mock.invocationCallOrder[0]!,
+  );
+  expect(replace).toHaveBeenCalledWith({
+    pathname: "/group-thread",
+    params: { groupId: "group-1", name: "Created" },
+  });
+});
+
+it("does not switch when the group's space is already selected", async () => {
+  params.current = { spaceId: "space-personal" };
+  await start();
+  await pickPair();
+  await click("Skip");
+  expect(space.select).not.toHaveBeenCalled();
+  expect(replace).toHaveBeenCalledWith({
+    pathname: "/group-thread",
+    params: { groupId: "group-1", name: "Created" },
+  });
+});
+
+it("goes back to the inbox with an alert when it cannot switch to the group's space", async () => {
+  params.current = { spaceId: "space-work" };
+  space.select.mockResolvedValue(false);
+  await start();
+  await pickPair();
+  await click("Skip");
+  expect(alert).toHaveBeenCalledWith("Could not switch spaces", "Try again.");
+  expect(replace).toHaveBeenCalledExactlyOnceWith("/");
+  expect(container.textContent).not.toContain("Could not create group");
 });

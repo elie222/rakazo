@@ -19,7 +19,7 @@ import { useInboxDay } from "./use-inbox-day";
 import { usePublishSearchInbox } from "./use-publish-search-inbox";
 
 type MenuProps = {
-  actions: { id: string; title: string; attributes?: { disabled?: boolean } }[];
+  actions: { id: string; title: string; image?: string; attributes?: { disabled?: boolean } }[];
   onPressAction: (event: { nativeEvent: { event: string } }) => void;
   children?: ReactNode;
 };
@@ -30,6 +30,7 @@ const ui = vi.hoisted(() => ({
   push: vi.fn(),
   menus: [] as MenuProps[],
   swipeRows: [] as string[],
+  swipeSections: [] as string[][],
   avatars: [] as string[],
   chevronStarts: [] as number[],
   chevronTargets: [] as number[],
@@ -195,8 +196,17 @@ vi.mock("../components/bot-avatar", () => ({
 vi.mock("../components/group-avatar", () => ({ GroupAvatar: () => null }));
 // Rows in the current space carry the iOS swipe host and its long-press menu.
 vi.mock("../components/inbox-swipe-row", () => ({
-  InboxSwipeRow: ({ rowKey, children }: { rowKey: string; children: ReactElement }) => {
+  InboxSwipeRow: ({
+    rowKey,
+    sections,
+    children,
+  }: {
+    rowKey: string;
+    sections: { id: string }[];
+    children: ReactElement;
+  }) => {
     ui.swipeRows.push(rowKey);
+    ui.swipeSections.push(sections.map((section) => section.id));
     return children;
   },
 }));
@@ -206,10 +216,10 @@ const action = vi.fn();
 const callbacks = {
   appearance: "light" as const,
   botAction: action,
-  botSections: [],
   chooseInboxSpace: action,
   confirmDeleteSpace: action,
   createBotInSpace: action,
+  createGroupInSpace: action,
   deleteSection: action,
   editSectionFromMenu: action,
   groupAction: action,
@@ -218,6 +228,7 @@ const callbacks = {
   organizeBot: action,
   organizeFromMenu: action,
   organizeGroup: action,
+  sectionsBySpace: new Map(),
   sharing: false,
   spaceBusy: false,
   spaceRecoveryId: null,
@@ -262,6 +273,7 @@ beforeEach(() => {
     previews: 0,
     menus: [],
     swipeRows: [],
+    swipeSections: [],
     avatars: [],
     chevronStarts: [],
     chevronTargets: [],
@@ -464,7 +476,7 @@ it("collapses a section from its heading and keeps the choice for the account", 
     const renderItem = useInboxRenderItem({ ...callbacks, toggleCollapsed, day: 0, spaceId });
     // The inbox waits for the saved choice, so a collapsed section never draws open first.
     if (!loaded) return null;
-    return spaceInboxItems(spaces, collapsed, spaceId).map((item) =>
+    return spaceInboxItems(spaces, collapsed).map((item) =>
       cloneElement(renderItem({ item }), { key: inboxItemKey(item) }),
     );
   }
@@ -587,23 +599,59 @@ it("waits for a saved or live inbox before publishing a remounted session's sear
   expect(publish).toHaveBeenLastCalledWith([]);
 });
 
-it("gives the long-press menu, and with it Delete, only to chats in the current space", () => {
-  const chat = (id: string, spaceId: string) => ({
+it("gives every chat its long-press menu and swipe actions, with its own space's sections", () => {
+  const chat = (id: string, spaceId?: string) => ({
     id,
     spaceId,
     name: id,
     preview: "",
     members: [],
   });
-  // Chats listed from another space have no row menu, as with Archive.
+  const section = (id: string) => ({ id, name: id, position: 0, createdAt: "", updatedAt: "" });
   const items = [
     { type: "bot", bot: chat("current-bot", "space-current") },
     { type: "group", group: chat("current-group", "space-current") },
     { type: "bot", bot: chat("other-bot", "space-other") },
     { type: "group", group: chat("other-group", "space-other") },
+    // A chat listed without a space is in the selected one.
+    { type: "bot", bot: chat("unscoped-bot") },
   ] as unknown as InboxItem[];
-  render(<List items={items} spaceId="space-current" />);
-  expect(ui.swipeRows).toEqual(["bot:current-bot", "group:current-group"]);
+  const sectionsBySpace = new Map([
+    ["space-current", [section("section-current")]],
+    ["space-other", [section("section-other")]],
+  ]);
+  render(<List items={items} spaceId="space-current" options={{ sectionsBySpace }} />);
+  expect(ui.swipeRows).toEqual([
+    "bot:current-bot",
+    "group:current-group",
+    "bot:other-bot",
+    "group:other-group",
+    "bot:unscoped-bot",
+  ]);
+  expect(ui.swipeSections).toEqual([
+    ["section-current"],
+    ["section-current"],
+    ["section-other"],
+    ["section-other"],
+    ["section-current"],
+  ]);
+});
+
+it("deletes a section from its heading in that heading's space", () => {
+  const deleteSection = vi.fn();
+  const items = [
+    {
+      type: "heading",
+      key: "space-other:section:s1",
+      title: "Clients",
+      sectionId: "s1",
+      spaceId: "space-other",
+    },
+  ] as unknown as InboxItem[];
+  render(<List items={items} spaceId="space-current" options={{ deleteSection }} />);
+  expect(ui.menus.map((menu) => menu.actions.map((entry) => entry.id))).toEqual([["delete"]]);
+  act(() => ui.menus[0]!.onPressAction({ nativeEvent: { event: "delete" } }));
+  expect(deleteSection).toHaveBeenCalledWith({ id: "s1", name: "Clients", spaceId: "space-other" });
 });
 
 it("offers every space heading's Members and Settings, and Delete only where the member may delete it", () => {
@@ -624,8 +672,8 @@ it("offers every space heading's Members and Settings, and Delete only where the
     />,
   );
   expect(ui.menus.map((menu) => menu.actions.map((entry) => entry.id))).toEqual([
-    ["new-bot", "members", "settings"],
-    ["new-bot", "members", "settings", "delete"],
+    ["new-bot", "new-group", "members", "settings"],
+    ["new-bot", "new-group", "members", "settings", "delete"],
   ]);
   act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "members" } }));
   expect(ui.push).toHaveBeenLastCalledWith({
@@ -642,34 +690,48 @@ it("offers every space heading's Members and Settings, and Delete only where the
   expect(confirmDeleteSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "space-work" }));
 });
 
-it("creates a bot in the heading's own space, and not while a space switch or recovery is under way", () => {
-  const createBotInSpace = vi.fn();
-  const heading = (id: string, name: string) =>
-    ({
-      type: "heading",
-      key: id,
-      title: name,
-      space: { id, name, isDefault: false, canDelete: true, bots: [], groups: [], botSections: [] },
-    }) as unknown as InboxItem;
-  const items = [heading("space-home", "Home"), heading("space-work", "Work")];
-  render(<List items={items} spaceId="space-home" options={{ createBotInSpace }} />);
-  const newBot = (menu: MenuProps) => menu.actions.find((entry) => entry.id === "new-bot");
-  expect(ui.menus.map((menu) => newBot(menu))).toEqual([
-    expect.objectContaining({ title: "New bot", attributes: { disabled: false } }),
-    expect.objectContaining({ title: "New bot", attributes: { disabled: false } }),
-  ]);
-  // A heading of a space that is not selected still makes the bot in that space.
-  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "new-bot" } }));
-  expect(createBotInSpace).toHaveBeenCalledWith("space-work");
-  for (const options of [{ spaceBusy: true }, { spaceRecoveryId: "space-home" }]) {
-    ui.menus = [];
-    render(<List items={items} spaceId="space-home" options={{ createBotInSpace, ...options }} />);
-    expect(ui.menus.map((menu) => newBot(menu)?.attributes)).toEqual([
-      { disabled: true },
-      { disabled: true },
+it.each([
+  ["new-bot", "New bot", "person.crop.circle.badge.plus", "createBotInSpace"],
+  ["new-group", "New group chat", "person.2", "createGroupInSpace"],
+] as const)(
+  "%s creates in the heading's own space, and not while a space switch or recovery is under way",
+  (id, title, image, prop) => {
+    const create = vi.fn();
+    const heading = (spaceId: string, name: string) =>
+      ({
+        type: "heading",
+        key: spaceId,
+        title: name,
+        space: {
+          id: spaceId,
+          name,
+          isDefault: false,
+          canDelete: true,
+          bots: [],
+          groups: [],
+          botSections: [],
+        },
+      }) as unknown as InboxItem;
+    const items = [heading("space-home", "Home"), heading("space-work", "Work")];
+    render(<List items={items} spaceId="space-home" options={{ [prop]: create }} />);
+    const entry = (menu: MenuProps) => menu.actions.find((action) => action.id === id);
+    expect(ui.menus.map((menu) => entry(menu))).toEqual([
+      expect.objectContaining({ title, image, attributes: { disabled: false } }),
+      expect.objectContaining({ title, image, attributes: { disabled: false } }),
     ]);
-  }
-});
+    // A heading of a space that is not selected still creates in that space.
+    act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: id } }));
+    expect(create).toHaveBeenCalledExactlyOnceWith("space-work");
+    for (const options of [{ spaceBusy: true }, { spaceRecoveryId: "space-home" }]) {
+      ui.menus = [];
+      render(<List items={items} spaceId="space-home" options={{ [prop]: create, ...options }} />);
+      expect(ui.menus.map((menu) => entry(menu)?.attributes)).toEqual([
+        { disabled: true },
+        { disabled: true },
+      ]);
+    }
+  },
+);
 
 it("pins a bot made for a space to that space while another is selected", async () => {
   const bot = { id: "bot-new", name: "New Bot", spaceId: "space-work" };

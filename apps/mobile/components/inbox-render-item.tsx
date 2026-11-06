@@ -21,6 +21,8 @@ export const SWIPE_ROWS = Platform.OS === "ios";
 
 type ChatActions = ReturnType<typeof useInboxChatActions>;
 
+const NO_SECTIONS: MobileBotSection[] = [];
+
 /** The end of the inbox list: the create hint while it is needed, then the archived chats. */
 export function InboxListFooter({
   createHint,
@@ -44,10 +46,10 @@ export function InboxListFooter({
 export function useInboxRenderItem({
   appearance,
   botAction,
-  botSections,
   chooseInboxSpace,
   confirmDeleteSpace,
   createBotInSpace,
+  createGroupInSpace,
   day,
   deleteSection,
   editSectionFromMenu,
@@ -58,6 +60,7 @@ export function useInboxRenderItem({
   organizeBot,
   organizeFromMenu,
   organizeGroup,
+  sectionsBySpace,
   sharing,
   spaceBusy,
   spaceRecoveryId,
@@ -67,17 +70,19 @@ export function useInboxRenderItem({
   "botAction" | "groupAction" | "organizeFromMenu" | "editSectionFromMenu" | "deleteSection"
 > & {
   appearance: ResolvedAppearance;
-  botSections: MobileBotSection[];
   chooseInboxSpace: (spaceId: string) => void;
   confirmDeleteSpace: (space: InboxSpace) => void;
   createBotInSpace: (spaceId: string) => void;
+  createGroupInSpace: (spaceId: string) => void;
   day: number;
-  /** The selected space: only its chats get swipe actions and the row menu. */
+  /** The selected space; rows without a space of their own belong to it. */
   spaceId: string | undefined;
   openBot: (bot: MobileBot | SpaceBot) => void;
   openGroup: (group: MobileGroup | SpaceGroup) => void;
   organizeBot: (bot: MobileBot | SpaceBot) => void;
   organizeGroup: (group: MobileGroup | SpaceGroup) => void;
+  /** Each space's sections: a chat's row menu moves it among its own space's. */
+  sectionsBySpace: ReadonlyMap<string, MobileBotSection[]>;
   /** Picking a chat for an incoming share: rows only open, without menus or swipe actions. */
   sharing: boolean;
   spaceBusy: boolean;
@@ -129,6 +134,12 @@ export function useInboxRenderItem({
                     image: "person.crop.circle.badge.plus",
                     attributes: { disabled: spaceBusy || !!spaceRecoveryId },
                   },
+                  {
+                    id: "new-group",
+                    title: t("New group chat"),
+                    image: "person.2",
+                    attributes: { disabled: spaceBusy || !!spaceRecoveryId },
+                  },
                   { id: "members", title: t("Members"), image: "person.2" },
                   { id: "settings", title: t("Settings"), image: "gearshape" },
                   ...(canDeleteInboxSpace(item.space)
@@ -149,6 +160,7 @@ export function useInboxRenderItem({
                 onPressAction={({ nativeEvent }) => {
                   if (!item.space) return;
                   if (nativeEvent.event === "new-bot") createBotInSpace(item.space.id);
+                  else if (nativeEvent.event === "new-group") createGroupInSpace(item.space.id);
                   else if (nativeEvent.event === "delete") confirmDeleteSpace(item.space);
                   else
                     router.push({
@@ -182,7 +194,8 @@ export function useInboxRenderItem({
                 accessibilityLabel={t("Delete section")}
                 accessibilityRole="button"
                 onPress={() => {
-                  if (item.sectionId) deleteSection({ id: item.sectionId, name: item.title });
+                  if (item.sectionId)
+                    deleteSection({ id: item.sectionId, name: item.title, spaceId: item.spaceId });
                 }}
                 style={styles.spaceActions}
               >
@@ -200,7 +213,8 @@ export function useInboxRenderItem({
                 ]}
                 colorScheme={appearance}
                 onPressAction={() => {
-                  if (item.sectionId) deleteSection({ id: item.sectionId, name: item.title });
+                  if (item.sectionId)
+                    deleteSection({ id: item.sectionId, name: item.title, spaceId: item.spaceId });
                 }}
               >
                 <View
@@ -220,8 +234,8 @@ export function useInboxRenderItem({
           day={day}
           onPress={openGroup}
           onLongPress={!SWIPE_ROWS ? organizeGroup : undefined}
-          onAction={SWIPE_ROWS && item.group.spaceId === spaceId ? groupAction : undefined}
-          sections={botSections}
+          onAction={SWIPE_ROWS ? groupAction : undefined}
+          sections={sectionsBySpace.get(item.group.spaceId ?? spaceId ?? "") ?? NO_SECTIONS}
           onOrganize={organizeFromMenu}
           onEditSection={editSectionFromMenu}
         />
@@ -231,8 +245,8 @@ export function useInboxRenderItem({
           day={day}
           onPress={openBot}
           onLongPress={!sharing && !SWIPE_ROWS ? organizeBot : undefined}
-          onAction={!sharing && SWIPE_ROWS && item.bot.spaceId === spaceId ? botAction : undefined}
-          sections={botSections}
+          onAction={!sharing && SWIPE_ROWS ? botAction : undefined}
+          sections={sectionsBySpace.get(item.bot.spaceId ?? spaceId ?? "") ?? NO_SECTIONS}
           onOrganize={organizeFromMenu}
           onEditSection={editSectionFromMenu}
         />
@@ -240,10 +254,10 @@ export function useInboxRenderItem({
     [
       appearance,
       botAction,
-      botSections,
       chooseInboxSpace,
       confirmDeleteSpace,
       createBotInSpace,
+      createGroupInSpace,
       deleteSection,
       day,
       editSectionFromMenu,
@@ -255,6 +269,7 @@ export function useInboxRenderItem({
       organizeFromMenu,
       organizeGroup,
       router,
+      sectionsBySpace,
       sharing,
       spaceBusy,
       spaceRecoveryId,

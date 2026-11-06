@@ -145,7 +145,7 @@ describe("spaceInboxItems", () => {
     ]);
   });
 
-  it("keeps empty section headings actionable only in the selected space", () => {
+  it("keeps empty section headings actionable in every space, with that space", () => {
     const section = {
       id: "empty",
       name: "Old ideas",
@@ -161,25 +161,22 @@ describe("spaceInboxItems", () => {
       botSections: [section],
     });
     const other = space({ id: "other", botSections: [{ ...section, id: "other-section" }] });
-    const headings = spaceInboxItems([current, other], new Set(), current.id).filter(
-      (item) => item.type === "heading",
-    );
-    expect(headings.find((item) => item.title === "Old ideas")).toMatchObject({
-      sectionId: "empty",
-    });
-    expect(headings.filter((item) => item.sectionId).map((item) => item.sectionId)).toEqual([
-      "empty",
+    const headings = spaceInboxItems([current, other]).filter((item) => item.type === "heading");
+    // Pinned and Unassigned are not sections, so they have no section menu.
+    expect(
+      headings
+        .filter((item) => item.sectionId)
+        .map(({ sectionId, spaceId }) => [sectionId, spaceId]),
+    ).toEqual([
+      ["empty", current.id],
+      ["other-section", "other"],
     ]);
-    expect(
-      spaceInboxItems([current]).some((item) => item.type === "heading" && item.sectionId),
-    ).toBe(false);
-    expect(
-      spaceInboxItems([space({ isDefault: true, botSections: [section] })], new Set(), current.id),
-    ).toContainEqual({
+    expect(spaceInboxItems([space({ isDefault: true, botSections: [section] })])).toContainEqual({
       type: "heading",
       key: `${current.id}:section:empty`,
       title: "Old ideas",
       sectionId: "empty",
+      spaceId: current.id,
       collapsed: false,
       count: 0,
     });

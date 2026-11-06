@@ -58,13 +58,14 @@ export function useInboxChatActions({
   setBots,
   setGroups,
   setSpaces,
-  botSections,
+  sectionsBySpace,
 }: {
   loadBots: () => Promise<unknown>;
   setBots: ListUpdate<MobileBot>;
   setGroups: ListUpdate<MobileGroup>;
   setSpaces: ListUpdate<MobileSpace>;
-  botSections: MobileBotSection[];
+  /** Each space's sections, by space id. */
+  sectionsBySpace: ReadonlyMap<string, MobileBotSection[]>;
 }) {
   const { t } = useI18n();
   const [unreadOverrides, setUnreadOverrides] = useState<ReadonlyMap<string, boolean>>(
@@ -85,7 +86,7 @@ export function useInboxChatActions({
         await afterChatNotifyChange(
           currentApiBase(),
           await loadSessionToken(),
-          selectedSpaceId() ?? "",
+          chat.spaceId ?? selectedSpaceId() ?? "",
           {
             botId: chat.id,
             threadId: "threadId" in chat ? chat.threadId : undefined,
@@ -136,6 +137,13 @@ export function useInboxChatActions({
               chats.map((item) => (item.id === chat.id ? { ...item, unread } : item));
             if (kind === "bot") setBots(mark);
             else setGroups(mark);
+            setSpaces((current) =>
+              current.map((space) =>
+                kind === "bot"
+                  ? { ...space, bots: mark(space.bots) }
+                  : { ...space, groups: mark(space.groups) },
+              ),
+            );
             await loadBots();
           },
           // The override stays until the last queued change for this chat is done.
@@ -198,15 +206,25 @@ export function useInboxChatActions({
           notifyArchivedChatsChanged();
           void loadBots();
         };
-        if (kind === "bot") confirmDeleteBot({ id: chat.id, name: chat.name }, deleted);
-        else confirmDeleteGroup({ id: chat.id, name: chat.name }, deleted);
+        const target = { id: chat.id, name: chat.name };
+        // A chat in another space is deleted there, as its other actions are.
+        const requestContext = await chatRequestContext(chat.spaceId).catch((err: unknown) => {
+          Alert.alert(
+            kind === "bot" ? t("Could not delete bot") : t("Could not delete group"),
+            errorText(err, t("Try again.")),
+          );
+          return null;
+        });
+        if (requestContext === null) return;
+        if (kind === "bot") confirmDeleteBot(target, deleted, undefined, requestContext);
+        else confirmDeleteGroup(target, deleted, requestContext);
         return;
       }
       await updateChat(kind, chat, { pinned: action === "pin" }).catch((err) =>
         Alert.alert(t("Could not update chat"), errorText(err, t("Try again."))),
       );
     },
-    [loadBots, sendReadState, t, updateChat],
+    [loadBots, sendReadState, setSpaces, t, updateChat],
   );
   const botAction = useCallback(
     (action: InboxRowAction, bot: MobileBot | SpaceBot) => void runRowAction("bot", bot, action),
@@ -249,8 +267,9 @@ export function useInboxChatActions({
       chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
       mode: "create" | "rename",
     ) => {
+      const sections = sectionsBySpace.get(chat.spaceId ?? selectedSpaceId() ?? "") ?? [];
       const current =
-        mode === "rename" ? botSections.find((section) => section.id === chat.sectionId) : null;
+        mode === "rename" ? sections.find((section) => section.id === chat.sectionId) : null;
       if (mode === "rename" && !current) return;
       promptSectionName({
         title: current ? t("Rename section") : t("New section"),
@@ -259,21 +278,23 @@ export function useInboxChatActions({
         defaultValue: current?.name,
         onSubmit: (name) =>
           void (
-            current ? renameSection(current.id, name) : createSection(kind, chat.id, name)
+            current
+              ? renameSection(current.id, name, chat.spaceId)
+              : createSection(kind, chat.id, name, chat.spaceId)
           ).catch((err) =>
             Alert.alert(t("Could not update chat"), errorText(err, t("Try again."))),
           ),
       });
     },
-    [botSections, createSection, renameSection, t],
+    [sectionsBySpace, createSection, renameSection, t],
   );
 
   const deleteSection = useCallback(
-    (section: { id: string; name: string }) => {
+    (section: { id: string; name: string; spaceId?: string }) => {
       confirmDeleteSection(section, t, () => {
         void (async () => {
           try {
-            await rpc("botSections/remove", { sectionId: section.id });
+            await chatRpc(section.spaceId, "botSections/remove", { sectionId: section.id });
             await loadBots();
           } catch (err) {
             Alert.alert(t("Could not delete section"), errorText(err, t("Try again.")));

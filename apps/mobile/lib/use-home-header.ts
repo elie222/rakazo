@@ -1,8 +1,8 @@
 import { useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import { useLayoutEffect } from "react";
-import type { CreateAction } from "./create-chooser";
-import { createMenuItems } from "./create-chooser";
+import type { CreateAction, CreateSpace } from "./create-chooser";
+import { createMenuItems, createMenuSpaces } from "./create-chooser";
 import { useI18n } from "./i18n";
 
 /** Liquid Glass home header: account on the left; activity, search and create on the right. */
@@ -14,6 +14,7 @@ export function useHomeHeader({
   activityMode,
   toggleActivityMode,
   runCreateAction,
+  createSpaces,
   headerTitle,
 }: {
   nativeHeader: boolean;
@@ -22,7 +23,8 @@ export function useHomeHeader({
   initials: string;
   activityMode: boolean;
   toggleActivityMode: () => void;
-  runCreateAction: (action: CreateAction) => void;
+  runCreateAction: (action: CreateAction, spaceId?: string) => void;
+  createSpaces: readonly CreateSpace[];
   headerTitle?: () => ReactNode;
 }) {
   const navigation = useNavigation();
@@ -69,12 +71,27 @@ export function useHomeHeader({
           accessibilityLabel: t("Create"),
           icon: { type: "sfSymbol" as const, name: "plus" },
           menu: {
-            items: createMenuItems.map(({ id, label, sfSymbol }) => ({
-              type: "action" as const,
-              label: t(label),
-              icon: { type: "sfSymbol" as const, name: sfSymbol },
-              onPress: () => runCreateAction(id),
-            })),
+            items: createMenuItems.map(({ id, label, sfSymbol }) => {
+              const icon = { type: "sfSymbol" as const, name: sfSymbol };
+              const choices = createMenuSpaces(id, createSpaces);
+              return choices
+                ? {
+                    type: "submenu" as const,
+                    label: t(label),
+                    icon,
+                    items: choices.map((space) => ({
+                      type: "action" as const,
+                      label: space.name,
+                      onPress: () => runCreateAction(id, space.id),
+                    })),
+                  }
+                : {
+                    type: "action" as const,
+                    label: t(label),
+                    icon,
+                    onPress: () => runCreateAction(id),
+                  };
+            }),
           },
         },
       ],
@@ -88,6 +105,7 @@ export function useHomeHeader({
     activityMode,
     toggleActivityMode,
     runCreateAction,
+    createSpaces,
     headerTitle,
     router,
     t,

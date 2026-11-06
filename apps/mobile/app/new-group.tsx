@@ -4,10 +4,10 @@ import {
   GROUP_MEMBER_MIN,
   GROUP_NAME_MAX_LENGTH,
 } from "@rakazo/contracts";
-import { Stack, useNavigation, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useEffect, useRef, useState } from "react";
-import { BackHandler, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, BackHandler, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { BotChipPicker } from "../components/bot-chip-picker";
 import { GlassIconButton } from "../components/glass-icon-button";
@@ -15,7 +15,7 @@ import { GroupAvatar } from "../components/group-avatar";
 import { NativeActionButton } from "../components/native-action-button";
 import { SheetCloseButton } from "../components/sheet-close-button";
 import type { MobileBot } from "../lib/api";
-import { rpc } from "../lib/api";
+import { captureApiRequestContext, rpc, selectedSpaceId, selectSpace } from "../lib/api";
 import { hapticSuccess } from "../lib/haptics";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
@@ -25,6 +25,8 @@ import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function NewGroup() {
+  // With a space, the group is made from that space's bots and lands there, whichever is selected.
+  const { spaceId } = useLocalSearchParams<{ spaceId?: string }>();
   const sideInsets = useSideInsets();
   const { t } = useI18n();
   const tokens = useMobileTokens();
@@ -48,11 +50,14 @@ export default function NewGroup() {
     else if (router.canGoBack()) router.back();
     else router.replace("/");
   }
+  const requestOptions = async () =>
+    spaceId ? { requestContext: await captureApiRequestContext(spaceId) } : undefined;
   useEffect(() => {
-    void rpc("bots/list")
+    void requestOptions()
+      .then((options) => rpc("bots/list", undefined, options))
       .then((nextBots) => setBots(nextBots.filter((bot) => !bot.archivedAt)))
       .catch(() => undefined);
-  }, []);
+  }, [spaceId]);
   useEffect(() => {
     if (step !== "name") return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -69,12 +74,26 @@ export default function NewGroup() {
     setError(null);
     const askedIn = searchInboxSession();
     try {
-      const group = await rpc("groups/create", {
-        name: name.trim() || defaultGroupName(picked.map((bot) => bot.name)),
-        botIds: selected,
-      });
+      const group = await rpc(
+        "groups/create",
+        {
+          name: name.trim() || defaultGroupName(picked.map((bot) => bot.name)),
+          botIds: selected,
+        },
+        await requestOptions(),
+      );
       if (navigation.isFocused() && isSearchInboxSession(askedIn)) hapticSuccess();
       addToSearchInbox({ kind: "group", group }, askedIn);
+      // The group chat reads the selected space, so it opens in the group's own.
+      if (
+        spaceId &&
+        spaceId !== selectedSpaceId() &&
+        !(await selectSpace(spaceId).catch(() => false))
+      ) {
+        Alert.alert(t("Could not switch spaces"), t("Try again."));
+        close();
+        return;
+      }
       router.replace({
         pathname: "/group-thread",
         params: { groupId: group.id, name: group.name },
