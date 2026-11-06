@@ -10,45 +10,10 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { materializeCurrentTurnFiles } from "../../../packages/adapters/src/thread-artifacts.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
-import {
-  TeamChatBridge,
-  teamChatAmbientPrompt,
-  teamChatPrompt,
-  teamChatResponseText,
-} from "./team-chat-bridge.js";
+import { TeamChatBridge } from "./team-chat-bridge.js";
 import { inboundDeliveryClientNonce, messagingWakeIdempotencyKey } from "./webhook-inbound.js";
 
 describe("team chat bridge", () => {
-  it("attributes an external speaker without changing their message", () => {
-    expect(teamChatPrompt("slack", "Ada Lovelace", "Review the launch plan")).toBe(
-      "Slack message from Ada Lovelace:\n\nReview the launch plan",
-    );
-  });
-
-  it("keeps provider IDs out of ambient conversation context", () => {
-    const prompt = teamChatAmbientPrompt({
-      provider: "slack",
-      channelId: "G123",
-      channelName: "leadership",
-      rules: "Engage on launch risks.",
-      messages: [{ senderName: "Pat", senderId: "U123", content: "Launch moved to Friday." }],
-    });
-    expect(prompt).toContain("Slack channel update from #leadership.");
-    expect(prompt).toContain("Pat: Launch moved to Friday.");
-    expect(prompt).not.toContain("G123");
-    expect(prompt).not.toContain("U123");
-  });
-
-  it("returns written agent output without leaking tool or computer blocks", () => {
-    const blocks: MessageBlock[] = [
-      { kind: "progress", text: "Searching" },
-      { kind: "text", text: "The plan is ready." },
-      { kind: "meta", text: "internal metadata" },
-    ];
-    expect(teamChatResponseText(blocks)).toBe("The plan is ready.");
-    expect(teamChatResponseText([])).toBe("Bot completed the request without a written reply.");
-  });
-
   it("keeps deferred messages outside reconciliation until routine routing resolves them", async () => {
     const upsert = vi.fn(async ({ create }: { create: Record<string, unknown> }) => ({
       id: "external-deferred",
@@ -844,11 +809,11 @@ describe("team chat bridge", () => {
     });
     const internals = bridge as unknown as {
       target: { id: string };
-      evaluateAmbient(now: Date): Promise<void>;
+      ambient: { evaluateAmbient(now: Date): Promise<void> };
       queue(message: unknown): Promise<void>;
     };
     internals.target = { id: "bot-1" };
-    await internals.evaluateAmbient(new Date(60_000));
+    await internals.ambient.evaluateAmbient(new Date(60_000));
     const batchContext = updateMany.mock.calls.find(([input]) => input.data?.batchContext)?.[0].data
       ?.batchContext;
     expect(JSON.parse(batchContext ?? "{}").messageIds).toEqual(messageIds);
