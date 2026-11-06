@@ -3932,6 +3932,28 @@ describe("mobile API authentication", () => {
     expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
   });
 
+  it("a sign-out does not record a session saved while it reads the active one", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    let signedIn: Promise<void> | undefined;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      const value = store.get(key) ?? null;
+      // A sign-in saves its token while the sign-out reads the active session.
+      if (key === "rakazo.session_token" && !signedIn) {
+        signedIn = saveSessionToken("fake-session-new");
+        await signedIn;
+      }
+      return value;
+    });
+
+    await expect(signOut()).rejects.toThrow("Could not clear the local session");
+
+    // The new session stays in use, so nothing may revoke it later.
+    expect(store.get("rakazo.session_token")).toBe("fake-session-new");
+    expect(await authHeaders(null)).toMatchObject({ authorization: "Bearer fake-session-new" });
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
   it("a sign-out after a failed session save revokes the stored token it clears", async () => {
     const store = new Map<string, string>();
     mockSecureStore(store);

@@ -1459,6 +1459,11 @@ export async function signOut() {
   // A failed save or wipe can leave a token stored that reads as no session; the clear deletes it
   // too. An unreadable store only skips that record: signing out still clears this device.
   const stored = tokenSnapshot.value ? undefined : await snapshotStoredSessionToken();
+  // A sign-in that started during the first read may have stored its token by the second one;
+  // that token is the session in use, not the one being signed out.
+  if (stored && (generation !== currentSessionGeneration() || sessionSaveInProgress())) {
+    throw new Error(t("Could not clear the local session"));
+  }
   const revocation: PendingSignOut = {
     apiBase,
     token: tokenSnapshot.value || (stored?.ok ? stored.value : ""),
