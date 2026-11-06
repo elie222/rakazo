@@ -20,6 +20,7 @@ import {
   isApprovalAskBlock,
   isConversationalRun,
   isSecretAskBlock,
+  isTextAnswerableAsk,
   messageReaction,
   resolveAskChoice,
   SITE_SENDING_TOOLS,
@@ -204,6 +205,7 @@ async function commitAnswerRunInput(
       checkpoint: true,
       trigger: true,
       clientNonce: true,
+      messagingMirroredAt: true,
       task: { select: { prompt: true } },
     },
   });
@@ -325,6 +327,9 @@ async function commitAnswerRunInput(
       status: "queued",
       ...(resumedTrigger !== run.trigger ? { trigger: resumedTrigger } : {}),
       ...(choiceAsk ? { checkpoint: null } : {}),
+      // The chat app got the question when the run paused; its reply after the answer is still
+      // to be mirrored, so receipts wait for it and the reconciler can repair a missed mirror.
+      ...(run.messagingMirroredAt ? { messagingMirroredAt: null } : {}),
     },
   });
   if (queued.count !== 1) return null;
@@ -623,7 +628,7 @@ export async function eligibleWaitingTextAnswer(
   if (!answer) return null;
   const found = await findPendingAsk(tx, input);
   if (!found) return null;
-  if (isApprovalAskBlock(found.pendingAsk) || isSecretAskBlock(found.pendingAsk)) return null;
+  if (!isTextAnswerableAsk(found.pendingAsk)) return null;
   if (input.messageId !== undefined) {
     if (input.messageId !== found.messageId) return null;
   } else {

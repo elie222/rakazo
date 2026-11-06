@@ -245,8 +245,13 @@ export function createJobReconciler(
           },
           select: { id: true },
         }),
+        // A run paused on a question is repaired too: the chat gets the question as text.
         deps.prisma.run.findMany({
-          where: { trigger: "messaging", status: "completed", messagingMirroredAt: null },
+          where: {
+            trigger: "messaging",
+            status: { in: ["completed", "waiting_input"] },
+            messagingMirroredAt: null,
+          },
           orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
           take: batchSize,
           select: { id: true },

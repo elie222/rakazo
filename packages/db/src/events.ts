@@ -47,7 +47,11 @@ import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { SpaceDeletionInProgressError, spaceTakesWork } from "./spaces.js";
 import type { AnswerRunInput, PauseRunForInput, RunSecretWriter } from "./thread-ask.js";
-import { answerRunInput, pauseRunForInput } from "./thread-ask.js";
+import {
+  answerRunInput,
+  answerWaitingRunWithTextInTransaction,
+  pauseRunForInput,
+} from "./thread-ask.js";
 import type { ClaimedSteeringMessage, ClaimSteeringInput } from "./thread-steering.js";
 import {
   claimSteering,
@@ -175,6 +179,11 @@ export interface SendUserMessageInput {
   createRun?: boolean;
   /** When true, start a new run even if the bot is already busy (team-chat delivery). */
   allowParallelRun?: boolean;
+  /**
+   * The waiting question this message replies to. While it can still take a typed answer, the
+   * message answers it with `answer` and resumes its run instead of starting one.
+   */
+  answers?: { runId: string; messageId: string; answer: string };
   /** Model every routine in an inbound delivery agreed on. */
   modelPin?: {
     modelProvider: string;
@@ -412,6 +421,16 @@ export async function sendUserMessage(
       }
       const author = await loadMessageAuthor(tx, input.authorUserId);
       const createRun = input.createRun !== false;
+      const answeredRunId =
+        input.answers &&
+        (await answerWaitingRunWithTextInTransaction(tx, {
+          spaceId: input.spaceId,
+          threadId: input.threadId,
+          answeredByUserId: input.userId,
+          ...input.answers,
+        }))
+          ? input.answers.runId
+          : null;
       // Include the creation intro. It has no tools, so it must not absorb the message, and a
       // second run would overlap it on a dedicated computer. Pending steering waits for the
       // continuation that starts when the intro finishes.
@@ -459,7 +478,9 @@ export async function sendUserMessage(
         null;
       let task = null;
       let run = null;
-      if (createRun && !busy) {
+      if (answeredRunId) {
+        await tx.message.update({ where: { id: message.id }, data: { runId: answeredRunId } });
+      } else if (createRun && !busy) {
         task = await tx.task.create({
           data: {
             spaceId: input.spaceId,
@@ -522,7 +543,7 @@ export async function sendUserMessage(
         threadId: input.threadId,
         botId: input.botId,
         type: "thread.message.created",
-        runId: run?.id ?? busy?.id,
+        runId: answeredRunId ?? run?.id ?? busy?.id,
         payload: {
           messageId: message.id,
           role: "user",
@@ -533,7 +554,7 @@ export async function sendUserMessage(
           callId: callIdFromClientNonce(message.clientNonce),
         },
       });
-      return { message, task, run, busy, event };
+      return { message, task, run, busy, answeredRunId, event };
     }, THREAD_LOCK_TRANSACTION_OPTIONS);
   const committed = await commit().catch(async (error) => {
     const winner = await replay();
@@ -554,7 +575,7 @@ export async function sendUserMessage(
     messageId: committed.message.id,
     seq: committed.message.seq,
     taskId: committed.task?.id ?? null,
-    runId: committed.run?.id ?? committed.busy?.id ?? null,
+    runId: committed.answeredRunId ?? committed.run?.id ?? committed.busy?.id ?? null,
   };
 }
 

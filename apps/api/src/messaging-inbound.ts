@@ -6,9 +6,11 @@ import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contrac
 import type { MessagingCommand } from "@rakazo/core";
 import {
   displayName,
+  isTextAnswerableAsk,
   messageBlockForArtifact,
   normalizeVoiceTranscript,
   parseMessagingCommand,
+  plainTextAskAnswer,
   promptTextForAttachments,
   sanitizeMessagingLabel,
 } from "@rakazo/core";
@@ -191,13 +193,29 @@ async function handleDirectEvent(
 
   const stored = await storeInboundMedia(deps, ids, event);
 
+  // A plain text reply to the bot's question answers it, before any routine can take it.
+  const answers =
+    existing && attachments.length === 0 && !event.mediaUrl
+      ? await answeredQuestion(deps, existing.id, ids, event.content)
+      : undefined;
+  const clientNonce = `messaging:${event.provider}:${event.handle}`;
+  // A redelivered reply that already answered a question replays as that reply, not a routine.
+  const delivered =
+    !answers && existing
+      ? await deps.prisma.message.findFirst({
+          where: { threadId: ids.threadId, clientNonce },
+          select: { id: true },
+        })
+      : null;
   // Message-trigger routines own the delivery when configured. Do not also
   // start a normal messaging continue for the same inbound handle.
   if (
-    await wakeMessageRoutines(deps, ids, event, {
+    !answers &&
+    !delivered &&
+    (await wakeMessageRoutines(deps, ids, event, {
       artifacts: stored.artifacts,
       unavailable: stored.unavailable,
-    })
+    }))
   )
     return;
   const body = [text, ...stored.unavailable].filter(Boolean).join("\n");
@@ -214,7 +232,8 @@ async function handleDirectEvent(
     ],
     prompt: promptTextForAttachments(body, stored.artifacts),
     trigger: "messaging",
-    clientNonce: `messaging:${event.provider}:${event.handle}`,
+    clientNonce,
+    ...(answers ? { answers } : {}),
   });
   if (sent.runId) {
     const runId = sent.runId;
@@ -246,6 +265,55 @@ async function handleDirectEvent(
       getLogger().error("messaging inbound run enqueue error", error);
     });
   }
+}
+
+/**
+ * The bot question a text reply answers, and what it answers: the newest message this line
+ * delivered to the person, sent within the answer window and still a pending question. Anything
+ * said since, by the bot or the product, makes the reply an ordinary message, as for a YES or NO
+ * (answeredRequest). The read is outside the answer's transaction, which checks again under the
+ * thread lock that the question is its run's pending one; a row sent to this chat in between does
+ * not stop the answer.
+ */
+async function answeredQuestion(
+  deps: MessagingInboundDeps,
+  identityId: string,
+  ids: { threadId: string; userId: string },
+  reply: string,
+) {
+  if (!reply.trim()) return undefined;
+  const latest = await deps.prisma.messagingOutbound.findFirst({
+    where: { identityId, kind: "dm", status: { in: ["pending", "sent"] } },
+    orderBy: { createdAt: "desc" },
+    select: { sourceMessageId: true, status: true, providerHandle: true, createdAt: true },
+  });
+  // A row is claimed as sent before the provider call; its handle says the chat has it.
+  if (
+    latest?.status !== "sent" ||
+    !latest.providerHandle ||
+    !latest.sourceMessageId ||
+    Date.now() - latest.createdAt.getTime() > TEXT_ANSWER_WINDOW_MS
+  )
+    return undefined;
+  const message = await deps.prisma.message.findFirst({
+    where: { id: latest.sourceMessageId, threadId: ids.threadId, role: "bot" },
+    select: { runId: true, blocks: true },
+  });
+  const blocks = Array.isArray(message?.blocks) ? (message.blocks as MessageBlock[]) : [];
+  const ask = blocks.find((block) => block.kind === "ask" && block.status !== "answered");
+  if (!message?.runId || ask?.kind !== "ask" || !isTextAnswerableAsk(ask)) return undefined;
+  // The answer checks these again under the thread lock; checking here too means a routine is
+  // passed over only for a reply that answers.
+  const run = await deps.prisma.run.findUnique({
+    where: { id: message.runId },
+    select: { status: true, userId: true },
+  });
+  if (run?.status !== "waiting_input" || run.userId !== ids.userId) return undefined;
+  return {
+    runId: message.runId,
+    messageId: latest.sourceMessageId,
+    answer: plainTextAskAnswer(reply, ask.actions),
+  };
 }
 
 /** Time for all voice note transcripts of one inbound message; files are delivered without them after it. */
@@ -562,7 +630,7 @@ async function stopOwnerWork(
   if (stop?.runIds.length) await finishThreadStop(deps, identity, target, stop);
 }
 
-/** How long a channel invite or connection request can be answered by text. */
+/** How long a channel invite, connection request or bot question can be answered by text. */
 export const TEXT_ANSWER_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**

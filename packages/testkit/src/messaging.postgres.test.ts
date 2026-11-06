@@ -269,6 +269,91 @@ describeMessaging("messaging surface journeys", () => {
     expect(histories.get(continuation.id)).toContain("How is it going?");
   });
 
+  it("sends a pending question to the chat and takes a numbered reply as its answer", async () => {
+    const texter = uniqueNumber();
+    await app.request(
+      emulator.buildInboundRequest({
+        fromNumber: texter,
+        content: "send the draft on the card",
+        handle: `journey-ask-${stamp}`,
+      }),
+    );
+    const identity = await waitForDatabase(async () => findIdentity(texter));
+    const thread = await waitForDatabase(async () =>
+      prisma.thread.findFirst({ where: { botId: identity.botId } }),
+    );
+    // The paused run's question goes out as text, its options numbered.
+    const asked = await waitForDatabase(async () =>
+      prisma.messagingOutbound.findFirst({
+        where: {
+          identityId: identity.id,
+          kind: "dm",
+          status: "sent",
+          providerHandle: { not: null },
+          body: { contains: "1. Send it" },
+        },
+      }),
+    );
+    expect(asked.body).toContain("Send this email to Ana?");
+    expect(asked.body).toContain("The draft body.");
+    expect(asked.body).toContain("1. Send it\n2. Show me first");
+    const question = await prisma.message.findUnique({ where: { id: asked.sourceMessageId } });
+    const paused = await waitForDatabase(async () => {
+      const run = await prisma.run.findUnique({ where: { id: question.runId } });
+      return run.messagingMirroredAt ? run : null;
+    });
+    expect(paused.status).toBe("waiting_input");
+
+    // The resumed run's reply is not mirrored yet, so its mark is clear while it works.
+    const markWhileResumed: unknown[] = [];
+    const scripted = ScriptedAgentRuntime.prototype.run;
+    const runtime = vi.spyOn(ScriptedAgentRuntime.prototype, "run").mockImplementation(function (
+      this: ScriptedAgentRuntime,
+      request,
+      context,
+    ) {
+      const turn = scripted.call(this, request, context);
+      if (request.runId !== paused.id) return turn;
+      return (async function* () {
+        const run = await prisma.run.findUnique({ where: { id: request.runId } });
+        markWhileResumed.push(run.messagingMirroredAt);
+        yield* turn;
+      })();
+    });
+    const replyHandle = `journey-ask-reply-${stamp}`;
+    try {
+      await app.request(
+        emulator.buildInboundRequest({ fromNumber: texter, content: "1", handle: replyHandle }),
+      );
+      await waitForDatabase(async () => {
+        const run = await prisma.run.findUnique({ where: { id: paused.id } });
+        return run.status === "completed" && run.messagingMirroredAt;
+      });
+    } finally {
+      runtime.mockRestore();
+    }
+    expect(markWhileResumed).toEqual([null]);
+    const answered = await waitForDatabase(async () => {
+      const message = await prisma.message.findUnique({ where: { id: question.id } });
+      return message.blocks.find(
+        (block: { kind: string; status?: string }) =>
+          block.kind === "ask" && block.status === "answered",
+      );
+    });
+    expect(answered.answer).toBe("choice-1");
+    // The reply stays in the transcript as part of the resumed run, not a run of its own.
+    const reply = await prisma.message.findUnique({
+      where: {
+        threadId_clientNonce: {
+          threadId: thread.id,
+          clientNonce: `messaging:sendblue:${replyHandle}`,
+        },
+      },
+    });
+    expect(reply.runId).toBe(paused.id);
+    expect(await prisma.run.count({ where: { sourceMessageId: reply.id } })).toBe(0);
+  });
+
   it("runs the channel loop: discovery, invite, intro, YES, fan-out, attributed post", async () => {
     const stranger = uniqueNumber();
     const groupId = `grp-${stamp}`;
