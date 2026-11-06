@@ -44,6 +44,16 @@ export function appendComposerDraftText(threadKey: string, text: string): void {
   replacedDrafts.emit(threadKey, next);
 }
 
+/** Rewrites a chat's saved draft from outside its composer; a composer showing it follows. */
+export function replaceComposerDraft(
+  threadKey: string,
+  text: string,
+  bindings: readonly ComposerMentionBinding[],
+): void {
+  writeComposerDraft(threadKey, text, undefined, bindings);
+  replacedDrafts.emit(threadKey, text);
+}
+
 export function beginComposerDraftSubmission(
   threadKey: string,
   text: string,

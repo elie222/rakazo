@@ -47,6 +47,7 @@ import {
   readComposerDraft,
   readComposerDraftBindings,
   readComposerRetryNonce,
+  replaceComposerDraft,
   settleComposerDraftSubmission,
   subscribeComposerDraftAccepted,
   subscribeComposerDraftReplaced,
@@ -214,6 +215,7 @@ const ComposerBody = memo(function Composer({
       if (!appendDictation(text) || reviewFirst) return;
       const clientNonce = newClientId();
       retryNonce.current = clientNonce;
+      queuedDictation.current = editRevision.current;
       setDictationSendDue(editRevision.current);
     },
   });
@@ -229,7 +231,7 @@ const ComposerBody = memo(function Composer({
       }),
     [draftKey],
   );
-  // A draft rewritten from elsewhere (a dictation that finished after the chat was left) shows
+  // A draft rewritten from elsewhere (late dictation or a left chat's recovered send) shows
   // here, so the next edit keeps it.
   useEffect(
     () =>
@@ -273,12 +275,15 @@ const ComposerBody = memo(function Composer({
   // send waits one render for the state appendDictation just queued.
   // The due send holds the edit revision the dictation left.
   const [dictationSendDue, setDictationSendDue] = useState<number | null>(null);
+  // The same due revision for send(), which reads it after its own await.
+  const queuedDictation = useRef<number | null>(null);
   // A dictation that finishes while an earlier send is in flight waits for it;
   // any edit in the meantime cancels the automatic send. It runs after the
   // reply effect above, so a reply armed in the same commit counts as an edit.
   useEffect(() => {
     if (dictationSendDue === null || sending) return;
     setDictationSendDue(null);
+    queuedDictation.current = null;
     if (editRevision.current === dictationSendDue) void send();
   }, [dictationSendDue, sending]);
   const {
@@ -584,6 +589,30 @@ const ComposerBody = memo(function Composer({
       // text send keeps its nonce with them, so the retry is not mistaken for
       // a reply-linked or otherwise different message.
       if (nonceRecoverable) keepComposerRetryNonce(draftKey, submission, clientNonce);
+      return;
+    }
+    // A dictation queued behind this send, and no other edit since, joins the failed
+    // words instead of going out alone; the send's error stays.
+    if (queuedDictation.current === revision + 1 && editRevision.current === revision + 1) {
+      queuedDictation.current = null;
+      setDictationSendDue(null);
+      retryNonce.current = null;
+      const queued = compositionRef.current;
+      const words = queued.text;
+      const restored = { text: `${submitted.text} ${words}`, bindings: submitted.bindings };
+      if (mountedRef.current && draftKeyRef.current === draftKey) {
+        commitComposition(restored);
+        setSelectedSkill(selectedSkill);
+        return;
+      }
+      // Once the chat was left, a composer reopened for it owns the saved draft; only a draft
+      // still holding just these words, mentions included, is this send's to restore, and the
+      // reopened field follows it. The same spelling bound to a mention there is a newer edit.
+      if (
+        readComposerDraft(draftKey) === words &&
+        JSON.stringify(readComposerDraftBindings(draftKey)) === JSON.stringify(queued.bindings)
+      )
+        replaceComposerDraft(draftKey, restored.text, restored.bindings);
       return;
     }
     // Restore only an untouched draft, retaining its nonce for an unchanged retry.

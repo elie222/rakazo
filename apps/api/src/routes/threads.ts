@@ -19,6 +19,7 @@ import {
   IsolationError,
   loadMessageAuthor,
   lockSpaceGroup,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -490,7 +491,7 @@ export function threadsRoutes(ctx: RouterContext) {
           });
           await touchGroupUpdatedAt(tx, target.groupId);
           return { runId: run?.id, eventSeq: event.seq, message };
-        });
+        }, THREAD_LOCK_TRANSACTION_OPTIONS);
         if (committed) {
           deps.analytics?.capture(
             context.actor.userId,

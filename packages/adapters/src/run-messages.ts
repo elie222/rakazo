@@ -4,6 +4,7 @@ import type { Prisma, RunLease } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -107,7 +108,7 @@ export async function publishMessage(
         Boolean(stoppedHelper),
         lease,
       );
-    }),
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
   await deps.events
     .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
