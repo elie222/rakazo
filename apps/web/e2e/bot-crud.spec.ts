@@ -150,6 +150,8 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(disabledTools).toBeVisible();
   await disabledTools.selectOption("web_search");
   await expect(settings.getByRole("button", { name: "Enable Web search" })).toBeVisible();
+  await disabledTools.selectOption({ label: "Notify owner" });
+  await expect(settings.getByRole("button", { name: "Enable Notify owner" })).toBeVisible();
   await captureScreenshot(page, testInfo, "27c-disabled-builtin-tools");
   await expect(teamComputer).toBeVisible();
   await expect(settings.getByRole("switch", { name: "Read replies aloud" })).toBeVisible();

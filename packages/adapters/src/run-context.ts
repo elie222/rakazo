@@ -91,6 +91,8 @@ export interface ReplyState {
   assistantTurnText: string;
   midTurnUserTexts: string[];
   midTurnProgressCount: number;
+  /** notify_owner messages posted this run, rehydrated like midTurnProgressCount. */
+  ownerNotifyCount: number;
   turnStartedAtMs: number;
   /** A message from the person mid-task starts a fresh budget from here (see "steered"). */
   progressBudgetStart: number;

@@ -124,6 +124,12 @@ describe("helpers know who they are talking to", () => {
     for (const name of FLEET_TOOL_NAMES) expect(seen.helperToolNames).not.toContain(name);
   });
 
+  it("leaves notifying the owner to the parent turn", () => {
+    expect(builtinAgentTools.map((tool) => tool.name)).toContain("notify_owner");
+    expect(seen.helperToolNames.length).toBeGreaterThan(0);
+    expect(seen.helperToolNames).not.toContain("notify_owner");
+  });
+
   it("marks helper calls so the executor refuses update_bot's bot management form from them", () => {
     expect(isSubagentToolExecution(seen.toolExecutionIds.get("update_bot")!)).toBe(true);
     const mainCall = seen.toolExecutionIds.get("list_fleet");

@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import { messagingDeliverJob } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
@@ -6,6 +7,8 @@ import {
   redactSecrets,
   resolveBotAddress,
 } from "@rakazo/core";
+import { isUniqueViolation } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import {
   connectAgent,
   messageConnectedAgent,
@@ -15,7 +18,9 @@ import { messageBot } from "./bot-messages.js";
 import { endCallFromTool, requestUserCall } from "./call-request.js";
 import { normalizeWorkspacePath, resolveBotWorkspacePath } from "./computer-support.js";
 import { handoffToGroupBot } from "./group-handoff.js";
+import { answersAnotherBot, ownerNotifyClientNonce } from "./messaging-delivery.js";
 import type { RunContext } from "./run-context.js";
+import { publishMessage } from "./run-messages.js";
 import {
   canPostLongTaskHeadsUp,
   canPublishDurableProgress,
@@ -269,6 +274,55 @@ export const messagingTools: ToolHandlers = {
             ok: true,
             truncated: true,
             note: `This progress update was cut off at ${maxLength} characters and the user only saw the truncated version above — it did NOT deliver your full content. message_user is for short interim beats only, never the final answer. Put your complete answer in your normal final reply instead of relying on this truncated update.`,
+          }
+        : { ok: true },
+    );
+  },
+  async notify_owner(ctx, call) {
+    const { deps, run, bot } = ctx;
+    const { reply } = ctx.state;
+    if (
+      !answersAnotherBot(run.trigger, ctx.source.peerMessage) ||
+      run.userId !== bot.userId ||
+      !(await deps.messaging?.hasIdentity(bot.id))
+    )
+      return call.finish({
+        error:
+          "notify_owner needs a turn answering another bot's request or question, and a linked chat.",
+      });
+    const rawMessage = redactSecrets(String(call.args.message ?? ""), ctx.secrets);
+    const maxLength = messageUserMaxLength();
+    const text = clampUserProgressMessage(rawMessage, maxLength);
+    if (!text) return call.finish({ error: "message is required" });
+    const clientNonce = ownerNotifyClientNonce(run.id, call.effectKey);
+    // A replayed call must not post twice: threadId + clientNonce is unique.
+    const sent = await deps.prisma.message.findFirst({
+      where: { threadId: run.threadId, clientNonce },
+      select: { id: true },
+    });
+    if (sent) return call.finish({ ok: true });
+    if (midTurnProgressBudgetUsed(reply.ownerNotifyCount))
+      return call.finish({
+        error: "Not sent: your owner already got as many notifications as one turn allows.",
+      });
+    try {
+      await publishMessage(deps, run, "bot", [{ kind: "text", text }], true, clientNonce);
+    } catch (error) {
+      // A concurrent retry of this call already posted it.
+      if (!isUniqueViolation(error)) throw error;
+      return call.finish({ ok: true });
+    }
+    reply.ownerNotifyCount += 1;
+    // Send it now rather than when the turn ends; the end-of-turn mirror still covers a failure.
+    await deps.jobs
+      .enqueue(messagingDeliverJob(run.id))
+      .catch((error) => getLogger().error("notify_owner delivery enqueue", error));
+    return call.finish(
+      isProgressMessageTruncated(rawMessage, maxLength)
+        ? {
+            ok: true,
+            truncated: true,
+            note: `Your owner saw only the first ${maxLength} characters.`,
           }
         : { ok: true },
     );

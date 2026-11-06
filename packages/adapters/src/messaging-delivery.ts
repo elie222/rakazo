@@ -8,7 +8,12 @@ import type {
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { botMessageHopExhausted, nextBotMessageHop, pageLinksAsTitles } from "@rakazo/core";
+import {
+  botMessageContext,
+  botMessageHopExhausted,
+  nextBotMessageHop,
+  pageLinksAsTitles,
+} from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   accountDeactivated,
@@ -92,6 +97,26 @@ export async function deliverMessagingOutbound(
   await drain(deps, context);
 }
 
+const OWNER_NOTIFY_CLIENT_NONCE_PREFIX = "owner-notify:";
+
+/** Marks a notify_owner message, the only kind a bot_message run mirrors to the linked chat. */
+export function ownerNotifyClientNonce(runId: string, key: string): string {
+  return `${OWNER_NOTIFY_CLIENT_NONCE_PREFIX}${runId}:${key}`;
+}
+
+/** A turn answering another bot's request or question: its replies go back to that bot. */
+export function answersAnotherBot(trigger: string, wake: { intent?: string } | undefined): boolean {
+  return (
+    trigger === "bot_message" &&
+    !!wake &&
+    ["request", "question"].includes(wake.intent ?? "request")
+  );
+}
+
+export function isOwnerNotifyClientNonce(clientNonce: string | null | undefined): boolean {
+  return Boolean(clientNonce?.startsWith(OWNER_NOTIFY_CLIENT_NONCE_PREFIX));
+}
+
 export async function mirrorMessagingOutbound(
   deps: MessagingDeliveryDeps,
   runId: string,
@@ -152,13 +177,18 @@ async function mirrorRun(
   // as a reply to their message_bot, stays in the app instead of reaching that person's chat app.
   if (!identity || identity.userId !== run.userId) return;
 
-  // bot_message runs can carry the bot's user-facing reply after a delegate wake.
-  // extractText keeps only text and page titles, so inter-bot chatter blocks never leak out.
+  // Replies to another bot stay in the app; only what the bot sent with notify_owner leaves.
+  const answersBot = answersAnotherBot(
+    run.trigger,
+    botMessageContext((run.sourceMessage?.blocks ?? []) as MessageBlock[]),
+  );
+  const messages = (
+    await deps.prisma.message.findMany({
+      where: { runId: run.id, role: "bot" },
+      orderBy: { seq: "asc" },
+    })
+  ).filter((message) => !answersBot || isOwnerNotifyClientNonce(message.clientNonce));
 
-  const messages = await deps.prisma.message.findMany({
-    where: { runId: run.id, role: "bot" },
-    orderBy: { seq: "asc" },
-  });
   const sendsFiles = deps.messaging
     .platforms()
     .some((platform) => platform.provider === identity.provider && platform.capabilities.files);

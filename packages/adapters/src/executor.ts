@@ -120,6 +120,7 @@ import {
 } from "./history-speakers.js";
 import { createMediaGenerationProvider } from "./media-generation-factory.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
+import { answersAnotherBot } from "./messaging-delivery.js";
 import { HostedModelCreditsRequiredError } from "./model-credit-observer.js";
 import {
   effectiveModelRole,
@@ -1300,7 +1301,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           : false;
         const messagingContext =
           [
-            hasMessagingIdentity ? messagingDmSurfaceNote() : null,
+            // A turn answering another bot reaches the owner's chat only through notify_owner.
+            hasMessagingIdentity && !answersAnotherBot(run.trigger, peerMessage)
+              ? messagingDmSurfaceNote()
+              : null,
             messagingChannelRun
               ? messagingChannelPrivacyBlock()
               : nonOwnerChatRun
@@ -1430,6 +1434,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
+            // The chat link is the bot maker's, so another member's turn has no chat to notify.
+            linkedChat:
+              hasMessagingIdentity &&
+              run.userId === bot.userId &&
+              answersAnotherBot(run.trigger, peerMessage),
             voiceCall,
             // Every member already got a message that names nobody, so a handoff only repeats it.
             disabledBuiltinTools: groupReplyOptional

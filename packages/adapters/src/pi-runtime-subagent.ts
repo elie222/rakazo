@@ -119,10 +119,12 @@ export async function executeSubagent(
   }
   const subagentModel = modelForCompletion(selectedModel.model, requestModel.maxTokens);
 
+  // Parallel helpers would each get their own notify_owner budget; only the parent turn notifies.
   // With a computer-use model, the screen belongs to top-level computer mode only.
   const childDefs = host.request.tools.filter(
     (tool) =>
       !DELEGATION_TOOL_NAMES.has(tool.name) &&
+      tool.name !== "notify_owner" &&
       !(host.computerModeAllowed && COMPUTER_MODE_TOOLS.has(tool.name)),
   );
   const nestedHost: ToolHost = {

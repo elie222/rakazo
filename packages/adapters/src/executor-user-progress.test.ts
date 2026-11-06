@@ -17,7 +17,11 @@ import { createJobReconciler } from "./job-reconciler.js";
 import type * as ModelVisionModule from "./model-vision.js";
 import { GROUP_UNADDRESSED_REPLY_GUIDANCE, messagesModeReplyGuidance } from "./run-replies.js";
 import { PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
-import { MID_TURN_PROGRESS_MIN_TURN_AGE_MS, userProgressClientNonce } from "./user-progress.js";
+import {
+  MID_TURN_PROGRESS_MIN_TURN_AGE_MS,
+  messageUserMaxLength,
+  userProgressClientNonce,
+} from "./user-progress.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
@@ -59,7 +63,8 @@ async function runTurn(
     runtimeError?: Error;
     runtimeCancel?: boolean;
     failHelperId?: string;
-    failMessageOnce?: boolean;
+    /** The first message write fails, with this error when one is given. */
+    failMessageOnce?: boolean | Error;
     history?: Array<{ id: string; seq: number; role: string; text: string; clientNonce?: string }>;
     /** When the run started; defaults to now, a turn too fresh for interim messages. */
     startedAt?: Date;
@@ -71,6 +76,10 @@ async function runTurn(
     appendGate?: (event: AppendEventInput) => Promise<void> | undefined;
     /** The computer has a screen and a page browser, and the model can see. */
     graphical?: boolean;
+    /** The bot has a linked messaging chat. */
+    linkedChat?: boolean;
+    /** Who made the bot, and so whose chat it is linked to; the run is user-1's. */
+    botUserId?: string;
     replyMode?: "chat" | "messages";
     /** The run belongs to a group chat; `optional` is whether the send named nobody. */
     group?: { optional: boolean; namedWhileRunning?: boolean };
@@ -169,6 +178,7 @@ async function runTurn(
     bot: {
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.botId,
+        userId: options.botUserId ?? "user-1",
         name: "Assistant",
         title: "Assistant",
         description: "Test assistant",
@@ -216,8 +226,10 @@ async function runTurn(
     message: {
       create: vi.fn(async ({ data }: { data: { blocks: MessageBlock[] } }) => {
         if (failMessage) {
+          const error =
+            failMessage instanceof Error ? failMessage : new Error("fixture message unavailable");
           failMessage = false;
-          throw new Error("fixture message unavailable");
+          throw error;
         }
         messages.push(data);
         return { ...data, id: `message-${messages.length}` };
@@ -349,6 +361,7 @@ async function runTurn(
     events: { append, finalizeRun, pauseRunForInput, notify: vi.fn(async () => undefined) },
     jobs,
     secrets,
+    ...(options.linkedChat ? { messaging: { hasIdentity: async () => true } } : {}),
     ...(options.graphical
       ? {
           browser: {
@@ -777,6 +790,154 @@ describe("notes that can't be posted as messages", () => {
       .filter((event) => event.type === "thread.progress")
       .map((event) => event.payload as { text?: string; activity?: boolean });
     expect(lines).toContainEqual({ text: "Reading march.csv", activity: true });
+  });
+
+  it("lets only a turn answering another bot's request notify the owner's linked chat", async () => {
+    const turn = async (
+      trigger: string,
+      linkedChat = true,
+      intent: "request" | "question" | "fyi" = "request",
+      failMessageOnce?: Error,
+      botUserId?: string,
+    ) => {
+      const results: unknown[] = [];
+      let seen: AgentRunRequest | undefined;
+      let offered = false;
+      const { messages, jobs } = await runTurn("", false, undefined, [], intent, {
+        trigger,
+        linkedChat,
+        failMessageOnce,
+        botUserId,
+        runtime: async function* (request) {
+          seen = request;
+          offered = request.tools.some((tool) => tool.name === "notify_owner");
+          for (const [message, executionId] of [
+            ["  ", "call-0"],
+            ["Approve the deploy?", "call-1"],
+            ["x".repeat(5_001), "call-2"],
+            ["y".repeat(5_001), "call-3"],
+            ["z", "call-4"],
+          ] as const)
+            results.push(await request.executeTool!("notify_owner", { message }, executionId));
+          yield { type: "text", text: "Done." };
+          yield { type: "done", text: "" };
+        },
+      });
+      const notices = (messages as Array<{ blocks: MessageBlock[]; clientNonce?: string }>).filter(
+        (message) => message.clientNonce?.startsWith("owner-notify:"),
+      );
+      const deliveries = jobs.enqueue.mock.calls.filter(
+        ([job]) => job.name === "messaging.deliver",
+      ).length;
+      return { results, notices, offered, deliveries, instructions: seen!.instructions };
+    };
+
+    const max = messageUserMaxLength();
+    const delegated = await turn("bot_message");
+    expect(delegated.offered).toBe(true);
+    const cut = {
+      ok: true,
+      truncated: true,
+      note: `Your owner saw only the first ${max} characters.`,
+    };
+    expect(delegated.results).toEqual([
+      { error: "message is required" },
+      { ok: true },
+      cut,
+      cut,
+      { error: "Not sent: your owner already got as many notifications as one turn allows." },
+    ]);
+    expect(
+      delegated.notices.map((notice) => (notice.blocks[0] as { text: string }).text.length),
+    ).toEqual(["Approve the deploy?".length, max, max]);
+    // Each notification goes out as it is sent, not when the turn ends.
+    expect(delegated.deliveries).toBe(3);
+    expect(delegated.instructions).not.toContain("mirrored to their chat");
+
+    expect((await turn("bot_message", true, "question")).offered).toBe(true);
+
+    // A retried call whose first write already landed is a success, not a failed turn.
+    const raced = await turn(
+      "bot_message",
+      true,
+      "request",
+      Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+    );
+    expect(raced.results.slice(0, 2)).toEqual([{ error: "message is required" }, { ok: true }]);
+
+    for (const [trigger, linkedChat, intent] of [
+      ["bot_message", false, "request"],
+      // An fyi wake's reply goes to no bot, so it reaches the chat as before.
+      ["bot_message", true, "fyi"],
+      ["messaging", true, "request"],
+      ["user", true, "request"],
+      ["routine", true, "request"],
+    ] as const) {
+      const other = await turn(trigger, linkedChat, intent);
+      expect(other.offered).toBe(false);
+      expect(other.results).toEqual(
+        Array(5).fill({
+          error:
+            "notify_owner needs a turn answering another bot's request or question, and a linked chat.",
+        }),
+      );
+      expect(other.notices).toEqual([]);
+    }
+    // In a shared Space the linked chat is the bot maker's; another member's turn stays in the app.
+    const member = await turn("bot_message", true, "request", undefined, "user-2");
+    expect(member.offered).toBe(false);
+    expect(member.results).toEqual(
+      Array(5).fill({
+        error:
+          "notify_owner needs a turn answering another bot's request or question, and a linked chat.",
+      }),
+    );
+    expect(member.notices).toEqual([]);
+    expect((await turn("user")).instructions).toContain("mirrored to their chat");
+    expect((await turn("bot_message", true, "fyi")).instructions).toContain(
+      "mirrored to their chat",
+    );
+  });
+
+  it("keeps the normal silent answer to the bot after notifying the owner", async () => {
+    vi.mocked(returnBotMessageOutcome).mockClear();
+    await runTurn("", false, undefined, [], "request", {
+      trigger: "bot_message",
+      linkedChat: true,
+      runtime: async function* (request) {
+        const args = { message: "Approve the deploy?" };
+        yield { type: "tool", name: "notify_owner", args, executionId: "call-1" };
+        await request.executeTool!("notify_owner", args, "call-1");
+        yield { type: "text", text: "NO_RESPONSE" };
+        yield { type: "done", text: "NO_RESPONSE" };
+      },
+    });
+    expect(vi.mocked(returnBotMessageOutcome).mock.calls.map((call) => call[3])).toEqual([
+      PEER_NOTHING_NEW_REPLY,
+    ]);
+  });
+
+  it("completes a request turn that only notifies the owner", async () => {
+    const { finalizeRun, messages } = await runTurn("", false, undefined, [], "request", {
+      trigger: "bot_message",
+      linkedChat: true,
+      runtime: async function* (request) {
+        const args = { message: "Approve the deploy?" };
+        yield { type: "tool", name: "notify_owner", args, executionId: "call-1" };
+        await request.executeTool!("notify_owner", args, "call-1");
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: "completed" }),
+    );
+    expect(
+      (messages as Array<{ blocks: MessageBlock[]; clientNonce?: string }>).filter((message) =>
+        message.clientNonce?.startsWith("owner-notify:"),
+      ),
+    ).toEqual([
+      expect.objectContaining({ blocks: [{ kind: "text", text: "Approve the deploy?" }] }),
+    ]);
   });
 
   it("tells the bot whether a message_user update it can't post can be retried", async () => {

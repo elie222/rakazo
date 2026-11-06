@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import type { ReconciliationLeadership } from "./job-reconciler.js";
 import { createJobReconciler, createPostgresReconciliationLeadership } from "./job-reconciler.js";
+import { ownerNotifyClientNonce } from "./messaging-delivery.js";
 import { loopGuardStopText } from "./tool-loop.js";
 
 vi.mock("./bot-messages.js", () => ({ returnBotMessageOutcome: vi.fn() }));
@@ -968,6 +969,55 @@ describe("createJobReconciler", () => {
       terminalRun,
       { id: "bot-1", name: "Researcher" },
       "Checking calendars…",
+      "status",
+      { forceUnread: false },
+    );
+  });
+
+  it("does not return an owner notification as the run's result", async () => {
+    const terminalRun = {
+      id: "run-notify",
+      spaceId: "workspace-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      userId: "user-1",
+      sourceMessageId: "message-1",
+      status: "completed",
+      error: null,
+      bot: { name: "Researcher" },
+    };
+    const prisma = {
+      run: {
+        findMany: vi.fn(async (args: { where?: Record<string, unknown> } = {}) =>
+          args.where?.trigger === "bot_message" && args.where?.messagingMirroredAt !== null
+            ? [terminalRun]
+            : [],
+        ),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      routine: { findMany: vi.fn(async () => []) },
+      computer: { findMany: vi.fn(async () => []) },
+      messagingOutbound: { findFirst: vi.fn(async () => null) },
+      message: {
+        findMany: vi.fn(async () => [
+          {
+            blocks: [{ kind: "text", text: "Approve the deploy?" }],
+            clientNonce: ownerNotifyClientNonce("run-notify", "call-1"),
+          },
+        ]),
+      },
+    } as unknown as PrismaClient;
+    const { jobs } = publisher();
+    const events = { notify: vi.fn() } as unknown as ThreadEvents;
+    vi.mocked(returnBotMessageOutcome).mockResolvedValue(true);
+
+    await createJobReconciler({ prisma, jobs, events }, { batchSize: 1 }).reconcileOnce();
+
+    expect(returnBotMessageOutcome).toHaveBeenCalledWith(
+      { prisma, jobs, events },
+      terminalRun,
+      { id: "bot-1", name: "Researcher" },
+      "The delegated bot completed its turn without a written summary.",
       "status",
       { forceUnread: false },
     );

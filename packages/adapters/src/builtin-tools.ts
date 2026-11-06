@@ -26,7 +26,7 @@ import {
 import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
 import { BROWSER_ACT_KINDS } from "./browser-tools.js";
-import { messageUserMaxLength } from "./user-progress.js";
+import { MID_TURN_PROGRESS_MAX_PER_RUN, messageUserMaxLength } from "./user-progress.js";
 import { MAX_WEB_FETCH_OFFSET } from "./web-limits.js";
 
 // The owner flag can land in process.env after static imports run (loadRootEnv
@@ -1801,6 +1801,26 @@ export const builtinAgentTools: ConnectorTool[] = [
         },
       },
       required: ["message"],
+    },
+  },
+  {
+    name: "notify_owner",
+    get description() {
+      return `Send your owner a short message in their linked chat. You are answering another bot's request or question: your replies go back to that bot and stay in the app, so this is the only way to reach your owner from this turn. Use it for what they need to see or act on: a result they asked for, an approval, a decision, a problem. Do not use it for acknowledgements or status between bots. At most ${MID_TURN_PROGRESS_MAX_PER_RUN} per turn, each cut off at ${messageUserMaxLength()} characters.`;
+    },
+    get inputSchema() {
+      return {
+        type: "object",
+        properties: {
+          message: {
+            type: "string",
+            minLength: 1,
+            maxLength: messageUserMaxLength(),
+            description: "What your owner should read.",
+          },
+        },
+        required: ["message"],
+      };
     },
   },
   {

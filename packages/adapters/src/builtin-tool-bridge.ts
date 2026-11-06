@@ -51,6 +51,7 @@ export const CORE_BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "read_email",
   "send_email",
   "end_call",
+  "notify_owner",
 ]);
 
 const FLEET_NAMES: ReadonlySet<string> = new Set(FLEET_TOOL_NAMES);
