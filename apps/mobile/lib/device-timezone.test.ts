@@ -80,11 +80,90 @@ describe("device timezone report", () => {
       // The next poll or foreground return sends the report again.
       await reportDeviceTimeZone("user-1");
       expect(vi.mocked(rpc)).toHaveBeenCalledTimes(2);
-      // A success after the retry keeps later calls quiet again.
+      // The failed report may still commit, so one later poll confirms the zone.
       await reportDeviceTimeZone("user-1");
-      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(3);
+      expect(vi.mocked(rpc).mock.calls[2]).toEqual([
+        "preferences/adoptTimezone",
+        { timezone: "Pacific/Auckland" },
+      ]);
+      // A success after the confirmation keeps later calls quiet again.
+      await reportDeviceTimeZone("user-1");
+      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(3);
     } finally {
       zone.mockRestore();
+    }
+  });
+
+  it("re-sends the zone when a timed-out report commits after its successor", async () => {
+    const london = fakeDeviceZone("Europe/London");
+    const { reportDeviceTimeZone } = await load();
+    // The account holds whatever write the server committed last; a client timeout does
+    // not stop the server-side write, which can land after a newer report's.
+    let accepted: string | null = null;
+    const calls: {
+      timezone: string;
+      write: () => void;
+      succeed: () => void;
+      fail: (error: unknown) => void;
+    }[] = [];
+    vi.mocked(rpc).mockImplementation(
+      ((_proc: string, body: { timezone: string }) =>
+        new Promise<void>((resolve, reject) => {
+          calls.push({
+            timezone: body.timezone,
+            write: () => {
+              accepted = body.timezone;
+            },
+            succeed: () => resolve(),
+            fail: (error) => reject(error),
+          });
+        })) as never,
+    );
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+    /** The issued report at an index, or a throw that fails the test with how many went out. */
+    const call = (index: number) => {
+      const issued = calls[index];
+      if (!issued) throw new Error(`report ${index} was not issued (out: ${calls.length})`);
+      return issued;
+    };
+    let auckland: ReturnType<typeof fakeDeviceZone> | undefined;
+    try {
+      const first = reportDeviceTimeZone("user-1");
+      london.mockRestore();
+      auckland = fakeDeviceZone("Pacific/Auckland");
+      const second = reportDeviceTimeZone("user-1");
+      await flush();
+      expect(call(0).timezone).toBe("Europe/London");
+      // The client gives up on the first report; its write lives on at the server.
+      call(0).fail(new Error("timeout"));
+      await expect(first).rejects.toThrow("timeout");
+      await flush();
+      expect(call(1).timezone).toBe("Pacific/Auckland");
+      call(1).succeed();
+      call(1).write();
+      await second;
+      // The timed-out write commits after the successor's.
+      call(0).write();
+      expect(accepted).toBe("Europe/London");
+      // The next poll must re-send the device's zone instead of staying quiet.
+      const third = reportDeviceTimeZone("user-1");
+      await flush();
+      expect(call(2).timezone).toBe("Pacific/Auckland");
+      call(2).succeed();
+      call(2).write();
+      await third;
+      expect(accepted).toBe("Pacific/Auckland");
+      // The confirmed zone keeps later polls quiet again.
+      await reportDeviceTimeZone("user-1");
+      await flush();
+      expect(calls.length).toBe(3);
+    } finally {
+      london.mockRestore();
+      auckland?.mockRestore();
+      vi.mocked(rpc)
+        .mockReset()
+        .mockResolvedValue({} as never);
     }
   });
 
