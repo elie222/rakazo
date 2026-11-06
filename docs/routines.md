@@ -50,12 +50,13 @@ routine.
 
 ### Email
 
-Gives the bot its own address, such as `scout@bots.example.com`. The first time, pick the part
-before the @; it stays the bot's for good. Forward or CC mail to it and the routine runs with
-that email. Choose who can start it: **Only me**, or **Anyone at** your own email domain. Mail
-from anyone else, and mail sent BCC, is ignored. If mail from your own address can't be verified,
-the chat says so; your email provider then needs DKIM signing turned on for your domain. Appears only when your server
-[receives email](./self-host-inbound-email.md).
+Runs when mail arrives at the bot's own address, such as `scout@bots.example.com`. The first
+time, pick the part before the @; it stays the bot's for good. Forward or CC mail to it and the
+routine runs with that email. Choose who can start it: **Only me**, or **Anyone at** your own
+email domain. Mail from anyone else, and mail sent BCC, starts nothing, but the bot keeps every
+email in its inbox either way. If mail from your own address can't be verified, the chat says so;
+your email provider then needs DKIM signing turned on for your domain. Appears only when your
+server [receives email](./self-host-inbound-email.md).
 
 ### Slack message
 
