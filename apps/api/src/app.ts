@@ -140,6 +140,7 @@ import {
   requireMembership,
   rowSecurityWarning,
   runAsSystem,
+  SpaceDeletionInProgressError,
   SpaceOwnerRequiredError,
   securityEventRetentionDays,
   verifyContentKeys,
@@ -1720,6 +1721,10 @@ export function handleRpcError(
   }
   if (error instanceof SpaceOwnerRequiredError) {
     throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });
+  }
+  // A Space being deleted takes no new work; the caller learns it, nothing failed.
+  if (error instanceof SpaceDeletionInProgressError) {
+    throw new ORPCError("CONFLICT", { message: error.message, cause: error });
   }
   // The user's own voice account refused the request: theirs to fix.
   if (error instanceof VoiceAccountError) {

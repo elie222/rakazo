@@ -168,6 +168,9 @@ export class ComputerBusyError extends Error {
   }
 }
 
+/** The computer's Space is being deleted, so it takes no maintenance until that ends. */
+export class ComputerSpaceDeletingError extends ComputerBusyError {}
+
 export { toComputerRef } from "./computer-support.js";
 
 export async function provisionComputer(
@@ -1091,51 +1094,50 @@ export async function replaceComputer(
   const claimStamp = new Date(Math.max(now.getTime(), existing.updatedAt.getTime() + 1));
   // Nothing is torn down or provisioned in a Space being deleted except by the deletion. Its lock
   // comes before the computer row, so a claim committing meanwhile is seen.
-  const claimed = await deps.prisma.$transaction(async (tx) =>
-    !(await spaceTakesWork(tx, existing.spaceId))
-      ? { count: 0 }
-      : tx.computer.updateMany({
-          where: {
-            id: computerId,
-            state: previousState,
-            maintenanceId: existing.maintenanceId ?? null,
-            // CAS the booting/suspending stamp so a concurrent live claim cannot be overwritten.
-            ...(previousState === "booting" || previousState === "suspending"
-              ? { updatedAt: existing.updatedAt }
-              : {}),
-            executionLeases: { none: { botId: { not: botId }, expiresAt: { gt: now } } },
-            ...(handBackIdleTakeover
-              ? {
-                  controlHolder: "user" as const,
-                  controlBotId: botId,
-                  controlRunId: null,
-                  controlLeaseId: existing.controlLeaseId,
-                }
-              : {
-                  OR: [
-                    { controlHolder: { not: "user" } },
-                    { controlLeaseId: null },
-                    { controlLeaseExpiresAt: null },
-                    { controlLeaseExpiresAt: { lte: now } },
-                  ],
-                }),
-          },
-          data: {
-            state: "suspending",
-            updatedAt: claimStamp,
-            ...(handBackIdleTakeover
-              ? {
-                  controlHolder: "none" as const,
-                  controlLeaseId: null,
-                  controlUserId: null,
-                  controlLeaseExpiresAt: null,
-                  controlBotId: null,
-                  controlRunId: null,
-                }
-              : {}),
-          },
-        }),
-  );
+  const claimed = await deps.prisma.$transaction(async (tx) => {
+    if (!(await spaceTakesWork(tx, existing.spaceId))) throw new ComputerSpaceDeletingError();
+    return tx.computer.updateMany({
+      where: {
+        id: computerId,
+        state: previousState,
+        maintenanceId: existing.maintenanceId ?? null,
+        // CAS the booting/suspending stamp so a concurrent live claim cannot be overwritten.
+        ...(previousState === "booting" || previousState === "suspending"
+          ? { updatedAt: existing.updatedAt }
+          : {}),
+        executionLeases: { none: { botId: { not: botId }, expiresAt: { gt: now } } },
+        ...(handBackIdleTakeover
+          ? {
+              controlHolder: "user" as const,
+              controlBotId: botId,
+              controlRunId: null,
+              controlLeaseId: existing.controlLeaseId,
+            }
+          : {
+              OR: [
+                { controlHolder: { not: "user" } },
+                { controlLeaseId: null },
+                { controlLeaseExpiresAt: null },
+                { controlLeaseExpiresAt: { lte: now } },
+              ],
+            }),
+      },
+      data: {
+        state: "suspending",
+        updatedAt: claimStamp,
+        ...(handBackIdleTakeover
+          ? {
+              controlHolder: "none" as const,
+              controlLeaseId: null,
+              controlUserId: null,
+              controlLeaseExpiresAt: null,
+              controlBotId: null,
+              controlRunId: null,
+            }
+          : {}),
+      },
+    });
+  });
   if (claimed.count !== 1) throw new ComputerBusyError();
   const releaseClaim = () =>
     deps.prisma.computer.updateMany({

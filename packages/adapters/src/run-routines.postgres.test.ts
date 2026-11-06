@@ -403,6 +403,24 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     }
   });
 
+  it("keeps a transcript message that starts no run in a Space that is being deleted", async () => {
+    await settle();
+    try {
+      await system.space.update({ where: { id: identity.spaceId }, data: claimed });
+      await expect(
+        sendUserMessage(system, {
+          ...identity,
+          blocks: [{ kind: "text", text: "mirrored" }],
+          prompt: "mirrored",
+          trigger: "messaging",
+          createRun: false,
+        }),
+      ).resolves.toMatchObject({ runId: null });
+    } finally {
+      await settle();
+    }
+  });
+
   it("refuses a message when the deletion claim commits while the send is under way", async () => {
     try {
       const outcome = await duringUncommittedClaim(() =>
