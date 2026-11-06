@@ -66,11 +66,9 @@ describe("describeToolActivity", () => {
     );
     expect(describeToolActivity("list_fleet", {})).toBe("Checking your bots");
     expect(describeToolActivity("render_plot", { spec: {} })).toBe("Rendering a chart");
-    expect(describeToolActivity("save_page", { help: true })).toBe(
-      "Reading the page kit reference",
-    );
+    expect(describeToolActivity("save_page", { help: true })).toBe("Reading the page guides");
     expect(describeToolActivity("save_page", { title: "Plan", source: "x" })).toBe(
-      "Writing the page code",
+      "Writing the page",
     );
     expect(describeToolActivity("add_mcp_server", { name: "Linear" })).toBe(
       "Connecting MCP server: Linear",

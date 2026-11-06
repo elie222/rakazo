@@ -14,7 +14,12 @@ const source = (heading: string) =>
 
 function context(
   tx: Record<string, unknown>,
-  existing?: { currentVersion: number; visibility?: "private" | "link" },
+  existing?: {
+    currentVersion: number;
+    visibility?: "private" | "link";
+    format?: "jsx" | "html";
+    source?: string;
+  },
   secrets: string[] = [],
   skipApprovals = false,
 ) {
@@ -26,8 +31,9 @@ function context(
               id: "page-1",
               title: "Plan",
               visibility: existing.visibility ?? "private",
+              format: existing.format ?? "jsx",
               currentVersion: existing.currentVersion,
-              versions: [{ source: source("Plan") }],
+              versions: [{ source: existing.source ?? source("Plan") }],
             }
           : null,
       ),
@@ -106,7 +112,13 @@ describe("save_page", () => {
       context({}, { currentVersion: 3 }),
       call({ pageId: "page-1", edits: [], source: "" }),
     )) as Record<string, unknown>;
-    expect(read).toEqual({ pageId: "page-1", version: 3, title: "Plan", source: source("Plan") });
+    expect(read).toEqual({
+      pageId: "page-1",
+      version: 3,
+      title: "Plan",
+      format: "jsx",
+      source: source("Plan"),
+    });
   });
 
   it("never stores a run secret in a page's source, title or chat card", async () => {
@@ -181,6 +193,65 @@ describe("save_page", () => {
     expect(JSON.stringify(tx.pageVersion.create.mock.calls)).not.toContain(secret);
     expect(JSON.stringify(publishMessage.mock.calls)).not.toContain(secret);
   });
+
+  it("stores an HTML page as written, without compiling it, and still posts its card", async () => {
+    const html = "<!DOCTYPE html><html><body><h1>Inline</h1><script>run()</script></body></html>";
+    const tx = {
+      page: {
+        create: vi.fn(async ({ data }: { data: { title: string } }) => ({
+          id: "page-html",
+          title: data.title,
+        })),
+      },
+    };
+    const result = (await pageTools.save_page!(
+      context(tx),
+      call({ title: "Inline", format: "html", source: html }),
+    )) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      pageId: "page-html",
+      version: 1,
+      title: "Inline",
+      format: "html",
+    });
+    expect(tx.page.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        format: "html",
+        versions: { create: expect.objectContaining({ source: html, code: html }) },
+      }),
+    });
+    expect(publishMessage.mock.calls[0]![3]).toEqual([
+      { kind: "page", pageId: "page-html", version: 1, title: "Inline" },
+    ]);
+  });
+
+  it("reads an HTML page back with its format, and never changes that format in place", async () => {
+    const html = "<!DOCTYPE html><html><body>one</body></html>";
+    const read = (await pageTools.save_page!(
+      context({}, { currentVersion: 2, format: "html", source: html }),
+      call({ pageId: "page-1" }),
+    )) as Record<string, unknown>;
+    expect(read).toMatchObject({ version: 2, format: "html", source: html });
+
+    const changed = (await pageTools.save_page!(
+      context({}, { currentVersion: 2, format: "html", source: html }),
+      call({ pageId: "page-1", format: "jsx", source: source("Plan") }),
+    )) as Record<string, unknown>;
+    expect(changed).toEqual({
+      error: "A page keeps the format it was created with; save a new page instead.",
+    });
+  });
+
+  it("refuses a format that is neither the kit nor HTML", async () => {
+    const result = (await pageTools.save_page!(
+      context({}),
+      call({ title: "Plan", format: "svg", source: source("Plan") }),
+    )) as Record<string, unknown>;
+    expect(result).toEqual({
+      error: 'format must be "jsx" (the page kit) or "html" (a self-contained document).',
+    });
+    expect(publishMessage).not.toHaveBeenCalled();
+  });
 });
 
 describe("saving a page shared by link", () => {
@@ -205,6 +276,20 @@ describe("saving a page shared by link", () => {
       whole as never,
     );
     expect(whole.fleetSummary?.lines).toEqual(["-     <Text>Hi</Text>", "+     <Text>Bye</Text>"]);
+  });
+
+  it("holds a change to a shared HTML page, checking it as HTML", async () => {
+    const html = "<!DOCTYPE html><html><body><p>Hi</p></body></html>";
+    const held = request({ pageId: "page-1", edits: [edit] });
+    await holdSharedPageSave(
+      context({}, { currentVersion: 1, visibility: "link", format: "html", source: html }),
+      held as never,
+    );
+    expect(held.heldForApproval).toBe(true);
+    expect(held.fleetSummary?.lines).toEqual([
+      "- <!DOCTYPE html><html><body><p>Hi</p></body></html>",
+      "+ <!DOCTYPE html><html><body><p>Hello</p></body></html>",
+    ]);
   });
 
   it("lets a save that would fail anyway fail without a card", async () => {

@@ -4,6 +4,7 @@ import { appContract } from "./index.js";
 import {
   PAGE_SOURCE_MAX_BYTES,
   PAGE_TITLE_MAX_LENGTH,
+  PageFormatSchema,
   PageSourceSchema,
   PageSummarySchema,
   PageTitleSchema,
@@ -43,6 +44,39 @@ it("bounds the titles pages send out by the cap a saved title has", () => {
   const longest = "x".repeat(PAGE_TITLE_MAX_LENGTH);
   expect([summary(longest), shared(longest)]).toEqual([true, true]);
   expect([summary(`${longest}x`), shared(`${longest}x`)]).toEqual([false, false]);
+});
+
+describe("PageFormatSchema", () => {
+  it("knows the page kit and self-contained HTML, and nothing else", () => {
+    expect(PageFormatSchema.options).toEqual(["jsx", "html"]);
+    expect(PageFormatSchema.safeParse("svg").success).toBe(false);
+  });
+
+  it("reads a page from a server that predates formats as JSX", () => {
+    const at = "2026-11-02T10:00:00.000Z";
+    expect(
+      PageSummarySchema.parse({
+        id: "page-1",
+        title: "Plan",
+        botId: null,
+        groupId: null,
+        visibility: "private",
+        currentVersion: 1,
+        pinned: false,
+        createdAt: at,
+        updatedAt: at,
+      }).format,
+    ).toBeUndefined();
+    expect(
+      SharedPageSchema.parse({
+        title: "Plan",
+        code: "<h1>x</h1>",
+        format: "html",
+        version: 1,
+        updatedAt: at,
+      }).format,
+    ).toBe("html");
+  });
 });
 
 describe("PageSourceSchema", () => {

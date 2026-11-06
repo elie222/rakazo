@@ -707,14 +707,26 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "save_page",
     description:
-      'Save a page the user opens from the chat: a dashboard, report, tracker or comparison. Pass the page as JSX source written against the Rakazo page kit; call with {"help": true} first for the kit guide. Problems come back with line numbers and nothing is saved. To change a page, pass its pageId with edits (applied together, or not at all) or full source; pass only pageId to read its current source. A result with sharedByLink is a page the user shared: anyone with its link sees each save at once.',
+      'Save a page the user opens from the chat: a dashboard, report, tracker or comparison. The default source is JSX written against the Rakazo page kit. Set format "html" to save a self-contained HTML document with its own CSS and scripts instead; it renders inline in the chat at its own height. Call with {"help": true} first for the guides. Problems come back with line numbers and nothing is saved. To change a page, pass its pageId with edits (applied together, or not at all) or full source; pass only pageId to read its current source and format. A result with sharedByLink is a page the user shared: anyone with its link sees each save at once.',
     inputSchema: {
       type: "object",
       properties: {
-        help: { type: "boolean", description: "Return the page kit guide instead of saving." },
+        help: {
+          type: "boolean",
+          description: "Return the page kit and HTML page guides instead of saving.",
+        },
         pageId: { type: "string", description: "The page to read or update." },
         title: { type: "string", description: "Page title; required for a new page." },
-        source: { type: "string", description: "The whole page as JSX." },
+        format: {
+          type: "string",
+          enum: ["jsx", "html"],
+          description:
+            'Defaults to "jsx" (page kit). "html" stores a complete HTML document and shows it inline in the chat. A page keeps the format it was created with.',
+        },
+        source: {
+          type: "string",
+          description: 'The whole page: JSX for format "jsx", or an HTML document for "html".',
+        },
         edits: {
           type: "array",
           description: "Changes to the current source; each find must occur exactly once.",

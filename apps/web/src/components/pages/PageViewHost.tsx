@@ -55,12 +55,7 @@ function OpenPage({
     ...queries.pages.get.queryOptions({ input: { pageId: shownId } }),
     enabled: pageId !== null,
   });
-  const viewer = usePageDocument(
-    page.data?.code,
-    sheet ? "background" : "card",
-    true,
-    DOCK_CLEARANCE,
-  );
+  const viewer = usePageDocument(page.data, sheet ? "background" : "card", true, DOCK_CLEARANCE);
   const [shareOpen, setShareOpen] = useState(false);
   const link = useQuery({
     ...queries.pages.get.queryOptions({ input: { pageId: shownId, link: true } }),

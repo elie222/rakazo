@@ -650,8 +650,14 @@ describePostgres("account import (PostgreSQL)", () => {
     {
       currentVersion = 1,
       title = "Plan",
+      format,
       source = (version: number) => `export default () => <Page title="Draft ${version}" />;`,
-    }: { currentVersion?: number; title?: string; source?: (version: number) => string } = {},
+    }: {
+      currentVersion?: number;
+      title?: string;
+      format?: "jsx" | "html";
+      source?: (version: number) => string;
+    } = {},
   ): AccountExportRecord[] => [
     ...sourceRecords(),
     {
@@ -660,6 +666,7 @@ describePostgres("account import (PostgreSQL)", () => {
       botId: null,
       groupId: null,
       title,
+      ...(format ? { format } : {}),
       pinnedAt: null,
       currentVersion,
       createdAt: at,
@@ -671,6 +678,7 @@ describePostgres("account import (PostgreSQL)", () => {
       pageId: "src-page",
       version,
       title,
+      ...(format ? { format } : {}),
       source: source(version),
       createdAt: at,
     })),
@@ -698,6 +706,22 @@ describePostgres("account import (PostgreSQL)", () => {
       currentVersion: 1,
       versions: [{ version: 1 }],
     });
+  });
+
+  it("imports an HTML page with its document as the viewer code, without compiling it", async () => {
+    const html = "<!DOCTYPE html><html><body><h1>Report</h1></body></html>";
+    const result = await runImport(
+      archive(pageRecords([1], { format: "html", source: () => html })),
+    );
+    const page = await system.page.findFirstOrThrow({
+      where: { spaceId: result.spaces[0]!.id },
+      select: {
+        format: true,
+        versions: { select: { source: true, code: true } },
+      },
+    });
+    expect(page.format).toBe("html");
+    expect(page.versions).toEqual([{ source: html, code: html }]);
   });
 
   it("imports a version today's check refuses, so it opens on its own error", async () => {

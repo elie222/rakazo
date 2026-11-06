@@ -146,3 +146,42 @@ function Dashboard() {
 
 export default Dashboard;
 `;
+
+/**
+ * Returned with the kit guide, so a bot can choose a page format without paying for both guides
+ * on an ordinary turn. An HTML page is written as one document and renders inline in the chat.
+ */
+export const HTML_PAGE_GUIDE = `# HTML pages
+
+Pass format "html" to save_page to store a self-contained HTML document instead of page-kit JSX. It renders inline in the chat at its own height, and also opens, prints and shares like any page.
+
+## Rules
+- Write one complete document: <!DOCTYPE html>, <html>, <head> and <body>. Inline <style> and <script> are allowed and run.
+- The page runs in an isolated frame with no network: remote images, fonts, stylesheets and scripts do not load. Embed pictures, sound and video as data: URIs. fetch and XHR fail.
+- Never use a fixed viewport height (such as body { height: 100vh }) for the whole page; the frame grows to the document. Scrollable inner regions are fine.
+- The frame follows the reader's theme and sets color-scheme and html[data-theme] for you. Use CSS system colours (Canvas, CanvasText) or select on html[data-theme="dark"] and html[data-theme="light"]; the page kit's tokens are not available in HTML pages.
+- Web links in the page open through the app after the reader confirms. Do not navigate the frame away.
+- Keep the page under 256 KB of source. Read it back with save_page {pageId}, change it with edits [{find, replace}], and keep the same format.
+
+## Example
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { margin: 0; padding: 24px; font: 16px/1.5 system-ui, sans-serif; background: Canvas; color: CanvasText; }
+  html[data-theme="dark"] .metric { color: LightGray; }
+  .metric { font-size: 32px; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>Weekly review</h1>
+  <p class="metric" id="revenue">$48,900</p>
+  <button id="toggle">Show change</button>
+  <script>
+    document.getElementById("toggle").addEventListener("click", () => {
+      document.getElementById("revenue").textContent = "$48,900 (+12%)";
+    });
+  </script>
+</body>
+</html>`;

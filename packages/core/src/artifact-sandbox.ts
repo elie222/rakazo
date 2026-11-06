@@ -69,6 +69,36 @@ export function pageViewerDocument(input: {
   ].join("");
 }
 
+/**
+ * The bridge a raw HTML page runs at the end of its body: it follows the reader's theme, reports
+ * its height so the host can grow the frame to the page, and hands web links to the app instead
+ * of navigating the sandbox away. Page scripts are already running by then.
+ */
+function htmlPageBridge(theme: "light" | "dark", lang: string | undefined): string {
+  const set = JSON.stringify(theme);
+  const language =
+    lang === undefined ? "" : `if(!r.lang)r.lang=${JSON.stringify(lang).replace(/</g, "\\u003c")};`;
+  return `<script>(function(){var r=document.documentElement;r.dataset.theme=${set};r.style.colorScheme=${set};${language}
+var up=parent!==window?parent:window;var last=-1;function report(){var b=document.body;if(!b)return;var h=b.scrollHeight;if(h===last)return;last=h;up.postMessage({type:"rakazo-page:height",height:h},"*");}
+if(typeof ResizeObserver!=="undefined")new ResizeObserver(report).observe(document.body||r);addEventListener("load",report);addEventListener("resize",report);setTimeout(report,0);
+document.addEventListener("click",function(event){var node=event.target;var a=node&&node.closest?node.closest("a[href]"):null;if(!a)return;var href=a.getAttribute("href")||"";if(href.charAt(0)==="#")return;var url;try{url=new URL(href,location.href);}catch(_){return;}if(url.protocol!=="http:"&&url.protocol!=="https:"&&url.protocol!=="mailto:")return;event.preventDefault();up.postMessage({type:"rakazo-page:open-link",url:url.href},"*");},true);})();</script>`;
+}
+
+/**
+ * A self-contained HTML page as the sandboxed viewer's document. It keeps the author's document
+ * intact and adds only the CSP and the bridge above, so scripts run under the same opaque origin
+ * and policy as any other artifact. The bridge follows the author's markup, so their scripts run
+ * first, and a `</body>` inside their own script cannot split it.
+ */
+export function htmlPageViewerDocument(input: {
+  html: string;
+  theme: "light" | "dark";
+  /** The reader's app language, unless the page declares its own. */
+  lang?: string;
+}): string {
+  return withSandboxedArtifactCsp(input.html + htmlPageBridge(input.theme, input.lang));
+}
+
 /** A page reply's text on one line, as the chat's composer takes it; null when unusable. */
 export function pageReplyText(text: unknown): string | null {
   if (typeof text !== "string") return null;

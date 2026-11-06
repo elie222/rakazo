@@ -2,7 +2,12 @@ import { PAGE_SOURCE_MAX_BYTES } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { pageViewerCode } from "./compile.js";
 import { PAGE_HELPERS, PAGE_KIT_COMPONENTS } from "./components.js";
-import { checkPageSource, PAGE_KIT_GUIDE } from "./validate.js";
+import {
+  checkHtmlPageSource,
+  checkPageSource,
+  HTML_PAGE_GUIDE,
+  PAGE_KIT_GUIDE,
+} from "./validate.js";
 
 const page = (body: string) => `${body}\nexport default App;\n`;
 
@@ -308,5 +313,43 @@ describe("checkPageSource", () => {
   );
 }`;
     expect(checkPageSource(source)).toEqual({ ok: true, code: expect.any(String) });
+  });
+});
+
+describe("checkHtmlPageSource", () => {
+  const html = "<!DOCTYPE html><html><body><h1>Report</h1><script>run()</script></body></html>";
+
+  it("stores a self-contained document as its own viewer code", () => {
+    expect(checkHtmlPageSource(html)).toEqual({ ok: true, code: html });
+  });
+
+  it("accepts the guide's own example, so the help text never teaches a rejected page", () => {
+    const example = HTML_PAGE_GUIDE.slice(
+      HTML_PAGE_GUIDE.indexOf("## Example") + "## Example".length,
+    ).trim();
+    expect(checkHtmlPageSource(example)).toEqual({ ok: true, code: example });
+  });
+
+  it("refuses an empty page and one past the size bound, in bytes", () => {
+    expect(checkHtmlPageSource(" \n\t ")).toEqual({ ok: false, errors: ["The page is empty."] });
+    const tooLong = `<p>${"x".repeat(PAGE_SOURCE_MAX_BYTES)}</p>`;
+    expect(checkHtmlPageSource(tooLong)).toMatchObject({ ok: false });
+    // Fewer characters than the bound, more bytes.
+    expect(checkHtmlPageSource(`<p>${"é".repeat(PAGE_SOURCE_MAX_BYTES / 2)}</p>`)).toMatchObject({
+      ok: false,
+    });
+  });
+
+  it("warns about network resources the sandbox will refuse instead of saving a hole", () => {
+    const remote = '<html><body><img src="https://example.com/a.png"></body></html>';
+    expect(checkHtmlPageSource(remote)).toEqual({
+      ok: true,
+      code: remote,
+      warnings: [expect.stringContaining("data: URIs")],
+    });
+    // Inline and embedded resources are fine.
+    expect(
+      checkHtmlPageSource('<html><body><img src="data:image/png;base64,AA=="></body></html>'),
+    ).toEqual({ ok: true, code: expect.any(String) });
   });
 });

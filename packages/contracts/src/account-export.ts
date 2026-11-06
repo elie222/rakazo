@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { Id, IsoDate, ReplyModeSchema } from "./ids.js";
-import { PageSourceSchema, PageTitleSchema } from "./pages.js";
+import { PageFormatSchema, PageSourceSchema, PageTitleSchema } from "./pages.js";
 
 /**
  * A whole account as one zip, to move between Rakazo installs (Cloud to self-hosted and back).
@@ -124,6 +124,8 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     botId: Id.nullable(),
     groupId: Id.nullable(),
     title: PageTitleSchema,
+    /** Absent in an archive written before HTML pages existed; read it as "jsx". */
+    format: PageFormatSchema.optional(),
     pinnedAt: IsoDate.nullable(),
     currentVersion: PageVersionNumber,
     createdAt: IsoDate,
@@ -135,6 +137,8 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     pageId: Id,
     version: PageVersionNumber,
     title: PageTitleSchema,
+    /** Absent in an archive written before HTML pages existed; read it as "jsx". */
+    format: PageFormatSchema.optional(),
     source: PageSourceSchema,
     createdAt: IsoDate,
   }),

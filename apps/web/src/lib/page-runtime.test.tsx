@@ -31,7 +31,7 @@ it("asks the server for the page runtime again each time a page opens", async ()
   vi.stubGlobal("fetch", fetcher);
   let shown: string | null = null;
   function Page() {
-    shown = usePageDocument("export default () => null;").document;
+    shown = usePageDocument({ code: "export default () => null;" }).document;
     return null;
   }
   const open = async () => {
@@ -52,4 +52,33 @@ it("asks the server for the page runtime again each time a page opens", async ()
   await open();
   expect(shown).toContain("kit-v2");
   expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+it("builds an HTML page without fetching or running the JSX runtime", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  const fetcher = vi.fn<typeof fetch>();
+  vi.stubGlobal("fetch", fetcher);
+  let shown: string | null = null;
+  function Page() {
+    shown = usePageDocument({ code: "<h1>Inline</h1>", format: "html" }).document;
+    return null;
+  }
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <Page />
+      </QueryClientProvider>,
+    ),
+  );
+  expect(shown).toContain("<h1>Inline</h1>");
+  expect(shown).toContain('r.dataset.theme="dark"');
+  expect(shown).toContain('"rakazo-page:height"');
+  expect(fetcher).not.toHaveBeenCalled();
+  act(() => root.unmount());
 });
