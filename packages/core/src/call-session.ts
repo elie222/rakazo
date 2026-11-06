@@ -68,7 +68,9 @@ export function callTurn(thread: CallThread | null, text: string): CallTurn {
   const asks = pendingCallAsks(thread);
   // A code asked by any waiting run is never spoken, even while another run is shown first.
   if (asks.some((ask) => ask.blocks.some(isSecretAskBlock))) return { kind: "enter_code" };
-  const ask = asks[0];
+  // Only the run the thread shows first is answered by voice: in a shared thread another
+  // waiting run can belong to someone else, who alone may answer it.
+  const ask = asks.find((candidate) => candidate.runId === thread?.run?.id);
   if (ask?.blocks.some(isApprovalAskBlock)) {
     return { kind: "approve_on_screen", messageId: ask.message.id, runId: ask.runId };
   }
@@ -87,7 +89,7 @@ export function pendingCallSecretAsk(thread: CallThread | null): boolean {
   return pendingCallAsks(thread).some((ask) => ask.blocks.some(isSecretAskBlock));
 }
 
-/** Each waiting run's newest card with unanswered asks, the run the thread shows first leading. */
+/** Each waiting run's newest card with unanswered asks. */
 function pendingCallAsks(thread: CallThread | null) {
   if (!thread) return [];
   const runs = [thread.run, ...(thread.activeRuns ?? [])].filter(

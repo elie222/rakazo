@@ -121,14 +121,10 @@ describe("call turn", () => {
     };
     expect(pendingCallSecretAsk(thread)).toBe(true);
     expect(callTurn(thread, "one two three")).toEqual({ kind: "enter_code" });
-    // A plain question on that run is answered there.
+    // A plain question on that run may be someone else's in a shared thread: only the run
+    // shown first is answered by voice, so this steers the working one.
     const asked = { ...thread, messages: [{ id: "q", runId: "run-2", blocks: [question] }] };
-    expect(callTurn(asked, "yes")).toEqual({
-      kind: "answer",
-      messageId: "q",
-      runId: "run-2",
-      answer: "yes",
-    });
+    expect(callTurn(asked, "yes")).toEqual({ kind: "follow_up" });
   });
 
   it("steers a working run even when the thread shows a finished one first", () => {

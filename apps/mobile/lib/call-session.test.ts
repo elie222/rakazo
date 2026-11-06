@@ -550,6 +550,8 @@ describe("mobile call session", () => {
       ]);
       fake.thread(secret);
       expect(fake.signals[0]?.aborted).toBe(true);
+      // The caller is told what to do without having to speak first.
+      expect(getSnapshot()?.caption).toBe("Hang up, then enter the code on screen.");
       fake.say("one two three");
       await flush();
       expect(fake.send).not.toHaveBeenCalled();
@@ -558,6 +560,7 @@ describe("mobile call session", () => {
       fake.thread({ ...secret, run: { id: "run-1", status: "running" }, messages: [] });
       await flush();
       expect(fake.recordings).toHaveLength(2);
+      expect(getSnapshot()?.caption).toBe("");
     });
   });
 

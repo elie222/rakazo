@@ -411,6 +411,7 @@ async function openMic(): Promise<void> {
   // first snapshot arrives, the call cannot tell, so it waits for that too.
   if (!thread || pendingCallSecretAsk(thread)) {
     heldForCode = true;
+    if (thread) set({ caption: t("Hang up, then enter the code on screen.") });
     return;
   }
   micOpen = true;
@@ -667,7 +668,7 @@ function onThread(next: MobileSnapshot): void {
     turn = null;
     micOpen = false;
     interim.clear();
-    set({ heard: "" });
+    set({ heard: "", caption: t("Hang up, then enter the code on screen.") });
     return;
   }
   // The first snapshot arrived, or the code was entered on screen: listen again unless the
