@@ -1,6 +1,57 @@
 import { describe, expect, it } from "vitest";
 
-import { serializeComposerPrompt, truncateSlashDescription } from "./composer-slash.js";
+import {
+  composerSlashQuery,
+  serializeComposerPrompt,
+  truncateSlashDescription,
+} from "./composer-slash.js";
+
+describe("composerSlashQuery", () => {
+  it("reads a / at the start or after whitespace on the caret's line, never inside bound text", () => {
+    expect(composerSlashQuery("/Weekly Rev")).toEqual({ start: 0, end: 11, query: "Weekly Rev" });
+    expect(composerSlashQuery("please run /week")).toEqual({ start: 11, end: 16, query: "week" });
+    expect(composerSlashQuery("a /b\nc /we now", 10)).toEqual({ start: 7, end: 10, query: "we" });
+    for (const text of ["see https://x.com/a", "and/or", "/week\nnext line"])
+      expect(composerSlashQuery(text)).toBeNull();
+    expect(composerSlashQuery("/week", 1, 3)).toBeNull();
+    const token = [{ start: 4, end: 18 }];
+    expect(composerSlashQuery("run /weekly-review ", 19, 19, token)).toBeNull();
+    expect(composerSlashQuery("run /weekly-review and more", 27, 27, token)).toBeNull();
+    expect(composerSlashQuery("run /weekly-review /da", 22, 22, token)).toEqual({
+      start: 19,
+      end: 22,
+      query: "da",
+    });
+  });
+
+  it("treats a / followed by a space as prose, and a bare / mid-message too", () => {
+    expect(composerSlashQuery("is it yes / no")).toBeNull();
+    expect(composerSlashQuery("salt / pepper / set")).toBeNull();
+    expect(composerSlashQuery("hello / ")).toBeNull();
+    expect(composerSlashQuery("/ notes")).toBeNull();
+    expect(composerSlashQuery("is it 1 /")).toBeNull();
+    expect(composerSlashQuery("yes / no", 5)).toBeNull();
+    expect(composerSlashQuery("/")).toEqual({ start: 0, end: 1, query: "" });
+  });
+
+  it("ends at the caret, and starts at 0 when only whitespace comes before the /", () => {
+    expect(composerSlashQuery("please /sum, thanks", 11)).toEqual({
+      start: 7,
+      end: 11,
+      query: "sum",
+    });
+    expect(composerSlashQuery("/sum，总结一下", 4)).toEqual({ start: 0, end: 4, query: "sum" });
+    // A caret inside a word is editing that word, not asking for a command.
+    for (const [text, caret] of [
+      ["/sum总结一下", 4],
+      ["please /sumthe notes", 11],
+      ["/summary please", 4],
+      ["run /weeky now", 7],
+    ] as const)
+      expect(composerSlashQuery(text, caret)).toBeNull();
+    expect(composerSlashQuery("\n  /sum")).toEqual({ start: 0, end: 7, query: "sum" });
+  });
+});
 
 describe("serializeComposerPrompt", () => {
   it("returns draft when no skill or mentions", () => {

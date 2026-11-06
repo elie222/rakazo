@@ -3,6 +3,7 @@ import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
 import type {
   ComposerMention,
   ComposerMentionBinding,
+  ComposerMentionQuery,
   ComposerMentionRange,
   SlashActionId,
 } from "@rakazo/core";
@@ -11,7 +12,9 @@ import {
   clampMentionHighlightIndex,
   composerMentionQuery,
   composerMentionsForPrompt,
+  composerPromptSkill,
   composerSelectedMentions,
+  composerSlashQuery,
   mentionChipKey,
   newClientId,
   replyAttachment,
@@ -203,10 +206,12 @@ const ComposerBody = memo(function Composer({
         ?.query ?? null,
   );
   const [mentionHighlightKey, setMentionHighlightKey] = useState<string | null>(null);
-  const [slashQuery, setSlashQuery] = useState<string | null>(() => {
-    const slashMatch = /^\/([^\n]*)$/.exec(draft);
-    return slashMatch ? (slashMatch[1] ?? "") : null;
-  });
+  // The range is kept, so a pick edits the query that opened the menu wherever the caret is now.
+  const [slashQuery, setSlashQuery] = useState<ComposerMentionQuery | null>(() =>
+    composerPromptSkill(null, mentionBindings)
+      ? null
+      : composerSlashQuery(draft, draft.length, draft.length, mentionBindings),
+  );
   const onCall = useCallSession() !== null;
   const talk = useHoldToTalk({
     transcribe: dictationTranscribe,
@@ -374,6 +379,7 @@ const ComposerBody = memo(function Composer({
   const replyAnnouncementKind = useRef<"reply" | "cancelled" | null>(null);
   const prevReplyTarget = useRef<ThreadMessage | null>(null);
   const mentionListboxId = useId();
+  const slashListboxId = useId();
   const dragDepth = useRef(0);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [fileDragActive, setFileDragActive] = useState(false);
@@ -474,11 +480,21 @@ const ComposerBody = memo(function Composer({
     setMentionQuery(
       composerMentionQuery(value, caret, end, knownMentions, bindings)?.query ?? null,
     );
-    // `/` only at the start of the draft so forced skills expand (`Use skill:` / `/Name` prefix).
-    const slashMatch = selectedSkill === null ? /^\/([^\n]*)$/.exec(value) : null;
-    const nextSlash = slashMatch ? (slashMatch[1] ?? "") : null;
-    if (nextSlash !== null && slashQuery === null) onSlashOpen?.();
-    setSlashQuery(nextSlash);
+    updateSlashQuery(value, caret, end, bindings);
+  }
+
+  function updateSlashQuery(
+    value: string,
+    start: number,
+    end: number,
+    bindings: typeof mentionBindings,
+  ) {
+    // One skill per message: a chosen skill, chip or inline, keeps the menu closed.
+    const next = composerPromptSkill(selectedSkill, bindings)
+      ? null
+      : composerSlashQuery(value, start, end, bindings);
+    if (next !== null && slashQuery === null) onSlashOpen?.();
+    setSlashQuery(next);
   }
 
   function insertMention(mention: ComposerMention) {
@@ -501,18 +517,37 @@ const ComposerBody = memo(function Composer({
     pendingCaret.current = { start: completion.caret, end: completion.caret };
   }
 
+  /** A skill picked at the start of the draft becomes the chip; anywhere else it stays inline. */
   function insertSkill(skill: AgentSkillCatalogEntry) {
+    if (!slashQuery) return;
     markEdited();
-    setSelectedSkill(skill);
-    commitComposition({ text: "", bindings: [] });
     setSlashQuery(null);
+    if (slashQuery.start === 0) {
+      setSelectedSkill(skill);
+      removeSlashQuery(slashQuery);
+      pendingCaret.current = { start: 0, end: 0 };
+      return;
+    }
+    const mention = { kind: "skill" as const, id: skill.id, name: skill.name };
+    const completion = bindComposerMention(draft, slashQuery, mention, mentionBindings);
+    commitComposition({ text: completion.text, bindings: completion.bindings });
+    pendingCaret.current = { start: completion.caret, end: completion.caret };
   }
 
   function runSlashAction(action: SlashActionId) {
+    if (!slashQuery) return;
     markEdited();
-    commitComposition({ text: "", bindings: [] });
+    removeSlashQuery(slashQuery);
     setSlashQuery(null);
     onSlashAction?.(action);
+  }
+
+  function removeSlashQuery(query: ComposerMentionQuery) {
+    const text = draft.slice(0, query.start) + draft.slice(query.end);
+    const bindings = updateComposerMentionBindings(draft, text, mentionBindings, {
+      before: [query],
+    });
+    commitComposition({ text, bindings });
   }
 
   function removeSkill() {
@@ -543,22 +578,24 @@ const ComposerBody = memo(function Composer({
 
   const slashSkillOptions = useMemo(() => {
     if (slashQuery === null) return [];
-    const query = slashQuery.trim().toLowerCase();
+    const query = slashQuery.query.trim().toLowerCase();
     const skills = agentSkills ?? [];
     return skills
       .filter((skill) => {
         if (!query) return true;
         return (
           skill.name.toLowerCase().includes(query) ||
-          skill.description.toLowerCase().includes(query)
+          // Mid-message, descriptions would match ordinary words.
+          (slashQuery.start === 0 && skill.description.toLowerCase().includes(query))
         );
       })
       .slice(0, 8);
   }, [agentSkills, slashQuery]);
 
   const slashActionOptions = useMemo(() => {
-    if (slashQuery === null) return [];
-    const query = slashQuery.trim().toLowerCase();
+    // Mid-message the menu offers skills only.
+    if (slashQuery === null || slashQuery.start > 0) return [];
+    const query = slashQuery.query.trim().toLowerCase();
     return SLASH_ACTIONS.filter((action) => !query || action.label.toLowerCase().includes(query));
   }, [slashQuery]);
 
@@ -566,6 +603,30 @@ const ComposerBody = memo(function Composer({
     slashQuery !== null &&
     mentionQuery === null &&
     (slashSkillOptions.length > 0 || slashActionOptions.length > 0);
+  const slashOptionKeys = showSlashPicker
+    ? [
+        ...slashSkillOptions.map((skill) => `skill:${skill.id}`),
+        ...slashActionOptions.map((action) => `action:${action.id}`),
+      ]
+    : [];
+  const [slashHighlightKey, setSlashHighlightKey] = useState<string | null>(null);
+  useEffect(() => setSlashHighlightKey(null), [slashQuery?.start, slashQuery?.query]);
+  const activeSlashIndex = clampMentionHighlightIndex(
+    slashOptionKeys.indexOf(slashHighlightKey ?? ""),
+    slashOptionKeys.length,
+  );
+  const activeOptionId = mentionPickerOpen
+    ? activeMentionOptionId
+    : showSlashPicker
+      ? `${slashListboxId}-option-${activeSlashIndex}`
+      : undefined;
+
+  function pickSlashOption(index: number) {
+    const skill = slashSkillOptions[index];
+    const action = slashActionOptions[index - slashSkillOptions.length];
+    if (skill) insertSkill(skill);
+    else if (action) runSlashAction(action.id);
+  }
 
   async function send(imageHandling?: "file") {
     if (!canSend || sending || disabled) return;
@@ -586,7 +647,7 @@ const ComposerBody = memo(function Composer({
       newClientId();
     retryNonce.current = null;
     const submitted = compositionRef.current;
-    const text = serializeComposerPrompt(submitted.text, selectedSkill);
+    const text = serializeComposerPrompt(submitted.text, selectedSkill, submitted.bindings);
     const mentions = composerMentionsForPrompt(submitted.text, selectedSkill, submitted.bindings);
     const submission = beginComposerDraftSubmission(draftKey, draft);
     commitComposition({ text: "", bindings: [] }, false);
@@ -890,16 +951,26 @@ const ComposerBody = memo(function Composer({
       ) : null}
       {showSlashPicker ? (
         <div
+          id={slashListboxId}
+          role="listbox"
+          aria-label={t`Command menu`}
           data-testid="slash-picker"
           className="mb-2 overflow-hidden rounded-[14px] border border-border bg-muted"
         >
-          {slashSkillOptions.map((skill) => (
+          {slashSkillOptions.map((skill, index) => (
             <button
+              id={`${slashListboxId}-option-${index}`}
               key={skill.id}
               type="button"
+              role="option"
+              aria-selected={index === activeSlashIndex}
               aria-label={t`Skill ${skill.name}`}
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => insertSkill(skill)}
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent"
+              onMouseMove={() => setSlashHighlightKey(`skill:${skill.id}`)}
+              className={`flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent ${
+                index === activeSlashIndex ? "bg-accent" : ""
+              }`}
             >
               <Box size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />
               <span className="min-w-0">
@@ -912,15 +983,23 @@ const ComposerBody = memo(function Composer({
               </span>
             </button>
           ))}
-          {slashActionOptions.map((action) => {
+          {slashActionOptions.map((action, actionIndex) => {
             const label = slashActionLabel(action.id);
+            const index = slashSkillOptions.length + actionIndex;
             return (
               <button
+                id={`${slashListboxId}-option-${index}`}
                 key={action.id}
                 type="button"
+                role="option"
+                aria-selected={index === activeSlashIndex}
                 aria-label={label}
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => runSlashAction(action.id)}
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent"
+                onMouseMove={() => setSlashHighlightKey(`action:${action.id}`)}
+                className={`flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent ${
+                  index === activeSlashIndex ? "bg-accent" : ""
+                }`}
               >
                 <Settings size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />
                 <span className="text-body text-foreground">{label}</span>
@@ -1016,6 +1095,12 @@ const ComposerBody = memo(function Composer({
                     mentionBindings,
                   )?.query ?? null,
                 );
+                updateSlashQuery(
+                  field.value,
+                  field.selectionStart,
+                  field.selectionEnd,
+                  mentionBindings,
+                );
               }}
               onPaste={handlePaste}
               onKeyDown={(event) => {
@@ -1030,11 +1115,25 @@ const ComposerBody = memo(function Composer({
                   shiftKey: event.shiftKey,
                   ctrlKey: event.ctrlKey,
                   metaKey: event.metaKey,
+                  altKey: event.altKey,
                   enterToSend,
                   isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
-                  optionCount: mentionOptions.length,
-                  highlightedIndex: activeMentionIndex,
+                  optionCount: mentionPickerOpen ? mentionOptions.length : slashOptionKeys.length,
+                  highlightedIndex: mentionPickerOpen ? activeMentionIndex : activeSlashIndex,
                 });
+                // An open slash menu only sends once closed, so Ctrl/Cmd+Enter picks the row too.
+                if (showSlashPicker && action.type !== "none") {
+                  event.preventDefault();
+                  if (action.type === "complete" || action.type === "send")
+                    pickSlashOption(activeSlashIndex);
+                  else if (action.type === "move")
+                    setSlashHighlightKey(slashOptionKeys[action.index] ?? null);
+                  else {
+                    completedSelection.current = event.currentTarget.selectionStart;
+                    setSlashQuery(null);
+                  }
+                  return;
+                }
                 if (action.type === "complete") {
                   const mention = mentionOptions[action.index];
                   if (!mention) return;
@@ -1070,12 +1169,6 @@ const ComposerBody = memo(function Composer({
                   event.altKey
                 )
                   return;
-                // An open picker closes first; a held Escape never goes on to stop the reply.
-                if (showSlashPicker) {
-                  event.preventDefault();
-                  setSlashQuery(null);
-                  return;
-                }
                 if (running && !sending && !talk.recording?.locked) {
                   event.preventDefault();
                   void onStop();
@@ -1093,9 +1186,11 @@ const ComposerBody = memo(function Composer({
               role="combobox"
               aria-autocomplete="list"
               aria-haspopup="listbox"
-              aria-expanded={mentionPickerOpen}
-              aria-controls={mentionPickerOpen ? mentionListboxId : undefined}
-              aria-activedescendant={activeMentionOptionId}
+              aria-expanded={mentionPickerOpen || showSlashPicker}
+              aria-controls={
+                mentionPickerOpen ? mentionListboxId : showSlashPicker ? slashListboxId : undefined
+              }
+              aria-activedescendant={activeOptionId}
               name="chat-message"
               autoComplete="off"
               dir="auto"

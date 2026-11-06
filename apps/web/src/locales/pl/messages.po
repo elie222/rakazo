@@ -1784,6 +1784,7 @@ msgid "Command"
 msgstr "Polecenie"
 
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/composer.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr "Menu poleceń"

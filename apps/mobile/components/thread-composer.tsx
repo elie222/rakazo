@@ -14,7 +14,9 @@ import {
   composerMentionQuery,
   composerMentionSegments,
   composerMentionsForPrompt,
+  composerPromptSkill,
   composerSelectedMentions,
+  composerSlashQuery,
   filterComposerMentionTargets,
   mentionChipKey,
   resolveComposerMentionBackspace,
@@ -22,6 +24,7 @@ import {
   SLASH_ACTIONS,
   serializeComposerPrompt,
   truncateSlashDescription,
+  updateComposerMentionBindings,
 } from "@rakazo/core";
 import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
 import type { Ref } from "react";
@@ -137,7 +140,7 @@ export function ThreadComposer({
   const completedSelection = useRef<number | null>(null);
   const [selection, setSelection] = useState<{ start: number; end: number }>();
   const [mentionQuery, setMentionQuery] = useState<ComposerMentionQuery | null>(null);
-  const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [slashQuery, setSlashQuery] = useState<ComposerMentionQuery | null>(null);
   const [mentionBindings, setMentionBindings] = useState(saved.bindings);
   const bindingsRef = useRef(saved.bindings);
   const selectionHistory = useRef<ComposerMentionRange[]>([]);
@@ -184,7 +187,7 @@ export function ThreadComposer({
   }, []);
   useImperativeHandle(ref, () => ({
     snapshot: () => ({
-      promptText: serializeComposerPrompt(draft, selectedSkill),
+      promptText: serializeComposerPrompt(draft, selectedSkill, mentionBindings),
       mentions: composerMentionsForPrompt(draft, selectedSkill, mentionBindings),
       skill: selectedSkill,
       replyTargetId,
@@ -233,7 +236,7 @@ export function ThreadComposer({
       MENTION_PICKER_MAX_ROWS,
     );
   }, [composerMentionTargets, mentionQuery]);
-  const slashQueryNormalized = slashQuery?.trim().toLowerCase() ?? null;
+  const slashQueryNormalized = slashQuery?.query.trim().toLowerCase() ?? null;
   const slashSkillOptions =
     slashQuery !== null && mentionQuery === null
       ? agentSkills
@@ -241,13 +244,16 @@ export function ThreadComposer({
             if (!slashQueryNormalized) return true;
             return (
               skill.name.toLowerCase().includes(slashQueryNormalized) ||
-              skill.description.toLowerCase().includes(slashQueryNormalized)
+              // Mid-message, descriptions would match ordinary words.
+              (slashQuery.start === 0 &&
+                skill.description.toLowerCase().includes(slashQueryNormalized))
             );
           })
           .slice(0, 8)
       : [];
+  // Mid-message the menu offers skills only.
   const slashActionOptions =
-    slashQuery !== null && mentionQuery === null
+    slashQuery?.start === 0 && mentionQuery === null
       ? SLASH_ACTIONS.filter((action) => {
           if (!slashQueryNormalized) return true;
           const label = t(action.label);
@@ -257,7 +263,14 @@ export function ThreadComposer({
           );
         })
       : [];
-  function updateMentionQuery(value: string, start: number, end = start) {
+  function updatePickerQueries(value: string, start: number, end = start) {
+    // One skill per message: a chosen skill, chip or inline, keeps the slash menu closed.
+    const bindings = bindingsRef.current;
+    setSlashQuery(
+      composerPromptSkill(selectedSkill, bindings)
+        ? null
+        : composerSlashQuery(value, start, end, bindings),
+    );
     // A mention selected by a backspace is waiting to be deleted, not re-picked.
     if (selectedMentionRef.current !== null) {
       setMentionQuery(null);
@@ -310,9 +323,7 @@ export function ThreadComposer({
     const caret = widenedCaret ?? nativeValue.length - suffix;
     if (widenedCaret !== null) nativeSelection.current = { start: caret, end: caret };
     setSelection(widenedCaret === null ? undefined : nativeSelection.current);
-    updateMentionQuery(value, caret);
-    const slashMatch = selectedSkill === null ? /^\/([^\n]*)$/.exec(value) : null;
-    setSlashQuery(slashMatch ? (slashMatch[1] ?? "") : null);
+    updatePickerQueries(value, caret);
   }
 
   function applyNativeEdit(edit: NativeEdit, after: ComposerMentionRange) {
@@ -335,9 +346,9 @@ export function ThreadComposer({
     return resolved;
   }
 
-  function insertMention(mention: ComposerMention) {
-    if (!mentionQuery) return;
-    const next = bindComposerMention(draftRef.current, mentionQuery, mention, bindingsRef.current);
+  function insertMention(mention: ComposerMention, query = mentionQuery) {
+    if (!query) return;
+    const next = bindComposerMention(draftRef.current, query, mention, bindingsRef.current);
     pendingNativeEdit.current = null;
     updateBindings(next.bindings);
     selectMention(null);
@@ -348,35 +359,43 @@ export function ThreadComposer({
     completedSelection.current = next.caret;
     setSelection(nativeSelection.current);
     setMentionQuery(null);
+    setSlashQuery(null);
     inputRef.current?.focus();
   }
 
+  /** A skill picked at the start of the draft becomes the chip; anywhere else it stays inline. */
   function insertSkill(skill: AgentSkillCatalogEntry) {
+    if (slashQuery && slashQuery.start > 0) {
+      insertMention({ kind: "skill", id: skill.id, name: skill.name }, slashQuery);
+      return;
+    }
     setSelectedSkill(skill);
-    draftRef.current = "";
-    setDraft("");
-    nativeSelection.current = { start: 0, end: 0 };
-    completedSelection.current = null;
-    setSelection(nativeSelection.current);
-    updateBindings([]);
-    selectMention(null);
-    selectionHistory.current = [];
-    pendingNativeEdit.current = null;
-    setSlashQuery(null);
+    removeSlashQuery();
   }
 
   function runSlashAction(action: SlashActionId) {
-    draftRef.current = "";
-    setDraft("");
-    nativeSelection.current = { start: 0, end: 0 };
+    removeSlashQuery();
+    onSlashAction(action);
+  }
+
+  function removeSlashQuery() {
+    const query = slashQuery;
+    const previous = draftRef.current;
+    const text = query ? previous.slice(0, query.start) + previous.slice(query.end) : "";
+    draftRef.current = text;
+    setDraft(text);
+    nativeSelection.current = { start: query?.start ?? 0, end: query?.start ?? 0 };
     completedSelection.current = null;
     setSelection(nativeSelection.current);
-    updateBindings([]);
+    updateBindings(
+      query
+        ? updateComposerMentionBindings(previous, text, bindingsRef.current, { before: [query] })
+        : [],
+    );
     selectMention(null);
     selectionHistory.current = [];
     pendingNativeEdit.current = null;
     setSlashQuery(null);
-    onSlashAction(action);
   }
 
   const composerPillStyle = {
@@ -659,7 +678,7 @@ export function ThreadComposer({
                           : { start: resolved.caret, end: resolved.caret };
                       selectionHistory.current = [nativeSelection.current];
                       setSelection(nativeSelection.current);
-                      updateMentionQuery(
+                      updatePickerQueries(
                         resolved.text,
                         nativeSelection.current.start,
                         nativeSelection.current.end,
@@ -694,7 +713,7 @@ export function ThreadComposer({
                     return;
                   }
                   completedSelection.current = null;
-                  updateMentionQuery(draftRef.current, next.start, next.end);
+                  updatePickerQueries(draftRef.current, next.start, next.end);
                 }}
                 accessibilityLabel={composerPrompt}
                 onKeyPress={(event) => {
