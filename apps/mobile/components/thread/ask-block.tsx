@@ -7,7 +7,6 @@ import { useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import type { MobileMessage } from "../../lib/api";
 import { plainAskTitle } from "../../lib/ask-title";
-import type { t as translate } from "../../lib/i18n";
 import { useI18n } from "../../lib/i18n";
 import { useMobileTokens } from "../../lib/native";
 import { secretDestinationLabel, siteHost } from "../../lib/secret-destination";
@@ -21,7 +20,10 @@ import { VaultItemEditor } from "../vault-item-editor";
 import type { MessageActionProps } from "./message-bubble";
 
 /** In a shared space another member's card says who it waits on; only they can answer it. */
-export function waitingOnLabel(waitingOn: AskWaitingOn, t: typeof translate): string {
+export function waitingOnLabel(
+  waitingOn: AskWaitingOn,
+  t: (message: string, values?: Record<string, string | number>) => string,
+): string {
   return waitingOn.name
     ? t("Waiting on {name}", { name: waitingOn.name })
     : t("Only the person who started this can answer it");
