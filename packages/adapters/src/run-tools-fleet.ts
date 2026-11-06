@@ -217,7 +217,7 @@ export const fleetTools: ToolHandlers = {
   async list_fleet(ctx, call) {
     const { deps } = ctx;
     const { args } = call;
-    return call.finish(await listFleet(deps, ctx.fleetRun, args));
+    return call.finish(await listFleet(await fleetPrepareDeps(deps, ctx.run), ctx.fleetRun, args));
   },
   async organize_bot(ctx, call) {
     const { deps } = ctx;
