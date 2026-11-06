@@ -244,10 +244,7 @@ export function SkillsDialog({
         if (!open) onClose();
       }}
     >
-      <DialogContent
-        showCloseButton={false}
-        className="flex h-[680px] max-h-[calc(100%-2rem)] w-[920px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[920px]"
-      >
+      <DialogContent showCloseButton={false} size="xl" className="bg-card">
         <DialogHeader className="flex-row items-start justify-between px-8 pt-7">
           <DialogTitle className="text-heading2 text-foreground">
             <Trans>Skills</Trans>
