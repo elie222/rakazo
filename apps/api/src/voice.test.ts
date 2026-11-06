@@ -1263,6 +1263,19 @@ describe("persistVoiceCredential", () => {
       expect(verify).not.toHaveBeenCalled();
       expect(put).not.toHaveBeenCalled();
     });
+
+    it("asks for a key when xAI refuses the model connection, not to check a key never typed", async () => {
+      const { verify } = stubProvider();
+      verify.mockResolvedValueOnce({ ok: false, message: "xAI rejected that key." });
+      const { deps, put } = linkedDeps();
+
+      await expect(
+        persistVoiceCredential(deps, actor, { provider: "xai", plaintext: "" }),
+      ).rejects.toMatchObject({
+        message: "xAI didn't accept your Models connection for voice. Paste an API key instead.",
+      });
+      expect(put).not.toHaveBeenCalled();
+    });
   });
 });
 
