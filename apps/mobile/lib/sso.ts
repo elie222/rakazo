@@ -2,7 +2,9 @@ import { authHeaders, clearSpace, currentApiBase, fetchMobileJson } from "./api"
 import { t } from "./i18n";
 import {
   currentSessionGeneration,
+  loadSessionToken,
   replaceSessionTokenIfCurrent,
+  rotateSessionTokenIfCurrent,
   tokenFromAuthResponse,
 } from "./session";
 import { authErrorText, authResponseErrorText, sessionSaveErrorText } from "./user-error";
@@ -26,6 +28,7 @@ export async function continueWithSso(
     const headers = action === "sign-in" ? {} : await authHeaders();
     requireCurrentSession();
     const previous = action === "reauthenticate" ? await sessionUser(apiBase, headers) : undefined;
+    const previousToken = action === "reauthenticate" ? await loadSessionToken() : "";
     requireCurrentSession();
     const { response, body, invalidJson } = await fetchMobileJson<{ url?: string; code?: string }>(
       `${apiBase}/api/auth/${action === "link" ? "link-social" : "sign-in/social"}`,
@@ -91,7 +94,10 @@ export async function continueWithSso(
     try {
       if (action === "sign-in" && !(await clearSpace()))
         throw new Error(t("Could not save your sign-in on this device. Try again."));
-      return await replaceSessionTokenIfCurrent(generation, token, action === "reauthenticate");
+      // The same account keeps its unsent messages and their cache, like a password change.
+      if (action === "reauthenticate")
+        return await rotateSessionTokenIfCurrent(generation, previousToken, token);
+      return await replaceSessionTokenIfCurrent(generation, token);
     } catch (error) {
       throw new Error(sessionSaveErrorText(error));
     }
