@@ -7,7 +7,7 @@ import type {
 } from "@rakazo/contracts";
 import { mcpServerConnection } from "@rakazo/contracts";
 import { catalogItemKey } from "@rakazo/core";
-import { Button } from "@rakazo/ui-web";
+import { Button, SectionHeading } from "@rakazo/ui-web";
 import { Check, ChevronLeft, CircleAlert, TriangleAlert } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import { ROW_BUTTON, ROW_HOVER, ROW_SHELL } from "../../components/integrations/plugin-marketplace";
@@ -88,7 +88,9 @@ export function ViewTitle({ title, onBack }: { title: ReactNode; onBack: () => v
       >
         <ChevronLeft />
       </Button>
-      <h2 className="text-heading3 font-medium text-foreground">{title}</h2>
+      <SectionHeading as="h2" variant="heading">
+        {title}
+      </SectionHeading>
     </div>
   );
 }

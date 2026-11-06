@@ -138,6 +138,8 @@ const deps: CallDeps = {
   record: vi.fn(),
   transcribe: vi.fn(),
   send: vi.fn(),
+  answer: vi.fn(),
+  followUp: vi.fn(),
   endCall: async () => undefined,
   speak: async () => undefined,
   watch: () => vi.fn(),

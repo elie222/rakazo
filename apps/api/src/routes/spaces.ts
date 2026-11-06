@@ -42,7 +42,8 @@ import type { RouterDeps } from "../router.js";
 import { listRoutinesDto } from "../routines.js";
 import { deleteSpaceWithContent } from "../space-deletion.js";
 import { afterSpaceDeparture } from "../space-departure.js";
-import { resolveThreadTarget, threadSnapshot } from "../thread-target.js";
+import { threadSnapshot } from "../thread-snapshot.js";
+import { resolveThreadTarget } from "../thread-target.js";
 import type { RouterContext } from "./context.js";
 import { meDto } from "./shared.js";
 
