@@ -1205,6 +1205,7 @@ function SpaceShell() {
               key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
               draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
               enterToSend={enterToSend}
+              sendColors={userBubble}
               activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
               running={composerRunning}
               disabled={Boolean(recordingSkill)}

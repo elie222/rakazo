@@ -102,6 +102,19 @@ function rerenderComposer(overrides: Partial<ComponentProps<typeof Composer>>) {
   act(() => root?.render(<Composer {...composerProps} />));
 }
 
+it("colors the send button like the bot's user bubbles", () => {
+  renderComposer(async () => true, {
+    sendColors: { background: "#9C47E9", foreground: "#FFFFFF" },
+  });
+  const send = () => container?.querySelector<HTMLButtonElement>('button[aria-label="Send"]');
+  expect(send()?.style.getPropertyValue("--send")).toBe("#9C47E9");
+  expect(send()?.className).toContain("bg-(--send)");
+
+  rerenderComposer({ sendColors: undefined });
+  expect(send()?.style.getPropertyValue("--send")).toBe("");
+  expect(send()?.className).not.toContain("bg-(--send)");
+});
+
 it("shows a readable run error with raw details, while preserving send errors", () => {
   const runError = '429: {"message":"Too many requests","metadata":{"provider":"OpenRouter"}}';
   renderComposer(async () => true, { runError, runErrorId: "failed-run" });
