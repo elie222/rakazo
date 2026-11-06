@@ -1030,7 +1030,10 @@ function watchReplies(
             if (!message || message.id === lastSeen) return;
             // Wait for the message's own run to settle so half-written blocks are never
             // spoken; another run still working says nothing about this one.
-            const run = snapshot?.run;
+            // An answered question can resume a run behind the one the thread shows first, so
+            // look the message's run up among every active run.
+            const run =
+              snapshot?.activeRuns?.find((active) => active.id === message.runId) ?? snapshot?.run;
             const fromAnotherRun = Boolean(message.runId && message.runId !== run?.id);
             if (!fromAnotherRun && run && ACTIVE_RUN_STATUSES.some((s) => s === run.status)) return;
             const text = blockText(message).trim();
@@ -1048,7 +1051,8 @@ function watchReplies(
         // A 4xx other than 408/429 is the server's answer; asking again only polls it. Without
         // a first snapshot the microphone stays shut, so the call cannot go on: hang it up.
         if (!isRetryableError(error)) {
-          if (!snapshot) onEnded({ callId: watchedCallId ?? undefined });
+          // The caller's side hangs up, so the server is told the call ended.
+          if (!snapshot && callId === watchedCallId) endCall();
           return;
         }
         retry = Math.min(FEED_RETRY_MAX_MS, retry * 2);

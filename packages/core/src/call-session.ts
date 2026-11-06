@@ -76,7 +76,10 @@ export function callTurn(thread: CallThread | null, text: string): CallTurn {
     const answer = spokenDecision(text) ?? text;
     return { kind: "answer", messageId: ask.message.id, runId: ask.runId, answer };
   }
-  return isRunWorking(thread?.run?.status) ? { kind: "follow_up" } : { kind: "send" };
+  const working = [thread?.run, ...(thread?.activeRuns ?? [])].some((run) =>
+    isRunWorking(run?.status),
+  );
+  return working ? { kind: "follow_up" } : { kind: "send" };
 }
 
 /** The bot is waiting on a code or password, which the call must not listen for. */

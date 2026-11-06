@@ -131,6 +131,15 @@ describe("call turn", () => {
     });
   });
 
+  it("steers a working run even when the thread shows a finished one first", () => {
+    const thread: CallThread = {
+      run: { id: "run-1", status: "failed" },
+      activeRuns: [{ id: "run-2", status: "running" }],
+      messages: [],
+    };
+    expect(callTurn(thread, "also this")).toEqual({ kind: "follow_up" });
+  });
+
   it("ignores asks left by another run", () => {
     const thread = waiting([question]);
     expect(
