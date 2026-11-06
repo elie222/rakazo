@@ -12,7 +12,7 @@ import {
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
 } from "@rakazo/core";
-import { IsolationError, Prisma } from "@rakazo/db";
+import { IsolationError, isRecordNotFound, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { assertEmailTrigger } from "../bot-email-address.js";
 import { assertRoutineModel } from "../model-pins.js";
@@ -30,7 +30,6 @@ import {
   routineTestTarget,
 } from "../routines.js";
 import type { RouterContext } from "./context.js";
-import { isRecordNotFound } from "./shared.js";
 
 export function routinesRoutes(ctx: RouterContext) {
   const { deps, repos, announceRoutine, codexCatalog, agentSkills, authed } = ctx;

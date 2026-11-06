@@ -703,7 +703,8 @@ code-b
       },
     ];
   }
-  if (/^run\s+/.test(lower)) {
+  // An inbound routine run opens with "Run routine"; its payload picks the branch, not this one.
+  if (/^run\s+(?!routine ")/.test(lower)) {
     return [
       {
         assistant:

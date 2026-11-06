@@ -29,6 +29,7 @@ import {
   computerObservation,
   normalizeWorkspacePath,
   shellQuote,
+  workspaceCwd,
   workspacePath,
 } from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
@@ -1418,7 +1419,7 @@ raise SystemExit(1)
     context: AdapterContext,
     timeoutMs: number,
   ): Promise<CreateOSExecResponse> {
-    const cwd = createosCwd(request.cwd);
+    const cwd = workspaceCwd(CREATEOS_WORKSPACE, request.cwd, ["/home/desktop"]);
     // Exec's env field only takes names declared when the sandbox was created, and command text
     // shows in `ps`, so the env travels on stdin. Loading it leaves `argv` with an empty stdin.
     const environment = shellExportScript(request.env ?? {});
@@ -1825,14 +1826,6 @@ function isAllowedCreateOSScreenHost(hostname: string, baseHost: string): boolea
     return host === CREATEOS_INGRESS_ZONE || host.endsWith(`.${CREATEOS_INGRESS_ZONE}`);
   }
   return false;
-}
-
-function createosCwd(cwd: string | undefined): string {
-  if (!cwd || cwd === "." || cwd === "/" || cwd === "/home/rakazo" || cwd === "/home/desktop") {
-    return CREATEOS_WORKSPACE;
-  }
-  if (cwd === CREATEOS_WORKSPACE || cwd.startsWith(`${CREATEOS_WORKSPACE}/`)) return cwd;
-  return workspacePath(CREATEOS_WORKSPACE, cwd);
 }
 
 function emptyScreenSession(): ScreenSession {

@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { AskCard } from "../../src/components/AskCard";
 import { bootstrapI18n, i18n } from "../../src/lib/i18n";
 import { queryClient } from "../../src/lib/query";
+import { rpc } from "../../src/lib/rpc";
 import type { RoutineDraftState } from "../../src/pages/RoutineEditor";
 import { RoutineEditor } from "../../src/pages/RoutineEditor";
 import { SettingsOverlay } from "../../src/pages/SettingsOverlay";
@@ -311,6 +312,7 @@ function SubscriptionShot() {
       className="min-h-screen bg-background text-foreground"
     >
       <SettingsOverlay
+        shellRpc={rpc}
         email="ada@example.test"
         name="Ada"
         section="models"

@@ -52,6 +52,7 @@ import { closeMcpResource } from "./mcp-close.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import {
   accessTokenExpiresAt,
+  launchArgSecrets,
   looksLikeSecretValue,
   McpReauthorizationRequiredError,
   oauthMaterialSecrets,
@@ -1085,6 +1086,7 @@ export class McpConnector implements ConnectorProvider {
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
       // Rows saved before arguments moved into the secret still hold them in plaintext.
       const args = material.args ?? (Array.isArray(server.args) ? server.args.map(String) : []);
+      launchSecrets.push(...launchArgSecrets(args));
       const env = { ...(material.env ?? {}) };
       const onPersisted = (record: { id: string; ref: string; material: OAuthMaterial }) => {
         ref = record.ref;

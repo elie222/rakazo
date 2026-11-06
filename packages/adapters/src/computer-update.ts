@@ -4,6 +4,7 @@ import type { ComputerUpdate } from "@rakazo/contracts";
 import { ComputerUpdateSchema } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import { spaceTakesWork } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
   enqueueTakeoverContinuation,
@@ -523,10 +524,21 @@ async function recordTakeoverHandback(
 }
 
 export async function performComputerUpdate(deps: Deps, updateId: string) {
-  const claimed = await deps.prisma.computerUpdate.updateMany({
-    where: { id: updateId, status: "queued" },
-    data: { status: "running" },
+  const target = await deps.prisma.computerUpdate.findUnique({
+    where: { id: updateId },
+    select: { computer: { select: { spaceId: true } } },
   });
+  if (!target) return;
+  // A Space being deleted gets no maintenance; its computers go with it. Its lock comes before
+  // the update row, so a claim committing meanwhile is seen.
+  const claimed = await deps.prisma.$transaction(async (tx) =>
+    !(await spaceTakesWork(tx, target.computer.spaceId))
+      ? { count: 0 }
+      : tx.computerUpdate.updateMany({
+          where: { id: updateId, status: "queued" },
+          data: { status: "running" },
+        }),
+  );
   if (claimed.count !== 1) return; // Never replay a destructive operation on job redelivery.
   const update = await deps.prisma.computerUpdate.findUniqueOrThrow({
     where: { id: updateId },

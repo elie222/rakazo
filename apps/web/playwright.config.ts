@@ -24,7 +24,6 @@ const nightlySpecs = [
   "bot-organization",
   "chart-export",
   "chart-links",
-  "chat-bubble-colors",
   "chat-header",
   "chat-progress-messages",
   "choice-card",

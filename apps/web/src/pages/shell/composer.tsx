@@ -1,6 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
-import type { ComposerMention, ComposerMentionRange, SlashActionId } from "@rakazo/core";
+import type {
+  ComposerMention,
+  ComposerMentionBinding,
+  ComposerMentionRange,
+  SlashActionId,
+} from "@rakazo/core";
 import {
   bindComposerMention,
   clampMentionHighlightIndex,
@@ -19,7 +24,7 @@ import {
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { ArrowUp, Box, Paperclip, Plus, Settings, Square, X } from "lucide-react";
-import type { ClipboardEvent, ComponentProps, DragEvent, RefObject } from "react";
+import type { ClipboardEvent, ComponentProps, CSSProperties, DragEvent, RefObject } from "react";
 import {
   memo,
   useEffect,
@@ -41,13 +46,16 @@ import type { ArtifactTarget } from "../../lib/artifact-open";
 import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
 import { useCallSession } from "../../lib/call-session";
 import {
+  appendComposerDraftText,
   beginComposerDraftSubmission,
   keepComposerRetryNonce,
   readComposerDraft,
   readComposerDraftBindings,
   readComposerRetryNonce,
+  replaceComposerDraft,
   settleComposerDraftSubmission,
   subscribeComposerDraftAccepted,
+  subscribeComposerDraftReplaced,
   subscribeComposerOffer,
   writeComposerDraft,
   writeComposerRetryNonce,
@@ -104,6 +112,7 @@ const ComposerBody = memo(function Composer({
   onSlashAction,
   draftKey,
   enterToSend,
+  sendColors,
   docked = false,
 }: {
   activeName?: string;
@@ -145,6 +154,8 @@ const ComposerBody = memo(function Composer({
   onSlashAction?: (action: SlashActionId) => void;
   draftKey: string;
   enterToSend: boolean;
+  /** The bot's color, as your messages to it wear it; the send button matches them. */
+  sendColors?: { background: string; foreground: string };
   /** Floating over an open page instead of sitting under the chat. */
   docked?: boolean;
 }) {
@@ -174,11 +185,17 @@ const ComposerBody = memo(function Composer({
     editSelections.current = [];
     if (persist) writeComposerDraft(draftKey, next.text, undefined, next.bindings);
   }
-  function appendDictation(text: string) {
-    if (!mountedRef.current || draftKeyRef.current !== draftKey) return;
+  /** False when the words went to this chat's saved draft because it is no longer shown. */
+  function appendDictation(text: string): boolean {
+    if (!mountedRef.current || draftKeyRef.current !== draftKey) {
+      // The chat changed while the words were transcribed; they wait in its draft for review.
+      appendComposerDraftText(draftKey, text);
+      return false;
+    }
     const current = compositionRef.current.text;
     editSelections.current = [{ start: current.length, end: current.length }];
     updateDraft(current ? `${current} ${text}` : text);
+    return true;
   }
   const [mentionQuery, setMentionQuery] = useState<string | null>(
     () =>
@@ -203,10 +220,10 @@ const ComposerBody = memo(function Composer({
         compositionRef.current.text.trim().length > 0 ||
         selectedSkill !== null ||
         pendingAttachments.length > 0;
-      appendDictation(text);
-      if (reviewFirst) return;
+      if (!appendDictation(text) || reviewFirst) return;
       const clientNonce = newClientId();
       retryNonce.current = clientNonce;
+      queuedDictation.current = editRevision.current;
       setDictationSendDue(editRevision.current);
     },
   });
@@ -222,6 +239,22 @@ const ComposerBody = memo(function Composer({
       }),
     [draftKey],
   );
+  // A draft rewritten from elsewhere (late dictation or a left chat's recovered send) shows
+  // here, so the next edit keeps it.
+  useEffect(
+    () => subscribeComposerDraftReplaced(draftKey, (text) => showReplacedDraft.current(text)),
+    [draftKey],
+  );
+  // Read through a ref: the subscription outlives the render whose pickers state it would see.
+  const showReplacedDraft = useRef((_text: string) => {});
+  showReplacedDraft.current = (text) => {
+    // An edit like typing: a send still in flight must not restore its older text over it.
+    markEdited();
+    const bindings = readComposerDraftBindings(draftKey);
+    commitComposition({ text, bindings }, false);
+    // The pickers follow the new text, as after an edit, with the caret at its end.
+    updatePickers(text, text.length, text.length, bindings);
+  };
   // An open page rewrites what this chat sends (pageReply), so it is part of the payload.
   const pageSession = usePageSession();
   const dock = pageSession?.dock ?? noDock;
@@ -255,12 +288,15 @@ const ComposerBody = memo(function Composer({
   // send waits one render for the state appendDictation just queued.
   // The due send holds the edit revision the dictation left.
   const [dictationSendDue, setDictationSendDue] = useState<number | null>(null);
+  // The same due revision for send(), which reads it after its own await.
+  const queuedDictation = useRef<number | null>(null);
   // A dictation that finishes while an earlier send is in flight waits for it;
   // any edit in the meantime cancels the automatic send. It runs after the
   // reply effect above, so a reply armed in the same commit counts as an edit.
   useEffect(() => {
     if (dictationSendDue === null || sending) return;
     setDictationSendDue(null);
+    queuedDictation.current = null;
     if (editRevision.current === dictationSendDue) void send();
   }, [dictationSendDue, sending]);
   const {
@@ -426,8 +462,17 @@ const ComposerBody = memo(function Composer({
     const end = edit.caret ?? nativeEnd;
     if (edit.caret !== null) pendingCaret.current = { start: caret, end };
     commitComposition({ text: value, bindings: edit.bindings });
+    updatePickers(value, caret, end, edit.bindings);
+  }
+
+  function updatePickers(
+    value: string,
+    caret: number,
+    end: number,
+    bindings: ComposerMentionBinding[],
+  ) {
     setMentionQuery(
-      composerMentionQuery(value, caret, end, knownMentions, edit.bindings)?.query ?? null,
+      composerMentionQuery(value, caret, end, knownMentions, bindings)?.query ?? null,
     );
     // `/` only at the start of the draft so forced skills expand (`Use skill:` / `/Name` prefix).
     const slashMatch = selectedSkill === null ? /^\/([^\n]*)$/.exec(value) : null;
@@ -568,6 +613,30 @@ const ComposerBody = memo(function Composer({
       if (nonceRecoverable) keepComposerRetryNonce(draftKey, submission, clientNonce);
       return;
     }
+    // A dictation queued behind this send, and no other edit since, joins the failed
+    // words instead of going out alone; the send's error stays.
+    if (queuedDictation.current === revision + 1 && editRevision.current === revision + 1) {
+      queuedDictation.current = null;
+      setDictationSendDue(null);
+      retryNonce.current = null;
+      const queued = compositionRef.current;
+      const words = queued.text;
+      const restored = { text: `${submitted.text} ${words}`, bindings: submitted.bindings };
+      if (mountedRef.current && draftKeyRef.current === draftKey) {
+        commitComposition(restored);
+        setSelectedSkill(selectedSkill);
+        return;
+      }
+      // Once the chat was left, a composer reopened for it owns the saved draft; only a draft
+      // still holding just these words, mentions included, is this send's to restore, and the
+      // reopened field follows it. The same spelling bound to a mention there is a newer edit.
+      if (
+        readComposerDraft(draftKey) === words &&
+        JSON.stringify(readComposerDraftBindings(draftKey)) === JSON.stringify(queued.bindings)
+      )
+        replaceComposerDraft(draftKey, restored.text, restored.bindings);
+      return;
+    }
     // Restore only an untouched draft, retaining its nonce for an unchanged retry.
     // This composer still carries the reply and attachments the send carried, so
     // the in-memory nonce is safe here; the stored one is only for plain text.
@@ -685,6 +754,15 @@ const ComposerBody = memo(function Composer({
     }
   }, [replyTarget, replyName, t]);
 
+  // The same chat-user colors your bubbles in this chat wear (set the same way in the transcript).
+  const sendStyle = sendColors
+    ? ({
+        "--chat-user": sendColors.background,
+        "--chat-user-foreground": sendColors.foreground,
+      } as CSSProperties)
+    : undefined;
+  // An empty draft keeps the quiet disabled look either way; the bot's color shows once it can go.
+  const sendClassName = `size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100 ${sendColors ? "bg-chat-user text-chat-user-foreground hover:bg-chat-user/90" : ""}`;
   return (
     <fieldset
       aria-label={t`Message composer`}
@@ -1051,7 +1129,8 @@ const ComposerBody = memo(function Composer({
                 aria-label={t`Send`}
                 disabled={sending || !canSend || disabled}
                 onClick={() => void send()}
-                className="size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
+                style={sendStyle}
+                className={sendClassName}
               >
                 <ArrowUp size={16} strokeWidth={2.2} />
               </Button>
@@ -1076,7 +1155,8 @@ const ComposerBody = memo(function Composer({
                 aria-label={t`Send`}
                 disabled={sending || !canSend || disabled}
                 onClick={() => void send()}
-                className="size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
+                style={sendStyle}
+                className={sendClassName}
               >
                 <ArrowUp size={16} strokeWidth={2.2} />
               </Button>
