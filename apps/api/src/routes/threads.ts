@@ -25,6 +25,7 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { releaseComputerControl } from "../computer-control.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
@@ -52,7 +53,6 @@ import {
   threadHead,
 } from "../thread-target.js";
 import { mapBotSecretInputError } from "./bots.js";
-import { releaseComputerControl } from "./computer.js";
 import type { RouterContext } from "./context.js";
 import {
   botsRunOwnModels,

@@ -1,13 +1,13 @@
 import { useNavigation, useRoute, useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
-import type { MobileBot } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { notifyArchivedChatsChanged } from "../../lib/archived-chats";
 import { restoreArchivedBot } from "../../lib/bot-lifecycle";
 import { chatTitleRoute } from "../../lib/chat-settings-route";
 import { onConversationCleared } from "../../lib/conversation-cleared";
 import { useI18n } from "../../lib/i18n";
+import type { MobileBot } from "../../lib/mobile-types";
 import { useResolvedAppearance } from "../../lib/native";
 import { useReferral } from "../../lib/referral";
 import { threadEdgeOptions } from "../../lib/thread-edges";

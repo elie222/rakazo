@@ -1,7 +1,7 @@
 import { runWithIdentityConfirmation } from "@rakazo/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Platform } from "react-native";
-import { confirmIdentity, fetchAccountSecurity, requestIdentityCode } from "../lib/api";
+import { confirmIdentity, fetchAccountSecurity, requestIdentityCode } from "../lib/api-auth";
 import { useI18n } from "../lib/i18n";
 import type { IdentityMethod } from "../lib/identity-confirmation";
 import { confirmIdentityOnDevice, NEW_CODE } from "../lib/identity-confirmation";
