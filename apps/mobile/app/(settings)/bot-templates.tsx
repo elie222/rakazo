@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BotTemplateIcon } from "../../components/bot-template-icon";
 import { NativeActionButton } from "../../components/native-action-button";
-import { Chevron } from "../../components/row-accessories";
+import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { botTemplateCopy } from "../../lib/bot-template-copy";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
@@ -54,32 +54,23 @@ export default function BotTemplatesScreen() {
           <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t("Loading…")} />
         ) : null}
         {templates.data?.length ? (
-          <View style={styles.list}>
+          <SettingsGroup>
             {templates.data.map((template) => {
               const { name, summary } = botTemplateCopy(template);
               return (
-                <Pressable
+                <SettingsRow
                   key={template.id}
                   testID="bot-template-row"
                   accessibilityRole="button"
-                  accessibilityLabel={name}
+                  title={name}
+                  detail={summary}
+                  leading={<BotTemplateIcon id={template.id} />}
+                  chevron="right"
                   onPress={() => open(template.id)}
-                  style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-                >
-                  <BotTemplateIcon id={template.id} />
-                  <View style={styles.grow}>
-                    <Text numberOfLines={1} style={styles.title}>
-                      {name}
-                    </Text>
-                    <Text numberOfLines={1} style={styles.secondary}>
-                      {summary}
-                    </Text>
-                  </View>
-                  <Chevron />
-                </Pressable>
+                />
               );
             })}
-          </View>
+          </SettingsGroup>
         ) : null}
       </ScrollView>
     </SafeAreaView>
@@ -91,20 +82,6 @@ function createStyles() {
     screen: { flex: 1, backgroundColor: native.page },
     content: { padding: 16, gap: 14 },
     list: { gap: 8 },
-    row: {
-      minHeight: 56,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      borderRadius: 14,
-      backgroundColor: native.fill,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-    },
-    pressed: { backgroundColor: native.fillPressed },
-    grow: { flex: 1, gap: 2, minWidth: 0 },
-    title: { color: native.label, fontSize: 15, fontWeight: "500" },
-    secondary: { color: native.secondaryLabel, fontSize: 13 },
     error: { color: native.secondaryLabel, fontSize: 14 },
   });
 }

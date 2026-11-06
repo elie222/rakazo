@@ -22,7 +22,7 @@ import {
   renameRoutineSkillMentions,
   renameSkillMd,
 } from "@rakazo/core";
-import { availableInSpace } from "@rakazo/db";
+import { availableInSpace, Prisma } from "@rakazo/db";
 import type { AgentImportServices, Built } from "./agent-import.js";
 import { requestDigest, savedTimeZone, writeImportedBot } from "./agent-import.js";
 
@@ -139,6 +139,8 @@ export async function createBotFromTemplate<PreparedKey>(
 ) {
   const template = findBotTemplate(input.templateId);
   if (!template) throw new ORPCError("NOT_FOUND", { message: "No template has that id." });
+  // Skills the plan reuses instead of adding, checked again when the bot is written.
+  let reusedRows: { id: string; name: string; content: string }[] = [];
   const request: Parameters<typeof writeImportedBot>[2] = {
     importKey: importKey(template.id),
     // The same for every version, so an existing bot is returned whatever changed since.
@@ -177,17 +179,21 @@ export async function createBotFromTemplate<PreparedKey>(
             },
           ],
         },
-        select: { name: true, content: true },
+        select: { id: true, name: true, content: true },
         orderBy: { createdAt: "asc" },
       });
       const reused = new Map<string, string>();
+      reusedRows = [];
       for (const skill of template.skills) {
         const copy = new RegExp(`^${escapeRegExp(skill.name)}(?:-\\d+)?$`, "i");
         const row = kept.find(
           (item) =>
             copy.test(item.name) && item.content === renameSkillMd(buildSkillMd(skill), item.name),
         );
-        if (row) reused.set(skill.name, row.name);
+        if (row) {
+          reused.set(skill.name, row.name);
+          reusedRows.push(row);
+        }
       }
       built.plan.skills = built.plan.skills.filter((skill) => !reused.has(skill.id));
       request.selection.skills = built.plan.skills.map((skill) => skill.id);
@@ -202,6 +208,23 @@ export async function createBotFromTemplate<PreparedKey>(
     // An archived bot no longer counts as the template's bot: its record makes way for the new
     // one, in the same transaction, so a failed create leaves the archived bot's record in place.
     beforeWrite: async (tx) => {
+      // A reused skill stays as planned until the bot is written: deleting or editing it waits.
+      if (reusedRows.length) {
+        const locked = await tx.$queryRaw<{ id: string; name: string; content: string }[]>`
+          SELECT id, name, content FROM agent_skills
+          WHERE id IN (${Prisma.join(reusedRows.map((row) => row.id))}) FOR SHARE`;
+        const unchanged = reusedRows.every((row) =>
+          locked.some(
+            (item) => item.id === row.id && item.name === row.name && item.content === row.content,
+          ),
+        );
+        if (!unchanged) {
+          throw new ORPCError("CONFLICT", {
+            message: "A skill this bot uses just changed. Try again.",
+            data: { reason: "skill_changed" },
+          });
+        }
+      }
       await tx.agentImport.deleteMany({
         where: {
           spaceId: actor.spaceId,
