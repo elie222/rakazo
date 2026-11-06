@@ -7,6 +7,7 @@ import type {
   MessagingInboundMessage,
 } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import { getLogger } from "@rakazo/logging";
 import { Message } from "chat";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
@@ -827,6 +828,36 @@ describe("Lark working receipts", () => {
         }),
       ),
     );
+  });
+
+  it("retries a failed deletion when a create completes after abort", async () => {
+    const { surface } = createSurface();
+    await surface.handleWebhook(
+      "lark",
+      webhook({ type: "url_verification", token, challenge: "test" }),
+    );
+    const controller = new AbortController();
+    const respond = request.getMockImplementation()!;
+    let deletes = 0;
+    const log = vi.spyOn(getLogger(), "error").mockImplementation(() => {});
+    request.mockImplementation(async (call: { url: string; method?: string }) => {
+      if (call.method === "POST" && call.url.endsWith("/reactions"))
+        controller.abort(new Error("expired"));
+      if (call.method === "DELETE" && ++deletes === 1) throw new Error("temporary outage");
+      return respond(call);
+    });
+    try {
+      await expect(
+        surface.acknowledge(encodeThreadId({ chatId: "oc-test" }), "om-late-retry", {
+          ...context,
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow("expired");
+      await vi.waitFor(() => expect(deletes).toBe(2));
+      expect(log).toHaveBeenCalledOnce();
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it("keeps messages independent when receipts overlap", async () => {

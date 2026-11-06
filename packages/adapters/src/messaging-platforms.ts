@@ -337,7 +337,7 @@ export function messagingPlatformsFromEnv(
       // Webhook-only: ws/long-connection incoming would consume events so
       // the HTTP webhook at /api/v1/messaging/webhook/lark never sees them.
       adapter,
-      acknowledge: (handle, context) => adapter.acknowledge(handle, context.signal),
+      acknowledge: (handle) => adapter.acknowledge(handle),
     });
   }
 

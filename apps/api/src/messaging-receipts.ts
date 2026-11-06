@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { MessagingReceipt, MessagingSurface } from "@rakazo/adapter-kit";
-import { providerOfThreadId } from "@rakazo/adapters";
+import { clearTemporaryReceipt, providerOfThreadId } from "@rakazo/adapters";
 import { getLogger } from "@rakazo/logging";
 
 // A reaction stays on the message, so it only goes on a late one: a fast reply
@@ -57,15 +57,7 @@ export function createMessagingReceipts(
         cancel(poll);
         cancel(expiry);
         try {
-          for (let attempt = 0; attempt < 3; attempt++) {
-            try {
-              await within(cleanup(), RECEIPT_TIMEOUT_MS);
-              return;
-            } catch (error) {
-              logFailure(error);
-              if (attempt < 2) await new Promise<void>((resolve) => setTimeout(resolve, 250));
-            }
-          }
+          await clearTemporaryReceipt(cleanup);
         } finally {
           cleanups.delete(clear);
         }

@@ -85,8 +85,8 @@ export class LazyLarkAdapter extends LarkAdapterBase implements Adapter {
   async openDM(userId: string) {
     return (await this.load()).openDM(userId);
   }
-  async acknowledge(messageId: string, signal: AbortSignal) {
-    return (await this.load()).acknowledge(messageId, signal);
+  async acknowledge(messageId: string) {
+    return (await this.load()).acknowledge(messageId);
   }
   async disconnect() {
     await this.implementation?.disconnect();

@@ -286,7 +286,7 @@ export class LarkAdapter extends LarkAdapterBase implements Adapter {
     return { id, threadId, raw: { message_id: id } };
   }
   /** Bots have no typing bubble; a reaction marks this message until its run settles. */
-  async acknowledge(messageId: string, signal: AbortSignal) {
+  async acknowledge(messageId: string) {
     const result = checked(
       await this.client.im.messageReaction.create({
         path: { message_id: messageId },
@@ -302,9 +302,8 @@ export class LarkAdapter extends LarkAdapterBase implements Adapter {
         }),
       );
     };
-    // A timed-out create can still finish: don't leave its reaction behind.
-    if (signal.aborted) await clear();
-    else return clear;
+    // The surface owns late results after cancellation and retries their cleanup.
+    return clear;
   }
 
   async editMessage(threadId: string, messageId: string, message: AdapterPostableMessage) {
