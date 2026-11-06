@@ -9,6 +9,7 @@ import {
   bindComposerMention,
   clampMentionHighlightIndex,
   composerMentionQuery,
+  filterComposerMentionTargets,
   mentionChipKey,
   SLASH_ACTIONS,
 } from "@rakazo/core";
@@ -119,10 +120,8 @@ export function useComposerTriggers({
 
   const mentionOptions = useMemo(() => {
     if (mentionQuery === null || !mentionTargets?.length) return [];
-    const query = mentionQuery.trim().toLowerCase();
-    return mentionTargets
-      .filter((target) => !query || target.name.toLowerCase().startsWith(query))
-      .slice(0, 10);
+    // Same matching as the mobile picker, so `everyone` also answers to @all and @所有人.
+    return filterComposerMentionTargets(mentionTargets, mentionQuery).slice(0, 10);
   }, [mentionQuery, mentionTargets]);
 
   useEffect(() => {

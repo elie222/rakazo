@@ -176,6 +176,12 @@ export function pageReplyTargetId(
 }
 
 /**
+ * The link pageReply writes before a message, `[title](page:<id>)`, title brackets escaped. The
+ * groups are the escaped title and the page id.
+ */
+export const PAGE_REPLY_LINK = /\[((?:\\[\\[\]]|[^\\[\]\n])*)\]\(page:([A-Za-z0-9_-]{1,64})\)/g;
+
+/**
  * A message sent about a page: a reply to its card in this chat, or a link naming the page when
  * the chat has none loaded. A reply the user picked themselves is left as they chose it.
  */

@@ -224,12 +224,16 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const visibleMessages = transcript.visibleMessages;
   const newestPages = useMemo(() => newestPageCards(visibleMessages), [visibleMessages]);
   const latestMessage = latestArrivalMessage(reactionView.visibleMessages, peerTranscript.markerOf);
+  // The group's members in its order, once the chat or its group list has loaded them; the
+  // title seats the inbox's copy until then.
+  const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);
   const composerMentionTargets = useMemo(
     () =>
       buildComposerMentionOptions({
         query: "",
         includeEveryone: inGroup,
         currentGroupId: groupId,
+        groupMemberNames: groupMembers?.map((member) => member.name),
         bots: mentionBots.map((bot) => ({
           id: bot.id,
           name: bot.name,
@@ -247,7 +251,16 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         connectors: mentionConnectors,
         cronLabels: cronLabels(locale),
       }),
-    [groupId, inGroup, locale, mentionBots, mentionConnectors, mentionGroups, mentionRoutines],
+    [
+      groupId,
+      groupMembers,
+      inGroup,
+      locale,
+      mentionBots,
+      mentionConnectors,
+      mentionGroups,
+      mentionRoutines,
+    ],
   );
   const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
   // Until the chat's own roster arrives, the bot as the inbox last loaded it.
@@ -263,9 +276,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     snap && (!showingSaved || error)
       ? snap.run?.status
       : (titleBot?.threadStatus ?? snap?.run?.status);
-  // The group's members in its order, once the chat or its group list has loaded them; the
-  // title seats the inbox's copy until then.
-  const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);
   // Only reply text being written replaces the footer; earlier sentences above a tool call don't.
   const hasLiveProgress = visibleMessages.some(
     (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
