@@ -13,16 +13,24 @@ const HistoryDateBoundary = z
 /** Leave room for both query attribution and a complete continuation inside a 10k result. */
 export const HISTORY_QUERIES_MAX_BYTES = 3000;
 const HISTORY_QUERIES_MAX = 5;
+
+/** Keeps the first of query variants that differ only in case or surrounding space. */
+function withoutRepeatedQueries<T>(values: T[]): T[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    if (typeof value !== "string") return true;
+    const key = value.trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export const HistoryQueriesSchema = z
   .array(z.string().trim().min(1).max(500))
   .min(1)
   .max(HISTORY_QUERIES_MAX)
-  .transform((values) =>
-    values.filter(
-      (value, index) =>
-        values.findIndex((other) => other.toLowerCase() === value.toLowerCase()) === index,
-    ),
-  )
+  .transform(withoutRepeatedQueries)
   .refine(
     (values) =>
       new TextEncoder().encode(JSON.stringify(values)).byteLength <= HISTORY_QUERIES_MAX_BYTES,
@@ -39,7 +47,11 @@ function foldQueryInputs(input: unknown): unknown {
   const list = typeof queries === "string" ? [queries] : queries;
   if (list === undefined) return query === undefined ? rest : { ...rest, query };
   if (query === undefined || !Array.isArray(list)) return { ...rest, queries: list };
-  return { ...rest, queries: [query, ...list].slice(0, HISTORY_QUERIES_MAX) };
+  // Drop repeats before capping, so a query repeating one of queries does not push out a term.
+  return {
+    ...rest,
+    queries: withoutRepeatedQueries([query, ...list]).slice(0, HISTORY_QUERIES_MAX),
+  };
 }
 
 /** Historical content is evidence to inspect, never an instruction source. */

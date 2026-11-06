@@ -31,7 +31,12 @@ import type {
 import { abortableDelay, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { screenSessionKey } from "./computer-screens.js";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import {
+  normalizeWorkspacePath,
+  shellQuote,
+  workspaceCwd,
+  workspacePath,
+} from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
@@ -256,7 +261,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     try {
       const result = await sandbox.process.executeCommand(
         sandboxCommandArgv(request).map(shellQuote).join(" "),
-        daytonaCwd(root, request.cwd),
+        workspaceCwd(root, request.cwd, ["/home/user", "/home/daytona"]),
         request.env,
         Math.max(1, Math.ceil(timeoutMs / 1_000)),
       );
@@ -846,21 +851,6 @@ function isFailedDaytonaTransition(error: unknown): boolean {
     error.statusCode === undefined &&
     !(error instanceof DaytonaTimeoutError)
   );
-}
-
-function daytonaCwd(root: string, cwd: string | undefined): string {
-  if (
-    !cwd ||
-    cwd === "." ||
-    cwd === "/" ||
-    cwd === "/home/rakazo" ||
-    cwd === "/home/user" ||
-    cwd === "/home/daytona" ||
-    cwd === root
-  ) {
-    return root;
-  }
-  return workspacePath(root, cwd);
 }
 
 function isDaytonaExecutable(mode: string, permissions: string): boolean {

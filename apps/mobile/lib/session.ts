@@ -185,15 +185,14 @@ export async function loadSessionToken() {
   return snapshot.ok ? snapshot.value : "";
 }
 
-/** `sameAccount` requires a verified replacement on the current server. */
-export async function saveSessionToken(token: string, sameAccount = false) {
+export async function saveSessionToken(token: string) {
   const generation = ++sessionGeneration;
   publishSessionGeneration(false);
   sessionInvalidated = true;
   sessionFallback = undefined;
   sessionSaves += 1;
   try {
-    const clearingScope = invalidateSessionCaches(false, sameAccount);
+    const clearingScope = invalidateSessionCaches();
     // Marked before the token lands, so an account deletion that clears it afterwards also clears the mark.
     await rememberSignedIn();
     await enqueueScopeWrite(() => SecureStore.setItemAsync(SESSION_KEY, token));
@@ -284,11 +283,10 @@ export async function restoreSessionToken(token: string): Promise<boolean> {
 export async function replaceSessionTokenIfCurrent(
   generation: number,
   token: string,
-  sameAccount = false,
 ): Promise<boolean> {
   if (generation !== sessionGeneration) return false;
   try {
-    await saveSessionToken(token, sameAccount);
+    await saveSessionToken(token);
   } catch (error) {
     // The server already revoked the stored token; keep the replacement in memory unless
     // something else changed the session meanwhile, and still report that it was not saved.
