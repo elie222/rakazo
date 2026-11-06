@@ -498,8 +498,11 @@ export function AgentImportForm({
             disabled={creating}
             onClick={() => {
               stopReading();
-              if (plan) setPlan(null);
-              else onClose();
+              if (plan) {
+                // A copy that failed while the preview was open must not greet the return.
+                resetCopy();
+                setPlan(null);
+              } else onClose();
             }}
           >
             <ArrowLeft size={16} strokeWidth={1.8} />
