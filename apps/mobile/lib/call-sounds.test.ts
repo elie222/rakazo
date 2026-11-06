@@ -69,21 +69,37 @@ it("greets on calls until the greeting is turned off on this device", async () =
 it.each(["start", "end"] as const)(
   "plays the %s cue without changing the audio mode",
   async (cue) => {
-    const playing = playCallCue(cue);
+    const playing = playCallCue(cue, { duringCall: true });
     await vi.advanceTimersByTimeAsync(1600);
     await playing;
 
     expect(player.play).toHaveBeenCalledOnce();
     expect(player.remove).toHaveBeenCalledOnce();
     expect(setAudioModeAsync).not.toHaveBeenCalled();
+    expect(createAudioPlayer).toHaveBeenCalledWith(expect.anything(), {
+      keepAudioSessionActive: true,
+    });
   },
 );
+
+it("lets a cue played outside a call release the audio session", async () => {
+  const playing = playCallCue("start");
+  await vi.advanceTimersByTimeAsync(1600);
+  await playing;
+
+  expect(createAudioPlayer).toHaveBeenCalledWith(expect.anything(), {
+    keepAudioSessionActive: false,
+  });
+});
 
 it("plays waiting audio without changing the active recognition audio mode", async () => {
   const playing = startWaitSound();
   await vi.advanceTimersByTimeAsync(0);
   expect(player.play).toHaveBeenCalledOnce();
   expect(setAudioModeAsync).not.toHaveBeenCalled();
+  expect(createAudioPlayer).toHaveBeenCalledWith(expect.anything(), {
+    keepAudioSessionActive: true,
+  });
 
   releaseWaitSound();
   await playing;

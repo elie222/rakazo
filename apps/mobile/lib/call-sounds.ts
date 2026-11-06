@@ -41,6 +41,8 @@ const WAIT_ASSETS = {
   ],
 } as const;
 
+const CALL_PLAYER = { keepAudioSessionActive: true };
+
 /** Bound playback when no completion event arrives. */
 const CUE_MAX_MS = 1600;
 const WAIT_FADE_MS = 150;
@@ -73,13 +75,13 @@ export async function saveCallGreetingEnabled(on: boolean): Promise<void> {
   else await SecureStore.setItemAsync(CALL_GREETING_KEY, "0");
 }
 
-export async function playCallCue(cue: CallCue): Promise<void> {
+export async function playCallCue(cue: CallCue, { duringCall = false } = {}): Promise<void> {
   const epoch = waitCallEpoch;
   if (!(await loadCallSoundsEnabled().catch(() => true))) return;
   if (epoch !== waitCallEpoch) return;
   const { createAudioPlayer } = await import("expo-audio");
   if (epoch !== waitCallEpoch) return;
-  const player = createAudioPlayer(CUE_ASSETS[cue]);
+  const player = createAudioPlayer(CUE_ASSETS[cue], { keepAudioSessionActive: duringCall });
   let finish: () => void = () => undefined;
   cuePlayers.set(player, () => finish());
   try {
@@ -124,7 +126,7 @@ async function waitPlayer(unit: WaitUnit, epoch: number): Promise<AudioPlayer | 
   const key = `${unit.tone}-${unit.pattern}`;
   let player = waitPlayers.get(key);
   if (!player) {
-    player = createAudioPlayer(WAIT_ASSETS[unit.tone][unit.pattern - 1]);
+    player = createAudioPlayer(WAIT_ASSETS[unit.tone][unit.pattern - 1], CALL_PLAYER);
     waitPlayers.set(key, player);
   }
   return player;

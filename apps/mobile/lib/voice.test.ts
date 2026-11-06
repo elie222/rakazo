@@ -1,5 +1,5 @@
 import { MAX_VOICE_AUDIO_BYTES, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
-import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
+import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync } from "expo-audio";
 import * as SecureStore from "expo-secure-store";
 import * as Speech from "expo-speech";
 import { Platform } from "react-native";
@@ -12,6 +12,7 @@ import {
   pauseVoicePlayback,
   playSpeechClip,
   resumeVoicePlayback,
+  setCallAudio,
   speakQueue,
   speakText,
   speakUtterance,
@@ -37,6 +38,7 @@ vi.mock("expo-file-system", () => ({
 vi.mock("expo-audio", () => ({
   createAudioPlayer: vi.fn(),
   setAudioModeAsync: vi.fn(async () => undefined),
+  setIsAudioActiveAsync: vi.fn(async () => undefined),
 }));
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
@@ -830,6 +832,131 @@ describe("hosted voice playback controls", () => {
       await spoken?.catch(() => undefined);
       vi.useRealTimers();
     }
+  });
+});
+
+describe("call audio", () => {
+  const platform = Platform as { OS: string };
+
+  afterEach(() => {
+    platform.OS = "ios";
+    vi.unstubAllGlobals();
+  });
+
+  function finishingPlayer() {
+    const listeners: Array<(status: Record<string, unknown>) => void> = [];
+    const player = {
+      play: vi.fn(() => {
+        for (const listener of listeners) listener({ didJustFinish: true });
+      }),
+      pause: vi.fn(),
+      release: vi.fn(),
+      addListener: (_event: string, listener: (status: Record<string, unknown>) => void) => {
+        listeners.push(listener);
+        return { remove: () => undefined };
+      },
+    };
+    vi.mocked(createAudioPlayer).mockReturnValue(
+      player as unknown as ReturnType<typeof createAudioPlayer>,
+    );
+    return player;
+  }
+
+  it("plays a call's clips in the session the call holds, then releases it at hang-up", async () => {
+    vi.stubGlobal("Audio", undefined);
+    finishingPlayer();
+    vi.mocked(setAudioModeAsync).mockClear();
+    vi.mocked(setIsAudioActiveAsync).mockClear();
+
+    await setCallAudio(true);
+    expect(setAudioModeAsync).toHaveBeenCalledExactlyOnceWith({
+      playsInSilentMode: true,
+      interruptionMode: "mixWithOthers",
+      allowsRecording: true,
+      shouldPlayInBackground: true,
+    });
+    vi.mocked(setAudioModeAsync).mockClear();
+
+    await playSpeechClip(new Uint8Array([1, 2, 3]));
+    expect(setAudioModeAsync).not.toHaveBeenCalled();
+    expect(createAudioPlayer).toHaveBeenLastCalledWith(expect.anything(), {
+      keepAudioSessionActive: true,
+    });
+
+    await setCallAudio(false);
+    expect(setAudioModeAsync).toHaveBeenCalledExactlyOnceWith({
+      playsInSilentMode: true,
+      interruptionMode: "mixWithOthers",
+      shouldPlayInBackground: false,
+    });
+    expect(setIsAudioActiveAsync).toHaveBeenCalledExactlyOnceWith(false);
+
+    await playSpeechClip(new Uint8Array([1, 2, 3]));
+    expect(createAudioPlayer).toHaveBeenLastCalledWith(expect.anything(), {
+      keepAudioSessionActive: false,
+    });
+  });
+
+  it("leaves the session to speech that is still playing when a call ends", async () => {
+    vi.mocked(captureApiRequestContext).mockReturnValueOnce(new Promise(() => undefined));
+    const reading = speakText("Read this", { botId: "bot-1" });
+    await waitFor(() => getVoicePlaybackState().status === "playing");
+    vi.mocked(setIsAudioActiveAsync).mockClear();
+
+    await setCallAudio(true);
+    await setCallAudio(false);
+    expect(setIsAudioActiveAsync).not.toHaveBeenCalled();
+
+    stopVoicePlayback();
+    void reading;
+  });
+
+  it("keeps Android audio enabled after a call", async () => {
+    platform.OS = "android";
+    vi.mocked(setIsAudioActiveAsync).mockClear();
+    await setCallAudio(true);
+    await setCallAudio(false);
+    expect(setIsAudioActiveAsync).not.toHaveBeenCalled();
+  });
+
+  it("keeps the session of a call that starts while the last one releases it", async () => {
+    vi.mocked(setAudioModeAsync).mockClear();
+    vi.mocked(setIsAudioActiveAsync).mockClear();
+    const ending = setCallAudio(false);
+    await setCallAudio(true);
+    await ending;
+    expect(setAudioModeAsync).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ allowsRecording: true }),
+    );
+    expect(setIsAudioActiveAsync).not.toHaveBeenCalled();
+    await setCallAudio(false);
+  });
+
+  it("applies audio mode changes one at a time, in order", async () => {
+    let releaseFirst!: () => void;
+    const applied: unknown[] = [];
+    vi.mocked(setAudioModeAsync)
+      .mockImplementationOnce(async (mode) => {
+        await new Promise<void>((resolve) => {
+          releaseFirst = resolve;
+        });
+        applied.push(mode);
+      })
+      .mockImplementation(async (mode) => {
+        applied.push(mode);
+      });
+    const starting = setCallAudio(true);
+    await Promise.resolve();
+    const ending = setCallAudio(false);
+    await Promise.resolve();
+    expect(applied).toEqual([]);
+    releaseFirst();
+    await Promise.all([starting, ending]);
+    expect(applied).toEqual([
+      expect.objectContaining({ allowsRecording: true }),
+      expect.objectContaining({ shouldPlayInBackground: false }),
+    ]);
+    vi.mocked(setAudioModeAsync).mockImplementation(async () => undefined);
   });
 });
 
