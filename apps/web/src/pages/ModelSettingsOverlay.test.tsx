@@ -188,6 +188,7 @@ const compatibleEntry = {
   auth: "api-key" as const,
   authHint: "Custom server",
   placeholder: true,
+  endpointPresets: [{ name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" }],
 };
 const deepseekCredential = {
   id: "cred-deepseek",
@@ -1336,9 +1337,7 @@ it("opens the Ollama preset with a required key and saves a compatible connectio
     expect(
       [...view.container.querySelectorAll("button")].filter((row) => row.textContent === "API key"),
     ).toHaveLength(0);
-    const key = view.container.querySelector(
-      'input[placeholder="Ollama API key"]',
-    ) as HTMLInputElement;
+    const key = view.container.querySelector('input[aria-label="API key"]') as HTMLInputElement;
     expect(key.required).toBe(true);
     await typeInto(key, "fake-fixture-key");
     await click(buttons(view.container, "Find models")[0]);
@@ -1369,6 +1368,7 @@ it("offers a saved Ollama connection's models without the Ollama preset", async 
       provider: "openai-compatible",
       modelId: "fixture-model",
       baseUrl: "https://ollama.com/",
+      endpointName: "Ollama Cloud",
       hasKey: true,
     },
   ]);
@@ -1434,6 +1434,7 @@ it.each(["https://ollama.com", "https://ollama.com/v1/"])(
         provider: "openai-compatible",
         modelId: "fixture-model",
         baseUrl: "https://ollama.com/v1",
+        endpointName: "Ollama Cloud",
         hasKey: true,
       },
     ]);

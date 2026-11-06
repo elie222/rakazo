@@ -91,7 +91,7 @@ export function connectionFormFields(input: {
     | "accountId"
     | "gatewayId"
   >;
-  /** Prefills a new OpenAI-compatible connection, such as the Ollama Cloud preset. */
+  /** Prefills a new OpenAI-compatible connection, such as a hosted preset. */
   presetBaseUrl?: string;
 }): ConnectionFormFields {
   const { catalog, provider, modelId, credential, presetBaseUrl } = input;
@@ -126,8 +126,10 @@ export function compatibleConnectionReady(input: {
   modelId: string;
   headerRows: ModelHeaderRow[] | null;
   credential?: Pick<ModelCredential, "hasKey" | "baseUrl">;
+  /** The endpoint is a hosted preset, which always needs a key. */
+  keyRequired?: boolean;
 }): boolean {
-  const { apiKey, credential, headerRows, modelId } = input;
+  const { apiKey, credential, headerRows, keyRequired, modelId } = input;
   const baseUrl = input.baseUrl.trim();
   return openAiCompatibleConnectReady({
     apiKey:
@@ -138,6 +140,7 @@ export function compatibleConnectionReady(input: {
     baseUrl,
     modelId:
       headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
+    keyRequired,
   });
 }
 

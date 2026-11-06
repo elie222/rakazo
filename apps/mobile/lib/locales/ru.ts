@@ -118,8 +118,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Резервные модели завершились с ошибкой или были недоступны для этого запроса.",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "API-ключ Ollama",
   "Show password": "Показать пароль",
   "Hide password": "Скрыть пароль",
   Export: "Экспорт",

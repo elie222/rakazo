@@ -1,5 +1,4 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -363,21 +362,21 @@ export function ConnectionControls({
 
 export function CompatibleKeyControls({
   apiKey,
-  baseUrl,
   busy,
   connectKey,
   credential,
+  endpointPreset,
   isOpenAiCompatible,
   openAiCompatibleReady,
   pending,
   updateApiKey,
 }: Pick<
   ModelSettingsState,
-  | "baseUrl"
   | "apiKey"
   | "busy"
   | "connectKey"
   | "credential"
+  | "endpointPreset"
   | "isOpenAiCompatible"
   | "openAiCompatibleReady"
   | "pending"
@@ -386,17 +385,20 @@ export function CompatibleKeyControls({
   const { t } = useLingui();
   return isOpenAiCompatible ? (
     <div className="mt-5">
-      <CompatibleKeyField baseUrl={baseUrl} className="block text-body text-muted-foreground">
+      <CompatibleKeyField
+        keyRequired={Boolean(endpointPreset)}
+        className="block text-body text-muted-foreground"
+      >
         <Input
           aria-label={t`API key`}
           value={apiKey}
           onChange={(event) => updateApiKey(event.target.value)}
-          required={isOllamaCloudBaseUrl(baseUrl)}
+          required={Boolean(endpointPreset)}
           placeholder={
-            isOllamaCloudBaseUrl(baseUrl)
-              ? t`Ollama API key`
-              : credential?.hasKey
-                ? t`Paste a replacement key`
+            credential?.hasKey
+              ? t`Paste a replacement key`
+              : endpointPreset
+                ? undefined
                 : t`Optional`
           }
           type="password"
