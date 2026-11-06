@@ -60,13 +60,13 @@ msgstr ""
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "{0, plural, one {Waiting for sign-in — the code expires in about # minute.} other {Waiting for sign-in — the code expires in about # minutes.}}"
 msgstr ""
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "{0, plural, one {Waiting for sign-in — the link expires in about # minute.} other {Waiting for sign-in — the link expires in about # minutes.}}"
 msgstr ""
 
@@ -569,7 +569,7 @@ msgstr ""
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "A sign-in tab opened at <0>{0}</0>. Enter this code there — this window keeps waiting:"
 msgstr ""
 
@@ -611,7 +611,7 @@ msgid "Account default"
 msgstr "계정 기본값"
 
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Account ID"
 msgstr "계정 ID"
 
@@ -809,7 +809,7 @@ msgstr "추가 항목"
 #: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -968,7 +968,7 @@ msgstr "응답함"
 msgid "Answered: {answer}"
 msgstr "응답: {answer}"
 
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "Anthropic API"
 msgstr ""
 
@@ -995,7 +995,7 @@ msgstr "링크가 있는 모든 사용자"
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "API key"
 msgstr "API 키"
@@ -1135,7 +1135,7 @@ msgid "Authentication failed."
 msgstr "인증에 실패했습니다."
 
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Authorization code"
 msgstr "인증 코드"
 
@@ -1411,7 +1411,7 @@ msgstr "이미지를 읽을 수 없음"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -1603,7 +1603,7 @@ msgstr ""
 msgid "Choose a new password"
 msgstr "새 비밀번호 선택"
 
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Choose a provider"
 msgstr ""
 
@@ -1917,7 +1917,7 @@ msgstr "{selectedProviderName} 연결"
 msgid "Connect a chat app"
 msgstr "채팅 앱 연결"
 
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/shell/composer-error.tsx
 msgid "Connect a model"
 msgstr "AI 모델 연결"
@@ -2020,7 +2020,7 @@ msgid "Contains code to run"
 msgstr "실행할 코드 포함"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Context limit"
 msgstr "컨텍스트 한도"
 
@@ -2030,7 +2030,7 @@ msgstr "컨텍스트 한도"
 #: src/components/SignupSurvey.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/Auth.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Continue"
@@ -2061,7 +2061,7 @@ msgstr ""
 #: src/components/vault/BotEmailAddresses.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
@@ -2069,7 +2069,7 @@ msgstr "복사됨"
 
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "복사"
@@ -2424,7 +2424,7 @@ msgstr "로그아웃하지 못했습니다. 다시 시도해 주세요."
 
 #: src/components/ModelCredits.tsx
 #: src/pages/BillingSettingsPanel.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
 msgstr ""
@@ -2557,7 +2557,7 @@ msgstr ""
 msgid "Could not save group"
 msgstr "그룹을 저장하지 못했습니다."
 
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "Could not save model"
 msgstr "AI 모델을 저장하지 못했습니다."
 
@@ -2888,7 +2888,7 @@ msgstr "거절"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Default"
 msgstr "기본값"
@@ -3275,17 +3275,17 @@ msgid "Enter a valid email"
 msgstr "올바른 이메일을 입력하세요"
 
 #: src/pages/model-settings/use-model-settings.ts
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "Enter a whole number from 1 to {MAX_MODEL_CONTEXT_WINDOW} for the context limit."
 msgstr "컨텍스트 한도는 1에서 {MAX_MODEL_CONTEXT_WINDOW} 사이의 정수로 입력하세요."
 
 #: src/pages/model-settings/use-model-settings.ts
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "Enter a whole number from 1 to {MAX_MODEL_MAX_TOKENS} for maximum output tokens."
 msgstr "최대 출력 토큰 수는 1에서 {MAX_MODEL_MAX_TOKENS} 사이의 정수로 입력하세요."
 
 #: src/pages/model-settings/use-model-settings.ts
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "Enter a whole number from 1 to 1000 for the image limit."
 msgstr "이미지 한도는 1에서 1000 사이의 정수로 입력하세요."
 
@@ -3429,7 +3429,7 @@ msgid "External conversation"
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Extra high"
 msgstr "매우 높음"
 
@@ -3523,12 +3523,12 @@ msgid "Find in chat"
 msgstr "채팅에서 찾기"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Find models"
 msgstr "모델 찾기"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Finding…"
 msgstr "찾는 중…"
 
@@ -3605,7 +3605,7 @@ msgid "Fullscreen"
 msgstr "전체 화면"
 
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Gateway ID"
 msgstr "게이트웨이 ID"
 
@@ -3738,7 +3738,7 @@ msgstr "대화 기록 숨기기"
 
 #: src/lib/ticket-priority.ts
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "High"
 msgstr "높음"
 
@@ -4205,7 +4205,7 @@ msgstr "키가 포함된 것 같습니다"
 
 #: src/lib/ticket-priority.ts
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Low"
 msgstr "낮음"
 
@@ -4276,7 +4276,7 @@ msgid "Marketing"
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Max"
 msgstr "최대"
 
@@ -4290,13 +4290,13 @@ msgid "Maximize"
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Maximum images per request"
 msgstr "요청당 최대 이미지 수"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Maximum output tokens"
 msgstr "최대 출력 토큰 수"
 
@@ -4314,7 +4314,7 @@ msgid "MCP servers"
 msgstr "MCP 서버"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Medium"
 msgstr "보통"
 
@@ -4425,7 +4425,7 @@ msgid "Microphone failed"
 msgstr "마이크를 사용할 수 없습니다."
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Minimal"
 msgstr "최소"
 
@@ -4465,7 +4465,7 @@ msgstr "모드"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-settings-sections.tsx
@@ -4481,7 +4481,7 @@ msgid "Model connections"
 msgstr "모델 연결"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Model id"
 msgstr "모델 ID"
 
@@ -5021,7 +5021,7 @@ msgstr "{title} 열기"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr ""
 
@@ -5064,12 +5064,12 @@ msgstr "Rakazo 열기"
 msgid "Open work"
 msgstr "진행 중인 작업"
 
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "OpenAI API"
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI 호환 서버 주소"
 
@@ -5083,7 +5083,7 @@ msgstr "브라우저의 인쇄 대화상자를 엽니다. 대상으로 PDF로 �
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Optional"
 msgstr "선택 사항"
@@ -5093,7 +5093,7 @@ msgid "Optional header value"
 msgstr "선택 사항인 헤더 값"
 
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Or paste an API key"
 msgstr "또는 API 키 붙여넣기"
 
@@ -5414,7 +5414,7 @@ msgid "Protocol"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Provider"
 msgstr "서비스"
@@ -5436,7 +5436,7 @@ msgstr "대기 중"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "Rakazo credits"
 msgstr ""
 
@@ -5469,7 +5469,7 @@ msgid "Reason"
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Reasoning effort"
 msgstr "추론 강도"
 
@@ -6257,7 +6257,7 @@ msgstr "서버 이름"
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Server URL"
 msgstr "서버 URL"
@@ -6382,7 +6382,7 @@ msgstr ""
 #: src/lib/localized-provider-hint.ts
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 #: src/pages/PluginsOverlay.tsx
 msgid "Sign in"
 msgstr "로그인"
@@ -6398,7 +6398,7 @@ msgstr "다시 로그인"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Sign in at <0>{0}</0>, then paste the code here."
 msgstr "<0>{0}</0>에서 로그인한 다음 코드를 여기에 붙여넣으세요."
 
@@ -6622,7 +6622,7 @@ msgstr "시작 중"
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/lib/roster-status.ts
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Starting…"
 msgstr "시작하는 중…"
 
@@ -6680,7 +6680,7 @@ msgid "subagent"
 msgstr "보조 에이전트"
 
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Submit"
 msgstr "확인"
 
@@ -6718,12 +6718,12 @@ msgid "Sunday"
 msgstr "일요일"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Supports images"
 msgstr "이미지 지원"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Supports thinking"
 msgstr "사고 모드 지원"
 
@@ -7211,7 +7211,7 @@ msgstr "신뢰할 수 있는 사이트"
 #: src/components/pages/PageNotice.tsx
 #: src/components/pages/PagesList.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/first-bot.tsx
 #: src/pages/SharedPage.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "Try again"
@@ -7378,7 +7378,7 @@ msgid "Use 2 to 64 characters"
 msgstr "2~64자를 사용하세요"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Use a found model"
 msgstr "찾은 모델 중에서 선택"
 

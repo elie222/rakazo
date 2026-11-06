@@ -60,13 +60,13 @@ msgstr ""
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "{0, plural, one {Waiting for sign-in — the code expires in about # minute.} other {Waiting for sign-in — the code expires in about # minutes.}}"
 msgstr ""
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "{0, plural, one {Waiting for sign-in — the link expires in about # minute.} other {Waiting for sign-in — the link expires in about # minutes.}}"
 msgstr ""
 
@@ -569,7 +569,7 @@ msgstr ""
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "A sign-in tab opened at <0>{0}</0>. Enter this code there — this window keeps waiting:"
 msgstr ""
 
@@ -611,7 +611,7 @@ msgid "Account default"
 msgstr "Padrão da conta"
 
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Account ID"
 msgstr "ID da conta"
 
@@ -809,7 +809,7 @@ msgstr "Inclui"
 #: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -968,7 +968,7 @@ msgstr "Respondido"
 msgid "Answered: {answer}"
 msgstr "Respondido: {answer}"
 
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "Anthropic API"
 msgstr ""
 
@@ -995,7 +995,7 @@ msgstr "Qualquer pessoa com o link"
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/model-settings/compatible-key-field.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "API key"
 msgstr "Chave de API"
@@ -1135,7 +1135,7 @@ msgid "Authentication failed."
 msgstr "A autenticação falhou."
 
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Authorization code"
 msgstr "Código de autorização"
 
@@ -1411,7 +1411,7 @@ msgstr "Não pode ler imagens"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -1603,7 +1603,7 @@ msgstr ""
 msgid "Choose a new password"
 msgstr "Escolha uma nova senha"
 
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Choose a provider"
 msgstr ""
 
@@ -1917,7 +1917,7 @@ msgstr "Conectar {selectedProviderName}"
 msgid "Connect a chat app"
 msgstr ""
 
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/shell/composer-error.tsx
 msgid "Connect a model"
 msgstr "Conectar um modelo"
@@ -2020,7 +2020,7 @@ msgid "Contains code to run"
 msgstr "Contém código para executar"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Context limit"
 msgstr "Limite de contexto"
 
@@ -2030,7 +2030,7 @@ msgstr "Limite de contexto"
 #: src/components/SignupSurvey.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/Auth.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Continue"
@@ -2061,7 +2061,7 @@ msgstr ""
 #: src/components/vault/BotEmailAddresses.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
@@ -2069,7 +2069,7 @@ msgstr "Copiado"
 
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Copiar"
@@ -2424,7 +2424,7 @@ msgstr "Não foi possível sair. Tente novamente."
 
 #: src/components/ModelCredits.tsx
 #: src/pages/BillingSettingsPanel.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
 msgstr ""
@@ -2557,7 +2557,7 @@ msgstr ""
 msgid "Could not save group"
 msgstr "Não foi possível salvar o grupo"
 
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "Could not save model"
 msgstr "Não foi possível salvar o modelo"
 
@@ -2888,7 +2888,7 @@ msgstr ""
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Default"
 msgstr "Padrão"
@@ -3275,17 +3275,17 @@ msgid "Enter a valid email"
 msgstr "Digite um e-mail válido"
 
 #: src/pages/model-settings/use-model-settings.ts
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "Enter a whole number from 1 to {MAX_MODEL_CONTEXT_WINDOW} for the context limit."
 msgstr "Digite um número inteiro de 1 a {MAX_MODEL_CONTEXT_WINDOW} para o limite de contexto."
 
 #: src/pages/model-settings/use-model-settings.ts
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "Enter a whole number from 1 to {MAX_MODEL_MAX_TOKENS} for maximum output tokens."
 msgstr "Digite um número inteiro de 1 a {MAX_MODEL_MAX_TOKENS} para o máximo de tokens de saída."
 
 #: src/pages/model-settings/use-model-settings.ts
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "Enter a whole number from 1 to 1000 for the image limit."
 msgstr "Digite um número inteiro de 1 a 1000 para o limite de imagens."
 
@@ -3429,7 +3429,7 @@ msgid "External conversation"
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Extra high"
 msgstr "Extra alta"
 
@@ -3523,12 +3523,12 @@ msgid "Find in chat"
 msgstr "Localizar no chat"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Find models"
 msgstr "Encontrar modelos"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Finding…"
 msgstr "Localizando…"
 
@@ -3605,7 +3605,7 @@ msgid "Fullscreen"
 msgstr "Tela Cheia"
 
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Gateway ID"
 msgstr "ID do gateway"
 
@@ -3738,7 +3738,7 @@ msgstr "Ocultar transcrição"
 
 #: src/lib/ticket-priority.ts
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "High"
 msgstr "Alto"
 
@@ -4205,7 +4205,7 @@ msgstr "Parece conter uma chave"
 
 #: src/lib/ticket-priority.ts
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Low"
 msgstr "Baixo"
 
@@ -4276,7 +4276,7 @@ msgid "Marketing"
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Max"
 msgstr "Máximo"
 
@@ -4290,13 +4290,13 @@ msgid "Maximize"
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Maximum images per request"
 msgstr "Máximo de imagens por solicitação"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Maximum output tokens"
 msgstr "Máximo de tokens de saída"
 
@@ -4314,7 +4314,7 @@ msgid "MCP servers"
 msgstr "Servidores MCP"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Medium"
 msgstr "Médio"
 
@@ -4425,7 +4425,7 @@ msgid "Microphone failed"
 msgstr "Falha no microfone"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Minimal"
 msgstr "Mínimo"
 
@@ -4465,7 +4465,7 @@ msgstr "Modo"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-settings-sections.tsx
@@ -4481,7 +4481,7 @@ msgid "Model connections"
 msgstr "Conexões de modelos"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Model id"
 msgstr "ID do modelo"
 
@@ -5021,7 +5021,7 @@ msgstr "Abrir {title}"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr ""
 
@@ -5064,12 +5064,12 @@ msgstr "Abrir o Rakazo"
 msgid "Open work"
 msgstr "Trabalho aberto"
 
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "OpenAI API"
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "URL do servidor compatível com OpenAI"
 
@@ -5083,7 +5083,7 @@ msgstr "Abre a caixa de impressão do navegador. Escolha Salvar como PDF como de
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Optional"
 msgstr "Opcional"
@@ -5093,7 +5093,7 @@ msgid "Optional header value"
 msgstr "Valor de cabeçalho opcional"
 
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Or paste an API key"
 msgstr "Ou cole uma chave de API"
 
@@ -5414,7 +5414,7 @@ msgid "Protocol"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Provider"
 msgstr "Provedor"
@@ -5436,7 +5436,7 @@ msgstr "Na fila"
 msgid "Rakazo"
 msgstr "Rakazo"
 
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 msgid "Rakazo credits"
 msgstr ""
 
@@ -5469,7 +5469,7 @@ msgid "Reason"
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Reasoning effort"
 msgstr "Esforço de raciocínio"
 
@@ -6257,7 +6257,7 @@ msgstr "Nome do servidor"
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Server URL"
 msgstr "URL do servidor"
@@ -6382,7 +6382,7 @@ msgstr ""
 #: src/lib/localized-provider-hint.ts
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/use-onboarding-model.ts
 #: src/pages/PluginsOverlay.tsx
 msgid "Sign in"
 msgstr "Entrar"
@@ -6398,7 +6398,7 @@ msgstr "Entre novamente"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Sign in at <0>{0}</0>, then paste the code here."
 msgstr "Entre em <0>{0}</0> e cole o código aqui."
 
@@ -6622,7 +6622,7 @@ msgstr "Iniciando"
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/lib/roster-status.ts
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Starting…"
 msgstr "Iniciando…"
 
@@ -6680,7 +6680,7 @@ msgid "subagent"
 msgstr "subagente"
 
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Submit"
 msgstr "Enviar"
 
@@ -6718,12 +6718,12 @@ msgid "Sunday"
 msgstr "domingo"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Supports images"
 msgstr "Suporta imagens"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Supports thinking"
 msgstr "Suporta raciocínio"
 
@@ -7211,7 +7211,7 @@ msgstr "Sites confiáveis"
 #: src/components/pages/PageNotice.tsx
 #: src/components/pages/PagesList.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/first-bot.tsx
 #: src/pages/SharedPage.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "Try again"
@@ -7378,7 +7378,7 @@ msgid "Use 2 to 64 characters"
 msgstr "Use de 2 a 64 caracteres"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Use a found model"
 msgstr "Usar um modelo encontrado"
 
