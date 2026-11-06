@@ -1,18 +1,18 @@
 import { Trans } from "@lingui/react/macro";
-import { openAiCompatibleKeyRequired } from "@rakazo/contracts";
 import { Disclosure } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 
 export function CompatibleKeyField({
-  baseUrl,
+  required,
   className,
   children,
 }: {
-  baseUrl: string;
+  /** The endpoint is a hosted preset that refuses requests without a key. */
+  required: boolean;
   className?: string;
   children: ReactNode;
 }) {
-  return openAiCompatibleKeyRequired(baseUrl) ? (
+  return required ? (
     <div className={className}>
       <span>
         <Trans>API key</Trans>

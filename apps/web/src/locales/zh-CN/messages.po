@@ -987,6 +987,7 @@ msgstr "任何拥有链接的人"
 msgid "API key"
 msgstr "API 密钥"
 
+#: src/lib/compatible-preset.ts
 #: src/pages/shell/import-status.ts
 msgid "API key for {provider}"
 msgstr "{provider} 的 API 密钥"
@@ -2862,10 +2863,6 @@ msgstr "天"
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "拒绝"
-
-#: src/lib/compatible-preset.ts
-msgid "DeepInfra API key"
-msgstr "DeepInfra API 密钥"
 
 #: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -4944,10 +4941,6 @@ msgstr "OAuth 连接失败"
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
 msgstr "离线"
-
-#: src/lib/compatible-preset.ts
-msgid "Ollama API key"
-msgstr "Ollama API 密钥"
 
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"

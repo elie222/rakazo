@@ -987,6 +987,7 @@ msgstr "Toute personne disposant du lien"
 msgid "API key"
 msgstr "Clé API"
 
+#: src/lib/compatible-preset.ts
 #: src/pages/shell/import-status.ts
 msgid "API key for {provider}"
 msgstr "Clé API pour {provider}"
@@ -2862,10 +2863,6 @@ msgstr "jours"
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "Refuser"
-
-#: src/lib/compatible-preset.ts
-msgid "DeepInfra API key"
-msgstr "Clé API DeepInfra"
 
 #: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -4943,10 +4940,6 @@ msgstr "Échec de la connexion OAuth"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
-msgstr ""
-
-#: src/lib/compatible-preset.ts
-msgid "Ollama API key"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx

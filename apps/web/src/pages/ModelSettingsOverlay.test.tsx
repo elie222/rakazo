@@ -18,6 +18,7 @@ const models = vi.hoisted(() => ({
   forRole: vi.fn(),
   setRole: vi.fn(),
   credentials: vi.fn(),
+  presets: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
   rename: vi.fn(),
@@ -356,6 +357,20 @@ beforeEach(() => {
   vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
   models.list.mockResolvedValue([deepseekEntry]);
   models.credentials.mockResolvedValue([]);
+  models.presets.mockResolvedValue([
+    {
+      id: "ollama-cloud",
+      name: "Ollama Cloud",
+      baseUrl: "https://ollama.com/v1",
+      keyRequired: true,
+    },
+    {
+      id: "deepinfra",
+      name: "DeepInfra",
+      baseUrl: "https://api.deepinfra.com/v1/openai",
+      keyRequired: true,
+    },
+  ]);
   autoReview.get.mockResolvedValue({
     mode: "ask",
     enabled: false,
@@ -1336,7 +1351,7 @@ it("opens the Ollama preset with a required key and saves a compatible connectio
       [...view.container.querySelectorAll("button")].filter((row) => row.textContent === "API key"),
     ).toHaveLength(0);
     const key = view.container.querySelector(
-      'input[placeholder="Ollama API key"]',
+      'input[placeholder="API key for Ollama Cloud"]',
     ) as HTMLInputElement;
     expect(key.required).toBe(true);
     await typeInto(key, "fake-fixture-key");
@@ -1389,7 +1404,7 @@ it("opens the DeepInfra preset with a required key and prefills the model's capa
       ).toHaveLength(0);
     }
     const key = view.container.querySelector(
-      'input[placeholder="DeepInfra API key"]',
+      'input[placeholder="API key for DeepInfra"]',
     ) as HTMLInputElement;
     expect(key.required).toBe(true);
     expect(buttons(view.container, "Save")[0]?.disabled).toBe(true);
@@ -1429,7 +1444,9 @@ it("re-prefills the capabilities when another found model becomes the default", 
   try {
     await pick("Change Main model", "DeepInfra");
     await typeInto(
-      view.container.querySelector('input[placeholder="DeepInfra API key"]') as HTMLInputElement,
+      view.container.querySelector(
+        'input[placeholder="API key for DeepInfra"]',
+      ) as HTMLInputElement,
       "fake-fixture-key",
     );
     await click(buttons(view.container, "Find models")[0]);
@@ -1469,7 +1486,9 @@ it("sends each enabled model's own cache pricing when several models are ticked"
   try {
     await pick("Change Main model", "DeepInfra");
     await typeInto(
-      view.container.querySelector('input[placeholder="DeepInfra API key"]') as HTMLInputElement,
+      view.container.querySelector(
+        'input[placeholder="API key for DeepInfra"]',
+      ) as HTMLInputElement,
       "fake-fixture-key",
     );
     await click(buttons(view.container, "Find models")[0]);
@@ -1623,6 +1642,38 @@ it("offers a saved Ollama connection's models without the Ollama preset", async 
   }
 });
 
+it("offers neither hosted preset once both have a saved connection", async () => {
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "fixture-ollama",
+      label: "OpenAI-compatible",
+      provider: "openai-compatible",
+      modelId: "fixture-model",
+      baseUrl: "https://ollama.com/v1",
+      presetName: "Ollama Cloud",
+      hasKey: true,
+    },
+    {
+      id: "fixture-hosted",
+      label: "OpenAI-compatible",
+      provider: "openai-compatible",
+      modelId: "other-model",
+      baseUrl: "https://api.deepinfra.com/v1/openai/",
+      presetName: "DeepInfra",
+      hasKey: true,
+    },
+  ]);
+  const view = await renderSettings(false);
+  try {
+    await openPicker("Add fallback");
+    expect(pickerOptions()).not.toContain("Ollama Cloud");
+    expect(pickerOptions()).not.toContain("DeepInfra");
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("keeps the Ollama preset to connect beside a saved local connection", async () => {
   models.list.mockResolvedValue([compatibleEntry]);
   models.credentials.mockResolvedValue([
@@ -1676,6 +1727,7 @@ it.each(["https://ollama.com", "https://ollama.com/v1/"])(
         provider: "openai-compatible",
         modelId: "fixture-model",
         baseUrl: "https://ollama.com/v1",
+        presetName: "Ollama Cloud",
         hasKey: true,
       },
     ]);

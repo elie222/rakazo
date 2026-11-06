@@ -987,6 +987,7 @@ msgstr "लिंक वाला कोई भी"
 msgid "API key"
 msgstr "API कुंजी"
 
+#: src/lib/compatible-preset.ts
 #: src/pages/shell/import-status.ts
 msgid "API key for {provider}"
 msgstr "{provider} के लिए API कुंजी"
@@ -2862,10 +2863,6 @@ msgstr "दिन"
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "अस्वीकार करें"
-
-#: src/lib/compatible-preset.ts
-msgid "DeepInfra API key"
-msgstr "DeepInfra API कुंजी"
 
 #: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -4943,10 +4940,6 @@ msgstr "OAuth कनेक्शन विफल"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
-msgstr ""
-
-#: src/lib/compatible-preset.ts
-msgid "Ollama API key"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx

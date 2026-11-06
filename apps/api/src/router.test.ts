@@ -4876,6 +4876,16 @@ describe("OpenAI-compatible model probes", () => {
     );
   });
 
+  it("lists the hosted presets the apps offer, each marked as needing a key", async () => {
+    const { client } = fixture();
+    const presets = await client.models.presets();
+    expect(presets.map((preset) => preset.baseUrl)).toEqual([
+      "https://ollama.com/v1",
+      "https://api.deepinfra.com/v1/openai",
+    ]);
+    expect(presets.every((preset) => preset.keyRequired && preset.name && preset.id)).toBe(true);
+  });
+
   it("probes the DeepInfra preset through the injected transport and returns model details", async () => {
     const transport = vi.fn<typeof globalThis.fetch>(async (input) =>
       String(input) === "https://api.deepinfra.com/v1/me"

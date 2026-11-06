@@ -6,6 +6,7 @@ import type {
   ModelCredential,
   ModelHeaderRow,
   OpenAiCompatibleModelInfo,
+  OpenAiCompatiblePreset,
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
@@ -17,6 +18,7 @@ import {
   modelOutputLeavesInputRoom,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
+  openAiCompatibleKeyRequired,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
@@ -95,7 +97,7 @@ export function connectionFormFields(input: {
     | "accountId"
     | "gatewayId"
   >;
-  /** Prefills a new OpenAI-compatible connection, such as the Ollama Cloud preset. */
+  /** Prefills a new OpenAI-compatible connection, such as a hosted preset. */
   presetBaseUrl?: string;
 }): ConnectionFormFields {
   const { catalog, provider, modelId, credential, presetBaseUrl } = input;
@@ -123,8 +125,44 @@ export function connectionFormFields(input: {
   };
 }
 
+/** What a model listing implies for the form; a field the server did not publish is absent. */
+export type ProbedModelFields = {
+  supportsImages?: boolean;
+  reasoning?: boolean;
+  /** The form's text field for the context limit. */
+  contextWindow?: string;
+  /** The form's text field for the output limit, lowered when the context limit leaves it no room. */
+  maxTokens?: string;
+};
+
+/**
+ * Connection form values a model listing implies. Fields the server did not publish are left
+ * out, so the user's own values stay. A published context limit that the current output limit
+ * would not leave room in lowers the output limit with it, so the form still saves. A one-token
+ * context leaves no valid output limit at all, so it is not prefilled.
+ */
+export function probedModelFields(
+  info: OpenAiCompatibleModelInfo | undefined,
+  currentMaxTokens: string,
+): ProbedModelFields {
+  if (!info) return {};
+  const fields: ProbedModelFields = {};
+  if (info.supportsImages !== undefined) fields.supportsImages = info.supportsImages;
+  if (info.reasoning !== undefined) fields.reasoning = info.reasoning;
+  if (info.contextWindow !== undefined && info.contextWindow >= 2) {
+    fields.contextWindow = String(info.contextWindow);
+    const maxTokens = Number(currentMaxTokens);
+    if (Number.isInteger(maxTokens) && maxTokens >= info.contextWindow) {
+      fields.maxTokens = String(Math.max(1, Math.floor(info.contextWindow / 2)));
+    }
+  }
+  return fields;
+}
+
 /** Whether an OpenAI-compatible form can save: a URL, a model, valid headers, and a key if one is needed. */
 export function compatibleConnectionReady(input: {
+  /** The hosted presets the server offers; a preset's endpoint needs a key. */
+  presets: readonly OpenAiCompatiblePreset[];
   apiKey: string;
   baseUrl: string;
   modelId: string;
@@ -142,6 +180,7 @@ export function compatibleConnectionReady(input: {
     baseUrl,
     modelId:
       headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
+    keyRequired: openAiCompatibleKeyRequired(input.presets, baseUrl),
   });
 }
 

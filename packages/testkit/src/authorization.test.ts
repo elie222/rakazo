@@ -257,6 +257,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/setRole"],
       ["models/backups"],
       ["models/setBackups"],
+      ["models/presets"],
       ["models/probeOpenAiCompatible"],
       ["models/probeCatalog"],
       ["models/rename"],

@@ -1,16 +1,22 @@
 import { describe, expect, it } from "vitest";
+import type { OpenAiCompatiblePreset } from "./domain.js";
 import {
   compatibleConnectionName,
-  DEEPINFRA_BASE_URL,
-  isDeepInfraBaseUrl,
-  isOllamaCloudBaseUrl,
+  connectedPresetBaseUrls,
   normalizeOpenAiCompatibleBaseUrl,
-  OLLAMA_CLOUD_BASE_URL,
   openAiCompatibleConnectReady,
   openAiCompatibleKeyRequired,
   openAiCompatiblePresetFor,
   savedCompatibleEndpointMatches,
 } from "./openai-compatible-ui.js";
+
+const HOSTED = "https://hosted.example.test/v1";
+const NESTED = "https://api.nested.example.test/v1/openai";
+const presets: OpenAiCompatiblePreset[] = [
+  { id: "hosted", name: "Hosted Example", baseUrl: HOSTED, keyRequired: true },
+  { id: "nested", name: "Nested Example", baseUrl: NESTED, keyRequired: true },
+  { id: "open", name: "Open Example", baseUrl: "https://open.example.test/v1", keyRequired: false },
+];
 
 describe("openAiCompatibleConnectReady", () => {
   it("allows a new connection with base URL and explicit model id", () => {
@@ -65,78 +71,86 @@ describe("normalizeOpenAiCompatibleBaseUrl", () => {
   });
 });
 
-it("uses an ordinary compatible connection for the Ollama preset and requires its key", () => {
-  expect(OLLAMA_CLOUD_BASE_URL).toBe("https://ollama.com/v1");
-  expect(compatibleConnectionName(OLLAMA_CLOUD_BASE_URL, "OpenAI-compatible")).toBe("Ollama Cloud");
-  expect(compatibleConnectionName("https://other.test/v1", "OpenAI-compatible")).toBe(
-    "OpenAI-compatible",
-  );
-  const input = { baseUrl: OLLAMA_CLOUD_BASE_URL, modelId: "example-model" };
-  expect(openAiCompatibleConnectReady(input)).toBe(false);
-  expect(openAiCompatibleConnectReady({ ...input, apiKey: "fake-key" })).toBe(true);
+describe("hosted OpenAI-compatible presets", () => {
+  it.each([
+    "https://hosted.example.test",
+    "https://hosted.example.test/",
+    "https://hosted.example.test/v1/",
+    " HTTPS://HOSTED.EXAMPLE.TEST:443/?q=x ",
+  ])("recognizes the preset at normalized URL %s", (url) => {
+    expect(openAiCompatiblePresetFor(presets, url)?.id).toBe("hosted");
+  });
+
+  it.each([
+    undefined,
+    "invalid",
+    "https://hosted.example.test.evil.test",
+    "https://hosted.example.test/v2",
+    "http://hosted.example.test",
+    "https://user:pass@hosted.example.test",
+  ])("does not mistake %s for a preset", (url) => {
+    expect(openAiCompatiblePresetFor(presets, url)).toBeUndefined();
+  });
+
+  it("keeps a preset path that already holds a version segment", () => {
+    expect(normalizeOpenAiCompatibleBaseUrl("https://api.nested.example.test/v1/openai/")).toBe(
+      NESTED,
+    );
+    expect(openAiCompatiblePresetFor(presets, `${NESTED}/`)?.id).toBe("nested");
+    expect(openAiCompatiblePresetFor(presets, "https://api.nested.example.test/v1")).toBe(
+      undefined,
+    );
+  });
+
+  it("recognizes nothing without a preset list", () => {
+    expect(openAiCompatiblePresetFor([], HOSTED)).toBeUndefined();
+    expect(compatibleConnectionName([], HOSTED, "Custom")).toBe("Custom");
+    expect(openAiCompatibleKeyRequired([], HOSTED)).toBe(false);
+  });
+
+  it("names preset connections from the list it is given", () => {
+    expect(compatibleConnectionName(presets, HOSTED, "Custom")).toBe("Hosted Example");
+    expect(compatibleConnectionName(presets, "http://127.0.0.1:8000/v1", "Custom")).toBe("Custom");
+  });
+
+  it("requires a key only where the preset says so", () => {
+    expect(openAiCompatibleKeyRequired(presets, HOSTED)).toBe(true);
+    expect(openAiCompatibleKeyRequired(presets, "https://open.example.test")).toBe(false);
+    expect(openAiCompatibleKeyRequired(presets, "http://127.0.0.1:8000/v1")).toBe(false);
+  });
+
+  it("waits for a key when the endpoint needs one", () => {
+    const input = { baseUrl: HOSTED, modelId: "example-model", keyRequired: true };
+    expect(openAiCompatibleConnectReady(input)).toBe(false);
+    expect(openAiCompatibleConnectReady({ ...input, apiKey: " " })).toBe(false);
+    expect(openAiCompatibleConnectReady({ ...input, apiKey: "fake-key" })).toBe(true);
+  });
+
+  it("lists every preset with a saved connection, however many share the provider", () => {
+    expect(
+      connectedPresetBaseUrls(presets, [
+        { provider: "openai-compatible", baseUrl: `${HOSTED}/` },
+        { provider: "openai-compatible", baseUrl: NESTED },
+        { provider: "openai-compatible", baseUrl: "http://127.0.0.1:8000/v1" },
+        { provider: "openai-compatible" },
+        { provider: "anthropic", baseUrl: "https://open.example.test/v1" },
+      ]),
+    ).toEqual(new Set([HOSTED, NESTED]));
+  });
 });
 
-it.each([
-  "https://ollama.com",
-  "https://ollama.com/",
-  "https://ollama.com/v1/",
-  " HTTPS://OLLAMA.COM:443/?q=x ",
-])("recognizes normalized Ollama URL %s", (url) => {
-  expect(isOllamaCloudBaseUrl(url)).toBe(true);
-});
-it.each([
-  undefined,
-  "invalid",
-  "https://ollama.com.evil.test",
-  "https://ollama.com/v2",
-  "http://ollama.com",
-  "https://user:pass@ollama.com",
-])("rejects non-preset URL %s", (url) => {
-  expect(isOllamaCloudBaseUrl(url)).toBe(false);
-});
-
-it.each(["https://ollama.com", "https://ollama.com/v1/"])(
+it.each(["https://hosted.example.test", "https://hosted.example.test/v1/"])(
   "matches equivalent saved endpoints: %s",
   (baseUrl) => {
-    expect(savedCompatibleEndpointMatches(baseUrl, OLLAMA_CLOUD_BASE_URL)).toBe(true);
+    expect(savedCompatibleEndpointMatches(baseUrl, HOSTED)).toBe(true);
   },
 );
-it.each(["", "https://", "https://other.test", "https://ollama.com/v2"])(
+it.each(["", "https://", "https://other.test", "https://hosted.example.test/v2"])(
   "does not inherit credentials for %s",
   (baseUrl) => {
-    expect(savedCompatibleEndpointMatches(baseUrl, OLLAMA_CLOUD_BASE_URL)).toBe(false);
+    expect(savedCompatibleEndpointMatches(baseUrl, HOSTED)).toBe(false);
   },
 );
 it("does not match a missing saved endpoint", () => {
-  expect(savedCompatibleEndpointMatches(OLLAMA_CLOUD_BASE_URL, undefined)).toBe(false);
-});
-
-describe("hosted OpenAI-compatible presets", () => {
-  it("recognizes DeepInfra's OpenAI-compatible base URL and keeps its /v1/openai path", () => {
-    expect(normalizeOpenAiCompatibleBaseUrl("https://api.deepinfra.com/v1/openai/")).toBe(
-      DEEPINFRA_BASE_URL,
-    );
-    expect(isDeepInfraBaseUrl("https://api.deepinfra.com/v1/openai")).toBe(true);
-    expect(isDeepInfraBaseUrl("https://api.deepinfra.com/v1")).toBe(false);
-    expect(openAiCompatiblePresetFor(DEEPINFRA_BASE_URL)?.id).toBe("deepinfra");
-    expect(openAiCompatiblePresetFor(OLLAMA_CLOUD_BASE_URL)?.id).toBe("ollama-cloud");
-    expect(openAiCompatiblePresetFor("http://127.0.0.1:8000/v1")).toBeUndefined();
-  });
-
-  it("names preset connections and requires a key only for presets", () => {
-    expect(compatibleConnectionName(DEEPINFRA_BASE_URL, "Custom")).toBe("DeepInfra");
-    expect(compatibleConnectionName("http://127.0.0.1:8000/v1", "Custom")).toBe("Custom");
-    expect(openAiCompatibleKeyRequired(DEEPINFRA_BASE_URL)).toBe(true);
-    expect(openAiCompatibleKeyRequired("http://127.0.0.1:8000/v1")).toBe(false);
-    expect(
-      openAiCompatibleConnectReady({ baseUrl: DEEPINFRA_BASE_URL, modelId: "zai-org/GLM-4.7" }),
-    ).toBe(false);
-    expect(
-      openAiCompatibleConnectReady({
-        baseUrl: DEEPINFRA_BASE_URL,
-        modelId: "zai-org/GLM-4.7",
-        apiKey: "key",
-      }),
-    ).toBe(true);
-  });
+  expect(savedCompatibleEndpointMatches(HOSTED, undefined)).toBe(false);
 });

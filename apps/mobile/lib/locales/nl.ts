@@ -109,10 +109,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Reservemodellen zijn mislukt of waren niet beschikbaar voor dit verzoek.",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "Ollama API-sleutel",
-  DeepInfra: "DeepInfra",
-  "DeepInfra API key": "DeepInfra API-sleutel",
   "Show password": "Wachtwoord tonen",
   "Hide password": "Wachtwoord verbergen",
   Export: "Exporteren",

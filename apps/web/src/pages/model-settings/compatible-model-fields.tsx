@@ -1,6 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
-import { openAiCompatiblePresetFor } from "@rakazo/contracts";
 import { compatibleThinkingLevels, toggleEnabledModelId } from "@rakazo/core";
 import {
   Button,
@@ -35,6 +34,7 @@ export function CompatibleModelFields({
   defaultModelOptions,
   effectiveBaseUrl,
   enabledModelIds,
+  hostedPreset,
   invalidatePreflight,
   maxImagesPerPrompt,
   maxTokens,
@@ -77,6 +77,7 @@ export function CompatibleModelFields({
   | "defaultModelOptions"
   | "effectiveBaseUrl"
   | "enabledModelIds"
+  | "hostedPreset"
   | "invalidatePreflight"
   | "maxImagesPerPrompt"
   | "maxTokens"
@@ -150,7 +151,7 @@ export function CompatibleModelFields({
           {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
         </Button>
       </div>
-      {!openAiCompatiblePresetFor(baseUrl) ? (
+      {!hostedPreset ? (
         <Disclosure
           className="mt-3 text-body text-muted-foreground"
           summary={<Trans>Setup help</Trans>}

@@ -12,7 +12,6 @@ import {
   DEFAULT_MODEL_MAX_TOKENS,
   ipVersion,
   isCloudMetadataAddress,
-  isDeepInfraBaseUrl,
   isLinkLocalAddress,
   isNonPublicAddress,
   MODEL_KEY_REJECTED_ERROR,
@@ -23,6 +22,7 @@ import { deepInfraModelList } from "./deepinfra-models.js";
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 import type { ResolveHostname } from "./network-address.js";
 import { createAddressCheckedLookup } from "./network-address.js";
+import { isDeepInfraBaseUrl } from "./openai-compatible-presets.js";
 import type { OpenAiCompatibleUrlPolicy } from "./openai-compatible-url.js";
 import {
   assertAllowedOpenAiCompatibleRequestUrl,

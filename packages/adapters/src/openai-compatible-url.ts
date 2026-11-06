@@ -9,10 +9,14 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 
+import { OPENAI_COMPATIBLE_PRESETS } from "./openai-compatible-presets.js";
+
 export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
 
-/** Hosts of the hosted presets (Ollama Cloud, DeepInfra), reachable even with public hosts off. */
-const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com", "api.deepinfra.com"]);
+/** Hosts of the hosted presets, reachable even with public hosts off. */
+const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(
+  OPENAI_COMPATIBLE_PRESETS.map((preset) => new URL(preset.baseUrl).hostname),
+);
 
 export function openAiCompatAllowPublicHosts(): boolean {
   return process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC !== "0";

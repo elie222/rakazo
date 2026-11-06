@@ -123,6 +123,7 @@ import {
   ModelOAuthBeginSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   OpenAiCompatibleModelInfoSchema,
+  OpenAiCompatiblePresetSchema,
   PluginMarketplaceCatalogSchema,
   PluginPartSchema,
   PluginPreviewSchema,
@@ -511,6 +512,8 @@ export const appContract = {
     backups: oc.output(z.array(ModelBackupChoiceSchema)),
     setBackups: oc.input(ModelBackupListSchema).output(z.object({ ok: z.literal(true) })),
     connect: oc.input(ModelConnectInputSchema).output(ModelCredentialSchema),
+    /** Hosted OpenAI-compatible services offered as one-tap choices. */
+    presets: oc.output(z.array(OpenAiCompatiblePresetSchema)),
     probeOpenAiCompatible: oc
       .input(
         z.object({

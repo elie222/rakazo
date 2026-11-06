@@ -1600,6 +1600,25 @@ export function modelOutputLeavesInputRoom(
   return typeof maxTokens !== "number" || contextWindow === undefined || maxTokens < contextWindow;
 }
 
+/**
+ * The cache capabilities a connect input gives one model: its own per-model entry, else the
+ * connection-wide value. Mirrors how the saved connection resolves them when that model runs.
+ */
+export function connectionCacheCapabilities(
+  input: {
+    cacheCapabilities?: CacheCapabilities | null;
+    cacheCapabilitiesByModel?: Record<string, CacheCapabilities | null>;
+  },
+  modelId: string | undefined,
+): CacheCapabilities | undefined {
+  const byModel = input.cacheCapabilitiesByModel;
+  const own =
+    modelId !== undefined && byModel !== undefined && Object.hasOwn(byModel, modelId)
+      ? byModel[modelId]
+      : undefined;
+  return own ?? input.cacheCapabilities ?? undefined;
+}
+
 /** Wire protocol selected for one OpenAI-compatible connection. */
 export const ModelApiProtocolSchema = z.enum([
   "chat-completions",
@@ -1614,6 +1633,8 @@ export const ModelCredentialSchema = z.object({
   ...ModelContextLimitsSchema.shape,
   /** Openai-compatible only: cache capabilities of the models that declare their own. */
   cacheCapabilitiesByModel: CacheCapabilitiesByModelSchema.optional(),
+  /** Openai-compatible only: the hosted preset's name when `baseUrl` points at one. */
+  presetName: z.string().optional(),
   id: Id,
   provider: z.string(),
   label: z.string(),
@@ -1676,8 +1697,9 @@ export function modelChoiceListSchema<T extends z.ZodType<ModelBackupChoice>>(ch
 export const ModelBackupListSchema = modelChoiceListSchema(ModelBackupChoiceSchema);
 
 /**
- * What a model listing says about one model, when the server publishes it (DeepInfra does in
- * `/models` metadata). Every field is optional: absent means unknown, never "unsupported".
+ * What a model listing says about one model, when the server publishes it (some hosted services
+ * do in their `/models` metadata). Every field is optional: absent means unknown, never
+ * "unsupported".
  * The UI uses it to prefill the connection's image, thinking and context settings.
  */
 export const OpenAiCompatibleModelInfoSchema = z.object({
@@ -1690,6 +1712,19 @@ export const OpenAiCompatibleModelInfoSchema = z.object({
   cacheCapabilities: CacheCapabilitiesSchema.optional(),
 });
 export type OpenAiCompatibleModelInfo = z.infer<typeof OpenAiCompatibleModelInfoSchema>;
+
+/**
+ * A hosted OpenAI-compatible service offered as a one-tap choice. The connection is still saved
+ * under the OpenAI-compatible provider with the preset's base URL; the server owns the list.
+ */
+export const OpenAiCompatiblePresetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  baseUrl: z.string(),
+  /** The service refuses requests without an API key. */
+  keyRequired: z.boolean(),
+});
+export type OpenAiCompatiblePreset = z.infer<typeof OpenAiCompatiblePresetSchema>;
 
 export const OPENAI_COMPATIBLE_PROVIDER_ID = "openai-compatible";
 
@@ -1712,11 +1747,12 @@ export const ModelConnectInputSchema = z
      * Openai-compatible only: capabilities per model id, merged into the saved ones. `null`
      * clears one model's entry, for a model the server describes as having no prompt cache.
      * Sending the map replaces the saved connection-wide value, which cannot describe several
-     * models, unless `cacheCapabilities` is sent too.
+     * models, unless `cacheCapabilities` is sent too. It holds up to the enabled models plus
+     * the selected one, which `enabledModelIds` leaves out.
      */
     cacheCapabilitiesByModel: z
       .record(z.string().trim().min(1).max(512), CacheCapabilitiesSchema.nullable())
-      .refine((value) => Object.keys(value).length <= MAX_ENABLED_MODEL_IDS, {
+      .refine((value) => Object.keys(value).length <= MAX_ENABLED_MODEL_IDS + 1, {
         message: "Too many models",
       })
       .optional(),

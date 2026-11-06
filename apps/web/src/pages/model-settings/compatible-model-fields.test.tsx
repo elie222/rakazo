@@ -50,6 +50,7 @@ function props(compatibleRows: string[], enabledModelIds: string[], modelId = ""
     defaultModelOptions: [],
     effectiveBaseUrl: "http://127.0.0.1:8000/v1",
     enabledModelIds,
+    hostedPreset: undefined,
     invalidatePreflight: () => {},
     maxImagesPerPrompt: "",
     maxTokens: "4096",
@@ -272,15 +273,23 @@ it("keeps the server URL and setup help only for a custom server", async () => {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const render = (baseUrl: string) =>
-    act(async () => root.render(<CompatibleModelFields {...props([], [])} baseUrl={baseUrl} />));
+  const hostedPreset = {
+    id: "hosted",
+    name: "Hosted Example",
+    baseUrl: "https://hosted.example.test/v1",
+    keyRequired: true,
+  };
+  const render = (baseUrl: string, preset?: typeof hostedPreset) =>
+    act(async () =>
+      root.render(
+        <CompatibleModelFields {...props([], [])} baseUrl={baseUrl} hostedPreset={preset} />,
+      ),
+    );
   try {
     await render("http://127.0.0.1:8000/v1");
     expect(container.textContent).toContain("Setup help");
-    for (const preset of ["https://ollama.com/v1", "https://api.deepinfra.com/v1/openai"]) {
-      await render(preset);
-      expect(container.textContent).not.toContain("Setup help");
-    }
+    await render(hostedPreset.baseUrl, hostedPreset);
+    expect(container.textContent).not.toContain("Setup help");
   } finally {
     await act(async () => root.unmount());
     container.remove();

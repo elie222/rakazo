@@ -1,4 +1,5 @@
 import type { ModelCredential } from "@rakazo/contracts";
+import { ModelConnectInputSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { ConnectionFormDraft } from "./model-connection-form.js";
 import {
@@ -6,6 +7,7 @@ import {
   connectionFormFields,
   connectionFormModelId,
   modelConnectRequest,
+  probedModelFields,
 } from "./model-connection-form.js";
 
 const catalog = [
@@ -213,7 +215,19 @@ describe("connectionFormFields", () => {
 });
 
 describe("compatibleConnectionReady", () => {
-  const ready = { apiKey: "", baseUrl: " http://h/v1 ", modelId: "m", headerRows: null };
+  const hosted = {
+    id: "hosted",
+    name: "Hosted Example",
+    baseUrl: "https://hosted.example.test/v1",
+    keyRequired: true,
+  };
+  const ready = {
+    presets: [hosted],
+    apiKey: "",
+    baseUrl: " http://h/v1 ",
+    modelId: "m",
+    headerRows: null,
+  };
 
   it("needs a URL and a model", () => {
     expect(compatibleConnectionReady(ready)).toBe(true);
@@ -225,6 +239,86 @@ describe("compatibleConnectionReady", () => {
     expect(
       compatibleConnectionReady({ ...ready, headerRows: [{ name: "bad name", value: "v" }] }),
     ).toBe(false);
+  });
+
+  it("waits for a key at a hosted preset, from the typed one or the saved one", () => {
+    const atPreset = { ...ready, baseUrl: " https://hosted.example.test " };
+    expect(compatibleConnectionReady(atPreset)).toBe(false);
+    expect(compatibleConnectionReady({ ...atPreset, apiKey: "fake-key" })).toBe(true);
+    expect(
+      compatibleConnectionReady({
+        ...atPreset,
+        credential: { hasKey: true, baseUrl: hosted.baseUrl },
+      }),
+    ).toBe(true);
+    expect(compatibleConnectionReady({ ...atPreset, presets: [] })).toBe(true);
+  });
+});
+
+describe("probedModelFields", () => {
+  it("prefills only the fields the listing publishes", () => {
+    expect(probedModelFields(undefined, "4096")).toEqual({});
+    expect(probedModelFields({ id: "a" }, "4096")).toEqual({});
+    expect(
+      probedModelFields(
+        { id: "a", supportsImages: false, reasoning: true, contextWindow: 131072 },
+        "4096",
+      ),
+    ).toEqual({ supportsImages: false, reasoning: true, contextWindow: "131072" });
+  });
+
+  it("ignores cache pricing, which rides on the connect request instead", () => {
+    expect(
+      probedModelFields(
+        { id: "a", cacheCapabilities: { scope: "account", retentionMode: "short" } },
+        "4096",
+      ),
+    ).toEqual({});
+  });
+
+  it.each([
+    [4096, "4096", "2048"],
+    [8192, "9000", "4096"],
+    [2, "4096", "1"],
+    [3, "3", "1"],
+  ])(
+    "lowers the output limit when a %i-token context would not leave it room (was %s)",
+    (contextWindow, current, lowered) => {
+      expect(probedModelFields({ id: "a", contextWindow }, current)).toEqual({
+        contextWindow: String(contextWindow),
+        maxTokens: lowered,
+      });
+    },
+  );
+
+  it("keeps an output limit that already fits", () => {
+    expect(probedModelFields({ id: "a", contextWindow: 8192 }, "4096")).toEqual({
+      contextWindow: "8192",
+    });
+  });
+
+  it.each(["", "lots", "4096.5"])(
+    "leaves an output limit it cannot read as a whole number (%j) to the form's own validation",
+    (current) => {
+      expect(probedModelFields({ id: "a", contextWindow: 4096 }, current)).toEqual({
+        contextWindow: "4096",
+      });
+    },
+  );
+
+  it("does not prefill a one-token context limit, which no output limit can fit under", () => {
+    expect(probedModelFields({ id: "a", reasoning: true, contextWindow: 1 }, "4096")).toEqual({
+      reasoning: true,
+    });
+  });
+
+  it("keeps every prefilled pair valid down to the smallest context limit", () => {
+    for (const contextWindow of [2, 3, 4096]) {
+      const fields = probedModelFields({ id: "a", contextWindow }, "4096");
+      expect(Number(fields.contextWindow)).toBe(contextWindow);
+      expect(Number(fields.maxTokens ?? "4096")).toBeLessThan(contextWindow);
+      expect(Number(fields.maxTokens ?? "4096")).toBeGreaterThanOrEqual(1);
+    }
   });
 });
 
@@ -440,6 +534,22 @@ describe("modelConnectRequest", () => {
         n: pricier,
         plain: null,
       });
+    });
+
+    it("builds a request the server accepts when the selected model and 500 enabled ones are described", () => {
+      const enabledModelIds = Array.from({ length: 500 }, (_, i) => `model-${i}`);
+      const request = modelConnectRequest({
+        form: form({ enabledModelIds }),
+        selected: compatible,
+        credentialId: null,
+        probedModels: new Map(
+          ["m", ...enabledModelIds].map((id) => [id, { id, cacheCapabilities: cached }]),
+        ),
+      });
+      expect(request.status).toBe("ready");
+      if (request.status !== "ready") return;
+      expect(Object.keys(request.input.cacheCapabilitiesByModel ?? {})).toHaveLength(501);
+      expect(ModelConnectInputSchema.safeParse(request.input).success).toBe(true);
     });
 
     it("sends no cache capabilities when the listing described none of the models", () => {

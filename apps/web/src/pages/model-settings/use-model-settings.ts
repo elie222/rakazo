@@ -3,6 +3,7 @@ import type {
   Me,
   ModelApiProtocol,
   ModelHeaderRow,
+  OpenAiCompatiblePreset,
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
@@ -18,6 +19,8 @@ import {
   MAX_MODEL_MAX_TOKENS,
   modelHeadersInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  openAiCompatibleKeyRequired,
+  openAiCompatiblePresetFor,
   openAiCompatibleProbeSuccessMessage,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
@@ -34,12 +37,12 @@ import {
   initialModelProbeState,
   modelConnectRequest,
   popularModelProvidersFirst,
+  probedModelFields,
   savedCompatibleModelIds,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { probedModelFields } from "../../lib/compatible-preset";
 import { useCopyText } from "../../lib/copy-text";
 import { providerDisplayName } from "../../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
@@ -59,6 +62,7 @@ import { errorText } from "../../lib/user-error";
 
 const NO_CATALOG: ModelCatalogEntry[] = [];
 const NO_CREDENTIALS: never[] = [];
+const NO_PRESETS: OpenAiCompatiblePreset[] = [];
 
 export type ModelConnectIntent = {
   /** False keeps the current main model; the connection is for a fallback or another role. */
@@ -92,6 +96,13 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     queryFn: () => rpc.models.credentials(),
   };
   const meQuery = { queryKey: queries.me.queryKey(), queryFn: () => rpc.me() };
+  // The hosted services the server offers never change within a session.
+  const presets =
+    useQuery({
+      queryKey: queries.models.presets.queryKey(),
+      queryFn: () => rpc.models.presets(),
+      staleTime: Number.POSITIVE_INFINITY,
+    }).data ?? NO_PRESETS;
   const catalog = useQuery(catalogQuery).data ?? NO_CATALOG;
   const credentials = useQuery(credentialsQuery).data ?? NO_CREDENTIALS;
   const me: Me | null = useQuery(meQuery).data ?? null;
@@ -295,6 +306,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   selectedLabelRef.current = selected?.label;
   const selectedProviderName = compatibleConnectionName(
+    presets,
     baseUrl,
     groups.find((group) => group.id === provider)?.name ?? provider,
   );
@@ -331,7 +343,10 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   const busy = pending !== null || oauthPending;
   const savedHeaderEndpointMatches = savedCompatibleEndpointMatches(baseUrl, credential?.baseUrl);
   const effectiveBaseUrl = baseUrl.trim();
+  const hostedPreset = openAiCompatiblePresetFor(presets, baseUrl);
+  const keyRequired = openAiCompatibleKeyRequired(presets, baseUrl);
   const openAiCompatibleReady = compatibleConnectionReady({
+    presets,
     apiKey,
     baseUrl,
     modelId,
@@ -753,10 +768,12 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     groups,
     handleClose,
     hostCredentialSource,
+    hostedPreset,
     invalidatePreflight,
     isCloudflare,
     isCloudflareGateway,
     isOpenAiCompatible,
+    keyRequired,
     loading,
     maxImagesPerPrompt,
     maxTokens,
@@ -774,6 +791,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     preflightSuccess,
     preflightTarget,
     preflightTesting,
+    presets,
     probeInfoById: probeInfo.infoById,
     probeModels,
     probeServerModels,

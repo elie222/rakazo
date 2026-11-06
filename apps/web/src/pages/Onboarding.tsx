@@ -1,5 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import type { ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
+import type { ModelHeaderRow, OpenAiCompatiblePreset, ThinkingLevel } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   cloudflareModelRouting,
@@ -10,7 +10,6 @@ import {
   MAX_MODEL_MAX_TOKENS,
   ModelHeaderRowsSchema,
   modelHeadersInput,
-  OPENAI_COMPATIBLE_PRESETS,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleKeyRequired,
@@ -27,6 +26,7 @@ import {
   initialModelProbeState,
   pickCatalogModelId,
   popularModelProvidersFirst,
+  probedModelFields,
 } from "@rakazo/core";
 import {
   Button,
@@ -52,11 +52,7 @@ import {
 import { ModelHeadersEditor } from "../components/ModelHeadersEditor";
 import { PageLoading } from "../components/PageLoading";
 import { SignupSurvey } from "../components/SignupSurvey";
-import {
-  modelCapabilityHint,
-  presetApiKeyPlaceholder,
-  probedModelFields,
-} from "../lib/compatible-preset";
+import { modelCapabilityHint, presetApiKeyPlaceholder } from "../lib/compatible-preset";
 import { useCopyText } from "../lib/copy-text";
 import { providerDisplayName } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../lib/model-auth";
@@ -163,6 +159,7 @@ export function OnboardingPage() {
   // The step after the survey; null until me loads.
   const [afterSurvey, setAfterSurvey] = useState<"model" | "bot" | null>(null);
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
+  const [presets, setPresets] = useState<OpenAiCompatiblePreset[]>([]);
   const [provider, setProvider] = useState("");
   const [providerAuth, setProviderAuth] = useState<ProviderAuth | undefined>();
   const [credits, setCredits] = useState(false);
@@ -218,10 +215,15 @@ export function OnboardingPage() {
   });
 
   useEffect(() => {
-    void Promise.all([rpc.me(), rpc.models.list().catch(() => [])])
-      .then(([me, models]) => {
+    void Promise.all([
+      rpc.me(),
+      rpc.models.list().catch(() => []),
+      rpc.models.presets().catch(() => []),
+    ])
+      .then(([me, models, hostedPresets]) => {
         setBillingEnabled(me.billingEnabled);
         setCatalog(models);
+        setPresets(hostedPresets);
         const next = me.needsModel ? "model" : "bot";
         setAfterSurvey(next);
         if (!linkedStep) goTo(me.needsSignupSurvey ? "survey" : next);
@@ -272,7 +274,10 @@ export function OnboardingPage() {
   const subscriptionSignIn = selected?.signIn !== undefined && providerAuth !== "key";
   const acceptsKey = selected?.auth !== "oauth" && providerAuth !== "sign-in";
   const signInLabel = selected?.oauthLabel ?? t`Sign in`;
+  const hostedPreset = openAiCompatiblePresetFor(presets, baseUrl);
+  const keyRequired = openAiCompatibleKeyRequired(presets, baseUrl);
   const openAiCompatibleReady = openAiCompatibleConnectReady({
+    keyRequired,
     apiKey,
     baseUrl,
     modelId:
@@ -311,7 +316,7 @@ export function OnboardingPage() {
           return entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
             ? [
                 item,
-                ...OPENAI_COMPATIBLE_PRESETS.map((preset) => ({
+                ...presets.map((preset) => ({
                   value: presetOptionValue(preset.id),
                   label: preset.name,
                 })),
@@ -358,11 +363,7 @@ export function OnboardingPage() {
   }
 
   function selectProvider(option: string, presetBaseUrl?: string) {
-    if (
-      option === providerOptionValue(provider, providerAuth) &&
-      !presetBaseUrl &&
-      !openAiCompatiblePresetFor(baseUrl)
-    )
+    if (option === providerOptionValue(provider, providerAuth) && !presetBaseUrl && !hostedPreset)
       return;
     const [nextProvider = option, auth] = option.split(":") as [string, ProviderAuth?];
     cancelOAuthAttempt();
@@ -617,8 +618,8 @@ export function OnboardingPage() {
                 value={
                   credits
                     ? CREDITS_OPTION
-                    : isOpenAiCompatible && openAiCompatiblePresetFor(baseUrl)
-                      ? presetOptionValue(openAiCompatiblePresetFor(baseUrl)?.id ?? "")
+                    : isOpenAiCompatible && hostedPreset
+                      ? presetOptionValue(hostedPreset.id)
                       : provider
                         ? providerOptionValue(provider, providerAuth)
                         : null
@@ -634,9 +635,7 @@ export function OnboardingPage() {
                     return;
                   }
                   setCredits(false);
-                  const preset = OPENAI_COMPATIBLE_PRESETS.find(
-                    (entry) => presetOptionValue(entry.id) === value,
-                  );
+                  const preset = presets.find((entry) => presetOptionValue(entry.id) === value);
                   if (preset) selectProvider(OPENAI_COMPATIBLE_PROVIDER_ID, preset.baseUrl);
                   else selectProvider(value);
                 }}
@@ -943,14 +942,14 @@ export function OnboardingPage() {
                   isOpenAiCompatible ? (
                     <CompatibleKeyField
                       className="mt-4 block text-body text-muted-foreground"
-                      baseUrl={baseUrl}
+                      required={keyRequired}
                     >
                       <Input
                         aria-label={t`API key`}
                         value={apiKey}
                         onChange={(e) => updateApiKey(e.target.value)}
-                        required={openAiCompatibleKeyRequired(baseUrl)}
-                        placeholder={presetApiKeyPlaceholder(baseUrl) ?? t`Optional`}
+                        required={keyRequired}
+                        placeholder={presetApiKeyPlaceholder(hostedPreset) ?? t`Optional`}
                         type="password"
                         autoComplete="new-password"
                         className="mt-2"

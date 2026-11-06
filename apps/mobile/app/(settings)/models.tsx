@@ -1,8 +1,8 @@
+import type { OpenAiCompatiblePreset } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
-  OPENAI_COMPATIBLE_PRESETS,
+  connectedPresetBaseUrls,
   OPENAI_COMPATIBLE_PROVIDER_ID,
-  openAiCompatiblePresetFor,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
@@ -27,7 +27,6 @@ import { closeModelConnection, openModelConnection } from "../../lib/model-conne
 import type { ModelPickerRequest } from "../../lib/model-picker-selection";
 import { closeModelPicker, openModelPicker } from "../../lib/model-picker-selection";
 import { native, useThemedStyles } from "../../lib/native";
-import { presetName } from "../../lib/openai-compatible-presets";
 import { queryClient, rpcQuery } from "../../lib/query";
 import { settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
@@ -36,6 +35,7 @@ import { errorText } from "../../lib/user-error";
 const noModels: MobileModel[] = [];
 const noCredentials: MobileModelCredential[] = [];
 const noBots: MobileBot[] = [];
+const noPresets: OpenAiCompatiblePreset[] = [];
 
 /**
  * The main and approval model lists; connecting a provider opens its own screen. Opened with a
@@ -63,6 +63,9 @@ export default function Models() {
       },
       queryClient,
     ).data ?? noCredentials;
+  const presets =
+    useQuery({ ...rpcQuery("models/presets", undefined, spaceId), enabled: false }, queryClient)
+      .data ?? noPresets;
   const bots =
     useQuery({ ...rpcQuery("bots/list", undefined, spaceId), enabled: false }, queryClient).data ??
     noBots;
@@ -93,6 +96,10 @@ export default function Models() {
           fetchFresh(queryClient, rpcQuery("models/credentials", undefined, spaceId), {
             reuse,
           }),
+          // Without the preset list only the hosted presets are not offered.
+          fetchFresh(queryClient, rpcQuery("models/presets", undefined, spaceId), { reuse }).catch(
+            () => undefined,
+          ),
           // Without the bot list only the bot model notice is missing.
           fetchFresh(queryClient, rpcQuery("bots/list", undefined, spaceId), { reuse }).catch(
             () => undefined,
@@ -160,7 +167,7 @@ export default function Models() {
       }),
     );
 
-  /** Every provider, popular first, plus a preset (Ollama Cloud, DeepInfra) per hosted compatible service. */
+  /** Every provider, popular first, plus a preset per hosted compatible service. */
   const allProviders = useMemo(() => {
     const grouped = new Map<string, ConnectableProvider>();
     for (const entry of catalog) {
@@ -172,10 +179,10 @@ export default function Models() {
     }
     const all = [...grouped.values()];
     if (catalog.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID))
-      for (const preset of OPENAI_COMPATIBLE_PRESETS)
+      for (const preset of presets)
         all.push({
           id: OPENAI_COMPATIBLE_PROVIDER_ID,
-          name: presetName(preset, t),
+          name: preset.name,
           baseUrl: preset.baseUrl,
         });
     return popularModelProvidersFirst(
@@ -183,26 +190,19 @@ export default function Models() {
       (provider) => provider.id,
       (provider) => provider.name,
     );
-  }, [catalog, t]);
+  }, [catalog, presets]);
 
   // Deployment-funded providers stay listed so people can still add their own key.
   const providers = useMemo(() => {
     const connected = new Set(credentials.map((entry) => canonicalPiProviderId(entry.provider)));
     // A hosted preset is offered once, until a connection to its endpoint is saved.
-    const connectedPresets = new Set<string>();
-    for (const entry of credentials) {
-      const preset =
-        entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-          ? openAiCompatiblePresetFor(entry.baseUrl)
-          : undefined;
-      if (preset) connectedPresets.add(preset.baseUrl);
-    }
+    const connectedPresets = connectedPresetBaseUrls(presets, credentials);
     return allProviders.filter((provider) =>
       provider.baseUrl
         ? !connectedPresets.has(provider.baseUrl)
         : !connected.has(canonicalPiProviderId(provider.id)),
     );
-  }, [allProviders, credentials]);
+  }, [allProviders, credentials, presets]);
 
   const providerKey = (provider: ConnectableProvider) =>
     `connect:${provider.id}:${provider.baseUrl ?? ""}`;

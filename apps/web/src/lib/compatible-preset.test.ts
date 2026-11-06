@@ -1,15 +1,8 @@
-import { DEEPINFRA_BASE_URL, OLLAMA_CLOUD_BASE_URL } from "@rakazo/contracts";
 import { expect, it } from "vitest";
-import {
-  modelCapabilityHint,
-  presetApiKeyPlaceholder,
-  probedModelFields,
-} from "./compatible-preset";
+import { modelCapabilityHint, presetApiKeyPlaceholder } from "./compatible-preset";
 
-it("labels the key field of each hosted preset and leaves ordinary servers alone", () => {
-  expect(presetApiKeyPlaceholder(OLLAMA_CLOUD_BASE_URL)).toBe("Ollama API key");
-  expect(presetApiKeyPlaceholder(`${DEEPINFRA_BASE_URL}/`)).toBe("DeepInfra API key");
-  expect(presetApiKeyPlaceholder("http://127.0.0.1:8000/v1")).toBeUndefined();
+it("labels the key field of a hosted preset with its name and leaves ordinary servers alone", () => {
+  expect(presetApiKeyPlaceholder({ name: "Hosted Example" })).toBe("API key for Hosted Example");
   expect(presetApiKeyPlaceholder(undefined)).toBeUndefined();
 });
 
@@ -21,40 +14,4 @@ it("summarizes only the capabilities a model listing confirms", () => {
   expect(modelCapabilityHint({ id: "a", supportsImages: true, reasoning: true })).toBe(
     "Images · Thinking",
   );
-});
-
-it("prefills only the fields the listing publishes", () => {
-  expect(probedModelFields(undefined, "4096")).toEqual({});
-  expect(probedModelFields({ id: "a" }, "4096")).toEqual({});
-  expect(
-    probedModelFields(
-      { id: "a", supportsImages: false, reasoning: true, contextWindow: 131072 },
-      "4096",
-    ),
-  ).toEqual({ supportsImages: false, reasoning: true, contextWindow: "131072" });
-});
-
-it("lowers the output limit when a published context limit leaves no room for input", () => {
-  expect(probedModelFields({ id: "a", contextWindow: 4096 }, "4096")).toEqual({
-    contextWindow: "4096",
-    maxTokens: "2048",
-  });
-  expect(probedModelFields({ id: "a", contextWindow: 8192 }, "4096")).toEqual({
-    contextWindow: "8192",
-  });
-});
-
-it("does not prefill a one-token context limit, which no output limit can fit under", () => {
-  expect(probedModelFields({ id: "a", reasoning: true, contextWindow: 1 }, "4096")).toEqual({
-    reasoning: true,
-  });
-});
-
-it("keeps every prefilled pair valid down to the smallest context limit", () => {
-  for (const contextWindow of [2, 3, 4096]) {
-    const fields = probedModelFields({ id: "a", contextWindow }, "4096");
-    expect(Number(fields.contextWindow)).toBe(contextWindow);
-    expect(Number(fields.maxTokens ?? "4096")).toBeLessThan(contextWindow);
-    expect(Number(fields.maxTokens ?? "4096")).toBeGreaterThanOrEqual(1);
-  }
 });

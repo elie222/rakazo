@@ -1,20 +1,7 @@
-/** UI preset only; saved connections use the OpenAI-compatible provider. */
-export const OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1";
+import type { OpenAiCompatiblePreset } from "./domain.js";
+import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./domain.js";
 
-/** UI preset only, like Ollama Cloud: DeepInfra serves its OpenAI-compatible API under /v1/openai. */
-export const DEEPINFRA_BASE_URL = "https://api.deepinfra.com/v1/openai";
-
-/**
- * Hosted OpenAI-compatible services offered as presets. Each needs an API key, and the
- * connection is still saved under the OpenAI-compatible provider with the preset's base URL.
- */
-export const OPENAI_COMPATIBLE_PRESETS = [
-  { id: "ollama-cloud", name: "Ollama Cloud", baseUrl: OLLAMA_CLOUD_BASE_URL },
-  { id: "deepinfra", name: "DeepInfra", baseUrl: DEEPINFRA_BASE_URL },
-] as const;
-export type OpenAiCompatiblePreset = (typeof OPENAI_COMPATIBLE_PRESETS)[number];
-
-function isPresetBaseUrl(baseUrl: string | undefined, presetBaseUrl: string): boolean {
+function matchesPresetBaseUrl(baseUrl: string | undefined, presetBaseUrl: string): boolean {
   try {
     return normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "") === presetBaseUrl;
   } catch {
@@ -22,28 +9,47 @@ function isPresetBaseUrl(baseUrl: string | undefined, presetBaseUrl: string): bo
   }
 }
 
-/** The hosted preset a base URL points at, if any. */
+/**
+ * The hosted preset a base URL points at, if any. The server owns the preset list and sends it
+ * to every app, so no app names a service itself.
+ */
 export function openAiCompatiblePresetFor(
+  presets: readonly OpenAiCompatiblePreset[],
   baseUrl: string | undefined,
 ): OpenAiCompatiblePreset | undefined {
-  return OPENAI_COMPATIBLE_PRESETS.find((preset) => isPresetBaseUrl(baseUrl, preset.baseUrl));
+  return presets.find((preset) => matchesPresetBaseUrl(baseUrl, preset.baseUrl));
 }
 
-export function isOllamaCloudBaseUrl(baseUrl: string | undefined): boolean {
-  return isPresetBaseUrl(baseUrl, OLLAMA_CLOUD_BASE_URL);
+/** Base URLs of the hosted presets that already have a saved connection, one per preset. */
+export function connectedPresetBaseUrls(
+  presets: readonly OpenAiCompatiblePreset[],
+  credentials: readonly { provider: string; baseUrl?: string }[],
+): Set<string> {
+  const connected = new Set<string>();
+  for (const credential of credentials) {
+    const preset =
+      credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+        ? openAiCompatiblePresetFor(presets, credential.baseUrl)
+        : undefined;
+    if (preset) connected.add(preset.baseUrl);
+  }
+  return connected;
 }
 
-export function isDeepInfraBaseUrl(baseUrl: string | undefined): boolean {
-  return isPresetBaseUrl(baseUrl, DEEPINFRA_BASE_URL);
+/** Hosted presets refuse keyless requests, so their key field is required. */
+export function openAiCompatibleKeyRequired(
+  presets: readonly OpenAiCompatiblePreset[],
+  baseUrl: string | undefined,
+): boolean {
+  return openAiCompatiblePresetFor(presets, baseUrl)?.keyRequired ?? false;
 }
 
-/** Hosted presets refuse keyless requests, so the key field is required for them. */
-export function openAiCompatibleKeyRequired(baseUrl: string | undefined): boolean {
-  return openAiCompatiblePresetFor(baseUrl) !== undefined;
-}
-
-export function compatibleConnectionName(baseUrl: string | undefined, fallback: string): string {
-  return openAiCompatiblePresetFor(baseUrl)?.name ?? fallback;
+export function compatibleConnectionName(
+  presets: readonly OpenAiCompatiblePreset[],
+  baseUrl: string | undefined,
+  fallback: string,
+): string {
+  return openAiCompatiblePresetFor(presets, baseUrl)?.name ?? fallback;
 }
 
 export const OPENAI_COMPATIBLE_BASE_URL_HINT =
@@ -54,11 +60,11 @@ export function openAiCompatibleConnectReady(input: {
   baseUrl: string;
   modelId: string;
   apiKey?: string;
+  /** The endpoint is a hosted preset that refuses requests without a key. */
+  keyRequired?: boolean;
 }): boolean {
   return Boolean(
-    input.baseUrl.trim() &&
-      input.modelId.trim() &&
-      (!openAiCompatibleKeyRequired(input.baseUrl) || input.apiKey?.trim()),
+    input.baseUrl.trim() && input.modelId.trim() && (!input.keyRequired || input.apiKey?.trim()),
   );
 }
 

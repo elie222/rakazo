@@ -27,6 +27,20 @@ vi.mock("../lib/rpc", () => ({
           billing: "API key",
         },
       ]),
+      presets: vi.fn(async () => [
+        {
+          id: "ollama-cloud",
+          name: "Ollama Cloud",
+          baseUrl: "https://ollama.com/v1",
+          keyRequired: true,
+        },
+        {
+          id: "deepinfra",
+          name: "DeepInfra",
+          baseUrl: "https://api.deepinfra.com/v1/openai",
+          keyRequired: true,
+        },
+      ]),
       probeOpenAiCompatible: vi.fn(async () => ({
         models: Array.from({ length: 11 }, (_, index) => `found-${index}`),
       })),
@@ -192,7 +206,7 @@ it("connects DeepInfra with a required key and the model's discovered capabiliti
     "https://api.deepinfra.com/v1/openai",
   );
   expect(document.body.textContent).not.toContain("Setup help");
-  const key = input('input[placeholder="DeepInfra API key"]');
+  const key = input('input[placeholder="API key for DeepInfra"]');
   expect(key.required).toBe(true);
   await change(key, "fake-fixture-key");
   await act(async () => button("Find models").click());
@@ -246,7 +260,7 @@ it("keeps Continue disabled for a hosted preset until its key is entered", async
   const continueButton = [...document.querySelectorAll("button")].find(
     (entry) => entry.textContent === "Continue",
   )!;
-  expect(document.querySelector('input[placeholder="Ollama API key"]')).not.toBeNull();
+  expect(document.querySelector('input[placeholder="API key for Ollama Cloud"]')).not.toBeNull();
   expect(continueButton.disabled).toBe(true);
   await act(async () => root.unmount());
 });

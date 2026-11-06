@@ -134,6 +134,7 @@ export * from "./model-vision.js";
 export * from "./none-sandbox.js";
 export * from "./novita-sandbox.js";
 export * from "./novita-template.js";
+export * from "./openai-compatible-presets.js";
 export * from "./openai-compatible-url.js";
 export * from "./openai-compatible-voice.js";
 export * from "./openai-voice.js";

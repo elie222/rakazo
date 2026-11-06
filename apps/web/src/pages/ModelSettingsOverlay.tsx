@@ -1,12 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SettingsScope } from "@rakazo/contracts";
 import {
-  compatibleConnectionName,
+  connectedPresetBaseUrls,
   connectionDisplayName,
   modelRoleChoiceKey,
-  OPENAI_COMPATIBLE_PRESETS,
   OPENAI_COMPATIBLE_PROVIDER_ID,
-  openAiCompatiblePresetFor,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
@@ -82,6 +80,7 @@ export function ModelSettingsOverlay({
     me,
     notice,
     pending,
+    presets,
     provider,
     refresh,
     selected,
@@ -105,7 +104,7 @@ export function ModelSettingsOverlay({
     [
       ...groups.map((group) => ({ id: group.id, name: group.name })),
       ...(groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID)
-        ? OPENAI_COMPATIBLE_PRESETS.map((preset) => ({
+        ? presets.map((preset) => ({
             id: OPENAI_COMPATIBLE_PROVIDER_ID,
             name: preset.name,
             baseUrl: preset.baseUrl,
@@ -115,11 +114,11 @@ export function ModelSettingsOverlay({
     (entry) => entry.id,
     (entry) => entry.name,
   );
+  // A hosted preset is offered until a connection to its endpoint is saved, however many
+  // other compatible connections there are.
+  const connectedPresets = connectedPresetBaseUrls(presets, credentials);
   const providers = allProviders.filter((entry) =>
-    entry.baseUrl
-      ? openAiCompatiblePresetFor(credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl)
-          ?.baseUrl !== entry.baseUrl
-      : !credentialByProvider.has(entry.id),
+    entry.baseUrl ? !connectedPresets.has(entry.baseUrl) : !credentialByProvider.has(entry.id),
   );
   const connectionName = (entry: ModelCredential) => {
     const group = groups.find((item) => item.id === entry.provider);
@@ -130,10 +129,7 @@ export function ModelSettingsOverlay({
     );
   };
   const providerLabel = (id: string) =>
-    compatibleConnectionName(
-      credentialByProvider.get(id)?.baseUrl,
-      groups.find((group) => group.id === id)?.name ?? id,
-    );
+    credentialByProvider.get(id)?.presetName ?? groups.find((group) => group.id === id)?.name ?? id;
   // The approval model only judges actions in Auto, so it shows only then. A Space may
   // inherit Approvals from the account, so its page asks for whichever copy applies there.
   const queries = useSpaceQueries();
@@ -153,7 +149,7 @@ export function ModelSettingsOverlay({
     !mainSeesImages ||
     Boolean(computerRole?.primary || computerRole?.backups.length);
 
-  // A hosted preset (Ollama Cloud, DeepInfra) shares the compatible provider id with a saved local server.
+  // A hosted preset shares the compatible provider id with a saved local server.
   const connected = Boolean(
     credential &&
       (!isOpenAiCompatible || savedCompatibleEndpointMatches(baseUrl, credential.baseUrl)),

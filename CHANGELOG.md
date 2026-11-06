@@ -6,10 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
-
-- DeepInfra is a model connection choice next to Ollama Cloud. Paste a DeepInfra API key and **Find models** lists its chat models, with each model's image input, thinking, context window and prompt cache pricing filled in from DeepInfra's own model details ([self-hosted models](docs/self-host-models.md)).
-
 ### Fixed
 
 - Connecting an MCP server whose OAuth asks for many permissions, such as PostHog's, no longer fails with "MCP URL exceeds 2048 characters". The browser sign-in link now has its own, larger limit, while MCP server addresses keep the 2,048-character one.

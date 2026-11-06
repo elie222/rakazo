@@ -3,6 +3,7 @@ import type {
   ModelHeaderRow,
   ModelOAuthBegin,
   OpenAiCompatibleModelInfo,
+  OpenAiCompatiblePreset,
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
@@ -33,6 +34,7 @@ import {
   createModelProbe,
   initialModelProbeState,
   modelConnectRequest,
+  probedModelFields,
   savedCompatibleModelIds,
   toggleEnabledModelId,
 } from "@rakazo/core";
@@ -73,7 +75,6 @@ import {
   modelConnectionRequest,
 } from "../../lib/model-connection-request";
 import { native, useThemedStyles } from "../../lib/native";
-import { presetKeyPlaceholder, probedModelPrefill } from "../../lib/openai-compatible-presets";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/settings-target";
 import { thinkingLevelLabel } from "../../lib/thinking-level";
 import { useListSearch } from "../../lib/use-list-search";
@@ -103,6 +104,7 @@ export default function ModelConnection() {
   const { t } = useI18n();
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
+  const [presets, setPresets] = useState<OpenAiCompatiblePreset[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
   const provider = request?.provider ?? "";
   // The provider whose optional personal-key form is open.
@@ -206,10 +208,12 @@ export default function ModelConnection() {
     async (preferred: ModelSelection = {}) => {
       if (!request) throw new Error(t("Could not load model settings"));
       setError(null);
-      const [nextMe, nextCatalog, nextCredentials] = await Promise.all([
+      const [nextMe, nextCatalog, nextCredentials, nextPresets] = await Promise.all([
         rpc("me"),
         rpc("models/list"),
         rpc("models/credentials"),
+        // Without the list only the hosted presets go unrecognized.
+        rpc("models/presets").catch((): OpenAiCompatiblePreset[] => []),
       ]);
       const nextProvider = request.provider;
       const nextCredential = nextCredentials.find((entry) => entry.id === credentialIdRef.current);
@@ -231,6 +235,7 @@ export default function ModelConnection() {
       setMe(nextMe);
       setCatalog(nextCatalog);
       setCredentials(nextCredentials);
+      setPresets(nextPresets);
       resetOpenAiCompatibleProbe();
       setModelId(nextModel);
       setHeaderRows(null);
@@ -269,14 +274,14 @@ export default function ModelConnection() {
   const providerName = selected?.providerName ?? selected?.provider ?? "";
   const selectedProviderLabel = credential
     ? connectionDisplayName(credential, providerName)
-    : compatibleConnectionName(baseUrl, providerName);
+    : compatibleConnectionName(presets, baseUrl, providerName);
   useLayoutEffect(() => {
     if (selectedProviderLabel) navigation.setOptions({ title: selectedProviderLabel });
   }, [navigation, selectedProviderLabel]);
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  // A hosted preset (Ollama Cloud, DeepInfra) needs a key and has no setup to explain.
-  const hostedPreset = isOpenAiCompatible ? openAiCompatiblePresetFor(baseUrl) : undefined;
-  const keyRequired = isOpenAiCompatible && openAiCompatibleKeyRequired(baseUrl);
+  // A hosted preset needs a key and has no setup to explain.
+  const hostedPreset = isOpenAiCompatible ? openAiCompatiblePresetFor(presets, baseUrl) : undefined;
+  const keyRequired = isOpenAiCompatible && openAiCompatibleKeyRequired(presets, baseUrl);
   const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
   const isCloudflare = isCloudflareModelProvider(provider);
   const cloudflareRoutingReady =
@@ -302,6 +307,7 @@ export default function ModelConnection() {
   const busy = pending !== null || oauthPending;
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = compatibleConnectionReady({
+    presets,
     apiKey,
     baseUrl,
     modelId,
@@ -357,7 +363,8 @@ export default function ModelConnection() {
     Keyboard.dismiss();
     clearFeedback();
     // The probe keeps only the model ids; hold the rest for the success callback, which a
-    // superseded probe never reaches.
+    // superseded probe never reaches. A search that fails leaves no details behind.
+    setProbeDetails([]);
     let found: OpenAiCompatibleModelInfo[] = [];
     await modelProbe.probe({
       baseUrl,
@@ -422,7 +429,12 @@ export default function ModelConnection() {
     const savedModel =
       credential?.modelId === nextModelId &&
       savedCompatibleEndpointMatches(baseUrl, credential.baseUrl);
-    const prefill = savedModel ? {} : probedModelPrefill(details, nextModelId, maxTokens);
+    const prefill = savedModel
+      ? {}
+      : probedModelFields(
+          details.find((info) => info.id === nextModelId),
+          maxTokens,
+        );
     const nextReasoning = prefill.reasoning ?? reasoning;
     setModelId(nextModelId);
     if (prefill.reasoning !== undefined) setReasoning(prefill.reasoning);
@@ -929,7 +941,7 @@ export default function ModelConnection() {
             onChangeText={updateApiKey}
             placeholder={
               hostedPreset
-                ? presetKeyPlaceholder(hostedPreset, t)
+                ? t("API key for {provider}", { provider: hostedPreset.name })
                 : credential?.hasKey
                   ? t("Paste a replacement key")
                   : t("Optional")

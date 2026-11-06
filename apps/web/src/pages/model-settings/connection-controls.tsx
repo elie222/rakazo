@@ -1,5 +1,4 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import { openAiCompatibleKeyRequired } from "@rakazo/contracts";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -367,22 +366,24 @@ export function ConnectionControls({
 
 export function CompatibleKeyControls({
   apiKey,
-  baseUrl,
   busy,
   connectKey,
   credential,
+  hostedPreset,
   isOpenAiCompatible,
+  keyRequired,
   openAiCompatibleReady,
   pending,
   updateApiKey,
 }: Pick<
   ModelSettingsState,
-  | "baseUrl"
   | "apiKey"
   | "busy"
   | "connectKey"
   | "credential"
+  | "hostedPreset"
   | "isOpenAiCompatible"
+  | "keyRequired"
   | "openAiCompatibleReady"
   | "pending"
   | "updateApiKey"
@@ -390,14 +391,14 @@ export function CompatibleKeyControls({
   const { t } = useLingui();
   return isOpenAiCompatible ? (
     <div className="mt-5">
-      <CompatibleKeyField baseUrl={baseUrl} className="block text-body text-muted-foreground">
+      <CompatibleKeyField required={keyRequired} className="block text-body text-muted-foreground">
         <Input
           aria-label={t`API key`}
           value={apiKey}
           onChange={(event) => updateApiKey(event.target.value)}
-          required={openAiCompatibleKeyRequired(baseUrl)}
+          required={keyRequired}
           placeholder={
-            presetApiKeyPlaceholder(baseUrl) ??
+            presetApiKeyPlaceholder(hostedPreset) ??
             (credential?.hasKey ? t`Paste a replacement key` : t`Optional`)
           }
           type="password"

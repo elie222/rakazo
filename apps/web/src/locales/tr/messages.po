@@ -987,6 +987,7 @@ msgstr "Bağlantıya sahip herkes"
 msgid "API key"
 msgstr "API anahtarı"
 
+#: src/lib/compatible-preset.ts
 #: src/pages/shell/import-status.ts
 msgid "API key for {provider}"
 msgstr "{provider} için API anahtarı"
@@ -2862,10 +2863,6 @@ msgstr "gün"
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "Reddet"
-
-#: src/lib/compatible-preset.ts
-msgid "DeepInfra API key"
-msgstr "DeepInfra API anahtarı"
 
 #: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -4944,10 +4941,6 @@ msgstr "OAuth bağlantısı başarısız"
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
 msgstr "Çevrimdışı"
-
-#: src/lib/compatible-preset.ts
-msgid "Ollama API key"
-msgstr "Ollama API anahtarı"
 
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"

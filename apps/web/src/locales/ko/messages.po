@@ -987,6 +987,7 @@ msgstr "링크가 있는 모든 사용자"
 msgid "API key"
 msgstr "API 키"
 
+#: src/lib/compatible-preset.ts
 #: src/pages/shell/import-status.ts
 msgid "API key for {provider}"
 msgstr "{provider}용 API 키"
@@ -2862,10 +2863,6 @@ msgstr "일"
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "거절"
-
-#: src/lib/compatible-preset.ts
-msgid "DeepInfra API key"
-msgstr "DeepInfra API 키"
 
 #: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -4943,10 +4940,6 @@ msgstr "OAuth 연결 실패"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
-msgstr ""
-
-#: src/lib/compatible-preset.ts
-msgid "Ollama API key"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx

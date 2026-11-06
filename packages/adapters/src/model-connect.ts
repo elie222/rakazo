@@ -22,6 +22,7 @@ import {
   modelIdSupportsImages,
   updateModelImageCapabilities,
 } from "./model-vision.js";
+import { hostedPresetFor } from "./openai-compatible-presets.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "./openai-compatible-url.js";
 import { modelCredentialAuthKind } from "./pi-catalog-availability.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
@@ -377,6 +378,7 @@ export function modelCredentialDto(
   if (parsed.kind !== "openai_compatible") {
     return { ...compatibleCredential, authKind: modelCredentialAuthKind(parsed) };
   }
+  const preset = hostedPresetFor(parsed.baseUrl);
   return {
     ...compatibleCredential,
     authKind: "openai_compatible",
@@ -393,6 +395,7 @@ export function modelCredentialDto(
       : {}),
     ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
     ...(parsed.contextWindow !== undefined ? { contextWindow: parsed.contextWindow } : {}),
+    ...(preset ? { presetName: preset.name } : {}),
     cacheCapabilities: modelCacheCapabilities(parsed, row.defaultModel ?? ""),
     ...(parsed.cacheCapabilitiesByModel !== undefined
       ? { cacheCapabilitiesByModel: parsed.cacheCapabilitiesByModel }

@@ -373,6 +373,25 @@ describe("openai-codex API key guard", () => {
 });
 
 describe("modelCredentialDto", () => {
+  it.each([
+    ["https://ollama.com/", "Ollama Cloud"],
+    ["https://api.deepinfra.com/v1/openai", "DeepInfra"],
+  ])("names the hosted preset a connection at %s uses", (baseUrl, presetName) => {
+    const credential = modelCredentialDto(
+      { id: "cred-1", provider: "openai-compatible", label: "openai-compatible" },
+      serializeModelSecret({ kind: "openai_compatible", baseUrl }),
+    );
+    expect(credential.presetName).toBe(presetName);
+  });
+
+  it("names no preset for an ordinary server", () => {
+    const credential = modelCredentialDto(
+      { id: "cred-1", provider: "openai-compatible", label: "Local MLX" },
+      serializeModelSecret({ kind: "openai_compatible", baseUrl: "https://example.invalid/v1" }),
+    );
+    expect(credential).not.toHaveProperty("presetName");
+  });
+
   it("returns stored baseUrl and modelId for openai-compatible credentials", () => {
     const plaintext = serializeModelSecret({
       kind: "openai_compatible",
@@ -1116,13 +1135,25 @@ describe("per-model cache capabilities", () => {
     expect(cacheFor(plaintext, "__proto__")).toBeUndefined();
   });
 
-  it("rejects more models than a connection can enable", () => {
-    const map = Object.fromEntries(
-      Array.from({ length: 501 }, (_, i) => [`model-${i}`, cached] as const),
-    );
+  it("rejects more models than a connection can enable plus the selected one", () => {
+    const map = (count: number) =>
+      Object.fromEntries(Array.from({ length: count }, (_, i) => [`model-${i}`, cached] as const));
     expect(
-      ModelConnectInputSchema.safeParse({ ...input, cacheCapabilitiesByModel: map }).success,
+      ModelConnectInputSchema.safeParse({ ...input, cacheCapabilitiesByModel: map(502) }).success,
     ).toBe(false);
+  });
+
+  it("saves the selected model and 500 enabled ones, each with its own entry", () => {
+    const enabledModelIds = Array.from({ length: 500 }, (_, i) => `enabled-${i}`);
+    const plaintext = connectAsOwner({
+      ...input,
+      enabledModelIds,
+      cacheCapabilitiesByModel: Object.fromEntries(
+        ["model-a", ...enabledModelIds].map((id) => [id, cached] as const),
+      ),
+    });
+    expect(cacheFor(plaintext, "model-a")).toEqual(cached);
+    expect(cacheFor(plaintext, "enabled-499")).toEqual(cached);
   });
 
   it("accepts null for a model and for the connection in the connect input", () => {

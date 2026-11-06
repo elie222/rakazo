@@ -102,10 +102,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} 备用模型失败或无法用于此请求。",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "Ollama API 密钥",
-  DeepInfra: "DeepInfra",
-  "DeepInfra API key": "DeepInfra API 密钥",
   "Show password": "显示密码",
   "Hide password": "隐藏密码",
   Export: "导出",

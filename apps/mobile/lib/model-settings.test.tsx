@@ -50,6 +50,7 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
     needsModel: false,
     // What the probe says about each found model; DeepInfra's listing carries it.
     probeDetails: undefined as object[] | undefined,
+    failProbe: false,
   },
 }));
 
@@ -77,11 +78,28 @@ vi.mock("./api", () => ({
         defaultModel: "model-fixture",
         needsModel: saved.needsModel,
       };
-    if (procedure === "models/probeOpenAiCompatible")
+    if (procedure === "models/probeOpenAiCompatible") {
+      if (saved.failProbe) throw new Error("offline");
       return {
         models: Array.from({ length: 11 }, (_, index) => `found-${index}`),
         ...(saved.probeDetails ? { details: saved.probeDetails } : {}),
       };
+    }
+    if (procedure === "models/presets")
+      return [
+        {
+          id: "ollama-cloud",
+          name: "Ollama Cloud",
+          baseUrl: "https://ollama.com/v1",
+          keyRequired: true,
+        },
+        {
+          id: "deepinfra",
+          name: "DeepInfra",
+          baseUrl: "https://api.deepinfra.com/v1/openai",
+          keyRequired: true,
+        },
+      ];
     if (procedure === "models/role") return { primary: null, backups: [] };
     if (procedure === "bots/list") {
       if (saved.failBotList) throw new Error("offline");
@@ -414,7 +432,7 @@ it("opens the DeepInfra preset through the compatible form with a visible key fi
     renderConnection({ baseUrl: "https://api.deepinfra.com/v1/openai", credentialId: null }),
   );
   expect(field("OpenAI-compatible server URL")?.value).toBe("https://api.deepinfra.com/v1/openai");
-  expect(field("API key")?.placeholder).toBe("DeepInfra API key");
+  expect(field("API key")?.placeholder).toBe("API key for DeepInfra");
   expect(field("API key")?.type).toBe("password");
   expect(
     [...container.querySelectorAll("button")].filter((button) =>
@@ -463,6 +481,7 @@ describe("DeepInfra capability prefill", () => {
 
   afterEach(() => {
     saved.probeDetails = undefined;
+    saved.failProbe = false;
   });
 
   it("prefills the switches and limit from the picked model and sends them on connect", async () => {
@@ -564,6 +583,26 @@ describe("DeepInfra capability prefill", () => {
     expect(field("Context limit")?.value).toBe("65536");
   });
 
+  it("forgets the last search's details when a later search fails", async () => {
+    saved.probeDetails = [
+      { id: "found-0", contextWindow: 65536 },
+      { id: "found-1", contextWindow: 32768, cacheCapabilities: cache },
+    ];
+    await openDeepInfra();
+    expect(field("Context limit")?.value).toBe("65536");
+    saved.failProbe = true;
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Find models")!
+        .click(),
+    );
+    await change("Model id", "found-1");
+    expect(field("Context limit")?.value).toBe("65536");
+    await save();
+    expect(connectInput()).toMatchObject({ modelId: "found-1" });
+    expect(connectInput()).not.toHaveProperty("cacheCapabilitiesByModel");
+  });
+
   it("does not prefill when the server sends no details", async () => {
     await openDeepInfra();
     expect(field("Supports images")?.checked).toBe(false);
@@ -575,7 +614,7 @@ describe("DeepInfra capability prefill", () => {
 it("opens the Ollama preset through the compatible form with a visible key field", async () => {
   await remount(() => renderConnection({ baseUrl: "https://ollama.com/v1", credentialId: null }));
   expect(field("OpenAI-compatible server URL")?.value).toBe("https://ollama.com/v1");
-  expect(field("API key")?.placeholder).toBe("Ollama API key");
+  expect(field("API key")?.placeholder).toBe("API key for Ollama Cloud");
   expect(field("API key")?.type).toBe("password");
   expect(
     [...container.querySelectorAll("button")].filter((button) =>
