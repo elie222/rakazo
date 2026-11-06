@@ -79,7 +79,8 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   if (!bot || bot.archivedAt || !bot.thread) return ignored("no such bot");
   dropped.botId = bot.id;
 
-  const emailRoutine = { botId: bot.id, spaceId: bot.spaceId, active: true };
+  // The run acts as the bot's owner, so only their own routines may ride on it.
+  const emailRoutine = { botId: bot.id, spaceId: bot.spaceId, userId: bot.userId, active: true };
   // Cheap check first: most mail to a bot without an email routine is never parsed.
   const any = await deps.prisma.routine.findFirst({
     where: { ...emailRoutine, emailSenders: { not: null } },

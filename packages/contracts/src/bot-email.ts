@@ -33,7 +33,7 @@ export const BotEmailNameSchema = z
   .refine((name) => !name.includes(".."), "Use letters, numbers, dots, dashes or underscores")
   .refine((name) => !RESERVED_BOT_EMAIL_NAMES.has(name), BOT_EMAIL_NAME_TAKEN);
 
-/** Null when this server receives no email. */
+/** Null when this server receives no email, or for anyone but the bot's owner. */
 export const BotEmailAddressSchema = z
   .object({
     domain: z.string(),

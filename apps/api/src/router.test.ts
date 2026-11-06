@@ -10219,11 +10219,19 @@ describe("shared space bot permissions", () => {
     const deps = {
       prisma,
       secrets,
-      env: { webOrigin: "https://example.test" },
+      env: { webOrigin: "https://example.test", inboundEmailDomain: "bots.example.test" },
     } as unknown as RouterDeps;
     const client = createRouterClient(createRouter(deps), { context: { actor } as never });
     return { client, prisma, secrets };
   }
+
+  it("keeps a bot's email address with its creator", async () => {
+    const { client } = sharedBotClient("owner");
+    await expect(client.bots.emailAddress({ botId: "bot-1" })).resolves.toBeNull();
+    await expect(
+      client.bots.claimEmailAddress({ botId: "bot-1", name: "scout" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
 
   it("lets only the bot's creator or the space owner delete a bot for good", async () => {
     const { client, prisma } = sharedBotClient("member");

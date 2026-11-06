@@ -105,12 +105,20 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     const other = await bot(owner);
     const helper = name("helper");
     await claimBotEmailAddress(system, DOMAIN, target.id, helper);
-    const routine = (botId: string, label: string, emailSenders: string | null, active = true) =>
+    // Another member's routine on the owner's bot: mail runs as the owner, so it never starts.
+    const member = await signup(`lin-${suffix}@example.test`);
+    const routine = (
+      botId: string,
+      label: string,
+      emailSenders: string | null,
+      active = true,
+      userId = owner.userId,
+    ) =>
       system.routine.create({
         data: {
           spaceId: owner.spaceId,
           botId,
-          userId: owner.userId,
+          userId,
           name: label,
           prompt: `Do ${label}.`,
           crons: emailSenders ? [] : ["0 8 * * *"],
@@ -123,6 +131,7 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     await routine(target.id, "paused", "owner", false);
     await routine(target.id, "scheduled", null);
     await routine(other.id, "elsewhere", "owner");
+    await routine(target.id, "member's", "domain", true, member.userId);
 
     const sendUserMessage = vi.fn(async (_input: unknown) => ({
       messageId: "m",
@@ -161,7 +170,7 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     const prompt = (sendUserMessage.mock.calls[0]?.[0] as unknown as { prompt: string } | undefined)
       ?.prompt;
     expect(prompt).toContain('Run routine "team"');
-    for (const skipped of ["mine", "paused", "scheduled", "elsewhere"]) {
+    for (const skipped of ["mine", "paused", "scheduled", "elsewhere", "member's"]) {
       expect(prompt).not.toContain(`Run routine "${skipped}"`);
     }
   });

@@ -391,7 +391,7 @@ export function RoutineEditor({
     refetchInterval: 15_000,
     select: (routines) => routines.find((routine) => routine.id === editing?.id) ?? null,
   });
-  // Null when this server receives no email, which hides the trigger.
+  // Null when this server receives no email or the bot is another member's, which hides the trigger.
   const email = useQuery(queries.bots.emailAddress.queryOptions({ input: { botId: bot.id } })).data;
   const scheduleDelayed =
     !scheduleStatus.isError &&

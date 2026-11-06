@@ -613,10 +613,13 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       emailAddress: authed.bots.emailAddress.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        // The address and its inbox are the owner's: other members of the Space never see it.
+        if (bot.userId !== context.actor.userId) return null;
         return botEmailAddress(deps.prisma, deps.env.inboundEmailDomain, bot.id);
       }),
       claimEmailAddress: authed.bots.claimEmailAddress.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
         return claimBotEmailAddress(deps.prisma, deps.env.inboundEmailDomain, bot.id, input.name);
       }),
       rotateWebhookSecret: authed.bots.rotateWebhookSecret.handler(async ({ context, input }) => {
