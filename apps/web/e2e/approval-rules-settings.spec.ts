@@ -9,7 +9,7 @@ test("picks a tool for a rule and moves it from Always ask to Blocked", async ({
   const settings = await openUserSettings(page);
   await settings.getByTestId("settings-nav-confirmations").click();
   await settings.getByRole("button", { name: "Add rule", exact: true }).click();
-  await page.getByRole("textbox", { name: "Search apps and tools" }).fill("write");
+  await page.getByRole("combobox", { name: "Search apps and tools" }).fill("write");
   await page.getByRole("option", { name: "Write file", exact: true }).click();
   const asking = settings.getByTestId("approval-rules-require_approval");
   await expect(asking).toContainText("Write file");
