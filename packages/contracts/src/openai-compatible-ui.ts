@@ -4,7 +4,11 @@ import type { CompatibleEndpointPreset, ModelCatalogEntry } from "./domain.js";
 export function compatibleEndpointPresets(
   catalog: readonly Pick<ModelCatalogEntry, "endpointPresets">[],
 ): CompatibleEndpointPreset[] {
-  return catalog.flatMap((entry) => entry.endpointPresets ?? []);
+  // Every compatible catalog entry carries the same presets: offer each address once.
+  const presets = catalog.flatMap((entry) => entry.endpointPresets ?? []);
+  return presets.filter(
+    (preset, index) => presets.findIndex((other) => other.baseUrl === preset.baseUrl) === index,
+  );
 }
 
 /** The offered hosted service at this address, if any. */

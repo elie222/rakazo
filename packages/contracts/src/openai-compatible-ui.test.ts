@@ -74,6 +74,10 @@ it("requires a key only when the endpoint needs one", () => {
 
 it("collects the presets the catalog offers", () => {
   expect(compatibleEndpointPresets([{}, { endpointPresets: presets }])).toEqual(presets);
+  // Several compatible entries carry the same presets; each address is offered once.
+  expect(
+    compatibleEndpointPresets([{ endpointPresets: presets }, { endpointPresets: presets }]),
+  ).toEqual(presets);
 });
 
 it.each([
