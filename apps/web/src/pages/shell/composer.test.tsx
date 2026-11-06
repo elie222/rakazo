@@ -16,7 +16,7 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 
-import { replaceComposerDraft } from "../../lib/composer-draft";
+import { readComposerRetryNonce, replaceComposerDraft } from "../../lib/composer-draft";
 import { dictation } from "../../lib/dictation";
 import { createPageSession, PagesProvider } from "../../lib/pages";
 import { Composer } from "./composer";
@@ -231,16 +231,228 @@ function pressEnter(textarea: HTMLTextAreaElement) {
 }
 
 describe("Composer", () => {
-  it("restores caret position correctly when removing a slash action query", () => {
-    const onSlashAction = vi.fn();
-    const textarea = renderComposer(vi.fn(), { onSlashAction });
-    type(textarea, "/s");
-    const press = (name: string) =>
-      act(() => textarea.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true })));
-    press("ArrowDown");
-    press("Enter");
-    expect(onSlashAction).toHaveBeenCalledWith("chat-settings");
-    expect(textarea.selectionStart).toBe(0);
+  it.each(["chip only", "chip and body", "plain text"])(
+    "persists exact operation identity before dispatch settles: %s",
+    async (kind) => {
+      let finish!: (accepted: boolean) => void;
+      let persistedAtDispatch: string | null = null;
+      const onSend = vi.fn((_text: string, _mentions: ComposerMention[], _nonce: string) => {
+        persistedAtDispatch = readComposerRetryNonce("bot:bot-1");
+        return new Promise<boolean>((resolve) => {
+          finish = resolve;
+        });
+      });
+      const textarea = renderComposer(onSend);
+      if (kind !== "plain text") {
+        type(textarea, "/sum");
+        pressEnter(textarea);
+      }
+      if (kind !== "chip only") type(textarea, "notes");
+      pressEnter(textarea);
+      expect(onSend).toHaveBeenCalledOnce();
+      expect(persistedAtDispatch).toBe(onSend.mock.calls[0]?.[2]);
+      expect(readComposerRetryNonce("bot:bot-1")).toBe(onSend.mock.calls[0]?.[2]);
+      await act(async () => finish(true));
+      expect(readComposerRetryNonce("bot:bot-1")).toBeNull();
+    },
+  );
+  it.each(["Enter", "Tab", "pointer"])(
+    "restores the slash action caret before trailing text with %s and inserts there next",
+    (method) => {
+      const onSlashAction = vi.fn();
+      const textarea = renderComposer(vi.fn(), { onSlashAction });
+      type(textarea, "/settings trailing text");
+      act(() => {
+        textarea.focus();
+        textarea.setSelectionRange(9, 9);
+        document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+      });
+      const option = container?.querySelector<HTMLButtonElement>('[role="option"]');
+      expect(option?.textContent).toContain("Settings");
+      if (method === "pointer") act(() => option?.click());
+      else
+        act(() =>
+          textarea.dispatchEvent(new KeyboardEvent("keydown", { key: method, bubbles: true })),
+        );
+      expect(onSlashAction).toHaveBeenCalledExactlyOnceWith("chat-settings");
+      expect(textarea.value).toBe(" trailing text");
+      expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([0, 0]);
+      expect(document.activeElement).toBe(textarea);
+      const start = textarea.selectionStart;
+      type(
+        textarea,
+        `${textarea.value.slice(0, start)}next${textarea.value.slice(textarea.selectionEnd)}`,
+      );
+      expect(textarea.value).toBe("next trailing text");
+    },
+  );
+
+  it.each([
+    ["", "before"],
+    ["", "after"],
+    ["notes", "before"],
+    ["notes", "after"],
+  ])(
+    "retries an uncertain skill send unchanged (body: %s, reopen: %s rejection)",
+    async (body, timing) => {
+      let rejectSend!: (error: Error) => void;
+      const onSend = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<boolean>((_resolve, reject) => {
+              rejectSend = reject;
+            }),
+        )
+        .mockResolvedValue(true);
+      const textarea = renderComposer(onSend);
+      type(textarea, "/sum");
+      pressEnter(textarea);
+      if (body) type(textarea, body);
+      pressEnter(textarea);
+      const original = onSend.mock.calls[0];
+      expect(original).toEqual([
+        body ? `/summarize\n${body}` : "/summarize",
+        [],
+        expect.any(String),
+      ]);
+      act(() => root?.unmount());
+      container?.remove();
+      if (timing === "after") await act(async () => rejectSend(new Error("answer lost")));
+      const reopened = renderComposer(onSend);
+      expect(reopened.value).toBe(body);
+      expect(container?.querySelector('[data-testid="skill-chip"]')?.textContent).toBe("summarize");
+      if (timing === "before") await act(async () => rejectSend(new Error("answer lost")));
+      pressEnter(reopened);
+      await act(async () => {});
+      expect(onSend).toHaveBeenCalledTimes(2);
+      expect(onSend.mock.calls[1]).toEqual(original);
+    },
+  );
+
+  it.each(["remove", "change identity"])(
+    "does not resurrect an uncertain skill nonce after reopening and %s",
+    async (change) => {
+      let rejectSend!: (error: Error) => void;
+      const onSend = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<boolean>((_resolve, reject) => {
+              rejectSend = reject;
+            }),
+        )
+        .mockResolvedValue(true);
+      const textarea = renderComposer(onSend);
+      type(textarea, "/sum");
+      pressEnter(textarea);
+      type(textarea, "notes");
+      pressEnter(textarea);
+      const original = onSend.mock.calls[0];
+      act(() => root?.unmount());
+      container?.remove();
+      const reopened = renderComposer(onSend, { agentSkills: [{ ...summarize, id: "skill-2" }] });
+      act(() =>
+        container
+          ?.querySelector<HTMLButtonElement>('[aria-label="Remove skill summarize"]')
+          ?.click(),
+      );
+      if (change === "change identity") {
+        type(reopened, "/sum");
+        pressEnter(reopened);
+        type(reopened, "notes");
+      }
+      await act(async () => rejectSend(new Error("answer lost")));
+      expect(readComposerRetryNonce("bot:bot-1")).toBeNull();
+      pressEnter(reopened);
+      await act(async () => {});
+      expect(onSend).toHaveBeenCalledTimes(2);
+      expect(onSend.mock.calls[1]?.[0]).toBe(change === "remove" ? "notes" : original?.[0]);
+      expect(onSend.mock.calls[1]?.[2]).not.toBe(original?.[2]);
+    },
+  );
+
+  it.each(["Enter", "Tab", "pointer"])(
+    "completes an inline bot at the caret with %s",
+    async (method) => {
+      const onSend = vi.fn().mockResolvedValue(true);
+      const textarea = renderComposer(onSend);
+      const original = "i need u to message @Bo and do this";
+      type(textarea, original);
+      act(() => {
+        textarea.focus();
+        textarea.setSelectionRange(original.indexOf(" and"), original.indexOf(" and"));
+        document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+      });
+      expect(container?.querySelector('[data-testid="mention-picker"]')).not.toBeNull();
+      if (method === "pointer") {
+        act(() => container?.querySelector<HTMLButtonElement>('[role="option"]')?.click());
+      } else {
+        act(() =>
+          textarea.dispatchEvent(new KeyboardEvent("keydown", { key: method, bubbles: true })),
+        );
+      }
+      expect(textarea.value).toBe("i need u to message @Bob and do this");
+      expect(textarea.selectionStart).toBe("i need u to message @Bob ".length);
+      expect(document.activeElement).toBe(textarea);
+      pressEnter(textarea);
+      await act(async () => {});
+      expect(onSend).toHaveBeenCalledWith(
+        "i need u to message @Bob and do this",
+        [bob],
+        expect.any(String),
+      );
+    },
+  );
+
+  it("keeps repeated inline mentions in order with one routing target", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend);
+    type(textarea, "ask @Bo");
+    pressEnter(textarea);
+    type(textarea, `${textarea.value}and then @Bo`);
+    pressEnter(textarea);
+    expect(textarea.value).toBe("ask @Bob and then @Bob ");
+    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(2);
+    expect(container?.querySelector('[data-testid="mention-picker"]')).toBeNull();
+    expect(textarea.selectionStart).toBe(textarea.value.length);
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("ask @Bob and then @Bob", [bob], expect.any(String));
+  });
+
+  it("removes stale routing when a selected token is renamed or deleted", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend);
+    type(textarea, "ask @Bo");
+    pressEnter(textarea);
+    type(textarea, "ask @Bobby later");
+    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(0);
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("ask @Bobby later", [], expect.any(String));
+  });
+
+  it("draws each completed mention inline in the field instead of beside it", () => {
+    const textarea = renderComposer(vi.fn(), {
+      mentionTargets: [{ ...bob, color: "#3366FF" }],
+    });
+    type(textarea, "ask @Bo");
+    pressEnter(textarea);
+    type(textarea, `${textarea.value}now`);
+    const field = container?.querySelector('[data-testid="composer-field"]');
+    const card = field?.querySelector('[data-testid="mention-chip"]');
+    expect(card?.textContent).toBe("@Bob");
+    expect((card as HTMLElement | null)?.style.color).toBe("rgb(51, 102, 255)");
+    expect(card?.closest("[inert]")?.textContent).toBe("ask @Bob now");
+    expect(container?.querySelector('[aria-label="Remove mention Bob"]')).toBeNull();
+    expect(textarea.className).toContain("text-transparent");
+
+    const uploaded = "data:image/png;base64,bmV3";
+    rerenderComposer({ mentionTargets: [{ ...bob, color: uploaded }] });
+    expect(container?.querySelector('[data-testid="mention-chip"] img')?.getAttribute("src")).toBe(
+      uploaded,
+    );
   });
 
   it.each([
@@ -1882,7 +2094,7 @@ it("keeps a reply-linked dictation's words without its nonce", async () => {
       fail(new Error("offline"));
     });
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("spoken words");
-    expect(localStorage.getItem("rakazo.composerNonce.bot:bot-1")).toBeNull();
+    expect(readComposerRetryNonce("bot:bot-1")).toBeNull();
     const reopened = renderComposer(
       vi.fn(async (_text: string, _mentions: unknown[], clientNonce: string) => {
         nonces.push(clientNonce);
@@ -1926,7 +2138,7 @@ it("reuses the stored nonce when a send that lost its answer is retried from the
       fail(new Error("offline"));
     });
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("spoken words");
-    expect(localStorage.getItem("rakazo.composerNonce.bot:bot-1")).toBe(nonces[0]);
+    expect(readComposerRetryNonce("bot:bot-1")).toBe(nonces[0]);
     const reopened = renderComposer(
       vi.fn(async (_text: string, _mentions: unknown[], clientNonce: string) => {
         nonces.push(clientNonce);
@@ -1975,7 +2187,7 @@ it("recovers a dictation in a chat reopened before the send settles", async () =
     await act(async () => {
       fail(new Error("offline"));
     });
-    expect(localStorage.getItem("rakazo.composerNonce.bot:bot-1")).toBe(nonces[0]);
+    expect(readComposerRetryNonce("bot:bot-1")).toBe(nonces[0]);
     pressEnter(reopened);
     await act(async () => {});
     expect(nonces[1]).toBe(nonces[0]);
@@ -2364,7 +2576,7 @@ it("does not keep the nonce when a reopened chat rebinds the same mention text",
   await act(async () => {
     fail(new Error("offline"));
   });
-  expect(localStorage.getItem("rakazo.composerNonce.bot:bot-1")).toBeNull();
+  expect(readComposerRetryNonce("bot:bot-1")).toBeNull();
 });
 
 function renderWithOpenPage(onSend: ComponentProps<typeof Composer>["onSend"]) {
@@ -2399,7 +2611,7 @@ it("does not store a retry nonce for a send made with a page open", async () => 
     fail(new Error("offline"));
   });
   expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("about the page");
-  expect(localStorage.getItem("rakazo.composerNonce.bot:bot-1")).toBeNull();
+  expect(readComposerRetryNonce("bot:bot-1")).toBeNull();
 });
 
 it("renews the nonce when the page closes before a retry", async () => {

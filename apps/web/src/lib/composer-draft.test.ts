@@ -33,6 +33,135 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 describe("composer drafts", () => {
+  it.each(["reply edit", "same-payload write", "new submission"])(
+    "preserves another document's draft after a %s",
+    async (change) => {
+      const storage = memoryStorage();
+      vi.stubGlobal("localStorage", storage);
+      try {
+        vi.resetModules();
+        const first = await import("./composer-draft.js");
+        first.writeComposerDraft("ownership", "saved words", storage, []);
+        const submitted = first.beginComposerDraftSubmission("ownership", "saved words", {
+          nonce: "first-send",
+          bindings: [],
+          skill: null,
+        });
+        vi.resetModules();
+        const second = await import("./composer-draft.js");
+        expect(second.readComposerRetryNonce("ownership")).toBe("first-send");
+        if (change === "same-payload write")
+          second.writeComposerDraft("ownership", "saved words", storage, []);
+        else if (change === "new submission")
+          second.beginComposerDraftSubmission("ownership", "saved words");
+        else second.writeComposerRetryNonce("ownership", null); // Arming a reply: no payload write.
+        // A subsequent local context edit cannot take ownership back from the other document.
+        first.writeComposerRetryNonce("ownership", null);
+        first.settleComposerDraftSubmission("ownership", submitted, true);
+        expect(second.readComposerDraft("ownership")).toBe("saved words");
+        expect(second.readComposerRetryNonce("ownership")).toBeNull();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+  it.each(["text", "skill", "remove", "binding", "storage failure"])(
+    "does not recover an obsolete or unsaved identity: %s",
+    async (change) => {
+      const storage = memoryStorage();
+      vi.stubGlobal("localStorage", storage);
+      const skill = {
+        id: "s1",
+        name: "summarize",
+        description: "",
+        source: "user" as const,
+        readOnly: false,
+      };
+      try {
+        vi.resetModules();
+        const first = await import("./composer-draft.js");
+        first.writeComposerDraft("negative", "@Bob", storage, [], skill);
+        const setItem = storage.setItem;
+        if (change === "storage failure")
+          storage.setItem = (key, value) => {
+            if (key.startsWith("rakazo.composerNonce.")) throw new Error("quota");
+            setItem(key, value);
+          };
+        first.beginComposerDraftSubmission("negative", "@Bob", {
+          nonce: "old",
+          bindings: [],
+          skill,
+        });
+        if (change === "text") first.writeComposerDraft("negative", "changed", storage, [], skill);
+        if (change === "skill")
+          first.writeComposerDraft("negative", "@Bob", storage, [], { ...skill, id: "other" });
+        if (change === "remove") first.writeComposerDraft("negative", "@Bob", storage, []);
+        if (change === "binding")
+          storage.setItem(
+            composerDraftBindingsKey("negative"),
+            JSON.stringify({
+              version: 1,
+              text: "@Bob",
+              bindings: [{ start: 0, end: 4, mention: { kind: "bot", id: "bob", name: "Bob" } }],
+              skill,
+            }),
+          );
+        vi.resetModules();
+        const restored = await import("./composer-draft.js");
+        expect(restored.readComposerRetryNonce("negative")).toBeNull();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+  it.each(["", "notes", null])(
+    "recovers an unsettled operation in a fresh module: %s",
+    async (body) => {
+      const storage = memoryStorage();
+      vi.stubGlobal("localStorage", storage);
+      const skill = {
+        id: "s1",
+        name: "summarize",
+        description: "",
+        source: "user" as const,
+        readOnly: false,
+      };
+      try {
+        vi.resetModules();
+        const first = await import("./composer-draft.js");
+        first.writeComposerDraft(
+          "reload",
+          body ?? "plain text",
+          storage,
+          [],
+          body === null ? null : skill,
+        );
+        const original = first.beginComposerDraftSubmission("reload", body ?? "plain text", {
+          nonce: "operation-1",
+          bindings: [],
+          skill: body === null ? null : skill,
+        });
+        vi.resetModules();
+        const restored = await import("./composer-draft.js");
+        expect(restored.composerHoldsWorkInFlight()).toBe(false);
+        expect(restored.readComposerDraft("reload")).toBe(body ?? "plain text");
+        expect(restored.readComposerDraftSkill("reload")).toEqual(body === null ? null : skill);
+        expect(restored.readComposerRetryNonce("reload")).toBe("operation-1");
+        const retry = restored.beginComposerDraftSubmission("reload", body ?? "plain text", {
+          nonce: restored.readComposerRetryNonce("reload")!,
+          bindings: [],
+          skill: body === null ? null : skill,
+        });
+        restored.settleComposerDraftSubmission("reload", retry, true);
+        expect(restored.readComposerRetryNonce("reload")).toBeNull();
+        // A completion from the old document must not resurrect the accepted nonce.
+        first.keepComposerRetryNonce("reload", original, "operation-1");
+        expect(restored.readComposerRetryNonce("reload")).toBeNull();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
   it("scopes stored drafts per thread", () => {
     expect(composerDraftStorageKey("bot:1")).toBe("rakazo.composerDraft.bot:1");
     expect(composerDraftStorageKey("group:2")).toBe("rakazo.composerDraft.group:2");

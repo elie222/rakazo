@@ -53,7 +53,6 @@ import { useCallSession } from "../../lib/call-session";
 import {
   appendComposerDraftText,
   beginComposerDraftSubmission,
-  keepComposerRetryNonce,
   readComposerDraft,
   readComposerDraftBindings,
   readComposerDraftSkill,
@@ -280,12 +279,11 @@ const ComposerBody = memo(function Composer({
   // A draft reloaded without edits may still belong to a send whose answer never
   // came; its nonce is stored beside it. Anything that would change the next
   // payload (attachments, an armed reply, an open page) disqualifies the stored nonce.
-  const [storedRetryNonce] = useState(() =>
-    pendingAttachments.length === 0 && !replyTarget && openPageId === null
-      ? readComposerRetryNonce(draftKey)
-      : null,
-  );
-  const retryNonce = useRef(storedRetryNonce);
+  const retryNonce = useRef<string | null>(null);
+  useEffect(() => {
+    if (pendingAttachments.length || replyTarget || openPageId !== null)
+      writeComposerRetryNonce(draftKey, null);
+  }, [draftKey, pendingAttachments.length, replyTarget, openPageId]);
   // Opening or closing a page counts as an edit, like a reply change.
   const previousPageId = useRef(openPageId);
   useEffect(() => {
@@ -616,24 +614,37 @@ const ComposerBody = memo(function Composer({
   async function send(imageHandling?: "file") {
     if (!canSend || sending || disabled) return;
     const revision = editRevision.current;
-    // Recovery rebuilds the draft from text alone, so only a plain-text send —
-    // no reply target, no attachments, no skill, no open page — can share its
-    // nonce with a retry. Anything else keeps the words without a nonce.
-    const nonceRecoverable =
-      !replyTarget &&
-      pendingAttachments.length === 0 &&
-      openPageId === null;
+    // Recovery rebuilds text, mention bindings and the skill chip. Reply targets,
+    // attachments and open pages are not persisted, so those cannot share a retry nonce.
+    const nonceRecoverable = !replyTarget && pendingAttachments.length === 0 && openPageId === null;
     const clientNonce =
       retryNonce.current ??
       // A chat reopened before its unsettled send failed has not edited since
       // mount, so the nonce stored beside the saved draft is still this draft's.
-      (revision === 0 && nonceRecoverable ? readComposerRetryNonce(draftKey) : null) ??
+      (revision === 0 &&
+      nonceRecoverable &&
+      readComposerDraft(draftKey) === compositionRef.current.text &&
+      JSON.stringify(readComposerDraftBindings(draftKey)) ===
+        JSON.stringify(compositionRef.current.bindings) &&
+      JSON.stringify(readComposerDraftSkill(draftKey)) === JSON.stringify(selectedSkill)
+        ? readComposerRetryNonce(draftKey)
+        : null) ??
       newClientId();
     retryNonce.current = null;
     const submitted = compositionRef.current;
     const text = serializeComposerPrompt(submitted.text, selectedSkill, submitted.bindings);
     const mentions = composerMentionsForPrompt(submitted.text, selectedSkill, submitted.bindings);
-    const submission = beginComposerDraftSubmission(draftKey, draft);
+    const submission = beginComposerDraftSubmission(
+      draftKey,
+      draft,
+      nonceRecoverable
+        ? {
+            nonce: clientNonce,
+            bindings: submitted.bindings,
+            skill: selectedSkill,
+          }
+        : undefined,
+    );
     commitComposition({ text: "", bindings: [] }, false);
     setMentionQuery(null);
     setMentionHighlightKey(null);
@@ -652,10 +663,8 @@ const ComposerBody = memo(function Composer({
     } catch {
       settleComposerDraftSubmission(draftKey, submission, false);
       // A rejected callback leaves acceptance unknown; do not restore a possible
-      // send. The saved draft still holds the words; only a recoverable plain
-      // text send keeps its nonce with them, so the retry is not mistaken for
-      // a reply-linked or otherwise different message.
-      if (nonceRecoverable) keepComposerRetryNonce(draftKey, submission, clientNonce);
+      // send. The saved draft retains its metadata; only a fully recoverable
+      // payload keeps its nonce, so a retry cannot become a different message.
       return;
     }
     // A dictation queued behind this send, and no other edit since, joins the failed
@@ -689,7 +698,6 @@ const ComposerBody = memo(function Composer({
     // the in-memory nonce is safe here; the stored one is only for plain text.
     if (editRevision.current !== revision) return;
     retryNonce.current = clientNonce;
-    if (nonceRecoverable) keepComposerRetryNonce(draftKey, submission, clientNonce);
     commitComposition(submitted, false);
     setSelectedSkill(selectedSkill);
   }

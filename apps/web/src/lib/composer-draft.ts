@@ -11,7 +11,13 @@ const COMPOSER_BINDINGS_STORAGE_PREFIX = "rakazo.composerBindings.";
 const COMPOSER_NONCE_STORAGE_PREFIX = "rakazo.composerNonce.";
 
 /** `appended`: words added from outside the composer while this send was in flight. */
-type ComposerDraftSubmission = { text: string; bindingRecord: string | null; appended?: string };
+type ComposerDraftSubmission = {
+  text: string;
+  bindingRecord: string | null;
+  owner: string | null;
+  nonce?: string;
+  appended?: string;
+};
 const pendingSubmissions = new Map<string, ComposerDraftSubmission>();
 const acceptedListeners = new Map<string, Set<(text: string) => void>>();
 const replacedDrafts = createKeyedListeners<string>();
@@ -38,6 +44,7 @@ export function appendComposerDraftText(threadKey: string, text: string): void {
   const inFlight =
     pending &&
     savedDraftOf(pending) === saved &&
+    readComposerDraftOwner(threadKey) === pending.owner &&
     readBindingRecord(threadKey) === pending.bindingRecord
       ? pending
       : null;
@@ -51,6 +58,8 @@ export function appendComposerDraftText(threadKey: string, text: string): void {
   if (inFlight) {
     inFlight.appended = inFlight.appended ? `${inFlight.appended} ${text}` : text;
     inFlight.bindingRecord = readBindingRecord(threadKey);
+    writeNonceRecord(threadKey, null, getLocalStorage());
+    inFlight.owner = readComposerDraftOwner(threadKey);
     pendingSubmissions.set(threadKey, inFlight);
   }
   replacedDrafts.emit(threadKey, next);
@@ -70,12 +79,30 @@ export function replaceComposerDraft(
 export function beginComposerDraftSubmission(
   threadKey: string,
   text: string,
+  recoverable?: {
+    nonce: string;
+    bindings: readonly ComposerMentionBinding[];
+    skill: AgentSkillCatalogEntry | null;
+  },
 ): ComposerDraftSubmission {
   // An unchanged empty body can still hold a skill chip; beginning a send must not clear it.
   if (text || text !== readComposerDraft(threadKey)) writeComposerDraft(threadKey, text);
-  // The send that begins now carries its own nonce; a stored one is consumed.
-  writeComposerRetryNonce(threadKey, null);
-  const submission = { text, bindingRecord: readBindingRecord(threadKey) };
+  const submission: ComposerDraftSubmission = {
+    text,
+    bindingRecord: readBindingRecord(threadKey),
+    owner: null,
+  };
+  // Persist before dispatch: a new document loses this module and callback.
+  // Partially saved metadata or another composer's payload cannot inherit this nonce.
+  const matches =
+    recoverable &&
+    readComposerDraft(threadKey) === text &&
+    JSON.stringify(readComposerDraftBindings(threadKey)) === JSON.stringify(recoverable.bindings) &&
+    JSON.stringify(readComposerDraftSkill(threadKey)) === JSON.stringify(recoverable.skill);
+  writeNonceRecord(threadKey, matches ? recoverable.nonce : null, getLocalStorage());
+  submission.owner = readComposerDraftOwner(threadKey);
+  if (matches && readComposerRetryNonce(threadKey) === recoverable.nonce)
+    submission.nonce = recoverable.nonce;
   pendingSubmissions.set(threadKey, submission);
   return submission;
 }
@@ -90,7 +117,8 @@ export function settleComposerDraftSubmission(
   if (
     !accepted ||
     readComposerDraft(threadKey) !== savedDraftOf(submission) ||
-    readBindingRecord(threadKey) !== submission.bindingRecord
+    readBindingRecord(threadKey) !== submission.bindingRecord ||
+    readComposerDraftOwner(threadKey) !== submission.owner
   )
     return;
   if (submission.appended) {
@@ -114,7 +142,9 @@ export function keepComposerRetryNonce(
 ): void {
   if (
     readComposerDraft(threadKey) === submission.text &&
-    readBindingRecord(threadKey) === submission.bindingRecord
+    readBindingRecord(threadKey) === submission.bindingRecord &&
+    readComposerDraftOwner(threadKey) === submission.owner &&
+    (submission.nonce === undefined || readComposerRetryNonce(threadKey) === submission.nonce)
   )
     writeComposerRetryNonce(threadKey, nonce);
 }
@@ -228,22 +258,63 @@ export function readComposerRetryNonce(
 ): string | null {
   if (!storage || !threadKey) return null;
   try {
-    return storage.getItem(composerNonceStorageKey(threadKey));
+    const raw = storage.getItem(composerNonceStorageKey(threadKey));
+    if (!raw) return null;
+    const record = JSON.parse(raw);
+    return record?.version === 1 &&
+      typeof record.nonce === "string" &&
+      record.text === readComposerDraft(threadKey, storage) &&
+      record.bindingRecord === readBindingRecord(threadKey, storage)
+      ? record.nonce
+      : null;
   } catch {
     return null;
   }
 }
 
-/** A null nonce clears it; writes are best-effort, like the draft itself. */
+function readComposerDraftOwner(threadKey: string, storage = getLocalStorage()): string | null {
+  try {
+    const record = JSON.parse(storage?.getItem(composerNonceStorageKey(threadKey)) ?? "null");
+    return record?.version === 1 && typeof record.owner === "string" ? record.owner : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Retry eligibility can end without retiring this document's in-flight draft ownership. */
 export function writeComposerRetryNonce(
   threadKey: string,
   nonce: string | null,
   storage: DraftStorage | null = getLocalStorage(),
 ): void {
+  const owner = readComposerDraftOwner(threadKey, storage);
+  if (nonce === null && owner === null) return;
+  writeNonceRecord(
+    threadKey,
+    nonce,
+    storage,
+    pendingSubmissions.get(threadKey)?.owner === owner ? owner : null,
+  );
+}
+
+function writeNonceRecord(
+  threadKey: string,
+  nonce: string | null,
+  storage: DraftStorage | null,
+  owner: string | null = null,
+): void {
   if (!storage || !threadKey) return;
   try {
-    if (nonce === null) storage.removeItem(composerNonceStorageKey(threadKey));
-    else storage.setItem(composerNonceStorageKey(threadKey), nonce);
+    storage.setItem(
+      composerNonceStorageKey(threadKey),
+      JSON.stringify({
+        version: 1,
+        owner: owner ?? crypto.randomUUID(),
+        nonce,
+        text: readComposerDraft(threadKey, storage),
+        bindingRecord: readBindingRecord(threadKey, storage),
+      }),
+    );
   } catch {
     // The in-memory nonce still covers the retry while this chat stays open.
   }
@@ -321,12 +392,13 @@ export function writeComposerDraft(
   pendingSubmissions.delete(threadKey);
   if (!storage || !threadKey) return;
   try {
+    // Every saved write retires the previous submission, even for identical text.
+    storage.removeItem(composerNonceStorageKey(threadKey));
     // Plain-text callers preserve bindings only when they are resubmitting the
     // unchanged draft. New text without bindings cannot inherit old identities,
     // and a changed draft no longer matches the nonce its predecessor left.
     if (bindings !== undefined || draft !== readComposerDraft(threadKey, storage) || !draft) {
       storage.removeItem(composerDraftBindingsKey(threadKey));
-      storage.removeItem(composerNonceStorageKey(threadKey));
     }
     if (draft.length === 0) storage.removeItem(composerDraftStorageKey(threadKey));
     else storage.setItem(composerDraftStorageKey(threadKey), draft);
