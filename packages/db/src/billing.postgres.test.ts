@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   billingAccountForOrganization,
   createBillingAccount,
+  memberHasModelAccess,
   organizationForMember,
   organizationSeatCount,
   ownedBillingAccounts,
@@ -82,6 +83,14 @@ describePostgres("billing accounts (PostgreSQL)", () => {
       isOwner: false,
     });
     await expect(organizationSeatCount(prisma, organizationId)).resolves.toBe(2);
+  });
+
+  it("checks model access for a whole run row", async () => {
+    await prisma.modelCreditAccount.create({
+      data: { organizationId, mode: "credits", balanceMicros: 1_000_000n },
+    });
+    const run = { id: "run-1", spaceId, userId: ownerId, botId: "bot-1", status: "queued" };
+    await expect(memberHasModelAccess(prisma, run)).resolves.toBe(true);
   });
 
   it("keeps the first customer when an account is created twice", async () => {
