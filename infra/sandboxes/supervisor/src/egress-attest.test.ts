@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import type Docker from "dockerode";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -70,7 +71,8 @@ describe("egress attestation", () => {
       "==RAKAZO-V4USER==\n",
       "==RAKAZO-V4USER==\n-A DOCKER-USER -j ACCEPT\n",
     );
-    expect(() => verifyAttestation(withForeign)).toThrow(EgressNotEnforced);
+    expect(() => verifyAttestation(withForeign)).toThrow(/cannot verify restricted egress/);
+    expect(() => verifyAttestation(withForeign)).not.toThrow(EgressNotEnforced);
   });
 
   it("rejects a missing DOCKER-USER chain", () => {
@@ -117,48 +119,36 @@ describe("egress attestation", () => {
   it("builds the probe image from the repository context only when missing", async () => {
     const context = mkdtempSync(path.join(tmpdir(), "rakazo-attest-"));
     writeFileSync(path.join(context, "Dockerfile"), "FROM scratch\n");
-    const followProgress = vi.fn().mockImplementation((_stream, finished) => finished(undefined));
-    const buildImage = vi.fn().mockImplementation((_context, _options, callback) => {
-      callback(null, {});
-      return {};
-    });
+    const buildImage = vi.fn().mockResolvedValue(Readable.from(['{"stream":"built"}\n']));
     const present = {
-      modem: { followProgress },
       getImage: vi.fn().mockReturnValue({ inspect: vi.fn().mockResolvedValue({}) }),
       buildImage,
     } as unknown as Docker;
     await expect(attestImageEnsurer(present, context)()).resolves.toBeUndefined();
     expect(buildImage).not.toHaveBeenCalled();
+    const inspect = vi.fn().mockRejectedValueOnce({ statusCode: 404 }).mockResolvedValue({});
     const missing = {
-      modem: { followProgress },
-      getImage: vi.fn().mockReturnValue({
-        inspect: vi.fn().mockRejectedValue({ statusCode: 404 }),
-      }),
+      getImage: vi.fn().mockReturnValue({ inspect }),
       buildImage,
     } as unknown as Docker;
     await expect(attestImageEnsurer(missing, context)()).resolves.toBeUndefined();
     expect(buildImage).toHaveBeenCalledWith(
       { context, src: ["Dockerfile"] },
-      expect.objectContaining({ t: ATTEST_IMAGE, version: "2" }),
-      expect.any(Function),
+      expect.objectContaining({
+        t: ATTEST_IMAGE,
+        version: "2",
+        abortSignal: expect.any(AbortSignal),
+      }),
     );
+    expect(inspect).toHaveBeenCalledTimes(2);
   });
 
-  it("fails closed when the probe image cannot be built (offline daemon)", async () => {
-    const followProgress = vi
-      .fn()
-      .mockImplementation((_stream, finished) =>
-        finished(new Error("failed to solve: no network")),
-      );
+  it("fails closed when the build reports an error in its progress stream", async () => {
     const docker = {
-      modem: { followProgress },
-      getImage: vi.fn().mockReturnValue({
-        inspect: vi.fn().mockRejectedValue({ statusCode: 404 }),
-      }),
-      buildImage: vi.fn().mockImplementation((_context, _options, callback) => {
-        callback(null, {});
-        return {};
-      }),
+      getImage: vi
+        .fn()
+        .mockReturnValue({ inspect: vi.fn().mockRejectedValue({ statusCode: 404 }) }),
+      buildImage: vi.fn().mockResolvedValue(Readable.from(['{"error":"no network"}\n'])),
     } as unknown as Docker;
     const context = mkdtempSync(path.join(tmpdir(), "rakazo-attest-"));
     writeFileSync(path.join(context, "Dockerfile"), "FROM scratch\n");
@@ -222,6 +212,20 @@ describe("egress attestation", () => {
       /FORWARD chain filters traffic before DOCKER-USER/,
     );
     expect(() => verifyAttestation(shadowed)).not.toThrow(EgressNotEnforced);
+  });
+
+  it("treats an ip6tables command failure as unverifiable", () => {
+    const output = managedIptables()
+      .replace(
+        /==RAKAZO-V6USER==\n.*\n==RAKAZO-V6INPUT==/s,
+        "==RAKAZO-V6USER==\nip6tables-failed\n==RAKAZO-V6INPUT==",
+      )
+      .replace(
+        "==RAKAZO-IFINET6==\n",
+        "==RAKAZO-IFINET6==\n20010db8000000000000000000000001 02 40 00 00 eth0\n",
+      );
+    expect(() => verifyAttestation(output)).toThrow(/could not read v6 iptables/);
+    expect(() => verifyAttestation(output)).not.toThrow(EgressNotEnforced);
   });
 
   it("treats an unreadable (not absent) IPv6 chain as unverifiable on a global-IPv6 host", () => {

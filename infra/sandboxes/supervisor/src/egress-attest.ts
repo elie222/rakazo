@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { access } from "node:fs/promises";
 import path from "node:path";
 import type Docker from "dockerode";
+import { followProgress } from "./computer-image.js";
 import { EgressNotEnforced } from "./egress-probe.js";
 
 /**
@@ -77,22 +78,13 @@ async function provideAttestImage(docker: Docker, context: string) {
   } catch {
     throw new Error(`cannot attest restricted egress: ${ATTEST_IMAGE} is missing`);
   }
-  const version = "2";
-  await new Promise<void>((resolve, reject) => {
+  await followProgress((abortSignal) =>
     docker.buildImage(
       { context, src: ["Dockerfile"] },
-      { t: ATTEST_IMAGE, version },
-      (error, stream) => {
-        if (error || !stream) {
-          reject(error ?? new Error("no build stream"));
-          return;
-        }
-        docker.modem.followProgress(stream, (followError) =>
-          followError ? reject(followError) : resolve(),
-        );
-      },
-    );
-  });
+      { t: ATTEST_IMAGE, version: "2", abortSignal },
+    ),
+  );
+  await docker.getImage(ATTEST_IMAGE).inspect();
 }
 
 /** Rules the iptables backend must hold, in chain order, per family. */
@@ -145,10 +137,15 @@ function chainHasPrefix(rules: string[], wanted: string[], chain: string) {
   if (rules.length < wanted.length) {
     throw new EgressNotEnforced(`${chain} holds fewer managed rules than required`);
   }
+  const normalized = rules.map(normalizeRule);
+  if (wanted.some((rule) => !normalized.includes(rule))) {
+    throw new EgressNotEnforced(`${chain} is missing managed rules`);
+  }
   for (let i = 0; i < wanted.length; i += 1) {
-    const rule = rules[i];
-    if (rule === undefined || normalizeRule(rule) !== wanted[i]) {
-      throw new EgressNotEnforced(`${chain} rule ${i + 1} is not the managed rule (got: ${rule})`);
+    if (normalized[i] !== wanted[i]) {
+      throw new Error(
+        `cannot verify restricted egress: ${chain} rule ${i + 1} precedes the managed rule`,
+      );
     }
   }
 }
@@ -166,7 +163,9 @@ function chainReadable(section: string | undefined) {
   return (
     section !== undefined &&
     !/^iptables v/i.test(section) &&
-    !/iptables-failed|ip6tables-absent|no chain|not found|permission denied/i.test(section)
+    !/iptables-failed|ip6tables-(?:absent|failed)|no chain|not found|permission denied/i.test(
+      section,
+    )
   );
 }
 
