@@ -9,6 +9,8 @@ import {
   hasValidBearerToken,
   sanitizeMessagingLabel,
 } from "@rakazo/core";
+import type { ThreadEvents } from "@rakazo/db";
+import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
 import { cancelBody, readBoundedBytes } from "./http-body.js";
@@ -17,7 +19,8 @@ import { deliverWebhookEvent, formatUntrustedDeliveryPayload } from "./webhook-i
 
 export const INBOUND_EMAIL_PATH = "/api/v1/email/inbound";
 
-export type EmailInboundDeps = Pick<WebhookDeps, "prisma" | "events" | "jobs"> & {
+export type EmailInboundDeps = Pick<WebhookDeps, "prisma" | "jobs"> & {
+  events: WebhookDeps["events"] & Pick<ThreadEvents, "notify">;
   domain: string;
   secret: string;
   storeAttachment?: (input: {
@@ -103,16 +106,8 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     getLogger().warn("inbound email signature could not be checked yet", dropped);
     return { retry: true as const };
   }
-  if (!email.from || !email.authenticated) return ignored("unauthenticated");
+  if (!email.from) return ignored("unauthenticated");
   const sender = email.from.address;
-  if (domainOf(sender) === deps.domain) return ignored("from a bot");
-  // A signed message replayed to the bot does not name it; BCC does not either.
-  if (
-    ![...email.to, ...email.cc].some((address) => recipientName(address, deps.domain) === target)
-  ) {
-    return ignored("not addressed to this bot");
-  }
-
   // The rule only decides who may start the owner's own bot, so an address the owner never
   // verified can expose nothing but that owner's account; servers without email verify no one.
   const owner = await deps.prisma.user.findUnique({
@@ -120,6 +115,26 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     select: { email: true },
   });
   const ownerEmail = owner?.email.trim().toLowerCase() || null;
+  const named = [...email.to, ...email.cc].some(
+    (address) => recipientName(address, deps.domain) === target,
+  );
+  if (!email.authenticated) {
+    // BCC'd mail is dropped whatever its signature, so it never earns a note either.
+    if (sender === ownerEmail && named) {
+      await noteUnverifiedOwnerMail(
+        deps,
+        { id: bot.id, spaceId: bot.spaceId, threadId: bot.thread.id },
+        target,
+      );
+    }
+    return ignored("unauthenticated");
+  }
+  if (domainOf(sender) === deps.domain) return ignored("from a bot");
+  // A signed message replayed to the bot does not name it; BCC does not either.
+  if (!named) {
+    return ignored("not addressed to this bot");
+  }
+
   const allowed: RoutineEmailSenders[] =
     ownerEmail === null
       ? []
@@ -200,6 +215,56 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     { prompt, artifacts, routines: matched, source: "email", idempotencyKey: email.key },
   );
 }
+
+/** How often the owner hears that their own mail could not be verified. */
+const UNVERIFIED_NOTICE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Mail that claims the owner's address but fails the signature check is usually the owner's own,
+ * from a mail domain that does not sign as itself. Say so in the bot's chat, at most once a day,
+ * without any of the message: it may be forged.
+ */
+async function noteUnverifiedOwnerMail(
+  deps: EmailInboundDeps,
+  bot: { id: string; spaceId: string; threadId: string },
+  name: string,
+) {
+  const due = new Date(Date.now() - UNVERIFIED_NOTICE_INTERVAL_MS);
+  const blocks = [{ kind: "meta" as const, text: UNVERIFIED_OWNER_MAIL_NOTE }];
+  // The claim and the note commit together: instances receiving copies at once post one note,
+  // and a note that fails to save leaves the day's slot free for the next message.
+  const seq = await deps.prisma.$transaction(async (tx) => {
+    const claimed = await tx.botEmailAddress.updateMany({
+      where: {
+        name,
+        botId: bot.id,
+        OR: [{ unverifiedNoticeAt: null }, { unverifiedNoticeAt: { lt: due } }],
+      },
+      data: { unverifiedNoticeAt: new Date() },
+    });
+    if (claimed.count !== 1) return undefined;
+    const message = await createThreadMessageInTransaction(tx, {
+      threadId: bot.threadId,
+      botId: bot.id,
+      role: "system",
+      blocks,
+      // The owner should see it even while away from the bot's chat.
+      markUnread: true,
+    });
+    const event = await appendEventInTransaction(tx, {
+      spaceId: bot.spaceId,
+      threadId: bot.threadId,
+      botId: bot.id,
+      type: "thread.message.created",
+      payload: { messageId: message.id, role: "system", blocks },
+    });
+    return event.seq;
+  });
+  if (seq !== undefined) await deps.events.notify(bot.threadId, seq).catch(() => undefined);
+}
+
+export const UNVERIFIED_OWNER_MAIL_NOTE =
+  "An email from your address couldn't be verified, so no routine ran.";
 
 /** Longest subject or sender name the bot sees; only the body has its own, larger cap. */
 const HEADER_MAX_CHARS = 500;
