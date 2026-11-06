@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, useLayoutEffect } from "react";
+import { act, Suspense, startTransition, use, useLayoutEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -36,6 +36,8 @@ vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fa
 
 let root: Root;
 let attachments: ReturnType<typeof useThreadAttachments>;
+/** The import probe's state as last committed; a render React discards does not change it. */
+let committedAttachments: ReturnType<typeof useThreadAttachments>;
 
 /** A chat reopened after leaving it: a fresh screen instance on a fresh root. */
 function mount(node: React.ReactNode) {
@@ -75,6 +77,10 @@ function ImportProbe({ botId }: { botId: string }) {
     readOnly: false,
     threadKey: botId,
     uploadConfig,
+  });
+  const current = attachments;
+  useLayoutEffect(() => {
+    committedAttachments = current;
   });
   return null;
 }
@@ -300,4 +306,60 @@ it("keeps a share whose read settles between a warm link's commit and its effect
   expect(releaseIncomingShareFiles).not.toHaveBeenCalledWith(
     expect.arrayContaining([expect.objectContaining({ uri: files[0]!.uri })]),
   );
+});
+
+it("keeps a share for the committed chat when a render of another chat is discarded", async () => {
+  const files = [{ uri: "file:///group/t1.txt", name: "t1.txt", mimeType: "text/plain" }];
+  const share = { text: "", files, arrivedAt: Date.now(), generation: 1 };
+  vi.mocked(takeIncomingShare).mockReturnValueOnce(share);
+  let settle!: () => void;
+  vi.mocked(readSharedFiles).mockReturnValueOnce(
+    new Promise((resolve) => {
+      settle = () =>
+        resolve({
+          attachments: [
+            { id: "t1", name: "t1.txt", mimeType: "text/plain", contentBase64: "aGk=" },
+          ],
+          skipped: [],
+          failedFiles: [],
+          sources: [files[0]!.uri],
+        });
+    }),
+  );
+  const never = new Promise<never>(() => {});
+  function Suspends(): null {
+    use(never);
+    return null;
+  }
+  vi.mocked(retryIncomingShare).mockClear();
+  mount(
+    <Suspense fallback={null}>
+      <ImportProbe botId="bot-kept-a" />
+    </Suspense>,
+  );
+
+  // A transition renders chat B, which suspends, so chat A stays on screen.
+  await act(async () =>
+    startTransition(() =>
+      root.render(
+        <Suspense fallback={null}>
+          <ImportProbe botId="bot-kept-b" />
+          <Suspends />
+        </Suspense>,
+      ),
+    ),
+  );
+  await act(async () => settle());
+  // The suspended render of chat B is discarded: chat A renders again.
+  await act(async () =>
+    root.render(
+      <Suspense fallback={null}>
+        <ImportProbe botId="bot-kept-a" />
+      </Suspense>,
+    ),
+  );
+
+  expect(retryIncomingShare).not.toHaveBeenCalledWith(share);
+  const kept = committedAttachments.activePendingAttachments;
+  expect(kept.map((item) => item.id)).toEqual(["t1"]);
 });
