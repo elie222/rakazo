@@ -326,21 +326,27 @@ export function createBillingService(deps: {
   async function openCheckout(
     actor: Actor,
     account: BillingAccount,
-    call: (customerId: string) => Promise<{ url: string }>,
+    call: (customerId: string, leaseHeld: () => Promise<void>) => Promise<{ url: string }>,
   ) {
     // Opening another recurring checkout expires the old one.
-    return withCheckoutLease(account.organizationId, async () => {
+    return withCheckoutLease(account.organizationId, async (leaseHeld) => {
       // The entry check ran before this request waited for the lease, and a deletion's
       // cancellation holds the same lease: re-check, so no session opens that the
       // cancellation cannot see and the organization cannot outlive.
       if (await organizationBeingDeleted(account.organizationId))
         throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
-      return withLiveCustomer(actor, account, call);
+      return withLiveCustomer(actor, account, (customerId) => call(customerId, leaseHeld));
     });
   }
 
-  /** Runs `work` holding the organization's checkout lease, one at a time across API instances. */
-  async function withCheckoutLease<T>(organizationId: string, work: () => Promise<T>) {
+  /**
+   * Runs `work` holding the organization's checkout lease, one at a time across API instances.
+   * `leaseHeld` throws once the lease is lost.
+   */
+  async function withCheckoutLease<T>(
+    organizationId: string,
+    work: (leaseHeld: () => Promise<void>) => Promise<T>,
+  ) {
     const deadline = Date.now() + CHECKOUT_LEASE_MS;
     let leaseId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
     while (!leaseId) {
@@ -357,13 +363,16 @@ export function createBillingService(deps: {
       CHECKOUT_LEASE_RENEW_MS,
     );
     renew.unref();
+    const leaseHeld = async () => {
+      if (!(await checkoutLeaseHeld(prisma, organizationId, leaseId)))
+        throw new ORPCError("CONFLICT", { message: "Billing is busy; try again shortly" });
+    };
     try {
-      const result = await work();
+      const result = await work(leaseHeld);
       // Renewal keeps the lease unless the database refused every attempt for a whole lease
       // period. A cancellation that still took the lease over expired the sessions open at
       // that moment, so a session created after it must not be handed back.
-      if (!(await checkoutLeaseHeld(prisma, organizationId, leaseId)))
-        throw new ORPCError("CONFLICT", { message: "Billing is busy; try again shortly" });
+      await leaseHeld();
       return result;
     } finally {
       clearInterval(renew);
@@ -401,7 +410,7 @@ export function createBillingService(deps: {
       organizationOwnerHadTrial(prisma, organizationId, "byok"),
     ]);
     try {
-      return await openCheckout(actor, account, async (customerId) => {
+      return await openCheckout(actor, account, async (customerId, leaseHeld) => {
         // Expire the open sessions first: once none is payable none holds the trial, so a
         // failure after this step gives this attempt's hold back in full. A failure while
         // expiring keeps the earlier hold, since its session may still be payable.
@@ -410,6 +419,9 @@ export function createBillingService(deps: {
         // not have arrived: record it, using up the owners' trial, while the earlier hold
         // still protects it. A failed sync keeps that hold.
         await sync(customerId);
+        // The sync's provider reads can outlast the lease, and a newer request may then hold
+        // a newer session's hold: touch no hold once the lease is lost.
+        await leaseHeld();
         await releaseByokTrialCheckouts(prisma, organizationId);
         // One trial per owner: reserve inside the organization's checkout lease, so overlapping
         // requests of the same organization cannot interleave their holds; the lease already
