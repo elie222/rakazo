@@ -1381,7 +1381,13 @@ export async function sendThreadMessage(
     // Subscribers catch up from the durable event cursor after a missed realtime wake.
     getLogger().error("thread send realtime notification", error);
   });
-  if (memberMessageAlerts({ callId, blocks: committed.message.blocks })) {
+  if (
+    memberMessageAlerts({
+      callId,
+      blocks: committed.message.blocks,
+      replyToMessageId: committed.message.replyToMessageId,
+    })
+  ) {
     // Not awaited: the sender's reply does not wait on anyone else's devices.
     void notifyMemberMessage(deps, {
       spaceId: actor.spaceId,

@@ -2,6 +2,12 @@
 -- the previous release keeps writing threads.unread and threads."lastReadSeq" while it runs;
 -- 20261202120100_drop_thread_unread drops them once it has stopped.
 
+BEGIN;
+
+-- Holds off the previous release's writes to threads from the backfill until the trigger that
+-- mirrors them is in place, so none lands in between and is lost.
+LOCK TABLE "threads" IN SHARE ROW EXCLUSIVE MODE;
+
 CREATE TABLE "thread_reads" (
     "threadId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
@@ -69,3 +75,5 @@ BEGIN
 END $$;
 CREATE TRIGGER threads_mirror_unread AFTER UPDATE OF "unread" ON "threads"
   FOR EACH ROW EXECUTE FUNCTION thread_reads_mirror_unread();
+
+COMMIT;

@@ -2,6 +2,7 @@ import type { MessageAuthor, MessageBlock, ReplyPreview } from "@rakazo/contract
 import { MessageAuthorSchema, ReplyPreviewSchema } from "@rakazo/contracts";
 import { displayName } from "./display-name.js";
 import { plainTextFromMarkdown } from "./markdown-plain.js";
+import { messageReaction } from "./message-reactions.js";
 
 type ReplyMetadata = {
   replyToMessageId?: string;
@@ -60,12 +61,19 @@ export function messageUnreadFor(
 
 /**
  * Whether a person's message alerts the rest of the space, by push or on the desktop: typed
- * text does; a spoken call turn or a file sent alone does not.
+ * text does; a spoken call turn, a reaction or a file sent alone does not.
  */
-export function memberMessageAlerts(message: { callId?: unknown; blocks?: unknown }): boolean {
-  const blocks = Array.isArray(message.blocks) ? message.blocks : [];
+export function memberMessageAlerts(message: {
+  callId?: unknown;
+  blocks?: unknown;
+  replyToMessageId?: unknown;
+}): boolean {
+  const blocks = (Array.isArray(message.blocks) ? message.blocks : []) as MessageBlock[];
+  const replyToMessageId =
+    typeof message.replyToMessageId === "string" ? message.replyToMessageId : undefined;
   return (
     typeof message.callId !== "string" &&
+    !messageReaction({ role: "user", blocks, replyToMessageId }) &&
     blocks.some(
       (block) =>
         block &&
