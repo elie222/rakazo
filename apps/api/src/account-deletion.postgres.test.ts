@@ -430,6 +430,10 @@ describePostgres("account deletion on bot computers (PostgreSQL)", () => {
     };
     await expect(deleteAccount(ids.leaver)).rejects.toThrow("provider unavailable");
     sandbox.failDestroy.clear();
+    // The retry may run on the previous release, which finds its claims by this exact token.
+    expect(await system.space.findUnique({ where: { id: ids.soloSpace } })).toMatchObject({
+      deletionClaimId: `account-deletion:${ids.leaver}`,
+    });
 
     await deleteAccount(ids.leaver);
 
