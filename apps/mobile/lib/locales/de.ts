@@ -696,6 +696,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Uninstall: "Deinstallieren",
   "Verify and add": "Prüfen und hinzufügen",
   "Working…": "Wird verarbeitet…",
+  "Running {name}…": "{name} läuft…",
   "https://example.com/graphql": "https://example.com/graphql",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",

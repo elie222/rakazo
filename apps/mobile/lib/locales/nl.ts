@@ -689,6 +689,7 @@ export const NL_MESSAGES: Record<string, string> = {
   Uninstall: "Verwijderen",
   "Verify and add": "Verifiëren en toevoegen",
   "Working…": "Bezig…",
+  "Running {name}…": "{name} wordt uitgevoerd…",
   "https://example.com/graphql": "https://example.com/graphql",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",

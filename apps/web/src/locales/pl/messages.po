@@ -5759,6 +5759,10 @@ msgstr "działa"
 msgid "Running"
 msgstr "Działa"
 
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "Trwa {workingRoutine}…"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "Działa…"
