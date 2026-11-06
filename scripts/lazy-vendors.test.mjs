@@ -107,6 +107,11 @@ test("every package loaded on demand is a listed vendor SDK or a known non-vendo
     [],
     "Add the SDK to OPTIONAL_VENDORS, or a non-vendor package to LAZY_NON_VENDORS",
   );
+  assert.deepEqual(
+    LAZY_NON_VENDORS.filter((name) => !dynamicPackages.has(name)),
+    [],
+    "No longer loaded on demand; remove from LAZY_NON_VENDORS",
+  );
 });
 
 /**
