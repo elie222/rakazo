@@ -54,7 +54,7 @@ The app checks for updates and downloads them in the background. When one is rea
 
 ## Dictation
 
-On a Mac, dictation and voice calls use the Mac's own speech recognition, so they work without a
+On a Mac, dictation uses the Mac's own speech recognition, so it works without a
 [voice provider](./voice-and-calls.md). If you declined the permission prompt, allow Rakazo under
 **Speech Recognition** and **Microphone** in System Settings.
 
