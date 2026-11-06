@@ -3047,6 +3047,10 @@ msgstr ""
 msgid "Did you mean <0>{emailSuggestion}</0>?"
 msgstr "Você quis dizer <0>{emailSuggestion}</0>?"
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Desativar uma ferramenta"

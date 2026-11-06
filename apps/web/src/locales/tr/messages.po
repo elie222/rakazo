@@ -3047,6 +3047,10 @@ msgstr "Dikte başarısız oldu."
 msgid "Did you mean <0>{emailSuggestion}</0>?"
 msgstr "<0>{emailSuggestion}</0> mi demek istediniz?"
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Bir aracı devre dışı bırak"

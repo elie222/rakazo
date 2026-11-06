@@ -3047,6 +3047,10 @@ msgstr "Falló el dictado."
 msgid "Did you mean <0>{emailSuggestion}</0>?"
 msgstr "¿Quisiste decir <0>{emailSuggestion}</0>?"
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Desactivar una herramienta"
