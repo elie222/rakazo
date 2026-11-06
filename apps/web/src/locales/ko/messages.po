@@ -4130,6 +4130,10 @@ msgstr "요청당 최대 이미지 수"
 msgid "Maximum output tokens"
 msgstr "최대 출력 토큰 수"
 
+#: src/pages/model-settings/use-model-settings.ts
+msgid "Maximum output tokens must be lower than the context limit."
+msgstr "최대 출력 토큰 수는 컨텍스트 한도보다 작아야 합니다."
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
 msgstr ""

@@ -791,10 +791,10 @@ function accessibleName(element: Element) {
     .join(" ");
 }
 
-/** The checkbox whose accessible name is exactly `id`. */
-function modelCheckbox(container: HTMLElement, id: string) {
+/** The checkbox whose accessible name is `id`, followed by the model's capability hint if any. */
+function modelCheckbox(container: HTMLElement, id: string, hint = "") {
   const found = [...container.querySelectorAll("[role='checkbox']")].find(
-    (entry) => accessibleName(entry) === id,
+    (entry) => accessibleName(entry) === `${id}${hint}`,
   );
   if (!(found instanceof HTMLElement)) throw new Error(`Missing model checkbox: ${id}`);
   return {
@@ -1315,9 +1315,10 @@ it("opens the DeepInfra preset with a required key and prefills the model's capa
         reasoning: true,
         supportsImages: true,
         contextWindow: 131072,
-        cacheCapabilities: { scope: "connection" as const },
+        cacheCapabilitiesByModel: { "vision-model": { scope: "connection" as const } },
       }),
     );
+    expect(models.connect.mock.calls.at(-1)?.[0]).not.toHaveProperty("cacheCapabilities");
   } finally {
     await view.unmount();
   }
@@ -1353,9 +1354,156 @@ it("re-prefills the capabilities when another found model becomes the default", 
         reasoning: false,
         supportsImages: false,
         contextWindow: 32768,
+        // The model has no prompt cache, so the previous model's pricing is not carried over.
+        cacheCapabilitiesByModel: { "text-model": null },
       }),
     );
     expect(models.connect.mock.calls.at(-1)?.[0]).not.toHaveProperty("cacheCapabilities");
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("sends each enabled model's own cache pricing when several models are ticked", async () => {
+  HTMLElement.prototype.scrollTo = vi.fn();
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([]);
+  models.probeOpenAiCompatible.mockResolvedValue({
+    models: ["vision-model", "text-model"],
+    details: deepInfraDetails,
+  });
+  const view = await renderSettings(false);
+  try {
+    await pick("Change Main model", "DeepInfra");
+    await typeInto(
+      view.container.querySelector('input[placeholder="DeepInfra API key"]') as HTMLInputElement,
+      "fake-fixture-key",
+    );
+    await click(buttons(view.container, "Find models")[0]);
+    await act(async () => {
+      modelCheckbox(view.container, "text-model").click();
+    });
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelId: "vision-model",
+        enabledModelIds: ["text-model"],
+        cacheCapabilitiesByModel: {
+          "vision-model": { scope: "connection" as const },
+          "text-model": null,
+        },
+      }),
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
+const savedLimits = {
+  ...compatibleCredential,
+  baseUrl: "https://api.deepinfra.com/v1/openai",
+  hasKey: true,
+  modelId: "text-model",
+  enabledModelIds: ["text-model"],
+  reasoning: false,
+  supportsImages: false,
+  maxTokens: 2048,
+  contextWindow: 16384,
+};
+
+it("restores a saved model's own settings when it is picked again after another model", async () => {
+  models.probeOpenAiCompatible.mockResolvedValue({
+    models: ["vision-model", "text-model"],
+    details: deepInfraDetails,
+  });
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "text-model"));
+  const view = await renderCompatible(savedLimits);
+  try {
+    await click(buttons(view.container, "Find models")[0]);
+    await act(async () => {
+      modelCheckbox(view.container, "vision-model", "Images · Thinking").click();
+    });
+    const select = view.container.querySelector(
+      "select[aria-label='Models from server']",
+    ) as HTMLSelectElement;
+    await selectValue(select, "vision-model");
+    await selectValue(select, "text-model");
+    await click(buttons(view.container, "Save")[0]);
+    const sent = models.connect.mock.calls.at(-1)?.[0];
+    expect(sent).toMatchObject({
+      modelId: "text-model",
+      reasoning: false,
+      supportsImages: false,
+      maxTokens: 2048,
+      contextWindow: 16384,
+    });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("does not overwrite a saved model's settings with the listing's when its connection reopens", async () => {
+  models.probeOpenAiCompatible.mockResolvedValue({
+    models: ["vision-model", "text-model"],
+    details: deepInfraDetails,
+  });
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "text-model"));
+  const view = await renderCompatible({ ...savedLimits, supportsImages: true, reasoning: true });
+  try {
+    await click(buttons(view.container, "Find models")[0]);
+    const select = view.container.querySelector(
+      "select[aria-label='Models from server']",
+    ) as HTMLSelectElement;
+    await selectValue(select, "text-model");
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect.mock.calls.at(-1)?.[0]).toMatchObject({
+      modelId: "text-model",
+      reasoning: true,
+      supportsImages: true,
+      contextWindow: 16384,
+    });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("prefills another model's settings but still lets the user edit them before saving", async () => {
+  models.probeOpenAiCompatible.mockResolvedValue({
+    models: ["vision-model", "text-model"],
+    details: deepInfraDetails,
+  });
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "text-model"));
+  const view = await renderCompatible(savedLimits);
+  try {
+    await click(buttons(view.container, "Find models")[0]);
+    await act(async () => {
+      modelCheckbox(view.container, "vision-model", "Images · Thinking").click();
+    });
+    const select = view.container.querySelector(
+      "select[aria-label='Models from server']",
+    ) as HTMLSelectElement;
+    await selectValue(select, "vision-model");
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect.mock.calls.at(-1)?.[0]).toMatchObject({
+      modelId: "vision-model",
+      reasoning: true,
+      supportsImages: true,
+      contextWindow: 131072,
+    });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("refuses to save when the output limit leaves no room in the context limit", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "text-model"));
+  const view = await renderCompatible({ ...savedLimits, maxTokens: 16384 });
+  try {
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect).not.toHaveBeenCalled();
+    expect(view.container.textContent).toContain(
+      "Maximum output tokens must be lower than the context limit.",
+    );
   } finally {
     await view.unmount();
   }

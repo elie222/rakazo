@@ -4130,6 +4130,10 @@ msgstr ""
 msgid "Maximum output tokens"
 msgstr ""
 
+#: src/pages/model-settings/use-model-settings.ts
+msgid "Maximum output tokens must be lower than the context limit."
+msgstr "Максимум выходных токенов должен быть меньше лимита контекста."
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
 msgstr ""

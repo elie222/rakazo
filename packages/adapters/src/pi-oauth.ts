@@ -13,6 +13,8 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type {
+  CacheCapabilities,
+  CacheCapabilitiesByModel,
   ModelApiProtocol,
   ModelContextLimits,
   ModelOAuthBegin,
@@ -21,6 +23,7 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
+  CacheCapabilitiesSchema,
   canonicalPiProviderId,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
@@ -284,6 +287,34 @@ function modelLimits(value: Record<string, unknown>): StoredModelLimits {
   };
 }
 
+/** Drops entries that are not valid capabilities; the result has no prototype surprises. */
+function parsedCacheCapabilitiesByModel(value: unknown): CacheCapabilitiesByModel | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value).flatMap(([modelId, capabilities]) => {
+    const parsed = CacheCapabilitiesSchema.safeParse(capabilities);
+    return modelId.trim() && parsed.success ? [[modelId, parsed.data] as const] : [];
+  });
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+/**
+ * The cache capabilities a model runs with. An OpenAI-compatible connection keeps them per
+ * model; a connection saved before that, or set up by hand, has one connection-wide value that
+ * applies to any model without an entry of its own.
+ */
+export function modelCacheCapabilities(
+  secret: Exclude<StoredModelSecret, { kind: "oauth" }>,
+  modelId: string,
+): CacheCapabilities | undefined {
+  const own =
+    secret.kind === "openai_compatible" &&
+    secret.cacheCapabilitiesByModel !== undefined &&
+    Object.hasOwn(secret.cacheCapabilitiesByModel, modelId)
+      ? secret.cacheCapabilitiesByModel[modelId]
+      : undefined;
+  return own ?? secret.cacheCapabilities;
+}
+
 export type StoredModelSecret =
   | ({
       kind: "api_key";
@@ -307,6 +338,8 @@ export type StoredModelSecret =
       visionModelIds?: string[];
       enabledModelIds?: string[];
       maxImagesPerPrompt?: number;
+      /** Per-model cache capabilities; `cacheCapabilities` is the fallback for other models. */
+      cacheCapabilitiesByModel?: CacheCapabilitiesByModel;
     } & StoredModelLimits);
 
 export type PiOAuthConnected = {
@@ -482,6 +515,9 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
         : undefined;
     const visionModelIds = parsedModelIds(parsed.visionModelIds);
     const enabledModelIds = parsedModelIds(parsed.enabledModelIds);
+    const cacheCapabilitiesByModel = parsedCacheCapabilitiesByModel(
+      parsed.cacheCapabilitiesByModel,
+    );
     const maxImagesPerPrompt =
       typeof parsed.maxImagesPerPrompt === "number" &&
       Number.isInteger(parsed.maxImagesPerPrompt) &&
@@ -502,6 +538,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       ...(visionModelIds ? { visionModelIds } : {}),
       ...(enabledModelIds ? { enabledModelIds } : {}),
       ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
+      ...(cacheCapabilitiesByModel ? { cacheCapabilitiesByModel } : {}),
       ...modelLimits(parsed),
     };
   }
@@ -575,6 +612,9 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
       ...(secret.enabledModelIds !== undefined ? { enabledModelIds: secret.enabledModelIds } : {}),
       ...(secret.maxImagesPerPrompt !== undefined
         ? { maxImagesPerPrompt: secret.maxImagesPerPrompt }
+        : {}),
+      ...(secret.cacheCapabilitiesByModel !== undefined
+        ? { cacheCapabilitiesByModel: secret.cacheCapabilitiesByModel }
         : {}),
     });
   }

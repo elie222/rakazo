@@ -40,6 +40,7 @@ import {
   CHATGPT_OAUTH_PROVIDER,
   isRetiredModelCredentialError,
   kickModelCredentialRefresh,
+  modelCacheCapabilities,
   parseModelSecret,
   persistStoredModelSecret,
   refreshStoredModelCredential,
@@ -329,7 +330,9 @@ async function resolveModelKeyMaterial(
         headers: resolved.secret.kind === "openai_compatible" ? resolved.secret.headers : undefined,
         allowPrivateEndpoint,
         cacheCapabilities:
-          resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
+          resolved.secret.kind !== "oauth"
+            ? modelCacheCapabilities(resolved.secret, modelId)
+            : undefined,
         contextWindow: resolved.secret.kind !== "oauth" ? resolved.secret.contextWindow : undefined,
         reasoning:
           resolved.secret.kind === "openai_compatible" ? resolved.secret.reasoning : undefined,

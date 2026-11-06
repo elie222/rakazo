@@ -1,9 +1,11 @@
 import type {
+  CacheCapabilities,
   ModelApiProtocol,
   ModelCatalogEntry,
   ModelConnectInput,
   ModelCredential,
   ModelHeaderRow,
+  OpenAiCompatibleModelInfo,
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
@@ -12,6 +14,7 @@ import {
   isCloudflareModelProvider,
   ModelHeaderRowsSchema,
   modelHeadersInput,
+  modelOutputLeavesInputRoom,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   parseModelContextWindow,
@@ -150,7 +153,28 @@ export type ConnectionFormDraft = Omit<ConnectionFormFields, "enabledModelIds"> 
 };
 
 /** A field whose number is out of range; each app words the message. */
-export type ConnectionFormInvalidField = "maxTokens" | "maxImagesPerPrompt" | "contextWindow";
+export type ConnectionFormInvalidField =
+  | "maxTokens"
+  | "maxImagesPerPrompt"
+  | "contextWindow"
+  /** Both numbers are valid, but the output limit leaves no room for input in the context. */
+  | "maxTokensExceedsContext";
+
+/**
+ * The cache capabilities to save for each of these models the listing described. A described
+ * model that publishes none is sent as `null`, so a price saved for it earlier is cleared; a
+ * model the listing did not describe is left out and keeps what it has.
+ */
+function probedCacheCapabilities(
+  probedModels: ReadonlyMap<string, Pick<OpenAiCompatibleModelInfo, "cacheCapabilities">>,
+  modelIds: readonly string[],
+): Record<string, CacheCapabilities | null> | undefined {
+  const entries = [...new Set(modelIds)].flatMap((id) => {
+    const info = probedModels.get(id);
+    return info ? [[id, info.cacheCapabilities ?? null] as const] : [];
+  });
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
 
 export type ModelConnectRequest =
   | { status: "incomplete" }
@@ -175,8 +199,18 @@ export function modelConnectRequest(input: {
   credentialId: string | null;
   settingsOnly?: boolean;
   makeDefault?: { makeDefault: boolean; scope: SettingsScope };
+  /** What the latest "Find models" probe said about each model, by id. */
+  probedModels?: ReadonlyMap<string, OpenAiCompatibleModelInfo>;
 }): ModelConnectRequest {
-  const { form, selected, credential, credentialId, settingsOnly = false, makeDefault } = input;
+  const {
+    form,
+    selected,
+    credential,
+    credentialId,
+    settingsOnly = false,
+    makeDefault,
+    probedModels,
+  } = input;
   const compatible = selected.provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const baseUrl = form.baseUrl.trim();
   const modelId = form.modelId.trim();
@@ -209,6 +243,13 @@ export function modelConnectRequest(input: {
   if (compatible && contextWindow === undefined) {
     return { status: "invalid", field: "contextWindow" };
   }
+  if (compatible && !modelOutputLeavesInputRoom(maxTokens, contextWindow)) {
+    return { status: "invalid", field: "maxTokensExceedsContext" };
+  }
+  const cacheCapabilitiesByModel =
+    compatible && probedModels
+      ? probedCacheCapabilities(probedModels, [modelId, ...form.enabledModelIds])
+      : undefined;
   // The staged effort belongs to the model on screen. Clamp it before a connect or a limit
   // save so a previous model's level cannot stick.
   const thinkingLevel = clampCatalogThinkingLevel(
@@ -240,6 +281,7 @@ export function modelConnectRequest(input: {
         supportsImages: form.supportsImages,
         maxImagesPerPrompt:
           form.supportsImages && !form.maxImagesPerPrompt.trim() ? null : maxImagesPerPrompt,
+        ...(cacheCapabilitiesByModel ? { cacheCapabilitiesByModel } : {}),
         ...makeDefault,
         apiKey: form.apiKey.trim() || undefined,
         label,

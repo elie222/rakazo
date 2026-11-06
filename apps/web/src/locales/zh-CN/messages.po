@@ -4130,6 +4130,10 @@ msgstr "每次请求的最大图像数"
 msgid "Maximum output tokens"
 msgstr "最大输出 token 数"
 
+#: src/pages/model-settings/use-model-settings.ts
+msgid "Maximum output tokens must be lower than the context limit."
+msgstr "最大输出 token 数必须小于上下文限制。"
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
 msgstr "MCP 端点"

@@ -409,8 +409,35 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     return probed.reasoning ?? reasoning;
   }
 
+  /** Whether this is the model the saved connection runs, on the endpoint it was saved for. */
+  function isSavedCompatibleModel(id: string): boolean {
+    return (
+      credential?.modelId === id && savedCompatibleEndpointMatches(baseUrl, credential.baseUrl)
+    );
+  }
+
+  /**
+   * Picks the model on screen. The connection's saved model keeps the settings its owner chose:
+   * the listing's guesses are skipped, and the saved values come back after another model's
+   * guesses were filled in. Any other model takes what the listing says about it.
+   */
   function stageCompatibleModelId(nextModelId: string) {
     setModelId(nextModelId);
+    if (credential && isSavedCompatibleModel(nextModelId)) {
+      const saved = connectionFormFields({
+        catalog,
+        provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+        modelId: nextModelId,
+        credential,
+      });
+      setReasoning(saved.reasoning);
+      setSupportsImages(saved.supportsImages);
+      setMaxImagesPerPrompt(saved.maxImagesPerPrompt);
+      setMaxTokens(saved.maxTokens);
+      setContextWindow(saved.contextWindow);
+      setThinkingLevel(saved.thinkingLevel);
+      return;
+    }
     const nextReasoning = applyProbedModelFields(nextModelId);
     setThinkingLevel(
       clampCatalogThinkingLevel(
@@ -483,10 +510,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
         const current = modelIdRef.current;
         const next = current.trim() || models[0] || "";
         // A saved connection keeps its own settings for the model it already runs.
-        const keepSaved =
-          next === current &&
-          credential?.modelId === current &&
-          savedCompatibleEndpointMatches(baseUrl, credential.baseUrl);
+        const keepSaved = next === current && isSavedCompatibleModel(current);
         if (next !== current) stageCompatibleModelId(next);
         else {
           setModelId(next);
@@ -593,6 +617,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       credential,
       credentialId: credential?.id ?? null,
       settingsOnly,
+      probedModels: probeInfo.infoRef.current,
       ...(intent ? { makeDefault: { makeDefault: intent.makeDefault, scope } } : {}),
     });
     if (request.status === "incomplete") return;
@@ -602,16 +627,14 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
           ? t`Enter a whole number from 1 to ${MAX_MODEL_MAX_TOKENS} for maximum output tokens.`
           : request.field === "maxImagesPerPrompt"
             ? t`Enter a whole number from 1 to 1000 for the image limit.`
-            : t`Enter a whole number from 1 to ${MAX_MODEL_CONTEXT_WINDOW} for the context limit.`,
+            : request.field === "maxTokensExceedsContext"
+              ? t`Maximum output tokens must be lower than the context limit.`
+              : t`Enter a whole number from 1 to ${MAX_MODEL_CONTEXT_WINDOW} for the context limit.`,
       );
       return;
     }
     const { savingLimitOnly, activeModelId } = request;
-    // Prompt-caching support the model listing published rides along with the connection.
-    const cacheCapabilities = isOpenAiCompatible
-      ? probeInfo.infoRef.current.get(modelId.trim())?.cacheCapabilities
-      : undefined;
-    const input = cacheCapabilities ? { ...request.input, cacheCapabilities } : request.input;
+    const { input } = request;
     setError(null);
     setNotice(null);
     setPending(settingsOnly ? "settings" : "connect");

@@ -43,3 +43,18 @@ it("lowers the output limit when a published context limit leaves no room for in
     contextWindow: "8192",
   });
 });
+
+it("does not prefill a one-token context limit, which no output limit can fit under", () => {
+  expect(probedModelFields({ id: "a", reasoning: true, contextWindow: 1 }, "4096")).toEqual({
+    reasoning: true,
+  });
+});
+
+it("keeps every prefilled pair valid down to the smallest context limit", () => {
+  for (const contextWindow of [2, 3, 4096]) {
+    const fields = probedModelFields({ id: "a", contextWindow }, "4096");
+    expect(Number(fields.contextWindow)).toBe(contextWindow);
+    expect(Number(fields.maxTokens ?? "4096")).toBeLessThan(contextWindow);
+    expect(Number(fields.maxTokens ?? "4096")).toBeGreaterThanOrEqual(1);
+  }
+});

@@ -487,8 +487,9 @@ describe("DeepInfra capability prefill", () => {
       supportsImages: true,
       reasoning: true,
       contextWindow: 131072,
-      cacheCapabilities: cache,
+      cacheCapabilitiesByModel: { "found-0": cache },
     });
+    expect(connectInput()).not.toHaveProperty("cacheCapabilities");
   });
 
   it("lets the person change a prefilled switch before connecting", async () => {
@@ -498,11 +499,16 @@ describe("DeepInfra capability prefill", () => {
     await openDeepInfra();
     await act(async () => field("Supports images")!.click());
     await save();
-    expect(connectInput()).toMatchObject({ supportsImages: false, reasoning: true });
+    expect(connectInput()).toMatchObject({
+      supportsImages: false,
+      reasoning: true,
+      // Described, with no prompt cache: sent as cleared rather than left to a saved price.
+      cacheCapabilitiesByModel: { "found-0": null },
+    });
     expect(connectInput()).not.toHaveProperty("cacheCapabilities");
   });
 
-  it("applies the details of whichever model is picked and drops the previous cache hints", async () => {
+  it("applies the details of whichever model is picked and sends only that model's cache pricing", async () => {
     saved.probeDetails = [
       { id: "found-0", supportsImages: true, reasoning: true, cacheCapabilities: cache },
       { id: "found-1", supportsImages: false, reasoning: false, contextWindow: 32768 },
@@ -518,8 +524,36 @@ describe("DeepInfra capability prefill", () => {
       supportsImages: false,
       reasoning: false,
       contextWindow: 32768,
+      cacheCapabilitiesByModel: { "found-1": null },
     });
     expect(connectInput()).not.toHaveProperty("cacheCapabilities");
+  });
+
+  it("lowers the output limit with a small published context limit so the form still saves", async () => {
+    saved.probeDetails = [{ id: "found-0", contextWindow: 2048 }];
+    await openDeepInfra();
+    expect(field("Context limit")?.value).toBe("2048");
+    expect(field("Maximum output tokens")?.value).toBe("1024");
+    await save();
+    expect(connectInput()).toMatchObject({ contextWindow: 2048, maxTokens: 1024 });
+  });
+
+  it("does not prefill a one-token context limit", async () => {
+    saved.probeDetails = [{ id: "found-0", reasoning: true, contextWindow: 1 }];
+    await openDeepInfra();
+    expect(field("Supports thinking")?.checked).toBe(true);
+    expect(field("Context limit")?.value).toBe("262144");
+  });
+
+  it("refuses to save an output limit that leaves no room in the context limit", async () => {
+    await openDeepInfra();
+    await change("Context limit", "4096");
+    await change("Maximum output tokens", "8192");
+    await save();
+    expect(connectInput()).toBeUndefined();
+    expect(container.textContent).toContain(
+      "Maximum output tokens must be lower than the context limit.",
+    );
   });
 
   it("leaves the switches alone for a model the listing did not describe", async () => {

@@ -1,5 +1,4 @@
 import type {
-  CacheCapabilities,
   ModelApiProtocol,
   ModelHeaderRow,
   ModelOAuthBegin,
@@ -127,8 +126,6 @@ export default function ModelConnection() {
   const [showApiKey, setShowApiKey] = useState(false);
   // What the server's listing says about each found model; picking one prefills the switches.
   const [probeDetails, setProbeDetails] = useState<OpenAiCompatibleModelInfo[]>([]);
-  // Prompt-cache support the listing reported for the model on screen, sent on connect.
-  const [cacheCapabilities, setCacheCapabilities] = useState<CacheCapabilities | undefined>();
   const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
   const resetOpenAiCompatibleProbe = useCallback(() => {
@@ -235,7 +232,6 @@ export default function ModelConnection() {
       setCatalog(nextCatalog);
       setCredentials(nextCredentials);
       resetOpenAiCompatibleProbe();
-      setCacheCapabilities(undefined);
       setModelId(nextModel);
       setHeaderRows(null);
       setEnabledModelIds(fields.enabledModelIds);
@@ -426,14 +422,13 @@ export default function ModelConnection() {
     const savedModel =
       credential?.modelId === nextModelId &&
       savedCompatibleEndpointMatches(baseUrl, credential.baseUrl);
-    const prefill = savedModel ? {} : probedModelPrefill(details, nextModelId);
+    const prefill = savedModel ? {} : probedModelPrefill(details, nextModelId, maxTokens);
     const nextReasoning = prefill.reasoning ?? reasoning;
     setModelId(nextModelId);
     if (prefill.reasoning !== undefined) setReasoning(prefill.reasoning);
     if (prefill.supportsImages !== undefined) setSupportsImages(prefill.supportsImages);
     if (prefill.contextWindow !== undefined) setContextWindow(prefill.contextWindow);
-    // The previous model's cache support does not carry over to this one.
-    setCacheCapabilities(prefill.cacheCapabilities);
+    if (prefill.maxTokens !== undefined) setMaxTokens(prefill.maxTokens);
     setThinkingLevel(
       clampCatalogThinkingLevel(
         credential?.modelId === nextModelId ? credential.thinkingLevel : null,
@@ -467,6 +462,7 @@ export default function ModelConnection() {
       credentialId: credentialIdRef.current,
       settingsOnly: limitsOnly,
       makeDefault: { makeDefault, scope: target.scope },
+      probedModels: new Map(probeDetails.map((info) => [info.id, info])),
     });
     if (connect.status === "incomplete") return;
     // Drop the previous result before the limit check so it cannot sit beside the new one.
@@ -482,20 +478,20 @@ export default function ModelConnection() {
               })
             : connect.field === "maxImagesPerPrompt"
               ? t("Enter a whole number from 1 to 1000 for the image limit.")
-              : t("Enter a whole number from 1 to {max} for the context limit.", {
-                  max: MAX_MODEL_CONTEXT_WINDOW,
-                }),
+              : connect.field === "maxTokensExceedsContext"
+                ? t("Maximum output tokens must be lower than the context limit.")
+                : t("Enter a whole number from 1 to {max} for the context limit.", {
+                    max: MAX_MODEL_CONTEXT_WINDOW,
+                  }),
       });
       return;
     }
     const { savingLimitOnly, activeModelId } = connect;
     setPending("connect");
     try {
-      const saved = await rpc(
-        "models/connect",
-        cacheCapabilities ? { ...connect.input, cacheCapabilities } : connect.input,
-        { timeoutMs: MODEL_CONNECT_TIMEOUT_MS },
-      );
+      const saved = await rpc("models/connect", connect.input, {
+        timeoutMs: MODEL_CONNECT_TIMEOUT_MS,
+      });
       credentialIdRef.current = saved.id;
       setCredentialId(saved.id);
       if (!limitsOnly) setApiKey("");

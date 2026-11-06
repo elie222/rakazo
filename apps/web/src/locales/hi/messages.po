@@ -4130,6 +4130,10 @@ msgstr "प्रति अनुरोध अधिकतम इमेज"
 msgid "Maximum output tokens"
 msgstr "अधिकतम आउटपुट टोकन"
 
+#: src/pages/model-settings/use-model-settings.ts
+msgid "Maximum output tokens must be lower than the context limit."
+msgstr "अधिकतम आउटपुट टोकन संदर्भ सीमा से कम होने चाहिए।"
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
 msgstr ""

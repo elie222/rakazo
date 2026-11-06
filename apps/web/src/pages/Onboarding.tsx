@@ -517,7 +517,7 @@ export function OnboardingPage() {
           return;
         }
         // Prompt-caching support the model listing published rides along with the connection.
-        const cacheCapabilities = probeInfo.infoRef.current.get(modelId.trim())?.cacheCapabilities;
+        const cached = probeInfo.infoRef.current.get(modelId.trim());
         await rpc.models.connect({
           provider,
           baseUrl: baseUrl.trim(),
@@ -529,7 +529,9 @@ export function OnboardingPage() {
           contextWindow: parsedContextWindow,
           supportsImages,
           maxImagesPerPrompt: maxImagesPerPromptInput,
-          ...(cacheCapabilities ? { cacheCapabilities } : {}),
+          ...(cached
+            ? { cacheCapabilitiesByModel: { [modelId.trim()]: cached.cacheCapabilities ?? null } }
+            : {}),
           apiKey: apiKey.trim() || undefined,
           label: selected?.providerName ?? provider,
         });

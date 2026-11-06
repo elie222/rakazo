@@ -215,6 +215,8 @@ it("connects DeepInfra with a required key and the model's discovered capabiliti
       reasoning: false,
       supportsImages: false,
       contextWindow: 32768,
+      // The listing describes this model as having no prompt cache, which is sent as such.
+      cacheCapabilitiesByModel: { "text-model": null },
     }),
   );
   expect(vi.mocked(rpc.models.connect).mock.lastCall?.[0]).not.toHaveProperty("cacheCapabilities");

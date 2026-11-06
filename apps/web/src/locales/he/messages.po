@@ -4130,6 +4130,10 @@ msgstr "מספר תמונות מרבי לבקשה"
 msgid "Maximum output tokens"
 msgstr "מספר טוקנים מרבי בפלט"
 
+#: src/pages/model-settings/use-model-settings.ts
+msgid "Maximum output tokens must be lower than the context limit."
+msgstr "מספר טוקני הפלט המרבי חייב להיות נמוך ממגבלת ההקשר."
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
 msgstr "נקודת קצה של MCP"

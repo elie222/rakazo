@@ -160,6 +160,16 @@ retrieval policy. An explicit executor context strategy still takes precedence.
 Callers without usable history-retrieval tools keep fitting original history
 under the model's context budget instead of replacing it with snapshots.
 
+An OpenAI-compatible connection can enable several models whose cache support and
+prices differ, so it also accepts `cacheCapabilitiesByModel`, keyed by model id. The
+model that runs uses its own entry. A value saves that model's entry, `null` clears it
+(a model the server lists with no prompt cache), and models not mentioned keep theirs.
+`cacheCapabilities` stays as the fallback for a model without an entry, which suits a
+connection set up by hand or saved before per-model entries; sending
+`cacheCapabilitiesByModel` without it replaces the saved connection-wide value, and
+`cacheCapabilities: null` clears it. Settings → Models sends per-model entries for
+every enabled model that DeepInfra's listing described.
+
 Cache warmth is advisory. Changing instructions or tools, context pressure,
 worker eviction, or a process restart can require fresh prompt processing.
 These settings do not create backend KV snapshots or keep a model loaded;

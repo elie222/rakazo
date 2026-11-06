@@ -1581,6 +1581,17 @@ export const ModelContextLimitsSchema = z.object({
 });
 export type ModelContextLimits = z.infer<typeof ModelContextLimitsSchema>;
 
+/**
+ * Cache capabilities for individual models of one OpenAI-compatible connection, keyed by model
+ * id. A connection can enable models whose cache support and prices differ, so a connection-wide
+ * value cannot describe them. The model running a request uses its own entry.
+ */
+export const CacheCapabilitiesByModelSchema = z.record(
+  z.string().trim().min(1).max(512),
+  CacheCapabilitiesSchema,
+);
+export type CacheCapabilitiesByModel = z.infer<typeof CacheCapabilitiesByModelSchema>;
+
 /** A completion limit must leave capacity for at least one input token. */
 export function modelOutputLeavesInputRoom(
   maxTokens: number | null | undefined,
@@ -1601,6 +1612,8 @@ export const ModelCredentialSchema = z.object({
   /** Computed space preference order; credentials themselves remain newest first. */
   preferenceRank: z.number().int().nonnegative().optional(),
   ...ModelContextLimitsSchema.shape,
+  /** Openai-compatible only: cache capabilities of the models that declare their own. */
+  cacheCapabilitiesByModel: CacheCapabilitiesByModelSchema.optional(),
   id: Id,
   provider: z.string(),
   label: z.string(),
@@ -1693,6 +1706,20 @@ export const CONNECTION_LABEL_MAX_LENGTH = 80;
 export const ModelConnectInputSchema = z
   .object({
     ...ModelContextLimitsSchema.shape,
+    /** The connection-wide capabilities. `null` clears a saved value; omitting keeps it. */
+    cacheCapabilities: CacheCapabilitiesSchema.nullable().optional(),
+    /**
+     * Openai-compatible only: capabilities per model id, merged into the saved ones. `null`
+     * clears one model's entry, for a model the server describes as having no prompt cache.
+     * Sending the map replaces the saved connection-wide value, which cannot describe several
+     * models, unless `cacheCapabilities` is sent too.
+     */
+    cacheCapabilitiesByModel: z
+      .record(z.string().trim().min(1).max(512), CacheCapabilitiesSchema.nullable())
+      .refine((value) => Object.keys(value).length <= MAX_ENABLED_MODEL_IDS, {
+        message: "Too many models",
+      })
+      .optional(),
     provider: z.string(),
     apiKey: z.string().optional(),
     accountId: z.string().optional(),

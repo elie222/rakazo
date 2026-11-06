@@ -32,7 +32,8 @@ export type ProbedModelFields = {
 /**
  * Connection form values a model listing implies. Fields the server did not publish are left
  * out, so the user's own values stay. A published context limit that the current output limit
- * would not leave room in lowers the output limit with it, so the form still saves.
+ * would not leave room in lowers the output limit with it, so the form still saves. A one-token
+ * context leaves no valid output limit at all, so it is not prefilled.
  */
 export function probedModelFields(
   info: OpenAiCompatibleModelInfo | undefined,
@@ -42,7 +43,7 @@ export function probedModelFields(
   const fields: ProbedModelFields = {};
   if (info.supportsImages !== undefined) fields.supportsImages = info.supportsImages;
   if (info.reasoning !== undefined) fields.reasoning = info.reasoning;
-  if (info.contextWindow !== undefined) {
+  if (info.contextWindow !== undefined && info.contextWindow >= 2) {
     fields.contextWindow = String(info.contextWindow);
     const maxTokens = Number(currentMaxTokens);
     if (Number.isInteger(maxTokens) && maxTokens >= info.contextWindow) {

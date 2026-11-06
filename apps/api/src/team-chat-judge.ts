@@ -5,6 +5,7 @@ import {
   formatCurrentTimeInstruction,
   hasHostedModelCredits,
   hostedModelCreditObserver,
+  modelCacheCapabilities,
   parseModelSecret,
   refreshStoredModelCredential,
   resolveMemberMainModel,
@@ -309,7 +310,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       parsed.kind === "oauth"
         ? {}
         : {
-            cacheCapabilities: parsed.cacheCapabilities,
+            cacheCapabilities: modelCacheCapabilities(parsed, modelId),
             contextWindow: parsed.contextWindow,
           };
     if (parsed.kind === "oauth") {

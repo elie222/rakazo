@@ -389,4 +389,69 @@ describe("modelConnectRequest", () => {
       },
     });
   });
+
+  describe("OpenAI-compatible limits and prompt caching", () => {
+    const compatible = { provider: COMPATIBLE, id: "openai-compatible" };
+    const form = (overrides: Partial<ConnectionFormDraft> = {}) =>
+      draft({ baseUrl: "http://h/v1", modelId: "m", maxTokens: "4096", ...overrides });
+    const cached = { scope: "account" as const, readCostPerMillion: 0.1 };
+    const pricier = { scope: "account" as const, readCostPerMillion: 0.9 };
+
+    it("refuses an output limit that leaves no room for input", () => {
+      for (const [maxTokens, contextWindow] of [
+        ["8192", "8192"],
+        ["8192", "4096"],
+        ["1", "1"],
+      ]) {
+        expect(
+          modelConnectRequest({
+            form: form({ maxTokens, contextWindow }),
+            selected: compatible,
+            credentialId: null,
+          }),
+        ).toEqual({ status: "invalid", field: "maxTokensExceedsContext" });
+      }
+    });
+
+    it("accepts an output limit one below the context limit", () => {
+      expect(
+        modelConnectRequest({
+          form: form({ maxTokens: "1", contextWindow: "2" }),
+          selected: compatible,
+          credentialId: null,
+        }).status,
+      ).toBe("ready");
+    });
+
+    it("sends the cache capabilities of every enabled model the listing described", () => {
+      const request = modelConnectRequest({
+        form: form({ enabledModelIds: ["n", "plain", "unlisted"] }),
+        selected: compatible,
+        credentialId: null,
+        probedModels: new Map([
+          ["m", { id: "m", cacheCapabilities: cached }],
+          ["n", { id: "n", cacheCapabilities: pricier }],
+          ["plain", { id: "plain", supportsImages: true }],
+          ["elsewhere", { id: "elsewhere", cacheCapabilities: cached }],
+        ]),
+      });
+      expect(request.status === "ready" && request.input.cacheCapabilitiesByModel).toEqual({
+        m: cached,
+        n: pricier,
+        plain: null,
+      });
+    });
+
+    it("sends no cache capabilities when the listing described none of the models", () => {
+      const request = modelConnectRequest({
+        form: form(),
+        selected: compatible,
+        credentialId: null,
+        probedModels: new Map([["elsewhere", { id: "elsewhere", cacheCapabilities: cached }]]),
+      });
+      expect(request.status === "ready" && request.input).not.toHaveProperty(
+        "cacheCapabilitiesByModel",
+      );
+    });
+  });
 });

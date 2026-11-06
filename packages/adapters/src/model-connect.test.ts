@@ -11,7 +11,7 @@ import {
   modelCredentialDto,
   storedOpenAiCompatibleProbeKey,
 } from "./model-connect.js";
-import { parseModelSecret, serializeModelSecret } from "./pi-oauth.js";
+import { modelCacheCapabilities, parseModelSecret, serializeModelSecret } from "./pi-oauth.js";
 
 /** Fixtures connect as the deployment owner, who may use local model servers. */
 const connectAsOwner = (
@@ -947,4 +947,191 @@ it("requires HTTPS when saving new or inherited headers on public HTTP", () => {
   } finally {
     vi.unstubAllEnvs();
   }
+});
+
+describe("per-model cache capabilities", () => {
+  const cached = { scope: "connection" as const, readCostPerMillion: 0.1, retentionMs: 300000 };
+  const pricier = { scope: "connection" as const, readCostPerMillion: 0.9 };
+  const input = {
+    provider: "openai-compatible",
+    modelId: "model-a",
+    baseUrl: "https://api.deepinfra.com/v1/openai",
+    apiKey: "fake-key-for-test",
+  };
+  const stored = (plaintext: string) => parseModelSecret(plaintext);
+  const cacheFor = (plaintext: string, modelId: string) => {
+    const secret = stored(plaintext);
+    return secret.kind === "oauth" ? undefined : modelCacheCapabilities(secret, modelId);
+  };
+
+  it("keeps a separate entry for every model sent", () => {
+    const plaintext = connectAsOwner({
+      ...input,
+      cacheCapabilitiesByModel: { "model-a": cached, "model-b": pricier },
+    });
+    expect(cacheFor(plaintext, "model-a")).toEqual(cached);
+    expect(cacheFor(plaintext, "model-b")).toEqual(pricier);
+  });
+
+  it("gives a model with no entry no cache pricing, not another model's", () => {
+    const plaintext = connectAsOwner({ ...input, cacheCapabilitiesByModel: { "model-a": cached } });
+    expect(cacheFor(plaintext, "model-c")).toBeUndefined();
+  });
+
+  it("keeps saved entries for models a later save does not mention", () => {
+    const first = connectAsOwner({ ...input, cacheCapabilitiesByModel: { "model-a": cached } });
+    const second = connectAsOwner(
+      {
+        ...input,
+        modelId: "model-b",
+        apiKey: undefined,
+        cacheCapabilitiesByModel: { "model-b": pricier },
+      },
+      first,
+    );
+    expect(cacheFor(second, "model-a")).toEqual(cached);
+    expect(cacheFor(second, "model-b")).toEqual(pricier);
+  });
+
+  it("keeps the saved entries when the save sends no map", () => {
+    const first = connectAsOwner({ ...input, cacheCapabilitiesByModel: { "model-a": cached } });
+    const second = connectAsOwner({ ...input, apiKey: undefined, reasoning: true }, first);
+    expect(cacheFor(second, "model-a")).toEqual(cached);
+  });
+
+  it("clears one model's entry with null and leaves the others", () => {
+    const first = connectAsOwner({
+      ...input,
+      cacheCapabilitiesByModel: { "model-a": cached, "model-b": pricier },
+    });
+    const second = connectAsOwner(
+      { ...input, apiKey: undefined, cacheCapabilitiesByModel: { "model-a": null } },
+      first,
+    );
+    expect(cacheFor(second, "model-a")).toBeUndefined();
+    expect(cacheFor(second, "model-b")).toEqual(pricier);
+  });
+
+  it("stores no map once the last entry is cleared", () => {
+    const first = connectAsOwner({ ...input, cacheCapabilitiesByModel: { "model-a": cached } });
+    const second = connectAsOwner(
+      { ...input, apiKey: undefined, cacheCapabilitiesByModel: { "model-a": null } },
+      first,
+    );
+    expect(stored(second)).not.toHaveProperty("cacheCapabilitiesByModel");
+  });
+
+  it("does not carry another endpoint's entries over", () => {
+    const first = connectAsOwner({ ...input, cacheCapabilitiesByModel: { "model-a": cached } });
+    const second = connectAsOwner({ ...input, baseUrl: "https://other.example/v1" }, first);
+    expect(stored(second)).not.toHaveProperty("cacheCapabilitiesByModel");
+  });
+
+  describe("connection-wide value", () => {
+    const legacy = connectAsOwner({ ...input, cacheCapabilities: cached });
+
+    it("still prices a model that has no entry of its own, for connections saved before the map", () => {
+      expect(cacheFor(legacy, "model-a")).toEqual(cached);
+      expect(cacheFor(legacy, "model-z")).toEqual(cached);
+    });
+
+    it("prefers the model's own entry over the connection-wide value", () => {
+      const next = connectAsOwner(
+        {
+          ...input,
+          apiKey: undefined,
+          cacheCapabilities: cached,
+          cacheCapabilitiesByModel: { "model-b": pricier },
+        },
+        legacy,
+      );
+      expect(cacheFor(next, "model-b")).toEqual(pricier);
+      expect(cacheFor(next, "model-a")).toEqual(cached);
+    });
+
+    it("is kept when a save sends neither value", () => {
+      const next = connectAsOwner({ ...input, apiKey: undefined, reasoning: true }, legacy);
+      expect(stored(next)).toMatchObject({ cacheCapabilities: cached });
+    });
+
+    it("is not inherited by a save that sends per-model values", () => {
+      const next = connectAsOwner(
+        {
+          ...input,
+          modelId: "model-b",
+          apiKey: undefined,
+          cacheCapabilitiesByModel: { "model-b": null },
+        },
+        legacy,
+      );
+      expect(stored(next)).not.toHaveProperty("cacheCapabilities");
+      expect(cacheFor(next, "model-b")).toBeUndefined();
+    });
+
+    it("is cleared by an explicit null", () => {
+      const next = connectAsOwner({ ...input, apiKey: undefined, cacheCapabilities: null }, legacy);
+      expect(stored(next)).not.toHaveProperty("cacheCapabilities");
+    });
+
+    it("is cleared by an explicit null on a built-in provider too", () => {
+      const first = connectAsOwner({
+        provider: "deepseek",
+        apiKey: "sk-deepseek-test",
+        cacheCapabilities: cached,
+      });
+      const next = connectAsOwner(
+        { provider: "deepseek", cacheCapabilities: null, maxTokens: 4096 },
+        first,
+      );
+      expect(stored(next)).not.toHaveProperty("cacheCapabilities");
+    });
+  });
+
+  it("projects the running model's pricing, and every saved entry, on the credential", () => {
+    const plaintext = connectAsOwner({
+      ...input,
+      cacheCapabilitiesByModel: { "model-a": cached, "model-b": pricier },
+    });
+    const dto = modelCredentialDto(
+      { id: "c", provider: "openai-compatible", label: "DeepInfra", defaultModel: "model-b" },
+      plaintext,
+    );
+    expect(dto.cacheCapabilities).toEqual(pricier);
+    expect(dto.cacheCapabilitiesByModel).toEqual({ "model-a": cached, "model-b": pricier });
+  });
+
+  it("ignores a stored entry that is not valid capabilities", () => {
+    const plaintext = JSON.stringify({
+      kind: "openai_compatible",
+      baseUrl: input.baseUrl,
+      cacheCapabilitiesByModel: { "model-a": cached, "model-b": { scope: "nowhere" } },
+    });
+    expect(stored(plaintext)).toMatchObject({ cacheCapabilitiesByModel: { "model-a": cached } });
+    expect(cacheFor(plaintext, "model-b")).toBeUndefined();
+  });
+
+  it("never reads a model id off the object prototype", () => {
+    const plaintext = connectAsOwner({ ...input, cacheCapabilitiesByModel: { "model-a": cached } });
+    expect(cacheFor(plaintext, "constructor")).toBeUndefined();
+    expect(cacheFor(plaintext, "__proto__")).toBeUndefined();
+  });
+
+  it("rejects more models than a connection can enable", () => {
+    const map = Object.fromEntries(
+      Array.from({ length: 501 }, (_, i) => [`model-${i}`, cached] as const),
+    );
+    expect(
+      ModelConnectInputSchema.safeParse({ ...input, cacheCapabilitiesByModel: map }).success,
+    ).toBe(false);
+  });
+
+  it("accepts null for a model and for the connection in the connect input", () => {
+    expect(
+      ModelConnectInputSchema.safeParse({
+        ...input,
+        cacheCapabilities: null,
+        cacheCapabilitiesByModel: { "model-a": null, "model-b": cached },
+      }).success,
+    ).toBe(true);
+  });
 });

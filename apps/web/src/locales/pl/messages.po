@@ -4130,6 +4130,10 @@ msgstr "Maksymalna liczba obrazów w żądaniu"
 msgid "Maximum output tokens"
 msgstr "Maksymalna liczba tokenów odpowiedzi"
 
+#: src/pages/model-settings/use-model-settings.ts
+msgid "Maximum output tokens must be lower than the context limit."
+msgstr "Maksymalna liczba tokenów odpowiedzi musi być mniejsza niż limit kontekstu."
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
 msgstr "Punkt końcowy MCP"

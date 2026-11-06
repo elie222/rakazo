@@ -4130,6 +4130,10 @@ msgstr "İstek başına maksimum görüntü sayısı"
 msgid "Maximum output tokens"
 msgstr "Maksimum çıktı token sayısı"
 
+#: src/pages/model-settings/use-model-settings.ts
+msgid "Maximum output tokens must be lower than the context limit."
+msgstr "Maksimum çıktı token sayısı bağlam sınırından düşük olmalıdır."
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
 msgstr "MCP uç noktası"
