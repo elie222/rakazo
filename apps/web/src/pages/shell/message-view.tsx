@@ -245,6 +245,7 @@ export const MessageView = memo(function MessageView({
       onReact={onReact}
     />
   );
+  const hasToolCard = visibleNarrationBlocks.some((block) => block.kind === "steps");
   if (isNarration) {
     if (visibleNarrationBlocks.length === 0) return null;
     if (isToolOnlyNarration(message.blocks, showToolActivity)) {
@@ -261,11 +262,25 @@ export const MessageView = memo(function MessageView({
     return (
       <>
         {messageContext}
-        <div className="relative w-fit max-w-full [@media(hover:none)]:w-full">
-          <div className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full">
+        <div
+          className={cn(
+            "relative w-fit max-w-full [@media(hover:none)]:w-full",
+            hasToolCard && "w-full",
+          )}
+        >
+          <div
+            className={cn(
+              "flex w-fit max-w-full justify-start [@media(hover:none)]:w-full",
+              hasToolCard && "w-full",
+            )}
+          >
             <div
               data-testid="message-bot-bubble"
-              className="max-w-full space-y-2.5 rounded-2xl bg-muted px-[18px] py-3 text-body-lg text-foreground"
+              className={cn(
+                "max-w-full space-y-2.5 rounded-2xl bg-muted px-[18px] py-3 text-body-lg text-foreground",
+                // A tool card's rows and code blocks need the room the row allows, not the reply's width.
+                hasToolCard && "w-full",
+              )}
               dir="auto"
             >
               {visibleNarrationBlocks.map((block, i) => {

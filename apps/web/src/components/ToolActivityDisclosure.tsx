@@ -11,7 +11,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
-import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useState, useSyncExternalStore } from "react";
 import { useSpaceQueries } from "../lib/query";
 import type { ToolStepStatus } from "../lib/tool-activity-view";
 import { toolStepCount, toolStepStatus } from "../lib/tool-activity-view";
@@ -283,8 +283,7 @@ export function ToolActivityDisclosure({
       defaultOpen={live}
       data-testid="tool-activity"
       data-live={live || undefined}
-      // On touch screens a floor keeps a short reply from crushing the rows; a narrow mouse window keeps the row cap that leaves room for the hover rail.
-      className="group [@media(hover:none)]:min-w-[min(20rem,80vw)]"
+      className="group"
     >
       <CollapsibleTrigger
         className={`flex min-h-6 w-fit cursor-pointer list-none items-center gap-1 rounded-md py-0.5 pe-1.5 text-body-sm font-medium outline-none hover:text-foreground/75 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
