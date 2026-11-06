@@ -330,8 +330,10 @@ export function useIncomingShareImport({
           const id = accepted[index]?.id;
           if (id) retainedShareCopies.set(id, uri);
         });
-        const imported = new Set(sources);
-        releaseIncomingShareFiles(share.files.filter((file) => !imported.has(file.uri)));
+        // A copy an unsent attachment still owns stays, even when this share left its file out:
+        // the share extension reuses a file's name for its copy.
+        const owned = new Set(retainedShareCopies.values());
+        releaseIncomingShareFiles(share.files.filter((file) => !owned.has(file.uri)));
       } finally {
         importingShare.current = false;
         setShareImporting(false);

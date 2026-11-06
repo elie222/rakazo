@@ -342,3 +342,54 @@ it("holds a share import to the attachment limit when files are dropped during i
   expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["d1", "d2"]);
   expect(attachments.attachmentNotice).toBe("Skipped {items}");
 });
+
+it("keeps the share copy an earlier unsent attachment still uses when a later share overflows", async () => {
+  const files = [{ uri: "file:///group/same.txt", name: "same.txt", mimeType: "text/plain" }];
+  vi.mocked(takeIncomingShare).mockReturnValueOnce({
+    text: "",
+    files,
+    arrivedAt: Date.now(),
+    generation: 1,
+  });
+  vi.mocked(readSharedFiles).mockResolvedValueOnce({
+    attachments: [picked("e1")],
+    skipped: [],
+    failedFiles: [],
+    sources: [files[0]!.uri],
+  });
+  mount(<ImportProbe botId="bot-share-reuse" uploadConfig={twoAttachments} />);
+  await act(async () => {});
+  expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["e1"]);
+  unmount();
+
+  // A later share reuses the file name, so its copy has the same URI as e1's.
+  vi.mocked(takeIncomingShare).mockReturnValueOnce({
+    text: "",
+    files,
+    arrivedAt: Date.now(),
+    generation: 2,
+  });
+  let settle!: () => void;
+  vi.mocked(readSharedFiles).mockReturnValueOnce(
+    new Promise((resolve) => {
+      settle = () =>
+        resolve({
+          attachments: [picked("s1")],
+          skipped: [],
+          failedFiles: [],
+          sources: [files[0]!.uri],
+        });
+    }),
+  );
+  vi.mocked(releaseIncomingShareFiles).mockClear();
+  mount(<ImportProbe botId="bot-share-reuse" uploadConfig={twoAttachments} />);
+  vi.mocked(readDroppedFiles).mockResolvedValueOnce({ attachments: [picked("d1")], skipped: [] });
+  // A dropped file takes the last slot while the share is read.
+  await act(async () => fileDrop.onDrop?.({ files: [], skipped: [] }));
+  await act(async () => settle());
+
+  expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["e1", "d1"]);
+  expect(releaseIncomingShareFiles).not.toHaveBeenCalledWith(
+    expect.arrayContaining([expect.objectContaining({ uri: files[0]!.uri })]),
+  );
+});
