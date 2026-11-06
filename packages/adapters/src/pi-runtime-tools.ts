@@ -943,3 +943,57 @@ function endToolCall(host: ToolHost) {
   host.toolCallBudget.inFlight = Math.max(0, host.toolCallBudget.inFlight - 1);
   maybeAbortToolCallBudget(host);
 }
+
+export function createGate(max: number) {
+  let active = 0;
+  const waiters: Array<() => void> = [];
+  return {
+    async acquire() {
+      if (active >= max) {
+        await new Promise<void>((resolve) => {
+          waiters.push(resolve);
+        });
+      }
+      active += 1;
+    },
+    release() {
+      active = Math.max(0, active - 1);
+      waiters.shift()?.();
+    },
+  };
+}
+
+export function createQueue(): EventQueue {
+  const items: AgentRuntimeEvent[] = [];
+  let wake: (() => void) | undefined;
+  let closed = false;
+  let failure: Error | undefined;
+  return {
+    push(event) {
+      items.push(event);
+      wake?.();
+    },
+    fail(error) {
+      failure = error;
+      closed = true;
+      wake?.();
+    },
+    close() {
+      closed = true;
+      wake?.();
+    },
+    async *iterate() {
+      while (true) {
+        if (items.length) {
+          yield items.shift()!;
+          continue;
+        }
+        if (failure) throw failure;
+        if (closed) return;
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+      }
+    },
+  };
+}
