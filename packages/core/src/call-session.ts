@@ -44,8 +44,6 @@ export function createCallSendTracker() {
 /** The parts of the call's thread that decide what a spoken turn does. */
 export type CallThread = {
   run: { id: string; status: string } | null;
-  /** Every active run; `run` is only the one the thread shows first. */
-  activeRuns?: readonly { id: string; status: string }[];
   messages: readonly { id: string; runId?: string; blocks: readonly MessageBlock[] }[];
 };
 
@@ -65,12 +63,8 @@ export type CallTurn =
   | { kind: "send" };
 
 export function callTurn(thread: CallThread | null, text: string): CallTurn {
-  const asks = pendingCallAsks(thread);
-  // A code asked by any waiting run is never spoken, even while another run is shown first.
-  if (asks.some((ask) => ask.blocks.some(isSecretAskBlock))) return { kind: "enter_code" };
-  // Only the run the thread shows first is answered by voice: in a shared thread another
-  // waiting run can belong to someone else, who alone may answer it.
-  const ask = asks.find((candidate) => candidate.runId === thread?.run?.id);
+  const ask = pendingCallAsk(thread);
+  if (ask?.blocks.some(isSecretAskBlock)) return { kind: "enter_code" };
   if (ask?.blocks.some(isApprovalAskBlock)) {
     return { kind: "approve_on_screen", messageId: ask.message.id, runId: ask.runId };
   }
@@ -78,32 +72,25 @@ export function callTurn(thread: CallThread | null, text: string): CallTurn {
     const answer = spokenDecision(text) ?? text;
     return { kind: "answer", messageId: ask.message.id, runId: ask.runId, answer };
   }
-  const working = [thread?.run, ...(thread?.activeRuns ?? [])].some((run) =>
-    isRunWorking(run?.status),
-  );
-  return working ? { kind: "follow_up" } : { kind: "send" };
+  return isRunWorking(thread?.run?.status) ? { kind: "follow_up" } : { kind: "send" };
 }
 
 /** The bot is waiting on a code or password, which the call must not listen for. */
 export function pendingCallSecretAsk(thread: CallThread | null): boolean {
-  return pendingCallAsks(thread).some((ask) => ask.blocks.some(isSecretAskBlock));
+  return Boolean(pendingCallAsk(thread)?.blocks.some(isSecretAskBlock));
 }
 
-/** Each waiting run's newest card with unanswered asks. */
-function pendingCallAsks(thread: CallThread | null) {
-  if (!thread) return [];
-  const runs = [thread.run, ...(thread.activeRuns ?? [])].filter(
-    (run, index, all): run is { id: string; status: string } =>
-      run?.status === "waiting_input" && all.findIndex((other) => other?.id === run.id) === index,
+/**
+ * The newest card the run the thread shows first asked, with its unanswered asks. Other active
+ * runs can belong to other members of a shared space, who alone may answer them.
+ */
+function pendingCallAsk(thread: CallThread | null) {
+  const run = thread?.run;
+  if (run?.status !== "waiting_input") return undefined;
+  const message = thread?.messages.findLast(
+    (candidate) => candidate.runId === run.id && candidate.blocks.some(unansweredAsk),
   );
-  return runs.flatMap((run) => {
-    const message = thread.messages.findLast(
-      (candidate) => candidate.runId === run.id && candidate.blocks.some(unansweredAsk),
-    );
-    return message
-      ? [{ message, runId: run.id, blocks: message.blocks.filter(unansweredAsk) }]
-      : [];
-  });
+  return message && { message, runId: run.id, blocks: message.blocks.filter(unansweredAsk) };
 }
 
 function unansweredAsk(block: MessageBlock): boolean {
