@@ -72,6 +72,9 @@ describe("history query folding", () => {
     expect(
       HistorySearchInputSchema.parse({ query: "a", queries: ["b", "c", "d", "e", "f"] }).queries,
     ).toEqual(["a", "b", "c", "d", "e"]);
+    expect(
+      HistorySearchInputSchema.parse({ query: "a", queries: ["A", "b", "c", "d", "e"] }).queries,
+    ).toEqual(["a", "b", "c", "d", "e"]);
   });
   it("reads a bare string as one query variant", () => {
     expect(HistorySearchInputSchema.parse({ queries: "Aurora" })).toEqual({ queries: ["Aurora"] });
