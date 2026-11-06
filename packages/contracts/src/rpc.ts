@@ -1559,7 +1559,13 @@ export const appContract = {
       )
       .output(VoiceCredentialSchema),
     voices: oc
-      .input(settingsScopeInput.extend({ provider: z.string().optional() }))
+      .input(
+        settingsScopeInput.extend({
+          provider: z.string().optional(),
+          /** BCP-47 tag or ISO 639-1 code; providers narrow it to what they support. */
+          language: z.string().max(35).optional(),
+        }),
+      )
       .output(z.array(VoiceInfoSchema)),
     prepare: oc
       .input(
