@@ -531,6 +531,7 @@ describe("thread lock transaction budget", () => {
   it("clears a thread with the explicit budget", async () => {
     const tx = {
       thread: {
+        findMany: vi.fn().mockResolvedValue([]),
         update: vi
           .fn()
           .mockResolvedValueOnce({
@@ -5205,6 +5206,7 @@ describe("clearThread", () => {
     const tx = {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
+        findMany: vi.fn().mockResolvedValue([]),
         update: vi
           .fn()
           .mockResolvedValueOnce({ nextMessageSeq: 3, historyCompactionGeneration: 0 })
@@ -5253,6 +5255,7 @@ describe("clearThread", () => {
     const tx = {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
+        findMany: vi.fn().mockResolvedValue([]),
         update: vi
           .fn()
           .mockResolvedValueOnce({ nextMessageSeq: 42, historyCompactionGeneration: 0 })

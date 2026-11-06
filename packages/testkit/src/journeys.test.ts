@@ -2275,12 +2275,11 @@ describeJourneys("required product journeys", () => {
       where: { id: done.threadId },
       select: { spaceId: true, userId: true },
     });
-    const imported = await prisma.thread.create({
-      data: {
-        ...owner,
-        helperBotId: bot.id,
-        messages: { create: { seq: 0, role: "bot", blocks: [{ kind: "text", text: "venues" }] } },
-      },
+    const imported = await prisma.thread.create({ data: { ...owner, helperBotId: bot.id } });
+    await createThreadMessage(prisma, {
+      threadId: imported.id,
+      role: "bot",
+      blocks: [{ kind: "text", text: "venues" }],
     });
     await startHelper(cookie, bot.id, "keep working on the venue list");
     const helper = await waitForHelper(bot.id, "running");
