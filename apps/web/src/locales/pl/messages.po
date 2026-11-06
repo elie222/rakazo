@@ -472,7 +472,7 @@ msgstr "Wynik polecenia"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "A model approves routine actions and asks you about the rest."
-msgstr ""
+msgstr "Model zatwierdza rutynowe działania, a o resztę pyta ciebie."
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -555,7 +555,7 @@ msgstr "Aktywność"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Acts without asking, except for purchases. Only Block rules apply."
-msgstr ""
+msgstr "Działa bez pytania, z wyjątkiem zakupów. Obowiązują tylko reguły blokowania."
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
@@ -759,7 +759,7 @@ msgstr "Cały okres"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
-msgstr ""
+msgstr "Zezwól"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
@@ -803,7 +803,7 @@ msgstr "Zawsze działaj"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Always allow"
-msgstr ""
+msgstr "Zawsze zezwalaj"
 
 #: src/components/AskCard.tsx
 msgid "Always allow {site}"
@@ -819,7 +819,7 @@ msgstr "Zawsze dozwolone"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Always ask"
-msgstr ""
+msgstr "Zawsze pytaj"
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
@@ -972,7 +972,7 @@ msgstr "Aplikacje"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Apps and tools"
-msgstr ""
+msgstr "Aplikacje i narzędzia"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Archive"
@@ -1001,7 +1001,7 @@ msgstr "Zapytaj"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Asks before anything that sends, changes or spends."
-msgstr ""
+msgstr "Pyta przed wszystkim, co wysyła, zmienia lub wydaje pieniądze."
 
 #: src/pages/shell/computer-panel.tsx
 msgid "Asleep"
@@ -1148,7 +1148,7 @@ msgstr "Okres rozliczeniowy"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
-msgstr ""
+msgstr "Zablokuj"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/lib/ticket-status.ts
@@ -5452,7 +5452,7 @@ msgstr "Usuń bota {0} z grupy"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Remove {label}"
-msgstr ""
+msgstr "Usuń {label}"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Remove {memberName}?"
@@ -5887,7 +5887,7 @@ msgstr "Szukaj aplikacji"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Search apps and tools"
-msgstr ""
+msgstr "Szukaj aplikacji i narzędzi"
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
