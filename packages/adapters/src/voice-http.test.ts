@@ -178,6 +178,7 @@ describe("voiceAccountIssue", () => {
         },
       },
     ],
+    ["xAI spent credit", 403, { error: "You have run out of credits or need a Grok subscription" }],
     ["ElevenLabs spent quota", 401, { detail: { status: "quota_exceeded", message: "Over" } }],
   ])("reads %s as out of credit", (_name, status, body) => {
     expect(voiceAccountIssue(status, body)).toBe("VOICE_OUT_OF_CREDIT");
@@ -186,6 +187,20 @@ describe("voiceAccountIssue", () => {
   it.each([
     ["a bare 401", 401, null],
     ["a 403", 403, { message: "Forbidden" }],
+    [
+      "an xAI permission refusal",
+      403,
+      { error: "The caller does not have permission to execute the specified operation" },
+    ],
+    [
+      "xAI incorrect key",
+      400,
+      {
+        code: "Client specified an invalid argument",
+        error:
+          "Incorrect API key provided: xa***. You can obtain an API key from https://console.x.ai.",
+      },
+    ],
     ["ElevenLabs invalid key", 401, { detail: { status: "invalid_api_key", message: "Bad" } }],
   ])("reads %s as a rejected key", (_name, status, body) => {
     expect(voiceAccountIssue(status, body)).toBe("VOICE_KEY_REJECTED");
@@ -203,6 +218,11 @@ describe("voiceAccountIssue", () => {
           code: "rate_limit_exceeded",
         },
       },
+    ],
+    [
+      "an ordinary validation error",
+      400,
+      { code: "Client specified an invalid argument", error: "voice_id is required" },
     ],
     ["an outage", 503, { message: "Service unavailable" }],
     [

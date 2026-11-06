@@ -89,17 +89,20 @@ vi.mock("react-native", () => {
       value,
       onChangeText,
       onBlur,
+      placeholder,
     }: {
       accessibilityLabel: string;
       value: string;
       onChangeText?: (value: string) => void;
       onBlur?: () => void;
+      placeholder?: string;
     }) => (
       <input
         aria-label={accessibilityLabel}
         value={value}
         onChange={(event) => onChangeText?.(event.currentTarget.value)}
         onBlur={onBlur}
+        placeholder={placeholder}
       />
     ),
   };
@@ -441,4 +444,68 @@ it("keeps a saved speech model when an opening read started before the save land
   });
   await act(async () => releaseCatalog());
   await vi.waitFor(() => expect(input().value).toBe("saved-model"));
+});
+
+async function typeInto(label: string, text: string) {
+  const input = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+function withLinkedProvider(credential: { hasKey: boolean } | null) {
+  const original = state.rpc.getMockImplementation()!;
+  let saved = credential && { id: "linked", provider: "linked", voiceId: "", ...credential };
+  state.rpc.mockImplementation((proc: string, args?: { provider: string }) => {
+    if (proc === "voice/catalog")
+      return [
+        ...catalog,
+        { id: "linked", name: "Linked", transcribe: true, modelConnection: true },
+      ];
+    if (proc === "voice/credentials") return saved ? [...credentials, saved] : credentials;
+    if (proc === "voice/connect") {
+      saved = { id: "linked", provider: "linked", voiceId: "", hasKey: false };
+      return saved;
+    }
+    return original(proc, args);
+  });
+}
+
+it("connects through the account's model connection with no key, then offers no key to replace", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider(null);
+  await render();
+  await click("Linked");
+  const key = () => container.querySelector<HTMLInputElement>('input[aria-label="API key"]');
+  expect(key()?.placeholder).toBe("Optional");
+  expect(button("Connect").disabled).toBe(false);
+  // A key the user does type must still be a whole one.
+  await typeInto("API key", "short");
+  expect(button("Connect").disabled).toBe(true);
+  await typeInto("API key", "");
+  await click("Connect");
+  expect(state.rpc).toHaveBeenCalledWith("voice/connect", {
+    provider: "linked",
+    scope: "account",
+    apiKey: "",
+  });
+  expect(key()).toBeNull();
+  const labels = [...container.querySelectorAll("button")].map((item) => item.textContent);
+  expect(labels).not.toContain("Connect");
+  expect(labels).not.toContain("Replace key");
+  expect(button("Disconnect").disabled).toBe(false);
+  expect(container.textContent).toContain("linked voice");
+});
+
+it("still needs a whole key to replace a key saved for a model-connection provider", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider({ hasKey: true });
+  await render();
+  await click("Linked");
+  expect(
+    container.querySelector<HTMLInputElement>('input[aria-label="API key"]')?.placeholder,
+  ).toBe("Paste a replacement key");
+  expect(button("Replace key").disabled).toBe(true);
+  await typeInto("API key", "a-whole-key");
+  expect(button("Replace key").disabled).toBe(false);
 });
