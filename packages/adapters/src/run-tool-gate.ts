@@ -112,6 +112,10 @@ export interface ToolCall {
    * the press: the handler records it then, so a call that stops earlier never uses the room.
    */
   readonly spend: PurchaseApproval | undefined;
+  /** `update_bot` settings the call filled in without listing in `change`; never applied. */
+  readonly unlistedFields?: Record<string, unknown>;
+  /** Another bot's owner-only settings the call named; only its Settings change them. */
+  readonly ownerOnlyFields?: Record<string, unknown>;
   /** This call moved its effect to executing. request_secret can hand the claim back. */
   claimedEffect: boolean;
   /** Store the result on the effect; false when it could not be stored. */
@@ -588,6 +592,8 @@ export async function gateToolCall(
     nextApprovedTool,
     bypassApproval: gateDecision === "allow" && gated,
     spend: spends,
+    unlistedFields: request.unlistedFields,
+    ownerOnlyFields: request.ownerOnlyFields,
   });
   const card = {
     reviewReason,

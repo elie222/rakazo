@@ -42,8 +42,9 @@ rest on demand. Every step is measured with tool-choice evals before and after.
 
 ## Decisions
 
-- One write path for a bot's own settings: `update_bot`. Calling it with no
-  fields returns current settings and allowed values; passing fields patches.
+- One write path for a bot's own settings: `update_bot`. Calling it without
+  `change` returns current settings and allowed values; it patches only the
+  fields listed in `change`, since some models fill in every field.
 - Instructions are written directly. Changes keep history and can be undone.
   Runs not started by the owner (other bots, routines, external messages) keep
   the existing owner-approval hold for self-changes.

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { dropUnchangedOwnBotArgs, ignoredFieldsNote } from "./update-bot-patch.js";
+import {
+  dropUnchangedOwnBotArgs,
+  ignoredFieldsNote,
+  splitUpdateBotChange,
+} from "./update-bot-patch.js";
 
 const current = {
   name: "Helper",
@@ -104,5 +108,68 @@ describe("ignoredFieldsNote", () => {
     expect(note).not.toContain("blank");
     expect(note!.length).toBeLessThan(1000);
     expect(ignoredFieldsNote({ name: "" })).toBeUndefined();
+    expect(ignoredFieldsNote({ readAloud: false }, "unlisted")).toBe(
+      "These were not listed in change, so they were not applied: readAloud=false. To change one, list it in change.",
+    );
+  });
+});
+
+describe("splitUpdateBotChange", () => {
+  // A model asked which model it runs sent every field, switches off.
+  const filled = {
+    thinkingLevel: "off",
+    notifyOnFinish: false,
+    dailyCheckIns: false,
+    readAloud: false,
+    use_attached_image: false,
+    model: "gpt-fixture",
+    instructions_offset: 800,
+    bot_id: "",
+  };
+
+  it("applies no setting without change and keeps what it did not apply apart", () => {
+    expect(splitUpdateBotChange(filled)).toEqual({
+      args: { instructions_offset: 800, bot_id: "" },
+      unlisted: {
+        thinkingLevel: "off",
+        notifyOnFinish: false,
+        dailyCheckIns: false,
+        readAloud: false,
+        model: "gpt-fixture",
+      },
+    });
+  });
+
+  it("applies the fields listed in change", () => {
+    expect(splitUpdateBotChange({ ...filled, change: ["model", "notifyOnFinish"] })).toEqual({
+      args: { model: "gpt-fixture", notifyOnFinish: false, instructions_offset: 800, bot_id: "" },
+      unlisted: { thinkingLevel: "off", dailyCheckIns: false, readAloud: false },
+    });
+    expect(splitUpdateBotChange({ notify_on_finish: true, change: ["notifyOnFinish"] })).toEqual({
+      args: { notify_on_finish: true },
+      unlisted: undefined,
+    });
+  });
+
+  it("ignores unknown names in change and takes a single name sent as a string", () => {
+    expect(splitUpdateBotChange({ name: "Scout", change: ["name", "fleetManagement"] })).toEqual({
+      args: { name: "Scout" },
+      unlisted: undefined,
+    });
+    expect(splitUpdateBotChange({ change: "name", name: "Scout", color: "#0a0" })).toEqual({
+      args: { name: "Scout" },
+      unlisted: { color: "#0a0" },
+    });
+    expect(splitUpdateBotChange({ change: 3, name: "Scout" })).toEqual({
+      args: {},
+      unlisted: { name: "Scout" },
+    });
+  });
+
+  it("matches the notify-on-finish alias whichever spelling change lists", () => {
+    expect(splitUpdateBotChange({ notifyOnFinish: true, change: ["notify_on_finish"] })).toEqual({
+      args: { notifyOnFinish: true },
+      unlisted: undefined,
+    });
   });
 });

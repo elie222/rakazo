@@ -1167,6 +1167,41 @@ async function resolveBot(prisma: PrismaClient, run: FleetRun, args: Record<stri
   );
 }
 
+/** The settings of a bot an `update_bot` call compares its arguments with. */
+export const UPDATE_BOT_CURRENT_SELECT = {
+  name: true,
+  description: true,
+  instructions: true,
+  color: true,
+  notifyOnFinish: true,
+  dailyCheckIns: true,
+  modelProvider: true,
+  modelId: true,
+  thinkingLevel: true,
+  autoSpeak: true,
+  voiceId: true,
+} satisfies Prisma.BotSelect;
+
+export type UpdateBotCurrent = Prisma.BotGetPayload<{ select: typeof UPDATE_BOT_CURRENT_SELECT }>;
+
+/**
+ * The active bot `update_bot` with `bot_id` edits, with the settings its call is compared with,
+ * or the refusal its handler gives.
+ */
+export async function resolveUpdateBotTarget(
+  prisma: PrismaClient,
+  run: FleetRun,
+  botId: unknown,
+): Promise<(UpdateBotCurrent & { id: string }) | { error: string }> {
+  const id = text(botId);
+  if (!id) return { error: "Pass bot_id or bot_name." };
+  const bot = await prisma.bot.findFirst({
+    where: { ...activeBotsWhere(run), id },
+    select: { id: true, ...UPDATE_BOT_CURRENT_SELECT },
+  });
+  return bot ?? { error: `No bot with id "${id}". Call list_fleet for ids.` };
+}
+
 /** One active group of the space, by `group_id` or exact `group_name`. Groups have no creator. */
 async function resolveGroup(prisma: PrismaClient, run: FleetRun, args: Record<string, unknown>) {
   const id = text(args.group_id);

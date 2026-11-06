@@ -769,6 +769,19 @@ describe("bot management tool parameters", () => {
     },
   );
 
+  it("passes update_bot's change list through", () => {
+    expect(
+      prepareFleetArguments("update_bot", { model: "gpt-fixture", change: ["model"] }),
+    ).toEqual({ model: "gpt-fixture", change: ["model"] });
+    expect(prepareFleetArguments("update_bot", { name: "Scout", change: "name" })).toEqual({
+      name: "Scout",
+      change: ["name"],
+    });
+    expect(prepareFleetArguments("update_bot", { model: "gpt-fixture" })).toEqual({
+      model: "gpt-fixture",
+    });
+  });
+
   it("keeps the instruction text exactly as sent", () => {
     const args = { bot_id: "b1", instructions: "  Keep\n spacing ", expected_version: "v1" };
     expect(prepareFleetArguments("set_child_instructions", args)).toEqual(args);

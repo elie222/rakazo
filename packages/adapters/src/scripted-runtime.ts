@@ -636,7 +636,12 @@ code-b
     return [
       {
         assistant: "updating my instructions.",
-        toolCalls: [{ name: "update_bot", args: { instructions: ownInstructions[1]!.trim() } }],
+        toolCalls: [
+          {
+            name: "update_bot",
+            args: { instructions: ownInstructions[1]!.trim(), change: ["instructions"] },
+          },
+        ],
         complete: true,
       },
     ];
@@ -688,7 +693,9 @@ code-b
     return [
       {
         assistant: "silencing finish notifications.",
-        toolCalls: [{ name: "update_bot", args: { notifyOnFinish: false } }],
+        toolCalls: [
+          { name: "update_bot", args: { notifyOnFinish: false, change: ["notifyOnFinish"] } },
+        ],
         complete: true,
       },
     ];
@@ -700,7 +707,9 @@ code-b
     return [
       {
         assistant: "enabling finish notifications.",
-        toolCalls: [{ name: "update_bot", args: { notifyOnFinish: true } }],
+        toolCalls: [
+          { name: "update_bot", args: { notifyOnFinish: true, change: ["notifyOnFinish"] } },
+        ],
         complete: true,
       },
     ];
@@ -1026,10 +1035,16 @@ function childEditCalls(
   }
   const renamed = /rename bot\s+([A-Za-z0-9_-]+)\s+to\s+([^\n<&]+)/i.exec(prompt);
   if (renamed)
-    return [{ name: "update_bot", args: { bot_id: renamed[1], name: clean(renamed[2]!) } }];
+    return [
+      {
+        name: "update_bot",
+        args: { bot_id: renamed[1], name: clean(renamed[2]!), change: ["name"] },
+      },
+    ];
   // Some providers send every omitted optional field as an empty string.
   const blank = /rename yourself to\s+([^\n<&]+?)\s+with blank bot management fields/i.exec(prompt);
-  if (blank) return [{ name: "update_bot", args: { name: clean(blank[1]!), bot_id: "" } }];
+  if (blank)
+    return [{ name: "update_bot", args: { name: clean(blank[1]!), bot_id: "", change: ["name"] } }];
   return undefined;
 }
 
