@@ -27,13 +27,14 @@ function copyBySelection(text: string): boolean {
 
 /**
  * Puts text on the clipboard; true once there. Browsers expose the Clipboard API only to secure
- * pages, so its absence is the insecure case.
+ * pages, so its absence is the insecure case. `isCurrent` lets a caller stop a superseded write
+ * from falling back to selection over newer text.
  */
-export function writeClipboard(text: string): Promise<boolean> {
+export function writeClipboard(text: string, isCurrent = () => true): Promise<boolean> {
   if (navigator.clipboard?.writeText) {
     return navigator.clipboard.writeText(text).then(
       () => true,
-      () => copyBySelection(text),
+      () => isCurrent() && copyBySelection(text),
     );
   }
   return Promise.resolve(copyBySelection(text));
@@ -72,7 +73,7 @@ export function useCopyText(): [
   const copy = (text: string) => {
     const attempt = ++attemptRef.current;
     if (timerRef.current) window.clearTimeout(timerRef.current);
-    return writeClipboard(text).then((ok) => {
+    return writeClipboard(text, () => attempt === attemptRef.current).then((ok) => {
       // A newer attempt superseded this one; its outcome decides.
       if (attempt !== attemptRef.current) return false;
       setState({ status: ok ? "copied" : "failed", text: ok ? "" : text });

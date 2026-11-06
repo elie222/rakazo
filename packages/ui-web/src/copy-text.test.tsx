@@ -69,3 +69,23 @@ it("keeps the newer copy's success when an older copy fails after it", async () 
   expect(status()?.dataset.failed).toBe("false");
   expect(status()?.dataset.text).toBe("");
 });
+
+it("does not let a superseded copy fall back to selection over the newer text", async () => {
+  const clipboard = manualClipboard();
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText: clipboard.writeText },
+    configurable: true,
+  });
+  const execCommand = vi.fn(() => true);
+  document.execCommand = execCommand;
+  const button = container.querySelector<HTMLButtonElement>("button");
+
+  await act(async () => button?.click());
+  await act(async () => button?.click());
+  const [first, second] = clipboard.writes;
+  await act(async () => second?.resolve());
+  await act(async () => first?.reject());
+
+  expect(execCommand).not.toHaveBeenCalled();
+  expect(container.querySelector<HTMLElement>("span")?.dataset.copied).toBe("true");
+});
