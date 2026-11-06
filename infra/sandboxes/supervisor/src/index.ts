@@ -62,7 +62,12 @@ import {
   screenUrlWithToken,
   xdotoolCommand,
 } from "./computer-spec.js";
-import { EgressNotEnforced, verifyRestrictedEgress } from "./egress-probe.js";
+import { attestImageEnsurer, expectedAttestImage } from "./egress-attest.js";
+import {
+  cleanupAbandonedProbeNetworks,
+  EgressNotEnforced,
+  verifyRestrictedEgress,
+} from "./egress-probe.js";
 import { assertComputerHomeWritable } from "./home-ownership.js";
 import type { ScreenAssignment } from "./supervisor-logic.js";
 import {
@@ -118,6 +123,13 @@ const computerContext =
   process.env.RAKAZO_COMPUTER_CONTEXT ??
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../computer");
 const ensureComputerImage = computerImageEnsurer(docker, COMPUTER_IMAGE, computerContext);
+// Bundle the build context next to the supervisor so it can build the probe
+// image on the Docker host when restricted egress is first used.
+const attestContext = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../egress-attest",
+);
+const ensureAttestImage = attestImageEnsurer(docker, attestContext);
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const dataDir = path.resolve(repositoryRoot, process.env.DATA_DIR ?? "./data");
 let supervisorInfo: Docker.ContainerInspectInfo | undefined;
@@ -1284,6 +1296,17 @@ async function startSupervisor() {
   void reclaimIdleComputerNetworks().catch((error) => {
     logger.error("computer network reclaim failed", error);
   });
+  // A crashed supervisor leaves its probe network behind; remove those (never an
+  // active concurrent probe — see cleanupAbandonedProbeNetworks). Long-lived
+  // peers keep crashing occasionally, so the cleanup also runs on a timer; it
+  // holds no lock and is safe to race against itself and other supervisors.
+  const cleanupProbes = () =>
+    void cleanupAbandonedProbeNetworks(docker).catch((error) => {
+      logger.error("egress probe network cleanup failed", error);
+    });
+  cleanupProbes();
+  const probeCleanupTimer = setInterval(cleanupProbes, 10 * 60_000);
+  probeCleanupTimer.unref();
   const port = Number(process.env.SUPERVISOR_PORT ?? 7091);
   const hostname = process.env.SUPERVISOR_HOST ?? "127.0.0.1";
   const server = serve({ fetch: app.fetch, hostname, port }, () => {
@@ -1313,24 +1336,47 @@ function closeListeningServer(server: {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  if (process.argv.includes("--print-attest-tag")) {
+    // Offline installs cannot build the attestation image on the Docker host;
+    // this prints the exact content-hash tag to build elsewhere and preload.
+    process.stdout.write(`${expectedAttestImage(attestContext)}\n`);
+    process.exit(0);
+  }
   // A rejected startup keeps Node's default: the error is printed and the process exits.
   void startSupervisor();
 }
 
-// Enforcement is host-side (DOCKER-USER/INPUT on rakazo-c* bridges); the flag only
-// names the interfaces. Refuse restricted computers until a probe shows the host
-// rules are in place. Only success is cached, so installing the rules needs no restart.
+// Enforcement is host-side. Probe every restricted provision so a removed ruleset
+// cannot be hidden by an earlier successful verification.
 // `auto` keeps the first answer a completed probe gives: restricted when the rules are in place,
 // otherwise open with a warning, which is how computers ran before the rules existed. A probe
 // that could not finish decides nothing: the provision fails and the next one probes again.
 // In both modes, once the rules are in place, a configured SANDBOX_COMPUTER_DNS that no server
 // answers fails the provision the same way, so the next one probes again.
-let restrictedEgressVerified: Promise<void> | undefined;
 let autoEgressSettled: Promise<void> | undefined;
+// One in-flight verification shared by concurrent provisions (never cached
+// after it settles): each provision is still covered by a check that finishes
+// after it arrived — an earlier settled success never covers a later start —
+// while a burst of starts shares one probe instead of each creating a network
+// from the engine's small address pools.
+let egressVerification: Promise<void> | undefined;
+async function verifyEgressNow() {
+  egressVerification ??= verifyRestrictedEgress(
+    docker,
+    COMPUTER_IMAGE,
+    computerDns,
+    ensureAttestImage,
+  ).finally(() => {
+    egressVerification = undefined;
+  });
+  await egressVerification;
+}
+
 async function ensureRestrictedEgressEnforced() {
   if (screenNetworkMode === "internal") return;
   if (computerEgressSetting === "auto") {
-    autoEgressSettled ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE, computerDns).then(
+    const firstProbe = !autoEgressSettled;
+    autoEgressSettled ??= verifyEgressNow().then(
       () => {
         computerEgressMode = "restricted";
         getLogger().info("restricted computer egress verified");
@@ -1345,16 +1391,17 @@ async function ensureRestrictedEgressEnforced() {
         });
       },
     );
-    return autoEgressSettled;
+    await autoEgressSettled;
+    // A provision that waited on an earlier probe must still be covered by a
+    // verification that finished after it arrived; the shared gate gives the
+    // waiters one such check, and the next provision after it settles a new one.
+    if (!firstProbe && computerEgressMode === "restricted") {
+      await verifyEgressNow();
+    }
+    return;
   }
   if (computerEgressMode !== "restricted") return;
-  restrictedEgressVerified ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE, computerDns).catch(
-    (error) => {
-      restrictedEgressVerified = undefined;
-      throw error;
-    },
-  );
-  await restrictedEgressVerified;
+  await verifyEgressNow();
 }
 
 async function findBotContainer(botId: string, spaceId: string) {

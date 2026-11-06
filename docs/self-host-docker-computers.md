@@ -57,16 +57,41 @@ It takes two parts:
    connections still flow), and installs a systemd oneshot so the rules return after a
    reboot. `--print` shows the exact rules without changing anything; `--remove` uninstalls.
 
-Before the first restricted computer starts, the supervisor checks that the host drops
-connections from a `rakazo-c*` bridge. Without the ruleset, computers fail to start with an
-error naming the script instead of running unrestricted; run the script (no restart needed)
-or set `SANDBOX_COMPUTER_EGRESS=open` and recreate the supervisor.
+Before each restricted computer starts, the supervisor tests connectivity from a temporary
+`rakazo-c*` bridge and checks the host firewall rules and their order. It uses a short-lived,
+locally built attestation image with host networking and `CAP_NET_ADMIN` to read the host rules,
+through whichever iptables backend (nftables or legacy) holds Docker's `DOCKER-USER` chain.
+The first build needs access to the base image and Debian package repositories. Anyone with access
+to the Docker socket can replace the local image and already controls the host. Without the
+ruleset, computers fail to start with an error naming the script instead of running
+unrestricted; run the script (no restart needed) or set `SANDBOX_COMPUTER_EGRESS=open` and
+recreate the supervisor. Firewall changes after the check can still expose running computers.
+
+Tools that insert their own rules at the top of the `FORWARD` chain (Tailscale, libvirt, and
+similar) push the `DOCKER-USER` jump down; the supervisor then refuses restricted starts rather
+than guess whether the rules above it could bypass the managed drops, because the installer does
+not manage `FORWARD`. To restore the expected order, move the jump back to the first rule — with
+the backend that actually holds Docker's chains, i.e. the variant of `iptables-nft`/
+`iptables-legacy` whose `FORWARD` chain lists the `DOCKER-USER` jump
+(`sudo iptables-nft -S FORWARD` / `sudo iptables-legacy -S FORWARD`; the installer's
+`RAKAZO_IPTABLES`/`RAKAZO_IP6TABLES` settings select the same backend):
+
+```bash
+sudo iptables-nft -D FORWARD -j DOCKER-USER && sudo iptables-nft -I FORWARD 1 -j DOCKER-USER
+sudo ip6tables-nft -D FORWARD -j DOCKER-USER && sudo ip6tables-nft -I FORWARD 1 -j DOCKER-USER
+```
+
+A foreign rule above the managed prefix inside `INPUT` or `DOCKER-USER` (which Tailscale and
+libvirt can also insert) is repaired the same way the installer repairs a stale prefix: re-run
+`sudo bash infra/compose/restrict-computer-egress.sh`, which re-inserts the managed rules at the
+top. The start error names the rules it found above them.
 
 When `SANDBOX_COMPUTER_EGRESS` is unset, the Compose files use `auto`: the supervisor runs the
 same check and uses restricted egress if the ruleset is in place, otherwise open egress with a
 warning in its log. It keeps the first completed answer; a check that could not finish (a Docker
 error or timeout) fails that computer's start and runs again on the next one. With the ruleset
-in place, so does a configured `SANDBOX_COMPUTER_DNS` that no server answers (see below). An
+in place, every restricted provision is checked again; so is a configured
+`SANDBOX_COMPUTER_DNS` that no server answers (see below). An
 install from before the ruleset existed therefore keeps working when it upgrades. After
 installing the ruleset, recreate the supervisor, or set `restricted` to refuse computers
 whenever the rules are missing. A host-run supervisor (`pnpm dev`) and the desktop app's
@@ -91,9 +116,9 @@ times out while connections by IP still work. In those cases set `SANDBOX_COMPUT
 public resolvers (comma-separated IP addresses, such as `1.1.1.1,1.0.0.1`) and recreate the
 supervisor; each computer picks the servers up on its next provision. When
 `SANDBOX_COMPUTER_DNS` is set, computers with restricted or `auto` egress start only after one
-of its first three servers (Docker uses no more) answers from a computer network; a start that
-fails this check retries it on the next start. The check runs from an IPv4-only network and
-skips IPv6 servers, so if those three are all IPv6 nothing is checked.
+of its servers answers from a computer network; a start that fails this check retries it on the
+next start. Once the ruleset is verified, the check rejects IPv6 servers or more than three
+servers rather than silently skipping them; before that, `auto` still falls back to open egress.
 
 ### Opening egress
 
