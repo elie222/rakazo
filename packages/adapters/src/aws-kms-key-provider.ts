@@ -7,6 +7,11 @@ export type AwsKmsKeyProviderConfig = {
 } & ({ accessKeyId: string; secretAccessKey: string } | { profile: string });
 
 const MASTER_KEY_PREFIX = "aws-kms:";
+/**
+ * Bounds a whole KMS call, retries included. The SDK's requestTimeout stops at the response
+ * headers, so a KMS or proxy that sends them and then stalls the body would hold the call.
+ */
+const KMS_CALL_DEADLINE_MS = 30_000;
 const KEY_ARN = /^arn:aws[a-z-]*:kms:([a-z0-9-]+):\d{12}:key\/([A-Za-z0-9-]+)$/;
 
 /**
@@ -102,6 +107,7 @@ export class AwsKmsKeyProvider implements KeyProvider {
         Plaintext: dataKey,
         EncryptionContext: encryptionContext(context),
       }),
+      { abortSignal: AbortSignal.timeout(KMS_CALL_DEADLINE_MS) },
     );
     if (!CiphertextBlob) throw new Error("AWS KMS returned no ciphertext");
     return {
@@ -127,6 +133,7 @@ export class AwsKmsKeyProvider implements KeyProvider {
           CiphertextBlob: Buffer.from(wrapped.wrappedKey, "base64url"),
           EncryptionContext: encryptionContext(context),
         }),
+        { abortSignal: AbortSignal.timeout(KMS_CALL_DEADLINE_MS) },
       )
       .catch((error: unknown) => {
         throw new Error(`Space key could not be unwrapped with master key ${wrapped.masterKeyId}`, {
