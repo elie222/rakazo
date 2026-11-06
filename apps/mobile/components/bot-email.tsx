@@ -179,7 +179,10 @@ export function BotEmailAddressesGroup() {
         .then((next) => {
           if (current) setEmail(next);
         })
-        .catch(() => undefined);
+        // The list read before may be another Space's, so a failed read hides it.
+        .catch(() => {
+          if (current) setEmail(null);
+        });
       return () => {
         current = false;
       };
