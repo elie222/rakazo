@@ -25,7 +25,12 @@ import {
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import {
+  normalizeWorkspacePath,
+  shellQuote,
+  workspaceCwd,
+  workspacePath,
+} from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import {
   INSTALL_LINUX_BROWSER,
@@ -309,7 +314,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
         await this.client.machines.fs.write(id, envFile, environment, { mode: 0o600 });
       }
       result = await this.run(id, envFile ? sourceEnvironmentCommand(envFile, argv) : argv, {
-        cwd: boxdCwd(request.cwd),
+        cwd: workspaceCwd(WORKSPACE, request.cwd, [HOME]),
         timeoutMs,
         signal: context.signal,
       });
@@ -811,17 +816,6 @@ function commandFailure(result: BoxdCommandResult): string {
   if (result.timedOut) return "timed out";
   const last = (result.stderr || result.stdout).trim().split("\n").at(-1)?.slice(0, 300);
   return last ? `exit ${result.exitCode}: ${last}` : `exit ${result.exitCode}`;
-}
-
-function boxdCwd(cwd: string | undefined): string {
-  if (!cwd || cwd === "." || cwd === "/" || cwd === "/home/rakazo" || cwd === HOME)
-    return WORKSPACE;
-  const relative = cwd.startsWith(`${WORKSPACE}/`)
-    ? cwd.slice(WORKSPACE.length + 1)
-    : cwd.startsWith("/home/rakazo/")
-      ? cwd.slice("/home/rakazo/".length)
-      : cwd;
-  return workspacePath(WORKSPACE, relative);
 }
 
 /** `path\0mode\0size\0` for every workspace file, relative to the workspace. */

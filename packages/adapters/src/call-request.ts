@@ -253,7 +253,7 @@ export async function requestUserCall(
         firstResponseRunId: event.firstResponse ? run.id : undefined,
         botName: target.bot.name,
       };
-    }),
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
   if ("error" in result) return result;
   await deps.events

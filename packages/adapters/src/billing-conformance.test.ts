@@ -162,6 +162,24 @@ for (const [name, create] of Object.entries(factories)) {
       });
     });
 
+    it("expires every open checkout of the customer", async () => {
+      const harness = create();
+      const { customerId } = await harness.provider.createCustomer({
+        email: "owner@example.com",
+        organizationId: "org_3b",
+      });
+      await harness.provider.createCheckout({ customerId, seats: 1, ...urls });
+      await harness.provider.expireOpenCheckouts(customerId);
+      expect(() => harness.completeCheckout(customerId)).toThrow();
+      await harness.provider.expireOpenCheckouts(customerId);
+      await harness.provider.createCheckout({ customerId, seats: 2, ...urls });
+      harness.completeCheckout(customerId);
+      expect(await harness.provider.getCustomerSubscription(customerId)).toMatchObject({
+        status: "active",
+        seats: 2,
+      });
+    });
+
     it("is active immediately without a trial and returns null before any subscription", async () => {
       const harness = create();
       const { customerId } = await harness.provider.createCustomer({
