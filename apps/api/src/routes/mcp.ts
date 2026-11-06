@@ -13,7 +13,7 @@ import {
   prepareGraphqlInstall,
   previewPluginInstall,
   recordMcpServerHealth,
-  sanitizeComposioError,
+  sanitizeIntegrationError,
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
@@ -24,6 +24,7 @@ import {
   AVAILABILITY_SELECT,
   availableInSpace,
   IsolationError,
+  isUniqueViolation,
   itemSecretIn,
   spaceAvailability,
 } from "@rakazo/db";
@@ -66,7 +67,7 @@ import {
   reviewPluginSubmission,
 } from "../plugin-submissions.js";
 import type { RouterContext } from "./context.js";
-import { computerContext, isUniqueViolation } from "./shared.js";
+import { computerContext } from "./shared.js";
 
 export function mcpRoutes(ctx: RouterContext) {
   const {
@@ -260,7 +261,7 @@ export function mcpRoutes(ctx: RouterContext) {
             config = prepared.config;
           }
         } catch (error) {
-          const message = sanitizeComposioError(error);
+          const message = sanitizeIntegrationError(error);
           throw new ORPCError("BAD_REQUEST", {
             message: credential ? message.split(credential).join("[redacted]") : message,
           });

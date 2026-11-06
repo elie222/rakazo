@@ -1,11 +1,6 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import type { ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
+import type { ThinkingLevel } from "@rakazo/contracts";
 import {
-  CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  cloudflareModelRouting,
-  DEFAULT_MODEL_CONTEXT_WINDOW,
-  DEFAULT_MODEL_MAX_TOKENS,
-  isCloudflareModelProvider,
   isOllamaCloudBaseUrl,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
@@ -14,16 +9,14 @@ import {
   OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
-  openAiCompatibleProbeSuccessMessage,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
 } from "@rakazo/contracts";
 import {
-  COMPATIBLE_THINKING_LEVELS,
   clampCatalogThinkingLevel,
-  createModelProbe,
-  initialModelProbeState,
+  compatibleThinkingLevels,
+  connectionFormFields,
   pickCatalogModelId,
   popularModelProvidersFirst,
 } from "@rakazo/core";
@@ -54,18 +47,12 @@ import { SignupSurvey } from "../components/SignupSurvey";
 import { useCopyText } from "../lib/copy-text";
 import { providerDisplayName } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../lib/model-auth";
-import type { ModelPreflightFailure } from "../lib/model-connection-preflight";
-import {
-  classifyModelConnectionFailure,
-  modelPreflightSuccessMessage,
-  runModelConnectionPreflight,
-  unavailableSelectedModel,
-} from "../lib/model-connection-preflight";
 import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 import { errorText } from "../lib/user-error";
 import { CompatibleKeyField } from "./model-settings/compatible-key-field";
+import { useModelConnectionForm } from "./model-settings/use-model-connection-form";
 
 const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
 /** Rakazo credits sit among the providers as the one choice that needs no account of its own. */
@@ -155,36 +142,70 @@ export function OnboardingPage() {
   // The step after the survey; null until me loads.
   const [afterSurvey, setAfterSurvey] = useState<"model" | "bot" | null>(null);
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
-  const [provider, setProvider] = useState("");
   const [providerAuth, setProviderAuth] = useState<ProviderAuth | undefined>();
   const [credits, setCredits] = useState(false);
-  const [modelId, setModelId] = useState("");
-  const modelIdRef = useRef(modelId);
-  modelIdRef.current = modelId;
-  const [apiKey, setApiKey] = useState("");
-  const [accountId, setAccountId] = useState("");
-  const [gatewayId, setGatewayId] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
-  const [reasoning, setReasoning] = useState(false);
   const [manualModelId, setManualModelId] = useState(false);
-  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
-  const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
-  const [contextWindow, setContextWindow] = useState(String(DEFAULT_MODEL_CONTEXT_WINDOW));
-  const [supportsImages, setSupportsImages] = useState(false);
-  const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
-  const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
-  const [modelProbe] = useState(() => createModelProbe(setProbe));
-  const resetOpenAiCompatibleProbe = modelProbe.reset;
+  const {
+    accountId,
+    apiKey,
+    apiProtocol,
+    baseUrl,
+    cloudflareRoutingReady,
+    contextWindow,
+    error,
+    gatewayId,
+    headerRows,
+    invalidatePreflight,
+    isCloudflare,
+    isCloudflareGateway,
+    isOpenAiCompatible,
+    maxImagesPerPrompt,
+    maxTokens,
+    modelId,
+    modelProbe,
+    modelsForProvider,
+    notice,
+    openConnection,
+    preflightFailure,
+    preflightSuccess,
+    preflightTarget,
+    preflightTesting,
+    probeModels,
+    probeServerModels,
+    probing,
+    provider,
+    reasoning,
+    resetOpenAiCompatibleProbe,
+    selected,
+    setAccountId,
+    setContextWindow,
+    setError,
+    setGatewayId,
+    setHeaderRows,
+    setMaxImagesPerPrompt,
+    setMaxTokens,
+    setModelId,
+    setProvider,
+    setReasoning,
+    setSupportsImages,
+    setThinkingLevel,
+    supportsImages,
+    testApiKeyConnection,
+    thinkingLevel,
+    updateApiKey,
+    updateBaseUrl,
+  } = useModelConnectionForm({
+    rpc,
+    catalog,
+    // Stay in manual entry across re-probes so a typed id that matches a
+    // discovered model cannot yank the freeform field back to the Select.
+    onModelsFound: (models, typedModelId) =>
+      setManualModelId(
+        (wasManual) => wasManual || (Boolean(typedModelId) && !models.includes(typedModelId)),
+      ),
+  });
   const createStartedRef = useRef(false);
-  const [error, setError] = useState<string | null>(null);
   const { signingOut, logOut } = useSignOut("/sign-in", setError);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [preflightTesting, setPreflightTesting] = useState(false);
-  const [preflightTarget, setPreflightTarget] = useState<"api-key" | "compatible" | null>(null);
-  const [preflightSuccess, setPreflightSuccess] = useState<string | null>(null);
-  const [preflightFailure, setPreflightFailure] = useState<ModelPreflightFailure | null>(null);
-  const preflightRevisionRef = useRef(0);
   const [codeCopied, copyOAuthCode] = useCopyText();
 
   const {
@@ -245,17 +266,6 @@ export function OnboardingPage() {
     );
   }, [catalog]);
 
-  const modelsForProvider = useMemo(
-    () => catalog.filter((entry) => entry.provider === provider),
-    [catalog, provider],
-  );
-
-  const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
-  const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
-  const isCloudflare = isCloudflareModelProvider(provider);
-  const cloudflareRoutingReady =
-    !isCloudflare || cloudflareModelRouting({ provider, accountId, gatewayId }) !== undefined;
   const subscriptionSignIn = selected?.signIn !== undefined && providerAuth !== "key";
   const acceptsKey = selected?.auth !== "oauth" && providerAuth !== "sign-in";
   const signInLabel = selected?.oauthLabel ?? t`Sign in`;
@@ -314,30 +324,6 @@ export function OnboardingPage() {
     [modelsForProvider],
   );
 
-  function invalidatePreflight() {
-    preflightRevisionRef.current += 1;
-    setPreflightTesting(false);
-    setPreflightTarget(null);
-    setPreflightSuccess(null);
-    setPreflightFailure(null);
-  }
-
-  function updateBaseUrl(nextBaseUrl: string) {
-    setBaseUrl(nextBaseUrl);
-    setHeaderRows(null);
-    // Keep Other model… mode across URL edits; only provider change clears it.
-    resetOpenAiCompatibleProbe();
-    invalidatePreflight();
-    setError(null);
-    setNotice(null);
-  }
-
-  function updateApiKey(nextApiKey: string) {
-    setApiKey(nextApiKey);
-    resetOpenAiCompatibleProbe();
-    invalidatePreflight();
-  }
-
   function selectProvider(option: string, presetBaseUrl?: string) {
     if (
       option === providerOptionValue(provider, providerAuth) &&
@@ -347,107 +333,28 @@ export function OnboardingPage() {
       return;
     const [nextProvider = option, auth] = option.split(":") as [string, ProviderAuth?];
     cancelOAuthAttempt();
-    setProvider(nextProvider);
     setProviderAuth(auth);
-    setApiKey("");
-    setHeaderRows(null);
-    setAccountId("");
-    setGatewayId("");
-    setModelId(
+    setManualModelId(false);
+    const nextModelId =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? ""
-        : pickCatalogModelId(catalog, nextProvider),
+        : pickCatalogModelId(catalog, nextProvider);
+    openConnection(
+      nextProvider,
+      nextModelId,
+      connectionFormFields({
+        catalog,
+        provider: nextProvider,
+        modelId: nextModelId,
+        presetBaseUrl,
+      }),
     );
-    setBaseUrl(presetBaseUrl ?? "");
-    setReasoning(false);
-    setThinkingLevel(null);
-    setManualModelId(false);
-    setSupportsImages(false);
-    setMaxTokens(String(DEFAULT_MODEL_MAX_TOKENS));
-    setContextWindow(String(DEFAULT_MODEL_CONTEXT_WINDOW));
-    setMaxImagesPerPrompt("");
-    resetOpenAiCompatibleProbe();
-    invalidatePreflight();
-    setError(null);
-    setNotice(null);
-  }
-
-  function preflightStillCurrent(revision: number): boolean {
-    return revision === preflightRevisionRef.current;
-  }
-
-  async function probeServerModels() {
-    if (!baseUrl.trim()) return;
-    const revision = preflightRevisionRef.current;
-    setError(null);
-    setNotice(null);
-    setPreflightSuccess(null);
-    setPreflightFailure(null);
-    setPreflightTarget("compatible");
-    await modelProbe.probe({
-      baseUrl,
-      apiKey,
-      request: (input) =>
-        rpc.models.probeOpenAiCompatible({ ...input, headers: modelHeadersInput(headerRows) }),
-      onSuccess: (models) => {
-        if (!preflightStillCurrent(revision)) return;
-        const trimmed = modelIdRef.current.trim();
-        const next = trimmed || models[0] || "";
-        if (next !== trimmed) setThinkingLevel(null);
-        // Stay in manual entry across re-probes so a typed id that matches a
-        // discovered model cannot yank the freeform field back to the Select.
-        setManualModelId(
-          (wasManual) => wasManual || (Boolean(trimmed) && !models.includes(trimmed)),
-        );
-        setModelId(next);
-        const unavailable = unavailableSelectedModel(trimmed, models);
-        if (unavailable) {
-          setPreflightFailure(unavailable);
-          setNotice(null);
-          return;
-        }
-        setPreflightTarget(null);
-        setPreflightFailure(null);
-        setNotice(openAiCompatibleProbeSuccessMessage(models.length));
-      },
-      onError: (err) => {
-        if (!preflightStillCurrent(revision)) return;
-        setPreflightFailure(classifyModelConnectionFailure(err, { modelId }));
-        setNotice(null);
-      },
-    });
-  }
-
-  async function testApiKeyConnection() {
-    if (!selected?.catalogProbe) return;
-    const revision = preflightRevisionRef.current;
-    setPreflightTarget("api-key");
-    setPreflightTesting(true);
-    setPreflightSuccess(null);
-    setPreflightFailure(null);
-    setError(null);
-    setNotice(null);
-    const result = await runModelConnectionPreflight({
-      authKind: "api-key",
-      provider: selected.provider,
-      apiKey,
-      modelId: selected.id,
-      catalogProbe: true,
-      probeCatalog: rpc.models.probeCatalog,
-    });
-    if (!preflightStillCurrent(revision)) return;
-    setPreflightTesting(false);
-    if (result.ok) {
-      setPreflightSuccess(modelPreflightSuccessMessage(result.discoveredModels.length));
-      return;
-    }
-    setPreflightFailure(result.failure);
   }
 
   function stagedThinkingLevel(): ThinkingLevel | null {
     return clampCatalogThinkingLevel(
       thinkingLevel,
-      reasoning ? COMPATIBLE_THINKING_LEVELS : [],
+      reasoning ? compatibleThinkingLevels(apiProtocol) : [],
     ) as ThinkingLevel | null;
   }
 
@@ -484,6 +391,7 @@ export function OnboardingPage() {
         await rpc.models.connect({
           provider,
           baseUrl: baseUrl.trim(),
+          apiProtocol,
           headers: modelHeadersInput(headerRows),
           modelId: modelId.trim(),
           reasoning,

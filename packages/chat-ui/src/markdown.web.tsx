@@ -30,6 +30,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  CopyTextFallback,
+  useCopyText,
 } from "@rakazo/ui-web";
 import { CheckIcon, CopyIcon, GlobeIcon, ImageIcon } from "./icons";
 import type { ChatMarkdownProps } from "./markdown";
@@ -80,30 +82,25 @@ function preserveSkippedTableText() {
 
 function CopyButton({ read, label }: { read: () => string; label: string }) {
   const copy = useMarkdownCopy();
-  const resetTimerRef = useRef<number | undefined>(undefined);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    if (!navigator.clipboard) return;
-    navigator.clipboard
-      .writeText(read())
-      .then(() => {
-        setCopied(true);
-        window.clearTimeout(resetTimerRef.current);
-        resetTimerRef.current = window.setTimeout(() => setCopied(false), 1500);
-      })
-      .catch(() => {});
-  }, [read]);
+  const [copied, copyText, copyFailed, resetCopy, failedText] = useCopyText();
 
   return (
-    <button
-      type="button"
-      className="rk-chat-markdown-copy"
-      onClick={handleCopy}
-      aria-label={copied ? copy.copied : label}
-    >
-      {copied ? <CheckIcon /> : <CopyIcon />}
-    </button>
+    <>
+      <button
+        type="button"
+        className="rk-chat-markdown-copy"
+        onClick={() => copyText(read())}
+        aria-label={copied ? copy.copied : label}
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+      </button>
+      <CopyTextFallback
+        open={copyFailed}
+        onOpenChange={resetCopy}
+        text={failedText}
+        label={label}
+      />
+    </>
   );
 }
 

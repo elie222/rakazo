@@ -48,6 +48,8 @@ export type WebhookTarget = {
   expected: string;
 };
 
+type InboundSource = "webhook" | "github" | "messaging" | "email";
+
 export type InboundTarget = {
   bot: Pick<WebhookTarget["bot"], "id" | "spaceId" | "userId">;
   threadId: string;
@@ -253,7 +255,7 @@ export function messagingWakeIdempotencyKey(provider: string, handle: string): s
 }
 
 export function inboundDeliveryClientNonce(
-  source: "webhook" | "github" | "messaging",
+  source: InboundSource,
   botId: string,
   idempotencyKey: string,
 ): string {
@@ -273,7 +275,7 @@ export async function deliverWebhookEvent(
       modelId: string | null;
       thinkingLevel: string | null;
     }>;
-    source: "webhook" | "github" | "messaging";
+    source: InboundSource;
     idempotencyKey?: string;
     /** Messaging wakes share the live chat thread; keep a separate webhook run. */
     allowParallelRun?: boolean;
@@ -288,7 +290,9 @@ export async function deliverWebhookEvent(
             ? "Inbound GitHub event metadata:"
             : input.source === "messaging"
               ? "Inbound messaging event:"
-              : "Inbound webhook payload:",
+              : input.source === "email"
+                ? "Inbound email:"
+                : "Inbound webhook payload:",
           input.prompt,
         ].join("\n")
       : input.prompt;

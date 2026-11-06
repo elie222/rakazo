@@ -76,7 +76,7 @@ export const taskTools: ToolHandlers = {
       spaceId: run.spaceId,
       botId: bot.id,
       userId: run.userId,
-      ...(thread.groupId ? { threadId: thread.id } : {}),
+      ...(thread.groupId ? { groupThreadId: thread.id } : {}),
       tools: ctx.tools.offered,
     });
   },
@@ -251,7 +251,7 @@ export const taskTools: ToolHandlers = {
     return listSchedulesFromTool(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
-      ...(thread.groupId ? { threadId: thread.id } : {}),
+      ...(thread.groupId ? { groupThreadId: thread.id } : {}),
     });
   },
   async schedule_cancel(ctx, call) {

@@ -1,61 +1,49 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  getToolActivityEnabled,
-  normalizeToolActivityPreference,
-  persistToolActivityPreference,
-  resolveToolActivityPreference,
+  normalizeToolActivityEnabled,
   TOOL_ACTIVITY_STORAGE_KEY,
 } from "./tool-activity-preference";
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.resetModules();
+});
+
 describe("tool activity preference", () => {
   it("stays off unless a saved choice turns it on", () => {
-    expect(normalizeToolActivityPreference("on")).toBe("on");
-    expect(normalizeToolActivityPreference("ON")).toBe("on");
-    expect(normalizeToolActivityPreference(" on ")).toBe("on");
-    expect(normalizeToolActivityPreference("off")).toBe("off");
-    expect(normalizeToolActivityPreference("OFF")).toBe("off");
-    expect(normalizeToolActivityPreference(null)).toBe("off");
-    expect(normalizeToolActivityPreference(undefined)).toBe("off");
-    expect(normalizeToolActivityPreference("")).toBe("off");
-    expect(normalizeToolActivityPreference("nonsense")).toBe("off");
+    expect(normalizeToolActivityEnabled("on")).toBe(true);
+    expect(normalizeToolActivityEnabled("ON")).toBe(true);
+    expect(normalizeToolActivityEnabled(" on ")).toBe(true);
+    expect(normalizeToolActivityEnabled("off")).toBe(false);
+    expect(normalizeToolActivityEnabled("OFF")).toBe(false);
+    expect(normalizeToolActivityEnabled(null)).toBe(false);
+    expect(normalizeToolActivityEnabled(undefined)).toBe(false);
+    expect(normalizeToolActivityEnabled("")).toBe(false);
+    expect(normalizeToolActivityEnabled("nonsense")).toBe(false);
   });
 
-  it("resolves from an explicit stored value", () => {
-    expect(resolveToolActivityPreference({ stored: "off" })).toBe("off");
-    expect(resolveToolActivityPreference({ stored: "on" })).toBe("on");
-    expect(resolveToolActivityPreference({ stored: null })).toBe("off");
-  });
-
-  it("persists through storage helpers and reads it back", () => {
+  it("saves the choice as on or off", async () => {
     const store = new Map<string, string>();
-    const storage = {
+    vi.stubGlobal("localStorage", {
       getItem: (key: string) => store.get(key) ?? null,
       setItem: (key: string, value: string) => {
         store.set(key, value);
       },
-    };
-    persistToolActivityPreference("off", storage);
+    });
+    const { toolActivityPreference } = await import("./tool-activity-preference");
+    expect(toolActivityPreference.get()).toBe(false);
+    toolActivityPreference.set(false);
     expect(store.get(TOOL_ACTIVITY_STORAGE_KEY)).toBe("off");
-    expect(resolveToolActivityPreference({ storage })).toBe("off");
-    persistToolActivityPreference("on", storage);
-    expect(resolveToolActivityPreference({ storage })).toBe("on");
+    toolActivityPreference.set(true);
+    expect(store.get(TOOL_ACTIVITY_STORAGE_KEY)).toBe("on");
   });
 
-  it("stays off when storage is unreadable or throws", () => {
-    const throwing = {
-      getItem: () => {
-        throw new Error("blocked");
-      },
-      setItem: () => {
-        throw new Error("blocked");
-      },
-    };
-    expect(resolveToolActivityPreference({ storage: throwing })).toBe("off");
-    expect(resolveToolActivityPreference({ storage: null })).toBe("off");
-    expect(() => persistToolActivityPreference("off", throwing)).not.toThrow();
-  });
-
-  it("stays disabled until a saved choice turns it on", () => {
-    expect(getToolActivityEnabled()).toBe(false);
+  it("reads a saved choice", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => (key === TOOL_ACTIVITY_STORAGE_KEY ? "on" : null),
+      setItem: () => undefined,
+    });
+    const { toolActivityPreference } = await import("./tool-activity-preference");
+    expect(toolActivityPreference.get()).toBe(true);
   });
 });
