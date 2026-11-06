@@ -30,14 +30,14 @@ export async function botEmailAddresses(
   const rows = await prisma.botEmailAddress.findMany({
     // Archived bots receive no mail, so their addresses would only mislead.
     where: { bot: { spaceId: owner.spaceId, userId: owner.userId, archivedAt: null } },
-    select: { localPart: true, bot: { select: { id: true, name: true } } },
-    orderBy: { localPart: "asc" },
+    select: { name: true, bot: { select: { id: true, name: true } } },
+    orderBy: { name: "asc" },
   });
   return {
     domain,
     addresses: rows.flatMap((row) =>
       row.bot
-        ? [{ botId: row.bot.id, botName: row.bot.name, address: `${row.localPart}@${domain}` }]
+        ? [{ botId: row.bot.id, botName: row.bot.name, address: `${row.name}@${domain}` }]
         : [],
     ),
   };

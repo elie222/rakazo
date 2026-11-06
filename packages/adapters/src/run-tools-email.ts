@@ -226,11 +226,11 @@ async function claimEmailAddress(ctx: RunContext, call: ToolCall) {
   if (result === "has-another") {
     const current = await deps.prisma.botEmailAddress.findUnique({
       where: { botId: bot.id },
-      select: { localPart: true },
+      select: { name: true },
     });
     return call.finish({
       error: "You already have an address, and it can't change.",
-      address: current ? `${current.localPart}@${domain}` : undefined,
+      address: current ? `${current.name}@${domain}` : undefined,
     });
   }
   return call.finish({ address: `${parsed.data}@${domain}` });

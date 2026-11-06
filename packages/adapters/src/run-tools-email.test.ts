@@ -391,7 +391,7 @@ describe("claim_email_address", () => {
       approved?: boolean;
     } = {},
   ) {
-    // localPart → botId, as bot_email_addresses keeps them.
+    // name → botId, as bot_email_addresses keeps them.
     const names = new Map(Object.entries(options.claimed ?? {}));
     const ctx = {
       deps: {
@@ -400,19 +400,19 @@ describe("claim_email_address", () => {
           // This is the run's first attempt.
           attempt: { count: async () => 1 },
           botEmailAddress: {
-            findUnique: async ({ where }: { where: { botId?: string; localPart?: string } }) => {
-              if (where.localPart) {
-                const botId = names.get(where.localPart);
-                return botId ? { botId, localPart: where.localPart } : null;
+            findUnique: async ({ where }: { where: { botId?: string; name?: string } }) => {
+              if (where.name) {
+                const botId = names.get(where.name);
+                return botId ? { botId, name: where.name } : null;
               }
               const entry = [...names].find(([, botId]) => botId === where.botId);
-              return entry ? { localPart: entry[0], botId: entry[1] } : null;
+              return entry ? { name: entry[0], botId: entry[1] } : null;
             },
-            create: async ({ data }: { data: { localPart: string; botId: string } }) => {
+            create: async ({ data }: { data: { name: string; botId: string } }) => {
               if (options.raceTo) names.set(options.raceTo, data.botId);
-              if (options.raceTo || names.has(data.localPart))
+              if (options.raceTo || names.has(data.name))
                 throw Object.assign(new Error("taken"), { code: "P2002" });
-              names.set(data.localPart, data.botId);
+              names.set(data.name, data.botId);
               return data;
             },
           },

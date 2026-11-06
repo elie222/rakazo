@@ -15,20 +15,20 @@ export async function claimBotEmailName(
 ): Promise<"claimed" | "taken" | "has-another"> {
   const existing = await prisma.botEmailAddress.findUnique({
     where: { botId },
-    select: { localPart: true },
+    select: { name: true },
   });
-  if (existing) return existing.localPart === name ? "claimed" : "has-another";
+  if (existing) return existing.name === name ? "claimed" : "has-another";
   try {
-    await prisma.botEmailAddress.create({ data: { localPart: name, botId } });
+    await prisma.botEmailAddress.create({ data: { name, botId } });
     return "claimed";
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
     // The name went to another bot, or a concurrent claim for this bot won, with any name.
     const current = await prisma.botEmailAddress.findUnique({
       where: { botId },
-      select: { localPart: true },
+      select: { name: true },
     });
-    if (current) return current.localPart === name ? "claimed" : "has-another";
+    if (current) return current.name === name ? "claimed" : "has-another";
     return "taken";
   }
 }
