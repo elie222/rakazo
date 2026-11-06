@@ -145,8 +145,21 @@ function bumpSpaceSelectionGeneration(): void {
 /** Orders complete endpoint transactions, including credential rollback. */
 let endpointChangeQueue: Promise<unknown> = Promise.resolve();
 
-function queueEndpointChange(step: () => Promise<EndpointResult>): Promise<EndpointResult> {
-  const result = endpointChangeQueue.then(step);
+/** Runs an endpoint change in order, holding the reconcile gate while it switches servers. */
+function queueEndpointChange(
+  url: string,
+  change: (previous: string, switching: boolean) => Promise<EndpointResult>,
+): Promise<EndpointResult> {
+  const result = endpointChangeQueue.then(async () => {
+    const previous = currentApiBase();
+    const switching = url !== previous;
+    if (switching) endpointChanges += 1;
+    try {
+      return await change(previous, switching);
+    } finally {
+      if (switching) endpointChanges -= 1;
+    }
+  });
   endpointChangeQueue = result.catch(() => undefined);
   return result;
 }
@@ -434,6 +447,13 @@ export function configureSessionEndHangUp(hangUp: (() => Promise<void>) | undefi
   hangUpBeforeCredentialsCleared = hangUp;
 }
 
+type ClearedCredentials = {
+  previousToken: string;
+  previousSpace: string;
+  /** The revocation owed to the previous server, recorded before its credentials are discarded. */
+  pendingSignOut: PendingSignOut | undefined;
+};
+
 /**
  * Clears session + space for an endpoint change. Restores both if either wipe fails. The session it
  * clears is the one it records for revocation: a sign-in during the hang-up is read here, and any
@@ -442,15 +462,7 @@ export function configureSessionEndHangUp(hangUp: (() => Promise<void>) | undefi
 async function clearCredentialsForEndpointChange(
   previous: string,
   previousHeaders: Record<string, string>,
-): Promise<
-  | {
-      ok: true;
-      previousToken: string;
-      previousSpace: string;
-      pendingSignOut: PendingSignOut | undefined;
-    }
-  | { ok: false; result: EndpointResult }
-> {
+): Promise<({ ok: true } & ClearedCredentials) | { ok: false; result: EndpointResult }> {
   // The old server's session authorizes the call's hang-up; send it while it still exists.
   await hangUpBeforeCredentialsCleared?.().catch(() => undefined);
   const generation = currentSessionGeneration();
@@ -551,9 +563,16 @@ async function clearCredentialsForEndpointChange(
  */
 async function settleRolledBackSignOut(
   record: PendingSignOut | undefined,
-  restoredToken: string | undefined,
+  restoredToken: string,
 ): Promise<void> {
   if (record && record.token === restoredToken) await removePendingSignOut(record);
+}
+
+/** Rolls back an endpoint change that cleared credentials, settling its revocation record. */
+async function rollBackEndpointChange(cleared: ClearedCredentials | undefined): Promise<void> {
+  if (!cleared) return;
+  const restoredToken = await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+  await settleRolledBackSignOut(cleared.pendingSignOut, restoredToken);
 }
 
 /** Returns the restored token, or "" when it is kept only in memory and a restart would lose it. */
@@ -626,129 +645,68 @@ export async function saveApiBase(
   const parsed = normalizeApiBase(input);
   if (!parsed.ok) return parsed;
   if (parsed.url === defaultApiBase() && Object.keys(headers).length === 0) return resetApiBase();
-  return queueEndpointChange(async () => {
-    const previous = currentApiBase();
-    const switching = parsed.url !== previous;
-    if (switching) endpointChanges += 1;
-    try {
-      return await saveApiBaseLocked(parsed, previous, headers, switching);
-    } finally {
-      if (switching) endpointChanges -= 1;
+  return queueEndpointChange(parsed.url, async (previous, switching) => {
+    const previousHeaders = serverHeaders(previous);
+    let cleared: ClearedCredentials | undefined;
+    if (switching) {
+      const result = await clearCredentialsForEndpointChange(previous, previousHeaders);
+      if (!result.ok) return result.result;
+      cleared = result;
     }
+    if (!(await saveServerHeaders(parsed.url, headers))) {
+      await rollBackEndpointChange(cleared);
+      return { ok: false, error: t("Could not save the server URL") };
+    }
+    try {
+      await SecureStore.setItemAsync(ENDPOINT_KEY, parsed.url);
+    } catch {
+      await saveServerHeaders(previous, previousHeaders);
+      await rollBackEndpointChange(cleared);
+      return { ok: false, error: t("Could not save the server URL") };
+    }
+    setCachedApiBase(parsed.url);
+    await clearStoredValue(SPACE_ROLLBACK_KEY);
+    if (cleared?.pendingSignOut) await promotePendingSignOut(cleared.pendingSignOut);
+    if (cleared) await clearStoredValue(ORGANIZATION_SPACES_KEY);
+    return parsed;
   });
-}
-
-/** The endpoint change, run with the reconcile gate held for the whole switch. */
-async function saveApiBaseLocked(
-  parsed: Extract<EndpointResult, { ok: true; url: string }>,
-  previous: string,
-  headers: Record<string, string>,
-  switching: boolean,
-): Promise<EndpointResult> {
-  const previousHeaders = serverHeaders(previous);
-  let cleared:
-    | {
-        previousToken: string;
-        previousSpace: string;
-      }
-    | undefined;
-  /** The revocation owed to the previous server, recorded before its credentials are discarded. */
-  let pendingPreviousSignOut: PendingSignOut | undefined;
-  if (switching) {
-    const result = await clearCredentialsForEndpointChange(previous, previousHeaders);
-    if (!result.ok) return result.result;
-    cleared = result;
-    pendingPreviousSignOut = result.pendingSignOut;
-  }
-  if (!(await saveServerHeaders(parsed.url, headers))) {
-    const restoredToken =
-      cleared && (await restoreCredentials(cleared.previousToken, cleared.previousSpace));
-    await settleRolledBackSignOut(pendingPreviousSignOut, restoredToken);
-    return { ok: false, error: t("Could not save the server URL") };
-  }
-  try {
-    await SecureStore.setItemAsync(ENDPOINT_KEY, parsed.url);
-  } catch {
-    await saveServerHeaders(previous, previousHeaders);
-    const restoredToken =
-      cleared && (await restoreCredentials(cleared.previousToken, cleared.previousSpace));
-    await settleRolledBackSignOut(pendingPreviousSignOut, restoredToken);
-    return { ok: false, error: t("Could not save the server URL") };
-  }
-  setCachedApiBase(parsed.url);
-  await clearStoredValue(SPACE_ROLLBACK_KEY);
-  if (pendingPreviousSignOut) await promotePendingSignOut(pendingPreviousSignOut);
-  if (cleared) await clearStoredValue(ORGANIZATION_SPACES_KEY);
-  return parsed;
 }
 
 export async function resetApiBase(): Promise<EndpointResult> {
-  return queueEndpointChange(async () => {
-    const previous = currentApiBase();
-    const url = defaultApiBase();
-    const switching = url !== previous;
-    if (switching) endpointChanges += 1;
-    try {
-      return await resetApiBaseLocked(previous, url, switching);
-    } finally {
-      if (switching) endpointChanges -= 1;
+  const url = defaultApiBase();
+  return queueEndpointChange(url, async (previous, switching) => {
+    let cleared: ClearedCredentials | undefined;
+    if (switching) {
+      const result = await clearCredentialsForEndpointChange(previous, serverHeaders(previous));
+      if (!result.ok) return result.result;
+      cleared = result;
     }
-  });
-}
-
-/** The reset, run with the reconcile gate held for the whole switch. */
-async function resetApiBaseLocked(
-  previous: string,
-  url: string,
-  switching: boolean,
-): Promise<EndpointResult> {
-  const previousHeaders = serverHeaders(previous);
-  let cleared:
-    | {
-        previousToken: string;
-        previousSpace: string;
+    try {
+      await SecureStore.deleteItemAsync(ENDPOINT_KEY);
+    } catch {
+      if (cleared) {
+        await rollBackEndpointChange(cleared);
+        return { ok: false, error: t("Could not clear the custom server URL") };
       }
-    | undefined;
-  /** As in saveApiBase: recorded provisionally before the old credentials are discarded. */
-  let pendingPreviousSignOut: PendingSignOut | undefined;
-  if (switching) {
-    const result = await clearCredentialsForEndpointChange(previous, previousHeaders);
-    if (!result.ok) return result.result;
-    cleared = result;
-    pendingPreviousSignOut = result.pendingSignOut;
-  }
-  try {
-    await SecureStore.deleteItemAsync(ENDPOINT_KEY);
-  } catch {
-    if (cleared) {
-      const restoredToken = await restoreCredentials(cleared.previousToken, cleared.previousSpace);
-      await settleRolledBackSignOut(pendingPreviousSignOut, restoredToken);
+    }
+    if (!(await saveServerHeaders(url, {}))) {
+      if (await writeStoredValue(ENDPOINT_KEY, previous)) {
+        await rollBackEndpointChange(cleared);
+      } else {
+        // Without the old server URL stored again, the next launch opens the default server, so
+        // this launch follows it too: the old session is not restored, its record stays for the
+        // next retry to revoke, and a later sign-in's token is never sent to another server.
+        setCachedApiBase(url);
+        if (cleared) await clearStoredValue(ORGANIZATION_SPACES_KEY);
+      }
       return { ok: false, error: t("Could not clear the custom server URL") };
     }
-  }
-  if (!(await saveServerHeaders(url, {}))) {
-    // Without the old server URL stored again, the next launch opens the default server: the old
-    // session is not restored, and its record stays for the next retry to revoke it.
-    const endpointRestored = await writeStoredValue(ENDPOINT_KEY, previous);
-    let restoredToken: string | undefined;
-    if (endpointRestored) {
-      if (cleared) {
-        restoredToken = await restoreCredentials(cleared.previousToken, cleared.previousSpace);
-      }
-    } else {
-      // This launch follows the default server too, so a later sign-in's token comes from the
-      // server a restart opens and is never sent to another one.
-      setCachedApiBase(url);
-      if (cleared) await clearStoredValue(ORGANIZATION_SPACES_KEY);
-    }
-    await settleRolledBackSignOut(pendingPreviousSignOut, restoredToken);
-    return { ok: false, error: t("Could not clear the custom server URL") };
-  }
-  setCachedApiBase(url);
-  await clearStoredValue(SPACE_ROLLBACK_KEY);
-  if (pendingPreviousSignOut) await promotePendingSignOut(pendingPreviousSignOut);
-  if (cleared) await clearStoredValue(ORGANIZATION_SPACES_KEY);
-  return { ok: true, url };
+    setCachedApiBase(url);
+    await clearStoredValue(SPACE_ROLLBACK_KEY);
+    if (cleared?.pendingSignOut) await promotePendingSignOut(cleared.pendingSignOut);
+    if (cleared) await clearStoredValue(ORGANIZATION_SPACES_KEY);
+    return { ok: true, url };
+  });
 }
 
 let clientBuild: { headers: () => Record<string, string>; onUpdateRequired: () => void } = {
