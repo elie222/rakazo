@@ -406,6 +406,10 @@ export function createBillingService(deps: {
         // failure after this step gives this attempt's hold back in full. A failure while
         // expiring keeps the earlier hold, since its session may still be payable.
         await provider.expireOpenCheckouts(customerId);
+        // A session paid before it could be expired leaves a subscription whose webhook may
+        // not have arrived: record it, using up the owners' trial, while the earlier hold
+        // still protects it. A failed sync keeps that hold.
+        await sync(customerId);
         await releaseByokTrialCheckouts(prisma, organizationId);
         // One trial per owner: reserve inside the organization's checkout lease, so overlapping
         // requests of the same organization cannot interleave their holds; the lease already

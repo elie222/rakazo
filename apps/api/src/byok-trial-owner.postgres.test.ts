@@ -278,6 +278,31 @@ class GatedFailingByokEmulator extends BillingEmulator {
   }
 }
 
+/** A database that holds one organization's next trial reservation until the test lets it go. */
+function reservationGatedPrisma(prisma: PrismaClient, organizationId: string) {
+  const entered = deferred();
+  const gate = deferred();
+  const gated = new Proxy(prisma, {
+    get(target, property, receiver) {
+      if (property !== "user") return Reflect.get(target, property, receiver);
+      return new Proxy(target.user, {
+        get(user, method, receiver) {
+          if (method !== "updateMany") return Reflect.get(user, method, receiver);
+          return async (args: { data: { byokTrialCheckoutOrganizationId?: string | null } }) => {
+            // Only a reservation names the organization; a release writes null.
+            if (args.data.byokTrialCheckoutOrganizationId === organizationId) {
+              entered.resolve();
+              await gate.promise;
+            }
+            return user.updateMany(args);
+          };
+        },
+      });
+    },
+  });
+  return { prisma: gated, reserving: entered.promise, release: gate.resolve };
+}
+
 /** A database whose own-key hold extension fails, while every other write works. */
 function extendFailingPrisma(prisma: PrismaClient): PrismaClient {
   return new Proxy(prisma, {
@@ -369,6 +394,30 @@ dbTests("own-key trial hold lifecycle", () => {
     await service.selectFunding(owner.second.actor, "byok");
     const second = await customerOf(owner.second.organizationId);
     expect(provider.byokCheckouts.get(second)?.trialDays).toBe(TRIAL_DAYS);
+  });
+
+  it("keeps the trial held while a reopen finds the earlier trial checkout paid", async () => {
+    const owner = await ownerWith("paidreopen");
+    const provider = new BillingEmulator({ modelCredits: true, namespace: `hold-paid-${stamp}` });
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    await service.selectFunding(owner.first.actor, "byok");
+    const first = await customerOf(owner.first.organizationId);
+    // The owner pays the trial checkout; its webhook has not been processed yet.
+    provider.completeByokCheckout(first);
+    const gated = reservationGatedPrisma(prisma, owner.first.organizationId);
+    const reopening = createBillingService({
+      prisma: gated.prisma,
+      provider,
+      webOrigin: "https://example.test",
+    });
+    const reopen = reopening.selectFunding(owner.first.actor, "byok");
+    await gated.reserving;
+    // The other organization checks out while the reopen is about to reserve again.
+    await service.selectFunding(owner.second.actor, "byok");
+    gated.release();
+    await expect(reopen).rejects.toThrow("Manage your existing subscription in Billing");
+    const second = await customerOf(owner.second.organizationId);
+    expect(provider.byokCheckouts.get(second)?.trialDays).toBeUndefined();
   });
 
   it("keeps an earlier open session's hold when expiring it fails", async () => {
