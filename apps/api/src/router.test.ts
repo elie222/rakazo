@@ -589,6 +589,33 @@ describe("account preferences", () => {
       });
     },
   );
+
+  it("ends only the calling session's push registration, keeping another session's", async () => {
+    const { deps, actor } = preferencesDeps("robot");
+    const calls: string[] = [];
+    deps.pushTokens = {
+      load: vi.fn(async () => undefined),
+      save: vi.fn(async () => undefined),
+      importLegacy: vi.fn(async () => false),
+      endSession: vi.fn(async (userId: string, sessionId: string) => {
+        calls.push(`endSession ${userId} ${sessionId}`);
+      }),
+      remove: vi.fn(async (userId: string) => {
+        calls.push(`remove ${userId}`);
+      }),
+    };
+    // A tablet of the same account holds the registration; the phone's session signs out.
+    const phone = createRouterClient(createRouter(deps), {
+      context: { actor, sessionId: "session-phone" } as never,
+    });
+    await expect(phone.notifications.unregisterPush()).resolves.toEqual({ ok: true });
+    expect(calls).toEqual([`endSession ${actor.userId} session-phone`]);
+
+    // Without a session to end, the account-wide registration is still removed.
+    const sessionless = createRouterClient(createRouter(deps), { context: { actor } as never });
+    await expect(sessionless.notifications.unregisterPush()).resolves.toEqual({ ok: true });
+    expect(calls).toEqual([`endSession ${actor.userId} session-phone`, `remove ${actor.userId}`]);
+  });
 });
 
 describe("billing", () => {
@@ -10219,11 +10246,19 @@ describe("shared space bot permissions", () => {
     const deps = {
       prisma,
       secrets,
-      env: { webOrigin: "https://example.test" },
+      env: { webOrigin: "https://example.test", inboundEmailDomain: "bots.example.test" },
     } as unknown as RouterDeps;
     const client = createRouterClient(createRouter(deps), { context: { actor } as never });
     return { client, prisma, secrets };
   }
+
+  it("keeps a bot's email address with its creator", async () => {
+    const { client } = sharedBotClient("owner");
+    await expect(client.bots.emailAddress({ botId: "bot-1" })).resolves.toBeNull();
+    await expect(
+      client.bots.claimEmailAddress({ botId: "bot-1", name: "scout" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
 
   it("lets only the bot's creator or the space owner delete a bot for good", async () => {
     const { client, prisma } = sharedBotClient("member");

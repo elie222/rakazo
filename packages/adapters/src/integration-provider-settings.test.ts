@@ -65,6 +65,16 @@ describe("integration provider settings", () => {
       apiKey: "fake-replacement-key",
     });
   });
+  it("lists connected plugin slugs for the user, or none before setup", async () => {
+    const f = fixture();
+    expect(await f.settings.listConnectedPluginSlugs("user-1")).toEqual([]);
+    await f.settings.save({ provider: "composio", apiKey: "fake-plugin-key" }, context);
+    vi.mocked(f.adapter.listConnectedExternalIds).mockResolvedValueOnce(["gmail"]);
+    expect(await f.settings.listConnectedPluginSlugs("user-1")).toEqual(["gmail"]);
+    expect(f.adapter.listConnectedExternalIds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ userId: "user-1" }),
+    );
+  });
   it("preserves working settings and hides provider error details on failed verification", async () => {
     const f = fixture();
     await f.settings.save({ provider: "composio", apiKey: "fake-working-key" }, context);
