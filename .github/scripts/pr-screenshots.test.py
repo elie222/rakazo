@@ -66,6 +66,11 @@ class SelectTest(unittest.TestCase):
             [("01-chat.png", "")],
         )
 
+    def test_size_limit_is_in_bytes(self):
+        (self.dir / "big.png").write_bytes(PNG + b"\0" * (shots.MAX_BYTES - len(PNG)))
+        (self.dir / "huge.png").write_bytes(PNG + b"\0" * (shots.MAX_BYTES - len(PNG) + 1))
+        self.assertEqual(self.select([{"file": "big.png"}, {"file": "huge.png"}]), [("big.png", "")])
+
     def test_caps_count(self):
         for index in range(6):
             (self.dir / f"s{index}.png").write_bytes(PNG)
@@ -75,9 +80,13 @@ class SelectTest(unittest.TestCase):
         self.assertEqual(shots.select(None, self.dir), [])
         self.assertEqual(shots.select({"screenshots": "01-chat.png"}, self.dir), [])
 
+    def test_captions_with_addresses_are_dropped(self):
+        for text in ("see https://evil.test", "go to www.evil.test", "visit evil.example/login", "mail a@evil.io"):
+            self.assertEqual(self.select([{"file": "01-chat.png", "caption": text}]), [("01-chat.png", "")])
+
     def test_captions_are_plain_text(self):
         [(_, caption)] = self.select(
-            [{"file": "01-chat.png", "caption": "![x](https://evil) <img src=x> @someone\n<!-- rakazo-pr-screenshots:end -->"}]
+            [{"file": "01-chat.png", "caption": "![x](y) <img src=x> @someone\n<!-- rakazo-pr-screenshots:end -->"}]
         )
         self.assertIsNone(re.search(r"(?<!\\)[<>\[\]()!@]", caption))
         self.assertNotIn(shots.END, caption)

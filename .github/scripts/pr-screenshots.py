@@ -26,6 +26,9 @@ PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 def clean_caption(value: object) -> str:
     text = " ".join(str(value).split())[:MAX_CAPTION]
+    # GitHub links bare addresses even when escaped, so a caption with one is dropped.
+    if re.search(r"://|www\.|[A-Za-z0-9-]\.[A-Za-z]{2,}(/|\b)", text):
+        return ""
     # Plain text only: no links, images, HTML, mentions, or markers.
     return re.sub(r"([\\`*_{}\[\]()<>#!|@~])", r"\\\1", text)
 

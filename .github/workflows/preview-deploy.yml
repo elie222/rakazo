@@ -115,13 +115,14 @@ jobs:
           mkdir -p "$dir"
           gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$pr/files?per_page=100" --jq '.[].filename' > "$dir/files.txt"
           # Only changes the web app can show; the agent decides the rest.
-          if ! grep -E '^(apps/web/src|packages/(ui-web|ui-tokens|chat-ui|page-kit))/' "$dir/files.txt" |
+          if ! grep -E '^(apps/web/(src/|public/|index\.html$)|packages/(ui-web|ui-tokens|chat-ui|page-kit)/)' "$dir/files.txt" |
             grep -Evq '(\.test\.[cm]?[jt]sx?|\.spec\.[cm]?[jt]sx?)$'; then
             echo "No web UI changes; skipping."
             exit 0
           fi
+          preview_url="https://${APP_PREFIX:-rakazo-pr}-$pr.fly.dev"
           gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" |
-            jq --arg url "https://${APP_PREFIX:-rakazo-pr}-$pr.fly.dev" --rawfile files "$dir/files.txt" \
+            jq --arg url "$preview_url" --rawfile files "$dir/files.txt" \
               '{title, body: (.body // ""), changed_files: ($files | split("\n") | map(select(. != ""))), preview_url: $url}' \
               > "$dir/pr.json"
           gh pr diff "$pr" --repo "$GITHUB_REPOSITORY" > "$dir/full.diff" 2>/dev/null || echo "(diff unavailable)" > "$dir/full.diff"
@@ -137,19 +138,22 @@ jobs:
             printf '\n</diff>\n'
             echo "$delimiter"
             echo "pr=$pr"
+            echo "preview_url=$preview_url"
           } >> "$GITHUB_OUTPUT"
       - name: Prepare an isolated browser
         if: steps.pr.outputs.pr
         env:
-          PREVIEW_URL: https://${{ vars.FLY_PREVIEW_APP_PREFIX || 'rakazo-pr' }}-${{ steps.pr.outputs.pr }}.fly.dev
+          PREVIEW_URL: ${{ steps.pr.outputs.preview_url }}
         run: |
           set -euo pipefail
+          node=$(command -v node)
+          npm=$(command -v npm)
           sudo useradd --create-home --shell /usr/sbin/nologin pr-screenshots
-          sudo npm install --no-save --no-fund --prefix /opt/pr-screenshots-mcp @playwright/mcp@0.0.84
+          sudo env PATH="$(dirname "$node"):/usr/bin:/bin" "$npm" install --no-save --no-fund --prefix /opt/pr-screenshots-mcp @playwright/mcp@0.0.84
           sudo env PLAYWRIGHT_BROWSERS_PATH=/opt/pr-screenshots-browsers \
-            node /opt/pr-screenshots-mcp/node_modules/playwright/cli.js install --with-deps chromium
+            "$node" /opt/pr-screenshots-mcp/node_modules/playwright/cli.js install --with-deps chromium
           sudo install -d -o pr-screenshots -g pr-screenshots -m 755 /srv/pr-screenshots
-          jq -n --arg node "$(command -v node)" --arg origin "$PREVIEW_URL" '{mcpServers: {playwright: {
+          jq -n --arg node "$node" --arg origin "$PREVIEW_URL" '{mcpServers: {playwright: {
             command: "sudo",
             args: ["-n", "-u", "pr-screenshots", "env", "-i", "-C", "/srv/pr-screenshots",
               "PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/home/pr-screenshots",
@@ -179,7 +183,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/shots"
-          sudo find /srv/pr-screenshots -maxdepth 1 -type f -name '*.png' -size -5M -exec cp -t "$RUNNER_TEMP/shots" {} +
+          sudo find /srv/pr-screenshots -maxdepth 1 -type f -name '*.png' -size -5242881c -exec cp -t "$RUNNER_TEMP/shots" {} +
           sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/shots"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.claude.outputs.structured_output != ''
@@ -205,8 +209,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        # An empty list uploads nothing.
-        continue-on-error: true
+        # An empty list uploads nothing; any other result must bring its files.
+        if: contains(needs.screenshots.outputs.result, '"file"')
         with:
           name: pr-screenshots
           path: ${{ runner.temp }}/shots
@@ -227,6 +231,7 @@ jobs:
           set -euo pipefail
           [[ $PR =~ ^[0-9]+$ ]] || { echo "Bad pull request number" >&2; exit 1; }
           [[ $HEAD_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "Bad commit" >&2; exit 1; }
+          [[ $PLAYWRIGHT_PUBLIC_BASE_URL =~ ^https://[^[:space:]]+$ ]] || { echo "PLAYWRIGHT_PUBLIC_BASE_URL must be an https URL" >&2; exit 1; }
           if [[ $(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '"\(.state) \(.head.sha)"') != "open $HEAD_SHA" ]]; then
             echo "The pull request closed or has a newer commit; skipping."
             exit 0
