@@ -1913,7 +1913,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   ? redactSecrets(ticketContext, runSecrets)
                   : undefined,
                 hasHistoricalContext: historicalContext.length > 0,
-                historyRetrievalEnabled: contextStrategy !== "current",
+                // A background helper is not offered the history tools, so it gets no guidance on them.
+                historyRetrievalEnabled:
+                  contextStrategy !== "current" &&
+                  tools.some((tool) => tool.name === "search_history"),
                 computerInstruction,
                 pageBrowserAllowed,
                 taskCatalogInstruction,

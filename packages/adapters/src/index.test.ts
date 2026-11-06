@@ -196,10 +196,8 @@ describe("builtin tools", () => {
       [
         "board_tickets",
         "cloud_agent_status",
-        "read_history",
         "recall_memory",
         "scratchpad_list",
-        "search_history",
         "skill_read",
         "task_catalog",
         "ticket_get",
@@ -219,6 +217,8 @@ describe("builtin tools", () => {
       "run_subagent",
       "ask_user",
       "message_user",
+      "search_history",
+      "read_history",
     ]) {
       expect(owner, name).toContain(name);
       expect(helper, name).not.toContain(name);

@@ -677,8 +677,13 @@ code-b
   if (helperResult) {
     return [{ assistant: `your helper finished: ${helperResult}`, complete: true }];
   }
-  // A peer's own reply can say it works in the background; only a person's request starts one.
-  if (lower.includes("in the background") && !peerMessage(prompt)) {
+  // A peer's own reply can say it works in the background, and a question only asks about it;
+  // only a person's request starts one.
+  if (
+    lower.includes("in the background") &&
+    !lower.trimEnd().endsWith("?") &&
+    !peerMessage(prompt)
+  ) {
     const task = prompt.replace(/\s*in the background/i, "").trim();
     return [
       {

@@ -71,8 +71,6 @@ export const BACKGROUND_HELPER_TOOL_NAMES: ReadonlySet<string> = new Set([
   "scratchpad_list",
   "board_tickets",
   "ticket_get",
-  "search_history",
-  "read_history",
   "cloud_agent_status",
 ]);
 
