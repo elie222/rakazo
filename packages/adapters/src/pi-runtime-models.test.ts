@@ -229,6 +229,17 @@ describe("reasoning efforts an endpoint refuses", () => {
     });
   });
 
+  it("sends no effort for off when a gateway refuses an effort without listing any", () => {
+    const levels = acceptedReasoningEfforts(
+      model({ off: "none", xhigh: "xhigh", max: "max" }),
+      'openai-compatible API error (400): {"message":"Unsupported reasoning effort","type":"invalid_request_error","param":"","code":null}',
+    );
+    expect(levels).toEqual({ off: null, xhigh: "xhigh", max: "max" });
+    expect(
+      acceptedReasoningEfforts(model({}), "400: Unsupported reasoning effort"),
+    ).toBeUndefined();
+  });
+
   it.each([
     '400: {"message":"Unexpected message role.","type":"invalid_request_error"}',
     '400: {"message":"reasoning_effort must be one of: turbo","type":"invalid_request_error"}',
