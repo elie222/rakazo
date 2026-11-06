@@ -1022,7 +1022,7 @@ msgstr ""
 msgid "Appearance"
 msgstr "מראה"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Appearance: {label}"
 msgstr ""
 
@@ -1307,7 +1307,7 @@ msgid "Bot style"
 msgstr ""
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Bot templates"
 msgstr "תבניות בוטים"
 
@@ -1932,8 +1932,8 @@ msgid "Connect API key"
 msgstr "חיבור מפתח API"
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Connect apps"
 msgstr "חיבור אפליקציות"
 
@@ -2859,7 +2859,7 @@ msgid "Daily check-ins on unfinished work"
 msgstr "מעקב יומי אחר עבודה שלא הושלמה"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Dark"
 msgstr "כהה"
 
@@ -4028,8 +4028,8 @@ msgstr ""
 msgid "key"
 msgstr "מפתח"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Keyboard shortcuts"
 msgstr "קיצורי מקלדת"
 
@@ -4083,7 +4083,7 @@ msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
 msgstr "מאפשר לבוטים לשמור ולשלוף עובדות לפי משמעות, לצד MEMORY.md."
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Light"
 msgstr "בהיר"
 
@@ -4676,6 +4676,7 @@ msgstr ""
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/create-bot-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "New bot"
 msgstr "בוט חדש"
 
@@ -4695,9 +4696,9 @@ msgstr ""
 msgid "New group"
 msgstr "קבוצה חדשה"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "New group chat"
 msgstr "צ'אט קבוצתי חדש"
 
@@ -4718,8 +4719,8 @@ msgstr "פריט עבודה פתוחה חדש"
 msgid "New password"
 msgstr "סיסמה חדשה"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "New private space"
 msgstr "מרחב פרטי חדש"
 
@@ -6290,7 +6291,7 @@ msgstr "הגדרות"
 msgid "Settings updated"
 msgstr "ההגדרות עודכנו"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Settings: {label}"
 msgstr ""
 
@@ -6462,8 +6463,8 @@ msgstr "מיומנות {position}"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/agent-import-plan.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Skills"
 msgstr "מיומנויות"
 
@@ -6764,7 +6765,7 @@ msgid "Switching…"
 msgstr "מחליף…"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "System"
 msgstr "מערכת"
 

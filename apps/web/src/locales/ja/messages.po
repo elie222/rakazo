@@ -1022,7 +1022,7 @@ msgstr ""
 msgid "Appearance"
 msgstr "外観"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Appearance: {label}"
 msgstr ""
 
@@ -1307,7 +1307,7 @@ msgid "Bot style"
 msgstr ""
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Bot templates"
 msgstr "ボットのテンプレート"
 
@@ -1932,8 +1932,8 @@ msgid "Connect API key"
 msgstr "APIキーを接続"
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Connect apps"
 msgstr "アプリを接続"
 
@@ -2859,7 +2859,7 @@ msgid "Daily check-ins on unfinished work"
 msgstr "未完了の作業を毎日確認"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Dark"
 msgstr "ダーク"
 
@@ -4028,8 +4028,8 @@ msgstr ""
 msgid "key"
 msgstr "キー"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Keyboard shortcuts"
 msgstr "キーボードショートカット"
 
@@ -4083,7 +4083,7 @@ msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
 msgstr "MEMORY.md に加えて、ボットが意味に基づいて事実を保存・想起できるようにします。"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Light"
 msgstr "ライト"
 
@@ -4676,6 +4676,7 @@ msgstr ""
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/create-bot-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "New bot"
 msgstr "新しいボット"
 
@@ -4695,9 +4696,9 @@ msgstr ""
 msgid "New group"
 msgstr "新しいグループ"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "New group chat"
 msgstr "新しいグループチャット"
 
@@ -4718,8 +4719,8 @@ msgstr "新しい未完了の作業"
 msgid "New password"
 msgstr "新しいパスワード"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "New private space"
 msgstr "新しいプライベートスペース"
 
@@ -6290,7 +6291,7 @@ msgstr "設定"
 msgid "Settings updated"
 msgstr "設定を更新しました"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Settings: {label}"
 msgstr ""
 
@@ -6462,8 +6463,8 @@ msgstr "スキル {position}"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/agent-import-plan.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Skills"
 msgstr "スキル"
 
@@ -6764,7 +6765,7 @@ msgid "Switching…"
 msgstr "切り替え中…"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "System"
 msgstr "システム"
 

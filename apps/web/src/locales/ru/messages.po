@@ -1022,7 +1022,7 @@ msgstr ""
 msgid "Appearance"
 msgstr "Внешний вид"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Appearance: {label}"
 msgstr ""
 
@@ -1307,7 +1307,7 @@ msgid "Bot style"
 msgstr ""
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Bot templates"
 msgstr "Шаблоны ботов"
 
@@ -1932,8 +1932,8 @@ msgid "Connect API key"
 msgstr "Подключить API-ключ"
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Connect apps"
 msgstr "Подключить приложения"
 
@@ -2859,7 +2859,7 @@ msgid "Daily check-ins on unfinished work"
 msgstr "Ежедневные напоминания о незавершённой работе"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Dark"
 msgstr "Тёмная"
 
@@ -4028,8 +4028,8 @@ msgstr ""
 msgid "key"
 msgstr "ключ"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Keyboard shortcuts"
 msgstr "Сочетания клавиш"
 
@@ -4083,7 +4083,7 @@ msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
 msgstr "Позволяет ботам сохранять и находить факты по смыслу в дополнение к MEMORY.md."
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Light"
 msgstr "Светлая"
 
@@ -4676,6 +4676,7 @@ msgstr ""
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/create-bot-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "New bot"
 msgstr "Новый бот"
 
@@ -4695,9 +4696,9 @@ msgstr ""
 msgid "New group"
 msgstr "Новая группа"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "New group chat"
 msgstr "Новый групповой чат"
 
@@ -4718,8 +4719,8 @@ msgstr "Новая задача"
 msgid "New password"
 msgstr "Новый пароль"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "New private space"
 msgstr "Новое личное пространство"
 
@@ -6290,7 +6291,7 @@ msgstr "Настройки"
 msgid "Settings updated"
 msgstr "Настройки обновлены"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Settings: {label}"
 msgstr ""
 
@@ -6462,8 +6463,8 @@ msgstr "Навык {position}"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/agent-import-plan.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Skills"
 msgstr "Навыки"
 
@@ -6764,7 +6765,7 @@ msgid "Switching…"
 msgstr "Переключение…"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "System"
 msgstr "Системная"
 
