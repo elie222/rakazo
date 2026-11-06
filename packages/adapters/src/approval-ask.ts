@@ -366,7 +366,7 @@ function pickScopeLabel(args: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-function truncate(value: string, maxLength: number): string {
+export function truncate(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
 }
 

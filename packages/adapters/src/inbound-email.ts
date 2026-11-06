@@ -1,0 +1,169 @@
+import { createHash } from "node:crypto";
+import type { Address } from "postal-mime";
+import { htmlToPlainText } from "./keyless-http-web.js";
+
+/** Largest raw message accepted, the size common mail relays deliver. */
+export const INBOUND_EMAIL_MAX_BYTES = 25 * 1024 * 1024;
+
+/** DKIM signatures checked per message; mail carrying more is never verified. */
+export const INBOUND_EMAIL_MAX_SIGNATURES = 5;
+
+/** Body text handed to the bot; longer mail is cut here. */
+export const INBOUND_EMAIL_TEXT_MAX_CHARS = 20_000;
+
+/** DNS TXT lookups for DKIM keys; tests pass a fixed one. */
+export type InboundEmailResolver = (
+  domain: string,
+  rrtype: string,
+) => Promise<string[][] | string[]>;
+
+export type InboundEmail = {
+  /**
+   * The same message always gets the same key: its verified DKIM signature, which a resent copy
+   * cannot change, else its Message-ID or a hash of the raw bytes.
+   */
+  key: string;
+  /** The single From mailbox, lowercased; null when the From field is missing or malformed. */
+  from: { address: string; name: string } | null;
+  /**
+   * A DKIM signature that passed, was made by the From address's own domain and covers the one
+   * From, To and Cc field, so that domain vouches for the From address and the recipients.
+   */
+  authenticated: boolean;
+  /** Not authenticated only because a DKIM key lookup failed for now; worth trying again later. */
+  temporaryFailure: boolean;
+  to: string[];
+  cc: string[];
+  subject: string;
+  date: string | null;
+  text: string;
+  /** Auto-replies, bulk and mailing-list mail, which nothing should act on (RFC 3834). */
+  automated: boolean;
+  attachments: Array<{ name: string; mimeType: string; bytes: Uint8Array }>;
+};
+
+/** Parse a raw RFC 5322 message and check its DKIM signatures. */
+export async function readInboundEmail(
+  raw: Uint8Array,
+  options: { resolver?: InboundEmailResolver } = {},
+): Promise<InboundEmail> {
+  // Loaded only on servers that receive email.
+  const [{ default: PostalMime }, { dkimVerify }] = await Promise.all([
+    import("postal-mime"),
+    import("mailauth"),
+  ]);
+  const buffer = Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength);
+  // Far below the parser's own defaults: real mail has a handful of parts, and anything past
+  // these limits is rejected as unreadable instead of costing a worker its time.
+  const email = await PostalMime.parse(buffer, {
+    attachmentEncoding: "arraybuffer",
+    maxPartCount: 200,
+    maxNestingDepth: 20,
+  });
+  // Each signature costs a DNS lookup; real mail carries one or two, so more is not verified.
+  const signatures = email.headerLines.filter((line) => line.key === "dkim-signature").length;
+  const dkim =
+    signatures <= INBOUND_EMAIL_MAX_SIGNATURES
+      ? await dkimVerify(buffer, options.resolver ? { resolver: options.resolver } : {})
+      : null;
+
+  const fieldCount = (name: string) => email.headerLines.filter((line) => line.key === name).length;
+  const values = (name: string) =>
+    email.headers
+      .filter((line) => line.key === name)
+      .map((line) => line.value.split(";")[0]?.trim().toLowerCase() ?? "");
+
+  const fromAddress =
+    dkim && dkim.fromFields === 1 && dkim.fromSyntax === "valid" && dkim.headerFrom.length === 1
+      ? (dkim.headerFrom[0]?.toLowerCase() ?? null)
+      : null;
+  const to = addresses(email.to);
+  const cc = addresses(email.cc);
+  // An extra To or Cc added above the signed one would be read but not verified.
+  const singleFields = fieldCount("to") <= 1 && fieldCount("cc") <= 1;
+  const fromDomain = fromAddress?.slice(fromAddress.lastIndexOf("@") + 1);
+  const signature =
+    fromAddress === null || !singleFields
+      ? undefined
+      : dkim?.results.find((result) => {
+          const status = result.status;
+          // Exactly the From domain: a subdomain (often run by a sending service) would align too.
+          if (status.result !== "pass" || result.signingDomain?.toLowerCase() !== fromDomain) {
+            return false;
+          }
+          // l= leaves trailing body bytes unsigned; anything could be appended there.
+          if ((status.underSized ?? 0) > 0 || result.signatureTimeValid === false) return false;
+          const signed = new Set(
+            (result.signingHeaders?.keys ?? "").split(":").map((key) => key.trim().toLowerCase()),
+          );
+          return (
+            signed.has("from") &&
+            (fieldCount("to") === 0 || signed.has("to")) &&
+            (fieldCount("cc") === 0 || signed.has("cc"))
+          );
+        });
+
+  // Every copy of a header counts, so an extra "Auto-Submitted: no" cannot hide an auto-reply.
+  const automated =
+    values("auto-submitted").some((value) => value !== "no") ||
+    values("precedence").some((value) => ["bulk", "junk", "list"].includes(value)) ||
+    fieldCount("list-id") > 0;
+
+  // Unauthenticated mail is dropped unread, so its body is never converted. A huge HTML part is
+  // cut first: the bot only ever sees the first INBOUND_EMAIL_TEXT_MAX_CHARS of its text.
+  const body = !signature
+    ? ""
+    : email.text?.trim() ||
+      (email.html ? htmlToPlainText(email.html.slice(0, INBOUND_EMAIL_TEXT_MAX_CHARS * 10)) : "");
+  const text =
+    body.length > INBOUND_EMAIL_TEXT_MAX_CHARS
+      ? `${body.slice(0, INBOUND_EMAIL_TEXT_MAX_CHARS)}\n[…]`
+      : body;
+  const fromName =
+    email.from && !email.from.group && email.from.address?.toLowerCase() === fromAddress
+      ? email.from.name
+      : "";
+
+  return {
+    key: signature?.id
+      ? `dkim:${signature.id}`
+      : email.messageId?.trim() ||
+        `sha256:${createHash("sha256").update(buffer).digest("base64url")}`,
+    from: fromAddress ? { address: fromAddress, name: fromName } : null,
+    authenticated: signature !== undefined,
+    // Only the From domain's own signature decides; another domain's slow DNS changes nothing.
+    temporaryFailure:
+      signature === undefined &&
+      fromDomain !== undefined &&
+      (dkim?.results ?? []).some(
+        (result) =>
+          result.status.result === "temperror" &&
+          result.signingDomain?.toLowerCase() === fromDomain,
+      ),
+    to,
+    cc,
+    subject: email.subject?.trim() ?? "",
+    // Date is not required to be signed, so cut it like any other unverified header.
+    date: email.date?.slice(0, 100) ?? null,
+    text,
+    automated,
+    attachments: email.attachments
+      // Inline parts are images an HTML body shows, such as signature logos.
+      .filter((attachment) => !attachment.related)
+      .map((attachment) => ({
+        name: attachment.filename?.trim() || "attachment",
+        mimeType: attachment.mimeType,
+        bytes:
+          typeof attachment.content === "string"
+            ? new TextEncoder().encode(attachment.content)
+            : new Uint8Array(attachment.content),
+      })),
+  };
+}
+
+function addresses(list: Address[] | undefined): string[] {
+  return (list ?? [])
+    .flatMap((entry) => (entry.group ? entry.group : [entry]))
+    .map((mailbox) => mailbox.address.trim().toLowerCase())
+    .filter(Boolean);
+}

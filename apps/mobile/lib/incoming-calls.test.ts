@@ -235,6 +235,64 @@ describe("mobile incoming calls", () => {
     );
     expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-roster", true);
   });
+  const pendingNativeAnswer = (expiresAt = block().expiresAt) =>
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      actions: [{ action: "answer", callId: "call-b", botId: orgBot.id, expiresAt }],
+    });
+  it("answers a pending native call the stream names when the roster load fails", async () => {
+    const answer = fake.rpc.getMockImplementation()!;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) => {
+      if (path === "spaces/list") throw new Error("offline");
+      return answer(path, ...rest);
+    });
+    pendingNativeAnswer();
+    stop = startIncomingCalls();
+    await tick();
+    fake.onEvent?.([{ ...orgBot, incomingCall: { ...block(), callId: "call-b" } }]);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-b"));
+    expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-b", true);
+  });
+  it("answers a pending native call the stream names without waiting for a slow roster", async () => {
+    const expiresAt = new Date(Date.now() + 3000).toISOString();
+    const answer = fake.rpc.getMockImplementation()!;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) => {
+      if (path === "spaces/list") await new Promise((resolve) => setTimeout(resolve, 4000));
+      return answer(path, ...rest);
+    });
+    pendingNativeAnswer(expiresAt);
+    stop = startIncomingCalls();
+    await tick();
+    fake.onEvent?.([{ ...orgBot, incomingCall: { ...block(), callId: "call-b", expiresAt } }]);
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-b"));
+    expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-b", true);
+    expect(fake.native.finishAnswer).not.toHaveBeenCalledWith("call-b", false);
+  });
+  it("fails one native answer whose caller cannot be found and still answers the next", async () => {
+    const answer = fake.rpc.getMockImplementation()!;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) => {
+      if (path === "spaces/list") throw new Error("offline");
+      return answer(path, ...rest);
+    });
+    const expiresAt = block().expiresAt;
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      ringing: [{ callId: "call-x", botId: "bot-unknown", expiresAt }],
+      actions: [
+        { action: "answer", callId: "call-x", botId: "bot-unknown", expiresAt },
+        { action: "answer", callId: "call-b", botId: orgBot.id, expiresAt },
+      ],
+    });
+    stop = startIncomingCalls();
+    await tick();
+    fake.onEvent?.([{ ...orgBot, incomingCall: { ...block(), callId: "call-b" } }]);
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-x", false);
+    expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-b"));
+    expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-b", true);
+  });
   it("answers a notification call from another organization once the stream reports it", async () => {
     fake.lastResponse = {
       actionIdentifier: "answer",

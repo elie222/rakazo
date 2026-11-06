@@ -444,6 +444,26 @@ it.each(["Allow in this space", "Allow for this chat"])(
   },
 );
 
+it("shows a question's detail as plain text above its options", async () => {
+  await render({
+    kind: "ask",
+    text: "Send this email to Ana?",
+    detail: "To: ana@example.test\nSubject: Demo\n\nThe draft body.",
+    detailFormat: "text",
+    status: "pending",
+    actions: [
+      { id: "choice-1", label: "Send it" },
+      { id: "choice-2", label: "Show me first" },
+    ],
+  });
+  const detail = container.querySelector('[data-testid="ask-detail"]')!;
+  expect(detail.textContent).toBe("To: ana@example.test\nSubject: Demo\n\nThe draft body.");
+  // Plain text sits on the card like the question, not in a code snippet box.
+  expect(detail.classList.contains("font-sans")).toBe(true);
+  expect(detail.classList.contains("bg-background")).toBe(false);
+  expect(button("ASend it")).toBeDefined();
+});
+
 it("gives onboarding choices the same lettered rows as questions", async () => {
   await act(async () =>
     root.render(

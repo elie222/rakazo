@@ -92,6 +92,7 @@ export * from "./home-object-store.js";
 export { HonchoMemoryProvider } from "./honcho-memory-provider.js";
 export * from "./host-aware-sandbox.js";
 export * from "./http-decisions.js";
+export * from "./inbound-email.js";
 export * from "./incus-sandbox.js";
 export * from "./infisical-secret-store.js";
 export * from "./installed-connectors.js";

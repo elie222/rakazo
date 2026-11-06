@@ -352,13 +352,22 @@ export async function leaveSpace(prisma: PrismaClient, input: SpaceRef): Promise
   return departSpace(prisma, { ...input, leaving: true });
 }
 
+/** A deactivated account was turned back on while it was leaving its invited Spaces. */
+class AccountReactivatedError extends Error {}
+
 /**
- * Before deleting an account: leave every Space it was invited into, so what it made there passes
- * to each Space's owner. Its own organizations go with the account, shared Spaces included.
+ * Before deleting or after deactivating an account: leave every Space it was invited into, so what
+ * it made there passes to each Space's owner. Spaces in its own organizations are left alone: they
+ * go with a deleted account and stay with a deactivated one. A deleted account also hands the
+ * Spaces it owns elsewhere to a teammate; a `deactivated` one keeps them, since it may come back,
+ * and stops leaving once it is active again.
  */
-export async function prepareAccountDeletion(
+export async function leaveInvitedSpaces(
   prisma: PrismaClient,
   userId: string,
+  /** Runs after each departure commits, so a later failure loses no earlier follow-up. */
+  onDeparture: (departure: SpaceDeparture & { spaceId: string }) => Promise<void>,
+  { deactivated = false }: { deactivated?: boolean } = {},
 ): Promise<Array<SpaceDeparture & { spaceId: string }>> {
   const owned = new Set(await personalOrganizationIds(prisma, userId));
   const memberships = await prisma.spaceMember.findMany({
@@ -370,16 +379,27 @@ export async function prepareAccountDeletion(
     // A Space in an organization that goes with the account goes with it.
     if (owned.has(membership.space.organizationId)) continue;
     const { spaceId } = membership;
-    // Under the Space's lock, so a member who is leaving meanwhile is never chosen.
-    if (isOwnerRole(membership.role) && !(await handOwnership(prisma, { spaceId, userId }))) {
-      continue;
+    if (isOwnerRole(membership.role)) {
+      if (deactivated) continue;
+      // Under the Space's lock, so a member who is leaving meanwhile is never chosen.
+      if (!(await handOwnership(prisma, { spaceId, userId }))) continue;
     }
-    // Someone who left or was removed meanwhile has already departed: nothing is left to do.
-    const departure = await departSpace(prisma, { spaceId, userId }).catch((error: unknown) => {
+    // Someone who left or was removed meanwhile has already departed: nothing is left to do. A
+    // deactivated account made owner meanwhile keeps the Space.
+    const departure = await departSpace(prisma, {
+      spaceId,
+      userId,
+      ...(deactivated ? { leaving: true, deactivated } : {}),
+    }).catch((error: unknown) => {
       if (error instanceof SpaceMemberNotFoundError) return null;
+      if (error instanceof SpaceOwnerCannotLeaveError) return null;
+      if (error instanceof AccountReactivatedError) return "reactivated" as const;
       throw error;
     });
-    if (departure) departures.push({ spaceId, ...departure });
+    if (departure === "reactivated") break;
+    if (!departure) continue;
+    departures.push({ spaceId, ...departure });
+    await onDeparture({ spaceId, ...departure });
   }
   return departures;
 }
@@ -422,15 +442,23 @@ async function handOwnership(prisma: PrismaClient, input: SpaceRef): Promise<boo
  */
 async function departSpace(
   prisma: PrismaClient,
-  input: SpaceRef & { removedBy?: string; leaving?: boolean },
+  input: SpaceRef & { removedBy?: string; leaving?: boolean; deactivated?: boolean },
 ): Promise<SpaceDeparture> {
-  const { spaceId, userId, removedBy, leaving } = input;
+  const { spaceId, userId, removedBy, leaving, deactivated } = input;
   // Bots, routines and credentials are tenant rows; this moves them between people.
   return runAsSystem("move a departing member's Space content to its owner", () =>
     withTransactionRetry(() =>
       prisma.$transaction(
         async (tx) => {
           await lockSpaceDeletion(tx, spaceId);
+          if (deactivated) {
+            // Held until commit, so a reactivation lands either before this (and it stays) or
+            // after it (and the departure stands).
+            const [account] = await tx.$queryRaw<Array<{ deactivatedAt: Date | null }>>`
+              SELECT "deactivatedAt" FROM "user" WHERE id = ${userId} FOR SHARE
+            `;
+            if (!account?.deactivatedAt) throw new AccountReactivatedError();
+          }
           const departing = await tx.spaceMember.findUnique({
             where: { spaceId_userId: { spaceId, userId } },
             select: { id: true, organizationId: true, role: true },
