@@ -37,6 +37,8 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "secret_request",
   "forget_secret",
   "forget_memory",
+  // Permanent, and only for mail the bot received; its owner may still want it.
+  "delete_email",
   "cloud_agent_launch",
   "cloud_agent_reply",
   "cloud_agent_cancel",
@@ -227,6 +229,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "ask_user",
   "connect_app",
   "attach_file",
+  "delete_email",
   "end_call",
   "feedback",
   "generate_secret",

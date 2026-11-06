@@ -269,7 +269,6 @@ async function saveToInbox(
         to: email.to.slice(0, LIST_STORED_MAX),
         cc: email.cc.slice(0, LIST_STORED_MAX),
         subject: email.subject.slice(0, HEADER_MAX_CHARS),
-        sentAt: email.date,
         text: email.text,
         attachments: files,
       },

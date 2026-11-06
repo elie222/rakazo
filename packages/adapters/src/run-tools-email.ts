@@ -10,6 +10,8 @@ export const READ_EMAIL_MAX_WAIT_SECONDS = 120;
 const TEXT_PAGE_CHARS = 8_000;
 const PREVIEW_CHARS = 160;
 const POLL_MS = 3_000;
+/** Emails one delete_email call removes. */
+const DELETE_EMAIL_MAX_IDS = 50;
 
 const ReadEmailSchema = z
   .object({
@@ -19,6 +21,12 @@ const ReadEmailSchema = z
     waitSeconds: z.number().int().min(0).max(READ_EMAIL_MAX_WAIT_SECONDS).optional(),
     textOffset: z.number().int().min(0).optional(),
     limit: z.number().int().min(1).max(20).optional(),
+  })
+  .strict();
+
+const DeleteEmailSchema = z
+  .object({
+    ids: z.array(z.string().trim().min(1).max(100)).min(1).max(DELETE_EMAIL_MAX_IDS),
   })
   .strict();
 
@@ -70,7 +78,6 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
         to: email.to,
         ...(email.cc.length ? { cc: email.cc } : {}),
         subject: email.subject,
-        ...(email.sentAt ? { date: email.sentAt } : {}),
         receivedAt: email.receivedAt.toISOString(),
         text,
         ...(offset + TEXT_PAGE_CHARS < email.text.length
@@ -148,5 +155,23 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
   });
 }
 
+async function deleteEmail(ctx: RunContext, call: ToolCall) {
+  const parsed = DeleteEmailSchema.safeParse(call.args);
+  if (!parsed.success) {
+    return call.finish({
+      error: parsed.error.issues
+        .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
+        .join(" "),
+    });
+  }
+  const { deps, bot, run } = ctx;
+  if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });
+  // Only mail it received.
+  const { count } = await deps.prisma.botEmailMessage.deleteMany({
+    where: { id: { in: [...new Set(parsed.data.ids)] }, botId: bot.id, sent: false },
+  });
+  return call.finish({ deleted: count });
+}
+
 /** The bot's own inbox: mail anyone sent to its address. */
-export const emailTools: ToolHandlers = { read_email: readEmail };
+export const emailTools: ToolHandlers = { read_email: readEmail, delete_email: deleteEmail };

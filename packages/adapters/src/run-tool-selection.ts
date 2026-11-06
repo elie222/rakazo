@@ -41,6 +41,9 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "purchase_status",
 ]);
 
+/** The bot's own inbox, offered only in its owner's runs outside groups and channels. */
+const EMAIL_INBOX_TOOL_NAMES = new Set(["read_email", "delete_email"]);
+
 /** Offered only to a user who connected a wallet. */
 const PURCHASE_TOOL_NAMES = new Set(["request_purchase", "purchase_status", "paid_request"]);
 
@@ -130,7 +133,7 @@ export function selectBuiltinToolsForRun(options: {
           "generate_video",
         ].includes(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
-      (options.emailInbox || tool.name !== "read_email") &&
+      (options.emailInbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
       ((options.userComputer && options.userComputerScreen) ||
         !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&

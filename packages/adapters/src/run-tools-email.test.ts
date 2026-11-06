@@ -1,5 +1,10 @@
-import { toolResultTaintsRun, unattendedTriggerToolRequiresApproval } from "@rakazo/core";
+import {
+  toolRequiresApproval,
+  toolResultTaintsRun,
+  unattendedTriggerToolRequiresApproval,
+} from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
+import { botEmailInstruction } from "./run-instructions.js";
 import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 import { emailTools } from "./run-tools-email.js";
 
@@ -9,10 +14,10 @@ type Row = {
   fromAddress: string;
   fromName: string;
   verified: boolean;
+  sent: boolean;
   to: string[];
   cc: string[];
   subject: string;
-  sentAt: string | null;
   text: string;
   attachments: unknown[];
   receivedAt: Date;
@@ -25,10 +30,10 @@ function row(overrides: Partial<Row>): Row {
     fromAddress: "noreply@shop.test",
     fromName: "Shop",
     verified: false,
+    sent: false,
     to: ["scout@bots.test"],
     cc: [],
     subject: "Your code",
-    sentAt: null,
     text: "Your sign-in code is 123456.",
     attachments: [],
     receivedAt: new Date("2026-11-05T10:00:00.000Z"),
@@ -67,6 +72,20 @@ function fakeRun(rows: Row[], options: { runUserId?: string; arriving?: Row } = 
               .filter((email) => matches(email, where))
               .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime());
           },
+          deleteMany: async ({
+            where,
+          }: {
+            where: { id: { in: string[] }; botId: string; sent: boolean };
+          }) => {
+            const gone = inbox.filter(
+              (email) =>
+                where.id.in.includes(email.id) &&
+                email.botId === where.botId &&
+                email.sent === where.sent,
+            );
+            for (const email of gone) inbox.splice(inbox.indexOf(email), 1);
+            return { count: gone.length };
+          },
         },
       },
     },
@@ -75,17 +94,19 @@ function fakeRun(rows: Row[], options: { runUserId?: string; arriving?: Row } = 
     computer: { copyEarlierFiles },
     context: { signal: new AbortController().signal },
   };
-  const call = (args: Record<string, unknown>) =>
-    emailTools.read_email!(
+  const invoke = (name: "read_email" | "delete_email", args: Record<string, unknown>) =>
+    emailTools[name]!(
       ctx as never,
       {
-        name: "read_email",
+        name,
         args,
         executionId: "call-1",
         finish: async (result: unknown) => result,
       } as never,
     ) as Promise<Record<string, unknown>>;
-  return { call, copyEarlierFiles };
+  const call = (args: Record<string, unknown>) => invoke("read_email", args);
+  const remove = (args: Record<string, unknown>) => invoke("delete_email", args);
+  return { call, remove, inbox, copyEarlierFiles };
 }
 
 describe("read_email", () => {
@@ -199,5 +220,68 @@ describe("read_email", () => {
     expect(unattendedTriggerToolRequiresApproval("webhook", "read_email", false)).toBe(false);
     // What it returns is someone else's mail, so the run counts as having read outside content.
     expect(toolResultTaintsRun("read_email")).toBe(true);
+  });
+});
+
+describe("delete_email", () => {
+  it("deletes only mail this bot received", async () => {
+    const { remove, inbox } = fakeRun([
+      row({ id: "spam" }),
+      row({ id: "kept" }),
+      row({ id: "theirs", botId: "bot-2" }),
+      row({ id: "outgoing", sent: true }),
+    ]);
+
+    expect(await remove({ ids: ["spam", "spam", "theirs", "outgoing", "missing"] })).toEqual({
+      deleted: 1,
+    });
+    expect(inbox.map((email) => email.id)).toEqual(["kept", "theirs", "outgoing"]);
+  });
+
+  it("works only in its owner's runs, for a bounded list of ids", async () => {
+    const visitor = fakeRun([row({})], { runUserId: "visitor-1" });
+    const owner = fakeRun([row({})]);
+
+    expect(await visitor.remove({ ids: ["email-1"] })).toEqual({
+      error: "Only the bot's owner can do that.",
+    });
+    expect(visitor.inbox).toHaveLength(1);
+    expect(await owner.remove({ ids: [] })).toHaveProperty("error");
+    expect(
+      await owner.remove({ ids: Array.from({ length: 51 }, (_, index) => `e${index}`) }),
+    ).toHaveProperty("error");
+  });
+
+  it("is offered with the inbox and follows the owner's approval settings", () => {
+    const names = (emailInbox: boolean) =>
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger: "user",
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+        emailInbox,
+      }).map((tool) => tool.name);
+
+    expect(names(true)).toContain("delete_email");
+    expect(names(false)).not.toContain("delete_email");
+    expect(toolRequiresApproval("delete_email", false)).toBe(true);
+    expect(unattendedTriggerToolRequiresApproval("webhook", "delete_email", false)).toBe(true);
+    expect(toolResultTaintsRun("delete_email")).toBe(false);
+  });
+});
+
+describe("botEmailInstruction", () => {
+  it("names only the inbox tools the run has", () => {
+    const both = botEmailInstruction("scout@bots.test", { read: true, delete: true });
+    const readOnly = botEmailInstruction("scout@bots.test", { read: true, delete: false });
+
+    expect(both).toContain("read_email");
+    expect(both).toContain("delete_email");
+    expect(readOnly).toContain("read_email");
+    expect(readOnly).not.toContain("delete_email");
+    expect(botEmailInstruction("scout@bots.test", { read: false, delete: false })).toBe(
+      "Your email address is scout@bots.test.",
+    );
   });
 });

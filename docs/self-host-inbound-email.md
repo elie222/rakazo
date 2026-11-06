@@ -121,7 +121,9 @@ esac
 
 ## The inbox
 
-Each message is saved once, however often the relay delivers it, until its bot is deleted. A bot
+Each message is saved once, however often the relay delivers it, until the bot deletes it or the
+bot itself is deleted. Deleting mail follows the owner's [approval](./approvals.md) settings, and
+files kept from that mail stay in the bot's files. A bot
 saves at most 500 messages a day that start nothing; past that, such mail is dropped until the
 day's count falls, while mail that starts the bot or a routine is always saved. The bot
 reads its inbox only in its owner's own chat, routines and mail, never in a group chat or a shared
