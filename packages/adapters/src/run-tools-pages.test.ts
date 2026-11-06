@@ -51,6 +51,7 @@ const call = (args: Record<string, unknown>, approval: Record<string, unknown> =
 const request = (args: Record<string, unknown>, nextApprovedTool?: string) =>
   ({ args, nextApprovedTool, heldForApproval: false, fleetSummary: undefined }) as {
     args: Record<string, unknown>;
+    effectRequest?: unknown;
     nextApprovedTool: string | undefined;
     heldForApproval: boolean;
     fleetSummary: { title: string; lines: string[] } | undefined;
@@ -186,13 +187,61 @@ describe("saving a page shared by link", () => {
   const edit = { find: "Hi", replace: "Hello" };
 
   it("holds a change to a shared page for approval, showing what changes", async () => {
-    const held = request({ pageId: "page-1", edits: [edit] });
+    const held = request({ pageId: "page-1", edits: [edit], approvedVersion: 9 });
     await holdSharedPageSave(context({}, { currentVersion: 1, visibility: "link" }), held as never);
     expect(held.heldForApproval).toBe(true);
     expect(held.fleetSummary).toEqual({
       title: "Update shared page “Plan”?",
-      lines: ["- Hi", "+ Hello"],
+      lines: ["-     <Text>Hi</Text>", "+     <Text>Hello</Text>"],
     });
+    // The approval pins the version the card was shown against, never one the model sent.
+    expect(held.args).toMatchObject({ approvedVersion: 1 });
+    expect(held.effectRequest).toBe(held.args);
+
+    // A whole new source shows only the lines that change too.
+    const whole = request({ pageId: "page-1", source: source("Plan").replace("Hi", "Bye") });
+    await holdSharedPageSave(
+      context({}, { currentVersion: 1, visibility: "link" }),
+      whole as never,
+    );
+    expect(whole.fleetSummary?.lines).toEqual(["-     <Text>Hi</Text>", "+     <Text>Bye</Text>"]);
+  });
+
+  it("lets a save that would fail anyway fail without a card", async () => {
+    const shared = { currentVersion: 1, visibility: "link" as const };
+    for (const args of [
+      { pageId: "page-1", edits: [{ find: "Hi" }] },
+      { pageId: "page-1", edits: [{ find: "Missing", replace: "x" }] },
+      { pageId: "page-1", source: "not a page" },
+    ]) {
+      const held = request(args);
+      expect(await holdSharedPageSave(context({}, shared), held as never)).toBeUndefined();
+      expect(held.heldForApproval).toBe(false);
+    }
+  });
+
+  it("refuses a change too long to show on the card", async () => {
+    const long = Array.from({ length: 400 }, (_, index) => `<Text>Row ${index}</Text>`).join("\n");
+    const held = request({ pageId: "page-1", edits: [{ find: "<Text>Hi</Text>", replace: long }] });
+    const refused = await holdSharedPageSave(
+      context({}, { currentVersion: 1, visibility: "link" }),
+      held as never,
+    );
+    expect(refused?.error).toMatch(/smaller edits/);
+    expect(held.heldForApproval).toBe(false);
+  });
+
+  it("refuses an approved change once the page moved past the version it was shown against", async () => {
+    const tx = { page: { updateMany: vi.fn() }, pageVersion: { create: vi.fn() } };
+    const result = (await pageTools.save_page!(
+      context(tx, { currentVersion: 2, visibility: "link" }),
+      call(
+        { pageId: "page-1", edits: [edit], approvedVersion: 1 },
+        { nextApprovedTool: "save_page" },
+      ),
+    )) as Record<string, unknown>;
+    expect(result).toMatchObject({ unchanged: true, error: expect.stringMatching(/changed/) });
+    expect(tx.page.updateMany).not.toHaveBeenCalled();
   });
 
   it("does not hold a private page, a read, a new page, or any save under Never ask", async () => {

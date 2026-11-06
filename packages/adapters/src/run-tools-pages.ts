@@ -3,6 +3,7 @@ import { PAGE_TITLE_MAX_LENGTH, PageTitleSchema } from "@rakazo/contracts";
 import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
 import { isUniqueViolation } from "@rakazo/db";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
+import { MAX_APPROVAL_DETAIL_LENGTH } from "./approval-ask.js";
 import type { RunContext } from "./run-context.js";
 import { neverAsks } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
@@ -69,39 +70,88 @@ function editsGiven(args: Record<string, unknown>): boolean {
   return Array.isArray(args.edits) ? args.edits.length > 0 : argumentGiven(args.edits);
 }
 
+/** The page a save would store: the given source, or the current source with the edits applied. */
+function proposedSource(
+  current: string,
+  args: Record<string, unknown>,
+): { ok: true; source: string } | { ok: false; error: string } {
+  if (!editsGiven(args))
+    return { ok: true, source: argumentGiven(args.source) ? String(args.source) : current };
+  const edits = parseEdits(args.edits);
+  return typeof edits === "string" ? { ok: false, error: edits } : applyPageEdits(current, edits);
+}
+
+/** The lines that change, with the lines both versions share at the start and end left out. */
+function changedLines(before: string, after: string): string[] {
+  const old = before.split("\n");
+  const next = after.split("\n");
+  let start = 0;
+  while (start < old.length && start < next.length && old[start] === next[start]) start++;
+  let end = 0;
+  while (
+    end < old.length - start &&
+    end < next.length - start &&
+    old[old.length - 1 - end] === next[next.length - 1 - end]
+  )
+    end++;
+  return [
+    ...old.slice(start, old.length - end).map((line) => `- ${line}`),
+    ...next.slice(start, next.length - end).map((line) => `+ ${line}`),
+  ];
+}
+
 /**
  * Anyone with a shared page's link sees each save at once, so a save to one is held for approval,
- * except under Never ask. An approved replay stays held so it claims the approval it was given.
+ * except under Never ask. The card shows every line that changes, and the approval holds the
+ * version it was shown against. A save that would fail anyway is not held: it fails as it would.
+ * An approved replay stays held so it claims the approval it was given.
  */
-export async function holdSharedPageSave(ctx: RunContext, request: ToolRequest): Promise<void> {
-  const { args } = request;
-  if (args.help === true || !argumentGiven(args.pageId)) return;
+export async function holdSharedPageSave(
+  ctx: RunContext,
+  request: ToolRequest,
+): Promise<{ error: string } | undefined> {
   if (request.nextApprovedTool === "save_page") {
     request.heldForApproval = true;
-    return;
+    return undefined;
   }
-  const hasSource = argumentGiven(args.source);
-  const hasEdits = editsGiven(args);
+  // Only a card the user approved pins a version.
+  const { approvedVersion: _ignored, ...args } = request.args;
+  request.args = args;
+  request.effectRequest = args;
+  if (args.help === true || !argumentGiven(args.pageId)) return undefined;
   const hasTitle = argumentGiven(args.title);
-  if (!hasSource && !hasEdits && !hasTitle) return;
-  if (await neverAsks(ctx)) return;
+  if (!argumentGiven(args.source) && !editsGiven(args) && !hasTitle) return undefined;
+  if (argumentGiven(args.source) && editsGiven(args)) return undefined;
+  if (await neverAsks(ctx)) return undefined;
   const page = await ctx.deps.prisma.page.findFirst({
     where: reachablePage(ctx, String(args.pageId)),
-    select: { title: true, visibility: true },
+    select: {
+      title: true,
+      visibility: true,
+      currentVersion: true,
+      versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
+    },
   });
-  if (page?.visibility !== "link") return;
-  const edits = hasEdits ? parseEdits(args.edits) : [];
+  if (page?.visibility !== "link") return undefined;
+  if (hasTitle && !PageTitleSchema.safeParse(args.title).success) return undefined;
+  const current = page.versions[0]?.source ?? "";
+  const proposed = proposedSource(current, args);
+  if (!proposed.ok || !checkPageSource(proposed.source).ok) return undefined;
   const lines = [
     ...(hasTitle ? [`Title: ${String(args.title)}`] : []),
-    ...(hasSource
-      ? [String(args.source)]
-      : typeof edits === "string"
-        ? []
-        : edits.flatMap((edit) => [`- ${edit.find}`, `+ ${edit.replace}`])),
+    ...changedLines(current, proposed.source),
   ];
+  if (lines.join("\n").length > MAX_APPROVAL_DETAIL_LENGTH)
+    return {
+      error:
+        "This page is shared by link, and this change is too long to show the user for approval. Save it as several smaller edits.",
+    };
   const title = page.title.replace(new RegExp(CARD_TITLE_ESCAPED_CHARACTERS, "g"), "\\$&");
+  request.args = { ...args, approvedVersion: page.currentVersion };
+  request.effectRequest = request.args;
   request.heldForApproval = true;
   request.fleetSummary = { title: `Update shared page “${title}”?`, lines };
+  return undefined;
 }
 
 async function savePage(ctx: RunContext, call: ToolCall) {
@@ -150,14 +200,12 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   if (!page && !hasSource) return { error: "A new page needs source." };
   if (!page && !title) return { error: "A new page needs a title." };
 
-  let source = hasSource ? String(args.source) : current;
-  if (hasEdits) {
-    const edits = parseEdits(args.edits);
-    if (typeof edits === "string") return { error: edits, unchanged: true };
-    const applied = applyPageEdits(current, edits);
-    if (!applied.ok) return { error: applied.error, unchanged: true };
-    source = applied.source;
-  }
+  // An approved change applies only to the version the user saw it against.
+  if (page && args.approvedVersion !== undefined && args.approvedVersion !== page.currentVersion)
+    return { error: "The page changed while saving; read it again and retry.", unchanged: true };
+  const proposed = proposedSource(current, args);
+  if (!proposed.ok) return { error: proposed.error, unchanged: true };
+  const { source } = proposed;
   const check = checkPageSource(source);
   if (!check.ok) {
     return { error: "The page has problems; nothing was saved.", problems: check.errors };

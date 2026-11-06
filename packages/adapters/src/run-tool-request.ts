@@ -354,7 +354,11 @@ export async function prepareToolRequest(
           "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
       };
   }
-  if (name === "save_page") await holdSharedPageSave(ctx, request);
+  if (name === "save_page") {
+    const refused = await holdSharedPageSave(ctx, request);
+    if (refused) return refused;
+    args = request.args;
+  }
   if (name === "update_bot" && !argumentGiven(args.bot_id)) {
     const refused = await prepareOwnBotUpdate(ctx, request);
     if (refused) return refused;
