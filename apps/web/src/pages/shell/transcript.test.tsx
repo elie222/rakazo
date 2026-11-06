@@ -118,6 +118,7 @@ function baseProps(messages: readonly ThreadMessage[]): ComponentProps<typeof Tr
     onAddRoutine: vi.fn(),
     voiceReady: false,
     speakingMessageId: null,
+    callHoldsSpeaker: false,
     onSpeak: vi.fn(),
     onOpenComputer: vi.fn(),
     rpc,
