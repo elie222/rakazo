@@ -556,15 +556,14 @@ async function handleTranscript(raw: string): Promise<void> {
     hangUpTimer = setTimeout(endCall, CALL_FAREWELL_TIMEOUT_MS);
   }
   let releasePendingSend: (() => void) | undefined;
-  // An answer resumes the question's run, whose reply can reach the feed before the request
-  // returns, so expect that run from the start.
-  // A follow-up may be answered by a continuation run, so any reply in the call counts.
-  const runBeforeAnswer = callRunId;
+  // A reply can reach the feed before the request returns, so set the expected run first: an
+  // answer resumes the question's run, and a follow-up may be answered by a continuation run,
+  // so any reply in the call counts. A failed request restores the previous expectation.
+  const previousCallRunId = callRunId;
   if (next.kind === "answer") callRunId = next.runId;
   else if (next.kind === "follow_up") callRunId = null;
   try {
     const clientNonce = callClientNonce(turnCallId);
-    // A follow-up may be answered by a continuation run, so any reply in the call counts.
     const sendRequest =
       next.kind === "answer"
         ? deps
@@ -585,7 +584,7 @@ async function handleTranscript(raw: string): Promise<void> {
     }
   } catch (error) {
     if (state?.botId !== botId || callId !== turnCallId) return;
-    if (next.kind === "answer" || next.kind === "follow_up") callRunId = runBeforeAnswer;
+    if (next.kind === "answer" || next.kind === "follow_up") callRunId = previousCallRunId;
     if (error instanceof AiConsentBlocked) {
       // Bot already closed server-side: do not clear its hang-up into a muted stuck call.
       if (botEndedCall) {
