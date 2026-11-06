@@ -469,8 +469,12 @@ export function accountRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       unregisterPush: authed.notifications.unregisterPush.handler(async ({ context }) => {
-        if (context.sessionId)
+        if (context.sessionId) {
+          // Only the calling session's registration: another device of this account,
+          // which registered from its own session, keeps its notifications.
           await deps.pushTokens.endSession(context.actor.userId, context.sessionId);
+          return { ok: true as const };
+        }
         await deps.pushTokens.remove(context.actor.userId);
         return { ok: true as const };
       }),

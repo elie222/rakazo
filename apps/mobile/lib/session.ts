@@ -169,6 +169,17 @@ export function currentSessionGeneration() {
   return sessionGeneration;
 }
 
+/** Token saves still running; a read during one sees no session until its token lands. */
+let sessionSaves = 0;
+export function sessionSaveInProgress() {
+  return sessionSaves > 0;
+}
+
+/** True while the active token is only in memory after a failed save; a restart loses it. */
+export function sessionOnlyInMemory() {
+  return sessionFallback !== undefined;
+}
+
 export async function loadSessionToken() {
   const snapshot = await snapshotSessionToken();
   return snapshot.ok ? snapshot.value : "";
@@ -179,11 +190,16 @@ export async function saveSessionToken(token: string) {
   publishSessionGeneration(false);
   sessionInvalidated = true;
   sessionFallback = undefined;
-  const clearingScope = invalidateSessionCaches();
-  // Marked before the token lands, so an account deletion that clears it afterwards also clears the mark.
-  await rememberSignedIn();
-  await enqueueScopeWrite(() => SecureStore.setItemAsync(SESSION_KEY, token));
-  await clearingScope;
+  sessionSaves += 1;
+  try {
+    const clearingScope = invalidateSessionCaches();
+    // Marked before the token lands, so an account deletion that clears it afterwards also clears the mark.
+    await rememberSignedIn();
+    await enqueueScopeWrite(() => SecureStore.setItemAsync(SESSION_KEY, token));
+    await clearingScope;
+  } finally {
+    sessionSaves -= 1;
+  }
   if (generation !== sessionGeneration) return;
   sessionInvalidated = false;
   sessionFallback = undefined;
@@ -231,27 +247,32 @@ async function clearStoredSessionToken(generation: number): Promise<boolean> {
   });
 }
 
-/** Restores the current-server session in memory even when persistence is unavailable. */
-export async function restoreSessionToken(token: string) {
+/**
+ * Restores the current-server session in memory even when persistence is unavailable. False when
+ * saving the token failed and only memory holds it.
+ */
+export async function restoreSessionToken(token: string): Promise<boolean> {
   const generation = ++sessionGeneration;
   publishSessionGeneration(false);
   const clearingScope = invalidateSessionCaches();
   if (!token) {
     await clearingScope;
-    if (generation !== sessionGeneration) return;
+    if (generation !== sessionGeneration) return true;
     sessionInvalidated = false;
     sessionFallback = undefined;
     if (generation === sessionGeneration) publishSessionGeneration();
-    return;
+    return true;
   }
   try {
     await saveSessionToken(token);
+    return true;
   } catch {
     if (sessionGeneration === generation + 1) {
       sessionInvalidated = false;
       sessionFallback = token;
       publishSessionGeneration();
     }
+    return false;
   }
 }
 
@@ -301,6 +322,7 @@ export async function rotateSessionTokenIfCurrent(
   sessionFallback = undefined;
   unsavedRotation = undefined;
   const clearingScope = invalidateSessionCaches(true);
+  sessionSaves += 1;
   try {
     await rotateArtifactCacheSession(previous, token);
     await saveRotatedToken(rotation, token);
@@ -312,6 +334,8 @@ export async function rotateSessionTokenIfCurrent(
       publishSessionGeneration();
     }
     throw error;
+  } finally {
+    sessionSaves -= 1;
   }
   await clearingScope;
   if (rotation === sessionGeneration) {
@@ -388,6 +412,20 @@ export async function snapshotSessionToken(): Promise<{ ok: true; value: string 
       ok: true,
       value: generation === sessionGeneration && !sessionInvalidated ? value : "",
     };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * The stored token, even one this launch stopped sending after a failed save or wipe: a restart
+ * would send it again, so discarding it must revoke it.
+ */
+export async function snapshotStoredSessionToken(): Promise<
+  { ok: true; value: string } | { ok: false }
+> {
+  try {
+    return { ok: true, value: (await SecureStore.getItemAsync(SESSION_KEY)) ?? "" };
   } catch {
     return { ok: false };
   }

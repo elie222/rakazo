@@ -869,6 +869,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Could not clear the local session": "No se pudo borrar la sesión local",
   "Could not clear the previous server session":
     "No se pudo borrar la sesión del servidor anterior",
+  "Could not save the previous server session":
+    "No se pudo guardar la sesión del servidor anterior",
   "Could not save the server URL": "No se pudo guardar la URL del servidor",
   "Could not send reset email": "No se pudo enviar el correo de restablecimiento",
   "The server changed while starting the request": "El servidor cambió al iniciar la solicitud",

@@ -589,6 +589,33 @@ describe("account preferences", () => {
       });
     },
   );
+
+  it("ends only the calling session's push registration, keeping another session's", async () => {
+    const { deps, actor } = preferencesDeps("robot");
+    const calls: string[] = [];
+    deps.pushTokens = {
+      load: vi.fn(async () => undefined),
+      save: vi.fn(async () => undefined),
+      importLegacy: vi.fn(async () => false),
+      endSession: vi.fn(async (userId: string, sessionId: string) => {
+        calls.push(`endSession ${userId} ${sessionId}`);
+      }),
+      remove: vi.fn(async (userId: string) => {
+        calls.push(`remove ${userId}`);
+      }),
+    };
+    // A tablet of the same account holds the registration; the phone's session signs out.
+    const phone = createRouterClient(createRouter(deps), {
+      context: { actor, sessionId: "session-phone" } as never,
+    });
+    await expect(phone.notifications.unregisterPush()).resolves.toEqual({ ok: true });
+    expect(calls).toEqual([`endSession ${actor.userId} session-phone`]);
+
+    // Without a session to end, the account-wide registration is still removed.
+    const sessionless = createRouterClient(createRouter(deps), { context: { actor } as never });
+    await expect(sessionless.notifications.unregisterPush()).resolves.toEqual({ ok: true });
+    expect(calls).toEqual([`endSession ${actor.userId} session-phone`, `remove ${actor.userId}`]);
+  });
 });
 
 describe("billing", () => {
