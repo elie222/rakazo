@@ -27,7 +27,14 @@ export function appendComposerDraftText(threadKey: string, text: string): void {
   const saved = readComposerDraft(threadKey);
   const next = saved ? `${saved} ${text}` : text;
   const pending = pendingSubmissions.get(threadKey);
-  const inFlight = pending && savedDraftOf(pending) === saved ? pending : null;
+  // Only a draft still holding the in-flight text and its mention bindings belongs to that
+  // send; another tab can rebind the same text to another mention.
+  const inFlight =
+    pending &&
+    savedDraftOf(pending) === saved &&
+    readBindingRecord(threadKey) === pending.bindingRecord
+      ? pending
+      : null;
   writeComposerDraft(threadKey, next, undefined, readComposerDraftBindings(threadKey));
   if (inFlight) {
     inFlight.appended = inFlight.appended ? `${inFlight.appended} ${text}` : text;
