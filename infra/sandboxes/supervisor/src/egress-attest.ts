@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type Docker from "dockerode";
@@ -29,22 +30,32 @@ import { EgressNotEnforced } from "./egress-probe.js";
 
 export const BRIDGE_PREFIX = "rakazo-c";
 
-// Must match blocked_destinations_v4/v6 in infra/compose/restrict-computer-egress.sh;
-// egress-attest.test.ts asserts the script's --print output against these lists.
-export const REQUIRED_V4_DROPS = [
-  "0.0.0.0/8",
-  "10.0.0.0/8",
-  "100.64.0.0/10",
-  "127.0.0.0/8",
-  "169.254.0.0/16",
-  "172.16.0.0/12",
-  "192.0.0.0/24",
-  "192.168.0.0/16",
-  "198.18.0.0/15",
-  "224.0.0.0/4",
-  "240.0.0.0/4",
-];
-export const REQUIRED_V6_DROPS = ["::1/128", "fc00::/7", "fe80::/10", "ff00::/8"];
+// The installer is the single source of truth for the blocked destinations:
+// its blocked_destinations_v4/v6 heredocs are parsed here instead of being
+// copied into TypeScript, so the two sides cannot drift. egress-attest.test.ts
+// still asserts the script's --print output against the parsed lists, which
+// guards the parser against a silent format change.
+function installerDrops(family: "v4" | "v6"): string[] {
+  const script = readFileSync(
+    path.resolve(import.meta.dirname, "../../../../infra/compose/restrict-computer-egress.sh"),
+    "utf8",
+  );
+  const match = new RegExp(
+    `blocked_destinations_${family}\\(\\) \\{\\s*cat <<'EOF'\\n([\\s\\S]*?)\\nEOF`,
+  ).exec(script);
+  const block = match?.[1];
+  if (!block) {
+    throw new Error(`cannot parse blocked_destinations_${family} from restrict-computer-egress.sh`);
+  }
+  const drops = block.split("\n").map((line) => line.trim());
+  if (drops.length === 0 || drops.some((cidr) => !/^[0-9a-fA-F:.]+\/\d+$/.test(cidr))) {
+    throw new Error(`cannot parse blocked_destinations_${family} from restrict-computer-egress.sh`);
+  }
+  return drops;
+}
+
+export const REQUIRED_V4_DROPS = installerDrops("v4");
+export const REQUIRED_V6_DROPS = installerDrops("v6");
 
 const ATTEST_DEADLINE_MS = 30_000;
 
@@ -357,32 +368,37 @@ export async function attestRestrictedEgress(docker: Docker, image: string) {
     // docker-modem streams the response only when `follow` is set; without it the
     // callback receives the whole buffered payload instead. TTY containers emit
     // raw logs, so no stream demultiplexing is needed either way. The deadline
-    // covers the log request too: a stream that never ends would otherwise hold
-    // the provision (and the container's cleanup) forever.
+    // starts before the request and covers both failure shapes — a callback that
+    // never fires and a stream that never ends — so the provision (and the
+    // container's cleanup) cannot be held forever.
     const logs = await new Promise<string>((resolve, reject) => {
+      let stream: NodeJS.ReadableStream | undefined;
+      const timer = setTimeout(() => {
+        reject(new Error("the attestation probe's logs did not finish streaming"));
+        (stream as (NodeJS.ReadableStream & { destroy?: () => void }) | undefined)?.destroy?.();
+      }, ATTEST_DEADLINE_MS).unref();
       container!.logs({ stdout: true, stderr: false }, (error, data) => {
         if (error || !data) {
+          clearTimeout(timer);
           reject(error ?? new Error("no attestation logs"));
           return;
         }
-        const stream = data as unknown as NodeJS.ReadableStream;
-        if (typeof stream.on !== "function") {
+        const logStream = data as unknown as NodeJS.ReadableStream;
+        if (typeof logStream.on !== "function") {
+          clearTimeout(timer);
           resolve(String(data));
           return;
         }
+        stream = logStream;
         let text = "";
-        const timer = setTimeout(() => {
-          reject(new Error("the attestation probe's logs did not finish streaming"));
-          (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
-        }, ATTEST_DEADLINE_MS).unref();
-        stream.on("data", (chunk: Buffer) => {
+        logStream.on("data", (chunk: Buffer) => {
           text += chunk.toString("utf8");
         });
-        stream.on("end", () => {
+        logStream.on("end", () => {
           clearTimeout(timer);
           resolve(text);
         });
-        stream.on("error", (streamError) => {
+        logStream.on("error", (streamError) => {
           clearTimeout(timer);
           reject(streamError);
         });

@@ -242,6 +242,24 @@ describe("egress attestation", () => {
     const file = readFileSync(path.join(root, "infra/sandboxes/supervisor/Dockerfile"), "utf8");
     expect(file).toContain("COPY infra/sandboxes/egress-attest infra/sandboxes/egress-attest");
     expect(existsSync(path.join(root, "infra/sandboxes/egress-attest/Dockerfile"))).toBe(true);
+    // The required drop lists are parsed from the installer at runtime, so the
+    // script must be inside the image too.
+    expect(file).toContain(
+      "COPY infra/compose/restrict-computer-egress.sh infra/compose/restrict-computer-egress.sh",
+    );
+  });
+
+  it("parses the required drop lists from the installer script", () => {
+    // The installer is the single source of truth; these assertions pin the
+    // parser against heredoc format drift, not the exact policy.
+    expect(REQUIRED_V4_DROPS).toContain("10.0.0.0/8");
+    expect(REQUIRED_V4_DROPS).toContain("192.168.0.0/16");
+    expect(REQUIRED_V4_DROPS.length).toBeGreaterThan(8);
+    expect(REQUIRED_V6_DROPS).toContain("fc00::/7");
+    expect(REQUIRED_V6_DROPS.length).toBeGreaterThan(2);
+    for (const cidr of [...REQUIRED_V4_DROPS, ...REQUIRED_V6_DROPS]) {
+      expect(cidr).toMatch(/^\S+\/\d+$/);
+    }
   });
 
   it("treats an unreadable INPUT chain as unverifiable, not as missing rules", () => {
@@ -398,6 +416,30 @@ describe("egress attestation", () => {
     }
   });
 
+  it("fails closed when Docker never answers the log request", async () => {
+    // The deadline starts before the request, so even a callback that never
+    // fires cannot hold the provision forever.
+    vi.useFakeTimers();
+    try {
+      const container = {
+        start: vi.fn().mockResolvedValue(undefined),
+        wait: vi.fn().mockResolvedValue({ StatusCode: 0 }),
+        logs: vi.fn().mockImplementation(() => {}),
+        remove: vi.fn().mockResolvedValue(undefined),
+      };
+      const docker = {
+        createContainer: vi.fn().mockResolvedValue(container),
+      } as unknown as Docker;
+      const probe = attestRestrictedEgress(docker, "computer:test");
+      const assertion = expect(probe).rejects.toThrow(/did not finish streaming/);
+      await vi.advanceTimersByTimeAsync(31_000);
+      await assertion;
+      expect(container.remove).toHaveBeenCalledWith({ force: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // The attest script must read the same iptables backend Docker and the
   // installer wrote to: Debian's default `iptables` is the nft variant, so the
   // script picks per family the variant whose FORWARD and DOCKER-USER chains
@@ -462,8 +504,9 @@ describe("egress attestation", () => {
     expect(() => verifyAttestation(run.stdout)).toThrow(/could not read v4 iptables/);
   });
 
-  // The required rule lists and the installer must never drift apart: run the
-  // script's --print with stubbed firewall binaries and compare rule for rule.
+  // The required lists are parsed from the installer, so this cross-checks the
+  // parser against the script's --print output: run it with stubbed firewall
+  // binaries and compare rule for rule.
   it("matches the rules restrict-computer-egress.sh installs", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "rakazo-attest-"));
     for (const tool of ["iptables", "ip6tables"]) {
