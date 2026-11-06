@@ -1,4 +1,13 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "No matches": "Нет совпадений",
+  "Always ask": "Всегда спрашивать",
+  "Search tools": "Поиск инструментов",
+  "A model approves routine actions and asks you about the rest.":
+    "Модель одобряет рутинные действия, а об остальном спрашивает вас.",
+  "Asks only before purchases and the first use of your computer. Only Block rules apply.":
+    "Спрашивает только перед покупками и первым использованием вашего компьютера. Действуют только правила блокировки.",
+  "Asks before sending, spending or changing anything in your apps.":
+    "Спрашивает перед отправкой, тратой денег или изменением чего-либо в ваших приложениях.",
   Haptics: "Тактильный отклик",
   "Add rule": "Добавить правило",
   "Tool name": "Название инструмента",
@@ -109,8 +118,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Резервные модели завершились с ошибкой или были недоступны для этого запроса.",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "API-ключ Ollama",
   "Show password": "Показать пароль",
   "Hide password": "Скрыть пароль",
   Export: "Экспорт",
@@ -445,9 +452,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Uses this server's own {source} credentials to access {provider}.":
     "Использует собственные учётные данные {source} этого сервера для доступа к {provider}.",
   "Connect API key": "Подключить API-ключ",
-  "Connect Executor": "Подключить Executor",
   "Connect MCP server {name}": "Подключение MCP-сервера {name}",
-  "Connect Treg": "Подключить Treg",
   Connected: "Подключено",
   "Connected.": "Подключено.",
   Copy: "Копировать",
@@ -606,7 +611,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "OTA {id}, {date}": "OTA {id}, {date}",
   "Enter a server URL": "Введите URL-адрес сервера",
   "Enter this code in your browser:": "Введите этот код в браузере:",
-  "Executor token": "Токен Executor",
   Failed: "Ошибка",
   "Failed to refresh": "Не удалось обновить",
   "Failed to send message": "Не удалось отправить сообщение",
@@ -856,7 +860,6 @@ export const RU_MESSAGES: Record<string, string> = {
   Thread: "Диалог",
   Title: "Заголовок",
   "Try again.": "Попробуйте еще раз.",
-  "Treg token": "Токен Treg",
   "Type your answer": "Введите ответ",
   Pinned: "Закреплённые",
   Unassigned: "Без раздела",
@@ -923,7 +926,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "http://127.0.0.1:8000/v1": "http://127.0.0.1:8000/v1",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
-  "https://executor.example/mcp": "https://executor.example/mcp",
   Diagram: "Диаграмма",
   Image: "Изображение",
   "Message from {peer}": "Сообщение от {peer}",
@@ -1171,6 +1173,10 @@ export const RU_MESSAGES: Record<string, string> = {
   Credits: "Кредиты",
   "Available credits": "Доступные кредиты",
   "Computer hours left": "Осталось часов компьютера",
+  Upgrade: "Улучшить план",
+  "Cancelled trials have no computer hours.":
+    "У отменённого пробного периода нет часов компьютера.",
+  "Renew plan": "Возобновить план",
   "Trials get fewer hours to prevent abuse.":
     "В пробном периоде меньше часов, чтобы предотвратить злоупотребления.",
   "Start plan now": "Начать тариф сейчас",

@@ -3,6 +3,7 @@ import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OAuthMaterial } from "./mcp-oauth.js";
 import {
+  launchArgSecrets,
   McpOAuthBroker,
   McpOAuthClientRequiredError,
   McpReauthorizationRequiredError,
@@ -3016,6 +3017,83 @@ describe("MCP OAuth", () => {
     });
 
     expect(secrets).toEqual([key]);
+  });
+
+  it("finds credentials in launch arguments and leaves ordinary arguments readable", () => {
+    const T = "FAKE-TOKEN-0000000000000000";
+    const credentials: string[][] = [
+      ["--api-key", T],
+      [`--api-key=${T}`],
+      ["--apiKey", T],
+      [`--accessToken=${T}`],
+      ["--key", T],
+      ["--access-key", T],
+      ["--private-key", T],
+      ["--secret-access-key", T],
+      ["--pat", T],
+      ["--auth", T],
+      ["--token", T],
+      ["--password", T],
+      ["--secret", T],
+      [`-api-key=${T}`],
+      ["--APIKey", T],
+      ["--api.key", T],
+      ["-token", T],
+      ["-k", T],
+      [`apiKey=${T}`],
+      [`API_KEY=${T}`],
+      [`--env=API_KEY=${T}`],
+      ["-e", `API_KEY=${T}`],
+      ["--header", `Authorization: Bearer ${T}`],
+      ["-H", `X-API-Key: ${T}`],
+      ["--header", "Authorization:Bearer", T],
+      ["--header", `Authorization: Basic ${T}`],
+      ["--header", `Proxy-Authorization: Bearer ${T}`],
+      ["--header", `Ocp-Apim-Subscription-Key: ${T}`],
+      [`postgres://user:${T}@db.example.test/app`],
+      [`DATABASE_URL=postgres://user:${T}@db.example.test/app`],
+      [`https://${T}@git.example.test/`],
+      [`https://${T}:x-oauth-basic@git.example.test/`],
+      [`https://api.example.test/?apiKey=${T}`],
+      ["--url", `https://api.example.test/mcp?token=${T}`],
+      [`https://api.example.test/mcp?authorization=Bearer%20${T}`],
+    ];
+    for (const args of credentials) expect(launchArgSecrets(args), args.join(" ")).toContain(T);
+    // Tokens that start with "-", are lowercase, or are short still count in these positions.
+    expect(launchArgSecrets(["--header", "Authorization:Bearer", `-${T}`])).toContain(`-${T}`);
+    expect(launchArgSecrets(["-k", "sk-live-abcdefgh12345678"])).toContain(
+      "sk-live-abcdefgh12345678",
+    );
+    expect(launchArgSecrets(["https://shorttok@git.example.test/"])).toContain("shorttok");
+    expect(launchArgSecrets(["PAT=abc"])).toContain("abc");
+    expect(launchArgSecrets(["--header", "X-Private-Key: abc"])).toContain("abc");
+    expect(launchArgSecrets(["--header", "Accept:Bearer", "/srv/data"])).toEqual([]);
+
+    const readable = [
+      "--port",
+      "3000",
+      "/srv/data",
+      "-y",
+      "@modelcontextprotocol/server-filesystem",
+      "--verbose",
+      "-y",
+      "mcp-server-sqlite2-extended",
+      "--sort-key",
+      "name",
+      "ssh://git@git.example.test/repo",
+      "ssh://deployuser@git.example.test/repo",
+      "--header",
+      "Accept: application/json",
+      "https://api.example.test/?key=0",
+      "--key",
+      "0",
+    ];
+    expect(launchArgSecrets(readable)).toEqual([]);
+    expect(launchArgSecrets(["--header", "Authorization:Bearer", "--verbose"])).toEqual([]);
+
+    // The server may echo a query value spelled as it was passed, not as it decodes.
+    for (const spelled of ["abc%2fDEF123456", "Abc+DEF123456"])
+      expect(launchArgSecrets([`https://api.example.test/?api_key=${spelled}`])).toContain(spelled);
   });
 
   it("does not start authorization for a server that neither challenges nor publishes OAuth metadata", async () => {

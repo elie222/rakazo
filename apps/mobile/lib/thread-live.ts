@@ -3,12 +3,14 @@ import {
   createRefreshCoalescer,
   isRetryableError,
   isRunTerminalEvent,
+  reduceThreadSnapshot,
+  rememberTerminalRun,
   retryDelayMs,
 } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useEffect, useRef } from "react";
 import type { MobileSnapshot } from "./api";
-import { applyMobileThreadEvent, rpc, subscribeThread } from "./api";
+import { rpc, subscribeThread } from "./api";
 import { getHapticsEnabled, hapticSuccess } from "./haptics";
 import { currentSessionGeneration } from "./session";
 import type { ThreadJumpAnchor } from "./thread-jump";
@@ -43,6 +45,7 @@ export function useThreadLiveSubscription({
   jumpScrollTarget,
   jumpAnchor,
   snapRef,
+  terminalRunIds,
   readVisibleTarget,
   showSavedThread,
   refresh,
@@ -65,6 +68,7 @@ export function useThreadLiveSubscription({
   jumpScrollTarget: RefObject<string | null>;
   jumpAnchor: RefObject<ThreadJumpAnchor>;
   snapRef: RefObject<MobileSnapshot | null>;
+  terminalRunIds: RefObject<Set<string>>;
   readVisibleTarget: RefObject<string | null>;
   showSavedThread: (signal: AbortSignal) => void;
   refresh: () => Promise<MobileSnapshot | undefined>;
@@ -215,6 +219,7 @@ export function useThreadLiveSubscription({
               cursor = Math.max(cursor, event.seq ?? -1);
               retryMs = 250;
               liveCursor.current = cursor;
+              rememberTerminalRun(terminalRunIds.current, event);
               if (
                 event.type === "run.completed" &&
                 event.runId &&
@@ -242,7 +247,7 @@ export function useThreadLiveSubscription({
                 }
                 toolCallRecords.record(event);
                 const previous = snapRef.current;
-                const reduced = applyMobileThreadEvent(previous, event);
+                const reduced = reduceThreadSnapshot(previous, event);
                 if (reduced !== previous) commitSnap(reduced);
               }
               if (event.type === "bot.updated") {

@@ -1,12 +1,12 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import {
-  isOllamaCloudBaseUrl,
+  compatibleEndpointPresets,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   ModelHeaderRowsSchema,
+  matchCompatibleEndpointPreset,
   modelHeadersInput,
-  OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   parseModelContextWindow,
@@ -57,6 +57,8 @@ import { useModelConnectionForm } from "./model-settings/use-model-connection-fo
 const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
 /** Rakazo credits sit among the providers as the one choice that needs no account of its own. */
 const CREDITS_OPTION = "__rakazo_credits__";
+/** Select value for a hosted compatible service; the rest of the value is its base URL. */
+const ENDPOINT_PRESET_OPTION = "endpoint-preset:";
 /** A provider whose catalog entry offers both sign-in and a key appears once per way to connect. */
 type ProviderAuth = "sign-in" | "key";
 
@@ -150,14 +152,14 @@ export function OnboardingPage() {
     apiKey,
     apiProtocol,
     baseUrl,
-    cloudflareRoutingReady,
+    routingReady,
     contextWindow,
     error,
     gatewayId,
     headerRows,
     invalidatePreflight,
-    isCloudflare,
-    isCloudflareGateway,
+    needsRouting,
+    needsGateway,
     isOpenAiCompatible,
     maxImagesPerPrompt,
     maxTokens,
@@ -269,17 +271,22 @@ export function OnboardingPage() {
   const subscriptionSignIn = selected?.signIn !== undefined && providerAuth !== "key";
   const acceptsKey = selected?.auth !== "oauth" && providerAuth !== "sign-in";
   const signInLabel = selected?.oauthLabel ?? t`Sign in`;
+  const endpointPresets = useMemo(() => compatibleEndpointPresets(catalog), [catalog]);
+  const endpointPreset = isOpenAiCompatible
+    ? matchCompatibleEndpointPreset(endpointPresets, baseUrl)
+    : undefined;
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     apiKey,
     baseUrl,
     modelId:
       headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
+    keyRequired: Boolean(endpointPreset),
   });
   const canSaveModel = Boolean(
     selected &&
       modelId.trim() &&
       !oauthPending &&
-      cloudflareRoutingReady &&
+      routingReady &&
       (isOpenAiCompatible ? openAiCompatibleReady : acceptsKey && apiKey.trim()),
   );
   // Subscriptions and the common API providers first; every other provider follows by name.
@@ -305,9 +312,13 @@ export function OnboardingPage() {
         )
         .flatMap((entry) => {
           const item = { value: entry.provider, label: entry.providerName ?? entry.provider };
-          return entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-            ? [item, { value: "ollama-preset", label: t`Ollama Cloud` }]
-            : [item];
+          return [
+            item,
+            ...(entry.endpointPresets ?? []).map((preset) => ({
+              value: `${ENDPOINT_PRESET_OPTION}${preset.baseUrl}`,
+              label: preset.name,
+            })),
+          ];
         }),
       (option) => option.value,
       (option) => option.label,
@@ -325,11 +336,7 @@ export function OnboardingPage() {
   );
 
   function selectProvider(option: string, presetBaseUrl?: string) {
-    if (
-      option === providerOptionValue(provider, providerAuth) &&
-      !presetBaseUrl &&
-      !isOllamaCloudBaseUrl(baseUrl)
-    )
+    if (option === providerOptionValue(provider, providerAuth) && !presetBaseUrl && !endpointPreset)
       return;
     const [nextProvider = option, auth] = option.split(":") as [string, ProviderAuth?];
     cancelOAuthAttempt();
@@ -407,7 +414,7 @@ export function OnboardingPage() {
         await rpc.models.connect({
           provider,
           apiKey,
-          ...(isCloudflare ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
+          ...(needsRouting ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
           modelId,
           label: selected?.providerName ?? provider,
         });
@@ -485,8 +492,8 @@ export function OnboardingPage() {
                 value={
                   credits
                     ? CREDITS_OPTION
-                    : isOpenAiCompatible && isOllamaCloudBaseUrl(baseUrl)
-                      ? "ollama-preset"
+                    : endpointPreset
+                      ? `${ENDPOINT_PRESET_OPTION}${endpointPreset.baseUrl}`
                       : provider
                         ? providerOptionValue(provider, providerAuth)
                         : null
@@ -502,8 +509,11 @@ export function OnboardingPage() {
                     return;
                   }
                   setCredits(false);
-                  if (value === "ollama-preset")
-                    selectProvider(OPENAI_COMPATIBLE_PROVIDER_ID, OLLAMA_CLOUD_BASE_URL);
+                  if (value.startsWith(ENDPOINT_PRESET_OPTION))
+                    selectProvider(
+                      OPENAI_COMPATIBLE_PROVIDER_ID,
+                      value.slice(ENDPOINT_PRESET_OPTION.length),
+                    );
                   else selectProvider(value);
                 }}
                 items={providerItems}
@@ -768,7 +778,7 @@ export function OnboardingPage() {
                     )}
                   </div>
                 ) : null}
-                {isCloudflare && acceptsKey ? (
+                {needsRouting && acceptsKey ? (
                   <div className="mt-4 grid gap-4">
                     <label
                       htmlFor={`${fieldId}-account-id`}
@@ -784,7 +794,7 @@ export function OnboardingPage() {
                         className="mt-2"
                       />
                     </label>
-                    {isCloudflareGateway ? (
+                    {needsGateway ? (
                       <label
                         htmlFor={`${fieldId}-gateway-id`}
                         className="block text-body font-medium text-foreground"
@@ -806,16 +816,14 @@ export function OnboardingPage() {
                   isOpenAiCompatible ? (
                     <CompatibleKeyField
                       className="mt-4 block text-body text-muted-foreground"
-                      baseUrl={baseUrl}
+                      keyRequired={Boolean(endpointPreset)}
                     >
                       <Input
                         aria-label={t`API key`}
                         value={apiKey}
                         onChange={(e) => updateApiKey(e.target.value)}
-                        required={isOllamaCloudBaseUrl(baseUrl)}
-                        placeholder={
-                          isOllamaCloudBaseUrl(baseUrl) ? t`Ollama API key` : t`Optional`
-                        }
+                        required={Boolean(endpointPreset)}
+                        placeholder={endpointPreset ? undefined : t`Optional`}
                         type="password"
                         autoComplete="new-password"
                         className="mt-2"

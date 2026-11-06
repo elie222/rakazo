@@ -334,7 +334,6 @@ vi.mock("./trusted-link-sites", () => ({
   removeTrustedLinkSite: trusted.remove,
   useTrustedLinkSites: () => trusted.sites,
 }));
-vi.mock("./ui-locale", () => ({ UI_LOCALE_LABELS: { en: "English" } }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 
 function security(overrides: Partial<AccountSecurity> = {}): AccountSecurity {

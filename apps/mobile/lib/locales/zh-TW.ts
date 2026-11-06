@@ -1,4 +1,13 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
+  "No matches": "沒有相符的結果",
+  "Always ask": "一律詢問",
+  "Search tools": "搜尋工具",
+  "A model approves routine actions and asks you about the rest.":
+    "模型會核准例行動作，其餘的會先詢問你。",
+  "Asks only before purchases and the first use of your computer. Only Block rules apply.":
+    "只在購買和第一次使用你的電腦前詢問。只有封鎖規則會生效。",
+  "Asks before sending, spending or changing anything in your apps.":
+    "在你的應用程式中傳送、花費或變更任何東西之前先詢問。",
   Haptics: "觸覺回饋",
   "Add rule": "新增規則",
   "Tool name": "工具名稱",
@@ -95,8 +104,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} 備援模型失敗或無法用於此請求。",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "Ollama API 金鑰",
   "Show password": "顯示密碼",
   "Hide password": "隱藏密碼",
   Export: "匯出",
@@ -394,9 +401,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Uses this server's own {source} credentials to access {provider}.":
     "使用此伺服器自己的 {source} 憑證存取 {provider}。",
   "Connect API key": "連線 API 金鑰",
-  "Connect Executor": "連線 Executor",
   "Connect MCP server {name}": "連線 MCP 伺服器 {name}",
-  "Connect Treg": "連線 Treg",
   Connected: "已連線",
   "Connected. Its tools are available from your next message.":
     "已連線。從你的下一條訊息起即可使用它的工具。",
@@ -554,7 +559,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "OTA · {id} · {date}": "OTA · {id} · {date}",
   "Enter a server URL": "請輸入伺服器網址",
   "Enter this code in your browser:": "請在瀏覽器中輸入以下驗證碼：",
-  "Executor token": "Executor 權杖",
   Failed: "失敗",
   "Failed to refresh": "重新整理失敗",
   "Failed to send message": "傳送訊息失敗",
@@ -798,7 +802,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Thread: "對話",
   Title: "標題",
   "Try again.": "請重試。",
-  "Treg token": "Treg 權杖",
   "Type your answer": "輸入你的回答",
   Pinned: "置頂",
   Unassigned: "未分組",
@@ -863,7 +866,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "http://localhost:53692/callback?code=…": "http://localhost:53692/callback?code=…",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
-  "https://executor.example/mcp": "https://executor.example/mcp",
   Diagram: "圖表",
   Image: "圖片",
   "Message from {peer}": "來自 {peer} 的訊息",
@@ -1108,6 +1110,9 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Credits: "額度",
   "Available credits": "可用額度",
   "Computer hours left": "剩餘電腦時數",
+  Upgrade: "升級",
+  "Cancelled trials have no computer hours.": "已取消的試用沒有電腦時數。",
+  "Renew plan": "續訂方案",
   "Trials get fewer hours to prevent abuse.": "為防止濫用，試用期的時數較少。",
   "Start plan now": "立即開始方案",
   "Start your plan now?": "立即開始你的方案？",

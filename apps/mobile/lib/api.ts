@@ -7,17 +7,13 @@ import type {
   Group,
   IncomingBotCall,
   Me,
-  MessageBlock,
   ModelCatalogEntry,
   ModelCredential,
   RpcInput,
   RpcOutput,
   RpcPath,
-  Run,
-  RunStatus,
   Space,
   SpaceNavigation,
-  ThreadMessage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
@@ -29,38 +25,23 @@ import {
   legacyAuthCapabilitiesSchema,
   parseServerHeaders,
 } from "@rakazo/contracts";
-import type { ThreadHistory } from "@rakazo/core";
+import type { LiveThreadMessage, LiveThreadRun, ThreadHistory } from "@rakazo/core";
 import {
   aiConsentTargets,
   aiDataUsesForProcedure,
   cancelResponseBody,
+  channelMessageLine,
   displayIdentityEvent,
   displayIdentityResult,
   displayName,
   ensureAiDataConsent,
-  isActive,
-  isBackgroundRunTrigger,
-  isRunTerminalEvent,
   isServerUnreachable,
   isUnreachableStatus,
-  mergeThreadHistory,
   messagingProviderLabel,
   parseRetryAfter,
-  payloadAuthor,
   prependThreadHistoryPage,
-  progressMessageId,
   readBoundedJsonResponse,
-  reduceLiveMessageBlocks,
-  replyMetadata,
-  runFailureError,
-  settleRunSubagents,
   signupRequiresEmailVerification,
-  stopsRunHelpers,
-  takeLiveMessage,
-  toolCalledUpdate,
-  toolCompletedUpdate,
-  updateCloudAgentMessages,
-  upsertMessageById,
   withAbort,
 } from "@rakazo/core";
 import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
@@ -1786,8 +1767,7 @@ export type MobileModel = ModelCatalogEntry;
 export type MobileModelCredential = ModelCredential;
 
 /** Live progress and streaming rows are shown before they have a seq, thread, or time. */
-export type MobileMessage = Omit<ThreadMessage, "threadId" | "seq" | "createdAt"> &
-  Partial<Pick<ThreadMessage, "threadId" | "seq" | "createdAt">>;
+export type MobileMessage = LiveThreadMessage;
 
 export type MobileGroup = Pick<
   Group,
@@ -1806,10 +1786,6 @@ export type MobileGroup = Pick<
 export type MobileSpace = Space;
 export type MobileSpaceNavigation = SpaceNavigation;
 
-/** A run as live events report it, before a refresh brings the full record. */
-type MobileRun = Pick<Run, "id"> &
-  Partial<Pick<Run, "botId" | "userId" | "routineName">> & { status: string; trigger?: string };
-
 /**
  * A thread as the screen holds it: live events patch it between refreshes, and a saved chat
  * reopens without its cursor, runs, or computer.
@@ -1820,8 +1796,8 @@ export type MobileSnapshot = Omit<
 > & {
   cursor?: ThreadSnapshot["cursor"];
   messages: MobileMessage[];
-  run: (MobileRun & Partial<Pick<Run, "error">>) | null;
-  activeRuns?: MobileRun[];
+  run: LiveThreadRun | null;
+  activeRuns?: LiveThreadRun[];
   computer?: Pick<
     ComputerStatus,
     "state" | "controlHolder" | "screenAvailable" | "mode" | "busyBotName"
@@ -1870,14 +1846,6 @@ export function mobileThreadRefreshResult(input: {
 
 export type MobileMessagePage = ThreadHistory<MobileMessage>;
 
-export function mergeMobileSnapshot(
-  prev: MobileSnapshot | null,
-  next: MobileSnapshot,
-  preserveLoadedHistory = false,
-): MobileSnapshot {
-  return mergeThreadHistory(prev, next, preserveLoadedHistory);
-}
-
 export function prependMobileMessagePage(
   prev: MobileSnapshot | null,
   page: MobileMessagePage,
@@ -1887,40 +1855,10 @@ export function prependMobileMessagePage(
 
 export { messagingProviderLabel };
 
-function channelMessageLine(block: {
-  provider: Parameters<typeof messagingProviderLabel>[0];
-  transport?: Parameters<typeof messagingProviderLabel>[1];
-  fromLabel: string;
-  text: string;
-}): string {
-  return `${block.fromLabel} (${messagingProviderLabel(block.provider, block.transport)}): ${block.text}`;
-}
-
-/** The message's text exactly as written, for a view that selects part of it. */
-export function selectableMobileMessageText(message: MobileMessage): string {
-  return message.blocks
-    .map((block) => {
-      if (block.kind === "channel_message") {
-        return channelMessageLine(block);
-      }
-      if (block.kind === "text" || block.kind === "progress" || block.kind === "ask")
-        return block.text;
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
-export function copyableMobileMessageText(message: MobileMessage): string {
-  return selectableMobileMessageText(message).trim();
-}
-
 export function blockText(message: MobileMessage) {
   return message.blocks
     .map((block) => {
-      if (block.kind === "channel_message") {
-        return channelMessageLine(block);
-      }
+      if (block.kind === "channel_message") return channelMessageLine(block);
       if (block.kind === "cloud_agent")
         return `${block.title}: ${block.status}${block.prUrl ? ` ${block.prUrl}` : ""}`;
       if (block.kind === "subagent") {
@@ -2171,363 +2109,6 @@ async function subscribeRpcEvents(
     }
     reader.releaseLock();
   }
-}
-
-/** Mirrors the web reducer so group member status matches across surfaces. */
-function updateMemberStatus(
-  members: MobileSnapshot["members"],
-  botId: string | undefined,
-  status: string,
-): MobileSnapshot["members"] {
-  const member = members?.find((candidate) => candidate.botId === botId);
-  if (!member || member.status === status) return members;
-  return members?.map((candidate) =>
-    candidate.botId === botId ? { ...candidate, status } : candidate,
-  );
-}
-
-export function applyMobileThreadEvent(
-  prev: MobileSnapshot | null,
-  event: ThreadEvent,
-): MobileSnapshot | null {
-  if (!prev || event.type === "heartbeat") return prev;
-  if (stopsRunHelpers(event)) {
-    const messages = settleRunSubagents(prev.messages, event.runId);
-    if (messages !== prev.messages) prev = { ...prev, messages };
-  }
-  if (event.type === "thread.cleared") {
-    return {
-      ...prev,
-      cursor: event.seq,
-      messages: [],
-      olderCursor: null,
-      run: null,
-      activeRuns: [],
-    };
-  }
-  if (event.type === "run.started") {
-    const cursor = event.seq ?? prev.cursor;
-    const trigger = typeof event.payload?.trigger === "string" ? event.payload.trigger : undefined;
-    if (isBackgroundRunTrigger(trigger)) {
-      return cursor === prev.cursor ? prev : { ...prev, cursor };
-    }
-    const members =
-      event.botId &&
-      prev.members?.some((member) => member.botId === event.botId && member.status !== "running")
-        ? prev.members.map((member) =>
-            member.botId === event.botId ? { ...member, status: "running" } : member,
-          )
-        : prev.members;
-    if (!event.runId) {
-      return cursor === prev.cursor && members === prev.members
-        ? prev
-        : { ...prev, cursor, members };
-    }
-    const previousRun =
-      prev.activeRuns?.find((candidate) => candidate.id === event.runId) ??
-      (prev.run?.id === event.runId ? prev.run : undefined);
-    const run = {
-      ...previousRun,
-      id: event.runId,
-      status: "running",
-      ...(event.botId ? { botId: event.botId } : {}),
-      ...(trigger ? { trigger } : {}),
-      ...(typeof event.payload?.routineName === "string"
-        ? { routineName: event.payload.routineName }
-        : {}),
-      error: null,
-    };
-    const activeRuns = [
-      ...(prev.activeRuns ?? (prev.run ? [prev.run] : [])).filter(
-        (candidate) => candidate.id !== run.id && isActive(candidate.status as RunStatus),
-      ),
-      run,
-    ];
-    return {
-      ...prev,
-      cursor,
-      members,
-      // Keep a group failure visible while another member starts work.
-      run: prev.groupId && prev.run?.status === "failed" && prev.run.id !== run.id ? prev.run : run,
-      activeRuns,
-    };
-  }
-  if (event.type === "run.waiting_input" || event.type === "computer.takeover.requested") {
-    const status = event.type === "run.waiting_input" ? "waiting_input" : "waiting_takeover";
-    const progressId = progressMessageId(event);
-    // Waiting pauses drop live progress server-side; clear a leftover bubble so
-    // the waiting footer is not hidden behind a stale "Working…" row.
-    const messages = prev.messages.filter((message) => message.id !== progressId);
-    const progressCleared = messages.length !== prev.messages.length;
-    const runId = event.runId;
-    const userId =
-      event.type === "run.waiting_input" && typeof event.payload?.userId === "string"
-        ? event.payload.userId
-        : undefined;
-    const knownInRun = Boolean(runId && prev.run?.id === runId);
-    const knownInActive = Boolean(
-      runId && prev.activeRuns?.some((candidate) => candidate.id === runId),
-    );
-    // Peer bot_message runs are omitted from snapshots while busy; the first wait
-    // event is how an open thread learns they need ask/takeover UI.
-    const needsInsert = Boolean(runId) && !knownInRun && !knownInActive;
-    const runChanged = Boolean(
-      knownInRun &&
-        prev.run &&
-        (prev.run.status !== status || (userId !== undefined && prev.run.userId !== userId)),
-    );
-    const activeRunChanged = Boolean(
-      knownInActive &&
-        prev.activeRuns?.some(
-          (candidate) =>
-            candidate.id === runId &&
-            (candidate.status !== status || (userId !== undefined && candidate.userId !== userId)),
-        ),
-    );
-    const computer =
-      event.type === "computer.takeover.requested" && prev.computer?.busyBotName
-        ? { ...prev.computer, busyBotName: null }
-        : prev.computer;
-    const computerChanged = computer !== prev.computer;
-    const members = updateMemberStatus(prev.members, event.botId, status);
-    const cursor = event.seq ?? prev.cursor;
-    if (
-      !runChanged &&
-      !activeRunChanged &&
-      !progressCleared &&
-      !needsInsert &&
-      !computerChanged &&
-      members === prev.members
-    ) {
-      return cursor === prev.cursor ? prev : { ...prev, cursor };
-    }
-    if (needsInsert && runId) {
-      const waitingRun = {
-        id: runId,
-        status,
-        ...(event.botId ? { botId: event.botId } : {}),
-        ...(userId !== undefined ? { userId } : {}),
-      };
-      const baseActive = prev.activeRuns ?? (prev.run ? [prev.run] : []);
-      const activeRuns = [...baseActive.filter((candidate) => candidate.id !== runId), waitingRun];
-      const promoteWaiting =
-        !prev.run ||
-        (prev.run.status !== "waiting_input" && prev.run.status !== "waiting_takeover");
-      return {
-        ...prev,
-        cursor,
-        members,
-        messages,
-        computer,
-        run: promoteWaiting ? waitingRun : prev.run,
-        activeRuns,
-      };
-    }
-    const run =
-      runChanged && prev.run
-        ? { ...prev.run, status, ...(userId !== undefined ? { userId } : {}) }
-        : prev.run;
-    const activeRuns = activeRunChanged
-      ? prev.activeRuns?.map((candidate) =>
-          candidate.id === runId
-            ? { ...candidate, status, ...(userId !== undefined ? { userId } : {}) }
-            : candidate,
-        )
-      : prev.activeRuns;
-    return { ...prev, cursor, members, run, activeRuns, messages, computer };
-  }
-  if (event.type === "computer.takeover.released") {
-    const runId = event.runId;
-    const settle = <T extends { id: string; status: string }>(candidate: T): T =>
-      runId && candidate.id === runId && candidate.status === "waiting_takeover"
-        ? { ...candidate, status: "queued" }
-        : candidate;
-    const nextRun = prev.run ? settle(prev.run) : prev.run;
-    const activeChanged = Boolean(
-      runId &&
-        prev.activeRuns?.some(
-          (candidate) => candidate.id === runId && candidate.status === "waiting_takeover",
-        ),
-    );
-    const cursor = event.seq ?? prev.cursor;
-    if (nextRun === prev.run && !activeChanged) {
-      return cursor === prev.cursor ? prev : { ...prev, cursor };
-    }
-    const members = prev.members?.some(
-      (member) => member.botId === event.botId && member.status === "waiting_takeover",
-    )
-      ? prev.members.map((member) =>
-          member.botId === event.botId ? { ...member, status: "queued" } : member,
-        )
-      : prev.members;
-    return {
-      ...prev,
-      cursor,
-      run: nextRun,
-      activeRuns: activeChanged ? prev.activeRuns?.map(settle) : prev.activeRuns,
-      members,
-    };
-  }
-  if (isRunTerminalEvent(event)) {
-    const activeRuns = prev.activeRuns?.filter((candidate) => candidate.id !== event.runId);
-    const nextMemberRun = activeRuns?.find((candidate) => candidate.botId === event.botId);
-    const failure = runFailureError(event);
-    const primaryEnded = prev.run?.id === event.runId ? prev.run : null;
-    // A group member run can fail while another is displayed; see reduceThreadSnapshot.
-    const endedRun =
-      primaryEnded ?? prev.activeRuns?.find((candidate) => candidate.id === event.runId) ?? null;
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: prev.messages.filter((message) => message.id !== progressMessageId(event)),
-      members: updateMemberStatus(prev.members, event.botId, nextMemberRun?.status ?? "idle"),
-      // A failed run stays in run so the thread can say why it stopped (see reduceThreadSnapshot).
-      run:
-        endedRun && failure
-          ? { ...endedRun, status: "failed", error: failure }
-          : primaryEnded
-            ? (activeRuns?.[0] ?? null)
-            : prev.run,
-      activeRuns,
-    };
-  }
-  if (event.type === "thread.progress") {
-    const progressId = progressMessageId(event);
-    const { previous, remaining } = takeLiveMessage(prev.messages, progressId);
-    const streaming: MobileMessage = {
-      id: progressId,
-      role: "bot",
-      blocks: reduceLiveMessageBlocks((previous?.blocks ?? []) as MessageBlock[], {
-        type: "progress",
-        payload: event.payload,
-      }),
-      ...(event.botId ? { botId: event.botId } : {}),
-      ...(event.runId ? { runId: event.runId } : {}),
-      // The thread and the run's first activity, which its tool card reads results and time from.
-      ...((event.threadId ?? previous?.threadId)
-        ? { threadId: event.threadId ?? previous?.threadId }
-        : {}),
-      ...((previous?.createdAt ?? event.createdAt)
-        ? { createdAt: previous?.createdAt ?? event.createdAt }
-        : {}),
-    };
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: [...remaining, streaming],
-    };
-  }
-  if (event.type === "agent.tool.called") {
-    const progressId = progressMessageId(event);
-    const { previous, remaining } = takeLiveMessage(prev.messages, progressId);
-    const streaming: MobileMessage = {
-      id: progressId,
-      role: "bot",
-      blocks: reduceLiveMessageBlocks(
-        (previous?.blocks ?? []) as MessageBlock[],
-        toolCalledUpdate(event.payload ?? {}),
-      ),
-      ...(event.botId ? { botId: event.botId } : {}),
-      ...(event.runId ? { runId: event.runId } : {}),
-      // The thread and the run's first activity, which its tool card reads results and time from.
-      ...((event.threadId ?? previous?.threadId)
-        ? { threadId: event.threadId ?? previous?.threadId }
-        : {}),
-      ...((previous?.createdAt ?? event.createdAt)
-        ? { createdAt: previous?.createdAt ?? event.createdAt }
-        : {}),
-    };
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: [...remaining, streaming],
-    };
-  }
-  if (event.type === "agent.tool.completed") {
-    const update = toolCompletedUpdate(event.payload ?? {});
-    const progressId = progressMessageId(event);
-    const live = prev.messages.find((message) => message.id === progressId);
-    if (!update || !live) return { ...prev, cursor: event.seq ?? prev.cursor };
-    const blocks = reduceLiveMessageBlocks(live.blocks as MessageBlock[], update);
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: prev.messages.map((message) => (message === live ? { ...live, blocks } : message)),
-    };
-  }
-  if (event.type === "thread.subagent") {
-    const agentId = String(event.payload?.agentId ?? event.id ?? "live");
-    const status = event.payload?.status;
-    const streaming: MobileMessage = {
-      id: `subagent:${agentId}`,
-      role: "bot",
-      ...(event.botId ? { botId: event.botId } : {}),
-      ...(event.runId ? { runId: event.runId } : {}),
-      blocks: [
-        {
-          kind: "subagent",
-          agentId,
-          name: String(event.payload?.name ?? "subagent"),
-          task: String(event.payload?.task ?? ""),
-          status: status === "completed" || status === "failed" ? status : "running",
-          progress: event.payload?.progress ? String(event.payload.progress) : undefined,
-          result: event.payload?.result ? String(event.payload.result) : undefined,
-        },
-      ],
-    };
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: [...prev.messages.filter((message) => message.id !== streaming.id), streaming],
-    };
-  }
-  if (event.type === "thread.cloud_agent") {
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: updateCloudAgentMessages(prev.messages, event.payload ?? {}),
-    };
-  }
-  if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
-    const { remaining } = takeLiveMessage(prev.messages, progressMessageId(event));
-    const id = String(event.payload?.messageId ?? event.id ?? `msg:${event.seq ?? 0}`);
-    const known = prev.messages.find((message) => message.id === id);
-    const seq = typeof event.payload?.seq === "number" ? event.payload.seq : known?.seq;
-    const next: MobileMessage = {
-      id,
-      // Inline cards act on the message's thread, so live messages need it too.
-      threadId: known?.threadId ?? prev.threadId,
-      // The seq lets a send that is still on screen as "Sending…" recognize its echo.
-      ...(seq === undefined ? {} : { seq }),
-      createdAt: known?.createdAt ?? event.createdAt,
-      runId: event.runId ? String(event.runId) : undefined,
-      role: (event.payload?.role as MobileMessage["role"]) ?? "bot",
-      // An update can leave the call id out — the `end_call` marker does — so keep the one
-      // the message already carries instead of dropping it out of its call.
-      callId: typeof event.payload?.callId === "string" ? event.payload.callId : known?.callId,
-      blocks: (event.payload?.blocks as MobileMessage["blocks"]) ?? [],
-      botId: event.botId ?? (event.payload?.botId ? String(event.payload.botId) : undefined),
-      ...payloadAuthor(event.payload ?? {}, known),
-      ...replyMetadata(event.payload ?? {}, known),
-    };
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: upsertMessageById(
-        remaining.filter(
-          (message) =>
-            !(
-              message.id.startsWith("subagent:") &&
-              next.blocks.some(
-                (block) => block.kind === "subagent" && message.id === `subagent:${block.agentId}`,
-              )
-            ),
-        ),
-        next,
-      ),
-    };
-  }
-  return prev;
 }
 
 export {

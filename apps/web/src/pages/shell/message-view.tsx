@@ -79,6 +79,7 @@ export const MessageView = memo(function MessageView({
   onAddRoutine,
   voiceReady,
   speaking,
+  callHoldsSpeaker,
   onSpeak,
   onOpenComputer,
   onOpenImportSetup,
@@ -124,6 +125,8 @@ export const MessageView = memo(function MessageView({
   onAddRoutine: (name: string, prompt: string) => void;
   voiceReady: boolean;
   speaking: boolean;
+  /** An active call owns the speaker, so new reads wait until it ends. */
+  callHoldsSpeaker: boolean;
   onSpeak: (message: ThreadMessage) => void;
   onOpenComputer: (botId?: string) => void;
   /** Opens where an imported item's setup is finished. */
@@ -329,6 +332,8 @@ export const MessageView = memo(function MessageView({
                   variant="text"
                   size="xs"
                   aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
+                  // Stopping the speech in progress stays available; a call blocks new reads.
+                  disabled={callHoldsSpeaker && !speaking}
                   onClick={speak}
                   className="font-normal"
                 >
@@ -615,6 +620,8 @@ export const MessageView = memo(function MessageView({
                       variant="text"
                       size="xs"
                       aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
+                      // Stopping the speech in progress stays available; a call blocks new reads.
+                      disabled={callHoldsSpeaker && !speaking}
                       onClick={speak}
                       className="mt-2 font-normal"
                     >

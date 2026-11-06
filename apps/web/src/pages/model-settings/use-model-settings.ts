@@ -1,10 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Me, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import {
-  compatibleConnectionName,
+  compatibleEndpointPresets,
   connectionDisplayName,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
+  matchCompatibleEndpointPreset,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -94,7 +95,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     gatewayId,
     headerRows,
     invalidatePreflight,
-    isCloudflare,
+    needsRouting,
     isOpenAiCompatible,
     maxImagesPerPrompt,
     maxTokens,
@@ -260,10 +261,11 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     [credentials],
   );
   selectedLabelRef.current = selected?.label;
-  const selectedProviderName = compatibleConnectionName(
-    baseUrl,
-    groups.find((group) => group.id === provider)?.name ?? provider,
-  );
+  const endpointPresets = useMemo(() => compatibleEndpointPresets(catalog), [catalog]);
+  // A hosted preset needs its key, so the form asks for it up front.
+  const endpointPreset = matchCompatibleEndpointPreset(endpointPresets, baseUrl);
+  const selectedProviderName =
+    endpointPreset?.name ?? groups.find((group) => group.id === provider)?.name ?? provider;
   const selectedConnectionName = credential
     ? connectionDisplayName(
         credential,
@@ -295,6 +297,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     modelId,
     headerRows,
     credential,
+    keyRequired: Boolean(endpointPreset),
   });
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
@@ -307,7 +310,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     !isOpenAiCompatible &&
     Boolean(credential) &&
     (maxTokens.trim() !== connectionMaxTokensField(provider, credential?.maxTokens) ||
-      (isCloudflare &&
+      (needsRouting &&
         (accountId.trim() !== (credential?.accountId ?? "") ||
           gatewayId.trim() !== (credential?.gatewayId ?? ""))));
 
@@ -508,6 +511,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     defaultModelOptions,
     disconnectCredential,
     disconnectName,
+    endpointPreset,
+    endpointPresets,
     effectiveBaseUrl,
     groups,
     handleClose,

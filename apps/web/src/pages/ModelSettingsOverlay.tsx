@@ -1,24 +1,13 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SettingsScope } from "@rakazo/contracts";
 import {
-  compatibleConnectionName,
   connectionDisplayName,
-  isOllamaCloudBaseUrl,
   modelRoleChoiceKey,
-  OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Button,
   Dialog,
   DialogClose,
@@ -32,6 +21,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import type { ModelCredential } from "../lib/model-auth";
 import { useSpaceQueries } from "../lib/query";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
@@ -71,6 +61,7 @@ export function ModelSettingsOverlay({
     credentials,
     disconnectCredential,
     disconnectName,
+    endpointPresets,
     error,
     groups,
     handleClose,
@@ -105,13 +96,11 @@ export function ModelSettingsOverlay({
     [
       ...groups.map((group) => ({ id: group.id, name: group.name })),
       ...(groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID)
-        ? [
-            {
-              id: OPENAI_COMPATIBLE_PROVIDER_ID,
-              name: t`Ollama Cloud`,
-              baseUrl: OLLAMA_CLOUD_BASE_URL,
-            },
-          ]
+        ? endpointPresets.map((preset) => ({
+            id: OPENAI_COMPATIBLE_PROVIDER_ID,
+            name: preset.name,
+            baseUrl: preset.baseUrl,
+          }))
         : []),
     ],
     (entry) => entry.id,
@@ -119,7 +108,10 @@ export function ModelSettingsOverlay({
   );
   const providers = allProviders.filter((entry) =>
     entry.baseUrl
-      ? !isOllamaCloudBaseUrl(credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl)
+      ? !savedCompatibleEndpointMatches(
+          credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl ?? "",
+          entry.baseUrl,
+        )
       : !credentialByProvider.has(entry.id),
   );
   const connectionName = (entry: ModelCredential) => {
@@ -131,10 +123,9 @@ export function ModelSettingsOverlay({
     );
   };
   const providerLabel = (id: string) =>
-    compatibleConnectionName(
-      credentialByProvider.get(id)?.baseUrl,
-      groups.find((group) => group.id === id)?.name ?? id,
-    );
+    credentialByProvider.get(id)?.endpointName ??
+    groups.find((group) => group.id === id)?.name ??
+    id;
   // The approval model only judges actions in Auto, so it shows only then. A Space may
   // inherit Approvals from the account, so its page asks for whichever copy applies there.
   const queries = useSpaceQueries();
@@ -154,7 +145,7 @@ export function ModelSettingsOverlay({
     !mainSeesImages ||
     Boolean(computerRole?.primary || computerRole?.backups.length);
 
-  // The Ollama Cloud preset shares the compatible provider id with a saved local server.
+  // A hosted preset shares the compatible provider id with a saved local server.
   const connected = Boolean(
     credential &&
       (!isOpenAiCompatible || savedCompatibleEndpointMatches(baseUrl, credential.baseUrl)),
@@ -425,35 +416,20 @@ export function ModelSettingsOverlay({
           <Trans>No model catalog is available.</Trans>
         </p>
       )}
-      <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              <Trans>Disconnect {disconnectName}?</Trans>
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              <Trans>This removes the connection from every space.</Trans>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              <Trans>Cancel</Trans>
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={pending === "disconnect"}
-              onClick={() => {
-                setConfirmDisconnect(false);
-                setConnectionAt(null);
-                intentRef.current = null;
-                void disconnectCredential();
-              }}
-            >
-              <Trans>Disconnect</Trans>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmDisconnect}
+        onCancel={() => setConfirmDisconnect(false)}
+        title={<Trans>Disconnect {disconnectName}?</Trans>}
+        description={<Trans>This removes the connection from every space.</Trans>}
+        confirmDisabled={pending === "disconnect"}
+        onConfirm={() => {
+          setConfirmDisconnect(false);
+          setConnectionAt(null);
+          intentRef.current = null;
+          void disconnectCredential();
+        }}
+        confirmLabel={<Trans>Disconnect</Trans>}
+      />
     </>
   );
 

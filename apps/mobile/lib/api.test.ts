@@ -3,18 +3,13 @@ import { getArtifactById } from "./artifacts";
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 
 import type { RpcInput } from "@rakazo/contracts";
-import {
-  dismissableAskMessageIds,
-  isServerUnreachable,
-  withLiveStreamingProgress,
-} from "@rakazo/core";
+import { isServerUnreachable, mergeThreadSnapshot, reduceThreadSnapshot } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promptAiConsent } from "./ai-consent";
 import type { MobileMessage, MobileModelCredential, MobileSnapshot } from "./api.js";
 import {
   adoptDeletedSpaceFallback,
-  applyMobileThreadEvent,
   authHeaders,
   blockText,
   captureApiRequestContext,
@@ -30,7 +25,6 @@ import {
   loadApiBase,
   MAX_MOBILE_AUTH_RESPONSE_BYTES,
   MAX_MOBILE_RPC_RESPONSE_BYTES,
-  mergeMobileSnapshot,
   mobileThreadRefreshResult,
   passwordResetCapabilities,
   prependMobileMessagePage,
@@ -5356,7 +5350,7 @@ describe("discarded mobile thread refresh cursor", () => {
       },
     ];
     return events.reduce<MobileSnapshot>(
-      (view, event) => (event.seq > cursor ? (applyMobileThreadEvent(view, event) ?? view) : view),
+      (view, event) => (event.seq > cursor ? (reduceThreadSnapshot(view, event) ?? view) : view),
       onScreen,
     );
   }
@@ -5375,7 +5369,7 @@ describe("discarded mobile thread refresh cursor", () => {
   });
 
   it("keeps a live message applied while a refresh snapshot was in flight", () => {
-    const live = applyMobileThreadEvent(fetched, {
+    const live = reduceThreadSnapshot(fetched, {
       type: "thread.message.created",
       seq: 6,
       payload: {
@@ -5400,88 +5394,6 @@ describe("discarded mobile thread refresh cursor", () => {
 });
 
 describe("mobile thread event reduction", () => {
-  it("appends an emoji reply with its exact target", () => {
-    const initial = snapshot([mobileMessage("message-1", [{ kind: "text", text: "Done" }])]);
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.message.created",
-      seq: 4,
-      payload: {
-        messageId: "reaction-1",
-        role: "user",
-        blocks: [{ kind: "text", text: "❤️" }],
-        replyToMessageId: "message-1",
-      },
-    });
-
-    expect(next?.messages.find((message) => message.id === "reaction-1")).toMatchObject({
-      role: "user",
-      blocks: [{ kind: "text", text: "❤️" }],
-      replyToMessageId: "message-1",
-    });
-    expect(next?.cursor).toBe(4);
-  });
-
-  it("appends a quoted reply carrying its excerpt", () => {
-    const initial = snapshot([mobileMessage("message-1", [{ kind: "text", text: "Done" }])]);
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.message.created",
-      seq: 4,
-      createdAt: "2026-10-08T12:00:00.000Z",
-      payload: {
-        messageId: "reply-1",
-        role: "user",
-        blocks: [{ kind: "text", text: "why this?" }],
-        replyToMessageId: "message-1",
-        replyQuote: "Done",
-        replyPreview: { role: "user", text: "Done" },
-      },
-    });
-
-    expect(next?.messages.find((message) => message.id === "reply-1")).toMatchObject({
-      role: "user",
-      replyToMessageId: "message-1",
-      replyQuote: "Done",
-      replyPreview: { role: "user", text: "Done" },
-      createdAt: "2026-10-08T12:00:00.000Z",
-    });
-
-    const updated = applyMobileThreadEvent(next, {
-      type: "thread.message.updated",
-      seq: 5,
-      payload: { messageId: "reply-1", role: "user", blocks: [{ kind: "text", text: "Updated" }] },
-    });
-    expect(updated?.messages.find((message) => message.id === "reply-1")).toMatchObject({
-      replyToMessageId: "message-1",
-      replyQuote: "Done",
-      replyPreview: { role: "user", text: "Done" },
-      createdAt: "2026-10-08T12:00:00.000Z",
-    });
-  });
-
-  it("keeps a message in its call when an update leaves the call id out", () => {
-    const spoken: MobileMessage = {
-      ...mobileMessage("message-1", [{ kind: "text", text: "Hi" }]),
-      callId: "call-1",
-    };
-    const initial = snapshot([spoken]);
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.message.updated",
-      seq: 5,
-      payload: {
-        messageId: "message-1",
-        role: "bot",
-        blocks: [{ kind: "text", text: "Hi. Talk soon." }],
-      },
-    });
-
-    expect(next?.messages.find((message) => message.id === "message-1")).toMatchObject({
-      callId: "call-1",
-    });
-  });
-
   it("prepends ordered history pages without duplicating the boundary message", () => {
     const initial = snapshot([mobileMessage("m-2", [], 2), mobileMessage("m-3", [], 3)], 2);
 
@@ -5510,539 +5422,24 @@ describe("mobile thread event reduction", () => {
     );
     const refreshed = snapshot([mobileMessage("m-1", [], 1), mobileMessage("m-2", [], 2)], 1);
 
-    const next = mergeMobileSnapshot(initial, refreshed, true);
+    const next = mergeThreadSnapshot(initial, refreshed, true);
 
     expect(next.messages.map((item) => item.id)).toEqual(["m-0", "m-1", "m-2"]);
     expect(next.olderCursor).toBeNull();
   });
 
-  it("keeps the routine behind a started run", () => {
-    const started = applyMobileThreadEvent(snapshot(), {
-      type: "run.started",
-      seq: 9,
-      runId: "routine-run",
-      botId: "bot-1",
-      payload: { trigger: "routine", routineName: "Daily check" },
-    });
-    expect(started?.run).toMatchObject({ trigger: "routine", routineName: "Daily check" });
-
-    const resumed = applyMobileThreadEvent(started, {
-      type: "run.started",
-      seq: 10,
-      runId: "routine-run",
-      botId: "bot-1",
-      payload: { trigger: "routine" },
-    });
-    expect(resumed?.run).toMatchObject({ trigger: "routine", routineName: "Daily check" });
-  });
-
-  it("shows peer-started group work without hiding a waiting member", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "waiting-run", botId: "bot-1", status: "waiting_input" },
-      activeRuns: [{ id: "waiting-run", botId: "bot-1", status: "waiting_input" }],
-      members: [
-        { botId: "bot-1", name: "Writer", color: "blue", status: "waiting_input" },
-        { botId: "bot-2", name: "Researcher", color: "green", status: "idle" },
-      ],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      seq: 9,
-      runId: "peer-run",
-      botId: "bot-2",
-      payload: { trigger: "user_message" },
-    });
-
-    expect(next?.cursor).toBe(9);
-    expect(next?.run).toEqual({
-      id: "peer-run",
-      botId: "bot-2",
-      status: "running",
-      trigger: "user_message",
-      error: null,
-    });
-    expect(next?.activeRuns).toEqual([
-      { id: "waiting-run", botId: "bot-1", status: "waiting_input" },
-      { id: "peer-run", botId: "bot-2", status: "running", trigger: "user_message", error: null },
-    ]);
-    expect(next?.members?.map((member) => member.status)).toEqual(["waiting_input", "running"]);
-  });
-
-  it("keeps group member status in sync with run lifecycle events, like web", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      botId: undefined,
-      groupId: "group-1",
-      members: [
-        { botId: "bot-1", name: "Writer", color: "blue", status: "idle" },
-        { botId: "bot-2", name: "Researcher", color: "green", status: "idle" },
-      ],
-    };
-    const statuses = (state: MobileSnapshot | null) =>
-      state?.members?.map((member) => member.status);
-
-    const started = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      seq: 4,
-      botId: "bot-1",
-      runId: "run-1",
-    });
-    expect(statuses(started)).toEqual(["running", "idle"]);
-    const waiting = applyMobileThreadEvent(started, {
-      type: "run.waiting_input",
-      seq: 5,
-      botId: "bot-1",
-      runId: "run-1",
-    });
-    expect(statuses(waiting)).toEqual(["waiting_input", "idle"]);
-    const resumed = applyMobileThreadEvent(waiting, {
-      type: "run.started",
-      seq: 6,
-      botId: "bot-1",
-      runId: "run-1",
-    });
-    const takeover = applyMobileThreadEvent(resumed, {
-      type: "computer.takeover.requested",
-      seq: 7,
-      botId: "bot-1",
-      runId: "run-1",
-    });
-    expect(statuses(takeover)).toEqual(["waiting_takeover", "idle"]);
-    const released = applyMobileThreadEvent(takeover, {
-      type: "computer.takeover.released",
-      seq: 8,
-      botId: "bot-1",
-      runId: "run-1",
-    });
-    expect(statuses(released)).toEqual(["queued", "idle"]);
-    const completed = applyMobileThreadEvent(released, {
-      type: "run.completed",
-      seq: 9,
-      botId: "bot-1",
-      runId: "run-1",
-    });
-    expect(statuses(completed)).toEqual(["idle", "idle"]);
-  });
-
-  it("marks a waiting peer that the snapshot omitted", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      members: [{ botId: "bot-2", name: "Researcher", color: "green", status: "running" }],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.waiting_input",
-      seq: 9,
-      botId: "bot-2",
-      runId: "peer-run",
-    });
-
-    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "waiting_input" });
-    expect(next?.members?.[0]?.status).toBe("waiting_input");
-  });
-
-  it.each(["run.completed", "run.failed", "run.cancelled"])(
-    "settles a member on %s to its next active run, or idle",
-    (type) => {
-      const initial: MobileSnapshot = {
-        ...snapshot(),
-        groupId: "group-1",
-        run: { id: "run-1", botId: "bot-1", status: "running" },
-        activeRuns: [
-          { id: "run-1", botId: "bot-1", status: "running" },
-          { id: "run-2", botId: "bot-1", status: "waiting_input" },
-          { id: "run-3", botId: "bot-2", status: "running" },
-        ],
-        members: [
-          { botId: "bot-1", name: "Writer", color: "blue", status: "running" },
-          { botId: "bot-2", name: "Researcher", color: "green", status: "running" },
-        ],
-      };
-
-      const first = applyMobileThreadEvent(initial, {
-        type,
-        seq: 9,
-        botId: "bot-1",
-        runId: "run-1",
-      });
-      expect(first?.members?.map((member) => member.status)).toEqual(["waiting_input", "running"]);
-      const last = applyMobileThreadEvent(first, {
-        type,
-        seq: 10,
-        botId: "bot-2",
-        runId: "run-3",
-      });
-      expect(last?.members?.map((member) => member.status)).toEqual(["waiting_input", "idle"]);
-    },
-  );
-
-  it("consumes background run starts without changing visible work or members", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "waiting-run", botId: "bot-1", status: "waiting_input" },
-      activeRuns: [{ id: "waiting-run", botId: "bot-1", status: "waiting_input" }],
-      members: [{ botId: "bot-1", name: "Writer", color: "blue", status: "waiting_input" }],
-    };
-    const event = {
-      type: "run.started",
-      seq: 9,
-      runId: "ticket-run",
-      botId: "bot-1",
-      payload: { trigger: "tickets" },
-    };
-
-    const next = applyMobileThreadEvent(initial, event);
-
-    expect(next?.cursor).toBe(9);
-    expect(next?.run).toBe(initial.run);
-    expect(next?.activeRuns).toBe(initial.activeRuns);
-    expect(next?.members).toBe(initial.members);
-    expect(next?.messages).toBe(initial.messages);
-    expect(applyMobileThreadEvent(next, event)).toBe(next);
-  });
-
-  it("updates only the matching member and cursor when a start omits its run ID", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "waiting-run", botId: "bot-1", status: "waiting_takeover" },
-      activeRuns: [{ id: "waiting-run", botId: "bot-1", status: "waiting_takeover" }],
-      members: [
-        { botId: "bot-1", name: "Writer", color: "blue", status: "waiting_takeover" },
-        { botId: "bot-2", name: "Researcher", color: "green", status: "idle" },
-      ],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      seq: 9,
-      botId: "bot-2",
-    });
-
-    expect(next).toEqual({
-      ...initial,
-      cursor: 9,
-      members: [
-        initial.members![0],
-        { botId: "bot-2", name: "Researcher", color: "green", status: "running" },
-      ],
-    });
-    expect(next?.run).toBe(initial.run);
-    expect(next?.activeRuns).toBe(initial.activeRuns);
-    expect(next?.members?.[0]).toBe(initial.members?.[0]);
-    expect(applyMobileThreadEvent(next, { type: "run.started", seq: 9, botId: "bot-2" })).toBe(
-      next,
-    );
-  });
-
-  it("does not invent members for a start with an unknown bot or run ID", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      members: [{ botId: "bot-1", name: "Writer", color: "blue", status: "idle" }],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      seq: 9,
-      botId: "unknown-bot",
-    });
-
-    expect(next).toEqual({ ...initial, cursor: 9 });
-    expect(next?.members).toBe(initial.members);
-    expect(applyMobileThreadEvent(initial, { type: "run.started" })).toBe(initial);
-  });
-
-  it("does not infer a started run's bot from the snapshot", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      members: [{ botId: "bot-1", name: "Writer", color: "blue", status: "idle" }],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      runId: "unattributed-run",
-    });
-
-    expect(next?.cursor).toBe(3);
-    expect(next?.run).toEqual({ id: "unattributed-run", status: "running", error: null });
-    expect(next?.activeRuns).toEqual([{ id: "unattributed-run", status: "running", error: null }]);
-    expect(next?.members).toBe(initial.members);
-  });
-
-  it("deduplicates a restarted run and retains every other active lifecycle state", () => {
-    const retained = [
-      { id: "queued-run", status: "queued" },
-      { id: "leased-run", status: "leased" },
-      { id: "running-run", status: "running" },
-      { id: "ask-run", status: "waiting_input" },
-      { id: "takeover-run", status: "waiting_takeover" },
-    ];
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      run: retained[3]!,
-      activeRuns: [
-        ...retained,
-        { id: "resumed-run", botId: "bot-2", status: "waiting_input" },
-        { id: "resumed-run", botId: "bot-2", status: "running" },
-        { id: "completed-run", status: "completed" },
-        { id: "failed-run", status: "failed" },
-        { id: "cancelled-run", status: "cancelled" },
-      ],
-    };
-    const event = { type: "run.started", seq: 9, runId: "resumed-run", botId: "bot-2" };
-
-    const next = applyMobileThreadEvent(initial, event);
-    const replayed = applyMobileThreadEvent(next, event);
-
-    expect(next?.run).toEqual({
-      id: "resumed-run",
-      botId: "bot-2",
-      status: "running",
-      error: null,
-    });
-    expect(next?.activeRuns).toEqual([
-      ...retained,
-      { id: "resumed-run", botId: "bot-2", status: "running", error: null },
-    ]);
-    expect(replayed?.activeRuns).toEqual(next?.activeRuns);
-  });
-
-  it("retains a waiting primary run when the snapshot omits activeRuns", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      run: { id: "waiting-run", botId: "bot-1", status: "waiting_takeover" },
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      runId: "peer-run",
-      botId: "bot-2",
-    });
-
-    expect(next?.activeRuns).toEqual([
-      { id: "waiting-run", botId: "bot-1", status: "waiting_takeover" },
-      { id: "peer-run", botId: "bot-2", status: "running", error: null },
-    ]);
-    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "running", error: null });
-  });
-
-  it("retains an unrelated group failure until that failed run starts again", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "failed-run", botId: "bot-1", status: "failed", error: "Provider unavailable" },
-      activeRuns: [{ id: "waiting-run", botId: "bot-2", status: "waiting_input" }],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      seq: 9,
-      runId: "peer-run",
-      botId: "bot-3",
-    });
-
-    expect(next?.run).toBe(initial.run);
-    expect(next?.activeRuns).toEqual([
-      { id: "waiting-run", botId: "bot-2", status: "waiting_input" },
-      { id: "peer-run", botId: "bot-3", status: "running", error: null },
-    ]);
-    const restarted = applyMobileThreadEvent(next, {
-      type: "run.started",
-      seq: 10,
-      runId: "failed-run",
-      botId: "bot-1",
-    });
-    expect(restarted?.cursor).toBe(10);
-    expect(restarted?.run).toEqual({
-      id: "failed-run",
-      botId: "bot-1",
-      status: "running",
-      error: null,
-    });
-    expect(restarted?.activeRuns).toEqual([
-      { id: "waiting-run", botId: "bot-2", status: "waiting_input" },
-      { id: "peer-run", botId: "bot-3", status: "running", error: null },
-      { id: "failed-run", botId: "bot-1", status: "running", error: null },
-    ]);
-  });
-
-  it("replaces an unrelated failure when a direct thread starts work", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      run: { id: "failed-run", status: "failed", error: "Provider unavailable" },
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      seq: 9,
-      runId: "new-run",
-      botId: "bot-1",
-    });
-
-    expect(next?.run).toEqual({ id: "new-run", botId: "bot-1", status: "running", error: null });
-    expect(next?.activeRuns).toEqual([
-      { id: "new-run", botId: "bot-1", status: "running", error: null },
-    ]);
-  });
-
-  it("accumulates progress deltas for the same run", () => {
-    const first = applyMobileThreadEvent(snapshot(), {
-      type: "thread.progress",
-      runId: "run-1",
-      payload: { delta: "Hel" },
-    });
-    const second = applyMobileThreadEvent(first, {
-      type: "thread.progress",
-      runId: "run-1",
-      payload: { delta: "lo" },
-    });
-
-    expect(second?.messages).toEqual([
-      {
-        id: "progress:run-1",
-        role: "bot",
-        runId: "run-1",
-        blocks: [{ kind: "progress", text: "Hello" }],
-      },
-    ]);
-  });
-
-  it("keeps hidden token progress so re-enabling streaming stays continuous", () => {
-    const afterTokens = applyMobileThreadEvent(snapshot(), {
-      type: "thread.progress",
-      seq: 4,
-      runId: "run-1",
-      payload: { text: "Lis", streaming: true },
-    });
-    const afterDelta = applyMobileThreadEvent(afterTokens, {
-      type: "thread.progress",
-      seq: 5,
-      runId: "run-1",
-      payload: { delta: "bon", streaming: true },
-    });
-
-    expect(afterDelta?.cursor).toBe(5);
-    expect(afterDelta?.messages).toEqual([
-      {
-        id: "progress:run-1",
-        role: "bot",
-        runId: "run-1",
-        blocks: [{ kind: "progress", text: "Lisbon" }],
-      },
-    ]);
-    expect(withLiveStreamingProgress(afterDelta, false)?.messages).toEqual([]);
-
-    const afterComplete = applyMobileThreadEvent(afterDelta, {
-      type: "thread.message.created",
-      seq: 6,
-      runId: "run-1",
-      payload: {
-        messageId: "m-final",
-        role: "bot",
-        blocks: [{ kind: "text", text: "Lisbon" }],
-      },
-    });
-    expect(afterComplete?.messages).toEqual([
-      expect.objectContaining({
-        id: "m-final",
-        blocks: [{ kind: "text", text: "Lisbon" }],
-      }),
-    ]);
-  });
-
-  it("resumes from retained tokens after streaming is turned back on mid-reply", () => {
-    const afterPrefix = applyMobileThreadEvent(snapshot(), {
-      type: "thread.progress",
-      seq: 4,
-      runId: "run-1",
-      payload: { text: "Lis", streaming: true },
-    });
-    expect(withLiveStreamingProgress(afterPrefix, false)?.messages).toEqual([]);
-
-    const afterResume = applyMobileThreadEvent(afterPrefix, {
-      type: "thread.progress",
-      seq: 5,
-      runId: "run-1",
-      payload: { delta: "bon", streaming: true },
-    });
-    expect(withLiveStreamingProgress(afterResume, true)?.messages).toEqual([
-      {
-        id: "progress:run-1",
-        role: "bot",
-        runId: "run-1",
-        blocks: [{ kind: "progress", text: "Lisbon" }],
-      },
-    ]);
-  });
-
-  it("preserves progress from a legacy run-only snapshot", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot([
-        {
-          ...mobileMessage("progress:run-legacy", [{ kind: "progress", text: "Still working" }]),
-          runId: "run-legacy",
-        },
-      ]),
-      run: { id: "run-legacy", status: "running" },
-      activeRuns: undefined,
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.progress",
-      runId: "run-new",
-      payload: { text: "New work" },
-    });
-
-    expect(next?.messages.map((item) => item.id)).toEqual([
-      "progress:run-legacy",
-      "progress:run-new",
-    ]);
-  });
-
-  it("preserves concurrent progress when active-run metadata lags", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot([
-        {
-          ...mobileMessage("progress:run-concurrent", [
-            { kind: "progress", text: "Concurrent work" },
-          ]),
-          runId: "run-concurrent",
-        },
-      ]),
-      run: { id: "run-current", status: "running" },
-      activeRuns: [{ id: "run-current", status: "running" }],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.progress",
-      runId: "run-current",
-      payload: { text: "Current work" },
-    });
-
-    expect(next?.messages.map((item) => item.id)).toEqual([
-      "progress:run-concurrent",
-      "progress:run-current",
-    ]);
-  });
-
   it("holds live tool steps until mobile narration reaches a sentence boundary", () => {
-    const narration = applyMobileThreadEvent(snapshot(), {
+    const narration = reduceThreadSnapshot(snapshot(), {
       type: "thread.progress",
       runId: "run-1",
       payload: { text: "Let me check " },
     });
-    const pending = applyMobileThreadEvent(narration, {
+    const pending = reduceThreadSnapshot(narration, {
       type: "agent.tool.called",
       runId: "run-1",
       payload: { name: "SLACK_FIND_CHANNELS" },
     });
-    const completed = applyMobileThreadEvent(pending, {
+    const completed = reduceThreadSnapshot(pending, {
       type: "thread.progress",
       runId: "run-1",
       payload: { delta: "now." },
@@ -6065,14 +5462,14 @@ describe("mobile thread event reduction", () => {
   });
 
   it("keeps the thread and first activity time on a live message for its tool card", () => {
-    const started = applyMobileThreadEvent(snapshot(), {
+    const started = reduceThreadSnapshot(snapshot(), {
       type: "thread.progress",
       runId: "run-1",
       threadId: "thread-1",
       createdAt: "2026-08-16T00:00:01.000Z",
       payload: { text: "Running: ls", activity: true },
     });
-    const called = applyMobileThreadEvent(started, {
+    const called = reduceThreadSnapshot(started, {
       type: "agent.tool.called",
       runId: "run-1",
       threadId: "thread-1",
@@ -6118,286 +5515,6 @@ describe("mobile thread event reduction", () => {
     ).toBe("Alex (Slack): Hello from the group");
   });
 
-  it("deduplicates durable messages and replaces matching transient subagent state", () => {
-    const initial = snapshot([
-      mobileMessage("message-1", [{ kind: "text", text: "old" }]),
-      mobileMessage("subagent:research", [
-        {
-          kind: "subagent",
-          agentId: "research",
-          name: "Research",
-          task: "Search",
-          status: "running",
-        },
-      ]),
-      mobileMessage("subagent:other", [
-        { kind: "subagent", agentId: "other", name: "Other", task: "Wait", status: "running" },
-      ]),
-      {
-        ...mobileMessage("progress:run-1", [{ kind: "progress", text: "draft" }]),
-        runId: "run-1",
-      },
-    ]);
-    const completed = {
-      kind: "subagent" as const,
-      agentId: "research",
-      name: "Research",
-      task: "Search",
-      status: "completed" as const,
-      result: "Done",
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      id: "event-1",
-      type: "thread.message.created",
-      seq: 9,
-      runId: "run-1",
-      payload: { messageId: "message-1", role: "bot", blocks: [completed] },
-    });
-
-    expect(next?.messages.map((item) => item.id)).toEqual(["message-1", "subagent:other"]);
-    expect(next?.messages[0]?.blocks).toEqual([completed]);
-  });
-
-  it("keeps a replayed bot-to-bot marker in its durable transcript position", () => {
-    const peerBlock = {
-      kind: "bot_message_received" as const,
-      fromBotId: "bot-peer",
-      fromBotName: "Peer",
-      text: "Please check this.",
-    };
-    const initial = snapshot([
-      mobileMessage("peer-message", [peerBlock], 1),
-      mobileMessage("newer-message", [{ kind: "text", text: "Working on it." }], 2),
-    ]);
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.message.created",
-      seq: 9,
-      payload: { messageId: "peer-message", role: "user", blocks: [peerBlock] },
-    });
-
-    expect(next?.messages.map((message) => message.id)).toEqual(["peer-message", "newer-message"]);
-  });
-
-  it("clears loaded history and active state when another client clears the thread", () => {
-    const initial = snapshot([mobileMessage("message-1", [{ kind: "text", text: "old" }])], 1);
-    initial.run = { id: "run-1", status: "running" };
-
-    const next = applyMobileThreadEvent(initial, { type: "thread.cleared", seq: 12 });
-
-    expect(next).toMatchObject({ cursor: 12, messages: [], olderCursor: null, run: null });
-  });
-
-  it("applies the durable waiting-input run transition", () => {
-    const initial: MobileSnapshot = { ...snapshot(), run: { id: "run-1", status: "running" } };
-    const waiting = applyMobileThreadEvent(initial, {
-      type: "run.waiting_input",
-      runId: "run-1",
-      seq: 8,
-    });
-
-    expect(waiting?.run?.status).toBe("waiting_input");
-    expect(waiting?.cursor).toBe(8);
-    const repeated = applyMobileThreadEvent(waiting, {
-      type: "run.waiting_input",
-      runId: "run-1",
-      seq: 9,
-    });
-    expect(repeated?.cursor).toBe(9);
-    expect(repeated?.run).toBe(waiting?.run);
-  });
-
-  it("applies the waiting-input owner only to its run", () => {
-    const type = "run.waiting_input";
-    const status = "waiting_input";
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      run: { id: "run-1", status: "running", userId: "old-owner" },
-      activeRuns: [
-        { id: "run-1", status: "running", userId: "old-owner" },
-        { id: "run-2", status: "running", userId: "other-owner" },
-      ],
-    };
-    const waiting = applyMobileThreadEvent(initial, {
-      type,
-      runId: "run-1",
-      payload: { userId: "owner-1" },
-    });
-
-    expect(waiting?.run).toEqual({ id: "run-1", status, userId: "owner-1" });
-    expect(waiting?.activeRuns).toEqual([
-      { id: "run-1", status, userId: "owner-1" },
-      { id: "run-2", status: "running", userId: "other-owner" },
-    ]);
-
-    const corrected = applyMobileThreadEvent(waiting, {
-      type,
-      runId: "run-1",
-      payload: { userId: "owner-2" },
-    });
-    expect(corrected?.run?.userId).toBe("owner-2");
-    expect(corrected?.activeRuns?.[0]?.userId).toBe("owner-2");
-
-    const repeated = applyMobileThreadEvent(corrected, {
-      type,
-      runId: "run-1",
-      payload: { userId: "owner-2" },
-    });
-    expect(repeated).toBe(corrected);
-
-    const legacy = applyMobileThreadEvent(corrected, { type, runId: "run-1" });
-    expect(legacy?.run?.userId).toBe("owner-2");
-    expect(legacy?.activeRuns?.[0]?.userId).toBe("owner-2");
-  });
-
-  it("records the owner of an inserted waiting group run without changing another run", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "run-1", status: "waiting_input", userId: "owner-1" },
-      activeRuns: [{ id: "run-1", status: "waiting_input", userId: "owner-1" }],
-    };
-    const waiting = applyMobileThreadEvent(initial, {
-      type: "run.waiting_input",
-      runId: "run-2",
-      botId: "bot-2",
-      payload: { userId: "owner-2" },
-    });
-
-    expect(waiting?.run).toEqual(initial.run);
-    expect(waiting?.activeRuns).toEqual([
-      initial.run,
-      { id: "run-2", botId: "bot-2", status: "waiting_input", userId: "owner-2" },
-    ]);
-    const withoutRunId = applyMobileThreadEvent(waiting, {
-      type: "run.waiting_input",
-      payload: { userId: "unknown-owner" },
-    });
-    expect(withoutRunId?.run).toEqual(waiting?.run);
-    expect(withoutRunId?.activeRuns).toEqual(waiting?.activeRuns);
-  });
-
-  it("hydrates a late owner on an already-waiting group run", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "run-newer", status: "running", userId: "other-owner" },
-      activeRuns: [
-        { id: "run-newer", status: "running", userId: "other-owner" },
-        { id: "run-waiting", status: "waiting_input" },
-      ],
-    };
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.waiting_input",
-      runId: "run-waiting",
-      payload: { userId: "owner" },
-    });
-    expect(next?.run).toBe(initial.run);
-    expect(next?.activeRuns).toEqual([
-      initial.run,
-      { id: "run-waiting", status: "waiting_input", userId: "owner" },
-    ]);
-  });
-
-  it("does not infer an owner from a legacy waiting event or takeover payload", () => {
-    const legacy = applyMobileThreadEvent(snapshot(), {
-      type: "run.waiting_input",
-      runId: "run-1",
-    });
-    expect(legacy?.run).toEqual({ id: "run-1", status: "waiting_input" });
-    const takeover = applyMobileThreadEvent(snapshot(), {
-      type: "computer.takeover.requested",
-      runId: "run-2",
-      payload: { userId: "owner" },
-    });
-    expect(takeover?.run).toEqual({ id: "run-2", status: "waiting_takeover" });
-  });
-
-  it.each([undefined, "group-1"])(
-    "allows only the owner to dismiss a live secret ask in %s",
-    (groupId) => {
-      const ask = {
-        ...mobileMessage("ask-1", [
-          { kind: "ask", text: "Secret", input: "secret", status: "pending" },
-        ]),
-        runId: "run-1",
-      };
-      const initial: MobileSnapshot = {
-        ...snapshot([ask]),
-        groupId,
-        run: { id: "run-1", status: "running" },
-        activeRuns: [{ id: "run-1", status: "running" }],
-      };
-      const waiting = applyMobileThreadEvent(initial, {
-        type: "run.waiting_input",
-        runId: "run-1",
-        payload: { userId: "owner" },
-      });
-
-      expect(dismissableAskMessageIds(waiting, "owner")).toEqual(new Set(["ask-1"]));
-      expect(dismissableAskMessageIds(waiting, "other")).toEqual(new Set());
-      expect(
-        dismissableAskMessageIds(
-          applyMobileThreadEvent(initial, { type: "run.waiting_input", runId: "run-1" }),
-          "owner",
-        ),
-      ).toEqual(new Set());
-    },
-  );
-
-  it("applies computer takeover requests as waiting_takeover", () => {
-    const progress = mobileMessage("progress:run-1", [{ kind: "progress", text: "working…" }], 1);
-    const initial: MobileSnapshot = {
-      ...snapshot([progress]),
-      run: { id: "run-1", status: "running" },
-      activeRuns: [{ id: "run-1", status: "running" }],
-    };
-    const waiting = applyMobileThreadEvent(initial, {
-      type: "computer.takeover.requested",
-      runId: "run-1",
-      seq: 10,
-    });
-
-    expect(waiting?.run?.status).toBe("waiting_takeover");
-    expect(waiting?.activeRuns?.[0]?.status).toBe("waiting_takeover");
-    expect(waiting?.messages.some((message) => message.id.startsWith("progress:"))).toBe(false);
-    expect(waiting?.cursor).toBe(10);
-
-    const released = applyMobileThreadEvent(
-      {
-        ...initial,
-        run: { id: "run-1", status: "waiting_takeover" },
-        activeRuns: [
-          { id: "run-1", status: "waiting_takeover" },
-          { id: "run-2", status: "waiting_takeover" },
-        ],
-      },
-      {
-        type: "computer.takeover.released",
-        runId: "run-1",
-        seq: 11,
-      },
-    );
-    expect(released?.run?.status).toBe("queued");
-    expect(released?.activeRuns).toEqual([
-      { id: "run-1", status: "queued" },
-      { id: "run-2", status: "waiting_takeover" },
-    ]);
-    expect(released?.cursor).toBe(11);
-
-    const running = applyMobileThreadEvent(
-      {
-        ...snapshot(),
-        run: { id: "run-1", status: "running" },
-        activeRuns: [{ id: "run-1", status: "running" }],
-      },
-      { type: "computer.takeover.released", runId: "run-1", seq: 12 },
-    );
-    expect(running?.run?.status).toBe("running");
-    expect(running?.activeRuns?.[0]?.status).toBe("running");
-  });
-
   it("lets a newer refresh replace waiting_takeover with queued", () => {
     const waiting: MobileSnapshot = {
       ...snapshot(),
@@ -6412,206 +5529,17 @@ describe("mobile thread event reduction", () => {
       activeRuns: [{ id: "run-1", status: "queued" }],
     };
 
-    const next = mergeMobileSnapshot(waiting, refreshed);
+    const next = mergeThreadSnapshot(waiting, refreshed);
 
     expect(next.cursor).toBe(12);
     expect(next.run?.status).toBe("queued");
     expect(next.activeRuns?.[0]?.status).toBe("queued");
   });
 
-  it("inserts a peer takeover run that was absent from the open snapshot", () => {
-    const progress = mobileMessage(
-      "progress:run-peer",
-      [{ kind: "progress", text: "working…" }],
-      1,
-    );
-    const initial: MobileSnapshot = {
-      ...snapshot([progress]),
-      run: { id: "run-user", status: "running" },
-      activeRuns: [{ id: "run-user", status: "running" }],
-      computer: {
-        state: "running",
-        controlHolder: "bot",
-        screenAvailable: true,
-        mode: "team",
-        busyBotName: "Peer",
-      },
-    };
-
-    const waiting = applyMobileThreadEvent(initial, {
-      type: "computer.takeover.requested",
-      runId: "run-peer",
-      botId: "bot-peer",
-      seq: 12,
-    });
-
-    expect(waiting?.run).toEqual({ id: "run-peer", botId: "bot-peer", status: "waiting_takeover" });
-    expect(waiting?.activeRuns).toEqual([
-      { id: "run-user", status: "running" },
-      { id: "run-peer", botId: "bot-peer", status: "waiting_takeover" },
-    ]);
-    expect(waiting?.messages.some((message) => message.id.startsWith("progress:"))).toBe(false);
-    expect(waiting?.computer?.busyBotName).toBeNull();
-  });
-
-  it("advances the cursor for durable message events", () => {
-    const next = applyMobileThreadEvent(snapshot(), {
-      type: "thread.message.created",
-      seq: 11,
-      payload: { messageId: "message-1", role: "bot", blocks: [{ kind: "text", text: "Done" }] },
-    });
-
-    expect(next?.cursor).toBe(11);
-  });
-
-  it("preserves ask actions and runId on created messages", () => {
-    const initial = snapshot();
-    const askBlock = {
-      kind: "ask",
-      text: "Review before writing",
-      detail: "title: Result",
-      status: "pending",
-      actions: [
-        { id: "allow", label: "Allow once" },
-        { id: "always", label: "Always allow" },
-        { id: "deny", label: "Deny" },
-      ],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.message.created",
-      runId: "run-1",
-      payload: { messageId: "message-ask", role: "bot", blocks: [askBlock] },
-    });
-
-    expect(next?.messages.at(-1)).toMatchObject({
-      id: "message-ask",
-      runId: "run-1",
-      blocks: [askBlock],
-    });
-  });
-
-  it("updates a waiting group run without replacing the newer active run", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      run: { id: "run-newer", status: "running" },
-      activeRuns: [
-        { id: "run-newer", status: "running" },
-        { id: "run-waiting", status: "running" },
-      ],
-    };
-
-    const waiting = applyMobileThreadEvent(initial, {
-      type: "run.waiting_input",
-      runId: "run-waiting",
-    });
-
-    expect(waiting?.run).toEqual({ id: "run-newer", status: "running" });
-    expect(waiting?.activeRuns).toEqual([
-      { id: "run-newer", status: "running" },
-      { id: "run-waiting", status: "waiting_input" },
-    ]);
-  });
-
-  it("clears only the terminal run's live progress", () => {
-    const runA = { id: "run-a", status: "running" };
-    const runB = { id: "run-b", status: "running" };
-    const initial: MobileSnapshot = {
-      ...snapshot([
-        {
-          ...mobileMessage("progress:run-a", [{ kind: "progress", text: "A" }]),
-          runId: runA.id,
-        },
-        {
-          ...mobileMessage("progress:run-b", [{ kind: "progress", text: "B" }]),
-          runId: runB.id,
-        },
-      ]),
-      run: runA,
-      activeRuns: [runA, runB],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.cancelled",
-      seq: 10,
-      runId: runA.id,
-    });
-
-    expect(next?.messages.map((item) => item.id)).toEqual(["progress:run-b"]);
-    expect(next?.run).toEqual(runB);
-    expect(next?.activeRuns).toEqual([runB]);
-    expect(next?.cursor).toBe(10);
-  });
-
-  it("keeps a failed member run's error while another member run is still active", () => {
-    const runA = { id: "run-a", status: "running" };
-    const runB = { id: "run-b", status: "running" };
-    const initial: MobileSnapshot = {
-      ...snapshot([
-        {
-          ...mobileMessage("progress:run-b", [{ kind: "progress", text: "B" }]),
-          runId: runB.id,
-        },
-      ]),
-      run: runA,
-      activeRuns: [runA, runB],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.failed",
-      seq: 11,
-      runId: runB.id,
-      payload: { error: "member exploded" },
-    });
-
-    expect(next?.activeRuns).toEqual([runA]);
-    expect(next?.run).toEqual({ id: runB.id, status: "failed", error: "member exploded" });
-    expect(next?.messages).toEqual([]);
-  });
-
-  it("updates a cloud agent card from thread.cloud_agent", () => {
-    const initial = snapshot([
-      mobileMessage("msg-ca", [
-        {
-          kind: "cloud_agent",
-          agentId: "ca-1",
-          title: "Add README",
-          status: "running",
-          url: "https://example.test/agents/ca-1",
-        },
-      ]),
-    ]);
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.cloud_agent",
-      seq: 9,
-      payload: {
-        messageId: "msg-ca",
-        agentId: "ca-1",
-        title: "Add README",
-        status: "finished",
-        url: "https://example.test/agents/ca-1",
-        branch: "cursor/add-readme",
-        prUrl: "https://github.com/example/repo/pull/1",
-      },
-    });
-
-    expect(next?.cursor).toBe(9);
-    expect(next?.messages[0]?.blocks[0]).toEqual({
-      kind: "cloud_agent",
-      agentId: "ca-1",
-      title: "Add README",
-      status: "finished",
-      url: "https://example.test/agents/ca-1",
-      branch: "cursor/add-readme",
-      prUrl: "https://github.com/example/repo/pull/1",
-    });
-  });
-
   it("starts an idle run from live events and selects the active safety cadence", () => {
     const initial: MobileSnapshot = { ...snapshot(), run: null, activeRuns: [] };
     expect(threadRefreshDelayMs(initial.run?.status, { liveSubscribed: true })).toBe(60_000);
-    const started = applyMobileThreadEvent(initial, {
+    const started = reduceThreadSnapshot(initial, {
       type: "run.started",
       runId: "run-remote",
       botId: "bot-1",
@@ -6619,7 +5547,7 @@ describe("mobile thread event reduction", () => {
       payload: { trigger: "routine" },
     });
     expect(started?.cursor).toBe(12);
-    expect(started?.run).toEqual({
+    expect(started?.run).toMatchObject({
       id: "run-remote",
       botId: "bot-1",
       status: "running",
@@ -6628,57 +5556,13 @@ describe("mobile thread event reduction", () => {
     });
     expect(started?.activeRuns).toEqual([started?.run]);
     expect(threadRefreshDelayMs(started?.run?.status, { liveSubscribed: true })).toBe(30_000);
-    const finished = applyMobileThreadEvent(started, {
+    const finished = reduceThreadSnapshot(started, {
       type: "run.completed",
       runId: "run-remote",
       seq: 13,
     });
     expect(finished?.run).toBeNull();
     expect(finished?.activeRuns).toEqual([]);
-  });
-
-  it("resumes a waiting run without duplicating it or dropping other paused runs", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      run: { id: "run-1", status: "waiting_input" },
-      activeRuns: [
-        { id: "run-1", status: "waiting_input" },
-        { id: "run-2", status: "waiting_takeover" },
-        { id: "run-old", status: "completed" },
-      ],
-    };
-    const next = applyMobileThreadEvent(initial, { type: "run.started", runId: "run-1" });
-    expect(next?.run?.status).toBe("running");
-    expect(next?.activeRuns).toEqual([
-      { id: "run-2", status: "waiting_takeover" },
-      { id: "run-1", status: "running", error: null },
-    ]);
-  });
-
-  it("ignores background run starts and preserves group failures on member starts", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "run-failed", status: "failed", error: "Failed" },
-      activeRuns: [],
-    };
-    expect(
-      applyMobileThreadEvent(initial, {
-        type: "run.started",
-        runId: "run-background",
-        payload: { trigger: "tickets" },
-      }),
-    ).toBe(initial);
-    const next = applyMobileThreadEvent(initial, { type: "run.started", runId: "run-new" });
-    expect(next?.run).toBe(initial.run);
-    expect(next?.activeRuns).toEqual([{ id: "run-new", status: "running", error: null }]);
-  });
-
-  it("leaves the snapshot unchanged for unrelated events", () => {
-    const initial = snapshot();
-    expect(applyMobileThreadEvent(initial, { type: "thread.unrecognized" })).toBe(initial);
-    expect(applyMobileThreadEvent(initial, { type: "run.checkpointed" })).toBe(initial);
-    expect(applyMobileThreadEvent(null, { type: "thread.progress" })).toBeNull();
   });
 });
 
@@ -6773,42 +5657,6 @@ function mobileMessage(id: string, blocks: MobileMessage["blocks"], seq?: number
   return { id, threadId: "thread-1", seq, role: "bot", blocks };
 }
 
-describe("mobile clipboard text", () => {
-  it("copies message content with transport labels and omits card chrome", async () => {
-    const { copyableMobileMessageText } = await import("./api");
-    expect(
-      copyableMobileMessageText({
-        id: "message",
-        role: "bot",
-        blocks: [
-          { kind: "text", text: "Hello" },
-          {
-            kind: "channel_message",
-            provider: "sendblue",
-            transport: "SMS",
-            channelId: "ch-1",
-            fromAddress: "+15551234567",
-            fromLabel: "Sender",
-            text: "Reply",
-          },
-          { kind: "card", lines: [] },
-        ],
-      }),
-    ).toBe("Hello\nSender (SMS): Reply");
-  });
-
-  it("keeps leading whitespace for selection while copying trims it", async () => {
-    const { copyableMobileMessageText, selectableMobileMessageText } = await import("./api");
-    const message: MobileMessage = {
-      id: "message",
-      role: "user",
-      blocks: [{ kind: "text", text: "    indented\nnext  " }],
-    };
-    expect(selectableMobileMessageText(message)).toBe("    indented\nnext  ");
-    expect(copyableMobileMessageText(message)).toBe("indented\nnext");
-  });
-});
-
 it("sends the deletion-code request with a JSON body", async () => {
   const fetchMock = vi.fn(async () => jsonResponse({ status: true }));
   vi.stubGlobal("fetch", fetchMock);
@@ -6827,58 +5675,4 @@ it("localizes non-JSON successful account-security responses", async () => {
     vi.fn(async () => new Response("<html>Gateway error</html>")),
   );
   await expect(fetchAccountSecurity()).rejects.toThrow("Could not load sign-in options");
-});
-
-it("keeps the thread id on live messages so inline cards can act on them", () => {
-  const view = applyMobileThreadEvent(
-    { threadId: "chat", messages: [], olderCursor: null, run: null } as MobileSnapshot,
-    {
-      type: "thread.message.created",
-      seq: 1,
-      payload: { messageId: "card", role: "bot", blocks: [] },
-    } as never,
-  );
-  expect(view?.messages[0]?.threadId).toBe("chat");
-});
-
-describe("stale helper projection", () => {
-  it.each([
-    "run.waiting_input",
-    "computer.takeover.requested",
-    "run.completed",
-    "run.failed",
-    "run.cancelled",
-  ])("settles helpers on %s without reviving them on resume", (type) => {
-    const base = {
-      id: "fixture",
-      threadId: "thread-1",
-      runId: "run-1",
-      seq: 1,
-      createdAt: "2026-01-01T00:00:00.000Z",
-    };
-    const helper = { agentId: "helper", name: "Helper", task: "Check", status: "running" };
-    let next = applyMobileThreadEvent(snapshot(), {
-      ...base,
-      type: "thread.subagent",
-      payload: helper,
-    });
-    next = applyMobileThreadEvent(next, { ...base, seq: 2, type, payload: {} });
-    expect(next?.messages.find((m) => m.id === "subagent:helper")?.blocks[0]).toMatchObject({
-      status: "failed",
-      result: "stopped",
-    });
-    next = applyMobileThreadEvent(next, { ...base, seq: 3, type: "run.started", payload: {} });
-    next = applyMobileThreadEvent(next, {
-      ...base,
-      seq: 4,
-      type: "thread.subagent",
-      payload: { ...helper, agentId: "resumed" },
-    });
-    expect(next?.messages.find((m) => m.id === "subagent:helper")?.blocks[0]).toMatchObject({
-      status: "failed",
-    });
-    expect(next?.messages.find((m) => m.id === "subagent:resumed")?.blocks[0]).toMatchObject({
-      status: "running",
-    });
-  });
 });

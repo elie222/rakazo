@@ -563,6 +563,10 @@ msgstr ""
 msgid "A command's output"
 msgstr "कमांड का आउटपुट"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "A model approves routine actions and asks you about the rest."
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -852,7 +856,7 @@ msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
-msgstr "अनुमति दें"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
@@ -894,6 +898,10 @@ msgstr "पहले से खाता है?"
 msgid "Always act"
 msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Always allow"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Always allow {site}"
 msgstr "{site} को हमेशा अनुमति दें"
@@ -905,6 +913,10 @@ msgstr "इस टूल को हमेशा अनुमति दें"
 #: src/components/AskCard.tsx
 msgid "Always allowed"
 msgstr "हमेशा अनुमत"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Always ask"
+msgstr ""
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
@@ -1083,6 +1095,14 @@ msgstr ""
 msgid "Ask"
 msgstr "पूछें"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Asks before sending, spending or changing anything in your apps."
+msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Asks only before purchases and the first use of your computer. Only Block rules apply."
+msgstr ""
+
 #: src/pages/shell/computer-panel.tsx
 msgid "Asleep"
 msgstr "स्लीप में"
@@ -1230,8 +1250,9 @@ msgstr "बिलिंग अवधि"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
-msgstr "ब्लॉक करें"
+msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/lib/ticket-status.ts
 msgid "Blocked"
 msgstr ""
@@ -1378,28 +1399,22 @@ msgid "Can't read images"
 msgstr "तस्वीरें नहीं पढ़ सकता"
 
 #: src/components/AskCard.tsx
-#: src/components/ComputerMaintenanceActions.tsx
+#: src/components/ConfirmDialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
-#: src/components/SpaceMembersSettings.tsx
 #: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
-#: src/pages/SpaceSettingOverrides.tsx
 msgid "Cancel"
 msgstr "रद्द करें"
 
@@ -1431,6 +1446,10 @@ msgstr "रद्द"
 #: src/pages/ActivityList.tsx
 msgid "Cancelled"
 msgstr "रद्द किया गया"
+
+#: src/components/ModelCredits.tsx
+msgid "Cancelled trials have no computer hours."
+msgstr "रद्द किए गए ट्रायल में कंप्यूटर घंटे नहीं होते।"
 
 #: src/components/vault/kinds.tsx
 msgid "Card"
@@ -3036,6 +3055,10 @@ msgstr ""
 msgid "Did you mean <0>{emailSuggestion}</0>?"
 msgstr "क्या आपका मतलब <0>{emailSuggestion}</0> था?"
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "टूल अक्षम करें"
@@ -3358,10 +3381,6 @@ msgstr ""
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Executor token"
-msgstr "Executor टोकन"
 
 #. placeholder {0}: record.exitCode
 #: src/components/ToolActivityDisclosure.tsx
@@ -4766,6 +4785,7 @@ msgstr ""
 msgid "No longer active"
 msgstr "अब सक्रिय नहीं"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""
@@ -4946,16 +4966,6 @@ msgstr "OAuth कनेक्शन विफल"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
-msgstr ""
-
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama API key"
-msgstr ""
-
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama Cloud"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -5630,7 +5640,6 @@ msgstr "नियंत्रण छोड़ें"
 msgid "Reload"
 msgstr "फिर से लोड करें"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SpaceMembersSettings.tsx
 #: src/components/SpendingLimitSettings.tsx
@@ -5654,6 +5663,10 @@ msgstr "{0} हटाएं"
 #. placeholder {0}: bot.name
 #: src/pages/GroupPanel.tsx
 msgid "Remove {0} from the group"
+msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Remove {label}"
 msgstr ""
 
 #: src/components/SpaceMembersSettings.tsx
@@ -5732,6 +5745,10 @@ msgstr "नाम बदलें"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Rename section"
 msgstr "अनुभाग का नाम बदलें"
+
+#: src/components/ModelCredits.tsx
+msgid "Renew plan"
+msgstr "प्लान रिन्यू करें"
 
 #: src/lib/billing.ts
 msgid "Renews {day}"
@@ -5941,10 +5958,6 @@ msgstr ""
 msgid "Row"
 msgstr "पंक्ति"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Rules"
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr ""
@@ -6000,7 +6013,6 @@ msgstr "मुख्य मॉडल जैसा"
 msgid "Saturday"
 msgstr "शनिवार"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
@@ -6090,6 +6102,7 @@ msgstr "स्कोप (वैकल्पिक)"
 msgid "Screen not connected"
 msgstr "स्क्रीन कनेक्ट नहीं है"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/Artifacts.tsx
@@ -6151,6 +6164,10 @@ msgstr "रन खोजें"
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Search skills"
+msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Search tools"
 msgstr ""
 
 #: src/components/VaultSettings.tsx
@@ -7136,11 +7153,11 @@ msgstr "टूल आर्ग्युमेंट JSON ऑब्जेक्�
 msgid "Tool arguments must be JSON"
 msgstr "टूल आर्ग्युमेंट JSON होने चाहिए"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "टूल का नाम"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
@@ -7177,10 +7194,6 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "Treg टोकन"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"
@@ -7333,6 +7346,7 @@ msgid "Updating…"
 msgstr "अपडेट हो रहा है…"
 
 #: src/pages/shell/shell-sidebar.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
 msgstr "अपग्रेड करें"
 

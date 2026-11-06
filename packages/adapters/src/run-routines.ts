@@ -13,7 +13,12 @@ import {
   isOneShotRoutineCrons,
   nextRoutineRunDateAcross,
 } from "@rakazo/core";
-import { accountDeactivated, isUniqueViolation } from "@rakazo/db";
+import {
+  accountDeactivated,
+  isUniqueViolation,
+  SpaceDeletionInProgressError,
+  spaceTakesWork,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { protectedComputerLifecycleRefusal } from "./desktop-command-guard.js";
@@ -211,6 +216,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     userId: routine.userId,
   });
   const claimed = await deps.prisma.$transaction(async (tx) => {
+    if (!(await spaceTakesWork(tx, routine.spaceId))) return null;
     // The owner is part of the claim: a routine taken over mid-check runs as no one stale.
     const updated = await tx.routine.updateMany({
       where: {
@@ -383,8 +389,11 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
       nextRunAt: true,
       userId: true,
       bot: { select: { archivedAt: true } },
+      space: { select: { deletingAt: true } },
     },
   });
+  // As in wakeRoutine: a Space being deleted runs nothing.
+  if (routine?.space?.deletingAt) return;
   const laterRun = await deps.prisma.run.findFirst({
     where: { routineId: failed.routineId, createdAt: { gt: failed.createdAt } },
     select: { id: true },
@@ -417,6 +426,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
   let retry: { id: string; taskId: string } | null;
   try {
     retry = await deps.prisma.$transaction(async (tx) => {
+      if (!(await spaceTakesWork(tx, failed.spaceId))) throw new SpaceDeletionInProgressError();
       // Claim the still-eligible routine without changing its state. One-shot routines
       // may already be inactive; match their crons so an edit cannot revive a paused routine.
       const claimed = await tx.routine.updateMany({
@@ -487,6 +497,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
   } catch (error) {
     // retryOfRunId is unique: another delivery of this job already queued the retry.
     if (isUniqueViolation(error)) return;
+    if (error instanceof SpaceDeletionInProgressError) return;
     throw error;
   }
   if (!retry) {

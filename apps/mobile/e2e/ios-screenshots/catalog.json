@@ -113,7 +113,15 @@
     "id": "workspace",
     "title": "Workspace",
     "flow": "flows/workspace.yaml",
-    "screens": ["board", "approvals", "vault", "archived-bots", "space", "space-members"]
+    "screens": [
+      "board",
+      "approvals",
+      "approval-rule-add",
+      "vault",
+      "archived-bots",
+      "space",
+      "space-members"
+    ]
   },
   {
     "id": "messaging",

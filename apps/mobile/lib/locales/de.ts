@@ -1,4 +1,13 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "No matches": "Keine Treffer",
+  "Always ask": "Immer fragen",
+  "Search tools": "Tools durchsuchen",
+  "A model approves routine actions and asks you about the rest.":
+    "Ein Modell genehmigt Routineaktionen und fragt dich beim Rest.",
+  "Asks only before purchases and the first use of your computer. Only Block rules apply.":
+    "Fragt nur vor Käufen und der ersten Nutzung deines Computers. Nur Sperrregeln gelten.",
+  "Asks before sending, spending or changing anything in your apps.":
+    "Fragt, bevor in deinen Apps etwas gesendet, ausgegeben oder geändert wird.",
   Haptics: "Haptisches Feedback",
   "Add rule": "Regel hinzufügen",
   "Tool name": "Tool-Name",
@@ -112,8 +121,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Ersatzmodelle sind fehlgeschlagen oder waren für diese Anfrage nicht verfügbar.",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "Ollama API-Schlüssel",
   "Show password": "Passwort anzeigen",
   "Hide password": "Passwort verbergen",
   Export: "Exportieren",
@@ -683,8 +690,6 @@ export const DE_MESSAGES: Record<string, string> = {
   Added: "Hinzugefügt",
   Back: "Zurück",
   "Bearer token": "Bearer-Token",
-  "Connect Executor": "Executor verbinden",
-  "Connect Treg": "Treg verbinden",
   "Connection pending": "Verbindung steht aus",
   "Could not add source": "Quelle konnte nicht hinzugefügt werden",
   "Could not approve this server": "Server konnte nicht genehmigt werden",
@@ -694,7 +699,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not revoke connection": "Verbindung konnte nicht widerrufen werden",
   "Custom connector": "Eigener Connector",
   "Display name": "Anzeigename",
-  "Executor token": "Executor-Token",
   "Finish connecting in the browser, then refresh this page.":
     "Schließe die Verbindung im Browser ab und aktualisiere dann diese Seite.",
   "GraphQL endpoint": "GraphQL-Endpunkt",
@@ -710,7 +714,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Search apps": "Apps suchen",
   "Show more": "Mehr anzeigen",
   Tools: "Tools",
-  "Treg token": "Treg-Token",
   Uninstall: "Deinstallieren",
   "Verify and add": "Prüfen und hinzufügen",
   "Working…": "Wird verarbeitet…",
@@ -718,7 +721,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "https://example.com/graphql": "https://example.com/graphql",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
-  "https://executor.example/mcp": "https://executor.example/mcp",
   "{count} tools": "{count} Tools",
   "Show tool activity": "Toolaktivität anzeigen",
   "{count} tool": "{count} Tool",
@@ -1141,6 +1143,10 @@ export const DE_MESSAGES: Record<string, string> = {
   Credits: "Guthaben",
   "Available credits": "Verfügbares Guthaben",
   "Computer hours left": "Verbleibende Computerstunden",
+  Upgrade: "Upgraden",
+  "Cancelled trials have no computer hours.":
+    "Gekündigte Testzeiträume haben keine Computerstunden.",
+  "Renew plan": "Plan verlängern",
   "Trials get fewer hours to prevent abuse.":
     "Testzeiträume erhalten weniger Stunden, um Missbrauch zu verhindern.",
   "Start plan now": "Plan jetzt starten",

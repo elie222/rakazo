@@ -2,7 +2,7 @@ import type { MenuAction } from "@expo/ui/community/menu";
 import { attachmentMaxBytes, attachmentMaxCount } from "@rakazo/contracts";
 import { attachmentsForThread } from "@rakazo/core";
 import type { RefObject } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ThreadComposerHandle } from "../components/thread-composer";
 import type { ComposerDraftScope } from "./composer-draft";
 import { t, useI18n } from "./i18n";
@@ -267,6 +267,13 @@ export function useIncomingShareImport({
   // share that arrived in the meantime is left for the picker, not taken here.
   const interruptedShare = useRef<{ generation: number } | null>(null);
   const [retryTick, setRetryTick] = useState(0);
+  // A warm link to another chat commits before this effect's cleanup runs; a read that settles
+  // in between must not land in the state the new chat is about to replace. Set at commit, so a
+  // render of another chat that React discards leaves the committed chat's read in place.
+  const committedThread = useRef(threadKey);
+  useLayoutEffect(() => {
+    committedThread.current = threadKey;
+  }, [threadKey]);
   useEffect(() => {
     if (!threadKey || readOnly || !uploadConfig || importingShare.current) return;
     const interrupted = interruptedShare.current;
@@ -288,7 +295,7 @@ export function useIncomingShareImport({
           attachmentMaxBytes(uploadConfig),
           attachmentMaxCount(uploadConfig),
         );
-        if (!active || !isIncomingShareCurrent(share)) {
+        if (!active || committedThread.current !== threadKey || !isIncomingShareCurrent(share)) {
           retryIncomingShare(share);
           return;
         }

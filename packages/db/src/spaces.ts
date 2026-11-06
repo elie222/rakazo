@@ -257,6 +257,24 @@ export async function lockSpaceForContentCreation(
   return { organizationId: membership.organizationId };
 }
 
+/**
+ * Whether a Space takes new work: a run, a retry, maintenance. One being deleted takes none; its
+ * work resumes if the deletion is called off. Holds the Space's lock shared until the transaction
+ * ends, so a deletion claim, which takes it exclusively, either committed first and is seen here
+ * or waits for this work. Call it in a read-committed transaction before locking thread, run or
+ * computer rows, which deleting the Space locks after this lock.
+ */
+export async function spaceTakesWork(
+  tx: Prisma.TransactionClient,
+  spaceId: string,
+): Promise<boolean> {
+  await tx.$queryRaw(Prisma.sql`
+    SELECT pg_advisory_xact_lock_shared(hashtextextended(${spaceId}, 0))::text AS "lock"
+  `);
+  const space = await tx.space.findUnique({ where: { id: spaceId }, select: { deletingAt: true } });
+  return !space?.deletingAt;
+}
+
 /** Serializes creating a Space in an organization with claiming the organization for deletion. */
 export async function lockOrganizationSpaces(
   tx: Prisma.TransactionClient,

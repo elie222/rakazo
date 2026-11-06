@@ -69,6 +69,7 @@ import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { recordSecurityEvent } from "./security-events.js";
+import { SpaceDeletionInProgressError, spaceTakesWork } from "./spaces.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
 export { THREAD_LOCK_TRANSACTION_OPTIONS };
@@ -544,6 +545,10 @@ export async function sendUserMessage(
 
   const commit = () =>
     prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // Webhooks, texts and other bots can reach a Space until its teardown finishes; one being
+      // deleted takes no new turns. A transcript copy that starts none is still kept.
+      if (input.createRun !== false && !(await spaceTakesWork(tx, input.spaceId)))
+        throw new SpaceDeletionInProgressError();
       // Message first: its thread-row lock serializes the whole send against clearThread, so a
       // concurrent clear either sees the committed run and cancels it, or strictly precedes this
       // transaction. Created in separate transactions, the run could land inside the clear's
@@ -2024,7 +2029,11 @@ export async function discardAnsweredSteering(
   });
 }
 
-/** Queue one follow-up when this bot still has unclaimed steering and no live run. */
+/**
+ * Queue one follow-up when this bot still has unclaimed steering and no live run. A Space being
+ * deleted gets it too: its messages were accepted, and the executor holds the run until the
+ * deletion ends or is called off.
+ */
 export async function createPendingSteeringRun(
   tx: Prisma.TransactionClient,
   input: { spaceId: string; threadId: string; botId: string },

@@ -85,6 +85,13 @@ export default function SettingsLayout() {
         }}
       />
       <Stack.Screen
+        name="approval-rule-add"
+        options={{
+          ...glassHeaderOptions(t("Add rule")),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
+      <Stack.Screen
         name="vault"
         options={{
           ...glassHeaderOptions(t("Vault")),

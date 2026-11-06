@@ -1,4 +1,13 @@
 export const JA_MESSAGES: Record<string, string> = {
+  "No matches": "一致するものはありません",
+  "Always ask": "常に確認",
+  "Search tools": "ツールを検索",
+  "A model approves routine actions and asks you about the rest.":
+    "定型的な操作はモデルが承認し、それ以外はあなたに確認します。",
+  "Asks only before purchases and the first use of your computer. Only Block rules apply.":
+    "購入時とコンピューターの初回使用時にのみ確認します。適用されるのはブロックのルールだけです。",
+  "Asks before sending, spending or changing anything in your apps.":
+    "アプリでの送信、支払い、変更の前に確認します。",
   Haptics: "触覚フィードバック",
   "Add rule": "ルールを追加",
   "Tool name": "ツール名",
@@ -118,8 +127,6 @@ export const JA_MESSAGES: Record<string, string> = {
 
   "Use 80 characters or fewer": "80文字以内で入力してください",
   "Could not update name": "名前を更新できませんでした",
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "OllamaのAPIキー",
   "Show password": "パスワードを表示",
   "Hide password": "パスワードを非表示",
   Export: "エクスポート",
@@ -664,8 +671,6 @@ export const JA_MESSAGES: Record<string, string> = {
   Added: "追加済み",
   Back: "戻る",
   "Bearer token": "Bearerトークン",
-  "Connect Executor": "Executorに接続",
-  "Connect Treg": "Tregに接続",
   "Connection pending": "接続待ち",
   "Could not add source": "ソースを追加できませんでした",
   "Could not approve this server": "このサーバーを承認できませんでした",
@@ -675,7 +680,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not revoke connection": "接続を取り消せませんでした",
   "Custom connector": "カスタムコネクタ",
   "Display name": "表示名",
-  "Executor token": "Executorトークン",
   "Finish connecting in the browser, then refresh this page.":
     "ブラウザで接続を完了してから、このページを更新してください。",
   "GraphQL endpoint": "GraphQLエンドポイント",
@@ -691,7 +695,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Search apps": "アプリを検索",
   "Show more": "さらに表示",
   Tools: "ツール",
-  "Treg token": "Tregトークン",
   Uninstall: "アンインストール",
   "Verify and add": "確認して追加",
   "Working…": "処理中…",
@@ -699,7 +702,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "https://example.com/graphql": "https://example.com/graphql",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
-  "https://executor.example/mcp": "https://executor.example/mcp",
   "{count} tools": "{count}個のツール",
   "Show tool activity": "ツールのアクティビティを表示",
   "{count} tool": "{count} 個のツール",
@@ -1119,6 +1121,10 @@ export const JA_MESSAGES: Record<string, string> = {
   Credits: "クレジット",
   "Available credits": "利用可能なクレジット",
   "Computer hours left": "コンピューターの残り時間",
+  Upgrade: "アップグレード",
+  "Cancelled trials have no computer hours.":
+    "キャンセルしたトライアルにはコンピューター時間がありません。",
+  "Renew plan": "プランを更新",
   "Trials get fewer hours to prevent abuse.":
     "不正利用を防ぐため、トライアルでは時間が少なくなっています。",
   "Start plan now": "今すぐプランを開始",

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { APP_LOCALE_LABELS } from "@rakazo/core";
 import { setItemAsync } from "expo-secure-store";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -10,7 +11,7 @@ import Language from "../app/(settings)/language";
 import { rpc } from "./api";
 import * as i18n from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
-import { UI_LOCALE_LABELS, UI_LOCALE_STORAGE_KEY, UI_LOCALES } from "./ui-locale";
+import { UI_LOCALE_STORAGE_KEY, UI_LOCALES } from "./ui-locale";
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api", () => ({
@@ -104,11 +105,11 @@ it.each(["ru", "de", "zh-TW"] as const)(
     );
     await act(async () => root.render(<Language />));
     expect([...container.querySelectorAll("button")].map((button) => button.textContent)).toEqual(
-      UI_LOCALES.map((code) => UI_LOCALE_LABELS[code]),
+      UI_LOCALES.map((code) => APP_LOCALE_LABELS[code]),
     );
     expectSelected("English");
 
-    await act(async () => row(UI_LOCALE_LABELS[locale]).click());
+    await act(async () => row(APP_LOCALE_LABELS[locale]).click());
     expect(i18n.setUiLocale).toHaveBeenCalledExactlyOnceWith(locale);
     expect(setItemAsync).toHaveBeenCalledExactlyOnceWith(UI_LOCALE_STORAGE_KEY, locale);
     expect(i18n.getActiveUiLocale()).toBe("en");
@@ -122,7 +123,7 @@ it.each(["ru", "de", "zh-TW"] as const)(
     expect(i18n.getActiveUiLocale()).toBe(locale);
     expect(resumeLiveNotifications).toHaveBeenCalledWith("https://rakazo.test", "token", "space-1");
     expect(rpc).toHaveBeenCalledExactlyOnceWith("preferences/update", { locale });
-    expectSelected(UI_LOCALE_LABELS[locale]);
+    expectSelected(APP_LOCALE_LABELS[locale]);
     expect(row("English").getAttribute("aria-pressed")).toBe("false");
     expect([...container.querySelectorAll("button")].every((button) => !button.disabled)).toBe(
       true,

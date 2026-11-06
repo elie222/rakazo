@@ -51,6 +51,7 @@ import {
   readRunTimingFields,
   recordUsage,
   settleReleasedTakeoverCards,
+  spaceTakesWork,
   teamChatRunFromOwner,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
@@ -345,29 +346,35 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
       const fence = nextFence(run.leaseFence);
       const now = new Date();
-      const leased = await deps.prisma.run.updateMany({
-        where: {
-          id: runId,
-          ...continueRunClaimFence(run),
-          AND: [{ OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] }],
-          OR: [
-            { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
-            {
-              status: { in: ["leased", "running"] },
-              leaseExpiresAt: { lte: now },
-            },
-          ],
-        },
-        data: {
-          status: "leased",
-          leaseOwner: workerId,
-          leaseFence: fence,
-          leaseExpiresAt: new Date(Date.now() + 5 * 60_000),
-          error: null,
-          checkpoint: null,
-          wakeAt: null,
-        },
-      });
+      // A Space being deleted starts nothing; its runs wait for the deletion to end or be called
+      // off. Its lock comes before the run row, so a claim committing meanwhile is seen.
+      const leased = await deps.prisma.$transaction(async (tx) =>
+        !(await spaceTakesWork(tx, run.spaceId))
+          ? { count: 0 }
+          : tx.run.updateMany({
+              where: {
+                id: runId,
+                ...continueRunClaimFence(run),
+                AND: [{ OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] }],
+                OR: [
+                  { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
+                  {
+                    status: { in: ["leased", "running"] },
+                    leaseExpiresAt: { lte: now },
+                  },
+                ],
+              },
+              data: {
+                status: "leased",
+                leaseOwner: workerId,
+                leaseFence: fence,
+                leaseExpiresAt: new Date(Date.now() + 5 * 60_000),
+                error: null,
+                checkpoint: null,
+                wakeAt: null,
+              },
+            }),
+      );
       if (leased.count !== 1) return;
 
       const current = await deps.prisma.run.findUniqueOrThrow({

@@ -84,6 +84,9 @@ import { pagePaymentPrecheck, paysWithWallet } from "./spending-gate.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
 
+const WEBHOOK_RUN_ASK_REASON =
+  "Asked because a webhook started this run. Always allow doesn't skip this.";
+
 type ApprovalCard = {
   reviewReason: string | undefined;
   summary: FleetCardSummary | undefined;
@@ -275,12 +278,10 @@ export async function gateToolCall(
       ));
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;
-  const requiresMandatoryApproval =
-    paying ||
-    commandWatch ||
-    scheduleNamesNewSite ||
-    requiresUnattendedApproval ||
-    toolRequiresExplicitApproval(name);
+  // These ask in every run, whatever started it.
+  const mandatoryInAnyRun =
+    paying || commandWatch || scheduleNamesNewSite || toolRequiresExplicitApproval(name);
+  const requiresMandatoryApproval = mandatoryInAnyRun || requiresUnattendedApproval;
   // No allow rule skips these, and without them the tool needs no approval, so "Always allow"
   // on their card would save a rule that never takes effect.
   const asksEveryTime =
@@ -551,11 +552,19 @@ export async function gateToolCall(
     bypassApproval: gateDecision === "allow" && gated,
     spend: spends,
   });
+  // Only when the webhook overrode the owner's Always allow; cards every run shows say nothing.
+  const webhookForcedAsk =
+    requiresUnattendedApproval &&
+    !mandatoryInAnyRun &&
+    !request.heldForApproval &&
+    siteGate !== "new" &&
+    !unidentifiedAction &&
+    approvalResolved.source === "always_allow";
   const card = {
-    reviewReason,
+    reviewReason: webhookForcedAsk ? WEBHOOK_RUN_ASK_REASON : reviewReason,
     summary: request.fleetSummary,
     batch: connectorTool?.batch,
-    onceOnly: asksEveryTime,
+    onceOnly: asksEveryTime || webhookForcedAsk,
   };
 
   if (applied?.duplicate) {

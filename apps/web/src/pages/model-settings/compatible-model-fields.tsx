@@ -1,6 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
-import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
 import { compatibleThinkingLevels, toggleEnabledModelId } from "@rakazo/core";
 import {
   Button,
@@ -34,6 +33,7 @@ export function CompatibleModelFields({
   defaultModelOptions,
   effectiveBaseUrl,
   enabledModelIds,
+  endpointPreset,
   invalidatePreflight,
   maxImagesPerPrompt,
   maxTokens,
@@ -75,6 +75,7 @@ export function CompatibleModelFields({
   | "defaultModelOptions"
   | "effectiveBaseUrl"
   | "enabledModelIds"
+  | "endpointPreset"
   | "invalidatePreflight"
   | "maxImagesPerPrompt"
   | "maxTokens"
@@ -147,7 +148,7 @@ export function CompatibleModelFields({
           {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
         </Button>
       </div>
-      {!isOllamaCloudBaseUrl(baseUrl) ? (
+      {!endpointPreset ? (
         <Disclosure
           className="mt-3 text-body text-muted-foreground"
           summary={<Trans>Setup help</Trans>}

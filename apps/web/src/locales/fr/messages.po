@@ -563,6 +563,10 @@ msgstr "Un peu de tout"
 msgid "A command's output"
 msgstr "La sortie d’une commande"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "A model approves routine actions and asks you about the rest."
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -852,7 +856,7 @@ msgstr "Toute la période"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
-msgstr "Autoriser"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
@@ -894,6 +898,10 @@ msgstr "Vous avez déjà un compte ?"
 msgid "Always act"
 msgstr "Agir toujours"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Always allow"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Always allow {site}"
 msgstr "Toujours autoriser {site}"
@@ -905,6 +913,10 @@ msgstr "Toujours autoriser cet outil"
 #: src/components/AskCard.tsx
 msgid "Always allowed"
 msgstr "Toujours autorisé"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Always ask"
+msgstr ""
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
@@ -1083,6 +1095,14 @@ msgstr "Artefacts"
 msgid "Ask"
 msgstr "Demander"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Asks before sending, spending or changing anything in your apps."
+msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Asks only before purchases and the first use of your computer. Only Block rules apply."
+msgstr ""
+
 #: src/pages/shell/computer-panel.tsx
 msgid "Asleep"
 msgstr "En veille"
@@ -1230,8 +1250,9 @@ msgstr "Période de facturation"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
-msgstr "Bloquer"
+msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/lib/ticket-status.ts
 msgid "Blocked"
 msgstr ""
@@ -1378,28 +1399,22 @@ msgid "Can't read images"
 msgstr "Ne peut pas lire les images"
 
 #: src/components/AskCard.tsx
-#: src/components/ComputerMaintenanceActions.tsx
+#: src/components/ConfirmDialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
-#: src/components/SpaceMembersSettings.tsx
 #: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
-#: src/pages/SpaceSettingOverrides.tsx
 msgid "Cancel"
 msgstr "Annuler"
 
@@ -1431,6 +1446,10 @@ msgstr "annulé"
 #: src/pages/ActivityList.tsx
 msgid "Cancelled"
 msgstr "Annulé"
+
+#: src/components/ModelCredits.tsx
+msgid "Cancelled trials have no computer hours."
+msgstr "Les essais annulés n’ont pas d’heures d’ordinateur."
 
 #: src/components/vault/kinds.tsx
 msgid "Card"
@@ -3036,6 +3055,10 @@ msgstr ""
 msgid "Did you mean <0>{emailSuggestion}</0>?"
 msgstr "Vouliez-vous dire <0>{emailSuggestion}</0> ?"
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Désactiver un outil"
@@ -3358,10 +3381,6 @@ msgstr ""
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Executor token"
-msgstr "Jeton de l'exécuteur"
 
 #. placeholder {0}: record.exitCode
 #: src/components/ToolActivityDisclosure.tsx
@@ -4766,6 +4785,7 @@ msgstr "Aucun bot ne correspond"
 msgid "No longer active"
 msgstr "Plus actif"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""
@@ -4946,16 +4966,6 @@ msgstr "Échec de la connexion OAuth"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
-msgstr ""
-
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama API key"
-msgstr ""
-
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama Cloud"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -5630,7 +5640,6 @@ msgstr "Rendre le contrôle"
 msgid "Reload"
 msgstr "Recharger"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SpaceMembersSettings.tsx
 #: src/components/SpendingLimitSettings.tsx
@@ -5654,6 +5663,10 @@ msgstr "Retirer {0}"
 #. placeholder {0}: bot.name
 #: src/pages/GroupPanel.tsx
 msgid "Remove {0} from the group"
+msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Remove {label}"
 msgstr ""
 
 #: src/components/SpaceMembersSettings.tsx
@@ -5732,6 +5745,10 @@ msgstr "Renommer"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Rename section"
 msgstr "Renommer la section"
+
+#: src/components/ModelCredits.tsx
+msgid "Renew plan"
+msgstr "Renouveler l’abonnement"
 
 #: src/lib/billing.ts
 msgid "Renews {day}"
@@ -5941,10 +5958,6 @@ msgstr ""
 msgid "Row"
 msgstr "Ligne"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Rules"
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "Exécuter à"
@@ -6000,7 +6013,6 @@ msgstr "Identique au modèle principal"
 msgid "Saturday"
 msgstr "samedi"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
@@ -6090,6 +6102,7 @@ msgstr "Portées (facultatif)"
 msgid "Screen not connected"
 msgstr "Écran non connecté"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/Artifacts.tsx
@@ -6151,6 +6164,10 @@ msgstr "Rechercher des exécutions"
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Search skills"
+msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Search tools"
 msgstr ""
 
 #: src/components/VaultSettings.tsx
@@ -7136,11 +7153,11 @@ msgstr "Les arguments doivent être un objet JSON"
 msgid "Tool arguments must be JSON"
 msgstr "Les arguments doivent être au format JSON"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "Nom de l’outil"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
@@ -7177,10 +7194,6 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr "Traiter comme une personne"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "Jeton Treg"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"
@@ -7333,6 +7346,7 @@ msgid "Updating…"
 msgstr "Mise à jour en cours…"
 
 #: src/pages/shell/shell-sidebar.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
 msgstr "Passer à l’offre payante"
 

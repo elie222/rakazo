@@ -9,7 +9,7 @@ WORKDIR /app
 # install. pnpm gets a partial workspace: every package listed in pnpm-workspace.yaml
 # needs its manifest below, or --frozen-lockfile fails. The store is a cache mount, so
 # a lockfile change reuses whatever was already downloaded.
-COPY --chmod=755 package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY --chmod=755 package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN corepack install && chmod -R a+rX "${COREPACK_HOME}"
 COPY --chmod=755 patches patches
 COPY --chmod=755 apps/api/package.json apps/api/

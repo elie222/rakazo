@@ -47,6 +47,8 @@ export type SendAttempt = {
   artifactIds: Map<string, string>;
   state: "queued" | "pending" | "failed" | "refused";
   acceptedSeq?: number;
+  /** The run the accepted send started, shown as queued until the thread reports it. */
+  acceptedRun?: { runId: string; taskId: string };
   apiBase: string;
   spaceId: string | null;
   userId: string;
@@ -112,7 +114,9 @@ export async function deliverSend(
     ? (await request("threads/sendWithRoutines", { ...message, routineIds: plan.routineIds })).send
     : undefined;
   // Runs already saved for this nonce return no message; the plain send saves or replays it.
-  return (sent ?? (await request("threads/send", message))).seq;
+  const accepted = sent ?? (await request("threads/send", message));
+  attempt.acceptedRun = { runId: accepted.runId, taskId: accepted.taskId };
+  return accepted.seq;
 }
 
 export type OutboxScope = Pick<SendAttempt, "apiBase" | "spaceId" | "userId" | "cacheSession">;

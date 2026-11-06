@@ -1,6 +1,6 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { AccountSecurity, UsageSummary } from "@rakazo/contracts";
-import { accountDisplay, displayName } from "@rakazo/core";
+import { APP_LOCALE_LABELS, accountDisplay, displayName } from "@rakazo/core";
 import * as Notifications from "expo-notifications";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -106,7 +106,6 @@ import {
   removeTrustedLinkSite,
   useTrustedLinkSites,
 } from "../../lib/trusted-link-sites";
-import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
 import { confirmUnsentSendLoss } from "../../lib/unsent-send-warning";
 import { errorText } from "../../lib/user-error";
 
@@ -674,11 +673,11 @@ export default function Account() {
           <SettingsRow
             accessibilityRole="button"
             accessibilityLabel={t("Language")}
-            accessibilityValue={{ text: UI_LOCALE_LABELS[locale] }}
+            accessibilityValue={{ text: APP_LOCALE_LABELS[locale] }}
             chevron="right"
             onPress={() => router.push("/language")}
             title={t("Language")}
-            value={UI_LOCALE_LABELS[locale]}
+            value={APP_LOCALE_LABELS[locale]}
           />
           <SettingsSwitch label={t("Haptics")} value={hapticsEnabled} onChange={updateHaptics} />
         </SettingsGroup>

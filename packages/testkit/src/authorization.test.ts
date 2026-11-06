@@ -417,6 +417,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["agentSkills/update", { skillId: "missing-skill", description: "Nope" }],
       ["agentSkills/remove", { skillId: "missing-skill" }],
       ["capabilities/list"],
+      ["capabilities/sourcePresets"],
       ["capabilities/install", capabilityInput("Unauthenticated")],
       ["capabilities/remove", { id: "missing-capability" }],
       ["capabilities/catalogSearch"],

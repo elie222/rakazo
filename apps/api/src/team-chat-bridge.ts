@@ -579,7 +579,7 @@ export class TeamChatBridge {
    */
   async resolveDeferredMessage(
     externalMessageId: string,
-    resolution: "routine" | "agent",
+    resolution: "routine" | "agent" | "ignored",
     kind: TeamChatInboundMessage["kind"],
   ): Promise<boolean> {
     const target = this.target;
@@ -587,8 +587,9 @@ export class TeamChatBridge {
     const result = await this.deps.prisma.externalMessage.updateMany({
       where: {
         id: externalMessageId,
-        status:
-          resolution === "routine" ? { in: ["deferred", "received", "observed"] } : "deferred",
+        // A routine or a refusal settles a row recovery already handed back to agent routing too;
+        // work the agent started (queueing, running) stays its own.
+        status: resolution === "agent" ? "deferred" : { in: ["deferred", "received", "observed"] },
         externalConversation: this.conversationScope(),
       },
       data:
@@ -598,11 +599,14 @@ export class TeamChatBridge {
               engagementReason: "message_routine_wake",
               nextAttemptAt: null,
             }
-          : {
-              status: kind === "ambient" ? "observed" : "received",
-              engagementReason: null,
-              nextAttemptAt: null,
-            },
+          : resolution === "ignored"
+            ? // Nobody answers it; its transcript copy stays.
+              { status: "ignored", engagementReason: null, nextAttemptAt: null }
+            : {
+                status: kind === "ambient" ? "observed" : "received",
+                engagementReason: null,
+                nextAttemptAt: null,
+              },
     });
     return result.count === 1;
   }
