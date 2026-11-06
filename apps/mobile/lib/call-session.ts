@@ -994,6 +994,7 @@ function watchReplies(
     let cursor = 0;
     let retry = FEED_RETRY_MIN_MS;
     let failure: unknown;
+    let firstLoadFailures = 0;
     // The stream returns on an idle timeout as well as on a real failure, and a call
     // outlives both: pick it back up from the last seq until the caller hangs up. The
     // first snapshot is loaded in here too, so a failed load retries instead of
@@ -1049,9 +1050,12 @@ function watchReplies(
       } catch (error) {
         if (controller.signal.aborted) return;
         // A 4xx other than 408/429 is the server's answer; asking again only polls it. Without
-        // a first snapshot the microphone stays shut, so the call cannot go on: hang it up.
-        if (!isRetryableError(error)) {
-          // The caller's side hangs up, so the server is told the call ended.
+        // a first snapshot the microphone stays shut, so the call cannot go on: hang it up, from
+        // the caller's side so the server is told. A first load that keeps failing ends it too,
+        // after as many tries as a run of failed turns.
+        const giveUp =
+          !isRetryableError(error) || (!snapshot && ++firstLoadFailures >= MAX_TURN_FAILURES);
+        if (giveUp) {
           if (!snapshot && callId === watchedCallId) endCall();
           return;
         }
