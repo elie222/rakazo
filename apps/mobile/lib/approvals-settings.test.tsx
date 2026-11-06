@@ -251,6 +251,14 @@ it("moves and removes rules, keeping legacy category rules removable only", asyn
   expect(rows()).toEqual(["Always ask: Email", "Blocked: example.com"]);
 });
 
+it("offers Ask and Block, not Allow, for a tool a person approves every time", async () => {
+  state.rules = [rule({ id: "space", effect: "require_approval", matchValue: "create_space" })];
+  await render();
+  expect(menuButton("Create space", "Always ask")).toBeDefined();
+  expect(menuButton("Create space", "Blocked")).toBeDefined();
+  expect(menuButton("Create space", "Always allow")).toBeUndefined();
+});
+
 it("dims every rule but blocks in Never ask, where only blocks apply", async () => {
   state.settings = { ...state.settings, mode: "never" };
   state.rules = [

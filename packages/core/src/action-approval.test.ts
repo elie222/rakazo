@@ -6,6 +6,7 @@ import {
   approvalPreferenceFromMode,
   approvalRuleApplies,
   approvalRuleChoices,
+  approvalRuleEffectChoices,
   batchActions,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
@@ -1067,8 +1068,8 @@ describe("approvalRuleChoices", () => {
     ]);
     expect(choices).toContainEqual({ matchKind: "tool", matchValue: "shell", label: "Shell" });
     expect(choices.some((choice) => choice.matchValue === "web_search")).toBe(false);
-    // Always approved by a person, so an allow rule could never take effect.
-    expect(choices.some((choice) => choice.matchValue === "create_space")).toBe(false);
+    // Always approved by a person, but still worth blocking.
+    expect(choices.some((choice) => choice.matchValue === "create_space")).toBe(true);
     const labels = choices.map((choice) => choice.label);
     expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
   });
@@ -1081,5 +1082,25 @@ describe("approvalRuleApplies", () => {
     expect(approvalRuleApplies("never", "always_allow")).toBe(false);
     expect(approvalRuleApplies("ask", "always_allow")).toBe(true);
     expect(approvalRuleApplies(null, "require_approval")).toBe(true);
+  });
+});
+
+describe("approvalRuleEffectChoices", () => {
+  it("never offers Allow for a tool a person approves every time", () => {
+    const rule = (matchKind: "tool" | "category", matchValue: string) => ({
+      effect: "require_approval" as const,
+      matchKind,
+      matchValue,
+    });
+    expect(approvalRuleEffectChoices(rule("tool", "create_space"))).toEqual([
+      "require_approval",
+      "deny",
+    ]);
+    expect(approvalRuleEffectChoices(rule("tool", "shell"))).toEqual([
+      "always_allow",
+      "require_approval",
+      "deny",
+    ]);
+    expect(approvalRuleEffectChoices(rule("category", "email"))).toEqual([]);
   });
 });

@@ -237,6 +237,26 @@ it("grays out allow and ask rules in Never ask, where only blocks apply", async 
   }
 });
 
+it("offers Ask and Block, not Allow, for a tool a person approves every time", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpcMock.approvalRules.list.mockResolvedValue([
+    { id: "s", effect: "require_approval", matchKind: "tool", matchValue: "create_space" },
+  ]);
+  rpcMock.autoReview.get.mockResolvedValue(settings);
+  const { container, root } = await render();
+  try {
+    await vi.waitFor(() =>
+      expect(button(container, "Ask", group("require_approval"))).toBeDefined(),
+    );
+    expect(button(container, "Block", group("require_approval"))).toBeDefined();
+    expect(button(container, "Allow", group("require_approval"))).toBeUndefined();
+    await act(async () => root.unmount());
+  } finally {
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("groups older category rules by what they do and only offers to remove them", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   rpcMock.approvalRules.list.mockResolvedValue([

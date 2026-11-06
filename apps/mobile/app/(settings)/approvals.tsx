@@ -1,7 +1,12 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { ActionApprovalRule } from "@rakazo/contracts";
 import type { ApprovalMode } from "@rakazo/core";
-import { APPROVAL_RULE_EFFECTS, approvalRuleApplies, approvalRuleLabel } from "@rakazo/core";
+import {
+  APPROVAL_RULE_EFFECTS,
+  approvalRuleApplies,
+  approvalRuleEffectChoices,
+  approvalRuleLabel,
+} from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
@@ -93,7 +98,12 @@ export default function ApprovalRules() {
         setRules((current) => current?.filter((entry) => entry.id !== rule.id) ?? null);
         return;
       }
-      if (action === rule.effect || rule.matchKind === "category") return;
+      if (
+        action === rule.effect ||
+        rule.matchKind === "category" ||
+        !approvalRuleEffectChoices(rule).includes(action)
+      )
+        return;
       const saved = await rpc("approvalRules/set", {
         scope,
         effect: action,
@@ -183,20 +193,18 @@ export default function ApprovalRules() {
               ?.filter((rule) => rule.effect === effect)
               .map((rule) => {
                 const title = approvalRuleLabel(rule);
-                // Older category rules can only be removed; their match is no longer offered.
-                const switchable = rule.matchKind !== "category";
+                const effects = approvalRuleEffectChoices(rule);
                 return (
                   <MenuView
                     key={rule.id}
                     actions={[
-                      ...(switchable
-                        ? groups.map((group) => ({
-                            id: group.effect,
-                            title: group.title,
-                            state:
-                              rule.effect === group.effect ? ("on" as const) : ("off" as const),
-                          }))
-                        : []),
+                      ...groups
+                        .filter((group) => effects.includes(group.effect))
+                        .map((group) => ({
+                          id: group.effect,
+                          title: group.title,
+                          state: rule.effect === group.effect ? ("on" as const) : ("off" as const),
+                        })),
                       { id: "remove", title: t("Remove"), attributes: { destructive: true } },
                     ]}
                     colorScheme={colorScheme}

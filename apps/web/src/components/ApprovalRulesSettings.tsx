@@ -10,6 +10,7 @@ import {
   APPROVAL_RULE_EFFECTS,
   approvalRuleApplies,
   approvalRuleChoices,
+  approvalRuleEffectChoices,
   approvalRuleLabel,
 } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
@@ -290,7 +291,7 @@ function AddRulePicker({
   );
 }
 
-/** Allow, Ask or Block side by side, then remove. Older category rules can only be removed. */
+/** The effects a rule can take, side by side, then remove. */
 function RuleControls({
   rule,
   disabled,
@@ -304,6 +305,7 @@ function RuleControls({
 }) {
   const { t } = useLingui();
   const label = approvalRuleLabel(rule);
+  const effects = approvalRuleEffectChoices(rule);
   const options: Record<ActionApprovalRule["effect"], string> = {
     always_allow: t`Allow`,
     require_approval: t`Ask`,
@@ -311,19 +313,19 @@ function RuleControls({
   };
   return (
     <>
-      {rule.matchKind === "category" ? null : (
+      {effects.length === 0 ? null : (
         <ToggleGroup
           aria-label={label}
           value={[rule.effect]}
           onValueChange={([next]) => {
-            const effect = APPROVAL_RULE_EFFECTS.find((option) => option === next);
+            const effect = effects.find((option) => option === next);
             if (effect && effect !== rule.effect) onEffect(effect);
           }}
           disabled={disabled}
           spacing={1}
           className={segmented}
         >
-          {APPROVAL_RULE_EFFECTS.map((effect) => (
+          {effects.map((effect) => (
             <ToggleGroupItem key={effect} value={effect} className={segment}>
               {options[effect]}
             </ToggleGroupItem>

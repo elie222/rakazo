@@ -671,6 +671,20 @@ export function approvalRuleApplies(
   return mode !== "never" || effect === "deny";
 }
 
+/**
+ * The effects a person can switch a rule to. An older category rule can only be removed, and a tool
+ * a person approves every time cannot be allowed, though it can still be blocked.
+ */
+export function approvalRuleEffectChoices(
+  rule: ActionApprovalRule,
+): ReadonlyArray<ActionApprovalRule["effect"]> {
+  if (rule.matchKind === "category") return [];
+  if (rule.matchKind === "tool" && toolRequiresExplicitApproval(rule.matchValue)) {
+    return APPROVAL_RULE_EFFECTS.filter((effect) => effect !== "always_allow");
+  }
+  return APPROVAL_RULE_EFFECTS;
+}
+
 /** A site reads as itself; a tool, app or older category by its name. */
 export function approvalRuleLabel(rule: ActionApprovalRule): string {
   return rule.matchKind === "site" ? rule.matchValue : humanizeToolName(rule.matchValue);
@@ -680,7 +694,7 @@ export function approvalRuleLabel(rule: ActionApprovalRule): string {
 export type ApprovalRuleChoice = { matchKind: "tool"; matchValue: string; label: string };
 
 /**
- * What the rule picker lists: every built-in tool that has no rule yet and that a rule can govern. Apps are left out:
+ * What the rule picker lists: every built-in tool that has no rule yet, by name. Apps are left out:
  * an app rule matches a kind guessed from the action's name, which some providers' actions lack.
  */
 export function approvalRuleChoices(
@@ -689,10 +703,7 @@ export function approvalRuleChoices(
   const taken = new Set(
     rules.filter((rule) => rule.matchKind === "tool").map((rule) => rule.matchValue.toLowerCase()),
   );
-  // A person approves these every time whatever the rules say, so a rule could only mislead.
-  return BUILTIN_TOOL_NAMES.filter(
-    (name) => !taken.has(name) && !toolRequiresExplicitApproval(name),
-  )
+  return BUILTIN_TOOL_NAMES.filter((name) => !taken.has(name))
     .map(
       (name): ApprovalRuleChoice => ({
         matchKind: "tool",
