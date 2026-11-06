@@ -111,8 +111,7 @@ export function launchArgSecrets(args: string[]): string[] {
   const add = (value: string | undefined) => addSecret(values, value);
   const addAssignment = (assignment: string) => {
     const match = assignment.match(/^([A-Za-z_][\w.-]*)=([\s\S]*)$/);
-    if (match?.[1] && match[2] && isConfiguredSecret(splitCamelCase(match[1]), match[2]))
-      add(match[2]);
+    if (match?.[1] && match[2] && isConfiguredSecret(snakeName(match[1]), match[2])) add(match[2]);
   };
   for (const [index, arg] of args.entries()) {
     for (const url of urlsIn(arg)) values.push(...urlSecrets(url));
@@ -125,7 +124,7 @@ export function launchArgSecrets(args: string[]): string[] {
     const next = args[index + 1];
     const value = flag[2] ?? (next?.startsWith("-") ? undefined : next);
     if (!value) continue;
-    const normalized = splitCamelCase(name).toLowerCase().replace(/-/g, "_");
+    const normalized = snakeName(name);
     if (name === "H" || normalized === "header") {
       const header = value.match(/^([^:]+):\s*([\s\S]*)$/);
       if (!header?.[1] || !header[2]) continue;
@@ -151,7 +150,7 @@ export function launchArgSecrets(args: string[]): string[] {
 /** A flag, query, or header value under a credential name. Only explicit credential names
  * (`api_key`, `password`) take numeric values, so `?key=0` cannot redact every zero. */
 function isCredentialArg(name: string, value: string): boolean {
-  const normalized = splitCamelCase(name).toLowerCase().replace(/-/g, "_");
+  const normalized = snakeName(name);
   return (
     isCredentialName(normalized) &&
     looksLikeSecretValue(value, { allowNumeric: isExplicitCredentialKey(normalized) })
@@ -167,15 +166,23 @@ function isCredentialName(normalized: string): boolean {
   );
 }
 
-/** `apiKey` → `api_Key`, so camelCase names match the snake_case rules. */
-function splitCamelCase(name: string): string {
-  return name.replace(/([a-z0-9])([A-Z])/g, "$1_$2");
+/** `apiKey`, `APIKey`, `api.key` and `api-key` → `api_key`, so they match the snake_case rules. */
+function snakeName(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])|([A-Z])([A-Z][a-z])/g, (_, a, b, c, d) =>
+      a ? `${a}_${b}` : `${c}_${d}`,
+    )
+    .toLowerCase()
+    .replace(/[-.]/g, "_");
 }
 
 /** A one-letter flag's value is a credential only when it reads like a generated token,
  * not a package name, path, or number. */
 function looksLikeOpaqueToken(value: string): boolean {
-  return /^[\w+=.-]{16,}$/.test(value) && /\d/.test(value) && /[A-Za-z]/.test(value);
+  if (!/^[\w+=.-]{16,}$/.test(value) || !/\d/.test(value)) return false;
+  // Package and command names are lowercase words (`mcp-server-sqlite2`); tokens mix in
+  // capitals or are long hex.
+  return /[A-Z]/.test(value) || /^[a-f\d]{32,}$/.test(value);
 }
 
 /** Each whitespace- or quote-separated word containing `scheme://`, from the scheme on. A scan,
