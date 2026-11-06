@@ -29,6 +29,19 @@ describe("unreadDividerMessageId", () => {
     expect(unreadDividerMessageId(thread.slice(0, 3), 0, null)).toBeNull();
   });
 
+  it("starts at another member's message in a shared chat, never the viewer's own", () => {
+    const shared = [
+      { id: "m0", role: "bot", seq: 0 },
+      { id: "m1", role: "user", seq: 1, author: { id: "user-b", name: "Bea" } },
+      { id: "m2", role: "user", seq: 2, author: { id: "user-a", name: "Ada" } },
+      { id: "m3", role: "bot", seq: 3 },
+    ];
+    expect(unreadDividerMessageId(shared, 0, null, "user-a")).toBe("m1");
+    expect(unreadDividerMessageId(shared, 0, null, "user-b")).toBe("m2");
+    expect(unreadDividerMessageId(shared, 1, null, "user-b")).toBe("m2");
+    expect(unreadDividerMessageId(shared, 1, null, "user-a")).toBe("m3");
+  });
+
   it("shows nothing above the start of a chat never read", () => {
     expect(unreadDividerMessageId(thread, -1, null)).toBeNull();
     expect(unreadDividerMessageId(thread.slice(1), -1, null)).toBe("m3");

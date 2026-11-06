@@ -62,10 +62,11 @@ export function markThreadReadFor(prisma: PrismaClient, reader: Reader): Promise
         FOR SHARE`;
       if (!thread) return null;
       const latestSeq = thread.nextMessageSeq - 1;
-      const read = await tx.threadRead.findUnique({
-        where: { threadId_userId: { threadId, userId } },
-        select: { unread: true, lastReadSeq: true },
-      });
+      // Held until commit, so a Mark as Unread from another tab lands before or after, not lost.
+      const [read] = await tx.$queryRaw<Array<{ unread: boolean; lastReadSeq: number }>>`
+        SELECT unread, "lastReadSeq" FROM thread_reads
+        WHERE "threadId" = ${threadId} AND "userId" = ${userId}
+        FOR UPDATE`;
       if (!read || (!read.unread && read.lastReadSeq >= latestSeq)) return null;
       await tx.threadRead.update({
         where: { threadId_userId: { threadId, userId } },

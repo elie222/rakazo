@@ -204,6 +204,33 @@ describePostgres("each member's own read state (PostgreSQL)", () => {
     expect(await unread(bea)).toBe(true);
   });
 
+  it("waits for a Mark as Unread from another tab instead of overwriting it", async () => {
+    await as(ada, () => markThreadReadFor(prisma, reader(ada)));
+    let hold!: () => void;
+    const held = new Promise<void>((resolve) => {
+      hold = resolve;
+    });
+    let marked!: () => void;
+    const markedUnread = new Promise<void>((resolve) => {
+      marked = resolve;
+    });
+    // One tab marks the chat unread from its first message and has not committed yet.
+    const otherTab = as(ada, () =>
+      prisma.$transaction(async (tx) => {
+        await markThreadUnreadFromFor(tx, reader(ada), 0);
+        marked();
+        await held;
+      }),
+    );
+    await markedUnread;
+    // Another reads it meanwhile: the read waits for that row, then sees the mark.
+    const read = as(ada, () => markThreadReadFor(prisma, reader(ada)));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    hold();
+    await otherTab;
+    await expect(read).resolves.toBe(-1);
+  });
+
   it("clears every member's state with the chat", async () => {
     await as(ada, () => prisma.$transaction((tx) => clearThreadReads(tx, threadId)));
     await expect(asSystem(prisma).threadRead.count({ where: { threadId } })).resolves.toBe(0);

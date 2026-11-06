@@ -3753,22 +3753,31 @@ describe("sendThreadMessage", () => {
       },
       steeringMessage: { create: vi.fn() },
     };
+    // Who to tell about the message: Ada's teammate.
+    const members = vi.fn().mockResolvedValue([{ userId: "user-1" }, { userId: "user-2" }]);
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
+      spaceMember: { findMany: members },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
-    await sendThreadMessage(
-      {
-        prisma,
-        sandbox: {} as never,
-        events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
-        jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
-      },
-      { spaceId: "workspace-1", userId: "user-1" } as Actor,
-      { kind: "bot", botId: "bot-1", threadId: "thread-1" } as ThreadTarget,
-      { text: "book the flight", clientNonce },
-    );
+    const send = (nonce: string | undefined) =>
+      sendThreadMessage(
+        {
+          prisma,
+          sandbox: {} as never,
+          events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
+          jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
+          notifications: { send: vi.fn() } as never,
+        },
+        { spaceId: "workspace-1", userId: "user-1" } as Actor,
+        { kind: "bot", botId: "bot-1", threadId: "thread-1" } as ThreadTarget,
+        { text: "book the flight", clientNonce: nonce },
+      );
+    await send(clientNonce);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // A spoken turn tells no teammate; a typed message does.
+    expect(members).not.toHaveBeenCalled();
 
     expect(tx.event.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -3776,6 +3785,8 @@ describe("sendThreadMessage", () => {
         payload: expect.objectContaining({ callId: "call-7" }),
       }),
     });
+    await send(undefined);
+    await vi.waitFor(() => expect(members).toHaveBeenCalledOnce());
   });
 
   it("puts the message seq on the live event so the sender can match its echo", async () => {

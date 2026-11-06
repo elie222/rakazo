@@ -1381,7 +1381,8 @@ export async function sendThreadMessage(
     getLogger().error("thread send realtime notification", error);
   });
   const text = input.text?.trim();
-  if (text) {
+  // A spoken turn in a call is not a message to tell teammates about.
+  if (text && !callId) {
     // Not awaited: the sender's reply does not wait on anyone else's devices.
     void notifyMemberMessage(deps, {
       spaceId: actor.spaceId,
