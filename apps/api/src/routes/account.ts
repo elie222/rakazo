@@ -509,6 +509,7 @@ export function accountRoutes(ctx: RouterContext) {
         return (await voiceProviderFor(deps, row.cred.provider)).listVoices(
           row.apiKey,
           voiceContext(context.actor, context.signal),
+          { language: input.language },
         );
       }),
       prepare: authed.voice.prepare.handler(async ({ context, input }) =>

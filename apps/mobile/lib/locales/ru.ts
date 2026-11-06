@@ -1007,6 +1007,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Hang up": "Завершить",
   "Allow microphone access to call a bot.": "Разрешите доступ к микрофону, чтобы звонить боту.",
   "Could not hear that.": "Не удалось расслышать.",
+  "Approve or deny it on screen.": "Утвердите или запретите это на экране.",
+  "Hang up, then enter the code on screen.": "Повесьте трубку, затем введите код на экране.",
   "Could not transcribe that.": "Не удалось распознать речь.",
   "Could not speak that.": "Не удалось озвучить.",
   "Voice chat": "Голосовой чат",

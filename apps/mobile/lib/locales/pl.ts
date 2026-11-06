@@ -987,6 +987,8 @@ export const PL_MESSAGES: Record<string, string> = {
   Call: "Zadzwoń",
   "Calls need transcription": "Rozmowy wymagają transkrypcji",
   "Could not hear that.": "Nie udało się tego usłyszeć.",
+  "Approve or deny it on screen.": "Zatwierdź lub odrzuć na ekranie.",
+  "Hang up, then enter the code on screen.": "Zakończ rozmowę, a potem wpisz kod na ekranie.",
   "Could not speak that.": "Nie udało się tego odczytać na głos.",
   "Could not transcribe that.": "Nie udało się zamienić tej wypowiedzi na tekst.",
   "Hang up": "Rozłącz się",

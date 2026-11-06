@@ -35,20 +35,21 @@ import {
   shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
 } from "../thread-message-pages.js";
-import type { ThreadTarget } from "../thread-target.js";
+import { reactToThreadMessage } from "../thread-reactions.js";
 import {
-  isStopMessage,
   markThreadRead,
   markThreadUnreadFrom,
-  reactToThreadMessage,
+  setThreadUnreadState,
+} from "../thread-read-state.js";
+import { threadSnapshot } from "../thread-snapshot.js";
+import { isStopMessage, stopThreadRuns } from "../thread-stop.js";
+import type { ThreadTarget } from "../thread-target.js";
+import {
   replyParentBotId,
   resolveThreadTarget,
   sendTargetBotIds,
   sendThreadMessage,
-  setThreadUnreadState,
-  stopThreadRuns,
   threadHead,
-  threadSnapshot,
 } from "../thread-target.js";
 import { mapBotSecretInputError } from "./bots.js";
 import { releaseComputerControl } from "./computer.js";

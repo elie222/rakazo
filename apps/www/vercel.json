@@ -1,4 +1,5 @@
 {
+  "installCommand": "corepack pnpm install",
   "redirects": [
     {
       "source": "/",

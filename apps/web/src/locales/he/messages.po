@@ -559,7 +559,7 @@ msgstr ""
 msgid "A bit of everything"
 msgstr "קצת מהכול"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "A command's output"
 msgstr ""
 
@@ -663,11 +663,11 @@ msgstr "הוספה"
 msgid "Add {0} to the group"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a command to run"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a file or folder to watch"
 msgstr ""
 
@@ -773,7 +773,7 @@ msgstr ""
 msgid "Add to routine"
 msgstr "הוספה לרוטינה"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Add trigger"
 msgstr "הוספת טריגר"
 
@@ -809,13 +809,13 @@ msgstr "מה יתווסף"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "מתקדם"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Advanced..."
 msgstr "מתקדם..."
 
@@ -938,7 +938,7 @@ msgstr "לא ניתן היה לבדוק מפתח API שיובא. יש לנסות
 msgid "An imported API key could not be used. Untick it and try again."
 msgstr "לא ניתן היה להשתמש במפתח API שיובא. יש לבטל את הסימון ולנסות שוב."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "An integration tool"
 msgstr ""
 
@@ -979,7 +979,7 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr "כל מודל, עם מפתח משלך"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Anyone at @{ownerDomain}"
 msgstr "כל מי שב-@{ownerDomain}"
 
@@ -1166,7 +1166,7 @@ msgstr "אוטומטי"
 msgid "Automated senders"
 msgstr "שולחים אוטומטיים"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Available after the routine is saved"
 msgstr "זמין אחרי שמירת הרוטינה"
 
@@ -1311,7 +1311,7 @@ msgstr ""
 msgid "Bot templates"
 msgstr "תבניות בוטים"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 msgid "Bot's model"
 msgstr "המודל של הבוט"
 
@@ -1533,12 +1533,12 @@ msgstr "צ׳אטים"
 msgid "Check again"
 msgstr "בדיקה חוזרת"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check every"
 msgstr ""
 
 #. placeholder {0}: state.detail ?? ""
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check failed: {0}"
 msgstr ""
 
@@ -1783,7 +1783,7 @@ msgid "Comfortable"
 msgstr "מרווח"
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Command"
 msgstr "פקודה"
 
@@ -2761,7 +2761,7 @@ msgstr "יצירת קבוצה"
 msgid "Create organization"
 msgstr "יצירת ארגון"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Create Routine"
 msgstr "יצירת רוטינה"
 
@@ -2892,7 +2892,7 @@ msgid "Default"
 msgstr "ברירת מחדל"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "ברירת מחדל ({0})"
@@ -3225,7 +3225,8 @@ msgstr "עריכת פרופיל"
 msgid "Email"
 msgstr "אימייל"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/RoutineList.tsx
 msgctxt "routine trigger"
 msgid "Email"
 msgstr "אימייל"
@@ -3336,13 +3337,13 @@ msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "כל הבוטים במרחב הזה קוראים את ההערות האלה ומעדכנים אותן."
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "כל יום"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "כל שעה"
@@ -3360,12 +3361,12 @@ msgstr "כל הודעה"
 msgid "Every Monday"
 msgstr "כל יום שני"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every month"
 msgstr "כל חודש"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every week"
 msgstr "כל שבוע"
@@ -3461,11 +3462,11 @@ msgstr "נכשל."
 msgid "Failure handling"
 msgstr "טיפול בכשלים"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields that mark a change"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr ""
 
@@ -3474,11 +3475,11 @@ msgstr ""
 msgid "File"
 msgstr "קובץ"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders on the computer"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders, one per line"
 msgstr ""
 
@@ -3631,7 +3632,9 @@ msgstr "הורדת האפליקציה לנייד"
 msgid "Getting ready"
 msgstr "מתכונן"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Git event"
 msgstr "אירוע Git"
 
@@ -3683,7 +3686,7 @@ msgstr "יש לנתק קודם את השיחה ואז להזין את הקוד �
 msgid "Hang up, then enter the code on screen."
 msgstr "יש לנתק את השיחה ואז להזין את הקוד שעל המסך."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "header"
 msgstr "header"
 
@@ -3925,7 +3928,7 @@ msgstr "דומיין האינטגרציה"
 msgid "Integrations"
 msgstr "אינטגרציות"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Interval"
 msgstr "מרווח זמן"
@@ -4016,7 +4019,7 @@ msgstr "שמירת הזיכרונות"
 msgid "Keep tool results whole"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "key"
 msgstr "מפתח"
 
@@ -4039,12 +4042,12 @@ msgid "Language"
 msgstr "שפה"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: changed"
 msgstr ""
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: no changes"
 msgstr ""
 
@@ -4385,7 +4388,8 @@ msgstr "הודעה אל {activeName}"
 msgid "Message composer"
 msgstr "חלון כתיבת הודעה"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Message event"
 msgstr "אירוע הודעה"
 
@@ -4445,7 +4449,7 @@ msgid "minute"
 msgstr "דקה"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "minutes"
 msgstr "דקות"
 
@@ -4460,7 +4464,7 @@ msgstr "מצב"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Model"
@@ -4860,7 +4864,7 @@ msgstr ""
 msgid "No tickets yet"
 msgstr "עדיין אין כרטיסים"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "No trigger"
 msgstr "ללא טריגר"
 
@@ -4953,7 +4957,7 @@ msgstr "חיבור OAuth נכשל"
 msgid "Offline"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "On a schedule"
 msgstr "לפי תזמון"
 
@@ -4982,7 +4986,7 @@ msgstr ""
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "רק אני"
 
@@ -5245,7 +5249,7 @@ msgstr "יש להדביק את מפתח ה-API"
 msgid "Paste your API key, then test again."
 msgstr "יש להדביק את מפתח ה-API ולבדוק שוב."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 #: src/pages/shell/import-status.ts
 msgid "Paused"
 msgstr "מושהה"
@@ -5294,7 +5298,7 @@ msgstr "יש לבחור מודל מהקטלוג."
 msgid "Pick a model from the list or enter a model id served by this endpoint."
 msgstr "יש לבחור מודל מהרשימה או להזין מזהה מודל שמוגש על ידי נקודת הקצה הזו."
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Pick a tool to check"
 msgstr ""
 
@@ -5337,11 +5341,11 @@ msgstr ""
 msgid "Plugins"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Post \"No changes\" in chat"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "POST to"
 msgstr "POST אל"
 
@@ -5666,11 +5670,11 @@ msgstr "להסיר את {secretName}? בוטים לא יוכלו עוד להשת
 msgid "Remove {site}"
 msgstr "הסרת {site}"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove change trigger"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove email trigger"
 msgstr "הסר טריגר אימייל"
 
@@ -5681,7 +5685,7 @@ msgstr "הסר טריגר אימייל"
 msgid "Remove from every space?"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove Git event"
 msgstr "הסרת אירוע Git"
 
@@ -5689,7 +5693,7 @@ msgstr "הסרת אירוע Git"
 msgid "Remove header"
 msgstr "הסרת header"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove message trigger"
 msgstr "הסרת טריגר ההודעה"
 
@@ -5706,7 +5710,7 @@ msgstr "הסרת המיומנות {0}"
 msgid "Remove skills"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove webhook"
 msgstr "הסרת ה-webhook"
 
@@ -5919,7 +5923,7 @@ msgstr ""
 msgid "Root filesystem"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Rotate key"
 msgstr "החלפת מפתח"
 
@@ -5961,7 +5965,7 @@ msgstr "פועל"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Running"
 msgstr "פועל"
 
@@ -5977,7 +5981,7 @@ msgstr "מריץ…"
 msgid "Runs"
 msgstr "הרצות"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "רץ כשהבוט הזה מקבל הודעה מאומתת מהספק הזה."
 
@@ -6041,7 +6045,7 @@ msgstr "נשמר, אבל רענון הרשימה נכשל"
 msgid "Saved."
 msgstr "נשמר."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Saved. Rotate to reveal."
 msgstr "נשמר. יש להחליף את המפתח כדי להציג אותו."
 
@@ -6471,11 +6475,13 @@ msgstr ""
 msgid "Skipped {0}"
 msgstr "דולגו: {0}"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Slack message"
 msgstr "הודעת Slack"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Slack not enabled"
 msgstr "Slack לא מופעל"
 
@@ -6632,7 +6638,7 @@ msgid "Steps"
 msgstr "שלבים"
 
 #: src/components/SubagentCard.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 #: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
@@ -6777,7 +6783,8 @@ msgstr "צוות"
 msgid "Team Computer"
 msgstr "מחשב הצוות"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Teams message"
 msgstr "הודעת Teams"
 
@@ -6905,7 +6912,7 @@ msgstr "הם מקבלים {weeks} שבועות בחינם."
 
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
 msgstr "חשיבה"
@@ -7130,19 +7137,19 @@ msgstr "הצגה או הסתרה של סרגל הצד"
 msgid "Tokens"
 msgstr "טוקנים"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be a JSON object"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be JSON"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool name"
 msgstr "שם הכלי"
 
@@ -7532,7 +7539,7 @@ msgstr ""
 msgid "Web, desktop and mobile apps"
 msgstr "אפליקציות ווב, דסקטופ ומובייל"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Webhook"
 msgstr "Webhook"
 
@@ -7545,7 +7552,7 @@ msgid "week"
 msgstr "שבוע"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "שני עד שישי"
@@ -7594,7 +7601,7 @@ msgstr "למה הבוט הזה משמש"
 msgid "What to return"
 msgstr "מה להחזיר"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "What to watch"
 msgstr ""
 
@@ -7602,11 +7609,12 @@ msgstr ""
 msgid "What your bots remember between chats."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When a webhook fires"
 msgstr "כש-webhook מופעל"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "When an email arrives"
 msgstr "כשמגיע אימייל"
 
@@ -7618,7 +7626,9 @@ msgstr ""
 msgid "When it finishes or needs input"
 msgstr "כשהוא מסיים או זקוק לקלט"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When something changes"
 msgstr ""
 
@@ -7648,7 +7658,7 @@ msgstr ""
 msgid "Who can open this page"
 msgstr "מי יכול לפתוח את הדף הזה"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Who can start it"
 msgstr "מי יכול להפעיל"
 
