@@ -73,8 +73,10 @@ export function useMessageJump({
   const searchParamsRef = useRef(searchParams);
   searchParamsRef.current = searchParams;
   // Leaving the chats (another page) unmounts this hook while its refs still name the last chat.
+  // A layout effect, because a page still loading only hides the shell under Suspense, which
+  // cleans up layout effects but not passive ones.
   const mounted = useRef(true);
-  useEffect(() => {
+  useLayoutEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;

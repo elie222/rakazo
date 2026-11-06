@@ -2,7 +2,7 @@
 
 import type { Bot } from "@rakazo/contracts";
 import { foldPeerReplies } from "@rakazo/core";
-import { act, useEffect, useRef } from "react";
+import { act, lazy, StrictMode, Suspense, useEffect, useRef } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import type { NavigateFunction } from "react-router-dom";
@@ -204,6 +204,54 @@ it.each([
   expect(rpc.threads.get).toHaveBeenCalledTimes(1);
 
   // The user leaves the chats for another page; the shell and its jump hook unmount.
+  act(() => navigateRef.current?.("/app/artifacts?view=grid"));
+  await act(async () => {
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  expect(locations.at(-1)).toBe("/app/artifacts?view=grid");
+});
+
+function LocationSpy({ locations }: { locations: string[] }) {
+  const location = useLocation();
+  useEffect(() => {
+    locations.push(`${location.pathname}${location.search}`);
+  }, [location.pathname, location.search]);
+  return null;
+}
+
+it.each([
+  { name: "bot", from: "/app/bot/bot-a" },
+  { name: "group", from: "/app/group/group-a" },
+])("stays on another page that is still loading when a $name jump finishes", async ({ from }) => {
+  const { rpc, release } = heldRpc();
+  const locations: string[] = [];
+  const navigateRef: { current: NavigateFunction | null } = { current: null };
+  // The page module never finishes loading, so Suspense hides the shell instead of unmounting it.
+  const Loading = lazy(() => new Promise<{ default: () => null }>(() => undefined));
+  const container = document.createElement("div");
+  root = createRoot(container);
+  act(() =>
+    root?.render(
+      <StrictMode>
+        {/* As production's router: navigations commit at once rather than in a transition. */}
+        <MemoryRouter initialEntries={[`${from}?m=message-a`]} useTransitions={false}>
+          <LocationSpy locations={locations} />
+          <Suspense fallback={null}>
+            <Routes>
+              <Route path="/app/artifacts" element={<Loading />} />
+              <Route
+                path="/app/:kind/:id"
+                element={<Harness rpc={rpc} locations={[]} navigateRef={navigateRef} />}
+              />
+            </Routes>
+          </Suspense>
+        </MemoryRouter>
+      </StrictMode>,
+    ),
+  );
+
   act(() => navigateRef.current?.("/app/artifacts?view=grid"));
   await act(async () => {
     release();
