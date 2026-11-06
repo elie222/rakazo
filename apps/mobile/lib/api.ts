@@ -960,7 +960,9 @@ async function postSignOut(
 
 export async function signOut() {
   await rpc("notifications/unregisterPush").catch(() => undefined);
-  await postSignOut(currentApiBase(), await authHeaders());
+  // The token is read first, as before, so the server address cannot be older than it.
+  const headers = await authHeaders();
+  await postSignOut(currentApiBase(), headers);
   const sessionCleared = await clearSessionToken();
   const spaceCleared = await clearSpace();
   if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
