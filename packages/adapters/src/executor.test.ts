@@ -482,7 +482,12 @@ describe("run tool selection", () => {
   const toolNames = (
     trigger: string,
     groupId: string | null = null,
-    options?: { graphicalToolsAllowed?: boolean; pageBrowserAllowed?: boolean },
+    options?: {
+      graphicalToolsAllowed?: boolean;
+      pageBrowserAllowed?: boolean;
+      mediaImagesEnabled?: boolean;
+      mediaVideoEnabled?: boolean;
+    },
   ) =>
     selectBuiltinToolsForRun({
       graphicalToolsAllowed: options?.graphicalToolsAllowed ?? true,
@@ -491,6 +496,8 @@ describe("run tool selection", () => {
       trigger,
       semanticMemoryEnabled: false,
       messagingChannelRun: false,
+      mediaImagesEnabled: options?.mediaImagesEnabled,
+      mediaVideoEnabled: options?.mediaVideoEnabled,
     }).map((tool) => tool.name);
 
   it("keeps page browser tools without vision, and hides them without a graphical computer", () => {
@@ -513,14 +520,24 @@ describe("run tool selection", () => {
     expect(withoutPage).toEqual(expect.arrayContaining(["computer_observe", "computer_act"]));
   });
 
-  it("offers schedule creation to routine-triggered runs", () => {
+  it("offers schedule tools to routine-triggered runs", () => {
     expect(toolNames("routine")).toContain("schedule_create");
     expect(toolNames("routine")).toContain("task_catalog");
     expect(toolNames("routine")).toEqual(
-      expect.arrayContaining(["schedule_list", "schedule_cancel"]),
+      expect.arrayContaining(["schedule_list", "schedule_update", "schedule_cancel"]),
     );
     expect(toolNames("user")).toContain("schedule_create");
     expect(toolNames("user")).toContain("task_catalog");
+  });
+
+  it("offers messaging and enabled media tools to routine-triggered runs", () => {
+    const routineTools = toolNames("routine", null, {
+      mediaImagesEnabled: true,
+      mediaVideoEnabled: true,
+    });
+
+    expect(routineTools).toEqual(expect.arrayContaining(["message_user", "message_bot"]));
+    expect(routineTools).toEqual(expect.arrayContaining(["generate_image", "generate_video"]));
   });
 
   it("offers self-set follow-ups only on runs the owner started, with tools to track them", () => {

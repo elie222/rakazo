@@ -31,18 +31,6 @@ export const SCHEDULE_TOOL_NAMES = new Set([
   "schedule_cancel",
 ]);
 
-/** Routine runs may create, list, or cancel routines, but may not update them. */
-const ROUTINE_RUN_HIDDEN_TOOLS = new Set(["schedule_update"]);
-
-export function filterBuiltinToolsForRun<T extends { name: string }>(
-  tools: T[],
-  runTrigger: string,
-): T[] {
-  return runTrigger === "routine"
-    ? tools.filter((tool) => !ROUTINE_RUN_HIDDEN_TOOLS.has(tool.name))
-    : tools;
-}
-
 /** Keep cross-bot messaging thread-specific while exposing schedules in DMs and groups. */
 export function filterBuiltinToolsForThread<T extends { name: string }>(
   tools: T[],

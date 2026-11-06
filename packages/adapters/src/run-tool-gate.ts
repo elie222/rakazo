@@ -275,18 +275,6 @@ export async function gateToolCall(
       ));
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;
-  const requiresMandatoryApproval =
-    paying ||
-    commandWatch ||
-    scheduleNamesNewSite ||
-    requiresUnattendedApproval ||
-    toolRequiresExplicitApproval(name);
-  // No allow rule skips these, and without them the tool needs no approval, so "Always allow"
-  // on their card would save a rule that never takes effect.
-  const asksEveryTime =
-    (commandWatch || scheduleNamesNewSite) && !toolRequiresApproval(name, viaConnector);
-  // Never ask runs everything else: only another owner's connection could have been steered into it.
-  const guardedInNeverAsk = name === "respond_agent_connection";
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
@@ -305,6 +293,23 @@ export async function gateToolCall(
     unidentifiedAction && resolvedRules.decision === "allow"
       ? { ...resolvedRules, decision: "ask" as const }
       : resolvedRules;
+  const requiresMandatoryApproval =
+    paying ||
+    commandWatch ||
+    (scheduleNamesNewSite &&
+      !(
+        name === "schedule_create" &&
+        resolvedRules.decision === "allow" &&
+        resolvedRules.source === "always_allow"
+      )) ||
+    requiresUnattendedApproval ||
+    toolRequiresExplicitApproval(name);
+  // No allow rule skips these, and without them the tool needs no approval, so "Always allow"
+  // on their card would save a rule that never takes effect.
+  const asksEveryTime =
+    (commandWatch || scheduleNamesNewSite) && !toolRequiresApproval(name, viaConnector);
+  // Never ask runs everything else: only another owner's connection could have been steered into it.
+  const guardedInNeverAsk = name === "respond_agent_connection";
   const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
   const reviewable = mode === "auto" && !requiresMandatoryApproval;
   const injectedReview = reviewable ? deps.autoReview : undefined;

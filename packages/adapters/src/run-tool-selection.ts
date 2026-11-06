@@ -9,11 +9,7 @@ import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { selectMemoryTools } from "./memory-tools.js";
 import { filterImageReturningComputerTools } from "./model-vision.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./run-tools-user-computer.js";
-import {
-  filterBuiltinToolsForRun,
-  filterBuiltinToolsForThread,
-  SCHEDULE_TOOL_NAMES,
-} from "./schedule-tools.js";
+import { filterBuiltinToolsForThread, SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "./skill-tools.js";
 
 export const READ_ONLY_AGENT_TOOLS = new Set([
@@ -109,15 +105,12 @@ export function selectBuiltinToolsForRun(options: {
   const emailMailbox = Boolean(options.emailInbox) || emailClaimOffered;
   return selectCloudAgentTools(
     selectMemoryTools(
-      filterBuiltinToolsForRun(
-        filterBuiltinToolsForThread(
-          filterPageBrowserTools(
-            filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
-            options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
-          ),
-          options.groupId,
+      filterBuiltinToolsForThread(
+        filterPageBrowserTools(
+          filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
+          options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
         ),
-        options.trigger,
+        options.groupId,
       ),
       options.semanticMemoryEnabled,
       Boolean(options.semanticMemoryForgets),
