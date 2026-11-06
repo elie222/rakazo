@@ -6,8 +6,10 @@
 // does not have; those run against a database of the branch's own on the same server, so
 // unmerged schema changes never reach the shared one.
 //
-// The database is `.env`'s DATABASE_URL when it accepts a connection. Otherwise a local
-// Postgres container (`rakazo-dev-postgres`) is started and reused by every checkout.
+// The database is `.env`'s DATABASE_URL when it is set: it must accept a
+// connection, or startup fails rather than falling back to a different one.
+// With no DATABASE_URL, a local Postgres container (`rakazo-dev-postgres`) is
+// started and reused by every checkout.
 // Setting WEB_PORT or API_PORT, in the shell or `.env`, turns off port selection. A relative
 // DATA_DIR resolves in the main checkout, so checkouts sharing the database share its files.
 // Branch databases, and their copied files, are dropped once the branch is deleted or merged.
@@ -140,9 +142,7 @@ async function startManagedPostgres() {
   try {
     run("docker", ["version", "--format", "{{.Server.Version}}"]);
   } catch {
-    throw new Error(
-      "DATABASE_URL in .env does not accept a connection and Docker is not running to start a local Postgres.",
-    );
+    throw new Error("No DATABASE_URL in .env and Docker is not running to start a local Postgres.");
   }
   const state = (() => {
     try {
@@ -194,8 +194,13 @@ async function startManagedPostgres() {
 async function sharedDatabase() {
   const url = setting("DATABASE_URL");
   const migrationUrl = setting("DATABASE_MIGRATION_URL") || url;
-  if (url && (await connects(migrationUrl))) return { url, migrationUrl };
-  if (url) log("DATABASE_URL in .env does not accept a connection; using the local container");
+  if (url) {
+    if (await connects(migrationUrl)) return { url, migrationUrl };
+    // A fallback would silently give this checkout different data than configured.
+    throw new Error(
+      "The configured database does not accept a connection. Check DATABASE_MIGRATION_URL or DATABASE_URL, or remove DATABASE_URL to use the local container.",
+    );
+  }
   return startManagedPostgres();
 }
 

@@ -449,7 +449,7 @@ msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
 msgstr "{vcpus} vCPU, {memoryGb} GB, ayda {hours} bilgisayar saati"
 
 #. placeholder {0}: mention.name
-#: src/pages/shell/composer-parts.tsx
+#: src/pages/shell/composer.tsx
 msgid "@{0}"
 msgstr "@{0}"
 
@@ -559,7 +559,7 @@ msgstr "1 alan"
 msgid "A bit of everything"
 msgstr "Hepsi biraz"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "A command's output"
 msgstr "Bir komutun çıktısı"
 
@@ -663,11 +663,11 @@ msgstr "Ekle"
 msgid "Add {0} to the group"
 msgstr "{0} kişisini gruba ekle"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a command to run"
 msgstr "Çalıştırılacak bir komut ekleyin"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a file or folder to watch"
 msgstr "İzlenecek bir dosya veya klasör ekleyin"
 
@@ -773,7 +773,7 @@ msgstr "Beceri ekle"
 msgid "Add to routine"
 msgstr "Rutine ekle"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Add trigger"
 msgstr "Tetikleyici ekle"
 
@@ -809,13 +809,13 @@ msgstr "Eklenecekler"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "Gelişmiş"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Advanced..."
 msgstr "Gelişmiş..."
 
@@ -938,7 +938,7 @@ msgstr "İçe aktarılan bir API anahtarı kontrol edilemedi. Yeniden dene."
 msgid "An imported API key could not be used. Untick it and try again."
 msgstr "İçe aktarılan bir API anahtarı kullanılamadı. İşaretini kaldırıp yeniden dene."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "An integration tool"
 msgstr "Bir entegrasyon aracı"
 
@@ -979,7 +979,7 @@ msgstr "Anthropic Messages"
 msgid "Any model, with your own key"
 msgstr "Herhangi bir model, kendi anahtarınla"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Anyone at @{ownerDomain}"
 msgstr "@{ownerDomain} adresindeki herkes"
 
@@ -1166,7 +1166,7 @@ msgstr "Otomatik"
 msgid "Automated senders"
 msgstr "Otomatik göndericiler"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Available after the routine is saved"
 msgstr "Rutin kaydedildikten sonra kullanılabilir"
 
@@ -1311,7 +1311,7 @@ msgstr "Bot stili"
 msgid "Bot templates"
 msgstr "Bot şablonları"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 msgid "Bot's model"
 msgstr "Botun modeli"
 
@@ -1533,12 +1533,12 @@ msgstr "Sohbetler"
 msgid "Check again"
 msgstr "Tekrar kontrol et"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check every"
 msgstr "Kontrol aralığı"
 
 #. placeholder {0}: state.detail ?? ""
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check failed: {0}"
 msgstr "Kontrol başarısız: {0}"
 
@@ -1783,7 +1783,7 @@ msgid "Comfortable"
 msgstr "Rahat"
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Command"
 msgstr "Komut"
 
@@ -2761,7 +2761,7 @@ msgstr "Grup oluştur"
 msgid "Create organization"
 msgstr "Kuruluş oluştur"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Create Routine"
 msgstr "Rutin oluştur"
 
@@ -2892,7 +2892,7 @@ msgid "Default"
 msgstr "Varsayılan"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "Varsayılan ({0})"
@@ -3225,7 +3225,8 @@ msgstr "Profili Düzenle"
 msgid "Email"
 msgstr "E-posta"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/RoutineList.tsx
 msgctxt "routine trigger"
 msgid "Email"
 msgstr "E-posta"
@@ -3336,13 +3337,13 @@ msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "Bu alandaki tüm botlar bu notları okur ve güncel tutar."
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "Her gün"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "Her saat"
@@ -3360,12 +3361,12 @@ msgstr "Her mesaj"
 msgid "Every Monday"
 msgstr "Her pazartesi"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every month"
 msgstr "Her ay"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every week"
 msgstr "Her hafta"
@@ -3461,11 +3462,11 @@ msgstr "Başarısız oldu."
 msgid "Failure handling"
 msgstr "Hata yönetimi"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields that mark a change"
 msgstr "Değişikliği belirten alanlar"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Karşılaştırılacak alanlar, ör. id, modifiedTime (isteğe bağlı)"
 
@@ -3474,11 +3475,11 @@ msgstr "Karşılaştırılacak alanlar, ör. id, modifiedTime (isteğe bağlı)"
 msgid "File"
 msgstr "Dosya"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders on the computer"
 msgstr "Bilgisayardaki dosya veya klasörler"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders, one per line"
 msgstr "Dosya veya klasörler, her satıra bir tane"
 
@@ -3631,7 +3632,9 @@ msgstr "Mobil uygulamayı indir"
 msgid "Getting ready"
 msgstr "Hazırlanıyor"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Git event"
 msgstr "Git olayı"
 
@@ -3683,7 +3686,7 @@ msgstr "Önce aramayı sonlandır, sonra kodu ekrana gir."
 msgid "Hang up, then enter the code on screen."
 msgstr "Aramayı sonlandır, sonra kodu ekrana gir."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "header"
 msgstr "başlık"
 
@@ -3925,7 +3928,7 @@ msgstr "Entegrasyon etki alanı"
 msgid "Integrations"
 msgstr "Entegrasyonlar"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Interval"
 msgstr "Aralık"
@@ -4016,7 +4019,7 @@ msgstr "Hafızayı koru"
 msgid "Keep tool results whole"
 msgstr "Araç sonuçlarını bütün tut"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "key"
 msgstr "anahtar"
 
@@ -4039,12 +4042,12 @@ msgid "Language"
 msgstr "Dil"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: changed"
 msgstr "Son kontrol {0}: değişiklik var"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: no changes"
 msgstr "Son kontrol {0}: değişiklik yok"
 
@@ -4350,7 +4353,7 @@ msgstr "{title} için hafıza"
 msgid "Memory scope"
 msgstr "Hafıza kapsamı"
 
-#: src/pages/shell/composer-parts.tsx
+#: src/pages/shell/composer.tsx
 msgid "Mentions"
 msgstr "Bahsetmeler"
 
@@ -4385,7 +4388,8 @@ msgstr "{activeName} sohbetine yaz"
 msgid "Message composer"
 msgstr "Mesaj yazma alanı"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Message event"
 msgstr "Mesaj olayı"
 
@@ -4445,7 +4449,7 @@ msgid "minute"
 msgstr "dakika"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "minutes"
 msgstr "dakika"
 
@@ -4460,7 +4464,7 @@ msgstr "Mod"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Model"
@@ -4860,7 +4864,7 @@ msgstr "Gönderim yok"
 msgid "No tickets yet"
 msgstr "Henüz talep yok"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "No trigger"
 msgstr "Tetikleyici yok"
 
@@ -4953,7 +4957,7 @@ msgstr "OAuth bağlantısı başarısız"
 msgid "Offline"
 msgstr "Çevrimdışı"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "On a schedule"
 msgstr "Zamanlamayla"
 
@@ -4982,7 +4986,7 @@ msgstr "Tek seferlik satın alma. Krediler sona ermez."
 msgid "Only enter a code {codeHost} sent you."
 msgstr "Yalnızca {codeHost} tarafından gönderilen kodu gir."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "Yalnızca ben"
 
@@ -5245,7 +5249,7 @@ msgstr "API anahtarını yapıştır"
 msgid "Paste your API key, then test again."
 msgstr "API anahtarını yapıştır, sonra yeniden test et."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 #: src/pages/shell/import-status.ts
 msgid "Paused"
 msgstr "Duraklatıldı"
@@ -5294,7 +5298,7 @@ msgstr "Katalogdan bir model seç."
 msgid "Pick a model from the list or enter a model id served by this endpoint."
 msgstr "Listeden bir model seç veya bu uç noktanın sunduğu bir model kimliği gir."
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Pick a tool to check"
 msgstr "Kontrol edilecek bir araç seçin"
 
@@ -5337,11 +5341,11 @@ msgstr "Eklenti gönderimleri"
 msgid "Plugins"
 msgstr "Eklentiler"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Post \"No changes\" in chat"
 msgstr "Sohbete “Değişiklik yok” gönder"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "POST to"
 msgstr "Şuraya POST gönder"
 
@@ -5641,7 +5645,7 @@ msgstr "Kaldır"
 #. placeholder {0}: attachment.file.name
 #. placeholder {0}: device.name
 #: src/components/ComputerDeviceSettings.tsx
-#: src/pages/shell/composer-parts.tsx
+#: src/pages/shell/composer.tsx
 msgid "Remove {0}"
 msgstr "{0} kaldır"
 
@@ -5666,11 +5670,11 @@ msgstr "{secretName} kaldırılsın mı? Botlar artık bunu kullanamayacak."
 msgid "Remove {site}"
 msgstr "Kaldır: {site}"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove change trigger"
 msgstr "Değişiklik tetikleyicisini kaldır"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove email trigger"
 msgstr "E-posta tetikleyicisini kaldır"
 
@@ -5681,7 +5685,7 @@ msgstr "E-posta tetikleyicisini kaldır"
 msgid "Remove from every space?"
 msgstr "Her alandan kaldırılsın mı?"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove Git event"
 msgstr "Git olayını kaldır"
 
@@ -5689,7 +5693,7 @@ msgstr "Git olayını kaldır"
 msgid "Remove header"
 msgstr "Üstbilgiyi kaldır"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove message trigger"
 msgstr "Mesaj tetikleyicisini kaldır"
 
@@ -5706,7 +5710,7 @@ msgstr "{0} becerisini kaldır"
 msgid "Remove skills"
 msgstr "Becerileri kaldır"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove webhook"
 msgstr "Webhook'u kaldır"
 
@@ -5919,7 +5923,7 @@ msgstr "İptal edildi"
 msgid "Root filesystem"
 msgstr "Kök dosya sistemi"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Rotate key"
 msgstr "Anahtarı yenile"
 
@@ -5961,7 +5965,7 @@ msgstr "çalışıyor"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Running"
 msgstr "Çalışıyor"
 
@@ -5977,7 +5981,7 @@ msgstr "Çalışıyor…"
 msgid "Runs"
 msgstr "Çalıştırmalar"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "Bu bot bu sağlayıcıdan doğrulanmış bir mesaj aldığında çalışır."
 
@@ -6041,7 +6045,7 @@ msgstr "Kaydedildi ama liste yenilenemedi"
 msgid "Saved."
 msgstr "Kaydedildi."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Saved. Rotate to reveal."
 msgstr "Kaydedildi. Göstermek için yenile."
 
@@ -6189,7 +6193,7 @@ msgstr "Bir bot seç"
 msgid "Self-hosted"
 msgstr "Kendi sunucunuz"
 
-#: src/pages/shell/composer-parts.tsx
+#: src/pages/shell/composer.tsx
 msgid "Send"
 msgstr "Gönder"
 
@@ -6434,7 +6438,7 @@ msgid "Skill"
 msgstr "Beceri"
 
 #. placeholder {0}: skill.name
-#: src/pages/shell/composer-parts.tsx
+#: src/pages/shell/composer.tsx
 msgid "Skill {0}"
 msgstr "Beceri: {0}"
 
@@ -6471,11 +6475,13 @@ msgstr "Atlandı"
 msgid "Skipped {0}"
 msgstr "{0} atlandı"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Slack message"
 msgstr "Slack mesajı"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Slack not enabled"
 msgstr "Slack etkin değil"
 
@@ -6631,8 +6637,8 @@ msgstr "Durum"
 msgid "Steps"
 msgstr "Adımlar"
 
-#: src/pages/RoutineEditor.tsx
-#: src/pages/shell/composer-parts.tsx
+#: src/pages/RoutineList.tsx
+#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
@@ -6772,7 +6778,8 @@ msgstr "Takım"
 msgid "Team Computer"
 msgstr "Takım Bilgisayarı"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Teams message"
 msgstr "Teams mesajı"
 
@@ -6900,7 +6907,7 @@ msgstr "Arkadaşın {weeks} hafta ücretsiz kullanır."
 
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
 msgstr "Düşünüyor"
@@ -7125,19 +7132,19 @@ msgstr "Kenar çubuğunu göster/gizle"
 msgid "Tokens"
 msgstr "Token"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
 msgstr "Araç bağımsız değişkenleri (JSON)"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be a JSON object"
 msgstr "Araç bağımsız değişkenleri bir JSON nesnesi olmalıdır"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be JSON"
 msgstr "Araç bağımsız değişkenleri JSON olmalıdır"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool name"
 msgstr "Araç adı"
 
@@ -7527,7 +7534,7 @@ msgstr "Web, masaüstü ve mobil"
 msgid "Web, desktop and mobile apps"
 msgstr "Web, masaüstü ve mobil uygulamalar"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Webhook"
 msgstr "Webhook"
 
@@ -7540,7 +7547,7 @@ msgid "week"
 msgstr "hafta"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "Hafta içi"
@@ -7589,7 +7596,7 @@ msgstr "Bu botun amacı"
 msgid "What to return"
 msgstr "Ne döndürülecek"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "What to watch"
 msgstr "İzlenecek öğe"
 
@@ -7597,11 +7604,12 @@ msgstr "İzlenecek öğe"
 msgid "What your bots remember between chats."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When a webhook fires"
 msgstr "Webhook tetiklendiğinde"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "When an email arrives"
 msgstr "E-posta geldiğinde"
 
@@ -7613,7 +7621,9 @@ msgstr ""
 msgid "When it finishes or needs input"
 msgstr "Tamamladığında veya yanıt gerektiğinde"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When something changes"
 msgstr "Bir şey değiştiğinde"
 
@@ -7643,7 +7653,7 @@ msgstr ""
 msgid "Who can open this page"
 msgstr "Bu sayfayı kimler açabilir"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Who can start it"
 msgstr "Kimler başlatabilir"
 

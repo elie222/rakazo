@@ -15,11 +15,7 @@ import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { parse } from "shell-quote";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  BOAT_COMPUTER_SNAPSHOT,
-  BoatSandboxProvider,
-  boatComputerSnapshotName,
-} from "./boat-sandbox.js";
+import { BOAT_COMPUTER_SNAPSHOT, BoatSandboxProvider } from "./boat-sandbox.js";
 import type { BoatRecovery } from "./boat-sandbox.test-support.js";
 import {
   BOAT_ARTIFACT_MAX_BYTES,
@@ -27,6 +23,7 @@ import {
   FakeBoatApi,
   serveFakeBoatDownload,
 } from "./boat-sandbox.test-support.js";
+import { computerSnapshotName } from "./computer-base-snapshot.js";
 import { ComputerBrowserProvider } from "./computer-browser.js";
 import { PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { installPageBrowserCommand } from "./page-browser-install.js";
@@ -2304,10 +2301,10 @@ describe("Boat computer snapshot", () => {
 
   it("names the snapshot after the setup it captures", () => {
     expect(BOAT_COMPUTER_SNAPSHOT).toMatch(/^rakazo-computer-[0-9a-f]{12}$/);
-    expect(boatComputerSnapshotName(["mkdir -p a", PREPARE_LINUX_DESKTOP])).not.toBe(
-      boatComputerSnapshotName(["mkdir -p b", PREPARE_LINUX_DESKTOP]),
+    expect(computerSnapshotName(["mkdir -p a", PREPARE_LINUX_DESKTOP])).not.toBe(
+      computerSnapshotName(["mkdir -p b", PREPARE_LINUX_DESKTOP]),
     );
-    expect(boatComputerSnapshotName(["a", "b"])).toBe(boatComputerSnapshotName(["a", "b"]));
+    expect(computerSnapshotName(["a", "b"])).toBe(computerSnapshotName(["a", "b"]));
   });
 
   it("carries agent-browser but leaves the page-browser files to each boot", async () => {

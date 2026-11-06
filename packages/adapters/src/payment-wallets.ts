@@ -8,6 +8,7 @@ import { PaymentWalletDisconnected, SecretStoreUnavailableError } from "@rakazo/
 import type { PaymentWalletStatus } from "@rakazo/contracts";
 import type { PaymentWallet, Prisma, PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { advisoryLock } from "./advisory-lock.js";
 import { withRefreshLock } from "./refresh-lock.js";
 import { deleteSecretBestEffort, holdSecretNotifications } from "./secret-store-factory.js";
 
@@ -54,8 +55,8 @@ function warn(message: string, error: unknown): void {
 }
 
 /** Serializes credential changes for one user across the API and worker. */
-function lockWallet(tx: Prisma.TransactionClient, userId: string): Promise<number> {
-  return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('payment-wallet'), hashtext(${userId}))`;
+function lockWallet(tx: Prisma.TransactionClient, userId: string): Promise<unknown> {
+  return advisoryLock(tx, "payment-wallet", userId);
 }
 
 async function storeMaterial(

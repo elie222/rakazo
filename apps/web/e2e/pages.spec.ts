@@ -376,8 +376,11 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
     page,
     `call save_page with ${JSON.stringify({ pageId, title: "Signups dashboard", source: dashboard("1.9%") })}\nthen say Updated [Signups dashboard](page:${pageId}) with the new churn figure.`,
   );
-  // Anyone with the link would see the change at once, so the bot asks first.
-  await expect(page.getByText("Update shared page “Signups dashboard”?")).toBeVisible({
+  // Anyone with the link would see the change at once, so the bot asks first. The sidebar's
+  // unread preview can show the same words, so look for the card in the transcript.
+  await expect(
+    page.getByTestId("transcript").getByText("Update shared page “Signups dashboard”?"),
+  ).toBeVisible({
     timeout: 30_000,
   });
   await captureScreenshot(page, testInfo, "page-shared-update-approval");

@@ -947,6 +947,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Hang up": "結束通話",
   "Allow microphone access to call a bot.": "請允許使用麥克風，以便與機器人通話。",
   "Could not hear that.": "沒有聽清。",
+  "Approve or deny it on screen.": "請在螢幕上核准或拒絕。",
+  "Hang up, then enter the code on screen.": "請結束通話，再輸入螢幕上的驗證碼。",
   "Could not transcribe that.": "無法轉錄。",
   "Could not speak that.": "無法朗讀。",
   "Voice chat": "語音通話",
