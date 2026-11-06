@@ -263,6 +263,15 @@ describe("hosted compatible endpoint presets", () => {
     expect(isDeepInfraBaseUrl("https://ollama.com/v1")).toBe(false);
   });
 
+  it("checks a preset's key only over HTTPS on the preset's own host", () => {
+    for (const { baseUrl, keyCheckUrl } of COMPATIBLE_ENDPOINT_PRESETS) {
+      if (!keyCheckUrl) continue;
+      const check = new URL(keyCheckUrl);
+      expect(check.protocol).toBe("https:");
+      expect(check.host).toBe(new URL(baseUrl).host);
+    }
+  });
+
   it("keeps every preset host reachable when public hosts are off", () => {
     for (const preset of COMPATIBLE_ENDPOINT_PRESETS)
       expect(assertAllowedOpenAiCompatibleUrl(preset.baseUrl, { allowPublic: false }).href).toBe(

@@ -27,6 +27,7 @@ import {
   assertAllowedOpenAiCompatibleRequestUrl,
   assertAllowedOpenAiCompatibleUrl,
   assertHttpsForKeyedOpenAiCompatibleUrl,
+  hostedEndpointPresetForHost,
   isDeepInfraBaseUrl,
   isPrivateOpenAiCompatibleHostname,
   normalizeOpenAiCompatibleBaseUrl,
@@ -527,20 +528,15 @@ async function readBoundedJson(
 }
 
 /**
- * Hosted services whose model list answers without a key, so listing models proves nothing:
- * each gets an authenticated endpoint on the same host that refuses a missing or bad key.
+ * A hosted service whose model list answers without a key proves the key on its preset's
+ * `keyCheckUrl` instead, since listing models proves nothing. Other endpoints are not checked.
  */
-const HOSTED_KEY_CHECK_URLS: ReadonlyMap<string, string> = new Map([
-  ["ollama.com", "https://ollama.com/api/balance"],
-  ["api.deepinfra.com", "https://api.deepinfra.com/v1/me"],
-]);
-
 export async function verifyOpenAiCompatibleApiKey(
   input: { baseUrl: string; apiKey?: string; headers?: Record<string, string> },
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
 ): Promise<void> {
-  const checkUrl = HOSTED_KEY_CHECK_URLS.get(new URL(input.baseUrl).hostname);
+  const checkUrl = hostedEndpointPresetForHost(new URL(input.baseUrl).hostname)?.keyCheckUrl;
   if (!checkUrl) return;
   if (!input.apiKey?.trim()) throw new Error(MODEL_KEY_REJECTED_ERROR);
   const safeFetch = createOpenAiCompatibleFetch(fetchImpl);

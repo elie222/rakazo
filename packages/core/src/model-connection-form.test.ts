@@ -6,7 +6,9 @@ import {
   compatibleConnectionReady,
   connectionFormFields,
   connectionFormModelId,
+  isSavedCompatibleModel,
   modelConnectRequest,
+  pickedCompatibleModelFields,
   probedModelFields,
 } from "./model-connection-form.js";
 
@@ -307,6 +309,84 @@ describe("probedModelFields", () => {
       expect(Number(fields.maxTokens ?? "4096")).toBeLessThan(contextWindow);
       expect(Number(fields.maxTokens ?? "4096")).toBeGreaterThanOrEqual(1);
     }
+  });
+});
+
+describe("pickedCompatibleModelFields", () => {
+  const endpoint = "https://models.example.test/v1";
+  const saved = credential({
+    provider: COMPATIBLE,
+    baseUrl: endpoint,
+    modelId: "saved",
+    apiProtocol: "chat-completions",
+    reasoning: true,
+    thinkingLevel: "high",
+    maxTokens: 2048,
+    contextWindow: 32_000,
+    supportsImages: false,
+    maxImagesPerPrompt: 2,
+  });
+  const listing = new Map([
+    ["saved", { id: "saved", supportsImages: true, reasoning: false, contextWindow: 8192 }],
+    ["other", { id: "other", supportsImages: true, reasoning: false, contextWindow: 1024 }],
+  ]);
+  const savedFields = {
+    reasoning: true,
+    supportsImages: false,
+    maxImagesPerPrompt: "2",
+    maxTokens: "2048",
+    contextWindow: "32000",
+    thinkingLevel: "high",
+  };
+
+  /** A form that writes every returned field, as both apps do. */
+  function pick(form: Record<string, unknown>, modelId: string, baseUrl = endpoint) {
+    const fields = pickedCompatibleModelFields({
+      credential: saved,
+      baseUrl,
+      modelId,
+      probed: listing.get(modelId),
+      form: {
+        reasoning: form.reasoning as boolean,
+        maxTokens: form.maxTokens as string,
+        apiProtocol: "chat-completions",
+      },
+    });
+    return { ...form, ...fields };
+  }
+
+  it("tells the saved model on its saved endpoint from the same id elsewhere", () => {
+    expect(isSavedCompatibleModel(saved, `${endpoint}/`, "saved")).toBe(true);
+    expect(isSavedCompatibleModel(saved, endpoint, "other")).toBe(false);
+    expect(isSavedCompatibleModel(saved, "https://elsewhere.example.test/v1", "saved")).toBe(false);
+    expect(isSavedCompatibleModel(undefined, endpoint, "saved")).toBe(false);
+  });
+
+  it("restores the saved model's settings after another model's listing values were filled in", () => {
+    const other = pick(savedFields, "other");
+    expect(other).toEqual({
+      reasoning: false,
+      supportsImages: true,
+      maxImagesPerPrompt: "2",
+      maxTokens: "512",
+      contextWindow: "1024",
+      thinkingLevel: null,
+    });
+    expect(pick(other, "saved")).toEqual(savedFields);
+  });
+
+  it("takes the listing's values for the saved id on another endpoint", () => {
+    expect(pick(savedFields, "saved", "https://elsewhere.example.test/v1")).toEqual({
+      ...savedFields,
+      reasoning: false,
+      supportsImages: true,
+      contextWindow: "8192",
+      thinkingLevel: null,
+    });
+  });
+
+  it("keeps the form's own values for a model the listing does not describe", () => {
+    expect(pick(savedFields, "unlisted")).toEqual({ ...savedFields, thinkingLevel: null });
   });
 });
 

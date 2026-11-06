@@ -30,7 +30,7 @@ import {
   createModelProbe,
   initialModelProbeState,
   modelConnectRequest,
-  probedModelFields,
+  pickedCompatibleModelFields,
   savedCompatibleModelIds,
   toggleEnabledModelId,
 } from "@rakazo/core";
@@ -328,6 +328,8 @@ export default function ModelConnection() {
       savedCompatibleEndpointMatches(nextBaseUrl, credential?.baseUrl)
         ? (credential?.modelId ?? "")
         : "",
+      [],
+      nextBaseUrl,
     );
     resetOpenAiCompatibleProbe();
     clearFeedback();
@@ -417,29 +419,21 @@ export default function ModelConnection() {
     }
   }
 
-  function stageCompatibleModelId(nextModelId: string, details = probeDetails) {
-    // The connection's saved model keeps the settings its owner chose.
-    const savedModel =
-      credential?.modelId === nextModelId &&
-      savedCompatibleEndpointMatches(baseUrl, credential.baseUrl);
-    const prefill = savedModel
-      ? {}
-      : probedModelFields(
-          details.find((info) => info.id === nextModelId),
-          maxTokens,
-        );
-    const nextReasoning = prefill.reasoning ?? reasoning;
+  function stageCompatibleModelId(nextModelId: string, details = probeDetails, endpoint = baseUrl) {
     setModelId(nextModelId);
-    if (prefill.reasoning !== undefined) setReasoning(prefill.reasoning);
-    if (prefill.supportsImages !== undefined) setSupportsImages(prefill.supportsImages);
-    if (prefill.contextWindow !== undefined) setContextWindow(prefill.contextWindow);
-    if (prefill.maxTokens !== undefined) setMaxTokens(prefill.maxTokens);
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        credential?.modelId === nextModelId ? credential.thinkingLevel : null,
-        nextReasoning ? compatibleThinkingLevels(apiProtocol) : [],
-      ) as ThinkingLevel | null,
-    );
+    const fields = pickedCompatibleModelFields({
+      credential,
+      baseUrl: endpoint,
+      modelId: nextModelId,
+      probed: details.find((info) => info.id === nextModelId),
+      form: { reasoning, maxTokens, apiProtocol },
+    });
+    if (fields.reasoning !== undefined) setReasoning(fields.reasoning);
+    if (fields.supportsImages !== undefined) setSupportsImages(fields.supportsImages);
+    if (fields.maxImagesPerPrompt !== undefined) setMaxImagesPerPrompt(fields.maxImagesPerPrompt);
+    if (fields.maxTokens !== undefined) setMaxTokens(fields.maxTokens);
+    if (fields.contextWindow !== undefined) setContextWindow(fields.contextWindow);
+    setThinkingLevel(fields.thinkingLevel);
   }
 
   async function connectKey(limitsOnly = false) {

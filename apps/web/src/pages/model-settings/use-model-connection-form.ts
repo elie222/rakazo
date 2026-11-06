@@ -11,15 +11,15 @@ import {
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleProbeSuccessMessage,
-  savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import type { ConnectionFormFields } from "@rakazo/core";
 import {
   clampCatalogThinkingLevel,
   compatibleThinkingLevels,
-  connectionFormFields,
   createModelProbe,
   initialModelProbeState,
+  isSavedCompatibleModel,
+  pickedCompatibleModelFields,
   probedModelFields,
   savedCompatibleModelIds,
 } from "@rakazo/core";
@@ -179,42 +179,25 @@ export function useModelConnectionForm({
     return probed.reasoning ?? reasoning;
   }
 
-  /** Whether this is the model the saved connection runs, on the endpoint it was saved for. */
-  function isSavedCompatibleModel(id: string): boolean {
-    return (
-      credential?.modelId === id && savedCompatibleEndpointMatches(baseUrl, credential.baseUrl)
-    );
-  }
-
   /**
-   * Picks the model on screen. The connection's saved model keeps the settings its owner chose:
-   * the listing's guesses are skipped, and the saved values come back after another model's
-   * guesses were filled in. Any other model takes what the listing says about it.
+   * Picks the model on screen. The connection's saved model gets its saved settings back; any
+   * other model takes what the listing says about it.
    */
   function stageCompatibleModelId(nextModelId: string) {
     setModelId(nextModelId);
-    if (credential && isSavedCompatibleModel(nextModelId)) {
-      const saved = connectionFormFields({
-        catalog,
-        provider: OPENAI_COMPATIBLE_PROVIDER_ID,
-        modelId: nextModelId,
-        credential,
-      });
-      setReasoning(saved.reasoning);
-      setSupportsImages(saved.supportsImages);
-      setMaxImagesPerPrompt(saved.maxImagesPerPrompt);
-      setMaxTokens(saved.maxTokens);
-      setContextWindow(saved.contextWindow);
-      setThinkingLevel(saved.thinkingLevel);
-      return;
-    }
-    const nextReasoning = applyProbedModelFields(nextModelId);
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        credential?.modelId === nextModelId ? credential.thinkingLevel : null,
-        nextReasoning ? compatibleThinkingLevels(apiProtocol) : [],
-      ) as ThinkingLevel | null,
-    );
+    const fields = pickedCompatibleModelFields({
+      credential,
+      baseUrl,
+      modelId: nextModelId,
+      probed: probeInfo.infoRef.current.get(nextModelId),
+      form: { reasoning, maxTokens, apiProtocol },
+    });
+    if (fields.reasoning !== undefined) setReasoning(fields.reasoning);
+    if (fields.supportsImages !== undefined) setSupportsImages(fields.supportsImages);
+    if (fields.maxImagesPerPrompt !== undefined) setMaxImagesPerPrompt(fields.maxImagesPerPrompt);
+    if (fields.maxTokens !== undefined) setMaxTokens(fields.maxTokens);
+    if (fields.contextWindow !== undefined) setContextWindow(fields.contextWindow);
+    setThinkingLevel(fields.thinkingLevel);
   }
 
   async function probeServerModels() {
@@ -243,7 +226,7 @@ export function useModelConnectionForm({
         const current = modelIdRef.current;
         const next = current.trim() || models[0] || "";
         // A saved connection keeps its own settings for the model it already runs.
-        const keepSaved = next === current && isSavedCompatibleModel(current);
+        const keepSaved = next === current && isSavedCompatibleModel(credential, baseUrl, current);
         if (next !== current) stageCompatibleModelId(next);
         else {
           setModelId(next);

@@ -31,6 +31,23 @@ import {
 type CatalogModel = Pick<ModelCatalogEntry, "provider" | "id" | "recommended" | "thinkingLevels">;
 type DefaultModel = { defaultProvider: string | null; defaultModel: string | null };
 
+/** What a form reads from a saved connection. */
+type SavedConnection = Pick<
+  ModelCredential,
+  | "modelId"
+  | "enabledModelIds"
+  | "baseUrl"
+  | "apiProtocol"
+  | "reasoning"
+  | "thinkingLevel"
+  | "maxTokens"
+  | "contextWindow"
+  | "supportsImages"
+  | "maxImagesPerPrompt"
+  | "accountId"
+  | "gatewayId"
+>;
+
 /** What a connection form edits, as the strings and toggles its fields hold. */
 export type ConnectionFormFields = {
   enabledModelIds: string[];
@@ -79,21 +96,7 @@ export function connectionFormFields(input: {
   catalog: readonly CatalogModel[];
   provider: string;
   modelId: string;
-  credential?: Pick<
-    ModelCredential,
-    | "modelId"
-    | "enabledModelIds"
-    | "baseUrl"
-    | "apiProtocol"
-    | "reasoning"
-    | "thinkingLevel"
-    | "maxTokens"
-    | "contextWindow"
-    | "supportsImages"
-    | "maxImagesPerPrompt"
-    | "accountId"
-    | "gatewayId"
-  >;
+  credential?: SavedConnection;
   /** Prefills a new OpenAI-compatible connection, such as a hosted preset. */
   presetBaseUrl?: string;
 }): ConnectionFormFields {
@@ -154,6 +157,64 @@ export function probedModelFields(
     }
   }
   return fields;
+}
+
+/** Whether `modelId` is the model the saved connection runs, on the endpoint it was saved for. */
+export function isSavedCompatibleModel(
+  credential: Pick<ModelCredential, "modelId" | "baseUrl"> | undefined,
+  baseUrl: string,
+  modelId: string,
+): boolean {
+  return (
+    credential?.modelId === modelId && savedCompatibleEndpointMatches(baseUrl, credential.baseUrl)
+  );
+}
+
+/** What an OpenAI-compatible form rewrites when a model is picked; a field left out stays. */
+export type PickedCompatibleModelFields = ProbedModelFields & {
+  maxImagesPerPrompt?: string;
+  thinkingLevel: ThinkingLevel | null;
+};
+
+/**
+ * Form updates for picking a model on an OpenAI-compatible form. The connection's saved model,
+ * on its saved endpoint, gets back the settings its owner chose, also after another model's
+ * listing values were filled in. Any other model takes what the listing says about it (see
+ * `probedModelFields`), and its effort is cleared unless the connection already runs that model.
+ */
+export function pickedCompatibleModelFields(input: {
+  credential?: SavedConnection;
+  baseUrl: string;
+  modelId: string;
+  /** What the endpoint's listing says about `modelId`, if anything. */
+  probed: OpenAiCompatibleModelInfo | undefined;
+  form: { reasoning: boolean; maxTokens: string; apiProtocol: ModelApiProtocol };
+}): PickedCompatibleModelFields {
+  const { credential, baseUrl, modelId, probed, form } = input;
+  if (credential && isSavedCompatibleModel(credential, baseUrl, modelId)) {
+    const saved = connectionFormFields({
+      catalog: [],
+      provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+      modelId,
+      credential,
+    });
+    return {
+      reasoning: saved.reasoning,
+      supportsImages: saved.supportsImages,
+      maxImagesPerPrompt: saved.maxImagesPerPrompt,
+      maxTokens: saved.maxTokens,
+      contextWindow: saved.contextWindow,
+      thinkingLevel: saved.thinkingLevel,
+    };
+  }
+  const fields = probedModelFields(probed, form.maxTokens);
+  return {
+    ...fields,
+    thinkingLevel: clampCatalogThinkingLevel(
+      credential?.modelId === modelId ? credential.thinkingLevel : null,
+      (fields.reasoning ?? form.reasoning) ? compatibleThinkingLevels(form.apiProtocol) : [],
+    ) as ThinkingLevel | null,
+  };
 }
 
 /** Whether an OpenAI-compatible form can save: a URL, a model, valid headers, and a key if one is needed. */

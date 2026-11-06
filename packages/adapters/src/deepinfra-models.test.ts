@@ -121,6 +121,24 @@ describe("deepInfraModelList", () => {
     expect(detail("fixture/huge-window")?.contextWindow).toBeUndefined();
   });
 
+  it.each([
+    ["a non-chat entry comes first", false],
+    ["the chat entry comes first", true],
+  ])("offers a duplicated id once with its chat entry's details when %s", (_, chatFirst) => {
+    const chat = { id: "fixture/dup", metadata: { context_length: 4096, tags: ["chat", "vlm"] } };
+    const other = { id: "fixture/dup", metadata: { tags: ["embed"] } };
+    const listed = chatFirst ? [chat, other] : [other, chat];
+    expect(
+      deepInfraModelList(
+        listed,
+        listed.map((entry) => entry.id),
+      ),
+    ).toEqual({
+      models: ["fixture/dup"],
+      details: [{ id: "fixture/dup", supportsImages: true, reasoning: false, contextWindow: 4096 }],
+    });
+  });
+
   it("only describes ids the probe accepted and skips null entries", () => {
     const result = deepInfraModelList(
       [

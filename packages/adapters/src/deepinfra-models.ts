@@ -78,29 +78,26 @@ function modelInfo(
  * DeepInfra's `/models` lists every model it hosts (image, speech, embedding, ...) and tags each
  * in `metadata`. Keeps the chat models and reads their capabilities from the tags. A model whose
  * metadata has no tags list is kept without details, since nothing says it is not a chat model.
+ * Each entry is judged by its own metadata, and an id listed more than once is offered once, with
+ * the details of an entry that describes it.
  */
 export function deepInfraModelList(
   entries: ReadonlyArray<DeepInfraModelEntry>,
   ids: ReadonlyArray<string>,
 ): { models: string[]; details: OpenAiCompatibleModelInfo[] } {
-  const metadataById = new Map<string, Record<string, unknown> | undefined>();
+  const accepted = new Set(ids);
+  const kept = new Map<string, OpenAiCompatibleModelInfo | undefined>();
   for (const entry of entries) {
     const id = typeof entry?.id === "string" ? entry.id.trim() : "";
-    if (id && !metadataById.has(id)) metadataById.set(id, record(entry.metadata));
-  }
-  const models: string[] = [];
-  const details: OpenAiCompatibleModelInfo[] = [];
-  for (const id of ids) {
-    const metadata = metadataById.get(id);
+    if (!accepted.has(id)) continue;
+    const metadata = record(entry.metadata);
     const tags = tagsOf(metadata);
-    if (!metadata || !tags) {
-      models.push(id);
-      continue;
-    }
-    if (!tags.has("chat")) continue;
-    models.push(id);
-    const info = modelInfo(id, tags, metadata);
-    if (info) details.push(info);
+    if (metadata && tags && !tags.has("chat")) continue;
+    const info = metadata && tags ? modelInfo(id, tags, metadata) : undefined;
+    if (!kept.has(id) || (info && !kept.get(id))) kept.set(id, info);
   }
-  return { models, details };
+  return {
+    models: [...kept.keys()],
+    details: [...kept.values()].filter((info) => info !== undefined),
+  };
 }

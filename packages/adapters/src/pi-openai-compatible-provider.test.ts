@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext } from "./model-connect.js";
 import {
   assertAllowedOpenAiCompatibleUrl,
+  COMPATIBLE_ENDPOINT_PRESETS,
   PRIVATE_MODEL_ENDPOINT_MESSAGE,
 } from "./openai-compatible-url.js";
 import { listPiCatalog } from "./pi-models.js";
@@ -1226,6 +1227,20 @@ describe("built-in public compatible host", () => {
       verifyOpenAiCompatibleApiKey({ baseUrl: "https://ollama.com/v1" }, transport),
     ).rejects.toThrow("API key was rejected");
     expect(transport).not.toHaveBeenCalled();
+  });
+
+  it("does not check keys for a hosted preset that names no key check", async () => {
+    COMPATIBLE_ENDPOINT_PRESETS.push({
+      name: "Fixture",
+      baseUrl: "https://hosted.example.test/v1",
+    });
+    try {
+      const transport = vi.fn();
+      await verifyOpenAiCompatibleApiKey({ baseUrl: "https://hosted.example.test/v1" }, transport);
+      expect(transport).not.toHaveBeenCalled();
+    } finally {
+      COMPATIBLE_ENDPOINT_PRESETS.pop();
+    }
   });
 });
 
