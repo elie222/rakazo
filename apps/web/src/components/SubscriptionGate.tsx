@@ -8,7 +8,8 @@ import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { peekInitialBootstrap } from "../lib/bootstrap";
 import { lazyComponent } from "../lib/preload-recovery";
 import { loadBillingStatus } from "../lib/referral";
-import { rpc, SPACE_SELECTED_EVENT } from "../lib/rpc";
+import type { RpcClient } from "../lib/rpc";
+import { createSpaceRpc, rpc, SPACE_SELECTED_EVENT, selectedSpaceId } from "../lib/rpc";
 import type { SupportChat } from "../lib/support-chat";
 import { useSupportChat } from "../lib/support-chat";
 
@@ -16,10 +17,12 @@ const PaywallPage = lazyComponent(() =>
   import("../pages/Paywall").then((module) => module.PaywallPage),
 );
 
+// A status keeps the client of the space it was read for: another tab can select another
+// organization, and a plan choice must bill the one whose prices are on screen.
 type GateState =
   | { kind: "loading" }
-  | { kind: "open"; status?: BillingStatus }
-  | { kind: "paywall"; status: BillingStatus };
+  | { kind: "open"; status?: BillingStatus; client?: RpcClient }
+  | { kind: "paywall"; status: BillingStatus; client: RpcClient };
 
 const BillingContext = createContext<{ status: BillingStatus | null; showPlans: () => void }>({
   status: null,
@@ -40,8 +43,8 @@ function loadMe(): Promise<Me> {
   );
 }
 
-function gateFor(status: BillingStatus): GateState {
-  return { kind: status.access ? "open" : "paywall", status };
+function gateFor(status: BillingStatus, client: RpcClient): GateState {
+  return { kind: status.access ? "open" : "paywall", status, client };
 }
 
 /**
@@ -76,7 +79,8 @@ export function SubscriptionGate({
         if (!capabilities.billing) return { kind: "open" };
         const me = await loadMe();
         if (!me.billingEnabled) return { kind: "open" };
-        const status = await loadBillingStatus();
+        const client = createSpaceRpc(selectedSpaceId());
+        const status = await loadBillingStatus(client);
         if (active && capabilities.crispWebsiteId) {
           setSupportChat({
             crispWebsiteId: capabilities.crispWebsiteId,
@@ -84,7 +88,7 @@ export function SubscriptionGate({
             name: me.name,
           });
         }
-        return gateFor(status);
+        return gateFor(status, client);
       })
       .catch((): GateState => ({ kind: "open" }))
       .then((next) => {
@@ -109,10 +113,11 @@ export function SubscriptionGate({
     const recheck = (onFailure?: () => void) => {
       if (document.visibilityState === "hidden") return;
       const read = ++latest;
-      rpc.billing
+      const client = createSpaceRpc(selectedSpaceId());
+      client.billing
         .status()
         .then((status) => {
-          if (active && read === latest) setState(gateFor(status));
+          if (active && read === latest) setState(gateFor(status, client));
         })
         .catch(() => {
           if (active && read === latest) onFailure?.();
@@ -149,7 +154,7 @@ export function SubscriptionGate({
   if (state.kind === "paywall") {
     return (
       <Suspense fallback={fallback}>
-        <PaywallPage status={state.status} />
+        <PaywallPage status={state.status} client={state.client} />
       </Suspense>
     );
   }
@@ -158,7 +163,7 @@ export function SubscriptionGate({
       value={{ status: state.status ?? null, showPlans: () => setPlansOpen(true) }}
     >
       {children}
-      {state.status ? (
+      {state.status && state.client ? (
         // Over the app rather than replacing it, so closing keeps its state.
         <Dialog open={plansOpen} onOpenChange={setPlansOpen}>
           <DialogContent
@@ -166,7 +171,7 @@ export function SubscriptionGate({
             className="inset-0 top-0 left-0 block h-dvh max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none bg-background p-0 ring-0 sm:max-w-none"
           >
             <Suspense fallback={fallback}>
-              <PaywallPage status={state.status} dismissible />
+              <PaywallPage status={state.status} client={state.client} dismissible />
             </Suspense>
           </DialogContent>
         </Dialog>

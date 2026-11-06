@@ -5,12 +5,23 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ me: vi.fn(), status: vi.fn() }));
+const space = vi.hoisted(() => ({ selected: null as string | null }));
 vi.mock("../lib/rpc", () => ({
   rpc: { me: api.me, billing: { status: api.status } },
+  createSpaceRpc: (spaceId: string | null) => ({
+    spaceId,
+    me: api.me,
+    billing: { status: api.status },
+  }),
+  selectedSpaceId: () => space.selected,
   SPACE_SELECTED_EVENT: "rakazo:space-selected",
 }));
 vi.mock("../lib/bootstrap", () => ({ peekInitialBootstrap: () => undefined }));
-vi.mock("../pages/Paywall", () => ({ PaywallPage: () => <div>paywall</div> }));
+vi.mock("../pages/Paywall", () => ({
+  PaywallPage: ({ client }: { client?: { spaceId?: string | null } }) => (
+    <div>{client?.spaceId ? `paywall ${client.spaceId}` : "paywall"}</div>
+  ),
+}));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
 }));
@@ -52,6 +63,7 @@ async function renderGate(billing: boolean) {
 }
 
 afterEach(() => {
+  space.selected = null;
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
@@ -121,5 +133,24 @@ it("keeps checking billing after a newly selected Space's read fails", async () 
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
   expect(container.textContent).toBe("paywall");
+  act(() => root.unmount());
+});
+
+it("hands the plan choice the client of the space its prices were read for", async () => {
+  space.selected = "space-a";
+  api.me.mockResolvedValue({ billingEnabled: true });
+  api.status.mockResolvedValue({ access: false });
+  const { container, root } = await renderGate(true);
+
+  // Another tab selects another organization; this window still shows the first one's prices.
+  space.selected = "space-b";
+  expect(container.textContent).toBe("paywall space-a");
+
+  // A recheck reads the newly selected organization and acts on that same one.
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(container.textContent).toBe("paywall space-b");
   act(() => root.unmount());
 });
