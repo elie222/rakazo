@@ -54,6 +54,7 @@ import {
   createRepos,
   expireComputerExecutionLeases,
   IsolationError,
+  isRecordNotFound,
   parseComputerMode,
   recordComputerRunEnd,
   spaceIsShared,
@@ -67,7 +68,7 @@ import {
 } from "../computer-status.js";
 import type { RouterDeps } from "../router.js";
 import type { RouterContext } from "./context.js";
-import { computerContext, isRecordNotFound } from "./shared.js";
+import { computerContext } from "./shared.js";
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 

@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { AskCard } from "../../src/components/AskCard";
 import { bootstrapI18n, i18n } from "../../src/lib/i18n";
 import { queryClient } from "../../src/lib/query";
+import { rpc } from "../../src/lib/rpc";
 import type { RoutineDraftState } from "../../src/pages/RoutineEditor";
 import { RoutineEditor } from "../../src/pages/RoutineEditor";
 import { SettingsOverlay } from "../../src/pages/SettingsOverlay";
@@ -86,6 +87,7 @@ function inboxBot(): Bot {
     createdAt: "2026-10-07T00:00:00.000Z",
     voiceId: null,
     autoSpeak: false,
+    replyMode: "chat",
     modelProvider: "openai",
     modelId: "gpt-4.1",
     thinkingLevel: null,
@@ -310,6 +312,7 @@ function SubscriptionShot() {
       className="min-h-screen bg-background text-foreground"
     >
       <SettingsOverlay
+        shellRpc={rpc}
         email="ada@example.test"
         name="Ada"
         section="models"

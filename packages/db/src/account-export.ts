@@ -167,6 +167,7 @@ async function* spaceRecords(
       crossSpaceCommunication: bot.crossSpaceCommunication,
       dailyCheckIns: bot.dailyCheckIns,
       fleetManagement: bot.fleetManagement,
+      replyMode: bot.replyMode === "messages" ? "messages" : "chat",
       createdAt: iso(bot.createdAt),
     };
 

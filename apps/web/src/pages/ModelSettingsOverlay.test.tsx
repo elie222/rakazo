@@ -30,9 +30,12 @@ const models = vi.hoisted(() => ({
   submitOAuthCode: vi.fn(),
 }));
 
+const autoReview = vi.hoisted(() => ({ get: vi.fn() }));
+
 vi.mock("../lib/rpc", () => {
   const rpc = {
     models,
+    autoReview,
     bots: { list: vi.fn(async () => []), update: vi.fn() },
     me: vi.fn(),
   };
@@ -185,6 +188,7 @@ const compatibleEntry = {
   auth: "api-key" as const,
   authHint: "Custom server",
   placeholder: true,
+  endpointPresets: [{ name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" }],
 };
 const deepseekCredential = {
   id: "cred-deepseek",
@@ -258,7 +262,7 @@ async function click(element: Element | null | undefined) {
   });
 }
 
-function section(role: "main" | "approval") {
+function section(role: "main" | "approval" | "computer") {
   const found = document.querySelector(`[data-testid="model-role-${role}"]`);
   if (!found) throw new Error(`Missing ${role} model list`);
   return found;
@@ -269,7 +273,7 @@ function pickerOptions() {
   return [...document.querySelectorAll<HTMLElement>('[role="option"]')].map(optionName);
 }
 
-async function openPicker(label: string, role: "main" | "approval" = "main") {
+async function openPicker(label: string, role: "main" | "computer" = "main") {
   await click(section(role).querySelector(`button[aria-label="${label}"]`));
 }
 
@@ -280,7 +284,7 @@ async function choose(option: string) {
 }
 
 /** Picks a model or a not-connected provider from one of the list's pickers. */
-async function pick(label: string, option: string, role: "main" | "approval" = "main") {
+async function pick(label: string, option: string, role: "main" | "computer" = "main") {
   await openPicker(label, role);
   await choose(option);
 }
@@ -353,6 +357,12 @@ beforeEach(() => {
   vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
   models.list.mockResolvedValue([deepseekEntry]);
   models.credentials.mockResolvedValue([]);
+  autoReview.get.mockResolvedValue({
+    mode: "ask",
+    enabled: false,
+    skipApprovals: false,
+    checkerAvailable: true,
+  });
   models.connect.mockResolvedValue({});
   models.disconnect.mockResolvedValue(undefined);
   models.forRole.mockImplementation(() => models.list());
@@ -375,6 +385,7 @@ beforeEach(() => {
     return {
       primary: connected ? { provider: me.defaultProvider, modelId: me.defaultModel } : null,
       backups: [],
+      ...(connected ? { seesImages: true } : {}),
     };
   });
 });
@@ -547,9 +558,6 @@ it("labels the empty main slot by what runs there", async () => {
     expect(section("main").querySelector('[data-testid="model-role-default"]')?.textContent).toBe(
       "Choose a model",
     );
-    expect(
-      section("approval").querySelector('[data-testid="model-role-default"]')?.textContent,
-    ).toBe("Choose a model");
   } finally {
     await view.unmount();
   }
@@ -564,6 +572,93 @@ it("labels the empty main slot by what runs there", async () => {
     ).toContain("DeepSeek Chat");
   } finally {
     await connected.unmount();
+  }
+});
+
+it("shows the approval model only in Auto", async () => {
+  const asking = await renderSettings();
+  try {
+    expect(asking.container.querySelector('[data-testid="model-role-approval"]')).toBeNull();
+  } finally {
+    await asking.unmount();
+  }
+  autoReview.get.mockResolvedValue({
+    mode: "auto",
+    enabled: true,
+    skipApprovals: false,
+    checkerAvailable: false,
+  });
+  const auto = await renderSettings();
+  try {
+    await vi.waitFor(() =>
+      expect(
+        section("approval").querySelector('[data-testid="model-role-default"]')?.textContent,
+      ).toBe("Choose a model"),
+    );
+  } finally {
+    await auto.unmount();
+  }
+});
+
+it("keeps the computer-use model out of sight while the main model can see", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  const view = await renderSettings();
+  try {
+    expect(section("main").textContent).toContain("DeepSeek Chat");
+    expect(view.container.querySelector('[data-testid="model-role-computer"]')).toBeNull();
+    // Someone who wants screen work on another model asks for it from the main model's menu.
+    await click(
+      section("main").querySelector(
+        '[data-testid="model-role-row-1"] button[aria-label$=" options"]',
+      ),
+    );
+    await click(
+      [...document.querySelectorAll('[role="menuitem"]')].find(
+        (entry) => entry.textContent === "Computer-use model…",
+      ),
+    );
+    expect(
+      section("computer").querySelector('[data-testid="model-role-default"]')?.textContent,
+    ).toBe("Same as main model");
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("shows the computer-use model when the server could not tell whether the main model sees", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  const role = models.role.getMockImplementation()!;
+  models.role.mockImplementation(async (input: { role: string }) => {
+    const { seesImages: _unknown, ...view } = (await role(input)) as Record<string, unknown>;
+    return view;
+  });
+  const view = await renderSettings();
+  try {
+    await vi.waitFor(() =>
+      expect(view.container.querySelector('[data-testid="model-role-computer"]')).not.toBeNull(),
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("shows the computer-use model when the main model cannot read images", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  // The server says whether the main model reads images, as runs decide it.
+  const role = models.role.getMockImplementation()!;
+  models.role.mockImplementation(async (input: { role: string }) => ({
+    ...(await role(input)),
+    ...(input.role === "main" ? { seesImages: false } : {}),
+  }));
+  const view = await renderSettings();
+  try {
+    await vi.waitFor(() =>
+      expect(
+        section("computer").querySelector('[data-testid="model-role-default"]')?.textContent,
+      ).toBe("Choose a model that can see the screen"),
+    );
+  } finally {
+    await view.unmount();
   }
 });
 
@@ -654,7 +749,6 @@ it("shows a Space only its own role lists and makes a new connection its main mo
   const view = await renderSettings(true, testQueryClient(), "space");
   try {
     expect(view.container.querySelector('[data-testid="model-role-main"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="model-role-approval"]')).not.toBeNull();
     // Connections are the account's, so a Space does not list or add them.
     expect(view.container.querySelector('[data-testid="model-providers"]')).toBeNull();
     expect(models.role).toHaveBeenCalledWith(
@@ -681,6 +775,7 @@ it("shows Cloudflare account and gateway fields for a new and a saved connection
     billing: "API key",
     auth: "api-key" as const,
     authHint: "API key",
+    routingFields: ["accountId" as const, "gatewayId" as const],
   };
   vi.mocked(rpc.me).mockResolvedValue(account(entry.provider, entry.id));
   models.list.mockResolvedValue([entry]);
@@ -689,8 +784,8 @@ it("shows Cloudflare account and gateway fields for a new and a saved connection
   const fresh = await renderSettings();
   try {
     await pick("Change Main model", "Cloudflare AI Gateway");
-    const accountId = fresh.container.querySelector("#cloudflare-account-id");
-    const gatewayId = fresh.container.querySelector("#cloudflare-gateway-id");
+    const accountId = fresh.container.querySelector("#model-account-id");
+    const gatewayId = fresh.container.querySelector("#model-gateway-id");
     expect(accountId).toBeInstanceOf(HTMLInputElement);
     expect(gatewayId).toBeInstanceOf(HTMLInputElement);
     expect((accountId as HTMLInputElement).value).toBe("");
@@ -716,12 +811,12 @@ it("shows Cloudflare account and gateway fields for a new and a saved connection
   const saved = await renderSettings();
   try {
     await manage();
-    expect(
-      (saved.container.querySelector("#cloudflare-account-id") as HTMLInputElement).value,
-    ).toBe("acct1234");
-    expect(
-      (saved.container.querySelector("#cloudflare-gateway-id") as HTMLInputElement).value,
-    ).toBe("gateway-1");
+    expect((saved.container.querySelector("#model-account-id") as HTMLInputElement).value).toBe(
+      "acct1234",
+    );
+    expect((saved.container.querySelector("#model-gateway-id") as HTMLInputElement).value).toBe(
+      "gateway-1",
+    );
   } finally {
     await saved.unmount();
   }
@@ -1242,9 +1337,7 @@ it("opens the Ollama preset with a required key and saves a compatible connectio
     expect(
       [...view.container.querySelectorAll("button")].filter((row) => row.textContent === "API key"),
     ).toHaveLength(0);
-    const key = view.container.querySelector(
-      'input[placeholder="Ollama API key"]',
-    ) as HTMLInputElement;
+    const key = view.container.querySelector('input[aria-label="API key"]') as HTMLInputElement;
     expect(key.required).toBe(true);
     await typeInto(key, "fake-fixture-key");
     await click(buttons(view.container, "Find models")[0]);
@@ -1275,6 +1368,7 @@ it("offers a saved Ollama connection's models without the Ollama preset", async 
       provider: "openai-compatible",
       modelId: "fixture-model",
       baseUrl: "https://ollama.com/",
+      endpointName: "Ollama Cloud",
       hasKey: true,
     },
   ]);
@@ -1340,6 +1434,7 @@ it.each(["https://ollama.com", "https://ollama.com/v1/"])(
         provider: "openai-compatible",
         modelId: "fixture-model",
         baseUrl: "https://ollama.com/v1",
+        endpointName: "Ollama Cloud",
         hasKey: true,
       },
     ]);

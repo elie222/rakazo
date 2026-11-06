@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { Id, IsoDate } from "./ids.js";
+import { Id, IsoDate, ReplyModeSchema } from "./ids.js";
 import { PageSourceSchema, PageTitleSchema } from "./pages.js";
 
 /**
@@ -82,6 +82,7 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     crossSpaceCommunication: z.boolean(),
     dailyCheckIns: z.boolean().default(true),
     fleetManagement: z.boolean(),
+    replyMode: ReplyModeSchema.default("chat"),
     createdAt: IsoDate,
   }),
   z.object({

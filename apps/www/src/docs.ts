@@ -21,6 +21,7 @@ export const DOCS_NAV = [
     pages: [
       { slug: "integrations", label: "Connect apps" },
       { slug: "routines", label: "Routines" },
+      { slug: "pages", label: "Pages" },
       { slug: "computer", label: "The bot's computer" },
       { slug: "memory", label: "Memory" },
       { slug: "skills", label: "Skills" },
@@ -51,6 +52,7 @@ export const DOCS_NAV = [
     pages: [
       { slug: "fleet-management", label: "Bots that manage bots" },
       { slug: "build-a-plugin", label: "Build a plugin" },
+      { slug: "board", label: "Ticket board" },
     ],
   },
   {
@@ -78,6 +80,7 @@ export const DOCS_NAV = [
       { slug: "self-host-clients", label: "Apps and clients" },
       { slug: "self-host-billing", label: "Billing" },
       { slug: "self-host-observability", label: "Logs and monitoring" },
+      { slug: "self-host-audit-log", label: "Audit log" },
       { slug: "self-host-restricted-network", label: "Restricted networks" },
     ],
   },
