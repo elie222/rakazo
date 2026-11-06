@@ -9,6 +9,7 @@ import {
   MODEL_ROUTING_ID_MESSAGE,
   ModelConnectInputSchema,
   ModelOAuthBeginSchema,
+  modelRoutingForm,
   modelRoutingReady,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
@@ -174,6 +175,16 @@ describe("contracts", () => {
 
   it("is routing-ready only when every field the provider asks for is valid", () => {
     expect(modelRoutingReady(undefined, {})).toBe(true);
+    expect(modelRoutingForm(undefined, {})).toEqual({
+      needsRouting: false,
+      needsGateway: false,
+      routingReady: true,
+    });
+    expect(modelRoutingForm(["accountId", "gatewayId"], { accountId: "acct" })).toEqual({
+      needsRouting: true,
+      needsGateway: true,
+      routingReady: false,
+    });
     expect(modelRoutingReady(["accountId"], { accountId: " acct " })).toBe(true);
     expect(modelRoutingReady(["accountId", "gatewayId"], { accountId: "acct" })).toBe(false);
     expect(modelRoutingReady(["accountId"], { accountId: "acct/x" })).toBe(false);

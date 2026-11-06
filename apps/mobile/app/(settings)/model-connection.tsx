@@ -13,7 +13,7 @@ import {
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   modelHeadersInput,
-  modelRoutingReady,
+  modelRoutingForm,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
@@ -264,10 +264,10 @@ export default function ModelConnection() {
     if (selectedProviderLabel) navigation.setOptions({ title: selectedProviderLabel });
   }, [navigation, selectedProviderLabel]);
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const routingFields = selected?.routingFields ?? [];
-  const needsRouting = routingFields.length > 0;
-  const needsGateway = routingFields.includes("gatewayId");
-  const routingReady = modelRoutingReady(routingFields, { accountId, gatewayId });
+  const { needsRouting, needsGateway, routingReady } = modelRoutingForm(selected?.routingFields, {
+    accountId,
+    gatewayId,
+  });
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
     enabledModelIds,

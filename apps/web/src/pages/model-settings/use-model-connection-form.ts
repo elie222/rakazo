@@ -8,7 +8,7 @@ import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
   modelHeadersInput,
-  modelRoutingReady,
+  modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
@@ -86,10 +86,10 @@ export function useModelConnectionForm({
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   // The catalog names the IDs a provider needs besides its key.
-  const routingFields = selected?.routingFields ?? [];
-  const needsRouting = routingFields.length > 0;
-  const needsGateway = routingFields.includes("gatewayId");
-  const routingReady = modelRoutingReady(routingFields, { accountId, gatewayId });
+  const { needsRouting, needsGateway, routingReady } = modelRoutingForm(selected?.routingFields, {
+    accountId,
+    gatewayId,
+  });
 
   function applyFields(fields: ConnectionFormFields) {
     setEnabledModelIds(fields.enabledModelIds);

@@ -1700,6 +1700,18 @@ export function modelRoutingReady(
   return (fields ?? []).every((field) => modelRoutingId(values[field]) !== undefined);
 }
 
+/** What a connection form shows and requires for the routing ids a catalog entry names. */
+export function modelRoutingForm(
+  fields: readonly ModelRoutingField[] | undefined,
+  values: Partial<Record<ModelRoutingField, string>>,
+): { needsRouting: boolean; needsGateway: boolean; routingReady: boolean } {
+  return {
+    needsRouting: Boolean(fields?.length),
+    needsGateway: Boolean(fields?.includes("gatewayId")),
+    routingReady: modelRoutingReady(fields, values),
+  };
+}
+
 export const ModelConnectInputSchema = z
   .object({
     ...ModelContextLimitsSchema.shape,
