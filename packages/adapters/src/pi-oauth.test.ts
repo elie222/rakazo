@@ -28,6 +28,7 @@ import {
   secretValuesToRedact,
   serializeModelSecret,
   terminalOAuthRefreshErrorMarker,
+  tryRetireModelCredential,
   XAI_OAUTH_PROVIDER,
 } from "./pi-oauth.js";
 
@@ -519,6 +520,23 @@ describe("resolveModelAuth retirement", () => {
     ).rejects.toBe(failure);
     expect(isRetiredModelCredentialError(failure)).toBe(false);
     expect(isModelCredentialRejected(new Error(OAUTH_RECONNECT_REQUIRED_ERROR))).toBe(true);
+  });
+
+  it("counts a credential retired only when the retire hook confirms it", async () => {
+    const failed = oauthCred({ access: "old", expires: 1 });
+    const retired = (result: () => Promise<boolean | undefined>) =>
+      tryRetireModelCredential(vi.fn(result), "terminal-refresh-failure", "invalid_grant", failed);
+    expect(await retired(async () => true)).toBe(true);
+    expect(await retired(async () => false)).toBe(false);
+    expect(await retired(async () => undefined)).toBe(false);
+    expect(
+      await retired(async () => {
+        throw new Error("database gone");
+      }),
+    ).toBe(false);
+    expect(await tryRetireModelCredential(undefined, "account-changed", "detail", failed)).toBe(
+      false,
+    );
   });
 
   it("rethrows the refresh error when no retire hook is configured", async () => {
