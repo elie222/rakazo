@@ -35,14 +35,18 @@ export async function registerPushToken() {
     // drop rule sees this account instead of the blank of a fresh sign-in. A rejected
     // resume means native never stored this session: registering would have Android
     // drop every push, so leave the token unregistered for the next attempt to retry.
+    // A server native notifications skip (public http) keeps no native session, so it
+    // gets plain pushes, which the drop rule never sees.
+    let nativeSession: boolean;
     try {
-      await resumeLiveNotifications(apiBase, sessionToken, selectedSpaceId() ?? "");
+      nativeSession = await resumeLiveNotifications(apiBase, sessionToken, selectedSpaceId() ?? "");
     } catch {
       return;
     }
     await rpc("notifications/registerPush", {
       token,
       ...(Platform.OS === "android" &&
+      nativeSession &&
       requireOptionalNativeModule<{ supportsSenderAvatars?: boolean }>("RakazoNotifications")
         ?.supportsSenderAvatars
         ? { presentation: "android_sender" as const }

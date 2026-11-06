@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 vi.mock("./live-notifications.js", () => ({
-  resumeLiveNotifications: vi.fn(async () => undefined),
+  resumeLiveNotifications: vi.fn(async () => true),
   stopLiveNotifications: vi.fn(async () => undefined),
 }));
 vi.mock("./network-cache.js", () => ({ clearNetworkCache: vi.fn() }));
@@ -148,7 +148,7 @@ describe("push registration on Android", () => {
 it("syncs the native session before the server can push", async () => {
   Platform.OS = "android";
   vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as never);
-  const resumed = deferred<void>();
+  const resumed = deferred<boolean>();
   vi.mocked(resumeLiveNotifications).mockReturnValueOnce(resumed.promise);
 
   const registration = registerPushToken();
@@ -163,7 +163,7 @@ it("syncs the native session before the server can push", async () => {
     await expect(settled(registration)).resolves.toBe("still waiting");
     expect(fetch).not.toHaveBeenCalled();
   } finally {
-    resumed.resolve();
+    resumed.resolve(true);
     await registration;
   }
   expect(fetch).toHaveBeenCalledWith(
@@ -240,4 +240,17 @@ it("registers native sender delivery only when the installed Android module supp
   const call = fetch.mock.calls.find(([url]) => url.endsWith("/rpc/notifications/registerPush"));
   const options = (call as unknown as [string, RequestInit])[1];
   expect(JSON.parse(String(options.body)).json).toMatchObject({ presentation: "android_sender" });
+});
+
+it("registers plain delivery when the native module does not keep the session", async () => {
+  Platform.OS = "android";
+  vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as never);
+  vi.mocked(requireOptionalNativeModule).mockReturnValue({ supportsSenderAvatars: true });
+  // A public http server: native notifications skip it and store no session.
+  vi.mocked(resumeLiveNotifications).mockResolvedValueOnce(false);
+  await registerPushToken();
+  const call = fetch.mock.calls.find(([url]) => url.endsWith("/rpc/notifications/registerPush"));
+  const options = (call as unknown as [string, RequestInit])[1];
+  // Sender delivery would drop every push as signed out; plain pushes are still shown.
+  expect(JSON.parse(String(options.body)).json).not.toHaveProperty("presentation");
 });
