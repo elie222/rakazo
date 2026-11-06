@@ -321,7 +321,7 @@ describe("mobile API authentication", () => {
         vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
           storage.delete(key);
         });
-        await saveApiBase("https://first.example.test");
+        await saveApiBase("https://first.example.test", { "x-gateway": "fake-gateway-key" });
         let release!: () => void;
         const held = new Promise<void>((resolve) => {
           release = resolve;
@@ -351,7 +351,10 @@ describe("mobile API authentication", () => {
             "https://first.example.test/api/auth/sign-out",
             expect.objectContaining({
               credentials: "omit",
-              headers: expect.objectContaining({ authorization: "Bearer fake-session-first" }),
+              headers: expect.objectContaining({
+                authorization: "Bearer fake-session-first",
+                "x-gateway": "fake-gateway-key",
+              }),
             }),
           ),
         );

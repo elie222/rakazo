@@ -665,6 +665,8 @@ async function authenticate(
 ): Promise<{ verificationRequired: boolean }> {
   const apiBase = currentApiBase();
   const generation = currentSessionGeneration();
+  // A switch replaces the stored headers, and the cleanup below may still need them for this server.
+  const headers = serverHeaders(apiBase);
   const { response, body, invalidJson } = await postAuth(path, input, apiBase);
   if (!response.ok || invalidJson) {
     throw new Error(authResponseErrorText(response.status, body, invalidJson));
@@ -691,8 +693,10 @@ async function authenticate(
     }
   }
   if (!saved) {
-    void postSignOut(apiBase, { ...clientBuild.headers(), authorization: `Bearer ${token}` }).catch(
-      () => undefined,
+    void postSignOut(
+      apiBase,
+      { ...clientBuild.headers(), authorization: `Bearer ${token}` },
+      headers,
     );
     throw new Error(t("Could not continue"));
   }
@@ -917,8 +921,13 @@ export async function fetchMobileJson<T>(
   }
 }
 
-/** Ends the session these headers carry on `apiBase`; rejects when the request fails. */
-async function postSignOut(apiBase: string, headers: Record<string, string>): Promise<void> {
+/** Best-effort: ends the session these headers carry on `apiBase`; failures are ignored. */
+async function postSignOut(
+  apiBase: string,
+  headers: Record<string, string>,
+  /** The server's configured headers, when they are no longer stored for it. */
+  configured: Record<string, string> = {},
+): Promise<void> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
   try {
@@ -927,9 +936,16 @@ async function postSignOut(apiBase: string, headers: Record<string, string>): Pr
         `${apiBase}/api/auth/sign-out`,
         {
           method: "POST",
-          headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
+          headers: {
+            "content-type": "application/json",
+            origin: "rakazo://",
+            ...configured,
+            ...headers,
+          },
           body: "{}",
           credentials: "omit",
+          // As in fetchServer: configured headers must not follow a redirect to another origin.
+          ...(Object.keys(configured).length > 0 ? { redirect: "error" as const } : {}),
           signal: controller.signal,
         },
         apiBase,
