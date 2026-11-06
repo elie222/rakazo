@@ -266,7 +266,11 @@ export function startCall(
     heard: "",
     exchanges: [],
   };
-  unwatch = deps.watch(call.botId, onReply, onCallEnded, onThread);
+  // An ended call's watcher can still deliver a buffered snapshot; it must not reach this call.
+  const watchedCallId = callId;
+  unwatch = deps.watch(call.botId, onReply, onCallEnded, (next) => {
+    if (callId === watchedCallId) onThread(next);
+  });
   emit();
   void openCall(callId, call.greeting);
   return callId;

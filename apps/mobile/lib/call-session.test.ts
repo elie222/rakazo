@@ -486,6 +486,30 @@ describe("mobile call session", () => {
       expect(fake.recordings).toHaveLength(2);
     });
 
+    it("ignores a snapshot from an ended call's watcher", async () => {
+      const fake = fakes();
+      const threadCallbacks: Array<(thread: MobileSnapshot) => void> = [];
+      const watch = fake.deps.watch;
+      fake.deps.watch = (botId, onReply, onEnded, onThread) => {
+        threadCallbacks.push(onThread);
+        return watch(botId, onReply, onEnded, onThread);
+      };
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      hangUp();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      const listening = fake.recordings.length;
+      threadCallbacks[0]?.(
+        waitingOn([{ kind: "ask", text: "Code?", input: "secret", status: "pending" }]),
+      );
+      expect(fake.signals.at(-1)?.aborted).toBe(false);
+      fake.say("hello");
+      await flush();
+      expect(fake.send).toHaveBeenCalledWith("bot-1", "hello", expect.stringMatching(/^call:/));
+      expect(fake.recordings.length).toBeGreaterThanOrEqual(listening);
+    });
+
     it("keeps the microphone shut until it knows whether the bot waits on a code", async () => {
       const fake = fakes({ loadThread: false });
       startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
