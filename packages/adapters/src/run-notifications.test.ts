@@ -134,7 +134,10 @@ describe("notifications in a shared Space", () => {
       expect.objectContaining({ badge: 5 }),
       expect.objectContaining({ userId: "user-2" }),
     );
-    expect(publish.mock.calls.map((call) => (call as unknown[])[0]).sort()).toEqual(["user-1", "user-2"]);
+    expect(publish.mock.calls.map((call) => (call as unknown[])[0]).sort()).toEqual([
+      "user-1",
+      "user-2",
+    ]);
   });
 
   it("asks only the person whose run it is to answer, take over, or fix a failure", async () => {
