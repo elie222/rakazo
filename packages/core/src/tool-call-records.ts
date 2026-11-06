@@ -59,6 +59,7 @@ export function reduceToolCallRecord(
       name: typeof payload.name === "string" ? payload.name : (prior?.name ?? ""),
       status: prior?.status ?? "running",
       ...(typeof payload.input === "string" ? { input: payload.input } : {}),
+      ...(payload.withheld === true ? { withheld: true as const } : {}),
     };
   }
   if (event.type === "agent.tool.completed") {
@@ -78,6 +79,7 @@ export function reduceToolCallRecord(
         payload.outcome === "error" || payload.outcome === "paused" ? payload.outcome : "succeeded",
       ...(durationMs === undefined ? {} : { durationMs }),
       ...(typeof payload.error === "string" ? { error: payload.error } : {}),
+      ...(payload.withheld === true ? { withheld: true as const } : {}),
       // A shell command's own output already says what it printed; a file or app action
       // records none, so what the tool returned stands for it.
       ...(!prior?.output && typeof payload.preview === "string" ? { output: payload.preview } : {}),
@@ -142,11 +144,6 @@ export function createToolCallRecordStore() {
         if (byRun.size <= LIVE_RUNS_KEPT) break;
         byRun.delete(runId);
       }
-      notify();
-    },
-    /** Puts records in place of a run's events, for fixtures and tests. */
-    seed(runId: string, records: readonly ToolCallRecord[]): void {
-      byRun.set(runId, new Map(records.map((record) => [record.executionId, record])));
       notify();
     },
     get(runId: string): ReadonlyMap<string, ToolCallRecord> | undefined {

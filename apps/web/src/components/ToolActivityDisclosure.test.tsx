@@ -3,7 +3,7 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The macro compiles away in the app build; tests run the source, so expand the
 // plural by hand to assert the singular vs plural English forms.
@@ -32,7 +32,8 @@ const visibleText = (html: string) =>
     .trim();
 
 import { LIVE_TOOL_STEP_WINDOW } from "@rakazo/core";
-import { seedToolCallRecords } from "../lib/tool-call-records";
+import { clearToolCallRecords } from "../lib/tool-call-records";
+import { replayToolCallRecords } from "../lib/tool-call-records.fixture";
 import {
   StandaloneToolActivity,
   ToolActivityDisclosure,
@@ -161,6 +162,9 @@ describe("ToolActivityDisclosure", () => {
 });
 
 describe("ToolSteps", () => {
+  // Each test replays its own calls into the shared live store.
+  beforeEach(() => clearToolCallRecords());
+
   it("lists only the last steps and counts the earlier ones when limited", () => {
     const steps = stepsOf(LIVE_TOOL_STEP_WINDOW + 3, true);
     const html = renderToStaticMarkup(
@@ -190,7 +194,7 @@ describe("ToolSteps", () => {
   });
 
   it("opens a row to its command and output, which follow the run's records", () => {
-    seedToolCallRecords("run-1", [
+    replayToolCallRecords("run-1", [
       {
         executionId: "x1",
         name: "shell",
@@ -218,7 +222,7 @@ describe("ToolSteps", () => {
 
     // The command finishes: its exit code and final output land without reopening the row.
     flushSync(() =>
-      seedToolCallRecords("run-1", [
+      replayToolCallRecords("run-1", [
         {
           executionId: "x1",
           name: "shell",
@@ -240,7 +244,7 @@ describe("ToolSteps", () => {
   });
 
   it("shows a structured call's arguments and indents its JSON result", () => {
-    seedToolCallRecords("run-1", [
+    replayToolCallRecords("run-1", [
       {
         executionId: "x1",
         name: "web_search",
@@ -276,7 +280,7 @@ describe("ToolSteps", () => {
   });
 
   it("shows only the exit code for a call that ran and printed nothing", () => {
-    seedToolCallRecords("run-1", [
+    replayToolCallRecords("run-1", [
       { executionId: "x1", name: "write_file", status: "done", exitCode: 0, durationMs: 12 },
     ]);
     const container = document.createElement("div");
@@ -299,7 +303,7 @@ describe("ToolSteps", () => {
   });
 
   it("keeps a row open when a repeated call joins it under a new call id", () => {
-    seedToolCallRecords("run-1", [
+    replayToolCallRecords("run-1", [
       { executionId: "x1", name: "shell", status: "done", command: "ls", output: "a" },
       { executionId: "x2", name: "shell", status: "running", command: "ls", output: "" },
     ]);
@@ -327,7 +331,7 @@ describe("ToolSteps", () => {
   });
 
   it("shows nothing but the running mark for a call that has not printed yet", () => {
-    seedToolCallRecords("run-1", [{ executionId: "x1", name: "shell", status: "running" }]);
+    replayToolCallRecords("run-1", [{ executionId: "x1", name: "shell", status: "running" }]);
     const container = document.createElement("div");
     const root = createRoot(container);
     flushSync(() =>
@@ -346,8 +350,31 @@ describe("ToolSteps", () => {
     root.unmount();
   });
 
+  it("says nothing about output that is only withheld from this reader", () => {
+    replayToolCallRecords("run-1", [
+      { executionId: "x1", name: "read_history", status: "done", withheld: true },
+    ]);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    flushSync(() =>
+      root.render(
+        <ToolSteps
+          live={false}
+          source={MESSAGE}
+          steps={[{ label: "Read history", count: 1, executionId: "x1", outcome: "ok" }]}
+        />,
+      ),
+    );
+    flushSync(() =>
+      container.querySelector<HTMLButtonElement>('[data-testid="tool-step"]')?.click(),
+    );
+    expect(container.querySelector('[data-testid="tool-step-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="tool-step-empty"]')).toBeNull();
+    root.unmount();
+  });
+
   it("says when a call left no output and keeps rows without a call id plain", () => {
-    seedToolCallRecords("run-1", [{ executionId: "x1", name: "remember", status: "done" }]);
+    replayToolCallRecords("run-1", [{ executionId: "x1", name: "remember", status: "done" }]);
     const container = document.createElement("div");
     const root = createRoot(container);
     flushSync(() =>

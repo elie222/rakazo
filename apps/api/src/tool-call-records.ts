@@ -56,3 +56,17 @@ export async function loadToolCallRecords(
   const events: EventRow[] = [...calls, ...completions, ...commands].sort((a, b) => a.seq - b.seq);
   return foldToolCallRecords(events);
 }
+
+/**
+ * A record as someone who did not start the run sees it: without the call's arguments,
+ * returned text or error. A command's own output stays, since the thread's live activity
+ * feed already shows it to every reader.
+ */
+export function withheldToolCallRecord(record: ToolCallRecord): ToolCallRecord {
+  const { input: _input, error: _error, output, ...rest } = record;
+  return {
+    ...rest,
+    ...(record.exitCode !== undefined && output !== undefined ? { output } : {}),
+    withheld: true,
+  };
+}

@@ -9,6 +9,7 @@ import {
   LIVE_TOOL_STEP_WINDOW,
   pickToolCallRecord,
   toolCallMarkdown,
+  toolCallReadIsFinal,
   toolStepStatus,
 } from "@rakazo/core";
 import {
@@ -176,7 +177,9 @@ function useToolCallRecord(source: ToolStepSource, executionId: string, runLive:
   const fetched = useQuery({
     ...queries.threads.toolCalls.queryOptions({ input: source }),
     enabled: needsRead,
-    staleTime: 0,
+    // A live run's calls keep changing; a finished run's are read once for all its steps.
+    staleTime: (query) =>
+      !runLive && toolCallReadIsFinal(query.state.data, executionId) ? Number.POSITIVE_INFINITY : 0,
   });
   const read = fetched.data?.find((item) => item.executionId === executionId);
   const { record } = pickToolCallRecord(live, read, runLive);
@@ -225,7 +228,7 @@ function ToolStepDetail({
         <div className="max-h-80 overflow-y-auto" data-testid="tool-step-code">
           <ChatMarkdown streaming={running}>{markdown}</ChatMarkdown>
         </div>
-      ) : record?.error || exit || running ? null : (
+      ) : record?.error || exit || running || record?.withheld ? null : (
         <div className="text-label text-muted-foreground" data-testid="tool-step-empty">
           {loading ? (
             <Trans>Loading…</Trans>

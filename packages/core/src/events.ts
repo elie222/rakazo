@@ -121,11 +121,8 @@ export function projectMessages(
     if (event.type === "agent.tool.completed") {
       const update = toolCompletedUpdate(payload);
       const live = event.runId ? liveById.get(progressMessageId(event)) : undefined;
-      if (update && live) {
-        live.blocks = reduceLiveMessageBlocks(live.blocks, update);
-        // The message changed, so it sorts after what landed before this result.
-        live.meta = { ...live.meta, seq: event.seq };
-      }
+      // Only the step's mark changes; the row keeps its place, as it does in a live client.
+      if (update && live) live.blocks = reduceLiveMessageBlocks(live.blocks, update);
       continue;
     }
     if (event.type === "thread.cleared") {
@@ -359,12 +356,20 @@ export function reduceLiveMessageBlocks(
   }
   const tail = blocks.at(-1);
   const segments = tail?.kind === "progress" ? blocks.slice(0, -1) : blocks;
+  const activity =
+    update.type === "progress"
+      ? update.payload?.activity === true
+      : tail?.kind === "progress" && tail.activity === true;
+  // A status line labels the work; it is not the bot's prose. The bot's text continues from
+  // what it wrote before, so a status line is never part of what a delta builds on.
   const priorText = liveMessageText(blocks);
-  const flushedLength =
-    tail?.kind === "progress" ? priorText.length - tail.text.length : priorText.length;
+  const narrationTail = tail?.kind === "progress" && tail.activity !== true ? tail.text : "";
+  const flushedLength = priorText.length - narrationTail.length;
   const tailText =
     update.type === "progress"
-      ? progressMessageText(update.payload, priorText).slice(flushedLength)
+      ? activity
+        ? String(update.payload?.text ?? "")
+        : progressMessageText(update.payload, priorText).slice(flushedLength)
       : tail?.kind === "progress"
         ? tail.text
         : "";
@@ -372,10 +377,6 @@ export function reduceLiveMessageBlocks(
     ...(tail?.kind === "progress" ? (tail.pendingTools ?? []) : []),
     ...(update.type === "tool" ? [toolCallRef(update)] : []),
   ];
-  const activity =
-    update.type === "progress"
-      ? update.payload?.activity === true
-      : tail?.kind === "progress" && tail.activity === true;
 
   // A tool status line is not the bot's prose, so a call never waits behind it: the step shows
   // at once and the line stays after it as the working label.
@@ -455,10 +456,14 @@ export function completeToolStep(
   return completeToolCall(segments, { type: "tool_done", executionId, outcome, durationMs });
 }
 
+/** The bot's own text in a live message: its narration, without tool status lines. */
 function liveMessageText(blocks: readonly MessageBlock[]): string {
   return blocks
-    .filter((block) => block.kind === "text" || block.kind === "progress")
-    .map((block) => block.text)
+    .flatMap((block) =>
+      block.kind === "text" || (block.kind === "progress" && block.activity !== true)
+        ? [block.text]
+        : [],
+    )
     .join("");
 }
 
@@ -569,18 +574,8 @@ export function noteLastToolStep(segments: readonly MessageBlock[], note: string
   const steps = block.steps.slice(0, -1);
   if (last.count > 1) {
     // The row's call facts belong to its newest call, which the note goes with.
-    const { executionId, outcome, durationMs, ...earlier } = last;
-    steps.push(
-      { ...earlier, count: last.count - 1 },
-      {
-        ...last,
-        ...(executionId === undefined ? {} : { executionId }),
-        ...(outcome === undefined ? {} : { outcome }),
-        ...(durationMs === undefined ? {} : { durationMs }),
-        count: 1,
-        note,
-      },
-    );
+    const { executionId: _id, outcome: _outcome, durationMs: _duration, ...earlier } = last;
+    steps.push({ ...earlier, count: last.count - 1 }, { ...last, count: 1, note });
   } else steps.push({ ...last, note: last.note ? `${last.note}\n\n${note}` : note });
   const next = [...segments];
   next[index] = { ...block, steps };
@@ -771,25 +766,6 @@ export function redactSecrets(value: string, secrets: readonly string[]): string
     offset = end;
   }
   return output + value.slice(offset);
-}
-
-/**
- * Applies `fn` to every string inside a value, nested arrays and objects included, so a caller
- * can redact the strings before serializing the whole: a secret with a quote, backslash or
- * newline in it reads differently once JSON has escaped it and would slip past a text redactor.
- */
-export function mapStringValues(value: unknown, fn: (text: string) => string): unknown {
-  if (typeof value === "string") return fn(value);
-  if (Array.isArray(value)) return value.map((item) => mapStringValues(item, fn));
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-        fn(key),
-        mapStringValues(item, fn),
-      ]),
-    );
-  }
-  return value;
 }
 
 /** Redacts `text` as the continuation of `before`, so a value split across the two is hidden too. */

@@ -53,7 +53,7 @@ async function tourToolActivity(page: Page, testInfo: TestInfo, viewport: typeof
   await expect(liveSummary).toContainText(/Working…\s*8 tools\s*\d+s/);
   await expect(page.getByTestId("tool-rows-hidden")).toHaveText("+2 earlier steps");
   await expect(page.getByTestId("tool-rows")).not.toContainText("Open calendar");
-  await expect(page.getByTestId("tool-rows")).toContainText("Check conflicts");
+  await expect(page.getByTestId("tool-rows")).toContainText("cal conflicts");
   await expect(page.getByTestId("tool-step-note")).toHaveCount(0);
   // Each row names its call and its result; the last one is still running.
   await expect(page.getByTestId("tool-step").last()).toContainText("Tuesday 2 pm");
@@ -86,7 +86,7 @@ async function tourToolActivity(page: Page, testInfo: TestInfo, viewport: typeof
   await expect(doneSummary).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByTestId("tool-rows-hidden")).toHaveCount(0);
   await expect(page.getByTestId("tool-rows")).toContainText("Open calendar");
-  await expect(page.getByTestId("tool-rows")).toContainText("Check conflicts");
+  await expect(page.getByTestId("tool-rows")).toContainText("cal conflicts");
   await expect(page.getByTestId("tool-step-note")).toHaveText(NOTE_TEXT);
   await expect(page.getByTestId("tool-step")).toHaveCount(8);
   await expect(page.getByTestId("tool-step-panel")).toHaveCount(0);
@@ -94,7 +94,7 @@ async function tourToolActivity(page: Page, testInfo: TestInfo, viewport: typeof
   await captureScreenshot(page, testInfo, `default-done-expanded-${viewport.name}`);
 
   // A shell row opens to its command, output and exit code; a failed one to its error.
-  const shellRow = page.getByTestId("tool-step").filter({ hasText: "Shell" });
+  const shellRow = page.getByTestId("tool-step").filter({ hasText: "TZ=Europe/Berlin" });
   await shellRow.click();
   await expect(shellRow).toHaveAttribute("aria-expanded", "true");
   const panel = page.getByTestId("tool-step-panel");

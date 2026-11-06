@@ -11,6 +11,10 @@ import { toolCallRecords } from "./tool-call-records";
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock("./api", () => ({ rpc }));
+vi.mock("./tool-call-reads", () => ({
+  readFinishedRunToolCalls: (_runId: string, _executionId: string, read: () => Promise<unknown>) =>
+    read(),
+}));
 // The chat's markdown draws the code block; here its source is enough to check.
 vi.mock("@rakazo/chat-ui/native", () => ({
   ChatMarkdown: ({ children }: { children: string }) =>
@@ -121,10 +125,22 @@ describe("mobile tool activity card", () => {
     expect(rows()[2]?.disabled).toBe(true);
   });
 
+  /** The live events of one shell call, through the same path the thread's events take. */
+  function shell(frame: { status: "running" | "done"; exitCode: number | null; output: string }) {
+    toolCallRecords.record({
+      type: "agent.tool.called",
+      runId: "run-1",
+      payload: { name: "shell", executionId: "x1" },
+    });
+    toolCallRecords.record({
+      type: "computer.command",
+      runId: "run-1",
+      payload: { executionId: "x1", kind: "shell", command: "pnpm test", cwd: ".", ...frame },
+    });
+  }
+
   it("opens a row to the live command and output, which follow the run's records", () => {
-    toolCallRecords.seed("run-1", [
-      { executionId: "x1", name: "shell", status: "running", command: "pnpm test", output: "RUN" },
-    ]);
+    shell({ status: "running", exitCode: null, output: "RUN" });
     // The first call is still running: its step has no outcome yet.
     const running = {
       ...steps,
@@ -144,18 +160,7 @@ describe("mobile tool activity card", () => {
     expect(code()).toBe("```console\n$ pnpm test\nRUN\n```");
     expect(rpc).not.toHaveBeenCalled();
 
-    act(() =>
-      toolCallRecords.seed("run-1", [
-        {
-          executionId: "x1",
-          name: "shell",
-          status: "done",
-          command: "pnpm test",
-          output: "RUN\n1 failed",
-          exitCode: 1,
-        },
-      ]),
-    );
+    act(() => shell({ status: "done", exitCode: 1, output: "RUN\n1 failed" }));
     expect(code()).toBe("```console\n$ pnpm test\nRUN\n1 failed\n```");
     expect(container.textContent).toContain("exit 1");
   });

@@ -30,10 +30,12 @@ import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "..
 import { assertTeachingSendAllowed } from "../taught-skills.js";
 import {
   isBackgroundRun,
+  isOthersRun,
   isPeerRun,
   loadMessagePage,
   shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
+  withoutToolCallContent,
 } from "../thread-message-pages.js";
 import type { ThreadTarget } from "../thread-target.js";
 import {
@@ -50,7 +52,7 @@ import {
   threadHead,
   threadSnapshot,
 } from "../thread-target.js";
-import { loadToolCallRecords } from "../tool-call-records.js";
+import { loadToolCallRecords, withheldToolCallRecord } from "../tool-call-records.js";
 import { mapBotSecretInputError } from "./bots.js";
 import { releaseComputerControl } from "./computer.js";
 import type { RouterContext } from "./context.js";
@@ -71,7 +73,6 @@ export function callMarkerClientNonce(callId: string): string {
 }
 
 /** The card is closed by a marker; the run that follows finishes whatever the call left open. */
-
 const HANG_UP_PROMPT =
   "The voice call just ended because the user hung up. First call end_call with a short title for the call (leave farewell empty). Then, if anything the user asked for during the call is still unfinished, complete it now as a normal chat reply with full formatting. If nothing is pending, reply with one short sentence.";
 
@@ -186,6 +187,7 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         const peerRunCache = new Map<string, Promise<boolean>>();
         const backgroundRunCache = new Map<string, Promise<boolean>>();
+        const othersRunCache = new Map<string, Promise<boolean>>();
         const events = withHeartbeats(context, (signal) =>
           deps.events.follow(target.threadId, input.cursor, signal),
         );
@@ -208,6 +210,13 @@ export function threadsRoutes(ctx: RouterContext) {
             if (!shouldForwardPeerThreadEvent(event)) continue;
           } else if (await isBackgroundRun(deps.prisma, event.runId, backgroundRunCache)) {
             if (!shouldForwardBackgroundThreadEvent(event)) continue;
+          }
+          if (
+            (event.type === "agent.tool.called" || event.type === "agent.tool.completed") &&
+            (await isOthersRun(deps.prisma, event.runId, context.actor.userId, othersRunCache))
+          ) {
+            yield withoutToolCallContent(event);
+            continue;
           }
           yield event;
         }
@@ -310,7 +319,7 @@ export function threadsRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       toolCalls: authed.threads.toolCalls.handler(async ({ context, input }) => {
-        // Whoever can read the chat can read its calls: the thread's bot or group resolves for
+        // Whoever can read the chat can read its steps: the thread's bot or group resolves for
         // the actor the same way every other thread read does.
         const thread = await deps.prisma.thread.findFirst({
           where: { id: input.threadId, spaceId: context.actor.spaceId },
@@ -324,7 +333,16 @@ export function threadsRoutes(ctx: RouterContext) {
           { includeArchived: true },
         );
         if (target.threadId !== thread.id) throw new IsolationError();
-        return loadToolCallRecords(deps.prisma, thread.id, input.runId);
+        const [run, records] = await Promise.all([
+          deps.prisma.run.findFirst({
+            where: { id: input.runId, threadId: thread.id },
+            select: { userId: true },
+          }),
+          loadToolCallRecords(deps.prisma, thread.id, input.runId),
+        ]);
+        if (!run) return [];
+        // A call's arguments, result and error go only to the person who started the run.
+        return run.userId === context.actor.userId ? records : records.map(withheldToolCallRecord);
       }),
       clear: authed.threads.clear.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);

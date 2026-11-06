@@ -6,7 +6,7 @@ import { bootstrapI18n, i18n } from "../../src/lib/i18n";
 import { queryClient } from "../../src/lib/query";
 import { rpc } from "../../src/lib/rpc";
 import { toolActivityPreference } from "../../src/lib/tool-activity-preference";
-import { seedToolCallRecords } from "../../src/lib/tool-call-records";
+import { replayToolCallRecords } from "../../src/lib/tool-call-records.fixture";
 import { SettingsOverlay } from "../../src/pages/SettingsOverlay";
 import "../../src/styles.css";
 import { FixtureTranscript } from "./thread-fixture";
@@ -60,7 +60,14 @@ const STEPS: {
     output: "",
   },
   { label: "Draft invite", detail: "Tuesday 2 pm", durationMs: 1_500, output: "Draft saved." },
-  { label: "Check conflicts", detail: "Tuesday 2 pm", durationMs: 3_700, output: "No conflicts." },
+  // Only a shell prints while it runs, so the live run's last call is one.
+  {
+    label: "Shell",
+    detail: 'cal conflicts "Tuesday 2 pm"',
+    command: 'cal conflicts "Tuesday 2 pm"',
+    durationMs: 3_700,
+    output: "No conflicts.",
+  },
 ];
 
 const NOTE_TEXT = "Anna is free all Tuesday afternoon.";
@@ -76,14 +83,14 @@ const stepsBlock: MessageBlock = {
       detail: step.detail,
       ...(running ? {} : { outcome: step.outcome ?? "ok", durationMs: step.durationMs }),
       // A finished reply keeps what the bot wrote before a step on that step.
-      ...(!live && step.label === "Check conflicts" ? { note: NOTE_TEXT } : {}),
+      ...(!live && index === STEPS.length - 1 ? { note: NOTE_TEXT } : {}),
     };
   }),
   ...(live ? {} : { durationMs: 12_400 }),
 };
 
 // What the thread's events said about each call; the live run's last call is still printing.
-seedToolCallRecords(
+replayToolCallRecords(
   "run-1",
   STEPS.map((step, index): ToolCallRecord => {
     const running = live && index === STEPS.length - 1;

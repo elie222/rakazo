@@ -197,12 +197,13 @@ export function recordToolOutcome(
 ) {
   const duration = Math.max(0, Math.round(durationMs));
   // The call's own event is still on its way: its step takes the result when it is queued.
+  const result = { outcome, durationMs: duration };
   if (!queuedToolCall(reply, executionId)) {
-    reply.earlyToolOutcomes.set(executionId, { outcome, durationMs: duration });
+    reply.earlyToolOutcomes.set(executionId, result);
     return;
   }
   reply.pendingTools = reply.pendingTools.map((call: ToolCallRef) =>
-    call.executionId === executionId ? { ...call, outcome, durationMs: duration } : call,
+    call.executionId === executionId ? { ...call, ...result } : call,
   );
   reply.messageSegments = completeToolStep(reply.messageSegments, executionId, outcome, duration);
 }

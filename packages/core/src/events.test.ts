@@ -12,7 +12,6 @@ import {
   isRunTerminalEvent,
   liveActivityLine,
   liveMessageComposing,
-  mapStringValues,
   normalizeResponseStreamingPreference,
   noteLastToolStep,
   projectMessages,
@@ -27,6 +26,7 @@ import {
   toolCallDetail,
   toolCallDetailLine,
   toolCalledUpdate,
+  toolCompletedUpdate,
   toolNameFromLabel,
   trackToolCallStreak,
   trackToolNameStreak,
@@ -1268,18 +1268,6 @@ describe("liveActivityLine", () => {
   });
 });
 
-describe("mapStringValues", () => {
-  it("applies the function to every string, nested or not, and leaves other values", () => {
-    expect(
-      mapStringValues({ a: "x", n: 1, list: ["y", { deep: "z", ok: true }], none: null }, (text) =>
-        text.toUpperCase(),
-      ),
-    ).toEqual({ A: "X", N: 1, LIST: ["Y", { DEEP: "Z", OK: true }], NONE: null });
-    expect(mapStringValues("x", (text) => `${text}!`)).toBe("x!");
-    expect(mapStringValues(3, () => "no")).toBe(3);
-  });
-});
-
 describe("toolCalledUpdate", () => {
   it("carries the result of a call that finished before its own event", () => {
     expect(
@@ -1329,5 +1317,84 @@ describe("projectMessages live timing", () => {
       },
     ]);
     expect(live).toMatchObject({ seq: 2, createdAt: "2026-01-01T00:00:01.000Z" });
+  });
+});
+
+describe("reduceLiveMessageBlocks status lines", () => {
+  it("replaces a status line with the bot's next words instead of joining them", () => {
+    let blocks = reduceLiveMessageBlocks([], {
+      type: "progress",
+      payload: { text: "Running: ls -la", activity: true },
+    });
+    blocks = reduceLiveMessageBlocks(blocks, { type: "tool", name: "shell", executionId: "x1" });
+    expect(blocks).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1, executionId: "x1" }] },
+      { kind: "progress", text: "Running: ls -la", activity: true },
+    ]);
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "progress",
+      payload: { delta: "Found it.", streaming: true },
+    });
+    expect(blocks).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1, executionId: "x1" }] },
+      { kind: "progress", text: "Found it." },
+    ]);
+  });
+
+  it("never builds the bot's text on a status line", () => {
+    let blocks = reduceLiveMessageBlocks([], {
+      type: "progress",
+      payload: { text: "Checking ", streaming: true },
+    });
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "progress",
+      payload: { text: "Running: ls", activity: true },
+    });
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "progress",
+      payload: { delta: "the files", streaming: true },
+    });
+    expect(blocks.at(-1)).toEqual({ kind: "progress", text: "the files" });
+  });
+});
+
+describe("toolCompletedUpdate", () => {
+  it("leaves a paused call unmarked and marks a finished one", () => {
+    expect(toolCompletedUpdate({ executionId: "s1", outcome: "paused" })).toBeUndefined();
+    expect(toolCompletedUpdate({ executionId: "s1", outcome: "error", durationMs: 3 })).toEqual({
+      type: "tool_done",
+      executionId: "s1",
+      outcome: "error",
+      durationMs: 3,
+    });
+  });
+});
+
+describe("projectMessages tool results", () => {
+  it("marks the step without moving the live row", () => {
+    const [live] = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 1,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "shell", executionId: "x1" },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 5,
+        type: "agent.tool.completed",
+        runId: "r1",
+        payload: { name: "shell", executionId: "x1", outcome: "error" },
+        createdAt: "2026-01-01T00:00:05.000Z",
+      },
+    ]);
+    expect(live).toMatchObject({ seq: 1 });
+    expect(live?.blocks).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1, executionId: "x1", outcome: "error" }] },
+    ]);
   });
 });

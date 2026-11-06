@@ -4,6 +4,7 @@ import {
   formatElapsedSince,
   isToolActivityBlock,
   pickToolCallRecord,
+  toolCallReadIsFinal,
   toolStepStatus,
 } from "./tool-activity.js";
 
@@ -82,5 +83,17 @@ describe("formatElapsedSince", () => {
     expect(formatElapsedSince("2026-01-01T00:02:00.000Z", now)).toBe("0ms");
     expect(formatElapsedSince(undefined, now)).toBeNull();
     expect(formatElapsedSince("not a date", now)).toBeNull();
+  });
+});
+
+describe("toolCallReadIsFinal", () => {
+  it("lets a read stand once it has the call and nothing in it was still running", () => {
+    const done = { executionId: "x1", name: "shell", status: "done" } as const;
+    expect(toolCallReadIsFinal([done], "x1")).toBe(true);
+    expect(toolCallReadIsFinal([done], "x2")).toBe(false);
+    expect(
+      toolCallReadIsFinal([done, { ...done, executionId: "x2", status: "running" }], "x1"),
+    ).toBe(false);
+    expect(toolCallReadIsFinal(undefined, "x1")).toBe(false);
   });
 });

@@ -17,7 +17,6 @@ import {
   humanizeToolName,
   isBackgroundRunTrigger,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
-  mapStringValues,
   redactSecrets,
   redactSecretsAfter,
   TAKEOVER_COMPUTER_PENDING_STATE,
@@ -40,7 +39,6 @@ import {
   HISTORY_WINDOW_SIZE,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
-import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
 import { connectorStepNames } from "./pi-runtime-tools.js";
 import {
   backOffRoutineAfterAccountError,
@@ -94,6 +92,11 @@ import {
 } from "./silent-reply.js";
 import { isStrategicInitiativeRun } from "./strategic-initiative.js";
 import { takeoverCheckpointOf } from "./takeover-resume.js";
+import {
+  boundToolActivityText,
+  redactToolActivityLine,
+  redactToolActivityValue,
+} from "./tool-activity-redaction.js";
 import { appendToolCompletionAudit, toolCompletionFromResult } from "./tool-completion-audit.js";
 import {
   advanceOverLimitActionCalls,
@@ -520,9 +523,10 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   await flushProgress(ctx);
   // Queued first so the text written before this call becomes its note.
   const stepNames = connectorStepNames(ctx.tools.connector.get(event.name), event.args);
-  const callArgs = toolCallArgs(event);
-  const detail = toolStepDetail(callArgs, ctx.secrets);
-  const input = toolCallInput(event.name, callArgs, ctx.secrets);
+  // Redacted once, value by value, before any of it is shown or serialized.
+  const safeArgs = redactToolActivityValue(toolCallArgs(event), ctx.secrets);
+  const detail = toolStepDetail(safeArgs, ctx.secrets);
+  const input = toolCallInput(event.name, safeArgs, ctx.secrets);
   // A fast call can finish while the narration above flushes; its result is waiting here.
   const early = reply.earlyToolOutcomes.get(event.executionId) ?? {};
   reply.earlyToolOutcomes.delete(event.executionId);
@@ -628,29 +632,35 @@ function toolCallArgs(event: RuntimeEvent<"tool">): unknown {
 }
 
 /**
- * What the call is about, safe to show: its arguments' main line with secrets taken out, cut
- * to length only afterwards so a secret is never split and a replacement never overruns.
+ * What the call is about, safe to show: its arguments' main line, from arguments already
+ * redacted, cut to length only afterwards so a secret is never split and a replacement never
+ * overruns.
  */
-function toolStepDetail(args: unknown, secrets: string[]): string | undefined {
-  const line = toolCallDetailLine(args);
-  if (line === undefined) return undefined;
-  return boundToolStepDetail(sanitizeSensitiveText(redactSecrets(line, secrets)));
+function toolStepDetail(safeArgs: unknown, secrets: readonly string[]): string | undefined {
+  const line = toolCallDetailLine(safeArgs);
+  // Passed once more whole: a run secret can span values the line joins.
+  return line === undefined
+    ? undefined
+    : boundToolStepDetail(redactToolActivityLine(line, secrets));
 }
 
 /**
- * The call's arguments for the activity view, as bounded JSON with secrets taken out. A shell
+ * The call's arguments for the activity view, as bounded JSON of arguments already redacted
+ * value by value, passed once more whole: a run secret can span values the JSON joins. A shell
  * command's text already streams with its output, so it carries none.
  */
-function toolCallInput(name: string, args: unknown, secrets: string[]): string | undefined {
+function toolCallInput(
+  name: string,
+  safeArgs: unknown,
+  secrets: readonly string[],
+): string | undefined {
   if (name === "shell" || name === "user_computer_shell") return undefined;
-  if (!args || typeof args !== "object" || Object.keys(args).length === 0) return undefined;
-  // Each string is redacted before JSON escapes it, so a secret with a quote or newline in it
-  // cannot slip past; the whole is passed once more for a value that only reads as one joined.
-  const safe = (text: string) => sanitizeSensitiveText(redactSecrets(text, secrets));
-  const json = safe(JSON.stringify(mapStringValues(args, safe), null, 2));
-  return json.length > TOOL_RESULT_PREVIEW_MAX_CHARS
-    ? `${json.slice(0, TOOL_RESULT_PREVIEW_MAX_CHARS)}…`
-    : json;
+  if (!safeArgs || typeof safeArgs !== "object" || Object.keys(safeArgs).length === 0)
+    return undefined;
+  return boundToolActivityText(
+    redactToolActivityLine(JSON.stringify(safeArgs, null, 2), secrets),
+    TOOL_RESULT_PREVIEW_MAX_CHARS,
+  );
 }
 
 /** The model keeps repeating the same call: finish the run with what it has and say why. */

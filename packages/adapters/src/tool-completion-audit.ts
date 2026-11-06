@@ -1,12 +1,16 @@
 import type { AgentToolCompletion } from "@rakazo/adapter-kit";
 import { TOOL_RESULT_PREVIEW_MAX_CHARS } from "@rakazo/contracts";
-import { mapStringValues, redactSecrets } from "@rakazo/core";
+import { redactSecrets } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
-import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
+import {
+  boundToolActivityText,
+  redactToolActivityJson,
+  redactToolActivityText,
+} from "./tool-activity-redaction.js";
 import { isFailedToolResult, toolCallFailed, toolResultError } from "./tool-result-error.js";
 
 function isAuditableToolResult(value: unknown): value is {
@@ -88,9 +92,18 @@ export function toolCompletionAuditPayload(
  * parts, a plain string, or a plain object (a scripted file action's path and size) as JSON.
  */
 function toolResultPreview(result: unknown, secrets: string[]): string | undefined {
-  // Each string is redacted before JSON escapes it, so a secret with a quote or newline in it
-  // cannot slip past; the joined text is passed once more below.
-  const safe = (text: string) => sanitizeSensitiveText(redactSecrets(text, secrets));
+  // A structured result is redacted as it stands; text is checked for JSON first.
+  if (
+    result &&
+    typeof result === "object" &&
+    !Array.isArray((result as { content?: unknown }).content)
+  ) {
+    if (Object.keys(result).length === 0) return undefined;
+    return boundToolActivityText(
+      redactToolActivityJson(result, secrets),
+      TOOL_RESULT_PREVIEW_MAX_CHARS,
+    );
+  }
   const content = (result as { content?: unknown } | undefined)?.content;
   const text = (
     typeof result === "string"
@@ -103,15 +116,13 @@ function toolResultPreview(result: unknown, secrets: string[]): string | undefin
                 : [],
             )
             .join("\n")
-        : result && typeof result === "object" && Object.keys(result).length > 0
-          ? JSON.stringify(mapStringValues(result, safe), null, 2)
-          : ""
+        : ""
   ).trim();
   if (!text) return undefined;
-  const redacted = safe(text);
-  return redacted.length > TOOL_RESULT_PREVIEW_MAX_CHARS
-    ? `${redacted.slice(0, TOOL_RESULT_PREVIEW_MAX_CHARS)}…`
-    : redacted;
+  return boundToolActivityText(
+    redactToolActivityText(text, secrets),
+    TOOL_RESULT_PREVIEW_MAX_CHARS,
+  );
 }
 
 export async function appendToolCompletionAudit(

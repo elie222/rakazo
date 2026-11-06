@@ -4,7 +4,6 @@ import {
   clearToolCallRecords,
   liveToolCallRecords,
   recordToolCallEvent,
-  seedToolCallRecords,
   subscribeToolCallRecords,
 } from "./tool-call-records";
 
@@ -55,13 +54,11 @@ describe("live tool call records", () => {
     expect(liveToolCallRecords("run-2")).toBeUndefined();
   });
 
-  it("ignores events outside a run and seeds a run outright", () => {
+  it("ignores events outside a run", () => {
     recordToolCallEvent({
       ...event("agent.tool.completed", { executionId: "x1" }),
       runId: undefined,
     });
     expect(liveToolCallRecords("run-1")).toBeUndefined();
-    seedToolCallRecords("run-1", [{ executionId: "x9", name: "shell", status: "done" }]);
-    expect(liveToolCallRecords("run-1")?.get("x9")?.name).toBe("shell");
   });
 });

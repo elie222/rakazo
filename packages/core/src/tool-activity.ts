@@ -60,3 +60,19 @@ export function formatElapsedSince(startedAt: string | undefined, nowMs: number)
   const started = startedAt ? Date.parse(startedAt) : Number.NaN;
   return Number.isFinite(started) ? formatCompactDuration(Math.max(0, nowMs - started)) : null;
 }
+
+/**
+ * Whether a read of a finished run's calls can stand for it from now on: it has this call, and
+ * none of its calls was still running when it was read. A read taken mid-run fails one or the
+ * other and is read again.
+ */
+export function toolCallReadIsFinal(
+  records: readonly ToolCallRecord[] | undefined,
+  executionId: string,
+): boolean {
+  return (
+    records !== undefined &&
+    records.some((record) => record.executionId === executionId) &&
+    records.every((record) => record.status !== "running")
+  );
+}

@@ -42,8 +42,14 @@ API responses are the same with it on or off.
 - The `agent.tool.called` event carries the call's `detail` and its arguments as bounded,
   redacted JSON (`input`); the `agent.tool.completed` audit carries a bounded, redacted
   `preview` of the text the tool returned. Every string is redacted before it is serialized,
-  so a secret that JSON would escape cannot slip through. Shell commands keep streaming their
-  output through `computer.command` events as before.
+  so a secret that JSON would escape cannot slip through, and a string under a
+  credential-named key (password, token, API key, authorization, cookie and similar) is
+  dropped whole. Shell commands keep streaming their output through `computer.command`
+  events as before.
+- `input`, `preview` and a call's error text reach only the person who started the run, in
+  the live stream and in `threads.toolCalls`. Anyone else who can read the chat sees the
+  steps, their outcomes and shell output, which the live feed already showed every reader;
+  their records carry `withheld`, so the panel does not claim the call printed nothing.
 - A call that finishes before its own event is written carries its `outcome` and `durationMs`
   on `agent.tool.called`, so its step never stays marked running.
 - `threads.toolCalls` reads a run's first 2,000 calls with their completion and newest

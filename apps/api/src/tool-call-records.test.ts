@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { loadToolCallRecords } from "./tool-call-records.js";
+import { loadToolCallRecords, withheldToolCallRecord } from "./tool-call-records.js";
 
 describe("loadToolCallRecords", () => {
   it("reads whole calls in order and only the newest frame of each shell command", async () => {
@@ -72,5 +72,44 @@ describe("loadToolCallRecords", () => {
     const prisma = { event: { findMany }, $queryRaw: queryRaw } as never;
     await expect(loadToolCallRecords(prisma, "thread-1", "run-1")).resolves.toEqual([]);
     expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("shows someone who did not start the run the call, not its arguments, result or error", () => {
+    expect(
+      withheldToolCallRecord({
+        executionId: "x1",
+        name: "read_history",
+        status: "done",
+        outcome: "error",
+        input: '{"query":"private"}',
+        output: "Private chat text",
+        error: "No match for private",
+      }),
+    ).toEqual({
+      executionId: "x1",
+      name: "read_history",
+      status: "done",
+      outcome: "error",
+      withheld: true,
+    });
+    // A command's own output is the computer's activity feed, which every reader already sees.
+    expect(
+      withheldToolCallRecord({
+        executionId: "s1",
+        name: "shell",
+        status: "done",
+        command: "ls",
+        output: "a",
+        exitCode: 0,
+      }),
+    ).toEqual({
+      executionId: "s1",
+      name: "shell",
+      status: "done",
+      command: "ls",
+      output: "a",
+      exitCode: 0,
+      withheld: true,
+    });
   });
 });

@@ -15,6 +15,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-n
 import { rpc } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { native, useMobileTokens, useResolvedAppearance } from "../../lib/native";
+import { readFinishedRunToolCalls } from "../../lib/tool-call-reads";
 import { toolCallRecords } from "../../lib/tool-call-records";
 import { NativeSymbol } from "../native-symbol";
 
@@ -210,14 +211,16 @@ function useToolCallRecord(
   useEffect(() => {
     if (!needsFetch || !threadId) return;
     let cancelled = false;
-    rpc("threads/toolCalls", { threadId, runId }).then(
+    const read = () => rpc("threads/toolCalls", { threadId, runId });
+    // A live run's calls keep changing; a finished run's are read once for all its steps.
+    (runLive ? read() : readFinishedRunToolCalls(runId, executionId, read)).then(
       (records) => !cancelled && setFetched({ records }),
       () => !cancelled && setFetched({ failed: true }),
     );
     return () => {
       cancelled = true;
     };
-  }, [needsFetch, threadId, runId]);
+  }, [needsFetch, threadId, runId, runLive, executionId]);
   const read = fetched?.records?.find((item) => item.executionId === executionId);
   const { record } = pickToolCallRecord(live, read, runLive);
   return {
@@ -284,7 +287,7 @@ function StepPanel({
             {markdown}
           </ChatMarkdown>
         </ScrollView>
-      ) : record?.error || exit || running ? null : (
+      ) : record?.error || exit || running || record?.withheld ? null : (
         <Text style={[styles.empty, muted]}>
           {loading
             ? t("Loading…")

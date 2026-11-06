@@ -343,6 +343,12 @@ describe("tool completion audit", () => {
     expect(String(payload.preview)).toContain("again [redacted]");
   });
 
+  it("reads an exit code only from a shell result, not a connector's status code", () => {
+    expect(toolCallFailed(undefined, { code: 200, data: [] })).toBe(false);
+    expect(toolCallFailed(undefined, { details: { code: 201, id: "x" } })).toBe(false);
+    expect(toolCallFailed(undefined, { details: { stdout: "", stderr: "x", code: 1 } })).toBe(true);
+  });
+
   it("counts a shell command that exited nonzero as failed, but not one still running", () => {
     expect(toolCallFailed(undefined, { stdout: "", stderr: "boom", code: 1 })).toBe(true);
     expect(toolCallFailed(undefined, { details: { stdout: "", stderr: "", code: 2 } })).toBe(true);

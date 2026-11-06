@@ -483,6 +483,8 @@ export const ToolCallRecordSchema = z.object({
   /** Redacted text the tool returned, or the shell's output tail while and after it runs. */
   output: z.string().optional(),
   exitCode: z.number().int().nullable().optional(),
+  /** The call's arguments, result and error are only shown to the person who started the run. */
+  withheld: z.literal(true).optional(),
 });
 export type ToolCallRecord = z.infer<typeof ToolCallRecordSchema>;
 

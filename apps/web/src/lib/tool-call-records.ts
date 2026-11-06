@@ -8,7 +8,6 @@ export function recordToolCallEvent(event: ProductEvent): void {
   store.record(event);
 }
 
-export const seedToolCallRecords = store.seed;
 export const liveToolCallRecords = store.get;
 export const subscribeToolCallRecords = store.subscribe;
 export const clearToolCallRecords = store.clear;
