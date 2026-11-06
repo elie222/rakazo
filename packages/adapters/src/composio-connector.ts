@@ -603,7 +603,7 @@ export class ComposioConnector implements ComposioProvider {
           const logIds = collectLogIds(executed);
           yield {
             type: "error",
-            message: sanitizeComposioError(composioResultError(result.error, result.data)),
+            message: sanitizeIntegrationError(composioResultError(result.error, result.data)),
             ...(logIds.length > 0 ? { logIds } : {}),
           };
           return;
@@ -628,7 +628,7 @@ export class ComposioConnector implements ComposioProvider {
       const logIds = collectLogIds(executed);
       yield {
         type: "error",
-        message: sanitizeComposioError(error),
+        message: sanitizeIntegrationError(error),
         ...(logIds.length > 0 ? { logIds } : {}),
       };
     }
@@ -659,9 +659,9 @@ export class ComposioConnector implements ComposioProvider {
         return { authorizationUrl: null, state: request.provider };
       }
       if (isNoManagedAuthError(error)) {
-        throw new ConnectorAuthUnavailableError({ cause: sanitizeComposioError(error) });
+        throw new ConnectorAuthUnavailableError({ cause: sanitizeIntegrationError(error) });
       }
-      throw new Error(sanitizeComposioError(error));
+      throw new Error(sanitizeIntegrationError(error));
     }
   }
 
@@ -897,7 +897,7 @@ export class ConnectorRegistry implements ConnectorProvider {
         try {
           return [connectorId, await provider.discoverTools(context)] as const;
         } catch (error) {
-          getLogger().error("connector discovery failed", sanitizeComposioError(error), {
+          getLogger().error("connector discovery failed", sanitizeIntegrationError(error), {
             "connector.id": connectorId,
           });
           return [connectorId, []] as const;
@@ -1080,7 +1080,7 @@ export function composioResultError(summary: string, data: unknown): string {
   return `${summary}: ${shown.join("; ")}${more > 0 ? `; +${more} more` : ""}`;
 }
 
-export function sanitizeComposioError(error: unknown): string {
+export function sanitizeIntegrationError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return redactConnectorText(message);
 }
