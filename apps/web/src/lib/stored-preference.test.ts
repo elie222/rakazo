@@ -68,23 +68,44 @@ describe("createStoredPreference", () => {
     expect(listener).toHaveBeenCalledOnce();
   });
 
-  it("takes a change saved in another tab", () => {
-    vi.stubGlobal("localStorage", memoryStorage().storage);
+  it("takes a change saved in another tab, reading the latest saved value", () => {
+    localStorage.clear();
     const preference = flagPreference();
     const listener = vi.fn();
     preference.subscribe(listener);
     expect(preference.get()).toBe(false);
+    const storageEvent = (init: StorageEventInit) =>
+      window.dispatchEvent(new StorageEvent("storage", { storageArea: localStorage, ...init }));
 
-    window.dispatchEvent(new StorageEvent("storage", { key: "other.key", newValue: "1" }));
+    storageEvent({ key: "other.key", newValue: "1" });
     expect(listener).not.toHaveBeenCalled();
 
-    window.dispatchEvent(new StorageEvent("storage", { key: "test.flag", newValue: "1" }));
+    localStorage.setItem("test.flag", "1");
+    storageEvent({ key: "test.flag", newValue: "1" });
     expect(preference.get()).toBe(true);
     expect(listener).toHaveBeenCalledOnce();
 
-    // Another tab cleared all of storage.
-    window.dispatchEvent(new StorageEvent("storage", { key: null }));
+    // A queued event older than this tab's own write does not undo it.
+    preference.set(false);
+    storageEvent({ key: "test.flag", newValue: "1" });
     expect(preference.get()).toBe(false);
+
+    // Another tab cleared all of local storage.
+    preference.set(true);
+    localStorage.clear();
+    storageEvent({ key: null });
+    expect(preference.get()).toBe(false);
+  });
+
+  it("ignores session storage being cleared", () => {
+    localStorage.clear();
+    const preference = flagPreference();
+    preference.set(true);
+    const listener = vi.fn();
+    preference.subscribe(listener);
+    window.dispatchEvent(new StorageEvent("storage", { key: null, storageArea: sessionStorage }));
+    expect(preference.get()).toBe(true);
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it("keeps working in memory when storage is blocked or missing", () => {

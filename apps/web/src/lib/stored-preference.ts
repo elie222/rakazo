@@ -1,5 +1,13 @@
 import { useSyncExternalStore } from "react";
 
+function readableLocalStorage(): Storage | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
 /** Reads a saved string. Missing, blocked, or unavailable storage reads as nothing saved. */
 export function readStoredString(key: string): string | null {
   try {
@@ -69,9 +77,11 @@ export function createStoredPreference<T>({
   // Preferences are module singletons, so this listener lives as long as the page.
   if (typeof window !== "undefined") {
     window.addEventListener("storage", (event) => {
-      // A null key means another tab cleared all of storage.
+      // A null key means another tab cleared all of local storage. Session storage is not ours.
       if (event.key !== key && event.key !== null) return;
-      current = parse(event.key === null ? null : event.newValue);
+      if (event.storageArea !== readableLocalStorage()) return;
+      // Read the saved value now: a queued event can be older than a write made since.
+      current = parse(readStoredString(key));
       loaded = true;
       notify();
     });
