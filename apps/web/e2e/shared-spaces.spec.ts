@@ -91,13 +91,14 @@ test("an owner invites someone by link and both see the space's members", async 
     computerMode: "team",
     color: "#2A92FE",
   });
-  await openBotInSpace(ownerPage, home.id, bot.id, "Family");
-  await send(ownerPage, "Can you plan dinner for Saturday?");
-
-  // Each person reads for themselves: what Ada wrote is new to Bob, not to her.
+  // Each person reads for themselves: what Ada writes is new to Bob, not to her. Bob is in
+  // another chat first, so his shell does not open Family, and read it, when it appears.
   const familyRow = (page: Page) =>
     page.locator("aside").first().locator(`[data-roster-bot-id="${bot.id}"]`);
   await openBotInSpace(inviteePage, home.id, planner.id, "Planner");
+  await openBotInSpace(ownerPage, home.id, bot.id, "Family");
+  await send(ownerPage, "Can you plan dinner for Saturday?");
+  await inviteePage.reload();
   await expect(familyRow(inviteePage)).toHaveAttribute("data-roster-unread", "true");
   await captureScreenshot(inviteePage, testInfo, "shared-unread-invitee");
   await ownerPage.bringToFront();

@@ -53,7 +53,9 @@ export function shouldNotifyBrowser(
   context: BrowserNotificationContext,
 ): boolean {
   const notifiable =
-    (event.type === "thread.message.created" && messageUnreadFor(event.payload, context.meId)) ||
+    (event.type === "thread.message.created" &&
+      messageUnreadFor(event.payload, context.meId) &&
+      (event.payload.role === "bot" || memberMessageNotifies(event.payload))) ||
     event.type === "run.failed" ||
     event.type === "run.cancelled";
   return (
@@ -64,6 +66,22 @@ export function shouldNotifyBrowser(
     (!context.pageVisible || !context.windowFocused) &&
     context.permission === "granted" &&
     !context.notifiedEventIds.has(event.id)
+  );
+}
+
+/** A teammate's typed message notifies, as its push does; a spoken call turn or a bare file not. */
+function memberMessageNotifies(payload: Record<string, unknown>): boolean {
+  const blocks = Array.isArray(payload.blocks) ? payload.blocks : [];
+  return (
+    typeof payload.callId !== "string" &&
+    blocks.some(
+      (block) =>
+        block &&
+        typeof block === "object" &&
+        "text" in block &&
+        typeof block.text === "string" &&
+        block.text.trim() !== "",
+    )
   );
 }
 

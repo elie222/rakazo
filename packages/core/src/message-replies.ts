@@ -44,13 +44,17 @@ export function otherAuthor(
 }
 
 /**
- * A live message that leaves the chat unread for this viewer until they read it: a bot's, or
- * one someone else in the space wrote. Their own never does.
+ * A message that leaves the chat unread for this viewer until they read it: a bot's, or one
+ * someone else in the space wrote. Their own never does. Takes a stored message or a live
+ * event's payload.
  */
-export function messageUnreadFor(payload: Record<string, unknown>, meId: string | undefined) {
+export function messageUnreadFor(
+  message: { role?: unknown; author?: unknown },
+  meId: string | undefined,
+) {
   return (
-    payload.role === "bot" ||
-    (payload.role === "user" && Boolean(otherAuthor(payloadAuthor(payload).author, meId)))
+    message.role === "bot" ||
+    (message.role === "user" && Boolean(otherAuthor(payloadAuthor(message).author, meId)))
   );
 }
 

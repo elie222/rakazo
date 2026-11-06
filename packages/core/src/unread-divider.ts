@@ -1,5 +1,5 @@
 import type { MessageAuthor } from "@rakazo/contracts";
-import { otherAuthor } from "./message-replies.js";
+import { messageUnreadFor } from "./message-replies.js";
 
 type DividerCandidate = { id: string; role: string; seq?: number; author?: MessageAuthor };
 
@@ -21,10 +21,7 @@ export function unreadDividerMessageId(
   if (olderCursor !== null && olderCursor > readUpToSeq + 1) return null;
   const index = messages.findIndex(
     (message) =>
-      (message.role === "bot" ||
-        (message.role === "user" && otherAuthor(message.author, meId) !== undefined)) &&
-      message.seq !== undefined &&
-      message.seq > readUpToSeq,
+      messageUnreadFor(message, meId) && message.seq !== undefined && message.seq > readUpToSeq,
   );
   if (index === -1 || (index === 0 && olderCursor === null)) return null;
   return messages[index]?.id ?? null;
