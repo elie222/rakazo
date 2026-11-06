@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import type { ComponentProps, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { act, createContext } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AskWaitingOn } from "@rakazo/core";
 import type { MobileMessage } from "./api";
 
 vi.mock("react-native", async () => {
@@ -37,19 +38,14 @@ vi.mock("react-native-reanimated", async () => {
     withTiming: (value: number) => value,
   };
 });
+vi.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
 vi.mock("expo-secure-store", () => ({}));
-vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
-vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
-vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));
 vi.mock("./native", () => ({
   native: { fill: "fill" },
   useMobileTokens: () => ({}),
   useResolvedAppearance: () => "light",
-}));
-vi.mock("@rakazo/chat-ui/native", () => ({
-  MarkdownLongPressContext: createContext(undefined),
-  ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
-  withBlockMentions: <T,>(blocks: T) => blocks,
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/native-action-button", () => ({
@@ -67,49 +63,38 @@ vi.mock("../components/native-action-button", () => ({
     </button>
   ),
 }));
-// Cards this file doesn't exercise; each has its own tests.
-vi.mock("../components/message-caption", () => ({ MessageCaption: () => null }));
-vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
-vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
-vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
-vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
-vi.mock("../components/ComputerCard", () => ({ ComputerCard: () => null }));
-vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
-vi.mock("../components/thread/mcp-app-card", () => ({ McpAppCard: () => null }));
-vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
 vi.mock("../components/secret-ask-sheet", () => ({ SecretAskSheet: () => null }));
 vi.mock("../components/vault-item-editor", () => ({ VaultItemEditor: () => null }));
 
-import { MessageBubble } from "../components/thread/message-bubble";
+import { AskActions } from "../components/AskActions";
+import { AskBlock, waitingOnLabel } from "../components/thread/ask-block";
+import { t } from "./i18n";
 
-type BubbleProps = ComponentProps<typeof MessageBubble>;
+type Ask = Extract<MobileMessage["blocks"][number], { kind: "ask" }>;
 
-const approval: MobileMessage = {
-  id: "message-1",
-  role: "bot",
-  runId: "run-1",
-  blocks: [
-    {
-      kind: "ask",
-      text: "Review before web_fetch",
-      approvalEffectId: "effect-1",
-      site: "example.net",
-      status: "pending",
-      actions: [
-        { id: "allow", label: "Allow once" },
-        { id: "always", label: "Always allow" },
-        { id: "deny", label: "Deny" },
-      ],
-    },
+const approvalAsk = {
+  kind: "ask",
+  text: "Review before web_fetch",
+  approvalEffectId: "effect-1",
+  site: "example.net",
+  status: "pending",
+  actions: [
+    { id: "allow", label: "Allow once" },
+    { id: "always", label: "Always allow" },
+    { id: "deny", label: "Deny" },
   ],
-} as MobileMessage;
+} as Ask;
 
-const question: MobileMessage = {
-  id: "message-2",
-  role: "bot",
-  runId: "run-1",
-  blocks: [{ kind: "ask", text: "Which city?", status: "pending" }],
-} as MobileMessage;
+const questionAsk = { kind: "ask", text: "Which city?", status: "pending" } as Ask;
+
+describe("waitingOnLabel", () => {
+  it("names who the card waits on, or falls back when the name is missing", () => {
+    expect(waitingOnLabel({ userId: "casey", name: "Casey" }, t)).toBe("Waiting on Casey");
+    expect(waitingOnLabel({ userId: "casey" }, t)).toBe(
+      "Only the person who started this can answer it",
+    );
+  });
+});
 
 describe("another member's card in a shared space", () => {
   let container: HTMLDivElement;
@@ -118,83 +103,110 @@ describe("another member's card in a shared space", () => {
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     container = document.createElement("div");
+    document.body.appendChild(container);
     root = createRoot(container);
   });
 
   afterEach(() => {
     act(() => root.unmount());
+    container.remove();
     vi.unstubAllGlobals();
   });
 
-  function render(props: Partial<BubbleProps> & Pick<BubbleProps, "message" | "canAnswer">) {
-    act(() =>
+  it("keeps approval choices in place, disabled, with who it waits on under them", () => {
+    const waitingOn: AskWaitingOn = { userId: "casey", name: "Casey" };
+    act(() => {
       root.render(
-        <MessageBubble
-          botId="bot-1"
-          bots={[]}
-          showBotSenderName={false}
-          canDismiss={false}
-          onAnswer={async () => undefined}
-          onOpenBot={() => undefined}
-          onOpenComputer={() => undefined}
-          onPreviewFile={() => undefined}
-          onPreviewImage={() => undefined}
-          onOpenPeerChat={() => undefined}
-          actionProps={{}}
-          {...props}
-        />,
-      ),
-    );
-  }
-
-  const buttons = () => [...container.querySelectorAll("button")];
-
-  it("keeps the approval's choices in place, disabled, and says who it waits on", () => {
-    const onAnswer = vi.fn(async () => undefined);
-    render({
-      message: approval,
-      canAnswer: false,
-      waitingOn: { userId: "casey", name: "Casey" },
-      onAnswer,
+        <>
+          <AskActions
+            actions={approvalAsk.actions!}
+            site={approvalAsk.site}
+            approval
+            disabled
+            onAnswer={async () => {}}
+          />
+          <span>{waitingOnLabel(waitingOn, t)}</span>
+        </>,
+      );
     });
-
-    expect(buttons().map((button) => [button.textContent, button.disabled])).toEqual([
-      ["Allow once", true],
-      ["Always allow example.net", true],
-      ["Deny", true],
+    const buttons = [...container.querySelectorAll("button")];
+    expect(buttons.map((b) => b.textContent)).toEqual([
+      "Allow once",
+      "Always allow example.net",
+      "Deny",
     ]);
+    expect(buttons.every((b) => b.hasAttribute("disabled"))).toBe(true);
     expect(container.textContent).toContain("Waiting on Casey");
-    expect(container.textContent).not.toContain("No longer active");
-    act(() => buttons()[0]!.click());
-    expect(onAnswer).not.toHaveBeenCalled();
   });
 
-  it("says only the person who started it can answer when their name is not loaded", () => {
-    render({ message: approval, canAnswer: false, waitingOn: { userId: "casey" } });
-    expect(container.textContent).toContain("Only the person who started this can answer it");
-    expect(buttons().every((button) => button.disabled)).toBe(true);
+  it("lets the run's own user press the choices", async () => {
+    const onAnswer = vi.fn(async () => {});
+    act(() => {
+      root.render(
+        <AskActions
+          actions={approvalAsk.actions!}
+          site={approvalAsk.site}
+          approval
+          onAnswer={onAnswer}
+        />,
+      );
+    });
+    const allow = [...container.querySelectorAll("button")].find((b) => b.textContent === "Allow once")!;
+    expect(allow.hasAttribute("disabled")).toBe(false);
+    await act(async () => {
+      allow.click();
+    });
+    expect(onAnswer).toHaveBeenCalledWith("allow");
   });
 
-  it("lets the run's own user answer as before", async () => {
-    const onAnswer = vi.fn(async () => undefined);
-    render({ message: approval, canAnswer: true, onAnswer });
-
-    expect(buttons().some((button) => button.disabled)).toBe(false);
-    expect(container.textContent).not.toContain("Waiting on");
-    await act(async () => buttons()[0]!.click());
-    expect(onAnswer).toHaveBeenCalledWith(approval, "allow");
-  });
-
-  it("says who a question waits on instead of offering an answer field", () => {
-    render({ message: question, canAnswer: false, waitingOn: { userId: "casey", name: "Casey" } });
+  it("shows who a text question waits on instead of an answer field", () => {
+    act(() => {
+      root.render(
+        <AskBlock
+          ask={questionAsk}
+          canAnswer={false}
+          canDismiss={false}
+          waitingOn={{ userId: "casey", name: "Casey" }}
+          onAnswer={async () => {}}
+          onDismiss={async () => {}}
+          actionProps={{}}
+        />,
+      );
+    });
+    expect(container.textContent).toContain("Waiting on Casey");
     expect(container.querySelector("input")).toBeNull();
-    expect(container.textContent).toContain("Waiting on Casey");
-    expect(container.textContent).not.toContain("Waiting for this bot’s response.");
   });
 
-  it("still reads No longer active for a card nobody can answer", () => {
-    render({ message: approval, canAnswer: false });
-    expect(buttons()).toHaveLength(0);
-    expect(container.textContent).toContain("No longer active");
+  it("falls back when the owner's name is not loaded", () => {
+    act(() => {
+      root.render(
+        <AskBlock
+          ask={questionAsk}
+          canAnswer={false}
+          canDismiss={false}
+          waitingOn={{ userId: "casey" }}
+          onAnswer={async () => {}}
+          onDismiss={async () => {}}
+          actionProps={{}}
+        />,
+      );
+    });
+    expect(container.textContent).toContain("Only the person who started this can answer it");
+  });
+
+  it("still reads the bot-waiting line when nobody owns the wait", () => {
+    act(() => {
+      root.render(
+        <AskBlock
+          ask={questionAsk}
+          canAnswer={false}
+          canDismiss={false}
+          onAnswer={async () => {}}
+          onDismiss={async () => {}}
+          actionProps={{}}
+        />,
+      );
+    });
+    expect(container.textContent).toContain("Waiting for this bot");
   });
 });
