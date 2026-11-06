@@ -512,6 +512,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Git event": "Git-gebeurtenis",
   "Message event": "Berichtgebeurtenis",
   "When something changes": "Wanneer er iets verandert",
+  "When an email arrives": "Als er een e-mail binnenkomt",
   "Open conversation": "Gesprek openen",
   Paused: "Gepauzeerd",
   Prompt: "Prompt",
