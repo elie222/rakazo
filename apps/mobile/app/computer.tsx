@@ -16,6 +16,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   useWindowDimensions,
   View,
@@ -118,7 +119,10 @@ export default function Computer() {
   const unreachableScreen =
     computer?.state === "running" && Boolean(screenUrl) && !embeddedScreenUrl;
 
-  const hasControl = computer?.controlHolder === "user" && computer.controlBotId === botId;
+  const hasControl =
+    computer?.controlHolder === "user" &&
+    computer.controlBotId === botId &&
+    !computer.controlledByOther;
   // Propped open like a laptop, the desktop stays above the fold and the keys go below it.
   const tabletop = hasControl ? tabletopLayout(windowSize.width, windowSize.height, folds) : null;
   const screenVisible =
@@ -772,6 +776,14 @@ export default function Computer() {
                 />
               </View>
             </SafeAreaView>
+            {hasControl && computer?.shared ? (
+              <Text
+                testID="computer-shared-browser"
+                style={[styles.sharedBrowser, { color: tokens.mutedForeground }]}
+              >
+                {t("Sites you sign in to stay signed in for everyone in this space")}
+              </Text>
+            ) : null}
             <View style={{ flex: 1, backgroundColor: tokens.card }}>
               {foreground && loadedScreenUrl ? (
                 <ScreenWebView
@@ -952,3 +964,7 @@ function ScreenWebView({
     />
   );
 }
+
+const styles = StyleSheet.create({
+  sharedBrowser: { fontSize: 12, paddingHorizontal: 14, paddingBottom: 4 },
+});

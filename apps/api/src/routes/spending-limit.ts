@@ -1,4 +1,4 @@
-import { saveSpendingLimit, spendingStatus } from "@rakazo/db";
+import { recentPayments, saveSpendingLimit, spendingStatus } from "@rakazo/db";
 import type { RouterContext } from "./context.js";
 
 /** The account's spending limit. Only the user sets it; bots have no tool for it. */
@@ -13,6 +13,9 @@ export function spendingLimitRoutes(ctx: RouterContext) {
         await saveSpendingLimit(deps.prisma, context.actor.userId, input.limit);
         return spendingStatus(deps.prisma, context.actor.userId);
       }),
+      payments: authed.spendingLimit.payments.handler(({ context }) =>
+        recentPayments(deps.prisma, context.actor.userId),
+      ),
     },
   };
 }

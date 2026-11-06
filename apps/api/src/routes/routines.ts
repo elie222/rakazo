@@ -1,6 +1,11 @@
 import { ORPCError } from "@orpc/server";
 import { routineJobKey, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
-import { parseRoutineWatch, stableStringify, validateRoutineWatch } from "@rakazo/adapters";
+import {
+  finishRoutineHandover,
+  parseRoutineWatch,
+  stableStringify,
+  validateRoutineWatch,
+} from "@rakazo/adapters";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import {
   expandSkillReferencesInPrompt,
@@ -18,7 +23,6 @@ import {
   listRoutinesDto,
   mapRoutine,
   nextRoutineDate,
-  routineDto,
   routineNextRunAt,
   routineRowData,
   routineTestRunNonce,
@@ -38,7 +42,6 @@ export function routinesRoutes(ctx: RouterContext) {
           where: {
             id: { in: input.botIds },
             spaceId: actor.spaceId,
-            userId: actor.userId,
             archivedAt: null,
           },
           select: { id: true },
@@ -48,7 +51,7 @@ export function routinesRoutes(ctx: RouterContext) {
         });
         return bots.map((bot) => ({
           botId: bot.id,
-          routines: rows.filter((row) => row.botId === bot.id).map((row) => routineDto(row, actor)),
+          routines: rows.filter((row) => row.botId === bot.id).map(mapRoutine),
         }));
       }),
       history: authed.routines.history.handler(async ({ context, input }) =>
@@ -88,7 +91,6 @@ export function routinesRoutes(ctx: RouterContext) {
           where: {
             id: input.routineId,
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
             bot: { archivedAt: null },
           },
         });
@@ -245,6 +247,8 @@ export function routinesRoutes(ctx: RouterContext) {
               ...(writesActive ? { active: existing.active } : {}),
             },
             data: {
+              // A routine runs with its owner's accounts, so whoever edits it takes it over.
+              userId: context.actor.userId,
               name: input.name,
               prompt: input.prompt,
               crons: input.crons,
@@ -255,13 +259,14 @@ export function routinesRoutes(ctx: RouterContext) {
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,
               ...(touchesModel ? { modelProvider, modelId, thinkingLevel } : {}),
-              // A changed watch starts from a fresh baseline.
+              // A changed watch starts from a fresh baseline, and so does one that now reads
+              // a different person's accounts.
               ...(input.watch === undefined
                 ? {}
-                : {
-                    watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull,
-                    ...(watchChanged ? { watchState: Prisma.DbNull } : {}),
-                  }),
+                : { watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull }),
+              ...(watchChanged || existing.userId !== context.actor.userId
+                ? { watchState: Prisma.DbNull }
+                : {}),
               ...(writesSchedule ? { nextRunAt } : {}),
             },
           })
@@ -272,7 +277,6 @@ export function routinesRoutes(ctx: RouterContext) {
                   where: {
                     id: existing.id,
                     spaceId: context.actor.spaceId,
-                    userId: context.actor.userId,
                     bot: { archivedAt: null },
                   },
                   select: { id: true },
@@ -284,6 +288,13 @@ export function routinesRoutes(ctx: RouterContext) {
             }
             throw error;
           });
+        if (existing.userId !== context.actor.userId) {
+          await finishRoutineHandover(deps, {
+            id: row.id,
+            previousUserId: existing.userId,
+            userId: context.actor.userId,
+          });
+        }
         if (bot.thread) {
           await deps.events.append({
             spaceId: context.actor.spaceId,
@@ -309,12 +320,9 @@ export function routinesRoutes(ctx: RouterContext) {
         return mapRoutine(row);
       }),
       remove: authed.routines.remove.handler(async ({ context, input }) => {
+        // Any member can change a routine, so any member can delete one.
         const existing = await deps.prisma.routine.findFirst({
-          where: {
-            id: input.routineId,
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
-          },
+          where: { id: input.routineId, spaceId: context.actor.spaceId },
         });
         if (!existing) throw new IsolationError();
         await deps.prisma.routine.delete({ where: { id: existing.id } });

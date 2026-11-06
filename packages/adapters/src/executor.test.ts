@@ -1276,6 +1276,7 @@ function pinnedRoutineRunPrisma(modelId: string) {
   };
   return {
     user: { findUnique: vi.fn(async () => null) },
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
@@ -2573,6 +2574,7 @@ description: Prepare standup notes
 
 1. Summarize wins.
 `;
+    const claim = vi.fn(async (_args: unknown) => ({ count: 1 }));
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
       routine: {
@@ -2595,7 +2597,7 @@ description: Prepare standup notes
         })),
       },
       agentSkill: {
-        findMany: vi.fn(async () => [
+        findMany: vi.fn(async (_args: unknown) => [
           {
             id: "skill-1",
             name: "Daily standup",
@@ -2608,7 +2610,7 @@ description: Prepare standup notes
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
           routine: {
-            updateMany: vi.fn(async () => ({ count: 1 })),
+            updateMany: claim,
             findUnique: vi.fn(async () => ({
               prompt: "Run @Daily standup, then email me",
               modelProvider: null,
@@ -2620,9 +2622,9 @@ description: Prepare standup notes
           run: { create: vi.fn(async () => ({ id: "run-1" })) },
         }),
       ),
-    } as unknown as PrismaClient;
+    };
     const executor = createRunExecutor({
-      prisma,
+      prisma: prisma as unknown as PrismaClient,
       jobs: { enqueue, cancel: vi.fn(async () => undefined), close: vi.fn(async () => undefined) },
       events: { append: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof createRunExecutor>[0]);
@@ -2632,6 +2634,13 @@ description: Prepare standup notes
     expect(createdPrompt).toContain("Use skill: Daily standup");
     expect(createdPrompt).toContain("Summarize wins");
     expect(createdPrompt).not.toMatch(/@Daily standup/);
+    // Routines run as their owner: only the owner's skills, and the claim names the owner.
+    expect(prisma.agentSkill.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ userId: "user-1" }) }),
+    );
+    expect(claim).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ userId: "user-1" }) }),
+    );
   });
 
   it("still continues the run when routine.fired append fails", async () => {
@@ -2773,6 +2782,7 @@ description: Prepare standup notes
     const updateMany = vi.fn(async () => ({ count: 0 }));
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
+      spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {
         findUnique: vi.fn(async () => ({
           id: "run-1",
@@ -2827,6 +2837,7 @@ description: Prepare standup notes
     });
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
+      spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {
         findUnique: vi.fn(async () => ({
           id: "run-1",
@@ -2863,6 +2874,7 @@ description: Prepare standup notes
     const updateMany = vi.fn(async () => ({ count: 0 }));
     const prisma = {
       user: { findUnique: findUser },
+      spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {
         findUnique: vi.fn(async () => ({
           id: "run-1",
@@ -2903,6 +2915,7 @@ description: Prepare standup notes
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
+      spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {
         findUnique: vi.fn(async () => ({
           id: "run-1",
@@ -2963,6 +2976,7 @@ description: Prepare standup notes
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
+      spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {
         findUnique: vi.fn(async () => ({
           id: "run-1",
@@ -3021,6 +3035,7 @@ description: Prepare standup notes
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
+      spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {
         findUnique: vi.fn(async () => ({
           id: "run-1",
@@ -3102,6 +3117,7 @@ description: Prepare standup notes
       );
       const prisma = {
         user: { findUnique: vi.fn(async () => null) },
+        spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
         run: {
           findUnique: vi.fn(async () => run),
           findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
@@ -3221,6 +3237,7 @@ description: Prepare standup notes
     };
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
+      spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {
         findUnique: vi.fn(async () => run),
         findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
@@ -3327,6 +3344,23 @@ description: Prepare standup notes
     };
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
+      // One read answers both "still a member" and "whose plan pays".
+      spaceMember: {
+        findUnique: vi.fn(async () => ({
+          id: "member-1",
+          member: {
+            role: "owner",
+            organization: {
+              modelCredits: {
+                mode: "byok",
+                balanceMicros: 0n,
+                byokFreeUntil: new Date(Date.now() - 1000),
+              },
+              billing: null,
+            },
+          },
+        })),
+      },
       run: {
         findUnique: vi.fn(async () => run),
         findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
@@ -3368,15 +3402,17 @@ description: Prepare standup notes
       connection: { findMany: vi.fn(async () => []) },
       space: {
         findFirst: vi.fn(async () => ({ organization: { modelCredits: { mode: "byok" } } })),
+        findUnique: vi.fn(async () => ({ organizationId: "org-1" })),
+      },
+      member: { findUnique: vi.fn(async () => ({ role: "owner" })) },
+      organization: {
         findUnique: vi.fn(async () => ({
-          organization: {
-            modelCredits: {
-              mode: "byok",
-              balanceMicros: 0n,
-              byokFreeUntil: new Date(Date.now() - 1000),
-            },
-            billing: null,
+          modelCredits: {
+            mode: "byok",
+            balanceMicros: 0n,
+            byokFreeUntil: new Date(Date.now() - 1000),
           },
+          billing: null,
         })),
       },
       userModelPreference: {

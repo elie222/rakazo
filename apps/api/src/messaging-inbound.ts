@@ -217,6 +217,8 @@ async function handleDirectEvent(
     threadId: ids.threadId,
     botId: ids.botId,
     userId: ids.userId,
+    // The address is verified as this person\'s, so the line is theirs.
+    authorUserId: ids.userId,
     blocks: [
       ...(body ? [{ kind: "text" as const, text: body }] : []),
       ...stored.artifacts.map((artifact) => messageBlockForArtifact(artifact)),
@@ -380,6 +382,8 @@ export async function wakeMessageRoutines(
     where: {
       botId: target.botId,
       spaceId: target.spaceId,
+      // The wake runs as the identity's person, so only their own routines may ride on it.
+      userId: target.userId,
       active: true,
       messageProvider: event.provider,
     },

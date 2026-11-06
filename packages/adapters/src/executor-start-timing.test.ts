@@ -53,6 +53,7 @@ function fixture(
   };
   const prisma = {
     user: { findUnique: vi.fn(async () => null) },
+    spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => ({ ...run, status: "leased" })),

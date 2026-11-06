@@ -140,6 +140,7 @@ import {
   requireMembership,
   rowSecurityWarning,
   runAsSystem,
+  SpaceOwnerRequiredError,
   securityEventRetentionDays,
   verifyContentKeys,
 } from "@rakazo/db";
@@ -625,6 +626,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           dataDir: env.dataDir,
           messagingInstallations,
           secrets,
+          events,
           billing,
         },
         userId,
@@ -910,6 +912,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       integrationsCatalogUrl: env.integrationsCatalogUrl,
       mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
       desktopHostChoiceEnabled: Boolean(env.desktopStackToken),
+      computerSettingsEnabled: env.computerSettingsEnabled,
       mcpStdioEnabled: env.mcpStdioEnabled,
       mcpStdioAllowedCommands: env.mcpStdioAllowedCommands,
     },
@@ -1696,6 +1699,9 @@ export function handleRpcError(
   if (error instanceof IsolationError) {
     getLogger().warn(`rpc ${path.join("/")} not found`, { "error.stack": error.stack });
     throw new ORPCError("NOT_FOUND", { message: error.message, cause: error });
+  }
+  if (error instanceof SpaceOwnerRequiredError) {
+    throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });
   }
   // The user's own voice account refused the request: theirs to fix.
   if (error instanceof VoiceAccountError) {

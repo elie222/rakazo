@@ -49,7 +49,7 @@ export function InviteDialog({
             <Trans>Give a friend {weeks} weeks free</Trans>
           </DialogTitle>
         </DialogHeader>
-        <ul className="flex flex-col gap-3 text-sm">
+        <ul className="flex flex-col gap-3 text-body">
           <li className="flex items-center gap-3">
             <Gift aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />
             <Trans>They get {weeks} weeks free.</Trans>
@@ -60,7 +60,7 @@ export function InviteDialog({
           </li>
         </ul>
         {referral.rewards > 0 ? (
-          <p className="text-center text-sm text-muted-foreground">
+          <p className="text-center text-body text-muted-foreground">
             <Plural
               value={referral.rewards}
               one="# free month earned"

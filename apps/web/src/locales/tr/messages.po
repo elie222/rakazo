@@ -182,6 +182,10 @@ msgstr "{count} gün"
 msgid "{count} months"
 msgstr "{count} ay"
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "{count} tane daha"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr "{count} hafta"
@@ -217,6 +221,10 @@ msgstr "{hiddenSelectedCount, plural, one {# seçili model aramanla gizleniyor.}
 #: src/lib/relative-time.ts
 msgid "{hours}h ago"
 msgstr "{hours} sa önce"
+
+#: src/pages/Invite.tsx
+msgid "{inviterName} invited you"
+msgstr ""
 
 #: src/components/markdown-copy.tsx
 msgid "{label}, empty"
@@ -524,6 +532,10 @@ msgstr "{name} için hesap menüsü"
 msgid "Actions for {0}"
 msgstr "{0} için işlemler"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Actions for {name}"
+msgstr ""
+
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Actions for space"
 msgstr "Alan işlemleri"
@@ -721,6 +733,10 @@ msgstr "{credit} tutarın tamamı model kullanımına gider."
 msgid "All bots"
 msgstr "Tüm botlar"
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "Tüm dosyalar"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr "Tüm alanlar"
@@ -800,10 +816,6 @@ msgstr "Tutar"
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "Bu sağlayıcı için abonelik girişi değil, bir API anahtarı saklanıyor."
-
-#: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "An existing Honcho peer to read from. Rakazo never writes to it."
-msgstr "Verilerin okunacağı mevcut bir Honcho eşi. Rakazo bu eşe asla veri yazmaz."
 
 #: src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
@@ -938,7 +950,6 @@ msgid "Approving…"
 msgstr "Onaylanıyor…"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
 msgid "Apps"
 msgstr "Uygulamalar"
 
@@ -1055,6 +1066,7 @@ msgstr "Avatar Stüdyosu"
 #: src/components/vault/VaultPageHeader.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -1175,13 +1187,13 @@ msgstr "Botun modeli"
 msgid "Both"
 msgstr "İkisi de"
 
-#: src/pages/Artifacts.tsx
-msgid "Bots"
-msgstr "Botlar"
-
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
 msgstr "Botlar ve tarayıcı otomasyonu"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Bots use the accounts of whoever messages them"
+msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
@@ -1203,6 +1215,10 @@ msgstr "MCP sunucularına göz at"
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "Yerleşik"
+
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "“{button}” düğmesi · sayfadan okundu, kontrol edilmedi"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -1248,6 +1264,7 @@ msgstr "Görselleri okuyamaz"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -1275,6 +1292,10 @@ msgstr "Yeni botu iptal et"
 #: src/pages/GroupPanel.tsx
 msgid "Cancel new group"
 msgstr "Yeni grubu iptal et"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Cancel open invites"
+msgstr ""
 
 #: src/pages/shell/chat-context.tsx
 msgid "Cancel reply"
@@ -1487,6 +1508,10 @@ msgstr "Sohbeti temizle"
 #: src/pages/ActivityList.tsx
 msgid "Clear filter {label}"
 msgstr "{label} filtresini temizle"
+
+#: src/pages/Artifacts.tsx
+msgid "Clear filters"
+msgstr "Filtreleri temizle"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clearing…"
@@ -1893,6 +1918,10 @@ msgstr "Kodu kopyala"
 msgid "Copy diagram source"
 msgstr "Diyagram kaynağını kopyala"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Copy invite link"
+msgstr ""
+
 #: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
@@ -1934,6 +1963,10 @@ msgstr "Bu sunucu onaylanamadı"
 #: src/pages/shell/message-cards.tsx
 msgid "Could not authorize this app"
 msgstr "Bu uygulama yetkilendirilemedi"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not cancel invites"
+msgstr ""
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Could not change"
@@ -2020,6 +2053,10 @@ msgstr "Bot oluşturulamadı"
 #: src/pages/GroupPanel.tsx
 msgid "Could not create group"
 msgstr "Grup oluşturulamadı"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not create invite link"
+msgstr ""
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
@@ -2118,6 +2155,10 @@ msgstr "Bağlayıcı kurulamadı"
 msgid "Could not install plugin"
 msgstr "Eklenti kurulamadı"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not leave space"
+msgstr ""
+
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
 #: src/lib/user-devices.ts
@@ -2161,6 +2202,10 @@ msgstr "Entegrasyonlar yüklenemedi"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load MCP servers"
 msgstr "MCP sunucuları yüklenemedi"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not load members"
+msgstr ""
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
@@ -2251,6 +2296,10 @@ msgstr "Kaldırılamadı"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not remove connector"
 msgstr "Bağlayıcı kaldırılamadı"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not remove member"
+msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not remove plugin"
@@ -2557,10 +2606,6 @@ msgid "Credential"
 msgstr "Kimlik bilgisi"
 
 #: src/pages/PluginsOverlay.tsx
-msgid "Credential saved"
-msgstr "Kimlik bilgisi kaydedildi"
-
-#: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "Kimlik bilgileri şifrelenir ve modele asla gönderilmez."
 
@@ -2653,6 +2698,7 @@ msgstr "gün"
 msgid "Decline"
 msgstr "Reddet"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2770,11 +2816,6 @@ msgstr "Reddedildi"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "Reddet"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr "Dağıtım varsayılanı ({0})"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3132,6 +3173,14 @@ msgstr "Her ay"
 msgid "Every week"
 msgstr "Her hafta"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "Everyone here sees its chats, bots and memory"
+msgstr ""
+
+#: src/pages/MessagingSettingsPanel.tsx
+msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
 msgstr "Executor belirteci"
@@ -3240,15 +3289,26 @@ msgstr "Bilgisayardaki dosya veya klasörler"
 msgid "Files or folders, one per line"
 msgstr "Dosya veya klasörler, her satıra bir tane"
 
+#: src/pages/Artifacts.tsx
+msgid "Files your bots create, like reports, docs and images, collect here."
+msgstr "Botlarınızın oluşturduğu raporlar, belgeler ve görseller gibi dosyalar burada toplanır."
+
 #: src/pages/GroupPanel.tsx
 msgid "Filter bots"
 msgstr "Botları filtrele"
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by bot"
+msgstr "Bota göre filtrele"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
 msgstr "Tarihe göre filtrele"
 
 #: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "Oluşturana göre filtrele"
+
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "Filtreler"
@@ -3680,6 +3740,10 @@ msgstr "Aralık birimi"
 msgid "Invalid code"
 msgstr "Geçersiz kod"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite"
+msgstr ""
+
 #: src/pages/shell/chat-header.tsx
 msgid "Invite a friend"
 msgstr "Bir arkadaşını davet et"
@@ -3689,8 +3753,13 @@ msgid "Invite friends"
 msgstr "Arkadaşlarını davet et"
 
 #: src/components/InviteDialog.tsx
+#: src/components/SpaceMembersSettings.tsx
 msgid "Invite link"
 msgstr "Davet bağlantısı"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite link copied"
+msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3716,6 +3785,14 @@ msgstr "Sohbeti, dosyaları ve rutinleri kalıcı olarak silinecek. Oluşturduğ
 #: src/components/pages/PagesList.tsx
 msgid "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
 msgstr "Paylaşılan bağlantısı çalışmayı durdurur ve sohbetteki kartları silinmiş olarak görünür. Bu işlem geri alınamaz."
+
+#: src/pages/Invite.tsx
+msgid "Join"
+msgstr ""
+
+#: src/pages/Invite.tsx
+msgid "Join {spaceName}"
+msgstr ""
 
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
@@ -3773,9 +3850,19 @@ msgstr "Son kontrol {0}: değişiklik yok"
 msgid "Later"
 msgstr "Daha sonra"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr "Ayrıl"
+
+#. placeholder {0}: space.name
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave {0}?"
+msgstr ""
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave space"
+msgstr ""
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
@@ -3867,9 +3954,11 @@ msgstr "Ses sağlayıcıları yükleniyor…"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/Invite.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -3912,6 +4001,10 @@ msgstr "Düşük"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "Düşük"
+
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "Botların oluşturdukları"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
@@ -4021,6 +4114,10 @@ msgstr "Orta"
 #: src/lib/identity-display.ts
 msgid "Member"
 msgstr "Üye"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Members"
+msgstr ""
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -4217,6 +4314,7 @@ msgstr "Aylık krediler"
 msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "Aylık krediler yenilemede sona erer. Ek krediler sona ermez."
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "More"
@@ -4304,6 +4402,7 @@ msgstr "Yanıt bekliyor"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
+#: src/pages/PluginsOverlay.tsx
 msgid "Needs an OAuth client ID"
 msgstr "OAuth istemci kimliği gerekli"
 
@@ -4314,6 +4413,10 @@ msgstr "İlgi gerekiyor"
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "Girdi bekliyor"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Needs sign-in"
+msgstr "Oturum açılması gerekiyor"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4435,12 +4538,8 @@ msgid "No apps match your search."
 msgstr "Aramanla eşleşen uygulama yok."
 
 #: src/pages/Artifacts.tsx
-msgid "No artifacts found."
-msgstr "Çıktı bulunamadı."
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No auth"
-msgstr "Kimlik doğrulamasız"
+msgid "No artifacts yet"
+msgstr "Henüz çıktı yok"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4460,13 +4559,13 @@ msgstr "Eşleşen bot yok"
 msgid "No longer active"
 msgstr "Artık etkin değil"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "No managed app catalog is configured on this deployment."
-msgstr "Bu dağıtımda yönetilen uygulama kataloğu yapılandırılmamış."
-
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr "Eşleşme yok"
+
+#: src/pages/Artifacts.tsx
+msgid "No matching artifacts"
+msgstr "Eşleşen çıktı yok"
 
 #: src/pages/Artifacts.tsx
 msgid "No matching artifacts on this page."
@@ -4571,6 +4670,10 @@ msgstr "Eklenmedi: {0}"
 msgid "Not checked yet"
 msgstr "Henüz kontrol edilmedi"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Not connected"
+msgstr "Bağlı değil"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Not imported"
 msgstr "İçe aktarılmadı"
@@ -4598,6 +4701,7 @@ msgid "Not used by Rakazo"
 msgstr "Rakazo tarafından kullanılmıyor"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Not working"
 msgstr "Çalışmıyor"
 
@@ -4625,17 +4729,9 @@ msgstr "OAuth istemci kimliği (isteğe bağlı)"
 msgid "OAuth client secret (optional)"
 msgstr "OAuth istemci gizli anahtarı (isteğe bağlı)"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth connected"
-msgstr "OAuth bağlandı"
-
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "OAuth bağlantısı başarısız"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth expired"
-msgstr "OAuth süresi doldu"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
@@ -4663,6 +4759,10 @@ msgstr "{day} günü saat {time}"
 #: src/lib/cron.ts
 msgid "on the 1st at {0}"
 msgstr "ayın 1'inde saat {0}"
+
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "Düğmede"
 
 #: src/lib/cron.ts
 msgid "One-time"
@@ -4738,6 +4838,7 @@ msgid "Open navigation"
 msgstr "Gezinmeyi aç"
 
 #: src/components/pages/PublicPageShell.tsx
+#: src/pages/Invite.tsx
 #: src/pages/SharedPage.tsx
 msgid "Open Rakazo"
 msgstr "Rakazo'yu aç"
@@ -4807,6 +4908,7 @@ msgid "Output"
 msgstr "Çıktı"
 
 #: src/components/pages/SharePopover.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -5129,6 +5231,10 @@ msgstr "Tepki ver"
 msgid "Reactions"
 msgstr "Tepkiler"
 
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "Sayfadan okundu, kontrol edilmedi"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "Yanıtları sesli oku"
@@ -5150,6 +5256,10 @@ msgstr "Akıl yürütme düzeyi"
 msgid "Recall and write"
 msgstr "Hatırla ve yaz"
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "Recall from this peer; save to Rakazo’s own peers."
+msgstr "Bu eşten hatırla; Rakazo’nun kendi eşlerine kaydet."
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr "Yalnızca hatırla"
@@ -5161,6 +5271,10 @@ msgstr "Alındı"
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "Son"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "Son ödemeler"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -5298,6 +5412,7 @@ msgstr "Yeniden yükle"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
@@ -5320,6 +5435,10 @@ msgstr "{0} kaldır"
 #: src/pages/GroupPanel.tsx
 msgid "Remove {0} from the group"
 msgstr "{0} kişisini gruptan çıkar"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Remove {memberName}?"
+msgstr ""
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
@@ -5521,6 +5640,7 @@ msgstr "Çalışma alanın geri yükleniyor"
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
+#: src/pages/Invite.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5738,6 +5858,7 @@ msgstr "Ekran bağlı değil"
 
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5754,6 +5875,10 @@ msgstr "Ara"
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
 msgstr "Uygulama ara"
+
+#: src/pages/Artifacts.tsx
+msgid "Search artifacts"
+msgstr "Çıktılarda ara"
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
@@ -5774,6 +5899,10 @@ msgstr "Etki alanına göre ara"
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Search integrations.sh"
 msgstr "integrations.sh üzerinde ara"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Search MCP servers for “{query}”"
+msgstr "MCP sunucularında “{query}” ara"
 
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -5968,6 +6097,7 @@ msgstr "Ortak hafıza"
 msgid "Show"
 msgstr "Göster"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr "Tümünü göster"
@@ -6059,6 +6189,10 @@ msgstr "Oturum açma iptal edildi. Tekrar dene."
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Site"
 msgstr "Site"
+
+#: src/pages/shell/computer-overlay.tsx
+msgid "Sites you sign in to stay signed in for everyone in this space"
+msgstr ""
 
 #. placeholder {0}: skill.name
 #: src/pages/shell/composer.tsx
@@ -6433,6 +6567,10 @@ msgstr "Test ediliyor…"
 msgid "The bot can use the file but won't see the picture."
 msgstr "Bot dosyayı kullanabilir ama resmi göremez."
 
+#: src/components/SecretAskCard.tsx
+msgid "The bot's browser stays signed in for everyone in this space"
+msgstr ""
+
 #: src/lib/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
 msgstr "Tarayıcı mikrofonu sürekli bırakıyor. Tekrar denemek için dikteyi yeniden başlat."
@@ -6592,6 +6730,10 @@ msgstr "Bu dosya geçerli UTF-8 metni değil."
 msgid "This import was already used. Choose the files again."
 msgstr "Bu içe aktarma zaten kullanıldı. Dosyaları yeniden seç."
 
+#: src/pages/Invite.tsx
+msgid "This invite link is no longer valid."
+msgstr ""
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "bu Mac"
@@ -6749,6 +6891,10 @@ msgstr "Araç adı"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "Araçlar"
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "Toplam"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
@@ -7283,6 +7429,10 @@ msgstr "Kontrol sende"
 msgid "Your Anthropic"
 msgstr "Anthropic sağlayıcınız"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Your apps"
+msgstr "Uygulamaların"
+
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "Bugün kartından {annualPrice} tahsil edilir, bu ayın kullanılmayan kısmı düşülür."
@@ -7325,6 +7475,10 @@ msgstr "OpenAI sağlayıcınız"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "OpenRouter sağlayıcınız"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Your other spaces stay private"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."

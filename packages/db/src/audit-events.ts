@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/contracts";
 import { AuditActorTypeSchema, AuditOutcomeSchema } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
+import { GUEST_ROLE } from "./billing.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { parsePositiveInteger } from "./client.js";
 import { runAsSystem } from "./row-security.js";
@@ -93,7 +94,11 @@ async function auditRows(
       : null,
     personId ? db.user.findUnique({ where: { id: personId }, select: { email: true } }) : null,
     !input.spaceId && !input.organizationId && personId
-      ? db.member.findMany({ where: { userId: personId }, select: { organizationId: true } })
+      ? // A guest's own account events are not the business of the organizations that invited them.
+        db.member.findMany({
+          where: { userId: personId, role: { not: GUEST_ROLE } },
+          select: { organizationId: true },
+        })
       : [],
   ]);
   const organizations = input.organizationId

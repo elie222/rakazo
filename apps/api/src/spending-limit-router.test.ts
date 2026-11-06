@@ -14,7 +14,16 @@ const actor = {
   isDeploymentOwner: false,
 } satisfies Actor;
 
-function spendingDeps({ card = false } = {}) {
+const paid = {
+  id: "payment-1",
+  site: "shop.example.test",
+  amount: 1_250,
+  currency: "usd",
+  botId: "bot-1",
+  createdAt: new Date("2026-11-05T09:30:00Z"),
+};
+
+function spendingDeps({ card = false, payments = [] as Array<typeof paid> } = {}) {
   let limit: Record<string, unknown> | null = null;
   // The fake runs a transaction on itself.
   let self: unknown;
@@ -33,7 +42,12 @@ function spendingDeps({ card = false } = {}) {
         return { count };
       }),
     },
-    payment: { aggregate: vi.fn(async () => ({ _sum: { amount: 1_250 } })) },
+    payment: {
+      aggregate: vi.fn(async () => ({ _sum: { amount: 1_250 } })),
+      findFirst: vi.fn(async () => payments[0] ?? null),
+      findMany: vi.fn(async () => payments),
+    },
+    bot: { findMany: vi.fn(async () => [{ id: "bot-1", name: "Shopper" }]) },
     user: { findUnique: vi.fn(async () => ({ timezone: "Europe/London" })) },
     vaultCredential: { findFirst: vi.fn(async () => (card ? { id: "card" } : null)) },
     paymentWallet: { findFirst: vi.fn(async () => null) },
@@ -53,7 +67,7 @@ function spendingDeps({ card = false } = {}) {
     dataDir: "/tmp/rakazo-router-test",
   } as unknown as RouterDeps;
   const handler = new RPCHandler(createRouter(deps));
-  async function call(path: "get" | "set", json: unknown = {}) {
+  async function call(path: "get" | "set" | "payments", json: unknown = {}) {
     const { response } = await handler.handle(
       new Request(`http://127.0.0.1/rpc/spendingLimit/${path}`, {
         method: "POST",
@@ -80,6 +94,27 @@ describe("spendingLimit routes", () => {
       spent: 0,
       shown: true,
     });
+  });
+
+  it("shows the setting once a bot has paid, and lists the user's payments", async () => {
+    const { call, prisma } = spendingDeps({
+      payments: [paid, { ...paid, id: "payment-2", botId: "gone" }],
+    });
+    expect((await call("get")).body.json).toMatchObject({ shown: true });
+    expect((await call("payments")).body.json).toEqual([
+      {
+        id: "payment-1",
+        site: "shop.example.test",
+        amount: 1_250,
+        currency: "usd",
+        botName: "Shopper",
+        createdAt: "2026-11-05T09:30:00.000Z",
+      },
+      expect.objectContaining({ id: "payment-2", botName: null }),
+    ]);
+    expect(prisma.payment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: "user-1", releasedAt: null } }),
+    );
   });
 
   it("sets, reads and removes the user's own limit", async () => {

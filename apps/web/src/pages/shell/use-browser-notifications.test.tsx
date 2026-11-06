@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { i18n } from "@lingui/core";
 import type { Bot, ChatAlert } from "@rakazo/contracts";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -29,8 +30,9 @@ let streams: Array<{ push: (frame: Frame) => void; fail: (error: unknown) => voi
 let signals: AbortSignal[];
 let focused: boolean;
 let visible: boolean;
-let openChat: ReturnType<typeof vi.fn<(alert: ChatAlert) => void>>;
+let openChat: ReturnType<typeof vi.fn<(chat: Pick<ChatAlert, "botId" | "groupId">) => void>>;
 let root: Root;
+let hook: ReturnType<typeof useBrowserNotifications>;
 
 function stream(): AsyncIterable<Frame> {
   const queue: Frame[] = [];
@@ -73,11 +75,12 @@ const rpc = {
 } as unknown as Pick<RpcClient, "notifications">;
 
 const noBots: Bot[] = [];
+const bots = [{ id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot];
 
 function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
-  useBrowserNotifications(
+  hook = useBrowserNotifications(
     noBots,
-    { current: noBots },
+    { current: bots },
     {
       rpc,
       activeBotId: { current: botId },
@@ -118,6 +121,8 @@ async function send(alert: Partial<ChatAlert>) {
 const shown = () => FakeNotification.shown.map((n) => [n.title, n.options.body, n.options.tag]);
 
 beforeEach(() => {
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("Notification", FakeNotification);
   FakeNotification.permission = "granted";
@@ -126,7 +131,7 @@ beforeEach(() => {
   signals = [];
   focused = true;
   visible = true;
-  openChat = vi.fn<(alert: ChatAlert) => void>();
+  openChat = vi.fn<(chat: Pick<ChatAlert, "botId" | "groupId">) => void>();
   vi.spyOn(document, "visibilityState", "get").mockImplementation(() =>
     visible ? "visible" : "hidden",
   );
@@ -216,6 +221,64 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(streams).toHaveLength(2);
     await send({});
     expect(shown()).toHaveLength(1);
+  });
+
+  it("opens the chat from its own finished-run notification", async () => {
+    const focus = vi.spyOn(window, "focus").mockImplementation(() => undefined);
+    visible = false;
+    await open({ groupId: "group-g" });
+    const event = {
+      id: "event-1",
+      type: "thread.message.created",
+      threadId: "thread-g",
+      seq: 5,
+      botId: "bot-b",
+      payload: { role: "bot", blocks: [{ type: "text", text: "The report is ready." }] },
+    } as const;
+    act(() => hook.notifyBrowserForEvent(event, "thread-g", 4, true, "Scout", true, "group-g"));
+    const [notification] = FakeNotification.shown;
+    expect(shown()).toEqual([["Scout", "The report is ready.", "thread-g"]]);
+    notification!.onclick!();
+    expect(focus).toHaveBeenCalled();
+    expect(openChat).toHaveBeenCalledWith({ botId: "bot-b", groupId: "group-g" });
+    expect(notification!.closed).toBe(true);
+  });
+
+  it("closes the open chat's notifications when the shell unmounts", async () => {
+    visible = false;
+    await open({ botId: "bot-b" });
+    const event = {
+      id: "event-1",
+      type: "run.failed",
+      threadId: "thread-b",
+      seq: 5,
+      botId: "bot-b",
+      payload: {},
+    } as const;
+    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", true, undefined));
+    act(() => root.unmount());
+    expect(FakeNotification.shown[0]!.closed).toBe(true);
+    root = createRoot(document.createElement("div"));
+  });
+
+  it("drops a notification held for permission when the shell unmounts first", async () => {
+    FakeNotification.permission = "default";
+    visible = false;
+    await open({ botId: "bot-b" });
+    const event = {
+      id: "event-1",
+      type: "run.failed",
+      threadId: "thread-b",
+      seq: 5,
+      botId: "bot-b",
+      payload: {},
+    } as const;
+    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", true, undefined));
+    act(() => root.unmount());
+    FakeNotification.permission = "granted";
+    hook.flushPendingBrowserNotifications();
+    expect(shown()).toEqual([]);
+    root = createRoot(document.createElement("div"));
   });
 
   it("closes the stream when the shell unmounts", async () => {

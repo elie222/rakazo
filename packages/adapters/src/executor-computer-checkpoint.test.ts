@@ -227,6 +227,7 @@ function fixture(runId = "run-1") {
   const choice = { modelId: "main-a" };
   const prisma = {
     $queryRaw: vi.fn(async () => []),
+    spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     usageRecord: {
       createMany: vi.fn(async (_input: { data: Array<{ model: string }> }) => ({ count: 1 })),
     },

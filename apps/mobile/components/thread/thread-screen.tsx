@@ -10,6 +10,7 @@ import {
   memberName,
   newClientId,
   newestPageCards,
+  otherAuthor,
   displayName as safeDisplayName,
   workingRoutineName,
 } from "@rakazo/core";
@@ -342,6 +343,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     messageId,
     readOnly,
     foreground,
+    focused,
     sessionEpoch,
     activeBotId,
     activeGroupId,
@@ -607,7 +609,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             replyTarget={replyTarget}
             replyAuthor={
               replyTarget?.role === "user"
-                ? (channelMessageSender(replyTarget.blocks) ?? t("You"))
+                ? (otherAuthor(replyTarget.author, userId)?.name ??
+                  channelMessageSender(replyTarget.blocks) ??
+                  t("You"))
                 : (memberName(snap?.members, replyTarget?.botId) ?? displayName ?? t("Bot"))
             }
             replyQuote={replyQuote}

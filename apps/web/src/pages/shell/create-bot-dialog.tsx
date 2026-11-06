@@ -131,7 +131,11 @@ export function CreateBotDialog({
             className="text-center"
           />
           {error ? (
-            <p role="alert" data-testid="create-bot-error" className="text-[13px] text-destructive">
+            <p
+              role="alert"
+              data-testid="create-bot-error"
+              className="text-body-sm text-destructive"
+            >
               {error}
             </p>
           ) : null}

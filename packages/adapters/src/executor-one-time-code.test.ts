@@ -62,7 +62,9 @@ function recordingPrisma(models: Record<string, Record<string, unknown>>, calls:
           return async (fn: (tx: unknown) => unknown) => fn(prisma);
         }
         if (model === "$queryRaw") return async () => [{ locked: 1 }];
-        const methods = models[model] ?? {};
+        const methods =
+          models[model] ??
+          (model === "spaceMember" ? { findUnique: () => ({ id: "member-1" }) } : {});
         return new Proxy(methods, {
           get: (target, method: string) => {
             const impl = (target[method] ?? fallback[method]) as

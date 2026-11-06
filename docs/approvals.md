@@ -66,6 +66,9 @@ is in another currency, is refused too. A wallet purchase that is denied, expire
 counting, and so does a press the page refused because it changed. A press that went through still
 counts if the shop later declines it.
 
+Below the limit, **Recent payments** lists the latest payments that count, with the site, the bot,
+when and how much, whether or not a limit is set.
+
 A page in another dollar or pound currency is counted as if it were in US dollars or pounds. That
 is more than it costs for nearly all of them; a Cayman Islands dollar is worth a little more than a US
 dollar, so a price in it counts a little less. A saved card pays whatever the shop charges, so the limit relies on
