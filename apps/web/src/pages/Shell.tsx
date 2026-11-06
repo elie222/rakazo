@@ -1306,7 +1306,11 @@ function SpaceShell() {
                 computerControls.holdComputerRecovery();
               }}
               onRecoveryDismissed={computerControls.releaseComputerRecovery}
-              onOpenComputerSettings={() => openSettings("computer")}
+              onOpenComputerSettings={
+                bootstrapMe?.computerSettingsEnabled === true
+                  ? () => openSettings("computer")
+                  : undefined
+              }
               onOpen={() => void openComputer()}
               cleaningUpDisk={cleaningUpDisk}
               onCleanUpDisk={() => {
