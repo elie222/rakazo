@@ -23,6 +23,8 @@ concurrency:
 jobs:
   extract:
     name: Extract catalogs
+    # A manual run from another branch would base the sync PR on unmerged work.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
