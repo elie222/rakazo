@@ -30,19 +30,21 @@ import { EgressNotEnforced } from "./egress-probe.js";
 
 export const BRIDGE_PREFIX = "rakazo-c";
 
-// The installer is the single source of truth for the blocked destinations:
-// its blocked_destinations_v4/v6 heredocs are parsed here instead of being
-// copied into TypeScript, so the two sides cannot drift. egress-attest.test.ts
-// still asserts the script's --print output against the parsed lists, which
-// guards the parser against a silent format change.
+// The installer is the single source of truth for the firewall policy: its
+// blocked_destinations_v4/v6 heredocs and egress_rules_v4/v6 printf lines are
+// parsed here instead of being copied into TypeScript, so the two sides cannot
+// drift. egress-attest.test.ts still asserts the script's --print output against
+// the parsed rules, which guards the parser against a silent format change.
+const INSTALLER_SCRIPT = path.resolve(
+  import.meta.dirname,
+  "../../../../infra/compose/restrict-computer-egress.sh",
+);
+const installerScript = readFileSync(INSTALLER_SCRIPT, "utf8");
+
 function installerDrops(family: "v4" | "v6"): string[] {
-  const script = readFileSync(
-    path.resolve(import.meta.dirname, "../../../../infra/compose/restrict-computer-egress.sh"),
-    "utf8",
-  );
   const match = new RegExp(
     `blocked_destinations_${family}\\(\\) \\{\\s*cat <<'EOF'\\n([\\s\\S]*?)\\nEOF`,
-  ).exec(script);
+  ).exec(installerScript);
   const block = match?.[1];
   if (!block) {
     throw new Error(`cannot parse blocked_destinations_${family} from restrict-computer-egress.sh`);
@@ -100,24 +102,65 @@ async function provideAttestImage(docker: Docker, context: string) {
   }
   await followProgress((abortSignal) =>
     docker.buildImage({ context, src: ["Dockerfile"] }, { t: image, version: "2", abortSignal }),
-  );
+  ).catch((error: unknown) => {
+    // Offline hosts cannot run this build; the message names the exact tag to
+    // preload (see docs/self-host-restricted-network.md).
+    throw new Error(
+      `cannot attest restricted egress: building ${image} failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
   await docker.getImage(image).inspect();
   return image;
 }
 
-/** Rules the iptables backend must hold, in chain order, per family. */
+/**
+ * The rules the iptables backend must hold, in chain order, per family —
+ * parsed from the installer's egress_rules_* printf lines, which list rules
+ * in the order the final chain must show them.
+ */
 function requiredRules(family: "v4" | "v6") {
   const drops = family === "v4" ? REQUIRED_V4_DROPS : REQUIRED_V6_DROPS;
-  return {
-    input: [
-      `in=${BRIDGE_PREFIX}+ out= ct=ESTABLISHED,RELATED jump=ACCEPT dest= extra=-m conntrack`,
-      `in=${BRIDGE_PREFIX}+ out= ct= jump=DROP dest= extra=`,
-    ],
-    user: [
-      `in=${BRIDGE_PREFIX}+ out=${BRIDGE_PREFIX}+ ct= jump=RETURN dest= extra=`,
-      ...drops.map((cidr) => `in=${BRIDGE_PREFIX}+ out= ct= jump=DROP dest=${cidr} extra=`),
-    ],
-  };
+  const body = new RegExp(`egress_rules_${family}\\(\\) \\{\\n([\\s\\S]*?)\\n\\}`).exec(
+    installerScript,
+  )?.[1];
+  const loopFormat = body
+    ?.match(
+      new RegExp(
+        `while[\\s\\S]*?printf '([^']+)' [\\s\\S]*?done < <\\(blocked_destinations_${family}\\)`,
+      ),
+    )
+    ?.at(1);
+  if (!body || !loopFormat) {
+    throw new Error(`cannot parse egress_rules_${family} from restrict-computer-egress.sh`);
+  }
+  // Static printf lines expand every %s to the bridge prefix; the drop loop's
+  // first %s is the prefix and the rest expand to one blocked destination each.
+  const lines = [
+    ...[
+      ...body
+        .split("while")
+        .at(0)!
+        .matchAll(/printf '([^']+)'[^\n]*/g),
+    ].map((match) => match[1]!.split("%s").join(BRIDGE_PREFIX)),
+    ...drops.map((cidr) => {
+      const parts = loopFormat.split("%s");
+      return parts[0]! + BRIDGE_PREFIX + parts.slice(1).join(cidr);
+    }),
+  ].map((line) => line.replace(/\\n$/, ""));
+  const normalized = lines.map((line) => {
+    const [chain, ...args] = line.split(" ");
+    return { chain: chain!, rule: normalizeRule(args.join(" ")) };
+  });
+  const input = normalized.filter((line) => line.chain === "INPUT").map((line) => line.rule);
+  const user = normalized.filter((line) => line.chain === "DOCKER-USER").map((line) => line.rule);
+  if (
+    input.length < 2 ||
+    user.length < drops.length + 1 ||
+    input.length + user.length !== lines.length
+  ) {
+    throw new Error(`cannot parse egress_rules_${family} from restrict-computer-egress.sh`);
+  }
+  return { input, user };
 }
 
 // Canonical form mirroring the script's normalize_rule: the kernel may print
@@ -255,14 +298,17 @@ export function verifyAttestation(output: string) {
     throw new Error("the attestation probe produced no output");
   }
   verifyIptablesFamily(sections, "v4", true);
-  if (sections.IFINET6 === undefined || sections.IFINET6.includes("ifinet6-unreadable")) {
+  // The attest script echoes each marker on its own, so match the whole
+  // section: a host interface named like a marker must not read as absent.
+  const ifinet6 = sections.IFINET6?.trim();
+  if (ifinet6 === undefined || ifinet6 === "ifinet6-unreadable") {
     throw new Error("could not read host IPv6 state");
   }
   // A missing /proc/net/if_inet6 means the kernel has IPv6 disabled, which the
   // install script's host_has_ipv6 reads the same way: no IPv6 rules to verify.
-  const ipv6Absent = sections.IFINET6.includes("ifinet6-absent");
+  const ipv6Absent = ifinet6 === "ifinet6-absent";
   // /proc/net/if_inet6 lists scope as the 4th column; 00 is global.
-  const ipv6Lines = ipv6Absent ? [] : sections.IFINET6.split("\n").filter((line) => line.trim());
+  const ipv6Lines = ipv6Absent ? [] : ifinet6.split("\n").filter((line) => line.trim());
   if (
     ipv6Lines.some(
       (line) =>

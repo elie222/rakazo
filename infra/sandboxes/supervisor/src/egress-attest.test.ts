@@ -115,10 +115,27 @@ describe("egress attestation", () => {
     // The kernel without IPv6 has no if_inet6 file at all; the install script
     // reads that as "no IPv6" and skips the v6 rules, so verification must too.
     const noV6 = managedIptables().replace(
-      "==RAKAZO-IFINET6==\n",
-      "==RAKAZO-IFINET6==\nifinet6-absent\n",
+      /==RAKAZO-IFINET6==\n.*/,
+      "==RAKAZO-IFINET6==\nifinet6-absent",
     );
     expect(() => verifyAttestation(noV6)).not.toThrow();
+  });
+
+  it("does not mistake an interface named like a marker for absent IPv6", () => {
+    // A host interface whose name contains the marker string must not read as
+    // "IPv6 disabled": here it carries a global address and the v6 rules are
+    // unreadable, so verification must fail rather than skip the family.
+    const fakeInterface = managedIptables()
+      .replace(
+        /==RAKAZO-V6USER==\n.*\n==RAKAZO-V6INPUT==/s,
+        "==RAKAZO-V6USER==\nip6tables-absent\n==RAKAZO-V6INPUT==",
+      )
+      .replace(
+        /==RAKAZO-IFINET6==\n.*/,
+        "==RAKAZO-IFINET6==\n20010db8000000000000000000000001 02 40 00 00 ifinet6-absent",
+      );
+    expect(() => verifyAttestation(fakeInterface)).toThrow(/could not read v6 iptables/);
+    expect(() => verifyAttestation(fakeInterface)).not.toThrow(EgressNotEnforced);
   });
 
   it("refuses unreadable or malformed host IPv6 state", () => {
