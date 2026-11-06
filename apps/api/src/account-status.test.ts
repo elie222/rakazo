@@ -12,7 +12,12 @@ vi.mock("@rakazo/db", async (original) => ({
       return 1;
     },
   ),
-  leaveInvitedSpaces: vi.fn(async () => [{ spaceId: "space-2" }]),
+  leaveInvitedSpaces: vi.fn(
+    async (_prisma: unknown, _userId: string, onDeparture: (d: { spaceId: string }) => unknown) => {
+      await onDeparture({ spaceId: "space-2" });
+      return [];
+    },
+  ),
 }));
 
 describe("ending a deactivated account's access", () => {
@@ -45,8 +50,8 @@ describe("ending a deactivated account's access", () => {
       "call pushes",
       "link codes",
       "screens",
-      "notify",
       "left space-2",
+      "notify",
     ]);
   });
 

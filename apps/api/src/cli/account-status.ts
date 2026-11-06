@@ -15,6 +15,7 @@ import {
   installSecurityEventStore,
   runAsSystem,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { setAccountActive } from "../account-status.js";
 import { loadEnv } from "../env.js";
 
@@ -69,7 +70,9 @@ try {
         // waiting follow-ups are picked up by lease expiry and the job reconciler.
         afterDeparture: async (_actor, departure) => {
           for (const { threadId, seq } of departure.events)
-            await events.notify(threadId, seq).catch(() => undefined);
+            await events.notify(threadId, seq).catch((error) => {
+              getLogger().error("space departure realtime notification", error);
+            });
         },
       },
       user.id,

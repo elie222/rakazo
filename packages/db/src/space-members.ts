@@ -360,6 +360,8 @@ export async function leaveSpace(prisma: PrismaClient, input: SpaceRef): Promise
 export async function leaveInvitedSpaces(
   prisma: PrismaClient,
   userId: string,
+  /** Runs after each departure commits, so a later failure loses no earlier follow-up. */
+  onDeparture: (departure: SpaceDeparture & { spaceId: string }) => Promise<void>,
 ): Promise<Array<SpaceDeparture & { spaceId: string }>> {
   const owned = new Set(await personalOrganizationIds(prisma, userId));
   const memberships = await prisma.spaceMember.findMany({
@@ -380,7 +382,9 @@ export async function leaveInvitedSpaces(
       if (error instanceof SpaceMemberNotFoundError) return null;
       throw error;
     });
-    if (departure) departures.push({ spaceId, ...departure });
+    if (!departure) continue;
+    departures.push({ spaceId, ...departure });
+    await onDeparture({ spaceId, ...departure });
   }
   return departures;
 }

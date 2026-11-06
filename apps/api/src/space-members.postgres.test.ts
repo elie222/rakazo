@@ -696,7 +696,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(personalOrganizationIds(prisma, invitee.id)).resolves.toEqual([
       invitee.organizationId,
     ]);
-    await expect(leaveInvitedSpaces(prisma, invitee.id)).resolves.toEqual([
+    await expect(leaveInvitedSpaces(prisma, invitee.id, async () => undefined)).resolves.toEqual([
       expect.objectContaining({ spaceId: home }),
     ]);
     await expect(system.bot.findUniqueOrThrow({ where: { id: bot.id } })).resolves.toMatchObject({
@@ -705,7 +705,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
 
     const other = await person("other");
     await call(other.actor, "spaces/invites/accept", { token: await invite(owner, home) });
-    await expect(leaveInvitedSpaces(prisma, owner.id)).resolves.toEqual([]);
+    await expect(leaveInvitedSpaces(prisma, owner.id, async () => undefined)).resolves.toEqual([]);
     const ownedOrganizationIds = await personalOrganizationIds(prisma, owner.id);
     expect(ownedOrganizationIds).toEqual([owner.organizationId]);
     await system.organization.deleteMany({ where: { id: { in: ownedOrganizationIds } } });
@@ -731,7 +731,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       data: { spaceId: home, userId: coOwner.id, name: "Planner", color: "test" },
     });
 
-    const departures = await leaveInvitedSpaces(prisma, coOwner.id);
+    const departures = await leaveInvitedSpaces(prisma, coOwner.id, async () => undefined);
 
     await expect(personalOrganizationIds(prisma, coOwner.id)).resolves.not.toContain(
       owner.organizationId,
@@ -1383,7 +1383,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     const before = await call(inSpace(leaver.actor, shared), "bots/create", { name: "Planner" });
     expect(before.status).toBe(200);
 
-    await leaveInvitedSpaces(prisma, leaver.id);
+    await leaveInvitedSpaces(prisma, leaver.id, async () => undefined);
     await expect(
       system.spaceMember.findUnique({
         where: { spaceId_userId: { spaceId: shared, userId: teammate.id } },

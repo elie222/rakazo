@@ -382,6 +382,27 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
       { userId: nora.id, spaceId, email: address, isDeploymentOwner: false },
       { name: "Scout", description: "", instructions: "", notifyOnFinish: false },
     );
+    const thread = await system.thread.findFirstOrThrow({ where: { botId: bot.id } });
+    // Nora's run is working in the shared chat, and the owner's next message waits behind it.
+    const shared = { spaceId, botId: bot.id, threadId: thread.id, userId: nora.id };
+    const task = await system.task.create({
+      data: { ...shared, prompt: "fixture", status: "running" },
+    });
+    const running = await system.run.create({
+      data: { ...shared, taskId: task.id, trigger: "user", status: "running" },
+    });
+    const waiting = await system.message.create({
+      data: {
+        threadId: thread.id,
+        seq: 1_000,
+        role: "user",
+        authorUserId: owner.id,
+        blocks: [{ kind: "text", text: "Also this" }],
+      },
+    });
+    await system.steeringMessage.create({
+      data: { messageId: waiting.id, botId: bot.id, userId: owner.id },
+    });
 
     const off = await scim("PATCH", `/Users/${resource.id}`, {
       schemas: [PATCH_SCHEMA],
@@ -397,6 +418,12 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     expect(await system.thread.findFirstOrThrow({ where: { botId: bot.id } })).toMatchObject({
       userId: owner.id,
     });
+    expect((await system.run.findUniqueOrThrow({ where: { id: running.id } })).status).toBe(
+      "cancelled",
+    );
+    expect(
+      await system.run.findFirstOrThrow({ where: { threadId: thread.id, status: "queued" } }),
+    ).toMatchObject({ userId: owner.id, sourceMessageId: waiting.id });
 
     // Turning them back on restores sign-in, not the membership: the owner invites them again.
     const on = await scim("PATCH", `/Users/${resource.id}`, {
