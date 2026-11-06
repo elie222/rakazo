@@ -62,6 +62,7 @@ export function modelsRoutes(ctx: RouterContext) {
     refreshExpiredCredential,
     chatCatalog,
     withDeploymentDefault,
+    withImageInput,
     modelRoleCatalog,
     validateRoleChoices,
     authed,
@@ -151,12 +152,16 @@ export function modelsRoutes(ctx: RouterContext) {
       role: authed.models.role.handler(async ({ context, input }) => {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
           throw new ORPCError("FORBIDDEN");
-        return withDeploymentDefault(
+        return withImageInput(
+          context.actor,
           input.role,
-          await getModelRole(
-            deps.prisma,
-            await modelRoleTarget(deps.prisma, context.actor, input.scope),
+          await withDeploymentDefault(
             input.role,
+            await getModelRole(
+              deps.prisma,
+              await modelRoleTarget(deps.prisma, context.actor, input.scope),
+              input.role,
+            ),
           ),
         );
       }),
@@ -168,13 +173,17 @@ export function modelsRoutes(ctx: RouterContext) {
           ...(primary ? [primary] : []),
           ...(backups ?? []),
         ]);
-        return withDeploymentDefault(
+        return withImageInput(
+          context.actor,
           role,
-          await updateModelRole(
-            deps.prisma,
-            { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
+          await withDeploymentDefault(
             role,
-            { primary, backups },
+            await updateModelRole(
+              deps.prisma,
+              { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
+              role,
+              { primary, backups },
+            ),
           ),
         );
       }),

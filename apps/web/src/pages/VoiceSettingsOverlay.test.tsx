@@ -998,7 +998,7 @@ it("connects a keyless provider without asking for a key", async () => {
     });
     expect(container.textContent).not.toContain("API key");
     const connect = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Connect",
+      (button) => button.textContent === "Turn on",
     );
     expect(connect?.disabled).toBe(false);
     await act(async () => connect!.click());

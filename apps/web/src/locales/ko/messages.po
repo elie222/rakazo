@@ -17,11 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (읽지 않음)"
 
-#. placeholder {0}: pinned.length
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
-msgstr ""
-
 #. placeholder {0}: servers.length
 #: src/pages/PluginsOverlay.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
@@ -61,11 +56,6 @@ msgstr ""
 #. placeholder {0}: server.health.toolCount
 #: src/pages/McpServersOverlay.tsx
 msgid "{0, plural, one {# tool} other {# tools}}"
-msgstr ""
-
-#. placeholder {0}: pinned.length
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
 msgstr ""
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
@@ -239,10 +229,6 @@ msgstr "{label}, 비어 있음"
 msgid "{minutes}m ago"
 msgstr "{minutes}분 전"
 
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "{name} (same name as a built-in skill)"
 msgstr ""
@@ -273,6 +259,14 @@ msgstr "{name} 옵션"
 #: src/lib/browser-notifications.ts
 msgid "{name} stopped"
 msgstr "{name} 중지됨"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{names} keep their own model"
+msgstr ""
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{names} keeps its own model"
+msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -1279,10 +1273,6 @@ msgstr "봇 이메일 주소"
 msgid "Bot is watching, not acting"
 msgstr "Bot은 화면만 보고 직접 조작하지 않습니다"
 
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Bot models"
-msgstr ""
-
 #: src/pages/shell/computer-overlay.tsx
 msgid "Bot screen"
 msgstr "Bot 화면"
@@ -1318,6 +1308,10 @@ msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
+msgstr ""
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Bots with their own model"
 msgstr ""
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -1366,6 +1360,10 @@ msgstr ""
 msgid "Calls"
 msgstr "호출"
 
+#: src/pages/settings-nav.ts
+msgid "Calls, dictation, and replies read aloud."
+msgstr ""
+
 #: src/components/pages/SharePopover.tsx
 msgid "Can view without signing in"
 msgstr "로그인 없이 볼 수 있음"
@@ -1394,7 +1392,6 @@ msgstr "이미지를 읽을 수 없음"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
@@ -1500,6 +1497,10 @@ msgstr "채팅 설정"
 msgid "Chat with your bot from Slack."
 msgstr "Slack에서 봇과 채팅하세요."
 
+#: src/pages/settings-nav.ts
+msgid "Chat with your bots from other apps."
+msgstr ""
+
 #: src/lib/localized-provider-hint.ts
 msgid "ChatGPT subscription"
 msgstr ""
@@ -1573,6 +1574,10 @@ msgstr "봇 모양과 색을 고르거나 이미지를 업로드하세요"
 #: src/pages/shell/composer-error.tsx
 msgid "Choose a model"
 msgstr "모델 선택"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Choose a model that can see the screen"
+msgstr ""
 
 #: src/pages/Auth.tsx
 msgid "Choose a new password"
@@ -1827,6 +1832,10 @@ msgstr "컴퓨터가 중지됨"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Computer-use model"
 msgstr "컴퓨터 사용 모델"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model…"
+msgstr ""
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4160,6 +4169,10 @@ msgstr ""
 
 #: src/components/vault/kinds.tsx
 msgid "Logins"
+msgstr ""
+
+#: src/pages/settings-nav.ts
+msgid "Logins and keys your bots can use."
 msgstr ""
 
 #: src/pages/shell/agent-import.tsx
@@ -6690,7 +6703,6 @@ msgid "Supports thinking"
 msgstr "사고 모드 지원"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "전환"
 
@@ -6797,6 +6809,10 @@ msgstr ""
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
 msgstr ""
 
+#: src/pages/settings-nav.ts
+msgid "The computer your bots work on."
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "연결 시간이 초과되었습니다."
@@ -6847,10 +6863,6 @@ msgstr "공유 링크가 더 이상 작동하지 않음"
 #: src/components/ModelCredits.tsx
 msgid "The unused difference is credited to your next invoice."
 msgstr "사용하지 않은 차액은 다음 청구서에 적립됩니다."
-
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Their own model is cleared. You can pick one again in each bot."
-msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "These files are too large to import."
@@ -7191,6 +7203,14 @@ msgstr "테스트를 다시 시도하세요."
 msgid "Tuesday"
 msgstr "화요일"
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Turn off"
+msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Turn on"
+msgstr ""
+
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Type"
@@ -7359,6 +7379,10 @@ msgstr ""
 msgid "Use letters, numbers, dots, dashes or underscores"
 msgstr "문자, 숫자, 점, 대시 또는 밑줄을 사용하세요"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Use main model"
+msgstr ""
+
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
 msgstr ""
@@ -7369,10 +7393,6 @@ msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
-msgstr ""
-
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Use space default"
 msgstr ""
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -7559,6 +7579,10 @@ msgstr "완료 후 전달할 결과"
 msgid "What to watch"
 msgstr "감시 대상"
 
+#: src/pages/settings-nav.ts
+msgid "What your bots remember between chats."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "When a webhook fires"
 msgstr "웹훅이 실행될 때"
@@ -7566,6 +7590,10 @@ msgstr "웹훅이 실행될 때"
 #: src/pages/RoutineEditor.tsx
 msgid "When an email arrives"
 msgstr "이메일이 도착하면"
+
+#: src/pages/settings-nav.ts
+msgid "When bots check with you before acting."
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
@@ -7588,6 +7616,14 @@ msgstr "언제 사용할지"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "Bot을 어디에서 실행할까요?"
+
+#: src/pages/settings-nav.ts
+msgid "Where your bots pay from."
+msgstr ""
+
+#: src/pages/settings-nav.ts
+msgid "Which LLMs your bots use."
+msgstr ""
 
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"

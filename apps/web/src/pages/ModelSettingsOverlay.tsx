@@ -4,6 +4,7 @@ import {
   compatibleConnectionName,
   connectionDisplayName,
   isOllamaCloudBaseUrl,
+  modelRoleChoiceKey,
   OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
@@ -24,19 +25,22 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DropdownMenuItem,
   ModelThinkingOptions,
   Spinner,
 } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ModelCredential } from "../lib/model-auth";
+import { useSpaceQueries } from "../lib/query";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
-import { ModelRoleSettings } from "./ModelRoleSettings";
+import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
 import { CompatibleModelFields } from "./model-settings/compatible-model-fields";
 import { CompatibleKeyControls, ConnectionControls } from "./model-settings/connection-controls";
 import { ConnectionNameField, ProvidersSection } from "./model-settings/providers-section";
 import type { ConnectableProvider } from "./model-settings/role-model-picker";
-import { SpaceBotsModelNotice } from "./model-settings/space-bots-model";
+import { SpaceBotsModelButton } from "./model-settings/space-bots-model";
 import { useModelSettings } from "./model-settings/use-model-settings";
 
 export function ModelSettingsOverlay({
@@ -131,6 +135,25 @@ export function ModelSettingsOverlay({
       credentialByProvider.get(id)?.baseUrl,
       groups.find((group) => group.id === id)?.name ?? id,
     );
+  // The approval model only judges actions in Auto, so it shows only then. A Space may
+  // inherit Approvals from the account, so its page asks for whichever copy applies there.
+  const queries = useSpaceQueries();
+  const approvalMode = useQuery(
+    queries.autoReview.get.queryOptions({ input: scope === "account" ? { scope } : {} }),
+  ).data?.mode;
+  // Screen work runs on the main model unless it cannot read images, so the computer-use
+  // list shows only then, once one is chosen, or when asked for from the main model's menu.
+  const [computerOpened, setComputerOpened] = useState(false);
+  const mainRole = useModelRole(me, scope, "main");
+  const computerRole = useModelRole(me, scope, "computer");
+  const mainChoice = mainRole?.primary ?? mainRole?.deploymentPrimary ?? null;
+  // The server answers as runs do. A model it could not check may not see, so the list shows.
+  const mainSeesImages = !mainChoice || mainRole?.seesImages === true;
+  const showComputer =
+    computerOpened ||
+    !mainSeesImages ||
+    Boolean(computerRole?.primary || computerRole?.backups.length);
+
   // The Ollama Cloud preset shares the compatible provider id with a saved local server.
   const connected = Boolean(
     credential &&
@@ -306,44 +329,64 @@ export function ModelSettingsOverlay({
             panel={connectionAt === "main" ? panelFor(true) : null}
             thinking
             onChanged={() => void refresh()}
+            headerAction={
+              // Waits for the main role so its first key is what was already saved.
+              mainRole && !me.needsModel ? (
+                <SpaceBotsModelButton
+                  mainModelKey={`${me.spaceId}:${
+                    mainChoice
+                      ? modelRoleChoiceKey(mainChoice)
+                      : `${me.defaultProvider ?? ""}:${me.defaultModel ?? ""}`
+                  }`}
+                />
+              ) : null
+            }
+            primaryMenuItems={
+              showComputer ? null : (
+                <DropdownMenuItem onClick={() => setComputerOpened(true)}>
+                  <Trans>Computer-use model…</Trans>
+                </DropdownMenuItem>
+              )
+            }
           />
-          {me.needsModel ? null : (
-            <SpaceBotsModelNotice
-              refreshKey={`${me.spaceId}:${me.defaultProvider ?? ""}:${me.defaultModel ?? ""}`}
+          {approvalMode === "auto" ? (
+            <ModelRoleSettings
+              userId={me.userId}
+              spaceId={me.spaceId}
+              scope={scope}
+              credentials={credentials}
+              modelRole="approval"
+              title={t`Approval model`}
+              defaultLabel={t`Choose a model`}
+              providers={providers}
+              providerLabel={providerLabel}
+              onConnect={(next, intent) => openConnection(next, intent, null, "approval")}
+              onManage={(id, credentialId) =>
+                openConnection({ id, name: id }, null, credentialId, "approval")
+              }
+              panel={connectionAt === "approval" ? panelFor(true) : null}
             />
-          )}
-          <ModelRoleSettings
-            userId={me.userId}
-            spaceId={me.spaceId}
-            scope={scope}
-            credentials={credentials}
-            modelRole="approval"
-            title={t`Approval model`}
-            defaultLabel={t`Choose a model`}
-            providers={providers}
-            providerLabel={providerLabel}
-            onConnect={(next, intent) => openConnection(next, intent, null, "approval")}
-            onManage={(id, credentialId) =>
-              openConnection({ id, name: id }, null, credentialId, "approval")
-            }
-            panel={connectionAt === "approval" ? panelFor(true) : null}
-          />
-          <ModelRoleSettings
-            userId={me.userId}
-            spaceId={me.spaceId}
-            scope={scope}
-            credentials={credentials}
-            modelRole="computer"
-            title={t`Computer-use model`}
-            defaultLabel={t`Same as main model`}
-            providers={providers}
-            providerLabel={providerLabel}
-            onConnect={(next, intent) => openConnection(next, intent, null, "computer")}
-            onManage={(id, credentialId) =>
-              openConnection({ id, name: id }, null, credentialId, "computer")
-            }
-            panel={connectionAt === "computer" ? panelFor(true) : null}
-          />
+          ) : null}
+          {showComputer ? (
+            <ModelRoleSettings
+              userId={me.userId}
+              spaceId={me.spaceId}
+              scope={scope}
+              credentials={credentials}
+              modelRole="computer"
+              title={t`Computer-use model`}
+              defaultLabel={
+                mainSeesImages ? t`Same as main model` : t`Choose a model that can see the screen`
+              }
+              providers={providers}
+              providerLabel={providerLabel}
+              onConnect={(next, intent) => openConnection(next, intent, null, "computer")}
+              onManage={(id, credentialId) =>
+                openConnection({ id, name: id }, null, credentialId, "computer")
+              }
+              panel={connectionAt === "computer" ? panelFor(true) : null}
+            />
+          ) : null}
           {scope === "space" ? null : (
             <ProvidersSection
               credentials={credentials}

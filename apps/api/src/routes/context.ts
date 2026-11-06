@@ -210,6 +210,50 @@ export function createRouterContext(deps: RouterDeps) {
         : { env: process.env };
     return { ...settings, deploymentPrimary: deploymentModelRole(role, defaults).primary };
   };
+  /**
+   * The main role also says whether its model reads images where runs use it, so settings
+   * offer a computer-use model when screen work needs one. Left out when it cannot be told.
+   */
+  const withImageInput = async (
+    actor: Actor,
+    role: ModelRole,
+    view: ModelRoleView,
+  ): Promise<ModelRoleView> => {
+    const choice = role === "main" ? (view.primary ?? view.deploymentPrimary) : null;
+    if (!choice) return view;
+    try {
+      const [credential, catalog] = await Promise.all([
+        // The deployment's model runs on the deployment's key, never a member's connection.
+        view.primary
+          ? findConnectedModelCredential(
+              deps.prisma,
+              deps.secrets,
+              actor,
+              choice.provider,
+              choice.modelId,
+              { credentialId: choice.credentialId },
+            )
+          : null,
+        // Only an account-listed model needs the live catalog; the rest are known offline.
+        canonicalPiProviderId(choice.provider) === CHATGPT_OAUTH_PROVIDER ? chatCatalog(actor) : [],
+      ]);
+      const entry = catalog.find(
+        (entry) =>
+          entry.provider === canonicalPiProviderId(choice.provider) && entry.id === choice.modelId,
+      );
+      const seesImages = await connectedModelSeesImages(
+        { prisma: deps.prisma, secretStore: deps.secrets },
+        actor.userId,
+        choice.provider,
+        choice.modelId,
+        credential,
+        entry?.images,
+      );
+      return { ...view, seesImages };
+    } catch {
+      return view;
+    }
+  };
   const modelRoleCatalog = async (actor: Actor, role: ModelRole): Promise<ModelCatalogEntry[]> => {
     const catalog = await chatCatalog(actor);
     const decisions = role === "approval" ? decisionModelCatalog() : [];
@@ -424,6 +468,7 @@ export function createRouterContext(deps: RouterDeps) {
     agentImportServices,
     chatCatalog,
     withDeploymentDefault,
+    withImageInput,
     modelRoleCatalog,
     validateRoleChoices,
     groupRepos,

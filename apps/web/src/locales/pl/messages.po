@@ -17,11 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (nieprzeczytane)"
 
-#. placeholder {0}: pinned.length
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
-msgstr "{0, plural, one {# bot ma własny model:} few {# boty mają własny model:} many {# botów ma własny model:} other {# bota ma własny model:}}"
-
 #. placeholder {0}: servers.length
 #: src/pages/PluginsOverlay.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
@@ -62,11 +57,6 @@ msgstr "{0, plural, one {# przestrzeń} few {# przestrzenie} many {# przestrzeni
 #: src/pages/McpServersOverlay.tsx
 msgid "{0, plural, one {# tool} other {# tools}}"
 msgstr "{0, plural, one {# narzędzie} few {# narzędzia} many {# narzędzi} other {# narzędzia}}"
-
-#. placeholder {0}: pinned.length
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
-msgstr "{0, plural, one {Przełączyć # bota na domyślny model przestrzeni?} few {Przełączyć # boty na domyślny model przestrzeni?} many {Przełączyć # botów na domyślny model przestrzeni?} other {Przełączyć # bota na domyślny model przestrzeni?}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/model-settings/connection-controls.tsx
@@ -239,10 +229,6 @@ msgstr "{label}, puste"
 msgid "{minutes}m ago"
 msgstr "{minutes} min temu"
 
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
-msgstr "{moved, plural, one {# bot używa teraz domyślnego modelu przestrzeni.} few {# boty używają teraz domyślnego modelu przestrzeni.} many {# botów używa teraz domyślnego modelu przestrzeni.} other {# bota używa teraz domyślnego modelu przestrzeni.}}"
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "{name} (same name as a built-in skill)"
 msgstr "{name} (ta sama nazwa co wbudowana umiejętność)"
@@ -273,6 +259,14 @@ msgstr "Opcje {name}"
 #: src/lib/browser-notifications.ts
 msgid "{name} stopped"
 msgstr "{name}: zatrzymano"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{names} keep their own model"
+msgstr "{names} zachowują własny model"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{names} keeps its own model"
+msgstr "{names} zachowuje własny model"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -1279,10 +1273,6 @@ msgstr "Adresy e-mail botów"
 msgid "Bot is watching, not acting"
 msgstr "Bot obserwuje, bez wykonywania działań"
 
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Bot models"
-msgstr "Modele botów"
-
 #: src/pages/shell/computer-overlay.tsx
 msgid "Bot screen"
 msgstr "Ekran bota"
@@ -1319,6 +1309,10 @@ msgstr "Boty korzystają z kont osoby, która do nich pisze"
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
 msgstr "Boty z własnym komputerem i przeglądarką"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Bots with their own model"
+msgstr "Boty z własnym modelem"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Brain label"
@@ -1366,6 +1360,10 @@ msgstr "Dzwonienie…"
 msgid "Calls"
 msgstr "Połączenia"
 
+#: src/pages/settings-nav.ts
+msgid "Calls, dictation, and replies read aloud."
+msgstr "Rozmowy, dyktowanie i odpowiedzi czytane na głos."
+
 #: src/components/pages/SharePopover.tsx
 msgid "Can view without signing in"
 msgstr "Można przeglądać bez logowania"
@@ -1394,7 +1392,6 @@ msgstr "Nie odczytuje obrazów"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
@@ -1500,6 +1497,10 @@ msgstr "Ustawienia czatu"
 msgid "Chat with your bot from Slack."
 msgstr "Rozmawiaj z botem przez Slack."
 
+#: src/pages/settings-nav.ts
+msgid "Chat with your bots from other apps."
+msgstr "Rozmawiaj z botami w innych aplikacjach."
+
 #: src/lib/localized-provider-hint.ts
 msgid "ChatGPT subscription"
 msgstr "Subskrypcja ChatGPT"
@@ -1573,6 +1574,10 @@ msgstr "Wybierz kształt i kolor bota lub prześlij obraz"
 #: src/pages/shell/composer-error.tsx
 msgid "Choose a model"
 msgstr "Wybierz model"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Choose a model that can see the screen"
+msgstr "Wybierz model, który widzi ekran"
 
 #: src/pages/Auth.tsx
 msgid "Choose a new password"
@@ -1827,6 +1832,10 @@ msgstr "Komputer jest zatrzymany"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Computer-use model"
 msgstr "Model do obsługi komputera"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model…"
+msgstr "Model do obsługi komputera…"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4161,6 +4170,10 @@ msgstr "Login"
 #: src/components/vault/kinds.tsx
 msgid "Logins"
 msgstr "Loginy"
+
+#: src/pages/settings-nav.ts
+msgid "Logins and keys your bots can use."
+msgstr "Loginy i klucze, z których mogą korzystać boty."
 
 #: src/pages/shell/agent-import.tsx
 msgid "Looks like it contains a key"
@@ -6690,7 +6703,6 @@ msgid "Supports thinking"
 msgstr "Obsługuje rozumowanie"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "Przełącz"
 
@@ -6797,6 +6809,10 @@ msgstr "Przeglądarka bota pozostaje zalogowana dla wszystkich w tej przestrzeni
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
 msgstr "Przeglądarka ciągle traci dostęp do mikrofonu. Uruchom dyktowanie ponownie."
 
+#: src/pages/settings-nav.ts
+msgid "The computer your bots work on."
+msgstr "Komputer, na którym pracują boty."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "Upłynął czas połączenia."
@@ -6847,10 +6863,6 @@ msgstr "Link udostępniania przestanie działać"
 #: src/components/ModelCredits.tsx
 msgid "The unused difference is credited to your next invoice."
 msgstr "Niewykorzystana różnica pomniejszy kolejną fakturę."
-
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Their own model is cleared. You can pick one again in each bot."
-msgstr "Własne modele zostaną wyczyszczone. Możesz wybrać je ponownie w ustawieniach poszczególnych botów."
 
 #: src/pages/shell/agent-import.tsx
 msgid "These files are too large to import."
@@ -7191,6 +7203,14 @@ msgstr "Ponów test."
 msgid "Tuesday"
 msgstr "wtorek"
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Turn off"
+msgstr "Wyłącz"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Turn on"
+msgstr "Włącz"
+
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Type"
@@ -7359,6 +7379,10 @@ msgstr "Użyj w tym bocie"
 msgid "Use letters, numbers, dots, dashes or underscores"
 msgstr "Użyj liter, cyfr, kropek, myślników lub podkreśleń"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Use main model"
+msgstr "Użyj modelu głównego"
+
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
 msgstr "Użyj mojej subskrypcji lub klucza API"
@@ -7370,10 +7394,6 @@ msgstr "Do haseł używaj opcji Chronione wprowadzanie."
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
 msgstr "Użyj środków Rakazo"
-
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Use space default"
-msgstr "Użyj domyślnych przestrzeni"
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Use up to 512 letters, digits, _ or -."
@@ -7559,6 +7579,10 @@ msgstr "Co zwrócić"
 msgid "What to watch"
 msgstr "Co obserwować"
 
+#: src/pages/settings-nav.ts
+msgid "What your bots remember between chats."
+msgstr "Co boty pamiętają między czatami."
+
 #: src/pages/RoutineEditor.tsx
 msgid "When a webhook fires"
 msgstr "Gdy zadziała webhook"
@@ -7566,6 +7590,10 @@ msgstr "Gdy zadziała webhook"
 #: src/pages/RoutineEditor.tsx
 msgid "When an email arrives"
 msgstr "Gdy przyjdzie e-mail"
+
+#: src/pages/settings-nav.ts
+msgid "When bots check with you before acting."
+msgstr "Kiedy boty pytają cię przed działaniem."
 
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
@@ -7588,6 +7616,14 @@ msgstr "Kiedy używać"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "Gdzie mają działać boty?"
+
+#: src/pages/settings-nav.ts
+msgid "Where your bots pay from."
+msgstr "Skąd boty płacą."
+
+#: src/pages/settings-nav.ts
+msgid "Which LLMs your bots use."
+msgstr "Których LLM używają boty."
 
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
