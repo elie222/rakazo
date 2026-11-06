@@ -220,6 +220,26 @@ describe("saving a page shared by link", () => {
     }
   });
 
+  it("shows only the changed part of a long line", async () => {
+    const row = `const rows = [${Array.from({ length: 300 }, (_, index) => `"r${index}"`).join(", ")}];`;
+    const withRow = source("Plan").replace("const App", `${row}\nconst App`);
+    const ctx = context({}, { currentVersion: 1, visibility: "link" });
+    (
+      ctx as { deps: { prisma: { page: { findFirst: () => Promise<unknown> } } } }
+    ).deps.prisma.page.findFirst = async () => ({
+      title: "Plan",
+      visibility: "link",
+      currentVersion: 1,
+      versions: [{ source: withRow }],
+    });
+    const held = request({ pageId: "page-1", edits: [{ find: '"r150"', replace: '"changed"' }] });
+    expect(await holdSharedPageSave(ctx, held as never)).toBeUndefined();
+    const [removed, added] = held.fleetSummary!.lines;
+    expect(removed).toMatch(/^- ….*"r150".*…$/);
+    expect(added).toMatch(/^\+ ….*"changed".*…$/);
+    expect(removed!.length).toBeLessThan(120);
+  });
+
   it("refuses a change too long to show on the card", async () => {
     const long = Array.from({ length: 400 }, (_, index) => `<Text>Row ${index}</Text>`).join("\n");
     const held = request({ pageId: "page-1", edits: [{ find: "<Text>Hi</Text>", replace: long }] });

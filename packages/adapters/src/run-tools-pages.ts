@@ -81,7 +81,13 @@ function proposedSource(
   return typeof edits === "string" ? { ok: false, error: edits } : applyPageEdits(current, edits);
 }
 
-/** The lines that change, with the lines both versions share at the start and end left out. */
+/** Text kept on each side of a change inside a line, so the card shows where it is. */
+const CHANGE_CONTEXT = 40;
+
+/**
+ * What changes, without what both versions share: whole lines at the start and end, then
+ * characters inside the changed lines, keeping a little context around the change.
+ */
 function changedLines(before: string, after: string): string[] {
   const old = before.split("\n");
   const next = after.split("\n");
@@ -94,9 +100,30 @@ function changedLines(before: string, after: string): string[] {
     old[old.length - 1 - end] === next[next.length - 1 - end]
   )
     end++;
+  const removed = old.slice(start, old.length - end).join("\n");
+  const added = next.slice(start, next.length - end).join("\n");
+  let head = 0;
+  while (head < removed.length && head < added.length && removed[head] === added[head]) head++;
+  let tail = 0;
+  while (
+    tail < removed.length - head &&
+    tail < added.length - head &&
+    removed[removed.length - 1 - tail] === added[added.length - 1 - tail]
+  )
+    tail++;
+  const cut = Math.max(0, head - CHANGE_CONTEXT);
+  const keep = Math.max(0, tail - CHANGE_CONTEXT);
+  const shorten = (text: string) =>
+    `${cut ? "…" : ""}${text.slice(cut, text.length - keep)}${keep ? "…" : ""}`;
+  const block = (lineCount: number, text: string, sign: string) =>
+    lineCount
+      ? shorten(text)
+          .split("\n")
+          .map((line) => `${sign} ${line}`)
+      : [];
   return [
-    ...old.slice(start, old.length - end).map((line) => `- ${line}`),
-    ...next.slice(start, next.length - end).map((line) => `+ ${line}`),
+    ...block(old.length - end - start, removed, "-"),
+    ...block(next.length - end - start, added, "+"),
   ];
 }
 
