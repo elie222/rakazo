@@ -1,4 +1,5 @@
 export const RU_MESSAGES: Record<string, string> = {
+  Haptics: "Тактильный отклик",
   "Add rule": "Добавить правило",
   "Tool name": "Название инструмента",
   Address: "Адрес",
@@ -356,6 +357,14 @@ export const RU_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Всегда разрешать этот инструмент",
   "Always allow {site}": "Всегда разрешать {site}",
   "Replaces the login saved for {site}": "Заменяет сохранённый вход для {site}",
+  "Cancel open invites": "Отменить открытые приглашения",
+  "Could not cancel invites": "Не удалось отменить приглашения",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "Все в пространстве этого бота могут читать чаты, которые он получает из {app}.",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "Сайты, на которых вы входите, остаются в аккаунте для всех в этом пространстве",
+  "The bot's browser stays signed in for everyone in this space":
+    "Браузер бота остаётся в аккаунте для всех в этом пространстве",
   "Always allowed": "Всегда разрешено",
   "Android blocked notifications.": "Android заблокировал уведомления.",
   Answer: "Ответить",
@@ -1090,10 +1099,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "The server had a problem": "На сервере произошла ошибка",
   "Could not load MCP servers": "Не удалось загрузить серверы MCP",
   Disabled: "Отключено",
-  "OAuth connected": "OAuth подключён",
-  "OAuth expired": "Срок действия OAuth истёк",
+  "Needs sign-in": "Нужен вход",
+  "Not connected": "Не подключено",
+  "Not working": "Не работает",
   "Needs an OAuth client ID": "Нужен идентификатор клиента OAuth",
-  "Credential saved": "Учётные данные сохранены",
   Authentication: "Способ аутентификации",
   "No auth": "Без авторизации",
   "The bot couldn't reply because its provider's daily limit was reached.":
@@ -1222,6 +1231,13 @@ export const RU_MESSAGES: Record<string, string> = {
   "{count} need attention": "Требуют внимания: {count}",
   "{label}, above": "{label}, выше",
   "{label}, below": "{label}, ниже",
+  Invite: "Пригласить",
+  "Leave space": "Покинуть пространство",
+  "Leave {name}?": "Покинуть {name}?",
+  "Could not load members": "Не удалось загрузить участников",
+  "Could not create invite link": "Не удалось создать ссылку-приглашение",
+  "Could not remove member": "Не удалось удалить участника",
+  "Could not leave space": "Не удалось покинуть пространство",
   Work: "Работа",
   Both: "И то, и другое",
   "How will you use Rakazo?": "Как вы будете использовать Rakazo?",
@@ -1296,7 +1312,6 @@ export const RU_MESSAGES: Record<string, string> = {
   // Native remote MCP authentication controls.
   "API key header name": "Имя заголовка API-ключа",
   Bearer: "Bearer",
-  "Connect OAuth": "Подключить через OAuth",
   "Could not start MCP OAuth": "Не удалось запустить OAuth для MCP",
   OAuth: "OAuth",
   "Always open {site}": "Всегда открывать {site}",
@@ -1451,6 +1466,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "On the button": "На кнопке",
   "Read from the page, not checked": "Прочитано со страницы, не проверено",
   Total: "Итого",
+  "{name} options": "Опции: {name}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

@@ -196,6 +196,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     replaces: z.object({ id: z.string().max(64), origin: z.string().max(2048) }).optional(),
     /** The fields a login card asks for, by label; absent means DEFAULT_LOGIN_FIELD_LABELS. */
     loginFields: LoginFieldLabels.optional(),
+    /** On a login card in a shared Space: the site stays signed in for everyone in it. */
+    sharedBrowser: z.literal(true).optional(),
     /** On a fetch approval, the site an "always" answer allows. */
     site: z.string().optional(),
     status: z.enum(["pending", "answered"]).optional(),
@@ -520,11 +522,16 @@ export const ProductEventSchema = z
   });
 export type ProductEvent = z.infer<typeof ProductEventSchema>;
 
+/** The person who wrote a user message, when known. */
+export const MessageAuthorSchema = z.object({ id: Id, name: z.string() });
+export type MessageAuthor = z.infer<typeof MessageAuthorSchema>;
+
 export const ReplyPreviewSchema = z.object({
   role: MessageRole,
   /** The parent is a page card. */
   page: z.literal(true).optional(),
   botId: Id.optional(),
+  author: MessageAuthorSchema.optional(),
   text: z.string(),
   attachment: z
     .object({
@@ -544,6 +551,7 @@ export const ThreadMessageSchema = z.object({
   role: MessageRole,
   blocks: z.array(MessageBlock),
   botId: Id.optional(),
+  author: MessageAuthorSchema.optional(),
   replyToMessageId: Id.optional(),
   replyQuote: z.string().optional(),
   replyPreview: ReplyPreviewSchema.nullable().optional(),

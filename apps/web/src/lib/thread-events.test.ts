@@ -1837,6 +1837,21 @@ describe("computer event reduction", () => {
     expect(userHoldsComputerControl(granted, "bot-2")).toBe(false);
   });
 
+  it("leaves another person's control to them until it is released", () => {
+    const watching = computer({
+      state: "running",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      controlledByOther: true,
+    });
+    expect(userHoldsComputerControl(watching, "bot-1")).toBe(false);
+    const released = reduceComputerStatus(
+      watching,
+      event({ type: "computer.takeover.released", payload: { holder: "none" } }),
+    );
+    expect(released?.controlledByOther).toBeUndefined();
+  });
+
   it("treats a busy bot name as a blocked takeover", () => {
     expect(computerTakeoverBlocked(computer({ busyBotName: "Writer" }), "running")).toBe(true);
     expect(computerTakeoverBlocked(computer({ busyBotName: "Writer" }))).toBe(false);

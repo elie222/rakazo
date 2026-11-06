@@ -9,6 +9,12 @@ import type { MobileMessage } from "./api";
 import { messageRowLayout } from "./message-row-layout";
 import { answerThreadMessage } from "./thread-answer";
 
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
+
 type SheetProps = {
   destination: string;
   pending: boolean;
@@ -323,6 +329,7 @@ it("closes the current sheet and keeps the card saved when refresh fails", async
         readOnly: false,
         rpc,
         isCurrentTarget: () => true,
+        isFocused: () => true,
         refresh,
         markRead: vi.fn(),
       },

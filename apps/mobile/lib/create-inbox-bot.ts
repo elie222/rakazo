@@ -1,6 +1,7 @@
 import type { Href } from "expo-router";
 import { captureApiRequestContext, rpc, selectedSpaceId, spaceSelectionSeq } from "./api";
 import { allowFocusPrompt, scheduleFocusPrompt } from "./focus-prompt";
+import { hapticSuccess } from "./haptics";
 import { askToAddModel } from "./model-settings";
 import { addToSearchInbox, isSearchInboxSession, searchInboxSession } from "./search-inbox";
 
@@ -49,6 +50,7 @@ export async function createInboxBot({
     options,
   );
   if (!isSearchInboxSession(askedIn)) return;
+  hapticSuccess();
   void refreshBots().catch(() => undefined);
   allowFocusPrompt(bot.id);
   addToSearchInbox({ kind: "bot", bot }, askedIn);

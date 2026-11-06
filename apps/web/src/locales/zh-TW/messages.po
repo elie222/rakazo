@@ -223,6 +223,10 @@ msgstr "{hiddenSelectedCount, plural, other {搜尋結果未顯示 # 個已選�
 msgid "{hours}h ago"
 msgstr "{hours} 小時前"
 
+#: src/pages/Invite.tsx
+msgid "{inviterName} invited you"
+msgstr ""
+
 #: src/components/markdown-copy.tsx
 msgid "{label}, empty"
 msgstr "{label}，空白"
@@ -529,6 +533,10 @@ msgstr "{name} 的帳號選單"
 msgid "Actions for {0}"
 msgstr "{0} 的操作"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Actions for {name}"
+msgstr ""
+
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Actions for space"
 msgstr "空間操作"
@@ -810,10 +818,6 @@ msgstr "金額"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "此供應商儲存的是 API 金鑰，不是訂閱登入。"
 
-#: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "An existing Honcho peer to read from. Rakazo never writes to it."
-msgstr "用於讀取資料的現有 Honcho peer。Rakazo 絕不會向其寫入資料。"
-
 #: src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "無法檢查匯入的 API 金鑰。請再試一次。"
@@ -947,7 +951,6 @@ msgid "Approving…"
 msgstr "正在核准…"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
 msgid "Apps"
 msgstr "應用程式"
 
@@ -1064,6 +1067,7 @@ msgstr "頭像工作室"
 #: src/components/vault/VaultPageHeader.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -1184,13 +1188,13 @@ msgstr "機器人的模型"
 msgid "Both"
 msgstr "兩者都有"
 
-#: src/pages/Artifacts.tsx
-msgid "Bots"
-msgstr "機器人"
-
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
 msgstr "機器人與瀏覽器自動化"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Bots use the accounts of whoever messages them"
+msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
@@ -1261,6 +1265,7 @@ msgstr "無法讀取影像"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -1288,6 +1293,10 @@ msgstr "取消新增機器人"
 #: src/pages/GroupPanel.tsx
 msgid "Cancel new group"
 msgstr "取消新增群組"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Cancel open invites"
+msgstr ""
 
 #: src/pages/shell/chat-context.tsx
 msgid "Cancel reply"
@@ -1500,6 +1509,10 @@ msgstr "清空對話"
 #: src/pages/ActivityList.tsx
 msgid "Clear filter {label}"
 msgstr "清除篩選條件 {label}"
+
+#: src/pages/Artifacts.tsx
+msgid "Clear filters"
+msgstr "清除篩選"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clearing…"
@@ -1908,6 +1921,10 @@ msgstr "複製程式碼"
 msgid "Copy diagram source"
 msgstr "複製圖表原始碼"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Copy invite link"
+msgstr ""
+
 #: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
@@ -1953,6 +1970,10 @@ msgstr "無法核准此伺服器"
 #: src/pages/shell/message-cards.tsx
 msgid "Could not authorize this app"
 msgstr "無法授權此應用程式"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not cancel invites"
+msgstr ""
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Could not change"
@@ -2039,6 +2060,10 @@ msgstr "無法建立機器人"
 #: src/pages/GroupPanel.tsx
 msgid "Could not create group"
 msgstr "無法建立群組"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not create invite link"
+msgstr ""
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
@@ -2137,6 +2162,10 @@ msgstr "無法安裝連接器"
 msgid "Could not install plugin"
 msgstr "無法安裝外掛"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not leave space"
+msgstr ""
+
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
 #: src/lib/user-devices.ts
@@ -2180,6 +2209,10 @@ msgstr "無法載入整合"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load MCP servers"
 msgstr "無法載入 MCP 伺服器"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not load members"
+msgstr ""
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
@@ -2270,6 +2303,10 @@ msgstr "無法移除"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not remove connector"
 msgstr "無法移除連接器"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not remove member"
+msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not remove plugin"
@@ -2578,10 +2615,6 @@ msgstr "正在建立…"
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential"
 msgstr "憑證"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Credential saved"
-msgstr "憑證已儲存"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
@@ -3151,6 +3184,14 @@ msgstr "每月"
 msgid "Every week"
 msgstr "每週"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "Everyone here sees its chats, bots and memory"
+msgstr ""
+
+#: src/pages/MessagingSettingsPanel.tsx
+msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
 msgstr "Executor 權杖"
@@ -3265,9 +3306,17 @@ msgstr "電腦上的檔案或資料夾"
 msgid "Files or folders, one per line"
 msgstr "檔案或資料夾，每行一個"
 
+#: src/pages/Artifacts.tsx
+msgid "Files your bots create, like reports, docs and images, collect here."
+msgstr "你的機器人建立的檔案，例如報告、文件和圖片，都會匯集在這裡。"
+
 #: src/pages/GroupPanel.tsx
 msgid "Filter bots"
 msgstr "篩選機器人"
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by bot"
+msgstr "依機器人篩選"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -3277,7 +3326,6 @@ msgstr "依日期篩選"
 msgid "Filter by who made it"
 msgstr "依建立者篩選"
 
-#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "篩選器"
@@ -3709,6 +3757,10 @@ msgstr "間隔單位"
 msgid "Invalid code"
 msgstr "驗證碼無效"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite"
+msgstr ""
+
 #: src/pages/shell/chat-header.tsx
 msgid "Invite a friend"
 msgstr "邀請朋友"
@@ -3718,8 +3770,13 @@ msgid "Invite friends"
 msgstr "邀請朋友"
 
 #: src/components/InviteDialog.tsx
+#: src/components/SpaceMembersSettings.tsx
 msgid "Invite link"
 msgstr "邀請連結"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite link copied"
+msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3745,6 +3802,14 @@ msgstr "它的對話、檔案和例行任務將被永久刪除。它建立的機
 #: src/components/pages/PagesList.tsx
 msgid "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
 msgstr "其共用連結將失效，聊天中的卡片會顯示為已刪除。此操作無法復原。"
+
+#: src/pages/Invite.tsx
+msgid "Join"
+msgstr ""
+
+#: src/pages/Invite.tsx
+msgid "Join {spaceName}"
+msgstr ""
 
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
@@ -3802,9 +3867,19 @@ msgstr "上次檢查 {0}：無變化"
 msgid "Later"
 msgstr "稍後"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr "退出"
+
+#. placeholder {0}: space.name
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave {0}?"
+msgstr ""
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave space"
+msgstr ""
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
@@ -3896,10 +3971,12 @@ msgstr "正在載入語音供應商…"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/components/ToolActivityDisclosure.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/Invite.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4055,6 +4132,10 @@ msgstr "中"
 #: src/lib/identity-display.ts
 msgid "Member"
 msgstr "成員"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Members"
+msgstr ""
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -4251,6 +4332,7 @@ msgstr "每月額度"
 msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "每月額度在續訂時到期。單次加值額度不會過期。"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "More"
@@ -4338,6 +4420,7 @@ msgstr "需要回覆"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
+#: src/pages/PluginsOverlay.tsx
 msgid "Needs an OAuth client ID"
 msgstr "需要 OAuth 用戶端 ID"
 
@@ -4348,6 +4431,10 @@ msgstr "需要處理"
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "需要輸入"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Needs sign-in"
+msgstr "需要登入"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4469,12 +4556,8 @@ msgid "No apps match your search."
 msgstr "沒有符合搜尋條件的應用程式。"
 
 #: src/pages/Artifacts.tsx
-msgid "No artifacts found."
-msgstr "找不到成品。"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No auth"
-msgstr "無驗證"
+msgid "No artifacts yet"
+msgstr "尚無成品"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4494,13 +4577,13 @@ msgstr "沒有符合的機器人"
 msgid "No longer active"
 msgstr "已停用"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "No managed app catalog is configured on this deployment."
-msgstr "此部署尚未設定受管理的應用程式目錄。"
-
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "No matching artifacts"
+msgstr "沒有符合的成品"
 
 #: src/pages/Artifacts.tsx
 msgid "No matching artifacts on this page."
@@ -4609,6 +4692,10 @@ msgstr "未新增：{0}"
 msgid "Not checked yet"
 msgstr "尚未檢查"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Not connected"
+msgstr "未連線"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Not imported"
 msgstr "未匯入"
@@ -4636,6 +4723,7 @@ msgid "Not used by Rakazo"
 msgstr "Rakazo 不使用"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Not working"
 msgstr "無法正常工作"
 
@@ -4663,17 +4751,9 @@ msgstr "OAuth 客戶端 ID（選填）"
 msgid "OAuth client secret (optional)"
 msgstr "OAuth 客戶端金鑰（選填）"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth connected"
-msgstr "OAuth 已連線"
-
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "OAuth 連線失敗"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth expired"
-msgstr "OAuth 已過期"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
@@ -4780,6 +4860,7 @@ msgid "Open navigation"
 msgstr "開啟導覽"
 
 #: src/components/pages/PublicPageShell.tsx
+#: src/pages/Invite.tsx
 #: src/pages/SharedPage.tsx
 msgid "Open Rakazo"
 msgstr "開啟 Rakazo"
@@ -4849,6 +4930,7 @@ msgid "Output"
 msgstr "輸出"
 
 #: src/components/pages/SharePopover.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -5196,6 +5278,10 @@ msgstr "推理強度"
 msgid "Recall and write"
 msgstr "回想與寫入"
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "Recall from this peer; save to Rakazo’s own peers."
+msgstr "從此 peer 讀取；儲存至 Rakazo 自己的 peer。"
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr "僅回想"
@@ -5348,6 +5434,7 @@ msgstr "重新載入"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
@@ -5370,6 +5457,10 @@ msgstr "移除 {0}"
 #: src/pages/GroupPanel.tsx
 msgid "Remove {0} from the group"
 msgstr "將 {0} 移出群組"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Remove {memberName}?"
+msgstr ""
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
@@ -5571,6 +5662,7 @@ msgstr "正在還原工作空間"
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
+#: src/pages/Invite.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5785,6 +5877,7 @@ msgstr "螢幕未連線"
 
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5801,6 +5894,10 @@ msgstr "搜尋"
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
 msgstr "搜尋應用程式"
+
+#: src/pages/Artifacts.tsx
+msgid "Search artifacts"
+msgstr "搜尋成品"
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
@@ -5821,6 +5918,10 @@ msgstr "依網域搜尋"
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Search integrations.sh"
 msgstr "搜尋 integrations.sh"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Search MCP servers for “{query}”"
+msgstr "在 MCP 伺服器中搜尋「{query}」"
 
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -6107,6 +6208,10 @@ msgstr "登入已取消。請重試。"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Site"
 msgstr "網站"
+
+#: src/pages/shell/computer-overlay.tsx
+msgid "Sites you sign in to stay signed in for everyone in this space"
+msgstr ""
 
 #. placeholder {0}: skill.name
 #: src/pages/shell/composer.tsx
@@ -6481,6 +6586,10 @@ msgstr "正在測試…"
 msgid "The bot can use the file but won't see the picture."
 msgstr "機器人可以使用這個檔案，但看不到圖片內容。"
 
+#: src/components/SecretAskCard.tsx
+msgid "The bot's browser stays signed in for everyone in this space"
+msgstr ""
+
 #: src/lib/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
 msgstr "瀏覽器反覆中斷麥克風連線。請重新啟動語音輸入。"
@@ -6639,6 +6748,10 @@ msgstr "此檔案不是有效的 UTF-8 文字。"
 #: src/lib/agent-import-errors.ts
 msgid "This import was already used. Choose the files again."
 msgstr "此匯入已使用過。請重新選擇檔案。"
+
+#: src/pages/Invite.tsx
+msgid "This invite link is no longer valid."
+msgstr ""
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -7335,6 +7448,10 @@ msgstr "你已接管"
 msgid "Your Anthropic"
 msgstr "你的 Anthropic"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Your apps"
+msgstr "你的應用程式"
+
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "今天將從你的卡中扣款 {annualPrice}，並抵扣本月未使用的部分。"
@@ -7377,6 +7494,10 @@ msgstr "你的 OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "你的 OpenRouter"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Your other spaces stay private"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."

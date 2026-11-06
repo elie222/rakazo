@@ -41,6 +41,7 @@ const ui = vi.hoisted(() => ({
   setSearchInbox: vi.fn(),
   addToSearchInbox: vi.fn(),
   searchInboxSession: vi.fn(),
+  hapticSuccess: vi.fn(),
   loadCollapsedSections: vi.fn(),
   saveCollapsedSections: vi.fn(),
 }));
@@ -135,6 +136,7 @@ vi.mock("./api", () => ({
   selectedSpaceId: () => ui.spaceId,
   spaceSelectionSeq: () => ui.spaceSeq,
 }));
+vi.mock("./haptics", () => ({ hapticSuccess: ui.hapticSuccess }));
 vi.mock("./native", () => ({
   native: {},
   useThemedStyles: (factory: () => unknown) => useMemo(factory, [factory]),
@@ -166,7 +168,14 @@ vi.mock("./search-inbox", () => ({
   setSearchInbox: ui.setSearchInbox,
   addToSearchInbox: ui.addToSearchInbox,
   searchInboxSession: ui.searchInboxSession,
-  isSearchInboxSession: () => ui.sameSession,
+  isSearchInboxSession: (askedIn: { generation: number; apiBase: string }) => {
+    const current = ui.searchInboxSession();
+    return (
+      ui.sameSession &&
+      askedIn.generation === current.generation &&
+      askedIn.apiBase === current.apiBase
+    );
+  },
 }));
 vi.mock("./focus-prompt", () => ({ allowFocusPrompt: vi.fn(), scheduleFocusPrompt: vi.fn() }));
 vi.mock("../components/bot-avatar", () => ({
@@ -244,6 +253,9 @@ const rowLabels = () =>
   Array.from(container.querySelectorAll("button"), (button) => button.getAttribute("aria-label"));
 
 beforeEach(() => {
+  ui.searchInboxSession.mockReset().mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.sameSession = true;
+  ui.hapticSuccess.mockClear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   Object.assign(ui, {
     focused: true,
@@ -594,7 +606,7 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
   expect(ui.swipeRows).toEqual(["bot:current-bot", "group:current-group"]);
 });
 
-it("offers every space heading's Settings, and Delete only where the member may delete it", () => {
+it("offers every space heading's Members and Settings, and Delete only where the member may delete it", () => {
   const confirmDeleteSpace = vi.fn();
   ui.push.mockReset();
   const heading = (id: string, name: string, canDelete: boolean) =>
@@ -612,9 +624,14 @@ it("offers every space heading's Settings, and Delete only where the member may 
     />,
   );
   expect(ui.menus.map((menu) => menu.actions.map((entry) => entry.id))).toEqual([
-    ["new-bot", "settings"],
-    ["new-bot", "settings", "delete"],
+    ["new-bot", "members", "settings"],
+    ["new-bot", "members", "settings", "delete"],
   ]);
+  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "members" } }));
+  expect(ui.push).toHaveBeenLastCalledWith({
+    pathname: "/space-members",
+    params: { spaceId: "space-work", name: "Work" },
+  });
   // Settings open the Space's own page, which edits that Space even when another is selected.
   act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "settings" } }));
   expect(ui.push).toHaveBeenCalledWith({
@@ -664,7 +681,7 @@ it("pins a bot made for a space to that space while another is selected", async 
   ui.rpc
     .mockReset()
     .mockImplementation(async (method: string) => (method === "bots/create" ? bot : []));
-  ui.searchInboxSession.mockReset();
+  ui.searchInboxSession.mockReset().mockReturnValue({ generation: 7, apiBase: "http://api.test" });
   ui.addToSearchInbox.mockReset();
   await createInboxBot({
     refreshBots: async () => undefined,
@@ -932,12 +949,51 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
     undefined,
   );
   // The session is taken before the requests, so a bot that lands after a switch is dropped.
-  expect(calls.slice(0, 6)).toEqual([
+  expect(calls.slice(0, 8)).toEqual([
     "session",
     "bots/list",
     "me",
+    "session",
     "bots/create",
+    "session",
     `roster ${JSON.stringify({ kind: "bot", bot })} ${JSON.stringify(askedIn)}`,
     `open ${JSON.stringify({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })}`,
   ]);
+  expect(ui.hapticSuccess).toHaveBeenCalledOnce();
+});
+
+it("does not confirm a failed inbox bot creation with success feedback", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    if (method === "bots/create") throw new Error("Creation failed");
+    return [];
+  });
+  await expect(
+    createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() }),
+  ).rejects.toThrow("Creation failed");
+  expect(ui.hapticSuccess).not.toHaveBeenCalled();
+});
+
+it.each([
+  { generation: 8, apiBase: "http://api.test" },
+  { generation: 7, apiBase: "http://other.test" },
+])("does not confirm an inbox bot created in an obsolete session: %j", async (current) => {
+  const askedIn = { generation: 7, apiBase: "http://api.test" };
+  ui.searchInboxSession.mockReset().mockReturnValue(askedIn);
+  let finish!: (bot: { id: string; name: string }) => void;
+  ui.rpc.mockReset().mockImplementation(async (method: string) =>
+    method === "bots/create"
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : [],
+  );
+  const creating = createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() });
+  await vi.waitFor(() =>
+    expect(ui.rpc).toHaveBeenCalledWith("bots/create", expect.anything(), undefined),
+  );
+  ui.searchInboxSession.mockReturnValue(current);
+  finish({ id: "bot-new", name: "New Bot" });
+  await creating;
+  expect(ui.hapticSuccess).not.toHaveBeenCalled();
 });

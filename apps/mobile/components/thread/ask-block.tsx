@@ -258,6 +258,11 @@ export function AskBlock({
       {secretInput && destination ? (
         <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>{destination}</Text>
       ) : null}
+      {secretInput && ask.sharedBrowser && !ownerOnly && !answered ? (
+        <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>
+          {t("The bot's browser stays signed in for everyone in this space")}
+        </Text>
+      ) : null}
       {secretInput && ask.replaces && !ownerOnly && !answered ? (
         <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>
           {t("Replaces the login saved for {site}", { site: ask.replaces.origin })}

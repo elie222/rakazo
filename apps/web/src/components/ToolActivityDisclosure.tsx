@@ -44,7 +44,7 @@ export function ToolSteps({
   return (
     <div className="space-y-0.5" data-testid="tool-rows">
       {hidden > 0 ? (
-        <div className="text-[12px] leading-5 text-muted-foreground" data-testid="tool-rows-hidden">
+        <div className="text-label leading-5 text-muted-foreground" data-testid="tool-rows-hidden">
           <Plural value={hidden} one="+# earlier step" other="+# earlier steps" />
         </div>
       ) : null}
@@ -57,7 +57,7 @@ export function ToolSteps({
         return (
           <Fragment key={key}>
             {step.note ? (
-              <div className="py-1 text-[13px] text-foreground/75" data-testid="tool-step-note">
+              <div className="py-1 text-body-sm text-foreground/75" data-testid="tool-step-note">
                 <ChatMarkdown>{step.note}</ChatMarkdown>
               </div>
             ) : null}
@@ -109,7 +109,7 @@ function ToolStepRow({
   const content = (
     <>
       <span
-        className={`w-3 shrink-0 text-center text-[12px] ${
+        className={`w-3 shrink-0 text-center text-label ${
           status === "error" ? "text-destructive" : running ? "text-warning" : "text-success"
         }`}
         style={{ animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined }}
@@ -119,7 +119,7 @@ function ToolStepRow({
         {status === "error" ? "✕" : running ? "◷" : "✓"}
       </span>
       <span
-        className={`min-w-0 truncate text-[13px] ${running ? "text-foreground" : "text-muted-foreground"}`}
+        className={`min-w-0 truncate text-body-sm ${running ? "text-foreground" : "text-muted-foreground"}`}
         title={step.label}
       >
         {step.label}
@@ -127,7 +127,7 @@ function ToolStepRow({
       </span>
       {step.detail ? (
         <span
-          className="min-w-0 flex-1 truncate font-mono text-[12px] text-muted-foreground/80"
+          className="min-w-0 flex-1 truncate font-mono text-label text-muted-foreground/80"
           title={step.detail}
           dir="ltr"
           data-testid="tool-step-detail-line"
@@ -136,7 +136,7 @@ function ToolStepRow({
         </span>
       ) : null}
       {duration ? (
-        <span className="ms-auto shrink-0 ps-2 font-mono text-[11px] text-muted-foreground/70">
+        <span className="ms-auto shrink-0 ps-2 font-mono text-caption text-muted-foreground/70">
           {duration}
         </span>
       ) : null}
@@ -215,7 +215,7 @@ function ToolStepDetail({
     <div
       data-testid="tool-step-panel"
       dir="ltr"
-      className="my-1 min-w-0 overflow-hidden rounded-lg border border-border bg-background font-mono text-[12px] leading-5 text-foreground"
+      className="my-1 min-w-0 overflow-hidden rounded-lg border border-border bg-background font-mono text-label leading-5 text-foreground"
     >
       <div className="flex items-start gap-2 border-b border-border px-2.5 py-1.5">
         <span
@@ -284,7 +284,7 @@ function ToolStepDetail({
         </div>
       )}
       {record?.error || exit || duration || output ? (
-        <div className="flex flex-wrap items-center gap-x-3 border-t border-border px-2.5 py-1 text-[11px] text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-3 border-t border-border px-2.5 py-1 text-caption text-muted-foreground">
           {record?.error ? (
             <span className="min-w-0 break-words text-destructive" data-testid="tool-step-error">
               {record.error}
@@ -354,7 +354,7 @@ export function ToolActivityDisclosure({
       className="group"
     >
       <CollapsibleTrigger
-        className={`flex min-h-6 w-fit cursor-pointer list-none items-center gap-1 rounded-md py-0.5 pe-1.5 text-[13px] font-medium outline-none hover:text-foreground/75 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+        className={`flex min-h-6 w-fit cursor-pointer list-none items-center gap-1 rounded-md py-0.5 pe-1.5 text-body-sm font-medium outline-none hover:text-foreground/75 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
           live ? "text-foreground/75" : "text-muted-foreground"
         }`}
       >

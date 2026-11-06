@@ -18,7 +18,8 @@ import {
   createExternalConversationRepos,
   createThreadMessageInTransaction,
   IsolationError,
-  lockOwnedGroup,
+  loadMessageAuthor,
+  lockSpaceGroup,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -166,7 +167,7 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input, {
           includeArchived: true,
         });
-        return threadSnapshot(deps, target);
+        return threadSnapshot(deps, target, context.actor.userId);
       }),
       messages: authed.threads.messages.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input, {
@@ -419,6 +420,7 @@ export function threadsRoutes(ctx: RouterContext) {
             threadId: target.threadId,
             botId: target.botId,
             userId: context.actor.userId,
+            authorUserId: context.actor.userId,
             blocks: [{ kind: "text", text: input.text }],
             prompt: input.text,
             trigger: "follow_up",
@@ -440,7 +442,7 @@ export function threadsRoutes(ctx: RouterContext) {
             });
             if (existing) return null;
           }
-          await lockOwnedGroup(tx, context.actor, target.groupId);
+          await lockSpaceGroup(tx, context.actor, target.groupId);
           const group = await tx.chatGroup.findFirst({
             where: {
               id: target.groupId,
@@ -455,18 +457,23 @@ export function threadsRoutes(ctx: RouterContext) {
           const message = await createThreadMessageInTransaction(tx, {
             threadId: target.threadId,
             role: "user",
+            authorUserId: context.actor.userId,
             blocks,
             clientNonce: input.clientNonce,
           });
+          const author = await loadMessageAuthor(tx, context.actor.userId);
           const active = await tx.run.findFirst({
             where: {
               threadId: target.threadId,
               botId,
               status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
             },
-            select: { id: true },
+            select: { id: true, userId: true },
           });
           let run: { id: string } | null = null;
+          // Another person's message waits for a run of its own, which acts with their
+          // accounts, rather than joining the one under way.
+          const ownRunId = active?.userId === context.actor.userId ? active.id : null;
           if (!active) {
             const task = await tx.task.create({
               data: {
@@ -494,22 +501,19 @@ export function threadsRoutes(ctx: RouterContext) {
             await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
           } else {
             await tx.steeringMessage.create({
-              data: {
-                messageId: message.id,
-                botId,
-                userId: context.actor.userId,
-                runId: active.id,
-              },
+              data: { messageId: message.id, botId, userId: context.actor.userId, runId: ownRunId },
             });
-            await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
+            if (ownRunId) {
+              await tx.message.update({ where: { id: message.id }, data: { runId: ownRunId } });
+            }
           }
           const event = await appendEventInTransaction(tx, {
             spaceId: context.actor.spaceId,
             threadId: target.threadId,
             botId,
             type: "thread.message.created",
-            runId: run?.id ?? active?.id,
-            payload: { messageId: message.id, role: "user", blocks },
+            runId: run?.id ?? ownRunId ?? undefined,
+            payload: { messageId: message.id, role: "user", blocks, author },
           });
           await touchGroupUpdatedAt(tx, target.groupId);
           return { runId: run?.id, eventSeq: event.seq, message };

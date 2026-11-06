@@ -567,7 +567,10 @@ export interface AgentRunRequest {
   routineId?: string | null;
   sourceMessageId?: string | null;
   prompt: string;
-  /** Group threads: the label ("User") the model sees on the prompt, the same as on history. */
+  /**
+   * Group threads and shared spaces: the label the model sees on the prompt, the same as on
+   * history ("User", or the person's name in a space several people share).
+   */
   promptSpeaker?: string;
   instructions: string;
   history: Array<{
@@ -576,9 +579,10 @@ export interface AgentRunRequest {
     role: "user" | "assistant" | "system";
     content: string;
     /**
-     * Who wrote this message when it is neither this bot nor the human of a direct chat: another
-     * bot's current name, or "User" for the human in a group thread. The runtime shows such a
-     * message to the model as a user turn that starts with "[speaker]: ". Never a real person's name.
+     * Who wrote this message when it is neither this bot nor the human of a personal direct chat:
+     * another bot's current name, or the person: "User", or their name in a space several people
+     * share. The runtime shows such a message to the model as a user turn that starts with
+     * "[speaker]: ".
      */
     speaker?: string;
     /** Images attached to this message, hydrated only for recent user turns. */
@@ -804,7 +808,7 @@ export interface BackgroundJobPayloads {
   "skill.teaching-expire": { skillId: string };
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
-  "history.compact": { threadId: string };
+  "history.compact": { threadId: string; userId?: string };
   "messaging.deliver": { runId?: string };
   "messaging.credential-cleanup": { installationId: string; ref: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */

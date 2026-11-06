@@ -1,4 +1,5 @@
 export const ES_MESSAGES: Record<string, string> = {
+  Haptics: "Respuesta háptica",
   "Add rule": "Añadir regla",
   "Tool name": "Nombre de la herramienta",
   Title: "Título",
@@ -763,6 +764,14 @@ export const ES_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Permitir siempre esta herramienta",
   "Always allow {site}": "Permitir siempre {site}",
   "Replaces the login saved for {site}": "Reemplaza el inicio de sesión guardado para {site}",
+  "Cancel open invites": "Cancelar invitaciones abiertas",
+  "Could not cancel invites": "No se pudieron cancelar las invitaciones",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "Todos en el espacio de este bot pueden leer los chats que recibe de {app}.",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "Los sitios en los que inicies sesión siguen con la sesión iniciada para todos en este espacio",
+  "The bot's browser stays signed in for everyone in this space":
+    "El navegador del bot sigue con la sesión iniciada para todos en este espacio",
   "Could not submit answer": "No se pudo enviar la respuesta",
   Deny: "Denegar",
   "Please try again.": "Inténtalo de nuevo.",
@@ -998,10 +1007,10 @@ export const ES_MESSAGES: Record<string, string> = {
   "The server had a problem": "El servidor tuvo un problema",
   "Could not load MCP servers": "No se pudieron cargar los servidores MCP",
   Disabled: "Desactivado",
-  "OAuth connected": "OAuth conectado",
-  "OAuth expired": "OAuth expirado",
+  "Needs sign-in": "Requiere iniciar sesión",
+  "Not connected": "No conectado",
+  "Not working": "No funciona",
   "Needs an OAuth client ID": "Necesita un ID de cliente OAuth",
-  "Credential saved": "Credencial guardada",
   Authentication: "Autenticación",
   "No auth": "Sin autenticación",
   "The bot couldn't reply because its provider's daily limit was reached.":
@@ -1203,7 +1212,6 @@ export const ES_MESSAGES: Record<string, string> = {
   "Schedule delayed": "Ejecución programada retrasada",
   "API key header name": "Nombre del encabezado de la clave de API",
   Bearer: "Bearer",
-  "Connect OAuth": "Conectar OAuth",
   "Could not start MCP OAuth": "No se pudo iniciar OAuth de MCP",
   OAuth: "OAuth",
   "Always open {site}": "Abrir siempre {site}",
@@ -1327,6 +1335,14 @@ export const ES_MESSAGES: Record<string, string> = {
     "{count} bots ahora usan el modelo predeterminado del espacio.",
   "Could not switch {failedNames}. Try again.":
     "No se pudo cambiar {failedNames}. Vuelve a intentarlo.",
+  Members: "Miembros",
+  Invite: "Invitar",
+  "Leave space": "Salir del espacio",
+  "Leave {name}?": "¿Salir de {name}?",
+  "Could not load members": "No se pudieron cargar los miembros",
+  "Could not create invite link": "No se pudo crear el enlace de invitación",
+  "Could not remove member": "No se pudo quitar al miembro",
+  "Could not leave space": "No se pudo salir del espacio",
   "Create organization": "Crear organización",
   Organization: "Organización",
   "Delete organization": "Eliminar organización",
@@ -1361,6 +1377,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "On the button": "En el botón",
   "Read from the page, not checked": "Leído de la página, sin verificar",
   Total: "Total",
+  "{name} options": "Opciones de {name}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

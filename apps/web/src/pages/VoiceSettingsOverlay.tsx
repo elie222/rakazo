@@ -359,8 +359,8 @@ export function VoiceSettingsOverlay({
           />
         </div>
       ) : null}
-      {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
-      {notice ? <p className="mb-4 text-sm text-success">{notice}</p> : null}
+      {error ? <p className="mb-4 text-body text-destructive">{error}</p> : null}
+      {notice ? <p className="mb-4 text-body text-success">{notice}</p> : null}
       {catalog.length ? (
         <Field>
           <FieldLabel htmlFor={providerSelectId}>

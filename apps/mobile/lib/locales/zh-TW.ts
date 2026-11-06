@@ -1,4 +1,5 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
+  Haptics: "觸覺回饋",
   "Add rule": "新增規則",
   "Tool name": "工具名稱",
   Address: "地址",
@@ -1037,10 +1038,10 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "The server had a problem": "伺服器出現問題",
   "Could not load MCP servers": "無法載入 MCP 伺服器",
   Disabled: "已停用",
-  "OAuth connected": "OAuth 已連線",
-  "OAuth expired": "OAuth 已過期",
+  "Needs sign-in": "需要登入",
+  "Not connected": "未連線",
+  "Not working": "無法正常工作",
   "Needs an OAuth client ID": "需要 OAuth 用戶端 ID",
-  "Credential saved": "憑證已儲存",
   Authentication: "驗證方式",
   "No auth": "無驗證",
   "The bot couldn't reply because its provider's daily limit was reached.":
@@ -1175,6 +1176,14 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Always allow this tool": "一律允許此工具",
   "Always allow {site}": "一律允許 {site}",
   "Replaces the login saved for {site}": "取代為 {site} 儲存的登入資訊",
+  "Cancel open invites": "取消未使用的邀請",
+  "Could not cancel invites": "無法取消邀請",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "此機器人空間中的每個人都能閱讀它從 {app} 收到的聊天。",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "你登入的網站會為此空間中的每個人保持登入",
+  "The bot's browser stays signed in for everyone in this space":
+    "機器人的瀏覽器會為此空間中的每個人保持登入",
   Approvals: "核准",
   Rules: "規則",
   Ask: "詢問",
@@ -1265,7 +1274,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   // Remote MCP authorization controls.
   "API key header name": "API 金鑰標頭名稱",
   Bearer: "Bearer",
-  "Connect OAuth": "使用 OAuth 連線",
   "Could not start MCP OAuth": "無法啟動 MCP OAuth 授權",
   OAuth: "OAuth",
   "Always open {site}": "一律開啟 {site}",
@@ -1361,6 +1369,13 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "1 free month earned": "已獲得 1 個月免費",
   "{count} free months earned": "已獲得 {count} 個月免費",
   "Submit a plugin": "提交外掛程式",
+  Invite: "邀請",
+  "Leave space": "離開空間",
+  "Leave {name}?": "要離開 {name} 嗎？",
+  "Could not load members": "無法載入成員",
+  "Could not create invite link": "無法建立邀請連結",
+  "Could not remove member": "無法移除成員",
+  "Could not leave space": "無法離開空間",
   Board: "看板",
   "To do": "待辦",
   "In progress": "進行中",
@@ -1415,6 +1430,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "On the button": "按鈕上的金額",
   "Read from the page, not checked": "讀取自頁面，未核實",
   Total: "合計",
+  "{name} options": "{name}的選項",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

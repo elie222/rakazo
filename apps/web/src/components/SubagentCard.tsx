@@ -38,13 +38,13 @@ export function SubagentCard({ block }: { block: SubagentBlock }) {
     >
       <CollapsibleTrigger className="block w-full min-w-0 cursor-pointer rounded-md text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-muted">
         <span className="flex items-center justify-between gap-3">
-          <span className="flex min-w-0 flex-1 items-center text-[15px] font-medium text-foreground">
+          <span className="flex min-w-0 flex-1 items-center text-body-lg font-medium text-foreground">
             <span className="truncate" dir="auto">
               {block.name}
             </span>
           </span>
           <span
-            className={`${running ? "motion-safe:animate-[rkPulse_1.2s_ease-in-out_infinite]" : ""} shrink-0 rounded-full px-[11px] py-1 text-[13px] ${
+            className={`${running ? "motion-safe:animate-[rkPulse_1.2s_ease-in-out_infinite]" : ""} shrink-0 rounded-full px-[11px] py-1 text-body-sm ${
               failed
                 ? "bg-destructive/15 text-destructive"
                 : running
@@ -72,7 +72,7 @@ export function SubagentCard({ block }: { block: SubagentBlock }) {
         </span>
         <span
           data-testid="subagent-task"
-          className={`mt-2 block text-[13.5px] text-muted-foreground ${open ? "" : "truncate"}`}
+          className={`mt-2 block text-body text-muted-foreground ${open ? "" : "truncate"}`}
           dir="auto"
         >
           {block.task}
@@ -82,7 +82,7 @@ export function SubagentCard({ block }: { block: SubagentBlock }) {
         <CollapsibleContent>
           <div
             data-testid="subagent-body"
-            className="mt-2.5 text-[14.5px] leading-[1.5] text-foreground/75"
+            className="mt-2.5 text-body-lg leading-[1.5] text-foreground/75"
           >
             <ChatMarkdown streaming={running}>{body}</ChatMarkdown>
           </div>

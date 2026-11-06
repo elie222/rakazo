@@ -413,6 +413,10 @@ export function useThreadSync({
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void snapshotRefresh.invalidate().catch(() => undefined);
         } else if (isComputerStatusEvent(event)) {
+          // In a shared Space the event does not say who took control; the snapshot does.
+          if (event.type === "computer.takeover.granted" && computerRef.current?.shared) {
+            void snapshotRefresh.invalidate().catch(() => undefined);
+          }
           void refreshComputerScreen(active.id).catch(() => undefined);
         }
         if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
