@@ -118,6 +118,7 @@ export function ToolActivityCard({
                     runId={runId}
                     threadId={threadId}
                     status={toolStepStatus(step, live)}
+                    runLive={live}
                   />
                 ) : null}
               </View>
@@ -237,22 +238,20 @@ function StepPanel({
   runId,
   threadId,
   status,
+  runLive,
 }: {
   step: ToolStep;
   executionId: string;
   runId: string;
   threadId?: string;
   status: Status;
+  /** The run is still going, so the thread's events keep this call's record current. */
+  runLive: boolean;
 }) {
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const colorScheme = useResolvedAppearance();
-  const { record, loading, failed } = useToolCallRecord(
-    runId,
-    executionId,
-    threadId,
-    status === "running",
-  );
+  const { record, loading, failed } = useToolCallRecord(runId, executionId, threadId, runLive);
   const running = record?.status === "running" || status === "running";
   const markdown = record ? toolCallMarkdown(record) : "";
   const exit =
@@ -286,7 +285,7 @@ function StepPanel({
             {markdown}
           </ChatMarkdown>
         </ScrollView>
-      ) : record?.error || exit ? null : (
+      ) : record?.error || exit || running ? null : (
         <Text style={[styles.empty, muted]}>
           {loading
             ? t("Loading…")

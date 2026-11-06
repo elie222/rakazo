@@ -244,7 +244,7 @@ import {
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
-import { toolResultError } from "./tool-result-error.js";
+import { toolCallFailed } from "./tool-result-error.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
@@ -2024,10 +2024,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   recordToolOutcome(
                     state.reply,
                     completion.executionId,
-                    completion.error === undefined &&
-                      toolResultError(completion.result) === undefined
-                      ? "ok"
-                      : "error",
+                    toolCallFailed(completion.error, completion.result) ? "error" : "ok",
                     completion.durationMs,
                   );
                 }

@@ -305,6 +305,27 @@ describe("tool completion audit", () => {
         result: { content: [] },
       }),
     ).not.toHaveProperty("preview");
+    // A scripted file action returns a plain object, shown as JSON.
+    expect(
+      toolCompletionAuditPayload({
+        name: "write_file",
+        executionId: "w",
+        durationMs: 1,
+        result: { path: "/tmp/a.py", bytes: 12 },
+      }).preview,
+    ).toBe('{\n  "path": "/tmp/a.py",\n  "bytes": 12\n}');
+  });
+
+  it("counts a shell command that exited nonzero as failed, but not one still running", async () => {
+    const { toolCallFailed } = await import("./tool-result-error.js");
+    expect(toolCallFailed(undefined, { stdout: "", stderr: "boom", code: 1 })).toBe(true);
+    expect(toolCallFailed(undefined, { details: { stdout: "", stderr: "", code: 2 } })).toBe(true);
+    expect(toolCallFailed(undefined, { stdout: "ok", stderr: "", code: 0 })).toBe(false);
+    expect(toolCallFailed(undefined, { stdout: "", stderr: "", code: null, running: true })).toBe(
+      false,
+    );
+    expect(toolCallFailed(new Error("x"), { code: 0 })).toBe(true);
+    expect(toolCallFailed(undefined, { error: "nope" })).toBe(true);
   });
 
   it("records an MCP tool result flagged isError as an error", () => {

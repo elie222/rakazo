@@ -10,8 +10,9 @@ type EventRow = { type: string; payload: unknown; seq: number };
 
 /**
  * What each tool call of a run did. A shell command streams its output in many events, so
- * only its newest one is read; a finished command is then never cut off by the limit, and a
- * long-running one costs one row instead of a frame every few hundred milliseconds.
+ * only one is read per command: its final frame when it finished, since a streamed frame can
+ * land after it, else its newest. A finished command is then never cut off by the limit, and
+ * a long-running one costs one row instead of a frame every few hundred milliseconds.
  */
 export async function loadToolCallRecords(
   prisma: Pick<PrismaClient, "event" | "$queryRaw">,
@@ -29,7 +30,7 @@ export async function loadToolCallRecords(
       SELECT DISTINCT ON (payload->>'executionId') type, payload, seq
       FROM events
       WHERE "threadId" = ${threadId} AND "runId" = ${runId} AND type = 'computer.command'
-      ORDER BY payload->>'executionId', seq DESC
+      ORDER BY payload->>'executionId', (payload->>'status' = 'done') DESC, seq DESC
     `),
   ]);
   const events: EventRow[] = [...calls, ...commands].sort((a, b) => a.seq - b.seq);

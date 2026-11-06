@@ -298,6 +298,26 @@ describe("ToolSteps", () => {
     root.unmount();
   });
 
+  it("shows nothing but the running mark for a call that has not printed yet", () => {
+    seedToolCallRecords("run-1", [{ executionId: "x1", name: "shell", status: "running" }]);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    flushSync(() =>
+      root.render(
+        <ToolSteps
+          live
+          source={MESSAGE}
+          steps={[{ label: "Shell", count: 1, executionId: "x1", detail: "sleep 9" }]}
+        />,
+      ),
+    );
+    flushSync(() =>
+      container.querySelector<HTMLButtonElement>('[data-testid="tool-step"]')?.click(),
+    );
+    expect(container.querySelector('[data-testid="tool-step-empty"]')).toBeNull();
+    root.unmount();
+  });
+
   it("says when a call left no output and keeps rows without a call id plain", () => {
     seedToolCallRecords("run-1", [{ executionId: "x1", name: "remember", status: "done" }]);
     const container = document.createElement("div");

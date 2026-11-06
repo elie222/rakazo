@@ -99,7 +99,7 @@ import {
   overLimitStopText,
   toolResultFingerprint,
 } from "./tool-loop.js";
-import { toolResultError } from "./tool-result-error.js";
+import { toolCallFailed } from "./tool-result-error.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
@@ -602,7 +602,7 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
       recordToolOutcome(
         reply,
         event.executionId,
-        completion.error === undefined && toolResultError(result) === undefined ? "ok" : "error",
+        toolCallFailed(completion.error, result) ? "error" : "ok",
         completion.durationMs,
       );
     }

@@ -78,7 +78,10 @@ export function toolCompletionAuditPayload(
   return payload;
 }
 
-/** The text the tool returned, bounded and with secrets taken out, for the activity view. */
+/**
+ * What the tool returned, bounded and with secrets taken out, for the activity view: its text
+ * parts, a plain string, or a plain object (a scripted file action's path and size) as JSON.
+ */
 function toolResultPreview(result: unknown, secrets: string[]): string | undefined {
   const content = (result as { content?: unknown } | undefined)?.content;
   const text = (
@@ -92,7 +95,9 @@ function toolResultPreview(result: unknown, secrets: string[]): string | undefin
                 : [],
             )
             .join("\n")
-        : ""
+        : result && typeof result === "object" && Object.keys(result).length > 0
+          ? JSON.stringify(result, null, 2)
+          : ""
   ).trim();
   if (!text) return undefined;
   const safe = sanitizeSensitiveText(redactSecrets(text, secrets));

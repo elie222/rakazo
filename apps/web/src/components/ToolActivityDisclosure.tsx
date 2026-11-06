@@ -83,6 +83,7 @@ export function ToolSteps({
                 executionId={step.executionId}
                 source={source}
                 status={toolStepStatus(step, live)}
+                runLive={live}
               />
             ) : null}
           </Fragment>
@@ -192,13 +193,16 @@ function ToolStepDetail({
   executionId,
   source,
   status,
+  runLive,
 }: {
   step: ToolStep;
   executionId: string;
   source: ToolStepSource;
   status: ToolStepStatus;
+  /** The run is still going, so the thread's events keep this call's record current. */
+  runLive: boolean;
 }) {
-  const { record, loading, failed } = useToolCallRecord(source, executionId, status === "running");
+  const { record, loading, failed } = useToolCallRecord(source, executionId, runLive);
   const running = record?.status === "running" || status === "running";
   const markdown = record ? toolCallMarkdown(record) : "";
   const exit =
@@ -222,7 +226,7 @@ function ToolStepDetail({
         <div className="max-h-80 overflow-y-auto" data-testid="tool-step-code">
           <ChatMarkdown streaming={running}>{markdown}</ChatMarkdown>
         </div>
-      ) : record?.error || exit ? null : (
+      ) : record?.error || exit || running ? null : (
         <div className="text-label text-muted-foreground" data-testid="tool-step-empty">
           {loading ? (
             <Trans>Loading…</Trans>

@@ -53,5 +53,7 @@ describe("loadToolCallRecords", () => {
     const sql = queryRaw.mock.calls[0]?.[0].sql ?? "";
     expect(sql).toContain("DISTINCT ON");
     expect(sql).toContain("computer.command");
+    // The final frame wins over a streamed frame that landed after it.
+    expect(sql).toContain("(payload->>'status' = 'done') DESC, seq DESC");
   });
 });

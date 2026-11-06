@@ -338,16 +338,20 @@ export function threadsRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       toolCalls: authed.threads.toolCalls.handler(async ({ context, input }) => {
-        // The same ownership check a read receipt uses: the person's own thread in this space.
+        // Whoever can read the chat can read its calls: the thread's bot or group resolves for
+        // the actor the same way every other thread read does.
         const thread = await deps.prisma.thread.findFirst({
-          where: {
-            id: input.threadId,
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
-          },
-          select: { id: true },
+          where: { id: input.threadId, spaceId: context.actor.spaceId },
+          select: { id: true, botId: true, groupId: true },
         });
-        if (!thread) throw new IsolationError();
+        if (!thread || (!thread.botId && !thread.groupId)) throw new IsolationError();
+        const target = await resolveThreadTarget(
+          deps.prisma,
+          context.actor,
+          thread.botId ? { botId: thread.botId } : { groupId: thread.groupId ?? undefined },
+          { includeArchived: true },
+        );
+        if (target.threadId !== thread.id) throw new IsolationError();
         return loadToolCallRecords(deps.prisma, thread.id, input.runId);
       }),
       clear: authed.threads.clear.handler(async ({ context, input }) => {
