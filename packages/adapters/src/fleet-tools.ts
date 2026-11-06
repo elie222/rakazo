@@ -31,6 +31,7 @@ import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "./approval-as
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { createdByWhere, managedBotsWhere } from "./child-bots.js";
 import { stopCancelledGroupRuns } from "./computer-idle.js";
+import { asRecord } from "./connector-http.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { resolveModelChoice } from "./model-choice.js";
 import type { BotModelChangeDeps } from "./model-selection.js";
@@ -42,6 +43,7 @@ import {
   createScheduleFromTool,
   isScheduleValueProvided,
   resolveScheduleTiming,
+  scheduleTimingArgs,
   userTimeZone,
 } from "./schedule-tools.js";
 import type { UpdateBotPatch } from "./update-bot-patch.js";
@@ -337,18 +339,7 @@ async function prepareChildRoutine(
   if (!TimeZoneSchema.safeParse(timezone).success) {
     return refuse(`Unknown timezone "${timezone}". Use an IANA name like Europe/Paris.`);
   }
-  const resolved = resolveScheduleTiming(
-    compactScheduleInput({
-      cron: args.cron,
-      every: args.every,
-      unit: args.unit,
-      runAt: args.runAt,
-      delayMinutes: args.delayMinutes,
-      delaySeconds: args.delaySeconds,
-      startAt: args.startAt,
-    }),
-    timezone,
-  );
+  const resolved = resolveScheduleTiming(compactScheduleInput(scheduleTimingArgs(args)), timezone);
   if (!resolved.ok) return refuse(resolved.error);
 
   const child = await resolveBot(deps.prisma, run, args);
@@ -924,7 +915,7 @@ async function wroteInstructionsThisRun(prisma: PrismaClient, run: FleetRun, chi
     select: { request: true, result: true },
   });
   return effects.some(
-    (effect) => record(effect.request)?.botId === childId && record(effect.result)?.ok === true,
+    (effect) => asRecord(effect.request)?.botId === childId && asRecord(effect.result)?.ok === true,
   );
 }
 
@@ -947,7 +938,7 @@ export async function setChildBotModel(
   const child = await resolveBot(deps.prisma, run, { bot_id: canonical.botId });
   if ("error" in child) return { error: child.error };
   if (!child.thread) return { error: NOT_FOUND };
-  const previous = record(canonical.previous);
+  const previous = asRecord(canonical.previous);
   if (
     (previous?.provider ?? null) !== child.modelProvider ||
     (previous?.model ?? null) !== child.modelId ||
@@ -1011,7 +1002,7 @@ export async function createChildRoutine(
   const name = typedName === undefined ? undefined : singleLine(typedName);
   const prompt = text(canonical.prompt);
   const timezone = text(canonical.timezone) ?? "UTC";
-  const schedule = record(canonical.schedule);
+  const schedule = asRecord(canonical.schedule);
   if (!name || !prompt || !schedule) return { error: "The approved routine is incomplete." };
   const child = await resolveBot(deps.prisma, run, { bot_id: canonical.botId });
   if ("error" in child) return { error: child.error };
@@ -1207,12 +1198,6 @@ async function resolveGroup(prisma: PrismaClient, run: FleetRun, args: Record<st
       ? `No group with id "${id}". Call list_fleet for ids.`
       : `No group named "${name}". Call list_fleet and pass group_id.`,
   );
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
 }
 
 function refuse(error: string): Refusal {
