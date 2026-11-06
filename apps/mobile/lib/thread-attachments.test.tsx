@@ -6,10 +6,15 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { releaseIncomingShareFiles, takeIncomingShare } from "./incoming-share";
 import type { PickedAttachment } from "./pick-attachments";
-import { pickDocuments, readSharedFiles } from "./pick-attachments";
+import { pickDocuments, readDroppedFiles, readSharedFiles } from "./pick-attachments";
 import { useIncomingShareImport, useThreadAttachments } from "./thread-attachments";
 
 const sessionCaches = vi.hoisted(() => [] as Array<() => void>);
+const fileDrop = vi.hoisted(() => ({
+  onDrop: undefined as
+    | undefined
+    | ((drop: { files: unknown[]; skipped: Array<{ name: string; reason: string }> }) => void),
+}));
 vi.mock("./session", () => ({
   registerSessionDiskCache: (clear: () => void) => sessionCaches.push(clear),
 }));
@@ -25,7 +30,11 @@ vi.mock("./pick-attachments", () => ({
   readSharedFiles: vi.fn(),
   takePhoto: vi.fn(),
 }));
-vi.mock("./use-file-drop", () => ({ useFileDrop: () => undefined }));
+vi.mock("./use-file-drop", () => ({
+  useFileDrop: (_key: unknown, onDrop: NonNullable<typeof fileDrop.onDrop>) => {
+    fileDrop.onDrop = onDrop;
+  },
+}));
 vi.mock("./incoming-share", () => ({
   isIncomingShareCurrent: vi.fn(() => true),
   releaseIncomingShareFiles: vi.fn(),
@@ -60,9 +69,16 @@ function Probe({
   return null;
 }
 
-const uploadConfig = {};
+const defaultUploadConfig = {};
+const twoAttachments = { maxAttachmentsPerMessage: 2 };
 
-function ImportProbe({ botId }: { botId: string }) {
+function ImportProbe({
+  botId,
+  uploadConfig = defaultUploadConfig,
+}: {
+  botId: string;
+  uploadConfig?: { maxAttachmentsPerMessage?: number };
+}) {
   attachments = useThreadAttachments({
     botId,
     readOnly: false,
@@ -253,4 +269,127 @@ it("clears retained drafts and share copies on a session change", async () => {
   expect(releaseIncomingShareFiles).toHaveBeenCalledWith([
     { uri: "file:///group/s1.txt", name: "", mimeType: null },
   ]);
+});
+
+type Read = {
+  attachments: PickedAttachment[];
+  skipped: Array<{ name: string; reason: string }>;
+};
+function picked(id: string): PickedAttachment {
+  return { id, name: `${id}.txt`, mimeType: "text/plain", contentBase64: "aGk=" };
+}
+/** A share of two files whose read waits until the returned function settles it. */
+function slowShare() {
+  const files = ["s1", "s2"].map((id) => ({
+    uri: `file:///group/${id}.txt`,
+    name: `${id}.txt`,
+    mimeType: "text/plain",
+  }));
+  vi.mocked(takeIncomingShare).mockReturnValueOnce({
+    text: "",
+    files,
+    arrivedAt: Date.now(),
+    generation: 1,
+  });
+  let settle!: () => void;
+  vi.mocked(readSharedFiles).mockReturnValueOnce(
+    new Promise((resolve) => {
+      settle = () =>
+        resolve({
+          attachments: [picked("s1"), picked("s2")],
+          skipped: [],
+          failedFiles: [],
+          sources: files.map((file) => file.uri),
+        });
+    }),
+  );
+  return { files, settle: () => settle() };
+}
+
+it("holds a share import to the attachment limit when a picker opened before it settles first", async () => {
+  let settlePicker!: (result: Read) => void;
+  vi.mocked(pickDocuments).mockReturnValueOnce(
+    new Promise((resolve) => {
+      settlePicker = resolve;
+    }),
+  );
+  // The picker opens before the share is taken; the new limits then start the import.
+  mount(<ImportProbe botId="bot-share-picker" />);
+  act(() => attachments.attachFrom("file"));
+  const share = slowShare();
+  act(() => root.render(<ImportProbe botId="bot-share-picker" uploadConfig={twoAttachments} />));
+
+  await act(async () => settlePicker({ attachments: [picked("d1"), picked("d2")], skipped: [] }));
+  await act(async () => share.settle());
+
+  expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["d1", "d2"]);
+  expect(attachments.attachmentNotice).toBe("Skipped {items}");
+  // Files left out by the limit give their share copies back.
+  expect(releaseIncomingShareFiles).toHaveBeenLastCalledWith(share.files);
+});
+
+it("holds a share import to the attachment limit when files are dropped during it", async () => {
+  const share = slowShare();
+  mount(<ImportProbe botId="bot-share-drop" uploadConfig={twoAttachments} />);
+  vi.mocked(readDroppedFiles).mockResolvedValueOnce({
+    attachments: [picked("d1"), picked("d2")],
+    skipped: [],
+  });
+
+  await act(async () => fileDrop.onDrop?.({ files: [], skipped: [] }));
+  await act(async () => share.settle());
+
+  expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["d1", "d2"]);
+  expect(attachments.attachmentNotice).toBe("Skipped {items}");
+});
+
+it("keeps the share copy an earlier unsent attachment still uses when a later share overflows", async () => {
+  const files = [{ uri: "file:///group/same.txt", name: "same.txt", mimeType: "text/plain" }];
+  vi.mocked(takeIncomingShare).mockReturnValueOnce({
+    text: "",
+    files,
+    arrivedAt: Date.now(),
+    generation: 1,
+  });
+  vi.mocked(readSharedFiles).mockResolvedValueOnce({
+    attachments: [picked("e1")],
+    skipped: [],
+    failedFiles: [],
+    sources: [files[0]!.uri],
+  });
+  mount(<ImportProbe botId="bot-share-reuse" uploadConfig={twoAttachments} />);
+  await act(async () => {});
+  expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["e1"]);
+  unmount();
+
+  // A later share reuses the file name, so its copy has the same URI as e1's.
+  vi.mocked(takeIncomingShare).mockReturnValueOnce({
+    text: "",
+    files,
+    arrivedAt: Date.now(),
+    generation: 2,
+  });
+  let settle!: () => void;
+  vi.mocked(readSharedFiles).mockReturnValueOnce(
+    new Promise((resolve) => {
+      settle = () =>
+        resolve({
+          attachments: [picked("s1")],
+          skipped: [],
+          failedFiles: [],
+          sources: [files[0]!.uri],
+        });
+    }),
+  );
+  vi.mocked(releaseIncomingShareFiles).mockClear();
+  mount(<ImportProbe botId="bot-share-reuse" uploadConfig={twoAttachments} />);
+  vi.mocked(readDroppedFiles).mockResolvedValueOnce({ attachments: [picked("d1")], skipped: [] });
+  // A dropped file takes the last slot while the share is read.
+  await act(async () => fileDrop.onDrop?.({ files: [], skipped: [] }));
+  await act(async () => settle());
+
+  expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["e1", "d1"]);
+  expect(releaseIncomingShareFiles).not.toHaveBeenCalledWith(
+    expect.arrayContaining([expect.objectContaining({ uri: files[0]!.uri })]),
+  );
 });
