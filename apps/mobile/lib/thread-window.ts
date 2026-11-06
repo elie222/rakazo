@@ -7,9 +7,9 @@ import {
   peerExchangeLines,
 } from "@rakazo/core";
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import type { MobileSnapshot } from "./api";
 import { rpc } from "./api";
 import { isIntegrationsScopeCurrent } from "./integrations-cache";
+import type { MobileSnapshot } from "./mobile-types";
 import type { SavedChatsScope } from "./saved-chats";
 import { liveSavedChatsScope } from "./saved-chats";
 import type { ThreadJumpAnchor } from "./thread-jump";

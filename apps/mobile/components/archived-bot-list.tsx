@@ -1,8 +1,8 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import type { MobileBot, MobileGroup } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { native, useResolvedAppearance } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
 import { LongPressMenu } from "./long-press-menu";

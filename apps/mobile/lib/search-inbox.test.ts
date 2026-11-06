@@ -14,6 +14,9 @@ const state = vi.hoisted(() => ({
   sessionListener: () => {},
   unsubscribe: vi.fn(),
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ currentApiBase: () => state.apiBase }));
 vi.mock("./session", () => ({
   currentSessionGeneration: () => state.generation,
