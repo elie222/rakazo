@@ -363,6 +363,19 @@ function loaded() {
   return outboxDisk.load(2, scope).map((a) => a.clientNonce);
 }
 
+it("reports a queue still in the earlier cache outbox until its move is marked complete", () => {
+  legacy("nonce-a");
+  // Before the first load moves it, for example when the session expired across the upgrade.
+  expect(hasSavedUnsentSends()).toBe(true);
+  files.set("document/outbox-legacy-done", "");
+  expect(hasSavedUnsentSends()).toBe(false);
+});
+it("reports the earlier cache outbox's backup index too", () => {
+  legacy("nonce-a");
+  files.set("cache/outbox/sends-v4.json.bak", files.get("cache/outbox/sends-v4.json")!);
+  files.delete("cache/outbox/sends-v4.json");
+  expect(hasSavedUnsentSends()).toBe(true);
+});
 it("moves an earlier cache outbox to documents", async () => {
   legacy("nonce-a");
   const [restored] = outboxDisk.load(2, scope);
