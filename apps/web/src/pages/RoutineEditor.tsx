@@ -4,10 +4,17 @@ import type {
   ModelCatalogEntry,
   ModelCredential,
   Routine,
+  RoutineEmailSenders,
   RoutineWatch,
   RoutineWatchInput,
 } from "@rakazo/contracts";
-import { ROUTINE_WATCH_DEFAULT_MINUTES, ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
+import {
+  BOT_EMAIL_NAME_TAKEN,
+  BotEmailNameSchema,
+  ROUTINE_WATCH_DEFAULT_MINUTES,
+  ROUTINE_WATCH_MIN_MINUTES,
+  suggestedEmailName,
+} from "@rakazo/contracts";
 import type { CronFreq, CronLabels, CronPreset } from "@rakazo/core";
 import {
   credentialForModel,
@@ -36,13 +43,14 @@ import {
   Switch,
   Textarea,
 } from "@rakazo/ui-web";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft,
   Clock,
   Eye,
   GitBranch,
   Globe,
+  Mail,
   MessageSquare,
   Pause,
   Plus,
@@ -50,6 +58,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { authClient } from "../lib/auth";
 import { cronLabels } from "../lib/cron";
 import {
   connectedModelOptions,
@@ -59,6 +68,7 @@ import {
 } from "../lib/model-catalog";
 import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
+import { errorText } from "../lib/user-error";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { RoutineSchedule } from "./RoutineSchedule";
 
@@ -95,6 +105,7 @@ export type RoutineDraftState = {
   webhookEnabled: boolean;
   githubEnabled: boolean;
   messageProvider: string | null;
+  emailSenders: RoutineEmailSenders | null;
   active: boolean;
   runAtLocal: string;
   /** Empty runs this routine on the bot's model. */
@@ -191,6 +202,7 @@ export function emptyRoutineDraft(): RoutineDraftState {
     webhookEnabled: false,
     githubEnabled: false,
     messageProvider: null,
+    emailSenders: null,
     active: true,
     runAtLocal: "",
     modelKey: "",
@@ -207,6 +219,7 @@ export function draftFromRoutine(routine: Routine): RoutineDraftState {
     webhookEnabled: routine.webhookEnabled,
     githubEnabled: routine.githubEnabled,
     messageProvider: routine.messageProvider,
+    emailSenders: routine.emailSenders,
     active: routine.active,
     runAtLocal: routineNeedsOneShotArm(routine, routine.crons) ? defaultArmRunAtLocal() : "",
     modelKey:
@@ -229,6 +242,7 @@ export function routineTriggerSummary(
   if (routine.messageProvider === "slack") parts.push(t`Slack message`);
   else if (routine.messageProvider === "teams") parts.push(t`Teams message`);
   else if (routine.messageProvider) parts.push(t`Message event`);
+  if (routine.emailSenders) parts.push(t({ message: "Email", context: "routine trigger" }));
   for (const cron of routine.crons) parts.push(formatCron(cron, labels));
   if (routine.watch) parts.push(t`When something changes`);
   return parts.length > 0 ? parts.join(", ") : t`No trigger`;
@@ -333,6 +347,7 @@ function RoutineListRow({
 }
 
 export function RoutineEditor({
+  bot,
   draft,
   onChange,
   editing,
@@ -350,6 +365,7 @@ export function RoutineEditor({
   onDelete,
   onEnsureWebhook,
 }: {
+  bot: { id: string; name: string };
   draft: RoutineDraftState;
   onChange: (next: RoutineDraftState) => void;
   editing: Routine | null;
@@ -376,6 +392,8 @@ export function RoutineEditor({
     refetchInterval: 15_000,
     select: (routines) => routines.find((routine) => routine.id === editing?.id) ?? null,
   });
+  // Null when this server receives no email or the bot is another member's, which hides the trigger.
+  const email = useQuery(queries.bots.emailAddress.queryOptions({ input: { botId: bot.id } })).data;
   const scheduleDelayed =
     !scheduleStatus.isError &&
     (scheduleStatus.data === undefined
@@ -416,6 +434,7 @@ export function RoutineEditor({
     draft.webhookEnabled ||
     draft.githubEnabled ||
     Boolean(draft.messageProvider) ||
+    Boolean(draft.emailSenders) ||
     Boolean(draft.watch);
   const canTest = Boolean(editing) && !saving && !running;
   const needsOneShotArm =
@@ -669,6 +688,19 @@ export function RoutineEditor({
             />
           ) : null}
 
+          {/* Shown without email too, so a server that stopped receiving mail still lets it go. */}
+          {draft.emailSenders ? (
+            <EmailTriggerCard
+              key={bot.id}
+              bot={bot}
+              domain={email?.domain ?? null}
+              address={email?.address ?? null}
+              senders={draft.emailSenders}
+              onChange={(emailSenders) => onChange({ ...draft, emailSenders })}
+              onRemove={() => onChange({ ...draft, emailSenders: null })}
+            />
+          ) : null}
+
           {needsOneShotArm ? (
             <label htmlFor={`${fieldId}-run-at`} className="block text-body text-muted-foreground">
               <Trans>Run at</Trans>
@@ -729,6 +761,16 @@ export function RoutineEditor({
               <Eye />
               <Trans>When something changes</Trans>
             </DropdownMenuItem>
+
+            {email ? (
+              <DropdownMenuItem
+                disabled={Boolean(draft.emailSenders)}
+                onClick={() => onChange({ ...draft, emailSenders: "owner" })}
+              >
+                <Mail />
+                {t({ message: "Email", context: "routine trigger" })}
+              </DropdownMenuItem>
+            ) : null}
 
             <DropdownMenuItem disabled={draft.githubEnabled} onClick={() => void addGithub()}>
               <GitBranch />
@@ -940,6 +982,133 @@ function MessageTriggerCard({ provider, onRemove }: { provider: string; onRemove
       <p className="mt-2.5 text-body text-muted-foreground/70">
         <Trans>Runs when this bot receives a verified message from this provider.</Trans>
       </p>
+    </div>
+  );
+}
+
+function EmailTriggerCard({
+  bot,
+  domain,
+  address,
+  senders,
+  onChange,
+  onRemove,
+}: {
+  bot: { id: string; name: string };
+  /** Null while loading, or when this server no longer receives email. */
+  domain: string | null;
+  address: string | null;
+  senders: RoutineEmailSenders;
+  onChange: (senders: RoutineEmailSenders) => void;
+  onRemove: () => void;
+}) {
+  const { t } = useLingui();
+  const fieldId = useId();
+  const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  const ownerEmail = authClient.useSession().data?.user.email ?? "";
+  const ownerDomain = ownerEmail.slice(ownerEmail.lastIndexOf("@") + 1);
+  const [name, setName] = useState(() => suggestedEmailName(bot.name));
+  const [claiming, setClaiming] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
+  const cellClass =
+    "break-all rounded-lg bg-muted px-2.5 py-1.5 font-mono text-label text-foreground/75";
+
+  async function claim() {
+    const parsed = BotEmailNameSchema.safeParse(name);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      setClaimError(
+        issue?.code === "too_small" || issue?.code === "too_big"
+          ? t`Use 2 to 64 characters`
+          : issue?.message === BOT_EMAIL_NAME_TAKEN
+            ? t`That address isn't available`
+            : t`Use letters, numbers, dots, dashes or underscores`,
+      );
+      return;
+    }
+    setClaiming(true);
+    setClaimError(null);
+    try {
+      const claimed = await rpc.bots.claimEmailAddress({ botId: bot.id, name: parsed.data });
+      queryClient.setQueryData(
+        queries.bots.emailAddress.queryKey({ input: { botId: bot.id } }),
+        (current) => (current ? { ...current, address: claimed.address } : current),
+      );
+    } catch (error) {
+      setClaimError(errorText(error, t`That address isn't available`));
+    } finally {
+      setClaiming(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border p-3">
+      <div className="flex items-center gap-2.5 px-0.5">
+        <Mail size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
+        <span className="flex-1 text-body-lg text-foreground">
+          <Trans>When an email arrives</Trans>
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={t`Remove email trigger`}
+          onClick={onRemove}
+          className="text-muted-foreground"
+        >
+          <X />
+        </Button>
+      </div>
+      {domain ? (
+        <div className="mt-2.5 space-y-2.5 text-body">
+          {address ? (
+            <div className={cellClass}>{address}</div>
+          ) : (
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void claim();
+              }}
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                <Input
+                  id={`${fieldId}-name`}
+                  aria-label={t`Email address`}
+                  value={name}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    setClaimError(null);
+                  }}
+                  className="min-w-0 flex-1 font-mono text-label"
+                />
+                <span className="shrink-0 font-mono text-label text-muted-foreground">
+                  @{domain}
+                </span>
+              </div>
+              <Button type="submit" variant="secondary" size="sm" disabled={claiming || !name}>
+                <Trans>Claim</Trans>
+              </Button>
+            </form>
+          )}
+          {claimError ? (
+            <p role="alert" className="text-body-sm text-destructive">
+              {claimError}
+            </p>
+          ) : null}
+          {ownerDomain ? (
+            <NativeSelect
+              aria-label={t`Who can start it`}
+              className="w-full"
+              value={senders}
+              onChange={(event) => onChange(event.target.value as RoutineEmailSenders)}
+            >
+              <NativeSelectOption value="owner">{t`Only me`}</NativeSelectOption>
+              <NativeSelectOption value="domain">{t`Anyone at @${ownerDomain}`}</NativeSelectOption>
+            </NativeSelect>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -866,6 +866,10 @@ msgstr "Anthropic Messages"
 msgid "Any model, with your own key"
 msgstr "任意模型，使用你自己的密钥"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Anyone at @{ownerDomain}"
+msgstr "@{ownerDomain} 的任何人"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Anyone with the link"
 msgstr "任何拥有链接的人"
@@ -1359,6 +1363,7 @@ msgid "Chart failed to render: {error}"
 msgstr "图表渲染失败：{error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr "聊天"
 
@@ -1481,6 +1486,10 @@ msgstr "选择如何使用 Rakazo"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "City"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Claim"
+msgstr "认领"
 
 #: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
@@ -1900,6 +1909,7 @@ msgstr "对话"
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
 msgstr "已复制"
 
@@ -3040,6 +3050,15 @@ msgstr "编辑资料"
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "邮箱"
+
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "邮件"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Email address"
+msgstr "邮箱地址"
 
 #: src/lib/user-error.ts
 msgid "Email is not allowed to register"
@@ -4209,6 +4228,10 @@ msgstr "消息…"
 msgid "Messaged {peer}"
 msgstr "已发给 {peer}"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "消息"
@@ -4790,6 +4813,10 @@ msgstr "单次购买，额度不会过期。"
 #: src/components/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr "仅输入 {codeHost} 发给你的验证码。"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Only me"
+msgstr "仅我"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5467,6 +5494,10 @@ msgstr "移除 {site}"
 msgid "Remove change trigger"
 msgstr "移除变化触发器"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Remove email trigger"
+msgstr "移除邮件触发器"
+
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -5546,6 +5577,10 @@ msgstr "替换密钥"
 #: src/components/SecretAskCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Replaces the login saved for {0}"
+msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
 msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
@@ -5749,6 +5784,10 @@ msgstr "运行中"
 #: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "运行中"
+
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "正在运行 {workingRoutine}…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
@@ -6575,6 +6614,10 @@ msgstr "测试"
 msgid "Testing…"
 msgstr "正在测试…"
 
+#: src/pages/RoutineEditor.tsx
+msgid "That address isn't available"
+msgstr "该地址不可用"
+
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "Bot 可以使用该文件，但看不到图片内容。"
@@ -7112,6 +7155,10 @@ msgstr "使用 {hostLabel}"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "访问令牌请使用 {oauthEnvReference}。"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Use 2 to 64 characters"
+msgstr "请使用 2 到 64 个字符"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7132,6 +7179,10 @@ msgstr "{label}使用默认设置"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr "用于此 Bot"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "请使用字母、数字、点、短横线或下划线"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7337,6 +7388,10 @@ msgstr "监视内容"
 msgid "When a webhook fires"
 msgstr "当 Webhook 触发时"
 
+#: src/pages/RoutineEditor.tsx
+msgid "When an email arrives"
+msgstr "收到邮件时"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
 msgstr "完成任务或需要输入时"
@@ -7362,6 +7417,10 @@ msgstr "Bot 应在哪里运行？"
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
 msgstr "谁可以打开此页面"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Who can start it"
+msgstr "谁可以启动"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

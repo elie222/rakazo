@@ -237,6 +237,10 @@ vi.mock("../components/native-segmented-control", () => ({
       ),
     ),
 }));
+vi.mock("../components/routine-email-trigger", () => ({
+  RoutineEmailTrigger: () => null,
+  useBotEmail: () => ({ address: null, ownerDomain: "", setAddress: () => undefined }),
+}));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
 
 const routine = (id: string, name: string, partial: Partial<Routine> = {}) => ({
@@ -249,6 +253,7 @@ const routine = (id: string, name: string, partial: Partial<Routine> = {}) => ({
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
+  emailSenders: null,
   nextRunAt: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   ...partial,

@@ -235,16 +235,62 @@ const AutoReviewVerdict = z.object({
   reason: z.string().optional().catch(undefined),
 });
 
+/**
+ * A verdict counts only when the whole reply is one JSON object, optionally in one code fence,
+ * with no repeated keys. Anything else that still reads as a verdict becomes "ask", so prose, a
+ * second object, or repaired syntax can never pass an action; an unreadable reply is "error".
+ */
 export function parseAutoReviewJudgeText(text: string): {
   decision: AutoReviewJudgeDecision;
   reason?: string;
 } {
-  const verdict = parseModelJson(text, AutoReviewVerdict);
-  if (!verdict) return { decision: "error" };
-  return {
-    decision: verdict.decision,
-    reason: verdict.reason === undefined ? undefined : sanitizeAutoReviewReason(verdict.reason),
-  };
+  const verdict = readStrictVerdict(text);
+  if (verdict) {
+    return {
+      decision: verdict.decision,
+      reason: verdict.reason === undefined ? undefined : sanitizeAutoReviewReason(verdict.reason),
+    };
+  }
+  const loose = parseModelJson(text, AutoReviewVerdict);
+  if (!loose) return { decision: "error" };
+  if (loose.decision !== "ask" || loose.reason === undefined) return { decision: "ask" };
+  return { decision: "ask", reason: sanitizeAutoReviewReason(loose.reason) };
+}
+
+function readStrictVerdict(text: string): z.infer<typeof AutoReviewVerdict> | undefined {
+  const trimmed = text.trim();
+  const body = /^```(?:json)?[ \t]*\r?\n([\s\S]*)```$/i.exec(trimmed)?.[1]?.trim() ?? trimmed;
+  if (!body.startsWith("{")) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (hasRepeatedTopLevelKey(body)) return undefined;
+    const result = AutoReviewVerdict.safeParse(parsed);
+    return result.success ? result.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** JSON.parse keeps the last of repeated keys; call only on text it has already accepted. */
+function hasRepeatedTopLevelKey(json: string): boolean {
+  const keys = new Set<string>();
+  const colon = /\s*:/y;
+  let depth = 0;
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+    if (ch === '"') {
+      const start = i;
+      for (i++; json[i] !== '"'; i++) if (json[i] === "\\") i++;
+      colon.lastIndex = i + 1;
+      if (depth === 1 && colon.test(json)) {
+        const key: string = JSON.parse(json.slice(start, i + 1));
+        if (keys.has(key)) return true;
+        keys.add(key);
+      }
+    } else if (ch === "{" || ch === "[") depth++;
+    else if (ch === "}" || ch === "]") depth--;
+  }
+  return false;
 }
 
 /**

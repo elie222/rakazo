@@ -866,6 +866,10 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "Anyone at @{ownerDomain}"
+msgstr "Jeder bei @{ownerDomain}"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Anyone with the link"
 msgstr "Alle mit dem Link"
@@ -1359,6 +1363,7 @@ msgid "Chart failed to render: {error}"
 msgstr "Diagramm konnte nicht angezeigt werden: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1481,6 +1486,10 @@ msgstr ""
 #: src/components/vault/VaultItemEditor.tsx
 msgid "City"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Claim"
+msgstr "Beanspruchen"
 
 #: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
@@ -1900,6 +1909,7 @@ msgstr ""
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
 msgstr "Kopiert"
 
@@ -3040,6 +3050,15 @@ msgstr "Profil bearbeiten"
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "E-Mail"
+
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "E-Mail"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Email address"
+msgstr "E-Mail-Adresse"
 
 #: src/lib/user-error.ts
 msgid "Email is not allowed to register"
@@ -4209,6 +4228,10 @@ msgstr "Nachricht…"
 msgid "Messaged {peer}"
 msgstr "Nachricht an {peer} gesendet"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr ""
@@ -4790,6 +4813,10 @@ msgstr ""
 #: src/components/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Only me"
+msgstr "Nur ich"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5467,6 +5494,10 @@ msgstr "{site} entfernen"
 msgid "Remove change trigger"
 msgstr "Änderungsauslöser entfernen"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Remove email trigger"
+msgstr "E-Mail-Auslöser entfernen"
+
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -5546,6 +5577,10 @@ msgstr "Schlüssel ersetzen"
 #: src/components/SecretAskCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Replaces the login saved for {0}"
+msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
 msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
@@ -5749,6 +5784,10 @@ msgstr "läuft"
 #: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "Läuft"
+
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "{workingRoutine} läuft…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
@@ -6575,6 +6614,10 @@ msgstr ""
 msgid "Testing…"
 msgstr "Wird getestet…"
 
+#: src/pages/RoutineEditor.tsx
+msgid "That address isn't available"
+msgstr "Diese Adresse ist nicht verfügbar"
+
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "Der Bot kann die Datei nutzen, sieht das Bild aber nicht."
@@ -7112,6 +7155,10 @@ msgstr "{hostLabel} verwenden"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "Verwende {oauthEnvReference} für das Zugriffstoken."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Use 2 to 64 characters"
+msgstr "Verwende 2 bis 64 Zeichen"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7132,6 +7179,10 @@ msgstr "Standards für {label} verwenden"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "Verwende Buchstaben, Ziffern, Punkte, Bindestriche oder Unterstriche"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7337,6 +7388,10 @@ msgstr "Was überwachen"
 msgid "When a webhook fires"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "When an email arrives"
+msgstr "Wenn eine E-Mail eingeht"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
 msgstr "Wenn der Bot fertig ist oder eine Eingabe benötigt"
@@ -7362,6 +7417,10 @@ msgstr "Wo sollen Bots ausgeführt werden?"
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
 msgstr "Wer diese Seite öffnen kann"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Who can start it"
+msgstr "Wer es starten kann"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

@@ -590,11 +590,12 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "ask_user",
     description:
-      "Ask the user one short multiple-choice question with tappable options, then wait for their selection. Use this instead of asking them to type when two to four concise choices are enough.",
+      "Ask the user one short multiple-choice question with tappable options, then wait for their selection. Use this instead of asking them to type when two to four concise choices are enough. Put the content the user is deciding about, such as a draft email, in `detail`.",
     inputSchema: {
       type: "object",
       properties: {
         question: { type: "string", maxLength: 240 },
+        detail: { type: "string", maxLength: 4_000 },
         options: {
           type: "array",
           items: { type: "string", minLength: 1, maxLength: 80 },

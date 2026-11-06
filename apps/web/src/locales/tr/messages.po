@@ -866,6 +866,10 @@ msgstr "Anthropic Messages"
 msgid "Any model, with your own key"
 msgstr "Herhangi bir model, kendi anahtarınla"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Anyone at @{ownerDomain}"
+msgstr "@{ownerDomain} adresindeki herkes"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Anyone with the link"
 msgstr "Bağlantıya sahip herkes"
@@ -1359,6 +1363,7 @@ msgid "Chart failed to render: {error}"
 msgstr "Grafik çizilemedi: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr "Sohbet"
 
@@ -1481,6 +1486,10 @@ msgstr "Rakazo'yu nasıl kullanacağını seç"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "City"
 msgstr "Şehir"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Claim"
+msgstr "Al"
 
 #: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
@@ -1900,6 +1909,7 @@ msgstr "Sohbetler"
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
 msgstr "Kopyalandı"
 
@@ -3040,6 +3050,15 @@ msgstr "Profili Düzenle"
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "E-posta"
+
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "E-posta"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Email address"
+msgstr "E-posta adresi"
 
 #: src/lib/user-error.ts
 msgid "Email is not allowed to register"
@@ -4209,6 +4228,10 @@ msgstr "Mesaj…"
 msgid "Messaged {peer}"
 msgstr "{peer} botuna mesaj gönderildi"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "Mesajlaşma"
@@ -4790,6 +4813,10 @@ msgstr "Tek seferlik satın alma. Krediler sona ermez."
 #: src/components/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr "Yalnızca {codeHost} tarafından gönderilen kodu gir."
+
+#: src/pages/RoutineEditor.tsx
+msgid "Only me"
+msgstr "Yalnızca ben"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5467,6 +5494,10 @@ msgstr "Kaldır: {site}"
 msgid "Remove change trigger"
 msgstr "Değişiklik tetikleyicisini kaldır"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Remove email trigger"
+msgstr "E-posta tetikleyicisini kaldır"
+
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -5547,6 +5578,10 @@ msgstr "Anahtarı değiştir"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Replaces the login saved for {0}"
 msgstr "{0} için kayıtlı girişin yerini alır"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
@@ -5749,6 +5784,10 @@ msgstr "çalışıyor"
 #: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "Çalışıyor"
+
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "{workingRoutine} çalışıyor…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
@@ -6575,6 +6614,10 @@ msgstr "Test ediliyor"
 msgid "Testing…"
 msgstr "Test ediliyor…"
 
+#: src/pages/RoutineEditor.tsx
+msgid "That address isn't available"
+msgstr "Bu adres kullanılamıyor"
+
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "Bot dosyayı kullanabilir ama resmi göremez."
@@ -7112,6 +7155,10 @@ msgstr "{hostLabel} kullan"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "Erişim belirteci için {oauthEnvReference} kullanın."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Use 2 to 64 characters"
+msgstr "2 ile 64 karakter kullanın"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7132,6 +7179,10 @@ msgstr "{label}: varsayılanlarını kullan"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr "Bu botta kullan"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "Harf, rakam, nokta, tire veya alt çizgi kullanın"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7337,6 +7388,10 @@ msgstr "İzlenecek öğe"
 msgid "When a webhook fires"
 msgstr "Webhook tetiklendiğinde"
 
+#: src/pages/RoutineEditor.tsx
+msgid "When an email arrives"
+msgstr "E-posta geldiğinde"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
 msgstr "Tamamladığında veya yanıt gerektiğinde"
@@ -7362,6 +7417,10 @@ msgstr "Botlar nerede çalışsın?"
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
 msgstr "Bu sayfayı kimler açabilir"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Who can start it"
+msgstr "Kimler başlatabilir"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

@@ -59,6 +59,7 @@ import { threadRefreshDelayMs } from "./refresh";
 import {
   clearSessionToken,
   currentSessionGeneration,
+  loadSessionToken,
   replaceSessionTokenIfCurrent,
   restoreSessionToken,
   saveSessionToken,
@@ -165,6 +166,8 @@ describe("mobile API authentication", () => {
       await expect(authenticate("new@example.test", "password", "New User")).rejects.toThrow(
         "Could not save your sign-in on this device. Try again.",
       );
+      // A sign-in that reports failure leaves no session in use.
+      expect((await authHeaders()).authorization).toBeUndefined();
     });
 
     it("preserves human storage error messages", async () => {
@@ -295,6 +298,117 @@ describe("mobile API authentication", () => {
       }),
     );
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("rakazo.session_token", "signup-token");
+  });
+
+  describe.each([
+    ["sign-in", () => signIn("ada@example.test", "correct horse")],
+    ["sign-up", () => signUp("ada@example.test", "correct horse", "Ada")],
+    ["sign-in code", () => signInWithCode("ada@example.test", "123456")],
+  ])("a %s that finishes after a server change", (_name, authenticate) => {
+    it.each([
+      ["https://second.example.test", () => saveApiBase("https://second.example.test")],
+      ["http://127.0.0.1:3100", () => resetApiBase()],
+    ])(
+      "is dropped and signed out on the first server when switching to %s",
+      async (next, change) => {
+        const storage = new Map<string, string>();
+        vi.mocked(SecureStore.getItemAsync).mockImplementation(
+          async (key) => storage.get(key) ?? null,
+        );
+        vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+          storage.set(key, value);
+        });
+        vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+          storage.delete(key);
+        });
+        await saveApiBase("https://first.example.test", { "x-gateway": "fake-gateway-key" });
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
+          if (input.startsWith("https://first.example.test/api/auth/sign-")) {
+            await held;
+            return jsonResponse({ token: "fake-session-first" });
+          }
+          if (input.endsWith("/api/auth/sign-out")) return jsonResponse({ success: true });
+          return jsonResponse({ json: { id: "user" } });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const pending = authenticate();
+        const rejection = expect(pending).rejects.toThrow("Could not continue");
+        await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+        await expect(change()).resolves.toMatchObject({ ok: true });
+        expect(currentApiBase()).toBe(next);
+        release();
+        await rejection;
+
+        expect(await loadSessionToken()).toBe("");
+        expect(storage.get("rakazo.session_token") ?? "").toBe("");
+        await vi.waitFor(() =>
+          expect(fetchMock).toHaveBeenCalledWith(
+            "https://first.example.test/api/auth/sign-out",
+            expect.objectContaining({
+              credentials: "omit",
+              headers: expect.objectContaining({
+                authorization: "Bearer fake-session-first",
+                "x-gateway": "fake-gateway-key",
+              }),
+            }),
+          ),
+        );
+        const [, authInit] = fetchMock.mock.calls[0] ?? [];
+        expect(authInit?.credentials).toBe("omit");
+
+        fetchMock.mockClear();
+        await rpc("me").catch(() => undefined);
+        const [url, init] = fetchMock.mock.calls[0] ?? [];
+        expect(url).toMatch(new RegExp(`^${next.replaceAll(".", "\\.")}/`));
+        expect(new Headers(init?.headers).get("authorization")).toBeNull();
+
+        await resetApiBase();
+      },
+    );
+  });
+
+  it("drops a sign-in whose session changes while its token is being written", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let writing!: () => void;
+    const started = new Promise<void>((resolve) => {
+      writing = resolve;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key) => {
+      if (key !== "rakazo.session_token") return;
+      writing();
+      await held;
+    });
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) =>
+      input.endsWith("/api/auth/sign-out")
+        ? jsonResponse({ success: true })
+        : jsonResponse({ token: "fake-session-late" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = signIn("ada@example.test", "correct horse");
+    const rejection = expect(pending).rejects.toThrow("Could not continue");
+    await started;
+    const clearing = clearSessionToken();
+    release();
+    await clearing;
+    await rejection;
+
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/auth\/sign-out$/),
+        expect.objectContaining({
+          headers: expect.objectContaining({ authorization: "Bearer fake-session-late" }),
+        }),
+      ),
+    );
   });
 
   it("emails a sign-in code and persists the session the code returns", async () => {
@@ -3624,6 +3738,26 @@ describe("mobile thread event reduction", () => {
     expect(next.olderCursor).toBeNull();
   });
 
+  it("keeps the routine behind a started run", () => {
+    const started = applyMobileThreadEvent(snapshot(), {
+      type: "run.started",
+      seq: 9,
+      runId: "routine-run",
+      botId: "bot-1",
+      payload: { trigger: "routine", routineName: "Daily check" },
+    });
+    expect(started?.run).toMatchObject({ trigger: "routine", routineName: "Daily check" });
+
+    const resumed = applyMobileThreadEvent(started, {
+      type: "run.started",
+      seq: 10,
+      runId: "routine-run",
+      botId: "bot-1",
+      payload: { trigger: "routine" },
+    });
+    expect(resumed?.run).toMatchObject({ trigger: "routine", routineName: "Daily check" });
+  });
+
   it("shows peer-started group work without hiding a waiting member", () => {
     const initial: MobileSnapshot = {
       ...snapshot(),
@@ -3645,10 +3779,16 @@ describe("mobile thread event reduction", () => {
     });
 
     expect(next?.cursor).toBe(9);
-    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "running", error: null });
+    expect(next?.run).toEqual({
+      id: "peer-run",
+      botId: "bot-2",
+      status: "running",
+      trigger: "user_message",
+      error: null,
+    });
     expect(next?.activeRuns).toEqual([
       { id: "waiting-run", botId: "bot-1", status: "waiting_input" },
-      { id: "peer-run", botId: "bot-2", status: "running", error: null },
+      { id: "peer-run", botId: "bot-2", status: "running", trigger: "user_message", error: null },
     ]);
     expect(next?.members?.map((member) => member.status)).toEqual(["waiting_input", "running"]);
   });
@@ -4705,6 +4845,7 @@ describe("mobile thread event reduction", () => {
       id: "run-remote",
       botId: "bot-1",
       status: "running",
+      trigger: "routine",
       error: null,
     });
     expect(started?.activeRuns).toEqual([started?.run]);

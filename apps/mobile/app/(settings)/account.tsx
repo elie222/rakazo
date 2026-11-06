@@ -107,6 +107,7 @@ import {
   useTrustedLinkSites,
 } from "../../lib/trusted-link-sites";
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
+import { confirmUnsentSendLoss } from "../../lib/unsent-send-warning";
 import { errorText } from "../../lib/user-error";
 
 let hapticsSaveVersion = 0;
@@ -150,6 +151,8 @@ export default function Account() {
   const deletion = useAccountDeletion({ onSecurity: setSecurity });
   const { run: securityAction } = deletion;
   const [signingOut, setSigningOut] = useState(false);
+  // Held from the tap, so a second tap while the unsent-message check runs starts nothing.
+  const signOutStarted = useRef(false);
   const pending = deletion.pending || signingOut;
   const [notifications, setNotifications] = useState<LiveNotificationSettings>(
     DEFAULT_LIVE_NOTIFICATION_SETTINGS,
@@ -365,6 +368,12 @@ export default function Account() {
   );
 
   async function handleSignOut() {
+    if (signOutStarted.current) return;
+    signOutStarted.current = true;
+    if (!(await confirmUnsentSendLoss("sign-out"))) {
+      signOutStarted.current = false;
+      return;
+    }
     setSigningOut(true);
     setSignOutError(null);
     try {
@@ -375,6 +384,7 @@ export default function Account() {
     } catch (err) {
       setSignOutError(errorText(err, t("Could not sign out")));
       setSigningOut(false);
+      signOutStarted.current = false;
     }
   }
 

@@ -48,6 +48,15 @@ Gives you a URL and key. Any service that can send a POST request can start the 
 Gives you a URL to add as a GitHub webhook, so pushes, issues and pull requests can start the
 routine.
 
+### Email
+
+Gives the bot its own address, such as `scout@bots.example.com`. The first time, pick the part
+before the @; it stays the bot's for good. Forward or CC mail to it and the routine runs with
+that email. Choose who can start it: **Only me**, or **Anyone at** your own email domain. Mail
+from anyone else, and mail sent BCC, is ignored. If mail from your own address can't be verified,
+the chat says so; your email provider then needs DKIM signing turned on for your domain. Appears only when your server
+[receives email](./self-host-inbound-email.md).
+
 ### Slack message
 
 Runs when the bot receives a message in Slack. Needs [Slack connected](./messaging-apps.md).

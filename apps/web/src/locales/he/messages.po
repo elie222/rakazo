@@ -866,6 +866,10 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr "כל מודל, עם מפתח משלך"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Anyone at @{ownerDomain}"
+msgstr "כל מי שב-@{ownerDomain}"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Anyone with the link"
 msgstr "כל מי שיש לו את הקישור"
@@ -1359,6 +1363,7 @@ msgid "Chart failed to render: {error}"
 msgstr "לא ניתן להציג את התרשים: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1481,6 +1486,10 @@ msgstr ""
 #: src/components/vault/VaultItemEditor.tsx
 msgid "City"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Claim"
+msgstr "תפוס"
 
 #: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
@@ -1900,6 +1909,7 @@ msgstr ""
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
 msgstr "הועתק"
 
@@ -3040,6 +3050,15 @@ msgstr "עריכת פרופיל"
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "אימייל"
+
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "אימייל"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Email address"
+msgstr "כתובת אימייל"
 
 #: src/lib/user-error.ts
 msgid "Email is not allowed to register"
@@ -4209,6 +4228,10 @@ msgstr "הודעה…"
 msgid "Messaged {peer}"
 msgstr "נשלחה הודעה אל {peer}"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "הודעות"
@@ -4790,6 +4813,10 @@ msgstr ""
 #: src/components/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Only me"
+msgstr "רק אני"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5467,6 +5494,10 @@ msgstr "הסרת {site}"
 msgid "Remove change trigger"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "Remove email trigger"
+msgstr "הסר טריגר אימייל"
+
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -5546,6 +5577,10 @@ msgstr "החלפת מפתח"
 #: src/components/SecretAskCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Replaces the login saved for {0}"
+msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
 msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
@@ -5749,6 +5784,10 @@ msgstr "פועל"
 #: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "פועל"
+
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "מריץ את {workingRoutine}…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
@@ -6575,6 +6614,10 @@ msgstr ""
 msgid "Testing…"
 msgstr "בודק…"
 
+#: src/pages/RoutineEditor.tsx
+msgid "That address isn't available"
+msgstr "הכתובת הזו לא זמינה"
+
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "הבוט יוכל להשתמש בקובץ, אבל לא יראה את התמונה."
@@ -7112,6 +7155,10 @@ msgstr "שימוש ב{hostLabel}"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "השתמש ב-{oauthEnvReference} עבור אסימון הגישה."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Use 2 to 64 characters"
+msgstr "השתמשו ב-2 עד 64 תווים"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7132,6 +7179,10 @@ msgstr "שימוש בברירות המחדל עבור {label}"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "השתמשו באותיות, ספרות, נקודות, מקפים או קווים תחתונים"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7337,6 +7388,10 @@ msgstr ""
 msgid "When a webhook fires"
 msgstr "כש-webhook מופעל"
 
+#: src/pages/RoutineEditor.tsx
+msgid "When an email arrives"
+msgstr "כשמגיע אימייל"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
 msgstr "כשהוא מסיים או זקוק לקלט"
@@ -7362,6 +7417,10 @@ msgstr "איפה הבוטים ירוצו?"
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
 msgstr "מי יכול לפתוח את הדף הזה"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Who can start it"
+msgstr "מי יכול להפעיל"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

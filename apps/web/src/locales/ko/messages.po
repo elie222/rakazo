@@ -866,6 +866,10 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "Anyone at @{ownerDomain}"
+msgstr "@{ownerDomain}의 모든 사람"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Anyone with the link"
 msgstr "링크가 있는 모든 사용자"
@@ -1359,6 +1363,7 @@ msgid "Chart failed to render: {error}"
 msgstr "차트를 표시하지 못했습니다: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1481,6 +1486,10 @@ msgstr ""
 #: src/components/vault/VaultItemEditor.tsx
 msgid "City"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Claim"
+msgstr "등록"
 
 #: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
@@ -1900,6 +1909,7 @@ msgstr ""
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
 msgstr "복사됨"
 
@@ -3040,6 +3050,15 @@ msgstr "Bot 정보 수정"
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "이메일"
+
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "이메일"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Email address"
+msgstr "이메일 주소"
 
 #: src/lib/user-error.ts
 msgid "Email is not allowed to register"
@@ -4209,6 +4228,10 @@ msgstr "메시지를 입력하세요"
 msgid "Messaged {peer}"
 msgstr "{peer}에게 메시지 보냄"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "메시징"
@@ -4790,6 +4813,10 @@ msgstr ""
 #: src/components/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Only me"
+msgstr "나만"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5467,6 +5494,10 @@ msgstr "{site} 삭제"
 msgid "Remove change trigger"
 msgstr "변경 트리거 제거"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Remove email trigger"
+msgstr "이메일 트리거 제거"
+
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -5546,6 +5577,10 @@ msgstr "키 교체"
 #: src/components/SecretAskCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Replaces the login saved for {0}"
+msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
 msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
@@ -5749,6 +5784,10 @@ msgstr "실행 중"
 #: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "실행 중"
+
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "{workingRoutine} 실행 중…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
@@ -6575,6 +6614,10 @@ msgstr ""
 msgid "Testing…"
 msgstr "테스트 중…"
 
+#: src/pages/RoutineEditor.tsx
+msgid "That address isn't available"
+msgstr "사용할 수 없는 주소입니다"
+
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "Bot은 파일을 사용할 수 있지만 이미지는 볼 수 없습니다."
@@ -7112,6 +7155,10 @@ msgstr "{hostLabel} 사용"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "액세스 토큰에는 {oauthEnvReference}를 사용하세요."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Use 2 to 64 characters"
+msgstr "2~64자를 사용하세요"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7132,6 +7179,10 @@ msgstr "{label}에 기본값 사용"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "문자, 숫자, 점, 대시 또는 밑줄을 사용하세요"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7337,6 +7388,10 @@ msgstr "감시 대상"
 msgid "When a webhook fires"
 msgstr "웹훅이 실행될 때"
 
+#: src/pages/RoutineEditor.tsx
+msgid "When an email arrives"
+msgstr "이메일이 도착하면"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
 msgstr "작업을 완료하거나 입력이 필요할 때"
@@ -7362,6 +7417,10 @@ msgstr "Bot을 어디에서 실행할까요?"
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
 msgstr "이 페이지를 열 수 있는 사람"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Who can start it"
+msgstr "시작할 수 있는 사람"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

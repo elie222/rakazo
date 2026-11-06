@@ -866,6 +866,10 @@ msgstr "Anthropic Messages"
 msgid "Any model, with your own key"
 msgstr "Dowolny model z własnym kluczem"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Anyone at @{ownerDomain}"
+msgstr "Każdy z @{ownerDomain}"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Anyone with the link"
 msgstr "Każdy, kto ma link"
@@ -1359,6 +1363,7 @@ msgid "Chart failed to render: {error}"
 msgstr "Nie udało się wyświetlić wykresu: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr "Czat"
 
@@ -1481,6 +1486,10 @@ msgstr "Wybierz sposób korzystania z Rakazo"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "City"
 msgstr "Miejscowość"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Claim"
+msgstr "Zarezerwuj"
 
 #: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
@@ -1900,6 +1909,7 @@ msgstr "Rozmowy"
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
 msgstr "Skopiowano"
 
@@ -3040,6 +3050,15 @@ msgstr "Edytuj profil"
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "E-mail"
+
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "E-mail"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Email address"
+msgstr "Adres e-mail"
 
 #: src/lib/user-error.ts
 msgid "Email is not allowed to register"
@@ -4209,6 +4228,10 @@ msgstr "Wiadomość…"
 msgid "Messaged {peer}"
 msgstr "Wysłano wiadomość do {peer}"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr "Wiadomości"
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "Komunikatory"
@@ -4790,6 +4813,10 @@ msgstr "Zakup jednorazowy. Środki nie wygasają."
 #: src/components/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr "Wpisz tylko kod wysłany przez {codeHost}."
+
+#: src/pages/RoutineEditor.tsx
+msgid "Only me"
+msgstr "Tylko ja"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5467,6 +5494,10 @@ msgstr "Usuń {site}"
 msgid "Remove change trigger"
 msgstr "Usuń wyzwalacz zmiany"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Remove email trigger"
+msgstr "Usuń wyzwalacz e-mail"
+
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -5547,6 +5578,10 @@ msgstr "Zastąp klucz"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Replaces the login saved for {0}"
 msgstr "Zastępuje login zapisany dla {0}"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
+msgstr "Odpowiedzi"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
@@ -5749,6 +5784,10 @@ msgstr "działa"
 #: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "Działa"
+
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "Trwa {workingRoutine}…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
@@ -6575,6 +6614,10 @@ msgstr "Testowanie"
 msgid "Testing…"
 msgstr "Testowanie…"
 
+#: src/pages/RoutineEditor.tsx
+msgid "That address isn't available"
+msgstr "Ten adres jest niedostępny"
+
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "Bot może użyć pliku, ale nie zobaczy obrazu."
@@ -7112,6 +7155,10 @@ msgstr "Użyj {hostLabel}"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "Użyj {oauthEnvReference} jako tokenu dostępu."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Use 2 to 64 characters"
+msgstr "Użyj od 2 do 64 znaków"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7132,6 +7179,10 @@ msgstr "Użyj domyślnych dla {label}"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr "Użyj w tym bocie"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "Użyj liter, cyfr, kropek, myślników lub podkreśleń"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7337,6 +7388,10 @@ msgstr "Co obserwować"
 msgid "When a webhook fires"
 msgstr "Gdy zadziała webhook"
 
+#: src/pages/RoutineEditor.tsx
+msgid "When an email arrives"
+msgstr "Gdy przyjdzie e-mail"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
 msgstr "Gdy skończy lub potrzebuje danych"
@@ -7362,6 +7417,10 @@ msgstr "Gdzie mają działać boty?"
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
 msgstr "Kto może otworzyć tę stronę"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Who can start it"
+msgstr "Kto może uruchomić"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
