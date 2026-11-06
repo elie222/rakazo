@@ -162,11 +162,11 @@ export function McpAppCard({ block, target }: { block: AppBlock; target: Artifac
   const bordered = block.prefersBorder !== false;
   return (
     <div ref={box} className="w-[552px] max-w-full" data-testid="mcp-app">
-      <div className="mb-1.5 px-1 text-xs text-muted-foreground" dir="auto">
+      <div className="mb-1.5 px-1 text-label text-muted-foreground" dir="auto">
         {block.server}
       </div>
       <div
-        className={cn("overflow-hidden", bordered && "rounded-[20px] border border-border bg-card")}
+        className={cn("overflow-hidden", bordered && "rounded-2xl border border-border bg-card")}
       >
         {appDocument ? (
           <iframe

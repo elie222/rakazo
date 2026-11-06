@@ -32,7 +32,7 @@ export function ToolSteps({
   return (
     <div className="space-y-0.5" data-testid="tool-rows">
       {hidden > 0 ? (
-        <div className="text-[12px] leading-5 text-muted-foreground" data-testid="tool-rows-hidden">
+        <div className="text-label leading-5 text-muted-foreground" data-testid="tool-rows-hidden">
           <Plural value={hidden} one="+# earlier step" other="+# earlier steps" />
         </div>
       ) : null}
@@ -42,19 +42,19 @@ export function ToolSteps({
         return (
           <Fragment key={index}>
             {step.note ? (
-              <div className="py-1 text-[13px] text-foreground/75" data-testid="tool-step-note">
+              <div className="py-1 text-body-sm text-foreground/75" data-testid="tool-step-note">
                 <ChatMarkdown>{step.note}</ChatMarkdown>
               </div>
             ) : null}
             <div className="flex min-w-0 items-center gap-2 leading-5">
               <span
-                className={`text-[12px] ${isCurrent ? "text-warning" : "text-success"}`}
+                className={`text-label ${isCurrent ? "text-warning" : "text-success"}`}
                 style={{ animation: isCurrent ? "rkPulse 1.2s ease-in-out infinite" : undefined }}
               >
                 {isCurrent ? "◷" : "✓"}
               </span>
               <span
-                className={`min-w-0 flex-1 truncate text-[13px] ${
+                className={`min-w-0 flex-1 truncate text-body-sm ${
                   isCurrent ? "text-foreground" : "text-muted-foreground"
                 }`}
                 title={step.label}
@@ -96,7 +96,7 @@ export function ToolActivityDisclosure({
       className="group"
     >
       <CollapsibleTrigger
-        className={`flex min-h-6 w-fit cursor-pointer list-none items-center gap-1 rounded-md py-0.5 pe-1.5 text-[13px] font-medium outline-none hover:text-foreground/75 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+        className={`flex min-h-6 w-fit cursor-pointer list-none items-center gap-1 rounded-md py-0.5 pe-1.5 text-body-sm font-medium outline-none hover:text-foreground/75 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
           live ? "text-foreground/75" : "text-muted-foreground"
         }`}
       >

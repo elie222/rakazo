@@ -5,6 +5,8 @@ import { messageReplyPreview } from "./message-quote.js";
 import {
   channelMessageSender,
   isPageOriginReply,
+  otherAuthor,
+  payloadAuthor,
   previewMessageText,
   replyAttachment,
   replyLabel,
@@ -112,6 +114,25 @@ it("localizes legacy image-only quotes while retaining real selected caption tex
   expect(
     replyLabel("photo.png", "Caption photo.png", { ...image, name: "photo.png" }, labels),
   ).toBe("photo.png");
+});
+
+describe("message authors", () => {
+  const ana = { id: "user-a", name: "Ana" };
+
+  it("names only someone other than me", () => {
+    expect(otherAuthor(ana, "user-b")).toEqual(ana);
+    expect(otherAuthor(ana, "user-a")).toBeUndefined();
+    expect(otherAuthor(undefined, "user-b")).toBeUndefined();
+    // Before the session loads, nobody is named rather than everyone.
+    expect(otherAuthor(ana, undefined)).toBeUndefined();
+  });
+
+  it("reads a live event's author and keeps the known one across updates", () => {
+    expect(payloadAuthor({ author: ana })).toEqual({ author: ana });
+    expect(payloadAuthor({}, { author: ana })).toEqual({ author: ana });
+    expect(payloadAuthor({ author: { id: "user-a" } })).toEqual({});
+    expect(payloadAuthor({})).toEqual({});
+  });
 });
 
 describe("channelMessageSender", () => {

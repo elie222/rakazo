@@ -28,7 +28,7 @@ const NO_INSTALLATIONS: MessagingInstallationsStatus = { available: false, insta
 
 function Row({ children, actions }: { children: ReactNode; actions: ReactNode }) {
   return (
-    <li className="flex items-center justify-between gap-3 text-[14px] text-foreground/75">
+    <li className="flex items-center justify-between gap-3 text-body text-foreground/75">
       <span className="min-w-0 truncate">{children}</span>
       <span className="flex shrink-0 gap-2">{actions}</span>
     </li>
@@ -36,7 +36,7 @@ function Row({ children, actions }: { children: ReactNode; actions: ReactNode })
 }
 
 function Meta({ children }: { children: ReactNode }) {
-  return <span className="ml-2 text-[12px] text-muted-foreground/70">{children}</span>;
+  return <span className="ml-2 text-label text-muted-foreground/70">{children}</span>;
 }
 
 export function MessagingSettingsPanel() {
@@ -46,6 +46,7 @@ export function MessagingSettingsPanel() {
   const [linkRequest, setLinkRequest] = useState<{
     code: string;
     expiresAt: string;
+    shared?: boolean;
     botId: string;
     provider: string;
   } | null>(null);
@@ -276,7 +277,7 @@ export function MessagingSettingsPanel() {
 
   return (
     <div data-testid="messaging-settings" className="space-y-8">
-      {shownError ? <p className="text-[13px] text-destructive">{shownError}</p> : null}
+      {shownError ? <p className="text-body-sm text-destructive">{shownError}</p> : null}
 
       {hasRequests ? (
         <section>
@@ -319,7 +320,7 @@ export function MessagingSettingsPanel() {
               label={
                 <>
                   <p>{providerLabel("slack")}</p>
-                  <p className="mt-0.5 text-[13px] text-muted-foreground">
+                  <p className="mt-0.5 text-body-sm text-muted-foreground">
                     <Trans>Chat with your bot from Slack.</Trans>
                   </p>
                 </>
@@ -340,7 +341,7 @@ export function MessagingSettingsPanel() {
                 label={
                   <>
                     <p>{providerLabel("slack")}</p>
-                    <p className="mt-0.5 text-[13px] text-muted-foreground">
+                    <p className="mt-0.5 text-body-sm text-muted-foreground">
                       {[
                         installation.workspaceName,
                         installation.botName ?? botName(installation.botId),
@@ -382,7 +383,7 @@ export function MessagingSettingsPanel() {
             <button
               type="button"
               onClick={installSlack}
-              className="flex w-full items-center gap-2 rounded-b-xl px-4 py-3 text-start text-[14px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="flex w-full items-center gap-2 rounded-b-xl px-4 py-3 text-start text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <PlusIcon className="size-4" aria-hidden />
               <Trans>Add workspace</Trans>
@@ -436,7 +437,7 @@ export function MessagingSettingsPanel() {
           </div>
         ) : null}
         {linkCode ? (
-          <p className="mt-3 text-[14px] text-foreground/75" data-testid="messaging-link-code">
+          <p className="mt-3 text-body text-foreground/75" data-testid="messaging-link-code">
             {linkAddress ? (
               <Trans>
                 Send <span className="font-mono text-foreground">{linkCode}</span> to{" "}
@@ -449,6 +450,11 @@ export function MessagingSettingsPanel() {
                 within 10 minutes.
               </Trans>
             )}
+          </p>
+        ) : null}
+        {linkCode && linkRequest?.shared ? (
+          <p className="mt-1 text-body-sm text-muted-foreground">
+            <Trans>Everyone in this bot's space can read the chats it gets from {linkApp}.</Trans>
           </p>
         ) : null}
       </section>
@@ -510,7 +516,7 @@ export function MessagingSettingsPanel() {
               const bot = bots.find((candidate) => candidate.id === conversation.botId);
               const open = settingsConversationId === conversation.id;
               return (
-                <li key={conversation.id} className="text-[14px] text-foreground/75">
+                <li key={conversation.id} className="text-body text-foreground/75">
                   <div className="flex items-center justify-between gap-3">
                     <span className="min-w-0 truncate">
                       {conversation.displayName || t`External conversation`}

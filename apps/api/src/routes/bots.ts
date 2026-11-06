@@ -410,7 +410,6 @@ export function botsRoutes(ctx: RouterContext) {
             where: {
               id: input.sectionId,
               spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
             },
             select: { id: true },
           });
@@ -565,6 +564,7 @@ export function botsRoutes(ctx: RouterContext) {
                 state: "stopped",
                 controlHolder: "none",
                 controlLeaseId: null,
+                controlUserId: null,
                 controlLeaseExpiresAt: null,
                 controlBotId: null,
                 controlRunId: null,
@@ -611,8 +611,9 @@ export function botsRoutes(ctx: RouterContext) {
         if (!bot.archivedAt) return { ok: true as const };
         try {
           if (bot.computer) {
+            // The limit is the computer's owner's: a shared Team Computer is the space owner's.
             await restoreBotUnderComputerQuota(deps.prisma, {
-              userId: context.actor.userId,
+              userId: bot.computer.userId,
               botId: bot.id,
               computerId: bot.computer.id,
             });
@@ -630,6 +631,8 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       rotateWebhookSecret: authed.bots.rotateWebhookSecret.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        // Webhook runs act as the bot's creator, so only the creator can issue its secret.
+        if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
         const plaintext = randomBytes(32).toString("base64url");
         const stored = await deps.secrets.put(plaintext, {
           operationId: "bots.rotateWebhookSecret",
@@ -714,7 +717,6 @@ export function botsRoutes(ctx: RouterContext) {
             where: {
               id: input.sectionId,
               spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
             },
             select: { id: true },
           });
@@ -769,7 +771,9 @@ export function botsRoutes(ctx: RouterContext) {
         repos.listBotSections(context.actor),
       ),
       create: authed.botSections.create.handler(async ({ context, input }) =>
-        repos.createBotSection(context.actor, input),
+        repos.createBotSection(context.actor, input).catch((error: unknown) => {
+          throw mapSpaceLifecycleError(error);
+        }),
       ),
       update: authed.botSections.update.handler(async ({ context, input }) => {
         try {

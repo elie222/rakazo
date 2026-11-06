@@ -488,9 +488,13 @@ export class PiAgentRuntime implements AgentRuntime {
             activeStreamTarget = target;
             contextPolicy = contextPolicyFor(target);
             host.activeModel = target;
+            // A backup keeps its own effort.
             const nextThinkingLevel = thinkingLevelFor(
               target.model,
-              target.config.thinkingLevel ?? request.model.thinkingLevel,
+              target.config.thinkingLevel ??
+                (sameModelTarget(target.config, request.model)
+                  ? request.model.thinkingLevel
+                  : undefined),
             );
             agent.state.model = target.model;
             agent.state.thinkingLevel = nextThinkingLevel;

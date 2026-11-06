@@ -1,4 +1,5 @@
 export const PL_MESSAGES: Record<string, string> = {
+  Haptics: "Haptyka",
   "Add rule": "Dodaj regułę",
   "Tool name": "Nazwa narzędzia",
   Address: "Adres",
@@ -416,6 +417,9 @@ export const PL_MESSAGES: Record<string, string> = {
   Play: "Odtwórz",
   Pause: "Wstrzymaj",
   "Select text": "Zaznacz tekst",
+  "Filter by who made it": "Filtruj według autora",
+  "All files": "Wszystkie pliki",
+  "Made by bots": "Utworzone przez boty",
   "All bots": "Wszystkie boty",
   Artifact: "Artefakt",
   Artifacts: "Artefakty",
@@ -782,6 +786,21 @@ export const PL_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Zawsze zezwalaj na to narzędzie",
   "Always allow {site}": "Zawsze zezwalaj na {site}",
   "Replaces the login saved for {site}": "Zastępuje dane logowania zapisane dla {site}",
+  "Cancel open invites": "Anuluj otwarte zaproszenia",
+  "Could not cancel invites": "Nie udało się anulować zaproszeń",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "Wszyscy w przestrzeni tego bota mogą czytać czaty, które otrzymuje z {app}.",
+  Invite: "Zaproś",
+  "Leave space": "Opuść przestrzeń",
+  "Leave {name}?": "Opuścić {name}?",
+  "Could not load members": "Nie udało się wczytać członków",
+  "Could not create invite link": "Nie udało się utworzyć linku z zaproszeniem",
+  "Could not remove member": "Nie udało się usunąć członka",
+  "Could not leave space": "Nie udało się opuścić przestrzeni",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "Strony, na których się zalogujesz, pozostaną zalogowane dla wszystkich w tej przestrzeni",
+  "The bot's browser stays signed in for everyone in this space":
+    "Przeglądarka bota pozostaje zalogowana dla wszystkich w tej przestrzeni",
   "Could not submit answer": "Nie udało się przesłać odpowiedzi",
   Deny: "Odmów",
   "Please try again.": "Spróbuj ponownie.",
@@ -1035,10 +1054,10 @@ export const PL_MESSAGES: Record<string, string> = {
   "The server had a problem": "Wystąpił problem z serwerem",
   "Could not load MCP servers": "Nie udało się wczytać serwerów MCP",
   Disabled: "Wyłączone",
-  "OAuth connected": "Połączono przez OAuth",
-  "OAuth expired": "OAuth wygasło",
+  "Needs sign-in": "Wymaga logowania",
+  "Not connected": "Nie połączono",
+  "Not working": "Nie działa",
   "Needs an OAuth client ID": "Wymaga identyfikatora klienta OAuth",
-  "Credential saved": "Zapisano dane uwierzytelniające",
   Authentication: "Uwierzytelnianie",
   "No auth": "Bez uwierzytelniania",
   "The bot couldn't reply because its provider's daily limit was reached.":
@@ -1239,7 +1258,6 @@ export const PL_MESSAGES: Record<string, string> = {
   "Schedule delayed": "Harmonogram jest opóźniony",
   "API key header name": "Nazwa nagłówka klucza API",
   Bearer: "Bearer",
-  "Connect OAuth": "Połącz przez OAuth",
   "Could not start MCP OAuth": "Nie udało się rozpocząć OAuth MCP",
   OAuth: "OAuth",
   "Always open {site}": "Zawsze otwieraj {site}",
@@ -1411,6 +1429,7 @@ export const PL_MESSAGES: Record<string, string> = {
   Adds: "Zawiera",
   "Works with": "Współpracuje z",
   "Bot templates": "Szablony botów",
+  "Recent payments": "Ostatnie płatności",
   "Spending limit": "Limit wydatków",
   Amount: "Kwota",
   Currency: "Waluta",
@@ -1426,6 +1445,12 @@ export const PL_MESSAGES: Record<string, string> = {
   "{amount} spent this week": "Wydano w tym tygodniu: {amount}",
   "{amount} spent this month": "Wydano w tym miesiącu: {amount}",
   "{amount} spent": "Wydano: {amount}",
+  "Button “{button}” · read from the page, not checked":
+    "Przycisk „{button}” · odczytane ze strony, niesprawdzone",
+  "On the button": "Na przycisku",
+  "Read from the page, not checked": "Odczytane ze strony, niesprawdzone",
+  Total: "Razem",
+  "{name} options": "Opcje modelu {name}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

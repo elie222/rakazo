@@ -108,7 +108,7 @@ describePostgres("unread inbox chat count (PostgreSQL)", () => {
     });
   }
 
-  it("matches the inbox across member Spaces without counting hidden or other users' chats", async () => {
+  it("matches the inbox across member Spaces, including chats other members made", async () => {
     for (const spaceId of spaceIds.slice(0, 2)) {
       await bot(spaceId);
       await group(spaceId, 2);
@@ -139,7 +139,14 @@ describePostgres("unread inbox chat count (PostgreSQL)", () => {
     });
     await expect(
       runAsTenant({ spaceId, userId }, () => countUnreadInboxChats(prisma, { spaceId, userId })),
-    ).resolves.toBe(4);
+    ).resolves.toBe(6);
+    // Another organization's chats count only there, like its Spaces in the sidebar.
     await expect(countUnreadInboxChats(prisma, { spaceId: spaceIds[2]!, userId })).resolves.toBe(1);
+    // A Space shared with them as a guest shows, and counts, wherever they are.
+    await asSystem(prisma).member.updateMany({
+      where: { organizationId: organizationIds[1], userId },
+      data: { role: "guest" },
+    });
+    await expect(countUnreadInboxChats(prisma, { spaceId, userId })).resolves.toBe(7);
   });
 });

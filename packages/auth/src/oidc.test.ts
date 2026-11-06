@@ -70,6 +70,7 @@ function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
       findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
         hasMembership || signedInUsers.has(where.userId) ? { id: "existing-space" } : null,
       ),
+      findMany: vi.fn(async () => []),
     },
     member: { findMany: vi.fn(async () => []) },
     messagingIdentity: { deleteMany: vi.fn(async () => ({})) },

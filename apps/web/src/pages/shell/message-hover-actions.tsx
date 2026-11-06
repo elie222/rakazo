@@ -65,7 +65,7 @@ export function MessageHoverActions({
                   key={emoji}
                   type="button"
                   aria-label={emoji}
-                  className="grid h-11 w-11 place-items-center rounded-xl text-2xl hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                  className="grid h-11 w-11 place-items-center rounded-xl text-heading1 hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
                   onClick={() => {
                     setReactionsOpen(false);
                     void onReact(message, emoji);

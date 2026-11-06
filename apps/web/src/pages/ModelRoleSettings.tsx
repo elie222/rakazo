@@ -253,7 +253,7 @@ export function ModelRoleSettings({
   const ordered = rows.length + (primary ? 0 : 1) > 1;
   const rowClass = `flex min-h-[52px] items-center gap-2.5 py-2 pe-2 ${ordered ? "ps-2" : "ps-3"}`;
   const number = (index: number) => (
-    <span className="grid size-5 shrink-0 place-items-center rounded-md bg-accent text-[12px] text-muted-foreground">
+    <span className="grid size-5 shrink-0 place-items-center rounded-md bg-accent text-label text-muted-foreground">
       {index + 1}
     </span>
   );
@@ -262,8 +262,8 @@ export function ModelRoleSettings({
       type="button"
       className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md py-1 text-start outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
-      <span className="truncate text-[15px] text-foreground">{label}</span>
-      {sub ? <span className="truncate text-[13px] text-muted-foreground">{sub}</span> : null}
+      <span className="truncate text-body-lg text-foreground">{label}</span>
+      {sub ? <span className="truncate text-body-sm text-muted-foreground">{sub}</span> : null}
     </button>
   );
 
@@ -345,7 +345,7 @@ export function ModelRoleSettings({
                 onReopened={() => setReopen(null)}
               />
               {isPrimary && thinkingLevels.length && choice.thinkingLevel ? (
-                <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[12.5px] text-muted-foreground">
+                <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-body-sm text-muted-foreground">
                   <Trans>Thinking: {thinkingLevelLabel(choice.thinkingLevel)}</Trans>
                 </span>
               ) : null}
@@ -427,7 +427,7 @@ export function ModelRoleSettings({
               trigger={
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-b-xl px-3 py-3 text-start text-[14px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="flex w-full items-center gap-2 rounded-b-xl px-3 py-3 text-start text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   <Plus className="size-4" aria-hidden />
                   <Trans>Add fallback</Trans>
@@ -452,7 +452,7 @@ export function ModelRoleSettings({
         <Spinner className="mt-3" aria-label={t`Loading model catalog…`} />
       ) : null}
       {state.error ? (
-        <div role="alert" className="mt-2 text-sm text-destructive">
+        <div role="alert" className="mt-2 text-body text-destructive">
           {state.error}
           <Button variant="ghost" disabled={state.busy} onClick={() => void controller.load()}>
             <Trans>Retry</Trans>
