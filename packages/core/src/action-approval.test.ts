@@ -1067,6 +1067,8 @@ describe("approvalRuleChoices", () => {
     ]);
     expect(choices).toContainEqual({ matchKind: "tool", matchValue: "shell", label: "Shell" });
     expect(choices.some((choice) => choice.matchValue === "web_search")).toBe(false);
+    // Always approved by a person, so an allow rule could never take effect.
+    expect(choices.some((choice) => choice.matchValue === "create_space")).toBe(false);
     const labels = choices.map((choice) => choice.label);
     expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
   });

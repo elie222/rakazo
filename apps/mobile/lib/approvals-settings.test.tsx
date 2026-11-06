@@ -323,6 +323,19 @@ it("adds a tool from the picker, which searches and leaves out tools that have a
   expect(state.router.back).toHaveBeenCalled();
 });
 
+it("saves once and goes back once when a tool is tapped twice", async () => {
+  await act(async () => root.render(createElement(AddApprovalRule)));
+  const shell = [...container.querySelectorAll("span")].find(
+    (node) => node.textContent === "Shell",
+  );
+  await act(async () => {
+    shell!.click();
+    shell!.click();
+  });
+  expect(state.rpc.mock.calls.filter(([proc]) => proc === "approvalRules/set")).toHaveLength(1);
+  expect(state.router.back).toHaveBeenCalledTimes(1);
+});
+
 it("drops Never ask dimming when a later mode read fails", async () => {
   state.settings = { ...state.settings, mode: "never" };
   state.rules = [rule({ id: "allow", matchValue: "send_email" })];

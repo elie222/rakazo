@@ -680,7 +680,7 @@ export function approvalRuleLabel(rule: ActionApprovalRule): string {
 export type ApprovalRuleChoice = { matchKind: "tool"; matchValue: string; label: string };
 
 /**
- * What the rule picker lists: every built-in tool that has no rule yet, by name. Apps are left out:
+ * What the rule picker lists: every built-in tool that has no rule yet and that a rule can govern. Apps are left out:
  * an app rule matches a kind guessed from the action's name, which some providers' actions lack.
  */
 export function approvalRuleChoices(
@@ -689,7 +689,10 @@ export function approvalRuleChoices(
   const taken = new Set(
     rules.filter((rule) => rule.matchKind === "tool").map((rule) => rule.matchValue.toLowerCase()),
   );
-  return BUILTIN_TOOL_NAMES.filter((name) => !taken.has(name))
+  // A person approves these every time whatever the rules say, so a rule could only mislead.
+  return BUILTIN_TOOL_NAMES.filter(
+    (name) => !taken.has(name) && !toolRequiresExplicitApproval(name),
+  )
     .map(
       (name): ApprovalRuleChoice => ({
         matchKind: "tool",

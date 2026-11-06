@@ -1,7 +1,7 @@
 import type { ApprovalRuleChoice } from "@rakazo/core";
 import { approvalRuleChoices, listSearch } from "@rakazo/core";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadFailure } from "../../components/load-failure";
@@ -32,6 +32,8 @@ export default function AddApprovalRule() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // Set synchronously, so a second tap before the re-render can't save twice and go back twice.
+  const saving = useRef(false);
 
   useEffect(() => {
     let current = true;
@@ -63,7 +65,8 @@ export default function AddApprovalRule() {
 
   const add = useCallback(
     async (choice: ApprovalRuleChoice) => {
-      if (pending) return;
+      if (saving.current) return;
+      saving.current = true;
       setPending(true);
       setError(null);
       try {
@@ -77,10 +80,11 @@ export default function AddApprovalRule() {
       } catch (err) {
         setError(errorText(err, t("Could not save that preference")));
       } finally {
+        saving.current = false;
         setPending(false);
       }
     },
-    [pending, router, rpc, scope, t],
+    [router, rpc, scope, t],
   );
 
   const { visible } = listSearch(choices ?? [], query, {
