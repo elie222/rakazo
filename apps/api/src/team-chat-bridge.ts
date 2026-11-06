@@ -587,8 +587,9 @@ export class TeamChatBridge {
     const result = await this.deps.prisma.externalMessage.updateMany({
       where: {
         id: externalMessageId,
-        status:
-          resolution === "routine" ? { in: ["deferred", "received", "observed"] } : "deferred",
+        // A routine or a refusal settles a row recovery already handed back to agent routing too;
+        // work the agent started (queueing, running) stays its own.
+        status: resolution === "agent" ? "deferred" : { in: ["deferred", "received", "observed"] },
         externalConversation: this.conversationScope(),
       },
       data:
