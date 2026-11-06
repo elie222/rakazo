@@ -19,6 +19,25 @@ import {
   VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
 } from "./run-error.js";
 
+/** The classification alone, without the provider's own status and message. */
+function classify(details: string) {
+  const {
+    status: _status,
+    providerMessage: _message,
+    ...classification
+  } = normalizeRunError(details);
+  return classification;
+}
+
+it("returns the provider's status and the message unwrapped from its envelope", () => {
+  expect(normalizeRunError('403: {"error":{"message":"Weekly key limit exceeded"}}')).toMatchObject(
+    { status: 403, providerMessage: "Weekly key limit exceeded" },
+  );
+  const plain = normalizeRunError("Request timed out.");
+  expect(plain.status).toBeUndefined();
+  expect(plain.providerMessage).toBe("Request timed out.");
+});
+
 describe("normalizeRunError", () => {
   beforeEach(() => {
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-01T00:00:00Z"));
@@ -207,7 +226,7 @@ describe("normalizeRunError", () => {
       ["Model stream ended without a terminal event", tookTooLong],
       ["Request timed out.", tookTooLong],
     ])("summarizes %s without recovery advice", (details, summary) => {
-      expect(normalizeRunError(details)).toEqual({
+      expect(classify(details)).toEqual({
         summary,
         details,
         ...(summary === tooLong ? { kind: "context" } : {}),
@@ -225,7 +244,7 @@ describe("normalizeRunError", () => {
       "getaddrinfo EAI_AGAIN vllm",
       "Connection refused",
     ])("says an unreachable provider %s should be checked", (details) => {
-      expect(normalizeRunError(details)).toEqual({
+      expect(classify(details)).toEqual({
         summary: "Your model provider couldn't be reached. Check that it's running.",
         details,
       });
@@ -411,7 +430,7 @@ describe("normalizeRunError", () => {
       MODEL_OUTPUT_LIMIT_ERROR,
       "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {
-      expect(normalizeRunError(details)).toEqual({
+      expect(classify(details)).toEqual({
         summary: "The model returned an unusable response. Try again.",
         details,
         kind: "output",
@@ -603,8 +622,10 @@ it.each([
       reason: "fake-diagnostic",
     })),
   );
+  // The listed details replace the primary's own message.
+  const { providerMessage: _message, ...primary } = normalizeRunError(primaryError);
   expect(normalizeRunError(details)).toEqual({
-    ...normalizeRunError(primaryError),
+    ...primary,
     details: [
       primaryError,
       ...statuses.map(() => "fake-provider fake-model: fake-diagnostic"),

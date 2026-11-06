@@ -1,31 +1,7 @@
 import type { Routine, RpcInput } from "@rakazo/contracts";
-import type { CronPreset } from "@rakazo/core";
-import { cronFromPreset, isOneShotRoutineCrons, presetFromCron } from "@rakazo/core";
+import type { RoutineDraft } from "@rakazo/core";
+import { cronFromPreset, draftFromRoutine, isOneShotRoutineCrons } from "@rakazo/core";
 import { routineTriggerNames } from "./routine";
-
-/**
- * What the mobile editor changes. Webhook, Git, message and change triggers and the routine's
- * own model stay as they were: an update never sends them, so the server keeps them.
- */
-export type RoutineDraft = {
-  name: string;
-  prompt: string;
-  schedules: CronPreset[];
-  active: boolean;
-};
-
-export function emptyRoutineDraft(): RoutineDraft {
-  return { name: "", prompt: "", schedules: [], active: true };
-}
-
-export function draftFromRoutine(routine: Routine): RoutineDraft {
-  return {
-    name: routine.name,
-    prompt: routine.prompt,
-    schedules: routine.crons.map(presetFromCron),
-    active: routine.active,
-  };
-}
 
 /** A one-shot is set up from chat with its run time; its schedule can't change here. */
 export function routineScheduleLocked(routine: Routine | null): boolean {
@@ -36,7 +12,11 @@ function sameCrons(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((cron, index) => cron === b[index]);
 }
 
-/** What an update would change, compared as the editor writes it. */
+/**
+ * What an update would change, compared as the editor writes it. Webhook, Git, message and
+ * change triggers and the routine's own model are not on mobile: an update never sends them,
+ * so the server keeps them.
+ */
 function routineChanges(draft: RoutineDraft, routine: Routine) {
   const crons = draft.schedules.map(cronFromPreset);
   // A schedule merely opened is not a change, even when the editor would spell it differently.

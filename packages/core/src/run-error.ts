@@ -227,6 +227,10 @@ export function normalizeRunError(
   resetAt?: number;
   kind?: RunErrorKind;
   period?: "none" | "daily" | "weekly" | "monthly";
+  /** The provider's HTTP status, when it reported one. */
+  status?: number;
+  /** The provider's own message, unwrapped from its JSON envelope. */
+  providerMessage?: string;
 } {
   const trimmed = details.trim();
   if ([MODEL_IMAGE_INPUT_ERROR, MODEL_IMAGE_INPUT_UNKNOWN].includes(trimmed)) {
@@ -245,7 +249,13 @@ export function normalizeRunError(
   const record = asRecord(parseJson(body));
   const fallback = parseModelFallbackFailure(trimmed);
   if (fallback) {
-    const primary = normalizeRunError(fallback.primaryError, translate, locale, now);
+    // The details below list every model's failure, so the primary's message alone would hide them.
+    const { providerMessage: _primaryMessage, ...primary } = normalizeRunError(
+      fallback.primaryError,
+      translate,
+      locale,
+      now,
+    );
     const failed = fallback.backups.some((item) => item.status === "failed");
     const skipped = fallback.backups.some((item) => item.status === "skipped");
     const message = failed
@@ -514,6 +524,8 @@ export function normalizeRunError(
     ...(period ? { period } : {}),
     ...(recovery ? { recovery } : {}),
     ...(resetAt ? { resetAt } : {}),
+    ...(status !== undefined ? { status } : {}),
+    providerMessage: message,
   };
 }
 
