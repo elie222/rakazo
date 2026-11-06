@@ -1,8 +1,8 @@
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { useEffect } from "react";
-import { loadSessionToken } from "./api";
 import { notificationResponseRoute, threadRouteId } from "./notification-open";
+import { loadSessionToken } from "./session";
 import { closeSettingsSheet } from "./settings-sheet";
 
 const openedResponses = new Set<string>();

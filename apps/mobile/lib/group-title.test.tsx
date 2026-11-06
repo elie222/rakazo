@@ -5,11 +5,14 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { publishChatTitle } from "../components/chat-header-title";
 import { useThreadHeader } from "../components/thread/thread-header";
-import type { MobileGroup } from "./api";
 import type { InboxSpace } from "./inbox-spaces";
+import type { MobileGroup } from "./mobile-types";
 import { addToSearchInbox, setSearchInbox, useInboxGroup } from "./search-inbox";
 import { threadGroupMembers } from "./thread-snapshot";
 
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ currentApiBase: () => "http://api.test" }));
 vi.mock("./session", () => ({
   currentSessionGeneration: () => 1,

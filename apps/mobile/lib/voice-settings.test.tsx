@@ -20,6 +20,9 @@ vi.mock("expo-router", () => ({
   useFocusEffect: (callback: () => void) => useEffect(callback, [callback]),
   useLocalSearchParams: () => state.params,
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "https://app.example.test",

@@ -26,9 +26,9 @@ import {
 } from "@expo/ui/swift-ui/modifiers";
 import { PlatformColor } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { MobileBot, MobileGroup } from "../lib/api";
 import { useFloatingHeaderInset } from "../lib/floating-header";
 import { useI18n } from "../lib/i18n";
+import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import type { ArchivedBotListProps } from "./archived-bot-list";

@@ -33,6 +33,9 @@ vi.mock("expo-router", () => ({
   },
 }));
 // The plugin catalog has its own seam so app-catalog tests keep their own rpc fakes.
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: (proc: string, ...args: unknown[]) =>
     proc === "marketplace/catalog" ? state.marketplace() : state.rpc(proc, ...args),

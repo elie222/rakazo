@@ -63,6 +63,9 @@ vi.mock("react-native", async () => {
   };
 });
 
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc }));
 
 vi.mock("../components/glass-icon-button", async () => {

@@ -16,6 +16,9 @@ const status = vi.hoisted(() => ({
   fail: false,
   gate: undefined as Promise<void> | undefined,
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn(async () => {
     await status.gate;

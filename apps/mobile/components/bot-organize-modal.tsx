@@ -18,10 +18,10 @@ import {
   KeyboardEvents,
   KeyboardAvoidingView as SheetKeyboardAvoidingView,
 } from "react-native-keyboard-controller";
-import type { MobileBot, MobileBotSection } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { confirmDeleteSection } from "../lib/confirm-delete-section";
 import { useI18n } from "../lib/i18n";
+import type { MobileBot, MobileBotSection } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";

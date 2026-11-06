@@ -3,8 +3,8 @@ import { speechFromBlocks, voiceChatDuration, voiceChatSummary } from "@rakazo/c
 import { typeScale } from "@rakazo/ui-tokens";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import type { MobileMessage } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import type { MobileMessage } from "../lib/mobile-types";
 import { native, useMobileTokens } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
 

@@ -1,7 +1,7 @@
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import type { MobileSnapshot } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import type { MobileSnapshot } from "../../lib/mobile-types";
 import { openModelSettings } from "../../lib/model-settings";
 import { runErrorActionLabel } from "../../lib/run-error-presentation";
 import { useRunError } from "../run-error-sheet";

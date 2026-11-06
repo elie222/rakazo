@@ -37,16 +37,9 @@ import { useUnreadJumpPills } from "../components/unread-jump-overlay";
 import { fetchSpaceActivity } from "../lib/activity";
 import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
 import { readableGutters } from "../lib/adaptive-layout";
-import type { MobileBot, MobileBotSection, MobileGroup, MobileMe, MobileSpace } from "../lib/api";
-import {
-  currentApiBase,
-  loadSessionToken,
-  rpc,
-  selectedSpaceId,
-  selectInitialSpace,
-  selectSpace,
-  signOut,
-} from "../lib/api";
+import { currentApiBase, rpc, selectedSpaceId } from "../lib/api";
+import { signOut } from "../lib/api-auth";
+import { selectInitialSpace, selectSpace } from "../lib/api-server";
 import {
   appBadgeGeneration,
   forgetAppBadge,
@@ -79,6 +72,13 @@ import {
 } from "../lib/inbox-spaces";
 import { applyUnreadOverrides, withoutArchiving } from "../lib/inbox-swipe";
 import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
+import type {
+  MobileBot,
+  MobileBotSection,
+  MobileGroup,
+  MobileMe,
+  MobileSpace,
+} from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import {
@@ -99,6 +99,7 @@ import { loadSavedInbox, saveInbox } from "../lib/saved-chats";
 import {
   currentReadySessionGeneration,
   currentSessionGeneration,
+  loadSessionToken,
   subscribeSessionGeneration,
 } from "../lib/session";
 import { useSplitView } from "../lib/split-view";

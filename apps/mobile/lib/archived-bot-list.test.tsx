@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import { ArchivedBotList } from "../components/archived-bot-list.ios";
-import type { MobileBot, MobileGroup } from "./api";
+import type { MobileBot, MobileGroup } from "./mobile-types";
 
 const swift = vi.hoisted(() => ({
   buttons: [] as Array<{

@@ -1,10 +1,10 @@
 import { botsWithOwnModel } from "@rakazo/core";
 import { useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
-import type { MobileBot } from "../lib/api";
 import { captureApiRequestContext, rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
+import type { MobileBot } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { SettingsGroup, SettingsRow } from "./settings-group";
 

@@ -1,8 +1,8 @@
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import { useState } from "react";
 import { AccessibilityInfo, Pressable, Text, TextInput, View } from "react-native";
-import type { MobileBot } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import type { MobileBot } from "../lib/mobile-types";
 import { native, useMobileTokens } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
 import { NativeSymbol } from "./native-symbol";

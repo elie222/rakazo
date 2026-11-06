@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { MobileMessage } from "./api";
+import type { MobileMessage } from "./mobile-types";
 
 const state = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -19,6 +19,9 @@ vi.mock("react-native", () => ({
   Alert: { alert: state.alert },
   AppState: { currentState: "active" },
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: state.rpc }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./live-notifications", () => ({ dismissThreadNotifications: vi.fn(async () => {}) }));

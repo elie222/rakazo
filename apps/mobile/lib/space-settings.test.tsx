@@ -49,6 +49,9 @@ vi.mock("./i18n", () => {
   return { useI18n: () => ({ t }) };
 });
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   captureApiRequestContext: async (spaceId: string) => ({

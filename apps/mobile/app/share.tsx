@@ -4,13 +4,13 @@ import { Image, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeSymbol } from "../components/native-symbol";
-import type { MobileBot } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import {
   cancelIncomingShare,
   getIncomingShare,
   subscribeIncomingShare,
 } from "../lib/incoming-share";
+import type { MobileBot } from "../lib/mobile-types";
 import { useMobileTokens } from "../lib/native";
 import { sharePreview } from "../lib/share-preview";
 import { HomeSession } from "./index";

@@ -4,7 +4,7 @@ import type { ComponentProps } from "react";
 import { createContext } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
-import type { MobileBot, MobileSnapshot } from "./api";
+import type { MobileBot, MobileSnapshot } from "./mobile-types";
 
 vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() },

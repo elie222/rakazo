@@ -19,6 +19,9 @@ vi.mock("react-native", () => ({
   AppState: { addEventListener: () => ({ remove: () => {} }) },
 }));
 vi.mock("expo-router", () => ({ router: { push: vi.fn() } }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://api.example.test",
   isServerReachable: vi.fn(),

@@ -23,6 +23,9 @@ vi.mock("expo-router", () => ({
     useEffect(callback, [callback]);
   },
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: (method: string, body: unknown) => {
     if (method === "spendingLimit/get") return mocks.get();

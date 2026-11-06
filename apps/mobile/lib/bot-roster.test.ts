@@ -1,7 +1,7 @@
 import type { Bot } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import type { MobileBot } from "./api";
 import { retainUnchangedBotRoster } from "./bot-roster";
+import type { MobileBot } from "./mobile-types";
 
 function bot(id = "bot-1"): Bot {
   return {

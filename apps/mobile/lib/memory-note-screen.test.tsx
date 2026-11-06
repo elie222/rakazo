@@ -27,6 +27,9 @@ vi.mock("./native", () => ({
   useThemedStyles: (create: () => unknown) => create(),
 }));
 vi.mock("./i18n", () => ({ t: mocks.t, useI18n: () => ({ t: mocks.t }) }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: mocks.rpc }));
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => mocks.params,

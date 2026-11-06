@@ -1,9 +1,9 @@
 import { useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MobileBot, MobileGroup } from "./api";
 import { rpc } from "./api";
 import { retainUnchangedBotRoster } from "./bot-roster";
+import type { MobileBot, MobileGroup } from "./mobile-types";
 import { loadSavedInbox } from "./saved-chats";
 
 /** The bots and groups a chat can mention, refreshed on demand; also keeps the bot's title current. */

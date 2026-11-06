@@ -15,7 +15,8 @@ import { createRoot } from "react-dom/client";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FailedSendBubble } from "../components/failed-send-bubble";
-import type { MobileSnapshot, rpc } from "./api";
+import type { rpc } from "./api";
+import type { MobileSnapshot } from "./mobile-types";
 import { filterPickedAttachments } from "./pick-attachments-filter";
 import type { ComposerSnapshot, SendAttempt, SendPayload } from "./thread-feedback";
 import {

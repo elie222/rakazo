@@ -1,4 +1,5 @@
-import { authHeaders, clearSpace, currentApiBase, fetchMobileJson } from "./api";
+import { authHeaders, currentApiBase, fetchMobileJson } from "./api";
+import { clearSpace } from "./api-server";
 import { t } from "./i18n";
 import {
   currentSessionGeneration,

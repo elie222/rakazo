@@ -12,17 +12,13 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import { AppState, Platform } from "react-native";
 import type { ApiRequestContext } from "./api";
-import {
-  captureApiRequestContext,
-  loadSessionToken,
-  rpc,
-  subscribeIncomingCallEvents,
-} from "./api";
+import { captureApiRequestContext, rpc } from "./api";
+import { subscribeIncomingCallEvents } from "./api-live";
 import { endCall, getSnapshot, startCall, subscribe as subscribeCall } from "./call-session";
 import { t } from "./i18n";
 import { registerCallPushToken } from "./push";
 import { serverHeaders } from "./server-headers";
-import { currentSessionGeneration, registerSessionDiskCache } from "./session";
+import { currentSessionGeneration, loadSessionToken, registerSessionDiskCache } from "./session";
 
 type Ringing = NonNullable<ReturnType<typeof ringingCall>>;
 export function usesNativeIncomingCallRingtone() {

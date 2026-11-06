@@ -6,7 +6,7 @@ import {
   saveApiBase,
   selectSpace,
   subscribeConfirmedSpaceSwitch,
-} from "./api";
+} from "./api-server";
 import { DEVICE_VOICE_KEY } from "./device-voice";
 import { clearSessionToken, restoreSessionToken, saveSessionToken } from "./session";
 import { getVoicePlaybackState, speakQueue } from "./voice";

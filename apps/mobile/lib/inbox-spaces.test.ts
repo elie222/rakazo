@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileBot } from "./api";
-import { adoptDeletedSpaceFallback, rpc, selectedSpaceId, selectSpace } from "./api";
+import { rpc, selectedSpaceId } from "./api";
+import { adoptDeletedSpaceFallback, selectSpace } from "./api-server";
 import { activateUiLocale } from "./i18n";
 import type { InboxSpace } from "./inbox-spaces";
 import {
@@ -15,13 +15,18 @@ import {
   spaceInboxItems,
 } from "./inbox-spaces";
 import { mobileLogoAvatarActivity } from "./logo-avatar-activity";
+import type { MobileBot } from "./mobile-types";
 import { offscreenUnreads } from "./offscreen-unreads";
 
-vi.mock("./api", () => ({
+vi.mock("./api-server", () => ({
   adoptDeletedSpaceFallback: vi.fn(),
+  selectSpace: vi.fn(),
+}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", () => ({
   rpc: vi.fn(),
   selectedSpaceId: vi.fn(),
-  selectSpace: vi.fn(),
 }));
 
 function space(overrides: Partial<InboxSpace> = {}): InboxSpace {

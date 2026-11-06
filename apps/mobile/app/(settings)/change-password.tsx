@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
-import { changePassword } from "../../lib/api";
+import { changePassword } from "../../lib/api-auth";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";

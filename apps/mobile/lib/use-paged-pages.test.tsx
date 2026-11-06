@@ -6,6 +6,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { rpc } from "./api";
 import { usePagedPages } from "./use-paged-pages";
 
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./session", () => ({ registerSessionDiskCache: () => undefined }));
 vi.mock("expo-router", async () => {

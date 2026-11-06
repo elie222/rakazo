@@ -4,7 +4,7 @@ import type { ComponentProps } from "react";
 import { act, createContext } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileSnapshot } from "./api";
+import type { MobileSnapshot } from "./mobile-types";
 
 vi.mock("./haptics", () => ({
   hapticImpact: vi.fn(),

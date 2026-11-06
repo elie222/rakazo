@@ -5,8 +5,8 @@ import type { CSSProperties, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { MobileMessage } from "./api";
 import { messageRowLayout } from "./message-row-layout";
+import type { MobileMessage } from "./mobile-types";
 import { answerThreadMessage } from "./thread-answer";
 
 vi.mock("./haptics", () => ({

@@ -23,6 +23,9 @@ vi.mock("expo-secure-store", () => ({
     saved.delete(key);
   }),
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => account.apiBase,
   selectedSpaceId: () => account.selectedSpace,

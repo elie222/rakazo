@@ -2,10 +2,11 @@ import { isRetryableError, reconcileRefreshedThread } from "@rakazo/core";
 import { useFocusEffect } from "expo-router";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useEffect } from "react";
-import { mobileThreadRefreshResult, rpc, selectedSpaceId } from "./api";
+import { rpc, selectedSpaceId } from "./api";
 import { onConversationCleared } from "./conversation-cleared";
 import { useI18n } from "./i18n";
 import { isIntegrationsScopeCurrent } from "./integrations-cache";
+import { mobileThreadRefreshResult } from "./mobile-types";
 import { threadRefreshDelayMs } from "./refresh";
 import {
   liveSavedChatsScope,

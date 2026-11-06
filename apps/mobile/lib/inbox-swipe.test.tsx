@@ -6,7 +6,6 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboxSwipeRowProps } from "../components/inbox-swipe-row";
 import { InboxSwipeRow } from "../components/inbox-swipe-row.ios";
-import type { MobileBotSection } from "./api";
 import type { InboxRowAction } from "./inbox-swipe";
 import {
   applyUnreadOverrides,
@@ -16,6 +15,7 @@ import {
   inboxRowActions,
   unreadOverrideKey,
 } from "./inbox-swipe";
+import type { MobileBotSection } from "./mobile-types";
 
 const swift = vi.hoisted(() => ({
   groups: [] as Array<{ edge?: string; allowsFullSwipe?: boolean; labels: string[] }>,

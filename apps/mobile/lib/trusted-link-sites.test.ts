@@ -13,14 +13,19 @@ const scope = vi.hoisted(() => ({
   spaceId: "space-a" as string | null,
   rpc: vi.fn(),
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => scope.apiBase,
   selectedSpaceId: () => scope.spaceId,
   captureApiRequestContext: async () => ({ apiBase: scope.apiBase, headers: {} }),
-  loadSessionToken: async () => "token",
   rpc: scope.rpc,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => scope.generation }));
+vi.mock("./session", () => ({
+  loadSessionToken: async () => "token",
+  currentSessionGeneration: () => scope.generation,
+}));
 vi.mock("./i18n", () => ({ t: (text: string) => text }));
 
 function deferred<T>() {

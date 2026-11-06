@@ -10,6 +10,9 @@ import MessagingSettings from "../app/(settings)/messaging";
 import { rpc } from "./api";
 
 const appState = vi.hoisted(() => ({ change: undefined as ((state: string) => void) | undefined }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({

@@ -11,13 +11,13 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/api";
 import { AvatarRow } from "../lib/avatar-life";
 import { useI18n } from "../lib/i18n";
 import { formatThreadTime } from "../lib/inbox";
 import type { PinnedChat } from "../lib/inbox-spaces";
 import type { InboxChatKind, InboxRowAction } from "../lib/inbox-swipe";
 import { INBOX_ROW_ACTIONS, inboxRowActionList } from "../lib/inbox-swipe";
+import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
 import { androidRipple } from "../lib/ripple";

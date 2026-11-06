@@ -16,7 +16,15 @@ const { rpc, selectSpace, selectedSpaceId, alert, share, router } = vi.hoisted((
   router: { back: vi.fn(), dismissAll: vi.fn(), replace: vi.fn() },
 }));
 
-vi.mock("./api", () => ({ rpc, selectSpace, selectedSpaceId }));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", () => ({
+  rpc,
+  selectedSpaceId,
+}));
+vi.mock("./api-server", () => ({
+  selectSpace,
+}));
 vi.mock("expo-secure-store", () => ({}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("expo-router", () => ({

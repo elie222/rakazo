@@ -3,10 +3,10 @@ import { createChatQueues, settleReadBoundary } from "@rakazo/core";
 import { useNavigation } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Alert, AppState } from "react-native";
-import type { MobileMessage } from "./api";
 import { rpc } from "./api";
 import { useI18n } from "./i18n";
 import { dismissThreadNotifications } from "./live-notifications";
+import type { MobileMessage } from "./mobile-types";
 import { errorText } from "./user-error";
 
 /**

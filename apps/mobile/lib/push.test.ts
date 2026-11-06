@@ -46,7 +46,9 @@ vi.mock("expo-notifications", () => ({
 import { requireOptionalNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { rpc, selectInitialSpace, signOut } from "./api";
+import { rpc } from "./api";
+import { signOut } from "./api-auth";
+import { selectInitialSpace } from "./api-server";
 import { resumeLiveNotifications, stopLiveNotifications } from "./live-notifications.js";
 import { registerPushToken } from "./push";
 import * as session from "./session";

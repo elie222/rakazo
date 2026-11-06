@@ -4,9 +4,9 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
-import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "./api";
+import { currentApiBase, rpc, selectedSpaceId } from "./api";
 import { resumeLiveNotifications } from "./live-notifications";
-import { currentSessionGeneration } from "./session";
+import { currentSessionGeneration, loadSessionToken } from "./session";
 
 async function notificationsAllowed() {
   // On iOS getPermissionsAsync holds Expo's shared native queue until the system answers,

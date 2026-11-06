@@ -12,8 +12,8 @@ import {
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type { ListRenderItemInfo } from "react-native";
 import { StyleSheet, View } from "react-native";
-import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/mobile-types";
 import { threadHeaderFloats } from "../../lib/thread-edges";
 import { previewMessageText } from "../../lib/thread-message-text";
 import type { useThreadTranscript } from "../../lib/thread-transcript";

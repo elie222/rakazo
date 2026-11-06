@@ -15,7 +15,8 @@ import {
 import { NativeSymbol } from "../components/native-symbol";
 import { SettingsGroup, SettingsRow } from "../components/settings-group";
 import { cancelHeaderOptions } from "../components/sheet-header";
-import { rpc, selectedSpaceId, selectSpace } from "../lib/api";
+import { rpc, selectedSpaceId } from "../lib/api";
+import { selectSpace } from "../lib/api-server";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";

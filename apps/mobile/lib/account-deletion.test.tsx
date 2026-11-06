@@ -8,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import { Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAccountDeletion } from "../components/account-deletion";
-import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "./api";
+import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "./api-auth";
 import { replaceWithSignIn } from "./auth-routing";
 import { forgetSignedIn } from "./returning-user";
 import { continueWithSso } from "./sso";
@@ -107,7 +107,7 @@ vi.mock("../components/native-action-button", () => ({
       label,
     ),
 }));
-vi.mock("./api", () => ({
+vi.mock("./api-auth", () => ({
   fetchAccountSecurity: vi.fn(),
   deleteAccount: vi.fn(),
   requestAccountDeletionCode: vi.fn(),
