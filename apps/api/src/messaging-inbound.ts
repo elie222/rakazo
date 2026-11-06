@@ -1,8 +1,4 @@
-import type {
-  JobPublisher,
-  MessagingInboundMessage,
-  SandboxProvider,
-} from "@rakazo/adapter-kit";
+import type { JobPublisher, MessagingInboundMessage, SandboxProvider } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import { insertOutboundRows } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
