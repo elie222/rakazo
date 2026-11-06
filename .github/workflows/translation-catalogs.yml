@@ -84,10 +84,13 @@ jobs:
           remote="$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)"
           if [ -n "$pr" ]; then
             git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
-            author="$(git log -1 --format='%an' "origin/$BRANCH")"
-            # Someone pushed translations to the open PR: keep them until it merges.
-            if [ "$author" != "github-actions[bot]" ]; then
-              echo "::notice::#$pr has commits from $author; leaving it as it is until it merges."
+            # Someone pushed translations to the open PR: keep them until it merges. Every commit
+            # on the PR counts, not only the latest, and the PR's commit list is complete even
+            # though this checkout is shallow.
+            others="$(gh pr view "$pr" --json commits \
+              --jq '[.commits[].authors[].name | select(. != "github-actions[bot]")] | unique | join(", ")')"
+            if [ -n "$others" ]; then
+              echo "::notice::#$pr has commits from $others; leaving it as it is until it merges."
               exit 0
             fi
           fi
