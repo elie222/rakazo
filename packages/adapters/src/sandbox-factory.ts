@@ -113,8 +113,8 @@ export async function createSandboxProvider(
       });
     case "daytona": {
       if (!opts.daytonaApiKey?.trim()) return missingRemoteKey("daytona", "DAYTONA_API_KEY");
-      const { DaytonaSandboxProvider } = await import("./daytona-sandbox.js");
-      return new DaytonaSandboxProvider({
+      const { createDaytonaSandboxProvider } = await import("./daytona-sandbox.js");
+      return createDaytonaSandboxProvider({
         apiKey: opts.daytonaApiKey,
         apiUrl: opts.daytonaApiUrl,
         target: opts.daytonaTarget,
@@ -136,8 +136,8 @@ export async function createSandboxProvider(
     }
     case "boxd": {
       if (!opts.boxdApiKey?.trim()) return missingRemoteKey("boxd", "BOXD_API_KEY");
-      const { BoxdSandboxProvider } = await import("./boxd-sandbox.js");
-      return new BoxdSandboxProvider({ apiKey: opts.boxdApiKey, org: opts.boxdOrg });
+      const { createBoxdSandboxProvider } = await import("./boxd-sandbox.js");
+      return createBoxdSandboxProvider({ apiKey: opts.boxdApiKey, org: opts.boxdOrg });
     }
     case "railway":
       if (!opts.railwayApiToken?.trim()) return missingRemoteKey("railway", "RAILWAY_API_TOKEN");
