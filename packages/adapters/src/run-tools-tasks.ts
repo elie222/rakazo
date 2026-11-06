@@ -76,6 +76,7 @@ export const taskTools: ToolHandlers = {
       spaceId: run.spaceId,
       botId: bot.id,
       userId: run.userId,
+      ...(run.trigger === "routine" ? { ownerUserId: run.userId } : {}),
       ...(thread.groupId ? { groupThreadId: thread.id } : {}),
       tools: ctx.tools.offered,
     });
@@ -228,6 +229,7 @@ export const taskTools: ToolHandlers = {
         botId: bot.id,
         userId: run.userId,
         threadId: thread.id,
+        ...(run.trigger === "routine" ? { ownerUserId: run.userId } : {}),
         ...(thread.groupId ? { scopeThreadId: thread.id } : {}),
         routineId: String(args.routineId ?? ""),
         name: isScheduleValueProvided(args.name) ? String(args.name) : undefined,
@@ -251,6 +253,7 @@ export const taskTools: ToolHandlers = {
     return listSchedulesFromTool(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
+      ...(run.trigger === "routine" ? { ownerUserId: run.userId } : {}),
       ...(thread.groupId ? { groupThreadId: thread.id } : {}),
     });
   },
@@ -260,6 +263,7 @@ export const taskTools: ToolHandlers = {
     const cancelled = await cancelScheduleFromTool(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
+      ...(run.trigger === "routine" ? { ownerUserId: run.userId } : {}),
       ...(thread.groupId ? { threadId: thread.id } : {}),
       routineId: args.routineId ? String(args.routineId) : undefined,
       name: args.name ? String(args.name) : undefined,

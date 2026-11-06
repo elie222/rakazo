@@ -1447,6 +1447,10 @@ msgstr "已取消"
 msgid "Cancelled"
 msgstr "已取消"
 
+#: src/components/ModelCredits.tsx
+msgid "Cancelled trials have no computer hours."
+msgstr "已取消的试用没有电脑时长。"
+
 #: src/components/vault/kinds.tsx
 msgid "Card"
 msgstr ""
@@ -3047,6 +3051,10 @@ msgstr "语音输入失败。"
 msgid "Did you mean <0>{emailSuggestion}</0>?"
 msgstr "你是不是想输入 <0>{emailSuggestion}</0>？"
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "禁用工具"
@@ -3369,10 +3377,6 @@ msgstr "这里的每个人都能看到它的聊天、机器人和记忆"
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Executor token"
-msgstr "Executor 令牌"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
@@ -4949,16 +4953,6 @@ msgstr "OAuth 连接失败"
 msgid "Offline"
 msgstr "离线"
 
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama API key"
-msgstr "Ollama API 密钥"
-
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama Cloud"
-msgstr "Ollama Cloud"
-
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
 msgstr "按计划"
@@ -5736,6 +5730,10 @@ msgstr "重命名"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Rename section"
 msgstr "重命名分组"
+
+#: src/components/ModelCredits.tsx
+msgid "Renew plan"
+msgstr "续订方案"
 
 #: src/lib/billing.ts
 msgid "Renews {day}"
@@ -7181,10 +7179,6 @@ msgstr "转写响应过大。"
 msgid "Treat like a person"
 msgstr "当作真人"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "Treg token"
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"
 msgstr "试用"
@@ -7336,6 +7330,7 @@ msgid "Updating…"
 msgstr "正在更新…"
 
 #: src/pages/shell/shell-sidebar.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
 msgstr "升级"
 

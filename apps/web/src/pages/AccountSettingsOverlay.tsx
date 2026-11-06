@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AccountSecurity, BotAvatarSet, UsageSummary } from "@rakazo/contracts";
 import {
+  APP_LOCALE_LABELS,
   accountDisplay,
   displayName,
   MAX_PASSWORD_LENGTH,
@@ -55,7 +56,7 @@ import { toolActivityPreference } from "../lib/tool-activity-preference";
 import type { AppearancePreference } from "../lib/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance";
 import type { UiLocale } from "../lib/ui-locale";
-import { UI_LOCALE_LABELS, UI_LOCALES } from "../lib/ui-locale";
+import { UI_LOCALES } from "../lib/ui-locale";
 import { authErrorText } from "../lib/user-error";
 
 export type SettingsGeneralProps = {
@@ -839,7 +840,7 @@ function UiLocalePicker({
       aria-label={t`Language`}
       options={UI_LOCALES.map((code) => ({
         value: code,
-        label: UI_LOCALE_LABELS[code],
+        label: APP_LOCALE_LABELS[code],
       }))}
       value={value}
       onValueChange={onChange}

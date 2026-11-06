@@ -84,6 +84,9 @@ import { pagePaymentPrecheck, paysWithWallet } from "./spending-gate.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
 
+const WEBHOOK_RUN_ASK_REASON =
+  "Asked because a webhook started this run. Always allow doesn't skip this.";
+
 type ApprovalCard = {
   reviewReason: string | undefined;
   summary: FleetCardSummary | undefined;
@@ -275,6 +278,16 @@ export async function gateToolCall(
       ));
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;
+  // These ask in every run, whatever started it.
+  const mandatoryInAnyRun =
+    paying || commandWatch || scheduleNamesNewSite || toolRequiresExplicitApproval(name);
+  const requiresMandatoryApproval = mandatoryInAnyRun || requiresUnattendedApproval;
+  // No allow rule skips these, and without them the tool needs no approval, so "Always allow"
+  // on their card would save a rule that never takes effect.
+  const asksEveryTime =
+    (commandWatch || scheduleNamesNewSite) && !toolRequiresApproval(name, viaConnector);
+  // Never ask runs everything else: only another owner's connection could have been steered into it.
+  const guardedInNeverAsk = name === "respond_agent_connection";
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
@@ -293,23 +306,6 @@ export async function gateToolCall(
     unidentifiedAction && resolvedRules.decision === "allow"
       ? { ...resolvedRules, decision: "ask" as const }
       : resolvedRules;
-  const requiresMandatoryApproval =
-    paying ||
-    commandWatch ||
-    (scheduleNamesNewSite &&
-      !(
-        name === "schedule_create" &&
-        resolvedRules.decision === "allow" &&
-        resolvedRules.source === "always_allow"
-      )) ||
-    requiresUnattendedApproval ||
-    toolRequiresExplicitApproval(name);
-  // No allow rule skips these, and without them the tool needs no approval, so "Always allow"
-  // on their card would save a rule that never takes effect.
-  const asksEveryTime =
-    (commandWatch || scheduleNamesNewSite) && !toolRequiresApproval(name, viaConnector);
-  // Never ask runs everything else: only another owner's connection could have been steered into it.
-  const guardedInNeverAsk = name === "respond_agent_connection";
   const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
   const reviewable = mode === "auto" && !requiresMandatoryApproval;
   const injectedReview = reviewable ? deps.autoReview : undefined;
@@ -556,11 +552,19 @@ export async function gateToolCall(
     bypassApproval: gateDecision === "allow" && gated,
     spend: spends,
   });
+  // Only when the webhook overrode the owner's Always allow; cards every run shows say nothing.
+  const webhookForcedAsk =
+    requiresUnattendedApproval &&
+    !mandatoryInAnyRun &&
+    !request.heldForApproval &&
+    siteGate !== "new" &&
+    !unidentifiedAction &&
+    approvalResolved.source === "always_allow";
   const card = {
-    reviewReason,
+    reviewReason: webhookForcedAsk ? WEBHOOK_RUN_ASK_REASON : reviewReason,
     summary: request.fleetSummary,
     batch: connectorTool?.batch,
-    onceOnly: asksEveryTime,
+    onceOnly: asksEveryTime || webhookForcedAsk,
   };
 
   if (applied?.duplicate) {

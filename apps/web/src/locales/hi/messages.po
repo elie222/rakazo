@@ -1447,6 +1447,10 @@ msgstr "रद्द"
 msgid "Cancelled"
 msgstr "रद्द किया गया"
 
+#: src/components/ModelCredits.tsx
+msgid "Cancelled trials have no computer hours."
+msgstr "रद्द किए गए ट्रायल में कंप्यूटर घंटे नहीं होते।"
+
 #: src/components/vault/kinds.tsx
 msgid "Card"
 msgstr ""
@@ -3047,6 +3051,10 @@ msgstr ""
 msgid "Did you mean <0>{emailSuggestion}</0>?"
 msgstr "क्या आपका मतलब <0>{emailSuggestion}</0> था?"
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "टूल अक्षम करें"
@@ -3369,10 +3377,6 @@ msgstr ""
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Executor token"
-msgstr "Executor टोकन"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
@@ -4949,16 +4953,6 @@ msgstr "OAuth कनेक्शन विफल"
 msgid "Offline"
 msgstr ""
 
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama API key"
-msgstr ""
-
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama Cloud"
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
 msgstr ""
@@ -5736,6 +5730,10 @@ msgstr "नाम बदलें"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Rename section"
 msgstr "अनुभाग का नाम बदलें"
+
+#: src/components/ModelCredits.tsx
+msgid "Renew plan"
+msgstr "प्लान रिन्यू करें"
 
 #: src/lib/billing.ts
 msgid "Renews {day}"
@@ -7181,10 +7179,6 @@ msgstr ""
 msgid "Treat like a person"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "Treg टोकन"
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"
 msgstr ""
@@ -7336,6 +7330,7 @@ msgid "Updating…"
 msgstr "अपडेट हो रहा है…"
 
 #: src/pages/shell/shell-sidebar.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
 msgstr "अपग्रेड करें"
 

@@ -111,8 +111,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} 备用模型失败或无法用于此请求。",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "Ollama API 密钥",
   "Show password": "显示密码",
   "Hide password": "隐藏密码",
   Export: "导出",
@@ -423,9 +421,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Uses this server's own {source} credentials to access {provider}.":
     "使用此服务器自己的 {source} 凭据访问 {provider}。",
   "Connect API key": "连接 API 密钥",
-  "Connect Executor": "连接 Executor",
   "Connect MCP server {name}": "连接 MCP 服务器 {name}",
-  "Connect Treg": "连接 Treg",
   Connected: "已连接",
   "Connected.": "已连接。",
   "Connected. Its tools are available from your next message.":
@@ -588,7 +584,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "OTA · {id} · {date}": "OTA · {id} · {date}",
   "Enter a server URL": "请输入服务器地址",
   "Enter this code in your browser:": "请在浏览器中输入此代码：",
-  "Executor token": "Executor 令牌",
   Failed: "失败",
   "Failed to refresh": "刷新失败",
   "Failed to send message": "发送消息失败",
@@ -841,7 +836,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   Thread: "对话",
   Title: "标题",
   "Try again.": "请重试。",
-  "Treg token": "Treg 令牌",
   "Type your answer": "输入你的回答",
   Pinned: "置顶",
   Unassigned: "未分组",
@@ -906,7 +900,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "http://localhost:53692/callback?code=…": "http://localhost:53692/callback?code=…",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
-  "https://executor.example/mcp": "https://executor.example/mcp",
   Diagram: "图表",
   Image: "图片",
   "Message from {peer}": "来自 {peer} 的消息",
@@ -1152,6 +1145,9 @@ export const ZH_MESSAGES: Record<string, string> = {
   Credits: "额度",
   "Available credits": "可用额度",
   "Computer hours left": "剩余电脑时长",
+  Upgrade: "升级",
+  "Cancelled trials have no computer hours.": "已取消的试用没有电脑时长。",
+  "Renew plan": "续订方案",
   "Trials get fewer hours to prevent abuse.": "为防止滥用，试用期的时长较少。",
   "Start plan now": "立即开始套餐",
   "Start your plan now?": "立即开始你的套餐？",

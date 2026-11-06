@@ -17,6 +17,7 @@ import {
   createThreadMessageInTransaction,
   crossSpaceCommunicationAllowed,
   runAsSystem,
+  SpaceDeletionInProgressError,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -372,7 +373,11 @@ async function fanOutToPeers(
             crossSpaceSenderBotId: identity.botId,
           })
           .catch((error: unknown) => {
-            if (error instanceof CrossSpaceCommunicationBlockedError) return null;
+            if (
+              error instanceof CrossSpaceCommunicationBlockedError ||
+              error instanceof SpaceDeletionInProgressError
+            )
+              return null;
             throw error;
           });
         if (sent?.runId) {

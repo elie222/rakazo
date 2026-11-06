@@ -30,6 +30,7 @@ import {
   planComputerSize,
   recordComputerRunEnd,
   recordComputerRunStart,
+  spaceTakesWork,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -166,6 +167,9 @@ export class ComputerBusyError extends Error {
     this.name = "ComputerBusyError";
   }
 }
+
+/** The computer's Space is being deleted, so it takes no maintenance until that ends. */
+export class ComputerSpaceDeletingError extends ComputerBusyError {}
 
 export { toComputerRef } from "./computer-support.js";
 
@@ -1088,46 +1092,51 @@ export async function replaceComputer(
     : null;
   const now = new Date();
   const claimStamp = new Date(Math.max(now.getTime(), existing.updatedAt.getTime() + 1));
-  const claimed = await deps.prisma.computer.updateMany({
-    where: {
-      id: computerId,
-      state: previousState,
-      maintenanceId: existing.maintenanceId ?? null,
-      // CAS the booting/suspending stamp so a concurrent live claim cannot be overwritten.
-      ...(previousState === "booting" || previousState === "suspending"
-        ? { updatedAt: existing.updatedAt }
-        : {}),
-      executionLeases: { none: { botId: { not: botId }, expiresAt: { gt: now } } },
-      ...(handBackIdleTakeover
-        ? {
-            controlHolder: "user" as const,
-            controlBotId: botId,
-            controlRunId: null,
-            controlLeaseId: existing.controlLeaseId,
-          }
-        : {
-            OR: [
-              { controlHolder: { not: "user" } },
-              { controlLeaseId: null },
-              { controlLeaseExpiresAt: null },
-              { controlLeaseExpiresAt: { lte: now } },
-            ],
-          }),
-    },
-    data: {
-      state: "suspending",
-      updatedAt: claimStamp,
-      ...(handBackIdleTakeover
-        ? {
-            controlHolder: "none" as const,
-            controlLeaseId: null,
-            controlUserId: null,
-            controlLeaseExpiresAt: null,
-            controlBotId: null,
-            controlRunId: null,
-          }
-        : {}),
-    },
+  // Nothing is torn down or provisioned in a Space being deleted except by the deletion. Its lock
+  // comes before the computer row, so a claim committing meanwhile is seen.
+  const claimed = await deps.prisma.$transaction(async (tx) => {
+    if (!(await spaceTakesWork(tx, existing.spaceId))) throw new ComputerSpaceDeletingError();
+    return tx.computer.updateMany({
+      where: {
+        id: computerId,
+        state: previousState,
+        maintenanceId: existing.maintenanceId ?? null,
+        // CAS the booting/suspending stamp so a concurrent live claim cannot be overwritten.
+        ...(previousState === "booting" || previousState === "suspending"
+          ? { updatedAt: existing.updatedAt }
+          : {}),
+        executionLeases: { none: { botId: { not: botId }, expiresAt: { gt: now } } },
+        ...(handBackIdleTakeover
+          ? {
+              controlHolder: "user" as const,
+              controlBotId: botId,
+              controlRunId: null,
+              controlLeaseId: existing.controlLeaseId,
+            }
+          : {
+              OR: [
+                { controlHolder: { not: "user" } },
+                { controlLeaseId: null },
+                { controlLeaseExpiresAt: null },
+                { controlLeaseExpiresAt: { lte: now } },
+              ],
+            }),
+      },
+      data: {
+        state: "suspending",
+        updatedAt: claimStamp,
+        ...(handBackIdleTakeover
+          ? {
+              controlHolder: "none" as const,
+              controlLeaseId: null,
+              controlUserId: null,
+              controlLeaseExpiresAt: null,
+              controlBotId: null,
+              controlRunId: null,
+            }
+          : {}),
+      },
+    });
   });
   if (claimed.count !== 1) throw new ComputerBusyError();
   const releaseClaim = () =>

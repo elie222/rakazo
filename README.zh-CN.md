@@ -114,7 +114,7 @@ bash install-images.sh
 
 ## 本地开发（从源码运行）
 
-需要 Node.js 22.x（至少 22.22.2）、Node.js 24.x 或 Node.js 26 及以上版本，以及 pnpm 9 和 Docker。
+需要 Node.js 22.x（至少 22.22.2）、Node.js 24.x 或 Node.js 26 及以上版本，以及 pnpm 12 和 Docker。
 不支持 Node.js 23.x 和 25.x。
 
 ```bash

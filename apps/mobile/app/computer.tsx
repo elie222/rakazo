@@ -1,4 +1,5 @@
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
+import { isComputerAllowanceUsed } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
 import {
   createScreenReconnect,
@@ -7,7 +8,7 @@ import {
   screenProbeUrl,
   waitForScreenPage,
 } from "@rakazo/core";
-import { useLocalSearchParams, useNavigation } from "expo-router";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -76,6 +77,7 @@ export default function Computer() {
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const navigation = useNavigation();
+  const router = useRouter();
   const windowSize = useWindowDimensions();
   const stacked = stacksAtTextScale(windowSize.fontScale);
   const folds = useFoldRegions();
@@ -500,7 +502,9 @@ export default function Computer() {
       : previewPlaceholder(computer?.state, booting, name, computer?.mode));
   // Booting shows in the preview; the header and Back stay, and leaving lets the boot finish.
   const bootPending = booting || computer?.state === "booting";
-  const canRetry = !bootPending && (bootFailed || computer?.state === "error");
+  // Retrying cannot help once the hours are spent; only a plan change can.
+  const allowanceUsed = computer?.state !== "running" && isComputerAllowanceUsed(error);
+  const canRetry = !allowanceUsed && !bootPending && (bootFailed || computer?.state === "error");
   const screenRetry =
     unreachableScreen ||
     (computer?.state === "running" && screenOriginError && Boolean(screenError));
@@ -545,6 +549,15 @@ export default function Computer() {
         </Text>
       ) : null}
       {retryScreenAction}
+      {allowanceUsed ? (
+        <NativeActionButton
+          label={t("Upgrade")}
+          prominence="primary"
+          size="default"
+          style={{ marginBottom: 16 }}
+          onPress={() => router.push("/billing")}
+        />
+      ) : null}
       {canRetry ? (
         <NativeActionButton
           label={t("Try again")}

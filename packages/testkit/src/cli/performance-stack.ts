@@ -138,11 +138,13 @@ export async function waitForUrl(url: string) {
 }
 
 export async function stopProcess(child: ChildProcess) {
-  if (child.exitCode !== null) return;
+  if (child.exitCode !== null || child.signalCode !== null) return;
   const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
   child.kill("SIGTERM");
-  await Promise.race([exited, abortableDelay(5_000)]);
-  if (child.exitCode === null) {
+  const timeout = new AbortController();
+  await Promise.race([exited, abortableDelay(5_000, timeout.signal)]);
+  timeout.abort();
+  if (child.exitCode === null && child.signalCode === null) {
     child.kill("SIGKILL");
     await exited;
   }

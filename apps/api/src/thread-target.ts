@@ -47,7 +47,9 @@ import {
   lockSpaceGroup,
   primaryActiveRun,
   retireWaitingQuestionInTransaction,
+  SpaceDeletionInProgressError,
   spaceIsShared,
+  spaceTakesWork,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
   transientRunEventsWhere,
@@ -843,6 +845,8 @@ export async function sendThreadMessage(
 
   const commit = () =>
     deps.prisma.$transaction(async (tx) => {
+      // A Space being deleted takes no new turns; its lock comes before the group and thread rows.
+      if (!(await spaceTakesWork(tx, actor.spaceId))) throw new SpaceDeletionInProgressError();
       const author = await loadMessageAuthor(tx, actor.userId);
       let routineRuns: Array<{ id: string; status: string }> = [];
       let replyToMessageId: string | undefined;

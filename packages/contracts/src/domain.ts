@@ -2,12 +2,6 @@ import * as z from "zod";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
 import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
 import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
-import {
-  cloudflareGatewayRoutingId,
-  cloudflareModelConfigMessage,
-  isCloudflareAiGatewayProvider,
-  isCloudflareModelProvider,
-} from "./cloudflare-ai-gateway.js";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
 import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
 import {
@@ -1129,6 +1123,16 @@ export const IntegrationCatalogResultSchema = z.object({
 });
 export type IntegrationCatalogResult = z.infer<typeof IntegrationCatalogResultSchema>;
 
+/** A remote MCP service that connects with a bearer token. */
+export const McpSourcePresetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** Fixed endpoint; omitted when the person enters their own. */
+  url: z.string().url().optional(),
+  urlPlaceholder: z.string().optional(),
+});
+export type McpSourcePreset = z.infer<typeof McpSourcePresetSchema>;
+
 export type { McpTransport } from "./mcp.js";
 
 const McpServerBaseInput = z.object({
@@ -1608,6 +1612,8 @@ export const ModelCredentialSchema = z.object({
   isDefault: z.boolean(),
   headerNames: z.array(z.string()).optional(),
   baseUrl: z.string().optional(),
+  /** The hosted service at `baseUrl`, when it is one the catalog offers by name. */
+  endpointName: z.string().optional(),
   apiProtocol: ModelApiProtocolSchema.optional(),
   accountId: z.string().optional(),
   gatewayId: z.string().optional(),
@@ -1674,6 +1680,40 @@ export const ModelConnectionLabelSchema = z.string().trim().min(1).max(MAX_MODEL
 
 export const CONNECTION_LABEL_MAX_LENGTH = 80;
 
+/** Ids a provider needs besides its key to route requests, like an account. */
+export const ModelRoutingFieldSchema = z.enum(["accountId", "gatewayId"]);
+export type ModelRoutingField = z.infer<typeof ModelRoutingFieldSchema>;
+
+/** Routing ids are substituted into a URL path, so only a single path segment is accepted. */
+const MODEL_ROUTING_ID = /^[A-Za-z0-9_-]{1,64}$/;
+export const MODEL_ROUTING_ID_MESSAGE =
+  "Use only letters, numbers, dashes, and underscores, up to 64 characters.";
+
+export function modelRoutingId(value: string | null | undefined): string | undefined {
+  const id = value?.trim() ?? "";
+  return MODEL_ROUTING_ID.test(id) ? id : undefined;
+}
+
+/** Every routing id the provider needs is filled in and valid. */
+export function modelRoutingReady(
+  fields: readonly ModelRoutingField[] | undefined,
+  values: Partial<Record<ModelRoutingField, string>>,
+): boolean {
+  return (fields ?? []).every((field) => modelRoutingId(values[field]) !== undefined);
+}
+
+/** What a connection form shows and requires for the routing ids a catalog entry names. */
+export function modelRoutingForm(
+  fields: readonly ModelRoutingField[] | undefined,
+  values: Partial<Record<ModelRoutingField, string>>,
+): { needsRouting: boolean; needsGateway: boolean; routingReady: boolean } {
+  return {
+    needsRouting: Boolean(fields?.length),
+    needsGateway: Boolean(fields?.includes("gatewayId")),
+    routingReady: modelRoutingReady(fields, values),
+  };
+}
+
 export const ModelConnectInputSchema = z
   .object({
     ...ModelContextLimitsSchema.shape,
@@ -1713,24 +1753,11 @@ export const ModelConnectInputSchema = z
         path: ["maxTokens"],
       });
     }
-    if (isCloudflareModelProvider(value.provider)) {
-      if (value.accountId !== undefined && !cloudflareGatewayRoutingId(value.accountId)) {
-        ctx.addIssue({
-          code: "custom",
-          message: cloudflareModelConfigMessage(value.provider),
-          path: ["accountId"],
-        });
-      }
-      if (
-        isCloudflareAiGatewayProvider(value.provider) &&
-        value.gatewayId !== undefined &&
-        !cloudflareGatewayRoutingId(value.gatewayId)
-      ) {
-        ctx.addIssue({
-          code: "custom",
-          message: cloudflareModelConfigMessage(value.provider),
-          path: ["gatewayId"],
-        });
+    // Whether the provider needs an id is the provider's call; a blank one is left to it.
+    for (const field of ModelRoutingFieldSchema.options) {
+      const id = value[field];
+      if (id?.trim() && !modelRoutingId(id)) {
+        ctx.addIssue({ code: "custom", message: MODEL_ROUTING_ID_MESSAGE, path: [field] });
       }
     }
     if (value.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -1799,6 +1826,10 @@ export const SpaceMemoryConfigSchema = z.object({
 });
 export type SpaceMemoryConfig = z.infer<typeof SpaceMemoryConfigSchema>;
 
+/** A hosted OpenAI-compatible service offered by name. It always needs a key. */
+export const CompatibleEndpointPresetSchema = z.object({ name: z.string(), baseUrl: z.string() });
+export type CompatibleEndpointPreset = z.infer<typeof CompatibleEndpointPresetSchema>;
+
 export const ModelCatalogEntrySchema = z.object({
   /** Omitted by older servers and ordinary chat connections. */
   protocol: z.enum(["chat", "decisions"]).optional(),
@@ -1826,6 +1857,10 @@ export const ModelCatalogEntrySchema = z.object({
   placeholder: z.boolean().optional(),
   /** Models share one pinned HTTPS models-list URL that can be probed. */
   catalogProbe: z.boolean().optional(),
+  /** Ids the provider needs besides a key; a connection cannot save without them. */
+  routingFields: z.array(ModelRoutingFieldSchema).optional(),
+  /** Hosted services this connection type offers by name. */
+  endpointPresets: z.array(CompatibleEndpointPresetSchema).optional(),
   /** Listed by the provider's live models list but not in the bundled catalog. */
   live: z.literal(true).optional(),
 });
@@ -2260,6 +2295,11 @@ export const BillingStatusSchema = z.object({
     .optional(),
 });
 export type BillingStatus = z.infer<typeof BillingStatusSchema>;
+
+/** A trial set to cancel, which gets no computer hours until it is renewed. */
+export function isCancelledTrial(status: BillingStatus): boolean {
+  return status.state === "trialing" && status.cancelAtPeriodEnd;
+}
 
 /** The percent a yearly own-key price saves over twelve months at `monthlyCents`. */
 export function byokYearlySavingsPercent(monthlyCents: number, annualCents: number): number {

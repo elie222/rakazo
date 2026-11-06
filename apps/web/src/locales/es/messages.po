@@ -1447,6 +1447,10 @@ msgstr "cancelado"
 msgid "Cancelled"
 msgstr "Cancelado"
 
+#: src/components/ModelCredits.tsx
+msgid "Cancelled trials have no computer hours."
+msgstr "Las pruebas canceladas no tienen horas de computadora."
+
 #: src/components/vault/kinds.tsx
 msgid "Card"
 msgstr ""
@@ -3047,6 +3051,10 @@ msgstr "Falló el dictado."
 msgid "Did you mean <0>{emailSuggestion}</0>?"
 msgstr "¿Quisiste decir <0>{emailSuggestion}</0>?"
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Desactivar una herramienta"
@@ -3369,10 +3377,6 @@ msgstr ""
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Executor token"
-msgstr "Token de Executor"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
@@ -4949,16 +4953,6 @@ msgstr "Falló la conexión OAuth"
 msgid "Offline"
 msgstr "Sin conexión"
 
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama API key"
-msgstr "Clave de API de Ollama"
-
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama Cloud"
-msgstr "Ollama Cloud"
-
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
 msgstr "Con un horario"
@@ -5736,6 +5730,10 @@ msgstr "Cambiar nombre"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Rename section"
 msgstr "Renombrar sección"
+
+#: src/components/ModelCredits.tsx
+msgid "Renew plan"
+msgstr "Renovar plan"
 
 #: src/lib/billing.ts
 msgid "Renews {day}"
@@ -7181,10 +7179,6 @@ msgstr "La respuesta de la transcripción es demasiado grande."
 msgid "Treat like a person"
 msgstr "Tratar como a una persona"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "Token de Treg"
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"
 msgstr "Prueba"
@@ -7336,6 +7330,7 @@ msgid "Updating…"
 msgstr "Actualizando…"
 
 #: src/pages/shell/shell-sidebar.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
 msgstr "Mejorar plan"
 

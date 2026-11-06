@@ -117,8 +117,6 @@ export const PL_MESSAGES: Record<string, string> = {
     "{summary} Żaden model zapasowy nie mógł obsłużyć tego żądania.",
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Modele zapasowe zawiodły lub były niedostępne dla tego żądania.",
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "Klucz API Ollama",
   "Show password": "Pokaż hasło",
   "Hide password": "Ukryj hasło",
   Export: "Eksportuj",
@@ -682,8 +680,6 @@ export const PL_MESSAGES: Record<string, string> = {
   Added: "Dodano",
   Back: "Wstecz",
   "Bearer token": "Token Bearer",
-  "Connect Executor": "Połącz Executor",
-  "Connect Treg": "Połącz Treg",
   "Connection pending": "Oczekiwanie na połączenie",
   "Could not add source": "Nie udało się dodać źródła",
   "Could not approve this server": "Nie udało się zatwierdzić tego serwera",
@@ -693,7 +689,6 @@ export const PL_MESSAGES: Record<string, string> = {
   "Could not revoke connection": "Nie udało się cofnąć połączenia",
   "Custom connector": "Własne połączenie",
   "Display name": "Wyświetlana nazwa",
-  "Executor token": "Token wykonawcy",
   "Finish connecting in the browser, then refresh this page.":
     "Dokończ łączenie w przeglądarce, a następnie odśwież tę stronę.",
   "GraphQL endpoint": "Punkt końcowy GraphQL",
@@ -709,7 +704,6 @@ export const PL_MESSAGES: Record<string, string> = {
   "Search apps": "Szukaj aplikacji",
   "Show more": "Pokaż więcej",
   Tools: "Narzędzia",
-  "Treg token": "Token Treg",
   Uninstall: "Odinstaluj",
   "Verify and add": "Zweryfikuj i dodaj",
   "Working…": "Praca w toku…",
@@ -717,7 +711,6 @@ export const PL_MESSAGES: Record<string, string> = {
   "https://example.com/graphql": "https://example.com/graphql",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
-  "https://executor.example/mcp": "https://executor.example/mcp",
   "{count} tools": "Narzędzia: {count}",
   "API key": "Klucz API",
   "Account ID": "Identyfikator konta",
@@ -1136,6 +1129,10 @@ export const PL_MESSAGES: Record<string, string> = {
   Credits: "Środki",
   "Available credits": "Dostępne środki",
   "Computer hours left": "Pozostałe godziny pracy komputera",
+  Upgrade: "Ulepsz",
+  "Cancelled trials have no computer hours.":
+    "Anulowane okresy próbne nie mają godzin pracy komputera.",
+  "Renew plan": "Odnów plan",
   "Trials get fewer hours to prevent abuse.":
     "Okres próbny ma mniej godzin, aby zapobiegać nadużyciom.",
   "Start plan now": "Uruchom plan teraz",

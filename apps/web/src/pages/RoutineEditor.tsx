@@ -9,15 +9,16 @@ import type {
   RoutineWatchInput,
 } from "@rakazo/contracts";
 import { ROUTINE_WATCH_DEFAULT_MINUTES, ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
-import type { CronFreq, CronLabels, CronPreset } from "@rakazo/core";
+import type { CronFreq, CronLabels, CronPreset, RoutineDraft } from "@rakazo/core";
 import {
   credentialForModel,
   cronFromPreset,
   defaultCronPreset,
+  draftFromRoutine,
   ENGLISH_CRON_LABELS,
+  emptyRoutineDraft,
   formatCron,
   isOneShotRoutineCrons,
-  presetFromCron,
 } from "@rakazo/core";
 import {
   Button,
@@ -92,15 +93,10 @@ const SCHEDULE_PRESETS: CronFreq[] = [
   "Advanced",
 ];
 
-export type RoutineDraftState = {
-  name: string;
-  prompt: string;
-  schedules: CronPreset[];
+export type RoutineDraftState = RoutineDraft & {
   webhookEnabled: boolean;
   githubEnabled: boolean;
   messageProvider: string | null;
-  emailSenders: RoutineEmailSenders | null;
-  active: boolean;
   runAtLocal: string;
   /** Empty runs this routine on the bot's model. */
   modelKey: string;
@@ -188,16 +184,12 @@ export function watchFromDraft(
   };
 }
 
-export function emptyRoutineDraft(): RoutineDraftState {
+export function emptyRoutineDraftState(): RoutineDraftState {
   return {
-    name: "",
-    prompt: "",
-    schedules: [],
+    ...emptyRoutineDraft(),
     webhookEnabled: false,
     githubEnabled: false,
     messageProvider: null,
-    emailSenders: null,
-    active: true,
     runAtLocal: "",
     modelKey: "",
     thinkingLevel: "",
@@ -205,16 +197,12 @@ export function emptyRoutineDraft(): RoutineDraftState {
   };
 }
 
-export function draftFromRoutine(routine: Routine): RoutineDraftState {
+export function draftStateFromRoutine(routine: Routine): RoutineDraftState {
   return {
-    name: routine.name,
-    prompt: routine.prompt,
-    schedules: routine.crons.map(presetFromCron),
+    ...draftFromRoutine(routine),
     webhookEnabled: routine.webhookEnabled,
     githubEnabled: routine.githubEnabled,
     messageProvider: routine.messageProvider,
-    emailSenders: routine.emailSenders,
-    active: routine.active,
     runAtLocal: routineNeedsOneShotArm(routine, routine.crons) ? defaultArmRunAtLocal() : "",
     modelKey:
       routine.modelProvider && routine.modelId

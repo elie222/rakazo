@@ -127,8 +127,6 @@ export const JA_MESSAGES: Record<string, string> = {
 
   "Use 80 characters or fewer": "80文字以内で入力してください",
   "Could not update name": "名前を更新できませんでした",
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "OllamaのAPIキー",
   "Show password": "パスワードを表示",
   "Hide password": "パスワードを非表示",
   Export: "エクスポート",
@@ -673,8 +671,6 @@ export const JA_MESSAGES: Record<string, string> = {
   Added: "追加済み",
   Back: "戻る",
   "Bearer token": "Bearerトークン",
-  "Connect Executor": "Executorに接続",
-  "Connect Treg": "Tregに接続",
   "Connection pending": "接続待ち",
   "Could not add source": "ソースを追加できませんでした",
   "Could not approve this server": "このサーバーを承認できませんでした",
@@ -684,7 +680,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not revoke connection": "接続を取り消せませんでした",
   "Custom connector": "カスタムコネクタ",
   "Display name": "表示名",
-  "Executor token": "Executorトークン",
   "Finish connecting in the browser, then refresh this page.":
     "ブラウザで接続を完了してから、このページを更新してください。",
   "GraphQL endpoint": "GraphQLエンドポイント",
@@ -700,7 +695,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Search apps": "アプリを検索",
   "Show more": "さらに表示",
   Tools: "ツール",
-  "Treg token": "Tregトークン",
   Uninstall: "アンインストール",
   "Verify and add": "確認して追加",
   "Working…": "処理中…",
@@ -708,7 +702,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "https://example.com/graphql": "https://example.com/graphql",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
-  "https://executor.example/mcp": "https://executor.example/mcp",
   "{count} tools": "{count}個のツール",
   "API key": "APIキー",
   "Account ID": "アカウントID",
@@ -1123,6 +1116,10 @@ export const JA_MESSAGES: Record<string, string> = {
   Credits: "クレジット",
   "Available credits": "利用可能なクレジット",
   "Computer hours left": "コンピューターの残り時間",
+  Upgrade: "アップグレード",
+  "Cancelled trials have no computer hours.":
+    "キャンセルしたトライアルにはコンピューター時間がありません。",
+  "Renew plan": "プランを更新",
   "Trials get fewer hours to prevent abuse.":
     "不正利用を防ぐため、トライアルでは時間が少なくなっています。",
   "Start plan now": "今すぐプランを開始",

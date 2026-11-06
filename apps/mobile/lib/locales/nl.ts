@@ -118,8 +118,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Reservemodellen zijn mislukt of waren niet beschikbaar voor dit verzoek.",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "Ollama API-sleutel",
   "Show password": "Wachtwoord tonen",
   "Hide password": "Wachtwoord verbergen",
   Export: "Exporteren",
@@ -685,8 +683,6 @@ export const NL_MESSAGES: Record<string, string> = {
   Added: "Toegevoegd",
   Back: "Terug",
   "Bearer token": "Bearer-token",
-  "Connect Executor": "Executor koppelen",
-  "Connect Treg": "Treg koppelen",
   "Connection pending": "Verbinding in afwachting",
   "Could not add source": "Bron toevoegen mislukt",
   "Could not approve this server": "Deze server goedkeuren mislukt",
@@ -696,7 +692,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not revoke connection": "Verbinding intrekken mislukt",
   "Custom connector": "Eigen connector",
   "Display name": "Weergavenaam",
-  "Executor token": "Executor-token",
   "Finish connecting in the browser, then refresh this page.":
     "Rond het verbinden in de browser af en vernieuw daarna deze pagina.",
   "GraphQL endpoint": "GraphQL-eindpunt",
@@ -712,7 +707,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Search apps": "Apps zoeken",
   "Show more": "Meer tonen",
   Tools: "Tools",
-  "Treg token": "Treg-token",
   Uninstall: "Verwijderen",
   "Verify and add": "Verifiëren en toevoegen",
   "Working…": "Bezig…",
@@ -720,7 +714,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "https://example.com/graphql": "https://example.com/graphql",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
-  "https://executor.example/mcp": "https://executor.example/mcp",
   "{count} tools": "{count} tools",
   "API key": "API-sleutel",
   "Account ID": "Account-ID",
@@ -1136,6 +1129,9 @@ export const NL_MESSAGES: Record<string, string> = {
   Credits: "Tegoed",
   "Available credits": "Beschikbaar tegoed",
   "Computer hours left": "Resterende computeruren",
+  Upgrade: "Upgraden",
+  "Cancelled trials have no computer hours.": "Opgezegde proefperiodes hebben geen computeruren.",
+  "Renew plan": "Abonnement verlengen",
   "Trials get fewer hours to prevent abuse.":
     "Proefperiodes krijgen minder uren om misbruik te voorkomen.",
   "Start plan now": "Abonnement nu starten",
