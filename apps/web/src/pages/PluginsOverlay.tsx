@@ -680,12 +680,12 @@ export function PluginsOverlay({
     setPending(`catalog:${endpoint}`);
     try {
       const result = await connectMcpEndpoint({ name, endpoint, botId: activeBotId });
-      if (result === "cancelled") return;
-      setView("manage");
-      await refresh();
+      if (result !== "cancelled") setView("manage");
     } catch (err) {
       setCatalogFeedError(errorText(err, t`Could not connect`));
     } finally {
+      // The server is added whether or not sign-in finishes, and a failure can leave it needing a client.
+      await refresh().catch(() => undefined);
       setPending(null);
     }
   }

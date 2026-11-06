@@ -23,7 +23,9 @@ vi.mock("../lib/rpc", () => ({
   createSpaceRpc: () => api,
   selectedSpaceId: () => null,
 }));
-vi.mock("../lib/mcp-connect", () => ({ connectMcpOauth: vi.fn() }));
+const connectMcpEndpoint = vi.hoisted(() => vi.fn());
+
+vi.mock("../lib/mcp-connect", () => ({ connectMcpOauth: vi.fn(), connectMcpEndpoint }));
 vi.mock("../components/integrations/space-availability", () => ({
   AvailabilityControl: () => null,
   AvailabilityLabel: () => null,
@@ -53,7 +55,6 @@ vi.mock("@rakazo/ui-web", async () => {
       "Disclosure",
       "DropdownMenu",
       "DropdownMenuContent",
-      "DropdownMenuItem",
       "DropdownMenuSeparator",
       "DropdownMenuTrigger",
       "Field",
@@ -84,6 +85,11 @@ vi.mock("@rakazo/ui-web", async () => {
           { type: type ?? "button", onClick, disabled, "aria-label": label },
           children,
         ),
+    ],
+    [
+      "DropdownMenuItem",
+      ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) =>
+        createElement("button", { type: "button", onClick }, children),
     ],
     [
       "Input",
@@ -206,4 +212,50 @@ it("offers the public catalog for a search and sends nothing there until it is p
   expect(host.textContent).toContain("Add MCP server");
   expect(searchBox().value).toBe("canva");
   expect(publicSearches()).toEqual([[{ query: "canva", usePublicCatalog: true }]]);
+});
+
+it("reloads the servers after a catalog sign-in fails, so the added server shows", async () => {
+  api.capabilities.catalogSearch.mockImplementation(async () => ({
+    enabled: true,
+    results: [
+      {
+        domain: "tracker.example.test",
+        name: "Tracker",
+        description: "",
+        pageUrl: null,
+        surfaces: [
+          {
+            kind: "mcp",
+            slug: "tracker",
+            source: "https://mcp.tracker.example.test/mcp",
+            auth: { type: "oauth", headerName: null, note: null },
+          },
+        ],
+      },
+    ],
+  }));
+  connectMcpEndpoint.mockReset().mockRejectedValue(new Error("Needs an OAuth client ID"));
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  const button = (label: string) =>
+    Array.from(host.querySelectorAll("button")).find((node) => node.textContent === label);
+  await vi.waitFor(() => expect(button("Search by domain")).toBeDefined());
+  await act(async () => button("Search by domain")?.click());
+  await type(
+    host.querySelector<HTMLInputElement>('input[aria-label="Integration domain"]')!,
+    "tracker",
+  );
+  await act(async () => button("Search")?.click());
+  await vi.waitFor(() => expect(button("MCPAdd")).toBeDefined());
+  const reads = api.mcp.servers.list.mock.calls.length;
+
+  await act(async () => button("MCPAdd")?.click());
+
+  await vi.waitFor(() => expect(host.textContent).toContain("Needs an OAuth client ID"));
+  expect(api.mcp.servers.list.mock.calls.length).toBeGreaterThan(reads);
 });
