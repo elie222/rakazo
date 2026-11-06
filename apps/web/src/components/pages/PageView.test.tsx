@@ -76,3 +76,34 @@ it("closes on Escape unless the key landed in a popup", async () => {
   expect(onOpenChange).not.toHaveBeenCalled();
   await view.unmount();
 });
+
+it("keeps its controls clickable over the window's drag areas in the desktop app", async () => {
+  const view = mount({ document: "<p>v1</p>" });
+  await view.render({ document: "<p>v1</p>" });
+  // Electron applies drag areas through anything drawn on top, so the page opts out of them and
+  // drags the window only by the strip above it.
+  const page = document.querySelector('[data-testid="page-view"]')!;
+  expect(page.className).toContain("app-no-drag");
+  const close = document.querySelector('[aria-label="Close page"]')!;
+  expect(close.className).toContain("app-no-drag");
+  const titlePill = [...document.querySelectorAll("button")].find((b) => b.textContent === "Plan");
+  expect(titlePill?.className).toContain("app-no-drag");
+  expect(page.querySelectorAll(".app-drag")).toHaveLength(1);
+  await view.unmount();
+});
+
+it("starts its top row below the macOS window controls in the desktop app", async () => {
+  vi.stubGlobal("rakazoDesktop", { platform: "darwin" });
+  const mac = mount({ document: "<p>v1</p>" });
+  await mac.render({ document: "<p>v1</p>" });
+  expect(document.querySelector('[aria-label="Close page"]')!.className).toContain("top-[42px]");
+  expect(document.querySelector(".app-drag")!.className).toContain("h-[70px]");
+  await mac.unmount();
+  document.body.replaceChildren();
+  vi.unstubAllGlobals();
+
+  const browser = mount({ document: "<p>v1</p>" });
+  await browser.render({ document: "<p>v1</p>" });
+  expect(document.querySelector('[aria-label="Close page"]')!.className).toContain("top-[6px]");
+  await browser.unmount();
+});
