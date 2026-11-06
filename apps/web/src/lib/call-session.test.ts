@@ -5,6 +5,7 @@ import {
   callIdFromClientNonce,
   groupVoiceChats,
   INTERIM_BARGE_IN_MS,
+  reduceThreadSnapshot,
   runThreadSubscription,
 } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +13,6 @@ import { pickUp } from "./call-pickup.js";
 import { ECHO_GUARD_MS, endCall, getSnapshot, startCall, toggleMute } from "./call-session";
 import { dictation } from "./dictation.js";
 import { recheckSessionOnUnauthorized, rpc } from "./rpc.js";
-import { reduceThreadSnapshot } from "./thread-events.js";
 import { speaker } from "./tts.js";
 
 // The macro compiles away in the app build; tests run the source, so tag the template as-is.

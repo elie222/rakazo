@@ -108,6 +108,7 @@ export * from "./teach-recording.js";
 export * from "./text-direction.js";
 export * from "./thread-message-updates.js";
 export * from "./thread-scroll.js";
+export * from "./thread-snapshot-events.js";
 export * from "./thread-subscription.js";
 export * from "./time-separators.js";
 export * from "./tool-activity.js";
