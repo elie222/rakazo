@@ -57,6 +57,8 @@ describe("composerSlashQuery", () => {
     expect(composerSlashQuery("is it yes / no")).toBeNull();
     expect(composerSlashQuery("salt / pepper / set")).toBeNull();
     expect(composerSlashQuery("hello / ")).toBeNull();
+    expect(composerSlashQuery("see /re ")).toBeNull();
+    expect(composerSlashQuery("see /re word")).toBeNull();
     expect(composerSlashQuery("/ notes")).toBeNull();
     expect(composerSlashQuery("is it 1 /")).toBeNull();
     expect(composerSlashQuery("yes / no", 5)).toBeNull();

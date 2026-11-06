@@ -57,7 +57,7 @@ export function composerSlashQuery(
     if (bindings.some((binding) => slash >= binding.start && slash < binding.end)) return null;
     const query = text.slice(slash + 1, selectionStart);
     const start = text.slice(0, slash).trim() ? slash : 0;
-    if (start ? !/^\S/.test(query) : /^\s/.test(query)) return null;
+    if (start ? !/^\S+$/.test(query) : /^\s/.test(query)) return null;
     return { start, end: selectionStart, query };
   }
   return null;
