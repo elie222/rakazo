@@ -129,7 +129,6 @@ async function showConnectorApp(
   }
 }
 
-/** Web, cloud agents, MCP servers, app connections and connector tools. */
 /** Idempotent on the call's effect key, so an interrupted call can be replayed to settle its hold. */
 export async function callPaidService(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, context } = ctx;
@@ -144,6 +143,7 @@ export async function callPaidService(ctx: RunContext, call: ToolCall) {
   );
 }
 
+/** Web, cloud agents, MCP servers, app connections and connector tools. */
 export const integrationTools: ToolHandlers = {
   async web_search(ctx, call) {
     const { context } = ctx;
