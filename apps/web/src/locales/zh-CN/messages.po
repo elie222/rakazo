@@ -1023,7 +1023,7 @@ msgstr ""
 msgid "Appearance"
 msgstr "外观"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Appearance: {label}"
 msgstr "外观：{label}"
 
@@ -1307,7 +1307,7 @@ msgid "Bot style"
 msgstr ""
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Bot templates"
 msgstr "Bot 模板"
 
@@ -1930,8 +1930,8 @@ msgid "Connect API key"
 msgstr "连接 API 密钥"
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Connect apps"
 msgstr "连接应用"
 
@@ -2855,7 +2855,7 @@ msgid "Daily check-ins on unfinished work"
 msgstr "每天跟进未完成的工作"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Dark"
 msgstr "深色"
 
@@ -4020,8 +4020,8 @@ msgstr "保留完整工具结果"
 msgid "key"
 msgstr "密钥"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Keyboard shortcuts"
 msgstr "键盘快捷键"
 
@@ -4075,7 +4075,7 @@ msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
 msgstr "让机器人在 MEMORY.md 之外，按语义保存和回忆事实。"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Light"
 msgstr "浅色"
 
@@ -4664,6 +4664,7 @@ msgstr ""
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/create-bot-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "New bot"
 msgstr "新建 Bot"
 
@@ -4683,9 +4684,9 @@ msgstr ""
 msgid "New group"
 msgstr "新建群组"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "New group chat"
 msgstr "新建群聊"
 
@@ -4706,8 +4707,8 @@ msgstr "新的待办"
 msgid "New password"
 msgstr "新密码"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "New private space"
 msgstr "新建私人空间"
 
@@ -6273,7 +6274,7 @@ msgstr "设置"
 msgid "Settings updated"
 msgstr "设置已更新"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Settings: {label}"
 msgstr "设置：{label}"
 
@@ -6445,8 +6446,8 @@ msgstr "技能 {position}"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "Skills"
 msgstr "技能"
 
@@ -6740,7 +6741,7 @@ msgid "Switching…"
 msgstr "正在切换…"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-palette-actions.ts
 msgid "System"
 msgstr "系统"
 
