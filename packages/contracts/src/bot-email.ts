@@ -63,7 +63,7 @@ export const BotEmailAddressSchema = z
   .nullable();
 export type BotEmailAddress = z.infer<typeof BotEmailAddressSchema>;
 
-/** The claimed addresses of the bots in this Space; null when this server receives no email. */
+/** The addresses of the caller's own bots in this Space; null when this server receives no email. */
 export const BotEmailAddressesSchema = z
   .object({
     domain: z.string(),
