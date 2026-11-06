@@ -228,7 +228,9 @@ async function failRun(scenario: Scenario) {
     scratchpadItem: { findMany: vi.fn(async () => []) },
     externalEffect: { findMany: vi.fn(async () => []) },
     artifact: { findMany: vi.fn(async () => []) },
-    $transaction: vi.fn(async () => null),
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
   };
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const enqueue = vi.fn(async (job: { name: string }) => {
@@ -510,7 +512,8 @@ describe("backing off a routine after its model connection refuses it", () => {
   it("counts a refusal of the user's own key", async () => {
     const { prisma } = await failRun({ error: refusedKey(), personalKey: true });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    // The run's lease is one transaction, the refusal count the other.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
   });
 
   it("counts a run pinned to a provider the user has no connection for", async () => {
@@ -519,7 +522,8 @@ describe("backing off a routine after its model connection refuses it", () => {
       pinnedTo: { provider: "anthropic", modelId: "claude-sonnet-4-5" },
     });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    // The run's lease is one transaction, the refusal count the other.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
   });
 
   it("counts a daily quota that resets hours from now, without a quick retry", async () => {
@@ -535,14 +539,16 @@ describe("backing off a routine after its model connection refuses it", () => {
       personalKey: true,
     });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    // The run's lease is one transaction, the refusal count the other.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
     expect(retries).toEqual([]);
   });
 
   it("counts a spent computer allowance, without a quick retry", async () => {
     const { prisma, retries } = await failRun({ error: new SandboxAllowanceUsedError() });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    // The run's lease is one transaction, the refusal count the other.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
     expect(retries).toEqual([]);
   });
 
@@ -560,7 +566,8 @@ describe("backing off a routine after its model connection refuses it", () => {
   ] satisfies Array<[string, Scenario]>)("does not count %s", async (_label, scenario) => {
     const { prisma } = await failRun(scenario);
 
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    // Only the run's lease.
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
   });
 });
 
@@ -607,6 +614,8 @@ function retryHarness(scenario: RetryScenario = {}) {
     error: overloaded().message,
   };
   const tx = {
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
     routine: {
       updateMany: vi.fn(async () => ({
         count: scenario.pausedBeforeCreate || scenario.archivedBeforeCreate ? 0 : 1,

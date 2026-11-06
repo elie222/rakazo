@@ -17,14 +17,14 @@ export function ConnectionControls({
   beginSelectedSubscriptionSignIn,
   busy,
   cancelOAuthAttempt,
-  cloudflareRoutingReady,
+  routingReady,
   codeCopied,
   connectKey,
   copyOAuthCode,
   credential,
   gatewayId,
-  isCloudflare,
-  isCloudflareGateway,
+  needsRouting,
+  needsGateway,
   isOpenAiCompatible,
   oauth,
   oauthPending,
@@ -52,14 +52,14 @@ export function ConnectionControls({
   | "beginSelectedSubscriptionSignIn"
   | "busy"
   | "cancelOAuthAttempt"
-  | "cloudflareRoutingReady"
+  | "routingReady"
   | "codeCopied"
   | "connectKey"
   | "copyOAuthCode"
   | "credential"
   | "gatewayId"
-  | "isCloudflare"
-  | "isCloudflareGateway"
+  | "needsRouting"
+  | "needsGateway"
   | "isOpenAiCompatible"
   | "oauth"
   | "oauthPending"
@@ -257,15 +257,12 @@ export function ConnectionControls({
         </Disclosure>
       ) : acceptsKey ? (
         <div className="mt-5 first:mt-0">
-          {isCloudflare ? (
+          {needsRouting ? (
             <>
-              <label
-                className="block text-body text-muted-foreground"
-                htmlFor="cloudflare-account-id"
-              >
+              <label className="block text-body text-muted-foreground" htmlFor="model-account-id">
                 <Trans>Account ID</Trans>
                 <Input
-                  id="cloudflare-account-id"
+                  id="model-account-id"
                   value={accountId}
                   onChange={(event) => setAccountId(event.target.value)}
                   autoComplete="off"
@@ -273,14 +270,14 @@ export function ConnectionControls({
                   className="mt-2 h-10 text-foreground"
                 />
               </label>
-              {isCloudflareGateway ? (
+              {needsGateway ? (
                 <label
                   className="mt-4 block text-body text-muted-foreground"
-                  htmlFor="cloudflare-gateway-id"
+                  htmlFor="model-gateway-id"
                 >
                   <Trans>Gateway ID</Trans>
                   <Input
-                    id="cloudflare-gateway-id"
+                    id="model-gateway-id"
                     value={gatewayId}
                     onChange={(event) => setGatewayId(event.target.value)}
                     autoComplete="off"
@@ -293,7 +290,7 @@ export function ConnectionControls({
           ) : null}
           {acceptsKey ? (
             <label
-              className={`block text-body text-muted-foreground ${isCloudflare ? "mt-4" : ""}`}
+              className={`block text-body text-muted-foreground ${needsRouting ? "mt-4" : ""}`}
               htmlFor="model-api-key"
             >
               {credential?.hasKey ? (
@@ -333,7 +330,7 @@ export function ConnectionControls({
               type="button"
               variant="secondary"
               size="sm"
-              disabled={busy || !cloudflareRoutingReady || apiKey.trim().length < 8}
+              disabled={busy || !routingReady || apiKey.trim().length < 8}
               onClick={() => void connectKey()}
             >
               {pending === "connect" ? (

@@ -2,15 +2,16 @@ import * as z from "zod";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
 import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
 import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
-import {
-  cloudflareGatewayRoutingId,
-  cloudflareModelConfigMessage,
-  isCloudflareAiGatewayProvider,
-  isCloudflareModelProvider,
-} from "./cloudflare-ai-gateway.js";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
 import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
-import { Id, MemoryScope, RunStatus, SandboxKind, ThinkingLevelSchema } from "./ids.js";
+import {
+  Id,
+  MemoryScope,
+  ReplyModeSchema,
+  RunStatus,
+  SandboxKind,
+  ThinkingLevelSchema,
+} from "./ids.js";
 import {
   McpHeadersSchema,
   McpRemoteEndpointSchema,
@@ -137,6 +138,7 @@ export const BotSchema = z.object({
   crossSpaceCommunication: z.boolean().optional(),
   dailyCheckIns: z.boolean().optional(),
   fleetManagement: z.boolean().default(true),
+  replyMode: ReplyModeSchema.default("chat"),
   disabledBuiltinTools: z.array(z.string()).default([]),
   webhookConfigured: z.boolean(),
   /** Present when created with an idempotency key (e.g. onboarding:first). */
@@ -498,6 +500,7 @@ export const UpdateBotInput = z
     crossSpaceCommunication: z.boolean().optional(),
     dailyCheckIns: z.boolean().optional(),
     fleetManagement: z.boolean().optional(),
+    replyMode: ReplyModeSchema.optional(),
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),
     /** Write only while these settings still hold, as an undo does. */
     expectedSettings: BotSettingsValuesSchema.optional(),
@@ -561,6 +564,13 @@ export function routineModelIssues(
 
 export const ROUTINE_MENTION_BATCH_MAX = 100;
 
+export const ROUTINE_TRIGGER_REQUIRED =
+  "Add a schedule, webhook, GitHub, message, email, or change trigger";
+
+/** Whose authenticated mail starts an email routine: the bot owner, or anyone at the owner's domain. */
+export const RoutineEmailSendersSchema = z.enum(["owner", "domain"]);
+export type RoutineEmailSenders = z.infer<typeof RoutineEmailSendersSchema>;
+
 export const RoutineSchema = z.object({
   id: Id,
   botId: Id,
@@ -578,6 +588,8 @@ export const RoutineSchema = z.object({
     .max(50)
     .regex(/^[a-z0-9._-]+$/i)
     .nullable(),
+  /** Null unless mail to the bot's address starts this routine. Absent on older servers. */
+  emailSenders: RoutineEmailSendersSchema.nullable().default(null),
   /** Null runs this routine on its bot's model. */
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
@@ -613,6 +625,7 @@ export const CreateRoutineInput = z
       .regex(/^[a-z0-9._-]+$/i)
       .nullable()
       .default(null),
+    emailSenders: RoutineEmailSendersSchema.nullable().default(null),
     modelProvider: z.string().trim().min(1).max(80).nullable().default(null),
     modelId: z.string().trim().min(1).max(200).nullable().default(null),
     thinkingLevel: ThinkingLevelSchema.nullable().default(null),
@@ -625,11 +638,12 @@ export const CreateRoutineInput = z
       !value.webhookEnabled &&
       !value.githubEnabled &&
       !value.messageProvider &&
+      !value.emailSenders &&
       !value.watch
     ) {
       ctx.addIssue({
         code: "custom",
-        message: "Add a schedule, webhook, GitHub, message, or change trigger",
+        message: ROUTINE_TRIGGER_REQUIRED,
         path: ["crons"],
       });
     }
@@ -1109,6 +1123,16 @@ export const IntegrationCatalogResultSchema = z.object({
 });
 export type IntegrationCatalogResult = z.infer<typeof IntegrationCatalogResultSchema>;
 
+/** A remote MCP service that connects with a bearer token. */
+export const McpSourcePresetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** Fixed endpoint; omitted when the person enters their own. */
+  url: z.string().url().optional(),
+  urlPlaceholder: z.string().optional(),
+});
+export type McpSourcePreset = z.infer<typeof McpSourcePresetSchema>;
+
 export type { McpTransport } from "./mcp.js";
 
 const McpServerBaseInput = z.object({
@@ -1463,6 +1487,7 @@ export const RunSchema = z.object({
   status: RunStatus,
   trigger: RunTriggerSchema,
   routineId: Id.nullable(),
+  routineName: z.string().nullable().optional(),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   error: z.string().nullable(),
@@ -1655,6 +1680,40 @@ export const ModelConnectionLabelSchema = z.string().trim().min(1).max(MAX_MODEL
 
 export const CONNECTION_LABEL_MAX_LENGTH = 80;
 
+/** Ids a provider needs besides its key to route requests, like an account. */
+export const ModelRoutingFieldSchema = z.enum(["accountId", "gatewayId"]);
+export type ModelRoutingField = z.infer<typeof ModelRoutingFieldSchema>;
+
+/** Routing ids are substituted into a URL path, so only a single path segment is accepted. */
+const MODEL_ROUTING_ID = /^[A-Za-z0-9_-]{1,64}$/;
+export const MODEL_ROUTING_ID_MESSAGE =
+  "Use only letters, numbers, dashes, and underscores, up to 64 characters.";
+
+export function modelRoutingId(value: string | null | undefined): string | undefined {
+  const id = value?.trim() ?? "";
+  return MODEL_ROUTING_ID.test(id) ? id : undefined;
+}
+
+/** Every routing id the provider needs is filled in and valid. */
+export function modelRoutingReady(
+  fields: readonly ModelRoutingField[] | undefined,
+  values: Partial<Record<ModelRoutingField, string>>,
+): boolean {
+  return (fields ?? []).every((field) => modelRoutingId(values[field]) !== undefined);
+}
+
+/** What a connection form shows and requires for the routing ids a catalog entry names. */
+export function modelRoutingForm(
+  fields: readonly ModelRoutingField[] | undefined,
+  values: Partial<Record<ModelRoutingField, string>>,
+): { needsRouting: boolean; needsGateway: boolean; routingReady: boolean } {
+  return {
+    needsRouting: Boolean(fields?.length),
+    needsGateway: Boolean(fields?.includes("gatewayId")),
+    routingReady: modelRoutingReady(fields, values),
+  };
+}
+
 export const ModelConnectInputSchema = z
   .object({
     ...ModelContextLimitsSchema.shape,
@@ -1694,24 +1753,11 @@ export const ModelConnectInputSchema = z
         path: ["maxTokens"],
       });
     }
-    if (isCloudflareModelProvider(value.provider)) {
-      if (value.accountId !== undefined && !cloudflareGatewayRoutingId(value.accountId)) {
-        ctx.addIssue({
-          code: "custom",
-          message: cloudflareModelConfigMessage(value.provider),
-          path: ["accountId"],
-        });
-      }
-      if (
-        isCloudflareAiGatewayProvider(value.provider) &&
-        value.gatewayId !== undefined &&
-        !cloudflareGatewayRoutingId(value.gatewayId)
-      ) {
-        ctx.addIssue({
-          code: "custom",
-          message: cloudflareModelConfigMessage(value.provider),
-          path: ["gatewayId"],
-        });
+    // Whether the provider needs an id is the provider's call; a blank one is left to it.
+    for (const field of ModelRoutingFieldSchema.options) {
+      const id = value[field];
+      if (id?.trim() && !modelRoutingId(id)) {
+        ctx.addIssue({ code: "custom", message: MODEL_ROUTING_ID_MESSAGE, path: [field] });
       }
     }
     if (value.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -1811,6 +1857,8 @@ export const ModelCatalogEntrySchema = z.object({
   placeholder: z.boolean().optional(),
   /** Models share one pinned HTTPS models-list URL that can be probed. */
   catalogProbe: z.boolean().optional(),
+  /** Ids the provider needs besides a key; a connection cannot save without them. */
+  routingFields: z.array(ModelRoutingFieldSchema).optional(),
   /** Hosted services this connection type offers by name. */
   endpointPresets: z.array(CompatibleEndpointPresetSchema).optional(),
   /** Listed by the provider's live models list but not in the bundled catalog. */
@@ -1824,6 +1872,8 @@ export const VoiceCatalogEntrySchema = z.object({
   description: z.string(),
   transcribe: z.boolean(),
   keyless: z.boolean().optional(),
+  /** The connection takes an optional speech model id that overrides the provider default. */
+  speechModel: z.boolean().optional(),
 });
 export type VoiceCatalogEntry = z.infer<typeof VoiceCatalogEntrySchema>;
 
@@ -2245,6 +2295,11 @@ export const BillingStatusSchema = z.object({
     .optional(),
 });
 export type BillingStatus = z.infer<typeof BillingStatusSchema>;
+
+/** A trial set to cancel, which gets no computer hours until it is renewed. */
+export function isCancelledTrial(status: BillingStatus): boolean {
+  return status.state === "trialing" && status.cancelAtPeriodEnd;
+}
 
 /** The percent a yearly own-key price saves over twelve months at `monthlyCents`. */
 export function byokYearlySavingsPercent(monthlyCents: number, annualCents: number): number {

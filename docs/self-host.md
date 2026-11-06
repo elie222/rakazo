@@ -113,6 +113,8 @@ Compose bot homes mount only their own subdirectory of the application volume us
   voice.
 - [Tools and integrations](./self-host-integrations.md): web search, memory, MCP servers,
   messaging apps, cloud coding agents and payments.
+- [Bot email addresses](./self-host-inbound-email.md): an address for each bot, so mail you
+  forward or CC to it starts its routines.
 - [Computer providers](./self-host-sandbox-providers.md) and
   [Docker computers](./self-host-docker-computers.md): where bot computers run and how they are
   limited.

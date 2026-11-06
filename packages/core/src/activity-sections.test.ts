@@ -69,6 +69,18 @@ it("judges a chat by its latest run only", () => {
   expect(sections.unreadBots.map((bot) => bot.id)).toEqual(["writer", "chief"]);
 });
 
+it("lists each finished chat once in Recent, by its latest run", () => {
+  const latestWriter = run("writer", "failed");
+  const editor = run("editor", "completed");
+  const sections = activitySections({
+    active: [run("chief", "running")],
+    recent: [latestWriter, editor, run("writer", "completed"), run("chief", "completed")],
+    bots: [],
+    groups: [],
+  });
+  expect(sections.recent).toEqual([latestWriter, editor]);
+});
+
 it("lets live work speak for a chat over its older outcome", () => {
   const working = run("writer", "running");
   const asking = run("launcher", "waiting_input", "launch");

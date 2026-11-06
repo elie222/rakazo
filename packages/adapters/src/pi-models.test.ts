@@ -385,6 +385,12 @@ describe("Pi model catalog", () => {
       listPiCatalog().find((entry) => entry.provider === "cloudflare-workers-ai")?.catalogProbe,
     ).toBeUndefined();
 
+    const routing = (provider: string) =>
+      listPiCatalog().find((entry) => entry.provider === provider)?.routingFields;
+    expect(routing("cloudflare-workers-ai")).toEqual(["accountId"]);
+    expect(routing("cloudflare-ai-gateway")).toEqual(["accountId", "gatewayId"]);
+    expect(routing("anthropic")).toBeUndefined();
+
     const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
     process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "0";
     try {

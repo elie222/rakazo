@@ -1,6 +1,5 @@
 import { ORPCError } from "@orpc/server";
 import { commentTicket, createTicket, updateTicket } from "@rakazo/adapters";
-import type { BoardEvent } from "@rakazo/contracts";
 import { parseTicketRef } from "@rakazo/contracts";
 import { escapeSearchWildcards } from "@rakazo/core";
 import type { Board as BoardRow, Prisma, PrismaClient } from "@rakazo/db";
@@ -15,7 +14,7 @@ import {
   toTicketDto,
 } from "@rakazo/db";
 import type { RouterContext } from "./context.js";
-import { HEARTBEAT_MS, SESSION_RECHECK_MS } from "./shared.js";
+import { HEARTBEAT, withHeartbeats } from "./shared.js";
 
 async function resolveSpaceBoard(
   prisma: PrismaClient,
@@ -93,37 +92,13 @@ export function boardsRoutes(ctx: RouterContext) {
       }),
       subscribe: boardEnabled.boards.subscribe.handler(async function* ({ context }) {
         const spaceId = context.actor.spaceId;
-        const follow = deps.boardEvents.follow(spaceId, context.signal);
         // Board signals are transient, so a heartbeat stands in for liveness and
         // gives the client a periodic catch-up reload if a push was missed.
-        let pending: Promise<IteratorResult<BoardEvent>> | undefined;
-        let authorizedAt = Date.now();
-        const assertStillAuthorized = async () => {
-          if (!context.stillAuthorized || Date.now() - authorizedAt < SESSION_RECHECK_MS) return;
-          if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");
-          authorizedAt = Date.now();
-        };
-        try {
-          while (!context.signal?.aborted) {
-            pending ??= follow.next();
-            let timer: ReturnType<typeof setTimeout> | undefined;
-            const next = await Promise.race([
-              pending,
-              new Promise<"silent">((resolve) => {
-                timer = setTimeout(() => resolve("silent"), HEARTBEAT_MS);
-              }),
-            ]).finally(() => clearTimeout(timer));
-            await assertStillAuthorized();
-            if (next === "silent") {
-              yield { spaceId, createdAt: new Date().toISOString() };
-              continue;
-            }
-            pending = undefined;
-            if (next.done) return;
-            yield next.value;
-          }
-        } finally {
-          void follow.return(undefined).catch(() => {});
+        const events = withHeartbeats(context, (signal) =>
+          deps.boardEvents.follow(spaceId, signal),
+        );
+        for await (const next of events) {
+          yield next === HEARTBEAT ? { spaceId, createdAt: new Date().toISOString() } : next;
         }
       }),
     },

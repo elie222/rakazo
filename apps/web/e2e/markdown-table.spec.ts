@@ -417,3 +417,21 @@ test.describe("touch table controls", () => {
     }
   });
 });
+
+test("failed table copy offers selected text", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    document.execCommand = () => false;
+  });
+  await page.goto(fixture);
+  await page.getByRole("button", { name: "Copy rows" }).click();
+  const dialog = page.getByRole("dialog", { name: "Copy rows" });
+  await expect(dialog).toBeVisible();
+  const field = dialog.getByRole("textbox");
+  await expect(field).toHaveValue(/Item\tQty\nitem-01/);
+  await expect(field).toBeFocused();
+  expect(await field.evaluate((element: HTMLTextAreaElement) => element.selectionEnd)).toBe(
+    (await field.inputValue()).length,
+  );
+  await captureScreenshot(page, testInfo, "table-copy-fallback");
+});

@@ -1,11 +1,10 @@
+import { MODEL_KEY_FORMAT_ERROR, ModelConnectInputSchema } from "@rakazo/contracts";
+import { canUseCompatibleModelAsDefault } from "@rakazo/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  MODEL_KEY_FORMAT_ERROR,
-  ModelConnectInputSchema,
-} from "@rakazo/contracts";
-import { canUseCompatibleModelAsDefault } from "@rakazo/core";
-import { afterEach, describe, expect, it, vi } from "vitest";
+} from "./cloudflare-ai-gateway.js";
 import {
   buildModelConnectPlaintext,
   modelCredentialDto,

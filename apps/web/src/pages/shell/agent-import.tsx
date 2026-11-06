@@ -32,11 +32,13 @@ import {
 import {
   Button,
   Checkbox,
+  CopyTextFallback,
   Input,
   Label,
   NativeSelect,
   NativeSelectOption,
   Textarea,
+  useCopyText,
 } from "@rakazo/ui-web";
 import {
   Collapsible,
@@ -97,7 +99,7 @@ export function AgentImportForm({
   const [description, setDescription] = useState("");
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [reply, setReply] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copied, copy, copyFailed, resetCopy] = useCopyText();
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   // Bumped by every new read, so a slower earlier one never lands over it.
@@ -328,15 +330,6 @@ export function AgentImportForm({
     setBusy(false);
   }
 
-  async function copyPrompt() {
-    try {
-      await navigator.clipboard.writeText(AGENT_IMPORT_PROMPT);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  }
-
   const selectedInstructions = plan?.instructions.filter((item) => !unchecked.has(item.id)) ?? [];
   const chosen = <T extends { id: string }>(items: T[] | undefined) =>
     (items ?? []).filter((item) => !unchecked.has(item.id));
@@ -505,8 +498,11 @@ export function AgentImportForm({
             disabled={creating}
             onClick={() => {
               stopReading();
-              if (plan) setPlan(null);
-              else onClose();
+              if (plan) {
+                // A copy that failed while the preview was open must not greet the return.
+                resetCopy();
+                setPlan(null);
+              } else onClose();
             }}
           >
             <ArrowLeft size={16} strokeWidth={1.8} />
@@ -874,9 +870,15 @@ export function AgentImportForm({
             <h3 className={headingClass}>
               <Trans>Another assistant</Trans>
             </h3>
-            <Button variant="outline" className="mt-2" onClick={() => void copyPrompt()}>
+            <Button variant="outline" className="mt-2" onClick={() => copy(AGENT_IMPORT_PROMPT)}>
               {copied ? <Trans>Copied</Trans> : <Trans>Copy prompt</Trans>}
             </Button>
+            <CopyTextFallback
+              open={copyFailed}
+              onOpenChange={resetCopy}
+              text={AGENT_IMPORT_PROMPT}
+              label={t`Copy prompt`}
+            />
             <Textarea
               aria-label={t`Paste the reply`}
               value={reply}

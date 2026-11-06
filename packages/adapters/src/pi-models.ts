@@ -4,6 +4,7 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type {
   CompatibleEndpointPreset,
   ModelOAuthSignInMode,
+  ModelRoutingField,
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
@@ -11,6 +12,7 @@ import {
   canonicalPiProviderId,
   MODEL_KEY_REJECTED_ERROR,
 } from "@rakazo/contracts";
+import { cloudflareRoutingFields } from "./cloudflare-ai-gateway.js";
 import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
@@ -43,6 +45,7 @@ export type PiCatalogEntry = {
   placeholder?: boolean;
   /** Provider models share one pinned HTTPS models-list base URL. */
   catalogProbe?: boolean;
+  routingFields?: ModelRoutingField[];
   endpointPresets?: CompatibleEndpointPreset[];
   live?: true;
 };
@@ -301,6 +304,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
       ),
     );
     const modelIds = providerModels.map((model) => model.id);
+    const routingFields = cloudflareRoutingFields(provider.id);
     for (const model of providerModels) {
       if (!catalogModelServesAgents(model)) hiddenCatalogKeys.add(`${provider.id}:${model.id}`);
       const thinkingLevels = getSupportedThinkingLevels(model) as ThinkingLevel[];
@@ -326,6 +330,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
           ? { placeholder: true, endpointPresets: COMPATIBLE_ENDPOINT_PRESETS }
           : { images: model.input.includes("image") }),
         ...(probeBaseUrl ? { catalogProbe: true } : {}),
+        ...(routingFields ? { routingFields } : {}),
       });
     }
   }

@@ -105,6 +105,36 @@ describe("media generation connection", () => {
     expect(fetch.mock.calls[3]![0]).toBe(job.response_url);
     expect(await provider.pollVideo(jobId, context)).toEqual({ id: jobId, status: "failed" });
   });
+  it.each(["Image/PNG", "IMAGE/PNG", "Image/PNG ; name=render.png"])(
+    "accepts image Content-Type %s and returns canonical MIME",
+    async (contentType) => {
+      const { provider } = setup(
+        json(job),
+        json({ status: "COMPLETED" }),
+        json(imageResult),
+        new Response("image", { headers: { "content-type": contentType } }),
+      );
+      expect(await provider.generateImage({ prompt: "draw" }, context)).toEqual({
+        mimeType: "image/png",
+        bytes: new TextEncoder().encode("image"),
+      });
+    },
+  );
+  it.each(["Video/MP4", "VIDEO/MP4", "Video/MP4 ; name=render.mp4"])(
+    "accepts video Content-Type %s and returns canonical MIME",
+    async (contentType) => {
+      const { provider } = setup(
+        json({ status: "COMPLETED" }),
+        json(videoResult),
+        new Response("video", { headers: { "content-type": contentType } }),
+      );
+      expect(await provider.pollVideo(jobId, context)).toEqual({
+        id: jobId,
+        status: "completed",
+        output: { mimeType: "video/mp4", bytes: new TextEncoder().encode("video") },
+      });
+    },
+  );
   it.each([
     [429, "rate_limit"],
     [401, "authentication"],
