@@ -1354,11 +1354,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
 // In both modes, once the rules are in place, a configured SANDBOX_COMPUTER_DNS that no server
 // answers fails the provision the same way, so the next one probes again.
 let autoEgressSettled: Promise<void> | undefined;
-// One in-flight verification shared by concurrent provisions (never cached
-// after it settles): each provision is still covered by a check that finishes
-// after it arrived — an earlier settled success never covers a later start —
-// while a burst of starts shares one probe instead of each creating a network
-// from the engine's small address pools.
+// One in-flight verification shared by concurrent provisions, never cached
+// after it settles: each start is still covered by a check that finished after
+// it arrived, without one probe network per start in a burst.
 let egressVerification: Promise<void> | undefined;
 async function verifyEgressNow() {
   egressVerification ??= verifyRestrictedEgress(
@@ -1392,9 +1390,6 @@ async function ensureRestrictedEgressEnforced() {
       },
     );
     await autoEgressSettled;
-    // A provision that waited on an earlier probe must still be covered by a
-    // verification that finished after it arrived; the shared gate gives the
-    // waiters one such check, and the next provision after it settles a new one.
     if (!firstProbe && computerEgressMode === "restricted") {
       await verifyEgressNow();
     }

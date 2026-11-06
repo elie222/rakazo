@@ -7,22 +7,14 @@ import { attestRestrictedEgress } from "./egress-attest.js";
  * Restricted egress is enforced by host firewall rules the supervisor cannot see
  * (infra/compose/restrict-computer-egress.sh); without them a restricted computer
  * network is as open as any other. Before a restricted computer starts, a
- * throwaway container on a `rakazo-c*` bridge tries TCP to that bridge's gateway,
- * which is the Docker host. The ruleset's INPUT drop makes every attempt time out;
- * a refused or accepted connection means the host answered, so the rules are missing.
- * The forwarded path is also checked directly
- * against the cloud metadata endpoint: where one exists it accepts connections unless
- * the drop is in place, and elsewhere nothing answers, so only a connection fails.
- * Explicit computer DNS is forwarded from the computer's network, where the ruleset drops
- * private resolvers, so at least one configured IPv4 server must answer a query from the
- * bridge (which has no IPv6). Any reply counts, so a resolver that only knows internal
- * names still passes.
+ * throwaway container on a `rakazo-c*` bridge tries TCP to that bridge's gateway
+ * (the Docker host) and to the cloud metadata endpoint: the ruleset's drops make
+ * every attempt time out, so a refused or accepted connection means the rules
+ * are missing. Explicit computer DNS must answer from the bridge, since the
+ * ruleset drops private resolvers on the forwarded path.
  *
- * Forwarded destination drops cannot be verified behaviorally — blocked address space
- * usually has nothing listening, so a removed DROP rule looks identical to an enforced
- * one. After the behavioral checks, the firewall itself is therefore read back and every
- * required rule attested (see egress-attest.ts); anything short of a full match fails
- * closed, so a partially removed ruleset never passes as verified.
+ * Forwarded destination drops cannot be verified behaviorally, so after the
+ * behavioral checks the firewall itself is attested (see egress-attest.ts).
  */
 export const EGRESS_PROBE_NETWORK = "rakazo-egress-probe";
 // 22 is open or allowed on most servers, 1 is closed nearly everywhere: either one
@@ -37,7 +29,7 @@ const DNS_UNREACHABLE = 5;
 // Each server gets two short tries, so one lost packet does not fail a start (18s for three).
 const DNS_SECONDS = 3;
 
-export const EGRESS_NOT_ENFORCED =
+const EGRESS_NOT_ENFORCED =
   "SANDBOX_COMPUTER_EGRESS=restricted is not enforced on this Docker host: run infra/compose/restrict-computer-egress.sh on the host (see docs/self-host-docker-computers.md)";
 
 /**
@@ -115,17 +107,11 @@ export async function verifyRestrictedEgress(
       ).unref(),
     ),
   ]);
-  // Behavioral checks passed; attest the live firewall itself, so a partially
-  // removed ruleset cannot pass as verified. The attestation runs the
-  // supervisor-built probe image, never the configurable computer image, and
-  // runs before the DNS checks: a removed forwarded drop must surface as the
-  // rules-missing result even when the DNS configuration is also wrong.
+  // Attest before the DNS checks, so a removed drop outranks a DNS problem.
   await attestRestrictedEgress(docker, await ensureAttestImage());
-  // The DNS list is validated only now, after the rules are known to be in
-  // place: `auto` on a host without the ruleset must still fall back to open
-  // egress instead of failing every start on a DNS misconfiguration.
-  // Restricted computer networks are IPv4-only, so an IPv6 resolver could never
-  // be queried; skipping it silently would make the check pass without testing.
+  // Validate the DNS list only once the rules are known to be in place, so
+  // `auto` still falls back to open on a misconfigured host. Restricted
+  // networks are IPv4-only, so an IPv6 resolver would be silently skipped.
   if (dns?.some((server) => !isIPv4(server))) {
     throw new Error(
       "SANDBOX_COMPUTER_DNS must list IPv4 servers: restricted computer networks are IPv4-only (see docs/self-host-docker-computers.md)",

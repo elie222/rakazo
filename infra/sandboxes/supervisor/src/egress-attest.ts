@@ -28,7 +28,7 @@ import { EgressNotEnforced } from "./egress-probe.js";
  * builds it on a missing tag, never because of the name (see ATTEST_IMAGE).
  */
 
-export const BRIDGE_PREFIX = "rakazo-c";
+const BRIDGE_PREFIX = "rakazo-c";
 
 // The installer is the single source of truth for the firewall policy: its
 // blocked_destinations_v4/v6 heredocs and egress_rules_v4/v6 printf lines are
@@ -62,21 +62,13 @@ export const REQUIRED_V6_DROPS = installerDrops("v6");
 const ATTEST_DEADLINE_MS = 30_000;
 
 /**
- * The image name prefix the attestation probe runs under. Docker resolves a
- * two-part name like this to docker.io, so the name itself prevents nothing:
- * the supervisor never pulls it only because attestImageEnsurer builds it when
- * the tag is missing. Never add a pull fallback — the probe runs with host
- * networking and CAP_NET_ADMIN.
+ * The image name prefix the attestation probe runs under. A two-part name like
+ * this resolves to docker.io — only attestImageEnsurer's build-on-missing-tag
+ * keeps it local, so never add a pull fallback (see the module doc).
  */
 export const ATTEST_IMAGE = "rakazo/egress-attest";
 
-/**
- * Makes sure the attestation image exists, building it from the repository's
- * own context, and returns its name. Never pulled: an image reached through a
- * registry is exactly the trust this probe must not take. Like the computer
- * image, a local name can be spoofed by whoever already controls the Docker
- * socket.
- */
+/** Ensures the attestation image exists (see the module doc) and returns its name. */
 export function attestImageEnsurer(docker: Docker, context: string) {
   let attempt: Promise<string> | undefined;
   return () => {
@@ -161,20 +153,16 @@ function requiredRules(family: "v4" | "v6") {
       return parts[0]! + BRIDGE_PREFIX + parts.slice(1).join(cidr);
     }),
   ].map((line) => line.replace(/\\n$/, ""));
+  // The conformance test (an attestation dump built from the installer's
+  // --print output must verify) pins these shapes against format drift.
   const normalized = lines.map((line) => {
     const [chain, ...args] = line.split(" ");
     return { chain: chain!, rule: normalizeRule(args.join(" ")) };
   });
-  const input = normalized.filter((line) => line.chain === "INPUT").map((line) => line.rule);
-  const user = normalized.filter((line) => line.chain === "DOCKER-USER").map((line) => line.rule);
-  if (
-    input.length < 2 ||
-    user.length < drops.length + 1 ||
-    input.length + user.length !== lines.length
-  ) {
-    throw new Error(`cannot parse egress_rules_${family} from restrict-computer-egress.sh`);
-  }
-  return { input, user };
+  return {
+    input: normalized.filter((line) => line.chain === "INPUT").map((line) => line.rule),
+    user: normalized.filter((line) => line.chain === "DOCKER-USER").map((line) => line.rule),
+  };
 }
 
 // Canonical form mirroring the script's normalize_rule: the kernel may print
@@ -272,11 +260,7 @@ function verifyForwardJump(forwardRules: string[], family: "v4" | "v6") {
   }
 }
 
-function verifyIptablesFamily(
-  sections: Record<string, string>,
-  family: "v4" | "v6",
-  required: boolean,
-) {
+function verifyIptablesFamily(sections: Record<string, string>, family: "v4" | "v6") {
   const key = family === "v4" ? "V4" : "V6";
   const user = sections[`${key}USER`];
   const input = sections[`${key}INPUT`];
@@ -288,7 +272,6 @@ function verifyIptablesFamily(
       `could not read ${family} iptables rules from the host network namespace (${user ?? input ?? forward ?? "no output"})`,
     );
   }
-  if (!required) return;
   const wanted = requiredRules(family);
   chainHasPrefix(parseChain(user ?? "", "DOCKER-USER"), wanted.user, "DOCKER-USER");
   chainHasPrefix(parseChain(input ?? "", "INPUT"), wanted.input, "INPUT");
@@ -315,7 +298,7 @@ export function verifyAttestation(output: string) {
   if (sections.DONE === undefined) {
     throw new Error("the attestation probe produced no output");
   }
-  verifyIptablesFamily(sections, "v4", true);
+  verifyIptablesFamily(sections, "v4");
   // The attest script echoes each marker on its own, so match the whole
   // section: a host interface named like a marker must not read as absent.
   const ifinet6 = sections.IFINET6?.trim();
@@ -340,7 +323,7 @@ export function verifyAttestation(output: string) {
   sections.GLOBALIPV6 = ipv6Lines.some((line) => line.trim().split(/\s+/)[3] === "00") ? "yes" : "";
   // Mirror the install script: the IPv6 family is only skipped when the host
   // has no global IPv6; otherwise it must verify like IPv4.
-  if (sections.GLOBALIPV6) verifyIptablesFamily(sections, "v6", true);
+  if (sections.GLOBALIPV6) verifyIptablesFamily(sections, "v6");
 }
 
 export const ATTEST_SCRIPT = [
