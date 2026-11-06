@@ -248,6 +248,8 @@ async function noteUnverifiedOwnerMail(
       botId: bot.id,
       role: "system",
       blocks,
+      // The owner should see it even while away from the bot's chat.
+      markUnread: true,
     });
     const event = await appendEventInTransaction(tx, {
       spaceId: bot.spaceId,

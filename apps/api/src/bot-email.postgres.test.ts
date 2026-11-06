@@ -232,5 +232,6 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     });
     expect(notes).toHaveLength(1);
     expect(notify).toHaveBeenCalledTimes(1);
+    expect(thread.unread).toBe(true);
   });
 });
