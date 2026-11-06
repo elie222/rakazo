@@ -262,6 +262,7 @@ test("switching to Existing instance while the stack starts keeps that choice", 
 
   // Main process still finishes the install; setup.json must stay untouched. Wait for the
   // stack to be ready, not for a fixed time: a health probe that misses once retries later.
+  // How the window handles readiness after the switch is pinned in setup.test.ts.
   await expect
     .poll(
       () =>
