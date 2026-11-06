@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { MessagingInboundDeps } from "./messaging-inbound.js";
 import {
   createMessagingInboundHandler,
+  TEXT_ANSWER_WINDOW_MS,
   teamChatSenderCanWakeMessageRoutines,
   wakeMessageRoutines,
 } from "./messaging-inbound.js";
@@ -48,8 +49,12 @@ function createDeps(
   const notify = vi.fn(async () => undefined);
   const enqueue = vi.fn(async () => undefined);
   const acknowledge = vi.fn<MessagingReceipts["acknowledge"]>();
-  const runs = new Map<string, { status: string; messagingMirroredAt: Date | null }>([
+  const runs = new Map<
+    string,
+    { status: string; messagingMirroredAt: Date | null; userId?: string }
+  >([
     ["run-1", { status: "running", messagingMirroredAt: null }],
+    ["run-waiting", { status: "waiting_input", messagingMirroredAt: null, userId: "user-1" }],
   ]);
   const botReplies: Array<{ id: string; runId: string }> = [];
   const provision = vi.fn(async (request: { provider: string; address: string }) => ({
@@ -135,6 +140,7 @@ function createDeps(
       findMany: vi.fn(async ({ where }: { where: { runId: string } }) =>
         botReplies.filter((reply) => reply.runId === where.runId).map(({ id }) => ({ id })),
       ),
+      findFirst: vi.fn(async (_args: unknown) => null as unknown),
     },
     routine: { findMany: vi.fn(async () => overrides.routines ?? []) },
     thread: { findFirst: vi.fn(async () => ({ id: "thread-1" })) },
@@ -434,6 +440,120 @@ describe("createMessagingInboundHandler DM routing", () => {
     });
     expect(deps.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
+    );
+  });
+
+  it("answers the bot's question when it is the newest message the chat was sent", async () => {
+    const deps = createDeps();
+    const question = {
+      kind: "ask",
+      text: "Which city?",
+      status: "pending",
+      actions: [
+        { id: "choice-1", label: "Berlin" },
+        { id: "choice-2", label: "Paris" },
+      ],
+    };
+    const findQuestion = vi.fn(async ({ where }: { where: { id?: string } }) =>
+      where.id ? { runId: "run-waiting", blocks: [question] } : null,
+    );
+    Object.assign(deps.prisma.message, { findFirst: findQuestion });
+    const start = Date.now() - 60_000;
+    const sent = (sourceMessageId: string | null, status: string, at: number) =>
+      deps.outboundRows.push({
+        idempotencyKey: `row-${at}`,
+        kind: "dm",
+        identityId: "mi-1",
+        sourceMessageId,
+        status,
+        providerHandle: status === "sent" ? `sent-${at}` : null,
+        createdAt: new Date(start + at),
+      });
+    sent("ask-1", "sent", 1);
+    const handle = createMessagingInboundHandler(deps);
+
+    await handle({ ...dmEvent, content: "2" });
+    expect(findQuestion).toHaveBeenCalledWith({
+      where: { id: "ask-1", threadId: "thread-1", role: "bot" },
+      select: { runId: true, blocks: true },
+    });
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        blocks: [{ kind: "text", text: "2" }],
+        answers: { runId: "run-waiting", messageId: "ask-1", answer: "choice-2" },
+      }),
+    );
+
+    // A reply with a file, or one after anything newer the chat was sent, is an ordinary message.
+    await handle({
+      ...dmEvent,
+      handle: "handle-2",
+      content: "Paris",
+      mediaUrl: "https://x.test/a",
+    });
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ answers: expect.anything() }),
+    );
+    sent(null, "sent", 2);
+    await handle({ ...dmEvent, handle: "handle-3", content: "Paris" });
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ answers: expect.anything() }),
+    );
+
+    // Nor is a reply to a question that is already answered, or one sent too long ago.
+    sent("ask-1", "sent", 3);
+    question.status = "answered";
+    await handle({ ...dmEvent, handle: "handle-4", content: "Paris" });
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ answers: expect.anything() }),
+    );
+    question.status = "pending";
+    sent("ask-1", "sent", 4);
+    await handle({ ...dmEvent, handle: "handle-5", content: "Paris" });
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ answers: expect.objectContaining({ answer: "Paris" }) }),
+    );
+
+    // Nor is a reply while the question is still on its way: the row is claimed before the send.
+    sent("ask-1", "sent", 5);
+    const inFlight = deps.outboundRows.at(-1);
+    if (inFlight) inFlight.providerHandle = null;
+    await handle({ ...dmEvent, handle: "handle-6", content: "Paris" });
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ answers: expect.anything() }),
+    );
+    if (inFlight) inFlight.providerHandle = "sent-5";
+
+    // Nor one to a run that stopped waiting, or that another person in the Space started.
+    deps.runs.set("run-waiting", {
+      status: "running",
+      messagingMirroredAt: null,
+      userId: "user-1",
+    });
+    await handle({ ...dmEvent, handle: "handle-7", content: "Paris" });
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ answers: expect.anything() }),
+    );
+    deps.runs.set("run-waiting", {
+      status: "waiting_input",
+      messagingMirroredAt: null,
+      userId: "user-2",
+    });
+    await handle({ ...dmEvent, handle: "handle-8", content: "Paris" });
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ answers: expect.anything() }),
+    );
+    deps.runs.set("run-waiting", {
+      status: "waiting_input",
+      messagingMirroredAt: null,
+      userId: "user-1",
+    });
+
+    for (const [index, row] of deps.outboundRows.entries())
+      row.createdAt = new Date(Date.now() - TEXT_ANSWER_WINDOW_MS - 10 + index);
+    await handle({ ...dmEvent, handle: "handle-9", content: "Paris" });
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ answers: expect.anything() }),
     );
   });
 
@@ -1051,6 +1171,64 @@ describe("createMessagingInboundHandler DM routing", () => {
     expect(routinePrompt).toContain("<untrusted_delivery_payload>");
     expect(routinePrompt).toContain("&lt;/untrusted_delivery_payload&gt;");
     expect(deps.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers the bot's question before message routines can take the reply", async () => {
+    const deps = createDeps({
+      routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
+    });
+    const question = { kind: "ask", text: "Which city?", status: "pending" };
+    // The reply as stored, once the first delivery has answered with it.
+    const stored = new Set<string>();
+    Object.assign(deps.prisma.message, {
+      findFirst: vi.fn(async ({ where }: { where: { id?: string; clientNonce?: string } }) =>
+        where.id
+          ? { runId: "run-waiting", blocks: [question] }
+          : where.clientNonce && stored.has(where.clientNonce)
+            ? { id: "reply-1" }
+            : null,
+      ),
+    });
+    deps.outboundRows.push({
+      idempotencyKey: "row-ask",
+      kind: "dm",
+      identityId: "mi-1",
+      sourceMessageId: "ask-1",
+      status: "sent",
+      providerHandle: "sent-ask",
+      createdAt: new Date(),
+    });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "Paris" });
+
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(1);
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        trigger: "messaging",
+        answers: { runId: "run-waiting", messageId: "ask-1", answer: "Paris" },
+      }),
+    );
+
+    // The same reply delivered again, once it has answered, replays as that reply.
+    stored.add(`messaging:${dmEvent.provider}:${dmEvent.handle}`);
+    deps.runs.set("run-waiting", {
+      status: "running",
+      messagingMirroredAt: null,
+      userId: "user-1",
+    });
+    await handle({ ...dmEvent, content: "Paris" });
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
+    expect(deps.sendUserMessage.mock.calls[1]?.[0]?.trigger).toBe("messaging");
+
+    // A reply that would not answer, here to a run no longer waiting, still goes to the routine.
+    deps.runs.set("run-waiting", {
+      status: "running",
+      messagingMirroredAt: null,
+      userId: "user-1",
+    });
+    await handle({ ...dmEvent, handle: "handle-2", content: "Paris" });
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(3);
+    expect(deps.sendUserMessage.mock.calls[2]?.[0]?.trigger).toBe("webhook");
   });
 
   it("does not double-wake a DM when message routines match", async () => {

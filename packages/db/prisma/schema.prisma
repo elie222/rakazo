@@ -2256,6 +2256,7 @@ model MessagingOutbound {
   updatedAt       DateTime  @updatedAt
 
   @@index([status, nextAttemptAt])
+  @@index([identityId, createdAt])
   @@map("messaging_outbound")
 }
 

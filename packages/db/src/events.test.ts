@@ -4890,6 +4890,176 @@ describe("sendUserMessage", () => {
       },
     });
   });
+
+  it("answers the waiting question it replies to instead of starting a run", async () => {
+    const question = {
+      kind: "ask",
+      text: "Which city?",
+      status: "pending",
+      actions: [
+        { id: "choice-1", label: "Berlin" },
+        { id: "choice-2", label: "Paris" },
+      ],
+    };
+    let eventSeq = 8;
+    const tx = {
+      space: { findUnique: vi.fn() },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      thread: {
+        update: vi.fn(async () => ({ nextMessageSeq: 5, nextEventSeq: ++eventSeq })),
+      },
+      message: {
+        create: vi.fn().mockResolvedValue({ id: "reply-1", seq: 4, createdAt: new Date() }),
+        findFirst: vi.fn().mockResolvedValue({ id: "ask-1", runId: "run-1", blocks: [question] }),
+        findMany: vi.fn().mockResolvedValue([{ id: "ask-1", blocks: [question] }]),
+        update: vi.fn(),
+      },
+      run: {
+        create: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue({
+          botId: "bot-1",
+          userId: "user-1",
+          messagingMirroredAt: new Date(),
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+      },
+      task: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      steeringMessage: { create: vi.fn() },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      sendUserMessage(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        userId: "user-1",
+        blocks: [{ kind: "text", text: "2" }],
+        prompt: "2",
+        trigger: "messaging",
+        answers: { runId: "run-1", messageId: "ask-1", answer: "choice-2" },
+      }),
+    ).resolves.toMatchObject({ messageId: "reply-1", runId: "run-1", taskId: null });
+
+    expect(tx.message.update).toHaveBeenCalledWith({
+      where: { id: "ask-1" },
+      data: { blocks: [expect.objectContaining({ status: "answered", answer: "choice-2" })] },
+    });
+    expect(tx.message.update).toHaveBeenCalledWith({
+      where: { id: "reply-1" },
+      data: { runId: "run-1" },
+    });
+    expect(tx.task.updateMany).toHaveBeenCalledWith({
+      where: { runs: { some: { id: "run-1" } } },
+      data: { prompt: expect.stringContaining("Selected choice choice-2") },
+    });
+    // The chat app's reply after the answer still has to be mirrored.
+    expect(tx.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: "queued", checkpoint: null, messagingMirroredAt: null },
+      }),
+    );
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(tx.steeringMessage.create).not.toHaveBeenCalled();
+  });
+
+  const choices = [
+    { id: "choice-1", label: "Berlin" },
+    { id: "choice-2", label: "Paris" },
+  ];
+  it.each([
+    {
+      case: "an answered question",
+      ask: { kind: "ask", text: "Which city?", status: "answered", answer: "Paris" },
+      runUserId: "user-1",
+    },
+    {
+      case: "an approval",
+      ask: {
+        kind: "ask",
+        text: "Send the email?",
+        status: "pending",
+        approvalEffectId: "effect-1",
+        actions: [
+          { id: "allow", label: "Allow" },
+          { id: "deny", label: "Deny" },
+        ],
+      },
+      runUserId: "user-1",
+    },
+    {
+      case: "a secret request",
+      ask: { kind: "ask", text: "Your API key?", status: "pending", input: "secret" },
+      runUserId: "user-1",
+    },
+    {
+      case: "another person's question",
+      ask: { kind: "ask", text: "Which city?", status: "pending", actions: choices },
+      runUserId: "user-2",
+    },
+  ])("starts a run as usual for a reply to $case", async ({ ask, runUserId }) => {
+    const tx = {
+      space: { findUnique: vi.fn() },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 5 })
+          .mockResolvedValueOnce({ nextEventSeq: 9 }),
+      },
+      message: {
+        create: vi.fn().mockResolvedValue({ id: "reply-1", seq: 4, createdAt: new Date() }),
+        findMany: vi.fn().mockResolvedValue([{ id: "ask-1", blocks: [ask] }]),
+        findFirst: vi.fn().mockResolvedValue({ id: "ask-1", runId: "run-1", blocks: [ask] }),
+        update: vi.fn(),
+      },
+      run: {
+        create: vi.fn().mockResolvedValue({ id: "run-2" }),
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: runUserId }),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+        updateMany: vi.fn(),
+      },
+      task: { create: vi.fn().mockResolvedValue({ id: "task-2" }), updateMany: vi.fn() },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      sendUserMessage(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        userId: "user-1",
+        blocks: [{ kind: "text", text: "allow" }],
+        prompt: "allow",
+        trigger: "messaging",
+        answers: { runId: "run-1", messageId: "ask-1", answer: "allow" },
+      }),
+    ).resolves.toMatchObject({ runId: "run-2", taskId: "task-2" });
+    expect(tx.run.updateMany).not.toHaveBeenCalled();
+    expect(tx.task.updateMany).not.toHaveBeenCalled();
+    expect(tx.message.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "ask-1" } }),
+    );
+  });
 });
 
 describe("claimSteering", () => {
