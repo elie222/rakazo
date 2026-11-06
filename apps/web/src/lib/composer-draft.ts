@@ -1,5 +1,10 @@
+import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import type { ComposerMentionBinding } from "@rakazo/core";
-import { createKeyedListeners, validateComposerMentionBindings } from "@rakazo/core";
+import {
+  createKeyedListeners,
+  validateComposerDraftSkill,
+  validateComposerMentionBindings,
+} from "@rakazo/core";
 
 export const COMPOSER_DRAFT_STORAGE_PREFIX = "rakazo.composerDraft.";
 const COMPOSER_BINDINGS_STORAGE_PREFIX = "rakazo.composerBindings.";
@@ -15,7 +20,8 @@ const replacedDrafts = createKeyedListeners<string>();
 export const subscribeComposerDraftReplaced = replacedDrafts.subscribe;
 
 function savedDraftOf(submission: ComposerDraftSubmission): string {
-  return submission.appended ? `${submission.text} ${submission.appended}` : submission.text;
+  if (!submission.appended) return submission.text;
+  return submission.text ? `${submission.text} ${submission.appended}` : submission.appended;
 }
 
 /**
@@ -35,7 +41,13 @@ export function appendComposerDraftText(threadKey: string, text: string): void {
     readBindingRecord(threadKey) === pending.bindingRecord
       ? pending
       : null;
-  writeComposerDraft(threadKey, next, undefined, readComposerDraftBindings(threadKey));
+  writeComposerDraft(
+    threadKey,
+    next,
+    undefined,
+    readComposerDraftBindings(threadKey),
+    readComposerDraftSkill(threadKey),
+  );
   if (inFlight) {
     inFlight.appended = inFlight.appended ? `${inFlight.appended} ${text}` : text;
     inFlight.bindingRecord = readBindingRecord(threadKey);
@@ -49,8 +61,9 @@ export function replaceComposerDraft(
   threadKey: string,
   text: string,
   bindings: readonly ComposerMentionBinding[],
+  skill: AgentSkillCatalogEntry | null = null,
 ): void {
-  writeComposerDraft(threadKey, text, undefined, bindings);
+  writeComposerDraft(threadKey, text, undefined, bindings, skill);
   replacedDrafts.emit(threadKey, text);
 }
 
@@ -58,7 +71,8 @@ export function beginComposerDraftSubmission(
   threadKey: string,
   text: string,
 ): ComposerDraftSubmission {
-  writeComposerDraft(threadKey, text);
+  // An unchanged empty body can still hold a skill chip; beginning a send must not clear it.
+  if (text || text !== readComposerDraft(threadKey)) writeComposerDraft(threadKey, text);
   // The send that begins now carries its own nonce; a stored one is consumed.
   writeComposerRetryNonce(threadKey, null);
   const submission = { text, bindingRecord: readBindingRecord(threadKey) };
@@ -80,7 +94,7 @@ export function settleComposerDraftSubmission(
   )
     return;
   if (submission.appended) {
-    writeComposerDraft(threadKey, submission.appended);
+    writeComposerDraft(threadKey, submission.appended, undefined, []);
     replacedDrafts.emit(threadKey, submission.appended);
     return;
   }
@@ -127,14 +141,19 @@ export function composerHoldsWorkInFlight(): boolean {
   return pendingSubmissions.size > 0 || sendingWork;
 }
 
-/** Unsaved composer work, or saved text in any composer that has not been sent. */
+/** Unsaved composer work, or saved text or a skill chip that has not been sent. */
 export function hasUnsentComposerDraft(storage: Storage | null = null): boolean {
   if (composerHoldsUnsavedWork()) return true;
   try {
     const drafts = storage ?? localStorage;
-    for (let index = 0; index < drafts.length; index++) {
-      const key = drafts.key(index);
+    const keys = Array.from({ length: drafts.length }, (_, index) => drafts.key(index));
+    for (const key of keys) {
       if (key?.startsWith(COMPOSER_DRAFT_STORAGE_PREFIX) && drafts.getItem(key)) return true;
+      if (
+        key?.startsWith(COMPOSER_BINDINGS_STORAGE_PREFIX) &&
+        readComposerDraftSkill(key.slice(COMPOSER_BINDINGS_STORAGE_PREFIX.length), drafts)
+      )
+        return true;
     }
   } catch {
     // Without storage the draft lives only in memory, so treat it as unsent.
@@ -238,31 +257,46 @@ function readBindingRecord(threadKey: string, storage = getLocalStorage()): stri
   }
 }
 
-/** Bindings are optional metadata; a stale record must never replace the raw text. */
-export function readComposerDraftBindings(
-  threadKey: string,
-  storage: DraftStorage | null = getLocalStorage(),
-): ComposerMentionBinding[] {
-  if (!storage || !threadKey) return [];
+/** Bindings and the skill chip are optional metadata; a stale record must never replace the raw text. */
+function readDraftMetadata(threadKey: string, storage: DraftStorage | null) {
+  if (!storage || !threadKey) return null;
   const key = composerDraftBindingsKey(threadKey);
   try {
     const raw = readBindingRecord(threadKey, storage);
-    if (!raw) return [];
+    if (!raw) return null;
     const record = JSON.parse(raw);
     const text = readComposerDraft(threadKey, storage);
     if (record?.version !== 1 || record.text !== text) {
       storage.removeItem(key);
-      return [];
+      return null;
     }
-    return validateComposerMentionBindings(text, record.bindings);
+    return {
+      bindings: validateComposerMentionBindings(text, record.bindings),
+      skill: record.skill === undefined ? null : validateComposerDraftSkill(record.skill),
+    };
   } catch {
     try {
       storage.removeItem(key);
     } catch {
       /* The in-memory draft remains usable. */
     }
-    return [];
+    return null;
   }
+}
+
+export function readComposerDraftBindings(
+  threadKey: string,
+  storage: DraftStorage | null = getLocalStorage(),
+): ComposerMentionBinding[] {
+  return readDraftMetadata(threadKey, storage)?.bindings ?? [];
+}
+
+/** The skill chip picked for the saved draft, kept with its mentions. */
+export function readComposerDraftSkill(
+  threadKey: string,
+  storage: DraftStorage | null = getLocalStorage(),
+): AgentSkillCatalogEntry | null {
+  return readDraftMetadata(threadKey, storage)?.skill ?? null;
 }
 
 export function readComposerDraft(
@@ -282,6 +316,7 @@ export function writeComposerDraft(
   draft: string,
   storage: DraftStorage | null = getLocalStorage(),
   bindings?: readonly ComposerMentionBinding[],
+  skill: AgentSkillCatalogEntry | null = null,
 ): void {
   pendingSubmissions.delete(threadKey);
   if (!storage || !threadKey) return;
@@ -295,10 +330,10 @@ export function writeComposerDraft(
     }
     if (draft.length === 0) storage.removeItem(composerDraftStorageKey(threadKey));
     else storage.setItem(composerDraftStorageKey(threadKey), draft);
-    if (bindings?.length && draft) {
+    if (bindings !== undefined && (bindings.length || skill)) {
       storage.setItem(
         composerDraftBindingsKey(threadKey),
-        JSON.stringify({ version: 1, text: draft, bindings }),
+        JSON.stringify({ version: 1, text: draft, bindings, ...(skill ? { skill } : {}) }),
       );
     }
   } catch {

@@ -1,10 +1,39 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  composerSlashOptions,
   composerSlashQuery,
   serializeComposerPrompt,
   truncateSlashDescription,
+  validateComposerDraftSkill,
 } from "./composer-slash.js";
+
+describe("composerSlashOptions", () => {
+  const skills = [{ id: "s1", name: "summarize", description: "Write the weekly notes" }];
+  it("matches descriptions and offers actions only at the start of the draft", () => {
+    const start = composerSlashOptions({ start: 0, end: 5, query: "week" }, skills);
+    expect(start.skills).toEqual(skills);
+    const mid = composerSlashOptions({ start: 4, end: 9, query: "week" }, skills);
+    expect(mid).toEqual({ skills: [], actions: [] });
+    expect(composerSlashOptions({ start: 0, end: 4, query: "sett" }, skills).actions).toHaveLength(
+      3,
+    );
+    expect(composerSlashOptions({ start: 4, end: 8, query: "sett" }, skills).actions).toEqual([]);
+    expect(
+      composerSlashOptions({ start: 0, end: 4, query: "konf" }, skills, () => "Konfiguration")
+        .actions,
+    ).toHaveLength(3);
+  });
+});
+
+describe("validateComposerDraftSkill", () => {
+  it("restores a saved skill chip and drops anything else", () => {
+    const skill = { id: "s1", name: "summarize", description: "", source: "user", readOnly: false };
+    expect(validateComposerDraftSkill(skill)).toEqual(skill);
+    expect(validateComposerDraftSkill({ name: "summarize" })).toBeNull();
+    expect(validateComposerDraftSkill("summarize")).toBeNull();
+  });
+});
 
 describe("composerSlashQuery", () => {
   it("reads a / at the start or after whitespace on the caret's line, never inside bound text", () => {

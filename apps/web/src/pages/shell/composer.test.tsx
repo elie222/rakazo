@@ -1137,6 +1137,166 @@ describe("Composer", () => {
     expect(container?.querySelector("[data-testid='skill-chip']")).toBeNull();
   });
 
+  it.each([false, true])(
+    "restores a skill-only draft after reopening (delete body: %s)",
+    async (deleteBody) => {
+      const draftKey = "bot:skill-only";
+      const textarea = renderComposer(vi.fn(), { draftKey });
+      type(textarea, "/sum");
+      pressEnter(textarea);
+      if (deleteBody) {
+        type(textarea, "notes");
+        type(textarea, "");
+      }
+      expect(textarea.value).toBe("");
+      act(() => root?.unmount());
+      container?.remove();
+      const onSend = vi.fn().mockResolvedValue(true);
+      const reopened = renderComposer(onSend, { draftKey });
+      expect(container?.querySelector("[data-testid='skill-chip']")?.textContent).toBe("summarize");
+      pressEnter(reopened);
+      await act(async () => {});
+      expect(onSend).toHaveBeenCalledWith("/summarize", [], expect.any(String));
+      act(() => root?.unmount());
+      container?.remove();
+      renderComposer(onSend, { draftKey });
+      expect(container?.querySelector("[data-testid='skill-chip']")).toBeNull();
+    },
+  );
+
+  it.each(["", "notes"])(
+    "clears the restored skill after a deferred send accepts (body: %s)",
+    async (body) => {
+      let accept!: (accepted: boolean) => void;
+      const onSend = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<boolean>((resolve) => {
+              accept = resolve;
+            }),
+        )
+        .mockResolvedValue(true);
+      const draftKey = "bot:deferred-skill";
+      const textarea = renderComposer(onSend, { draftKey });
+      type(textarea, "/sum");
+      pressEnter(textarea);
+      if (body) type(textarea, body);
+      pressEnter(textarea);
+      expect(onSend).toHaveBeenCalledWith(
+        body ? `/summarize\n${body}` : "/summarize",
+        [],
+        expect.any(String),
+      );
+      act(() => root?.render(<Composer key="other" {...composerProps} draftKey="bot:other" />));
+      act(() => root?.render(<Composer key="reopened" {...composerProps} />));
+      expect(container?.querySelector("[data-testid='skill-chip']")?.textContent).toBe("summarize");
+      await act(async () => {
+        accept(true);
+      });
+      expect(container?.querySelector("[data-testid='skill-chip']")).toBeNull();
+      const reopened = container!.querySelector("textarea")!;
+      expect(reopened.value).toBe("");
+      type(reopened, "next message");
+      pressEnter(reopened);
+      await act(async () => {});
+      expect(onSend).toHaveBeenLastCalledWith("next message", [], expect.any(String));
+    },
+  );
+
+  it("keeps a newer skill-only draft when an older deferred send accepts", async () => {
+    let accept!: (accepted: boolean) => void;
+    const onSend = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            accept = resolve;
+          }),
+      )
+      .mockResolvedValue(true);
+    const draftKey = "bot:newer-skill";
+    const textarea = renderComposer(onSend, { draftKey });
+    type(textarea, "/sum");
+    pressEnter(textarea);
+    pressEnter(textarea);
+    act(() => root?.render(<Composer key="other" {...composerProps} draftKey="bot:other" />));
+    act(() => root?.render(<Composer key="reopened" {...composerProps} />));
+    act(() =>
+      container?.querySelector<HTMLButtonElement>('[aria-label="Remove skill summarize"]')?.click(),
+    );
+    const reopened = container!.querySelector("textarea")!;
+    type(reopened, "/sum");
+    pressEnter(reopened);
+    await act(async () => {
+      accept(true);
+    });
+    expect(container?.querySelector("[data-testid='skill-chip']")?.textContent).toBe("summarize");
+    pressEnter(reopened);
+    await act(async () => {});
+    expect(onSend).toHaveBeenLastCalledWith("/summarize", [], expect.any(String));
+  });
+
+  it("keeps a skill chip picked before more text when the chat is reopened", async () => {
+    const draftKey = "bot:saved-chip";
+    const reopen = (onSend: ComponentProps<typeof Composer>["onSend"] = vi.fn()) => {
+      act(() => root?.unmount());
+      container?.remove();
+      return renderComposer(onSend, { draftKey });
+    };
+    const chip = () => container?.querySelector("[data-testid='skill-chip']");
+    const textarea = renderComposer(vi.fn(), { draftKey });
+    act(() => textarea.focus());
+    type(textarea, "/sum the notes");
+    act(() => {
+      textarea.setSelectionRange(4, 4);
+      document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+    });
+    pressEnter(textarea);
+    expect(textarea.value).toBe(" the notes");
+    const onSend = vi.fn().mockResolvedValue(true);
+    const reopened = reopen(onSend);
+    expect(chip()?.textContent).toBe("summarize");
+    pressEnter(reopened);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("/summarize\nthe notes", [], expect.any(String));
+  });
+
+  it("forgets a removed skill chip when the chat is reopened", () => {
+    const draftKey = "bot:removed-chip";
+    const textarea = renderComposer(vi.fn(), { draftKey });
+    act(() => textarea.focus());
+    type(textarea, "/sum the notes");
+    act(() => {
+      textarea.setSelectionRange(4, 4);
+      document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+    });
+    pressEnter(textarea);
+    act(() =>
+      container?.querySelector<HTMLButtonElement>('[aria-label="Remove skill summarize"]')?.click(),
+    );
+    act(() => root?.unmount());
+    container?.remove();
+    const reopened = renderComposer(vi.fn(), { draftKey });
+    expect(reopened.value).toBe(" the notes");
+    expect(container?.querySelector("[data-testid='skill-chip']")).toBeNull();
+  });
+
+  it("lets Shift+Tab leave the field while the slash menu is open", () => {
+    const textarea = renderComposer(vi.fn());
+    type(textarea, "/s");
+    const shiftTab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => textarea.dispatchEvent(shiftTab));
+    expect(shiftTab.defaultPrevented).toBe(false);
+    expect(textarea.value).toBe("/s");
+    expect(container?.querySelector("[data-testid='skill-chip']")).toBeNull();
+  });
+
   it("sends a slash draft as typed when no row matches", async () => {
     const onSend = vi.fn().mockResolvedValue(true);
     const textarea = renderComposer(onSend);
@@ -2053,6 +2213,60 @@ it("keeps a mention bound after reopening the chat when the queued send fails", 
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe(saved);
     expect(localStorage.getItem("rakazo.composerBindings.bot:bot-1")).toBe(bindings);
     expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(1);
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it("keeps a newer skill after reopening the chat when the queued send fails", async () => {
+  let finish!: (accepted: boolean) => void;
+  const onSend = vi.fn(
+    (_text: string) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    renderComposer(onSend, { phoneCallsEnabled: true });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("please book the flight"));
+    await act(async () => {});
+    rerenderComposer({ sending: true });
+    act(() => onFinal("and a hotel"));
+    await act(async () => {});
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-2" draftKey="bot:bot-2" />));
+    act(() => root?.render(<Composer {...composerProps} key="bot:bot-1:again" sending={false} />));
+    const returned = container?.querySelector("textarea");
+    if (!returned) throw new Error("composer textarea not found");
+    type(returned, "/sum");
+    pressEnter(returned);
+    type(returned, "and a hotel");
+    expect(container?.querySelector('[data-testid="skill-chip"]')?.textContent).toBe("summarize");
+    const saved = localStorage.getItem("rakazo.composerDraft.bot:bot-1");
+    const metadata = localStorage.getItem("rakazo.composerBindings.bot:bot-1");
+    expect(saved).toBe("and a hotel");
+    expect(metadata).not.toBeNull();
+
+    await act(async () => finish(false));
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(returned.value).toBe("and a hotel");
+    expect(container?.querySelector('[data-testid="skill-chip"]')?.textContent).toBe("summarize");
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe(saved);
+    expect(localStorage.getItem("rakazo.composerBindings.bot:bot-1")).toBe(metadata);
+
+    act(() =>
+      root?.render(<Composer {...composerProps} key="bot:bot-2:again" draftKey="bot:bot-2" />),
+    );
+    act(() =>
+      root?.render(<Composer {...composerProps} key="bot:bot-1:remounted" sending={false} />),
+    );
+    expect(container?.querySelector("textarea")?.value).toBe("and a hotel");
+    expect(container?.querySelector('[data-testid="skill-chip"]')?.textContent).toBe("summarize");
   } finally {
     listen.mockRestore();
   }

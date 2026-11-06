@@ -3,10 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   appendComposerDraftText,
   beginComposerDraftSubmission,
+  clearComposerDrafts,
   composerDraftBindingsKey,
   composerDraftStorageKey,
+  hasUnsentComposerDraft,
   readComposerDraft,
   readComposerDraftBindings,
+  readComposerDraftSkill,
   settleComposerDraftSubmission,
   writeComposerDraft,
 } from "./composer-draft.js";
@@ -14,6 +17,11 @@ import {
 function memoryStorage(initial: Record<string, string> = {}) {
   const map = new Map<string, string>(Object.entries(initial));
   return {
+    get length() {
+      return map.size;
+    },
+    key: (index: number) => [...map.keys()][index] ?? null,
+    clear: () => map.clear(),
     getItem: (key: string) => map.get(key) ?? null,
     setItem: (key: string, value: string) => {
       map.set(key, value);
@@ -57,6 +65,118 @@ describe("composer drafts", () => {
     expect(readComposerDraftBindings("thread", storage)).toEqual(bindings);
     writeComposerDraft("thread", "new text", storage);
     expect(readComposerDraftBindings("thread", storage)).toEqual([]);
+  });
+
+  it("keeps a skill chip with its draft text, and only while that text is unchanged", () => {
+    const storage = memoryStorage();
+    const skill = {
+      id: "s1",
+      name: "summarize",
+      description: "",
+      source: "user" as const,
+      readOnly: false,
+    };
+    writeComposerDraft("thread", " the notes", storage, [], skill);
+    expect(readComposerDraftSkill("thread", storage)).toEqual(skill);
+    expect(readComposerDraftBindings("thread", storage)).toEqual([]);
+    writeComposerDraft("thread", " the notes", storage, []);
+    expect(readComposerDraftSkill("thread", storage)).toBeNull();
+    writeComposerDraft("thread", " the notes", storage, [], skill);
+    writeComposerDraft("thread", "new text", storage);
+    expect(readComposerDraftSkill("thread", storage)).toBeNull();
+  });
+
+  it("does not carry metadata from different saved text into a submission", () => {
+    const storage = memoryStorage();
+    const skill = {
+      id: "s1",
+      name: "summarize",
+      description: "",
+      source: "user" as const,
+      readOnly: false,
+    };
+    vi.stubGlobal("localStorage", storage);
+    try {
+      writeComposerDraft("thread", "old body", storage, [], skill);
+      const submitted = beginComposerDraftSubmission("thread", "new body");
+      expect(readComposerDraftSkill("thread", storage)).toBeNull();
+      settleComposerDraftSubmission("thread", submitted, true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps a chip-only draft through failed submission and clears it on acceptance", () => {
+    const storage = memoryStorage();
+    const skill = {
+      id: "s1",
+      name: "summarize",
+      description: "",
+      source: "user" as const,
+      readOnly: false,
+    };
+    vi.stubGlobal("localStorage", storage);
+    try {
+      writeComposerDraft("thread", "", storage, [], skill);
+      expect(readComposerDraftSkill("thread", storage)).toEqual(skill);
+      const failed = beginComposerDraftSubmission("thread", "");
+      expect(readComposerDraftSkill("thread", storage)).toEqual(skill);
+      settleComposerDraftSubmission("thread", failed, false);
+      expect(readComposerDraftSkill("thread", storage)).toEqual(skill);
+      expect(hasUnsentComposerDraft(storage)).toBe(true);
+      const accepted = beginComposerDraftSubmission("thread", "");
+      settleComposerDraftSubmission("thread", accepted, true);
+      expect(readComposerDraftSkill("thread", storage)).toBeNull();
+      expect(storage.getItem(composerDraftBindingsKey("thread"))).toBeNull();
+      expect(hasUnsentComposerDraft(storage)).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("leaves only late dictation after a chip-only send accepts", () => {
+    const storage = memoryStorage();
+    const skill = {
+      id: "s1",
+      name: "summarize",
+      description: "",
+      source: "user" as const,
+      readOnly: false,
+    };
+    vi.stubGlobal("localStorage", storage);
+    try {
+      writeComposerDraft("thread", "", storage, [], skill);
+      const submitted = beginComposerDraftSubmission("thread", "");
+      appendComposerDraftText("thread", "late words");
+      expect(readComposerDraftSkill("thread", storage)).toEqual(skill);
+      settleComposerDraftSubmission("thread", submitted, true);
+      expect(readComposerDraft("thread", storage)).toBe("late words");
+      expect(readComposerDraftSkill("thread", storage)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("counts chip-only drafts as unsent and clears them on signout", () => {
+    const storage = memoryStorage();
+    const skill = {
+      id: "s1",
+      name: "summarize",
+      description: "",
+      source: "user" as const,
+      readOnly: false,
+    };
+    vi.stubGlobal("localStorage", storage);
+    try {
+      writeComposerDraft("thread", "", storage, [], skill);
+      expect(hasUnsentComposerDraft(storage)).toBe(true);
+      clearComposerDrafts();
+      expect(hasUnsentComposerDraft(storage)).toBe(false);
+      expect(readComposerDraftSkill("thread", storage)).toBeNull();
+      expect(storage.length).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("preserves legacy raw drafts and discards stale or unsupported metadata only", () => {

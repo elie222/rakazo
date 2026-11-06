@@ -1,12 +1,20 @@
+import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import type { ComposerMentionBinding } from "@rakazo/core";
-import { validateComposerMentionBindings } from "@rakazo/core";
+import { validateComposerDraftSkill, validateComposerMentionBindings } from "@rakazo/core";
 import { Directory, File, Paths } from "expo-file-system";
 import { currentApiBase } from "./api";
 
 /** One unsent composer text per server, account, and conversation. */
 export type ComposerDraftScope = { apiBase: string; userId: string; threadKey: string };
 
-export type ComposerDraft = { text: string; bindings: ComposerMentionBinding[] };
+export type ComposerDraft = {
+  text: string;
+  bindings: ComposerMentionBinding[];
+  /** The skill chip picked for this draft. */
+  skill: AgentSkillCatalogEntry | null;
+};
+
+const EMPTY_DRAFT: ComposerDraft = { text: "", bindings: [], skill: null };
 
 /** Uses the web draft key (`bot:<id>` or `group:<id>`) inside the server and account. */
 export function composerDraftScope(
@@ -69,6 +77,7 @@ function readDraftRecord(file: File): ComposerDraft | undefined {
     return {
       text: record.text,
       bindings: validateComposerMentionBindings(record.text, record.bindings),
+      skill: record.skill === undefined ? null : validateComposerDraftSkill(record.skill),
     };
   } catch {
     return undefined;
@@ -145,7 +154,7 @@ function promoteRecoveredDraft(drafts: Directory, scope: ComposerDraftScope): vo
 
 /** Same record as the web binding record; bindings that no longer match the text are dropped. */
 export function readComposerDraft(scope: ComposerDraftScope | undefined): ComposerDraft {
-  if (!scope) return { text: "", bindings: [] };
+  if (!scope) return EMPTY_DRAFT;
   try {
     const drafts = draftsRoot();
     try {
@@ -155,25 +164,27 @@ export function readComposerDraft(scope: ComposerDraftScope | undefined): Compos
     }
     return (
       readDraftRecord(draftFile(drafts, scope)) ??
-      readDraftRecord(nextDraftFile(drafts, scope)) ?? { text: "", bindings: [] }
+      readDraftRecord(nextDraftFile(drafts, scope)) ??
+      EMPTY_DRAFT
     );
   } catch {
     // Evicted, corrupt, or unavailable storage starts an empty composer.
-    return { text: "", bindings: [] };
+    return EMPTY_DRAFT;
   }
 }
 
-/** An empty text deletes the draft, so a sent message leaves nothing behind. False when it failed. */
+/** No text or skill deletes the draft, so a sent message leaves nothing behind. False when it failed. */
 export function writeComposerDraft(
   scope: ComposerDraftScope,
   text: string,
   bindings: readonly ComposerMentionBinding[],
+  skill: AgentSkillCatalogEntry | null = null,
 ): boolean {
   try {
     const drafts = draftsRoot();
     const file = draftFile(drafts, scope);
     const next = nextDraftFile(drafts, scope);
-    if (!text) {
+    if (!text && !skill) {
       if (file.exists) file.delete();
       if (next.exists) next.delete();
       return true;
@@ -182,7 +193,7 @@ export function writeComposerDraft(
     promoteRecoveredDraft(drafts, scope);
     // Replace the saved draft only once the new one is fully written.
     next.create({ overwrite: true });
-    next.write(JSON.stringify({ version: 1, text, bindings }));
+    next.write(JSON.stringify({ version: 1, text, bindings, ...(skill ? { skill } : {}) }));
     next.moveSync(file, { overwrite: true });
     return true;
   } catch {

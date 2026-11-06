@@ -14,13 +14,15 @@ import {
   composerMentionsForPrompt,
   composerPromptSkill,
   composerSelectedMentions,
+  composerSlashOptions,
   composerSlashQuery,
   mentionChipKey,
   newClientId,
+  pickComposerSlashSkill,
+  removeComposerSlashQuery,
   replyAttachment,
   resolveComposerMentionEdit,
   resolveMentionPickerKey,
-  SLASH_ACTIONS,
   serializeComposerPrompt,
   truncateSlashDescription,
   updateComposerMentionBindings,
@@ -54,6 +56,7 @@ import {
   keepComposerRetryNonce,
   readComposerDraft,
   readComposerDraftBindings,
+  readComposerDraftSkill,
   readComposerRetryNonce,
   replaceComposerDraft,
   settleComposerDraftSubmission,
@@ -182,11 +185,20 @@ const ComposerBody = memo(function Composer({
       ...editSelections.current,
     ].slice(0, 3);
   }
+  // The skill chip is saved with the draft's mentions, so a reopened chat still sends it.
+  const [selectedSkill, setSkillState] = useState(() => readComposerDraftSkill(draftKey));
+  const selectedSkillRef = useRef(selectedSkill);
+  function setSelectedSkill(skill: AgentSkillCatalogEntry | null, persist = false) {
+    selectedSkillRef.current = skill;
+    setSkillState(skill);
+    if (persist) commitComposition(compositionRef.current);
+  }
   function commitComposition(next: typeof composition, persist = true) {
     compositionRef.current = next;
     setComposition(next);
     editSelections.current = [];
-    if (persist) writeComposerDraft(draftKey, next.text, undefined, next.bindings);
+    if (persist)
+      writeComposerDraft(draftKey, next.text, undefined, next.bindings, selectedSkillRef.current);
   }
   /** False when the words went to this chat's saved draft because it is no longer shown. */
   function appendDictation(text: string): boolean {
@@ -208,7 +220,7 @@ const ComposerBody = memo(function Composer({
   const [mentionHighlightKey, setMentionHighlightKey] = useState<string | null>(null);
   // The range is kept, so a pick edits the query that opened the menu wherever the caret is now.
   const [slashQuery, setSlashQuery] = useState<ComposerMentionQuery | null>(() =>
-    composerPromptSkill(null, mentionBindings)
+    composerPromptSkill(selectedSkill, mentionBindings)
       ? null
       : composerSlashQuery(draft, draft.length, draft.length, mentionBindings),
   );
@@ -232,13 +244,13 @@ const ComposerBody = memo(function Composer({
       setDictationSendDue(editRevision.current);
     },
   });
-  const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const editRevision = useRef(0);
   useEffect(
     () =>
       subscribeComposerDraftAccepted(draftKey, (text) => {
-        if (compositionRef.current.text === text)
-          commitComposition({ text: "", bindings: [] }, false);
+        if (compositionRef.current.text !== text) return;
+        commitComposition({ text: "", bindings: [] }, false);
+        setSelectedSkill(null);
         setMentionQuery(null);
         setSlashQuery(null);
       }),
@@ -256,6 +268,7 @@ const ComposerBody = memo(function Composer({
     // An edit like typing: a send still in flight must not restore its older text over it.
     markEdited();
     const bindings = readComposerDraftBindings(draftKey);
+    setSelectedSkill(readComposerDraftSkill(draftKey));
     commitComposition({ text, bindings }, false);
     // The pickers follow the new text, as after an edit, with the caret at its end.
     updatePickers(text, text.length, text.length, bindings);
@@ -517,42 +530,28 @@ const ComposerBody = memo(function Composer({
     pendingCaret.current = { start: completion.caret, end: completion.caret };
   }
 
-  /** A skill picked at the start of the draft becomes the chip; anywhere else it stays inline. */
   function insertSkill(skill: AgentSkillCatalogEntry) {
     if (!slashQuery) return;
     markEdited();
     setSlashQuery(null);
-    if (slashQuery.start === 0) {
-      setSelectedSkill(skill);
-      removeSlashQuery(slashQuery);
-      pendingCaret.current = { start: 0, end: 0 };
-      return;
-    }
-    const mention = { kind: "skill" as const, id: skill.id, name: skill.name };
-    const completion = bindComposerMention(draft, slashQuery, mention, mentionBindings);
-    commitComposition({ text: completion.text, bindings: completion.bindings });
-    pendingCaret.current = { start: completion.caret, end: completion.caret };
+    const pick = pickComposerSlashSkill(draft, slashQuery, skill, mentionBindings);
+    if (pick.chip) setSelectedSkill(pick.chip);
+    commitComposition({ text: pick.text, bindings: pick.bindings });
+    pendingCaret.current = { start: pick.caret, end: pick.caret };
   }
 
   function runSlashAction(action: SlashActionId) {
     if (!slashQuery) return;
     markEdited();
-    removeSlashQuery(slashQuery);
+    const removed = removeComposerSlashQuery(draft, slashQuery, mentionBindings);
+    commitComposition({ text: removed.text, bindings: removed.bindings });
     setSlashQuery(null);
     onSlashAction?.(action);
   }
 
-  function removeSlashQuery(query: ComposerMentionQuery) {
-    const text = draft.slice(0, query.start) + draft.slice(query.end);
-    const bindings = updateComposerMentionBindings(draft, text, mentionBindings, {
-      before: [query],
-    });
-    commitComposition({ text, bindings });
-  }
-
   function removeSkill() {
     markEdited();
-    setSelectedSkill(null);
+    setSelectedSkill(null, true);
   }
 
   const mentionOptions = useMemo(() => {
@@ -576,28 +575,13 @@ const ComposerBody = memo(function Composer({
     ? `${mentionListboxId}-option-${activeMentionIndex}`
     : undefined;
 
-  const slashSkillOptions = useMemo(() => {
-    if (slashQuery === null) return [];
-    const query = slashQuery.query.trim().toLowerCase();
-    const skills = agentSkills ?? [];
-    return skills
-      .filter((skill) => {
-        if (!query) return true;
-        return (
-          skill.name.toLowerCase().includes(query) ||
-          // Mid-message, descriptions would match ordinary words.
-          (slashQuery.start === 0 && skill.description.toLowerCase().includes(query))
-        );
-      })
-      .slice(0, 8);
-  }, [agentSkills, slashQuery]);
-
-  const slashActionOptions = useMemo(() => {
-    // Mid-message the menu offers skills only.
-    if (slashQuery === null || slashQuery.start > 0) return [];
-    const query = slashQuery.query.trim().toLowerCase();
-    return SLASH_ACTIONS.filter((action) => !query || action.label.toLowerCase().includes(query));
-  }, [slashQuery]);
+  const { skills: slashSkillOptions, actions: slashActionOptions } = useMemo(
+    () =>
+      slashQuery === null
+        ? { skills: [], actions: [] }
+        : composerSlashOptions(slashQuery, agentSkills ?? []),
+    [agentSkills, slashQuery],
+  );
 
   const showSlashPicker =
     slashQuery !== null &&
@@ -684,18 +668,20 @@ const ComposerBody = memo(function Composer({
       const words = queued.text;
       const restored = { text: `${submitted.text} ${words}`, bindings: submitted.bindings };
       if (mountedRef.current && draftKeyRef.current === draftKey) {
-        commitComposition(restored);
         setSelectedSkill(selectedSkill);
+        commitComposition(restored);
         return;
       }
       // Once the chat was left, a composer reopened for it owns the saved draft; only a draft
-      // still holding just these words, mentions included, is this send's to restore, and the
-      // reopened field follows it. The same spelling bound to a mention there is a newer edit.
+      // still holding just these words, mentions and skill included, is this send's to restore,
+      // and the reopened field follows it. The same spelling with newer metadata is a newer edit.
       if (
         readComposerDraft(draftKey) === words &&
-        JSON.stringify(readComposerDraftBindings(draftKey)) === JSON.stringify(queued.bindings)
+        JSON.stringify(readComposerDraftBindings(draftKey)) === JSON.stringify(queued.bindings) &&
+        JSON.stringify(readComposerDraftSkill(draftKey)) ===
+          JSON.stringify(selectedSkillRef.current)
       )
-        replaceComposerDraft(draftKey, restored.text, restored.bindings);
+        replaceComposerDraft(draftKey, restored.text, restored.bindings, selectedSkill);
       return;
     }
     // Restore only an untouched draft, retaining its nonce for an unchanged retry.
@@ -1122,7 +1108,12 @@ const ComposerBody = memo(function Composer({
                   highlightedIndex: mentionPickerOpen ? activeMentionIndex : activeSlashIndex,
                 });
                 // An open slash menu only sends once closed, so Ctrl/Cmd+Enter picks the row too.
-                if (showSlashPicker && action.type !== "none") {
+                // Shift+Tab still moves focus back out of the field.
+                if (
+                  showSlashPicker &&
+                  action.type !== "none" &&
+                  !(event.key === "Tab" && event.shiftKey)
+                ) {
                   event.preventDefault();
                   if (action.type === "complete" || action.type === "send")
                     pickSlashOption(activeSlashIndex);

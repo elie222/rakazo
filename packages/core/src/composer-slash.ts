@@ -1,5 +1,11 @@
+import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
+import { AgentSkillCatalogEntrySchema } from "@rakazo/contracts";
 import type { ComposerMentionBinding } from "./composer-mention-bindings.js";
-import { composerPromptSkill } from "./composer-mention-bindings.js";
+import {
+  bindComposerMention,
+  composerPromptSkill,
+  updateComposerMentionBindings,
+} from "./composer-mention-bindings.js";
 import type { ComposerMentionQuery, ComposerMentionRange } from "./composer-mentions.js";
 
 export const SLASH_ACTIONS = [
@@ -55,4 +61,60 @@ export function composerSlashQuery(
     return { start, end: selectionStart, query };
   }
   return null;
+}
+
+/**
+ * The rows the slash menu offers. Mid-message only skill names match, since descriptions would
+ * match ordinary words, and actions stay at the start of the draft.
+ */
+export function composerSlashOptions<S extends { name: string; description: string }>(
+  query: ComposerMentionQuery,
+  skills: readonly S[],
+  actionLabel: (action: (typeof SLASH_ACTIONS)[number]) => string = (action) => action.label,
+) {
+  const needle = query.query.trim().toLowerCase();
+  const matches = (value: string) => value.toLowerCase().includes(needle);
+  const atStart = query.start === 0;
+  return {
+    skills: skills
+      .filter((skill) => !needle || matches(skill.name) || (atStart && matches(skill.description)))
+      .slice(0, 8),
+    actions: atStart
+      ? SLASH_ACTIONS.filter(
+          (action) => !needle || matches(action.label) || matches(actionLabel(action)),
+        )
+      : [],
+  };
+}
+
+/** A saved draft's skill chip, or null when the stored value is not a skill. */
+export function validateComposerDraftSkill(value: unknown): AgentSkillCatalogEntry | null {
+  const parsed = AgentSkillCatalogEntrySchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/** The draft without its `/query`, keeping the text and mentions around it. */
+export function removeComposerSlashQuery(
+  text: string,
+  query: ComposerMentionQuery,
+  bindings: readonly ComposerMentionBinding[],
+) {
+  const next = text.slice(0, query.start) + text.slice(query.end);
+  return {
+    text: next,
+    bindings: updateComposerMentionBindings(text, next, bindings, { before: [query] }),
+    caret: query.start,
+  };
+}
+
+/** A skill picked at the start of the draft becomes the chip; anywhere else it goes inline. */
+export function pickComposerSlashSkill<S extends { id: string; name: string }>(
+  text: string,
+  query: ComposerMentionQuery,
+  skill: S,
+  bindings: readonly ComposerMentionBinding[],
+): { chip: S | null; text: string; bindings: ComposerMentionBinding[]; caret: number } {
+  if (query.start === 0) return { chip: skill, ...removeComposerSlashQuery(text, query, bindings) };
+  const mention = { kind: "skill" as const, id: skill.id, name: skill.name };
+  return { chip: null, ...bindComposerMention(text, query, mention, bindings) };
 }

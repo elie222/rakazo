@@ -1219,6 +1219,60 @@ describe("thread composer isolation", () => {
     expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper"]);
   });
 
+  it.each([false, true])(
+    "restores a skill-only draft after reopening (delete body: %s)",
+    (deleteBody) => {
+      render({ agentSkills: [{ ...skill, name: "summarize" }] });
+      type("/sum");
+      press("Skill {name}");
+      if (deleteBody) {
+        type("notes");
+        type("");
+      }
+      render({ threadKey: "bot-2" });
+      render();
+      expect(field().value).toBe("");
+      expect(composer.current!.snapshot()).toMatchObject({
+        skill: { ...skill, name: "summarize" },
+        promptText: "/summarize",
+      });
+      act(() => composer.current!.reset());
+      render({ threadKey: "bot-2" });
+      render();
+      expect(composer.current!.snapshot()).toMatchObject({ skill: null, promptText: "" });
+    },
+  );
+
+  it("keeps a skill chip picked before more text when the conversation is reopened", () => {
+    type("/Wri the notes");
+    select(4);
+    press("Skill {name}");
+    render({ threadKey: "bot-2" });
+    render();
+    expect(field().value).toBe(" the notes");
+    expect(composer.current!.snapshot()).toMatchObject({
+      skill,
+      promptText: "/Writing\nthe notes",
+    });
+    press("Remove skill {name}");
+    render({ threadKey: "bot-2" });
+    render();
+    expect(composer.current!.snapshot()).toMatchObject({ skill: null, promptText: "the notes" });
+  });
+
+  it("does not report a skill-only composer as emptied when its body is deleted", () => {
+    const onEmptied = vi.fn();
+    render({ onEmptied });
+    type("/Wri");
+    press("Skill {name}");
+    type("notes");
+    onEmptied.mockClear();
+    type("");
+    expect(onEmptied).not.toHaveBeenCalled();
+    press("Remove skill {name}");
+    expect(onEmptied).toHaveBeenCalledOnce();
+  });
+
   it("takes the chip after a blank line and keeps the text after the caret", () => {
     type("\n/Wri，总结");
     select(5);
