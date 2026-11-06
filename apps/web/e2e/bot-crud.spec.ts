@@ -1,4 +1,3 @@
-import type { Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   captureScreenshot,
@@ -65,7 +64,9 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   // A focus refresh that no longer knows the current bot redirects away from it; wait for
   // that refresh's roster response, not a fixed delay an overloaded runner can beat. The
   // request wait is armed before the event, so an in-flight overlapping poll cannot match
-  // it, and only the response of the matched request releases the wait. The paused clock
+  // it, and only the response of the matched request releases the wait. That response can
+  // arrive before `runFor` returns, so it is read from the request, which also returns one
+  // already received. The paused clock
   // fires every pending timer now, so the 3 s poll is not due while the 50 ms focus
   // debounce runs and cannot start the request the wait matches. A fixed date makes the
   // pause target the clock's current time, so a stalled runner cannot overshoot it.
@@ -74,21 +75,15 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await page.clock.pauseAt(pausedAt);
   await page.clock.setSystemTime(pausedAt);
   await page.clock.fastForward(3_000);
-  let focusRequest: Request | undefined;
-  const focusResponse = page.waitForResponse(
-    (response) =>
-      response.url().includes("/rpc/spaces/list") &&
-      focusRequest !== undefined &&
-      response.request() === focusRequest,
-  );
   const nextListRequest = page.waitForRequest((request) =>
     request.url().includes("/rpc/spaces/list"),
   );
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.clock.runFor(50);
-  focusRequest = await nextListRequest;
+  const focusResponse = await (await nextListRequest).response();
+  expect(focusResponse).not.toBeNull();
   // The response resolves on headers; the roster applies only once the body has arrived.
-  await (await focusResponse).finished();
+  await focusResponse?.finished();
   await page.clock.resume();
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
