@@ -1,6 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
 import type { FetchError, ResponseError } from "@boatdev/sdk";
-import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import {
+  SandboxProviderAccountError,
+  SandboxRateLimitError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import { readBodyCapped } from "./web-ssrf.js";
 
@@ -139,9 +143,8 @@ export function wrapBoatCall<Args extends unknown[], Result>(
     try {
       return await attemptWithRetry(...args);
     } catch (error) {
-      if (failedAtBoat(error) || billingRequired(error)) {
-        throw new SandboxUnresponsiveError(error.message, { cause: error });
-      }
+      if (billingRequired(error)) throw new SandboxProviderAccountError({ cause: error });
+      if (failedAtBoat(error)) throw new SandboxUnresponsiveError(error.message, { cause: error });
       throw error;
     }
   };
