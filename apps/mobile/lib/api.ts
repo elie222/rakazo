@@ -687,7 +687,9 @@ async function authenticate(
     }
   }
   if (!saved) {
-    void postSignOut(apiBase, { ...clientBuild.headers(), authorization: `Bearer ${token}` });
+    void postSignOut(apiBase, { ...clientBuild.headers(), authorization: `Bearer ${token}` }).catch(
+      () => undefined,
+    );
     throw new Error(t("Could not continue"));
   }
   return { verificationRequired: false };
@@ -911,7 +913,7 @@ export async function fetchMobileJson<T>(
   }
 }
 
-/** Best-effort: ends the session these headers carry on `apiBase`; failures are ignored. */
+/** Ends the session these headers carry on `apiBase`; rejects when the request fails. */
 async function postSignOut(apiBase: string, headers: Record<string, string>): Promise<void> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
