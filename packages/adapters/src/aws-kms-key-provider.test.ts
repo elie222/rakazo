@@ -34,12 +34,12 @@ const stalled = createServer((_request, response) => {
 });
 let slowRequests = 0;
 const slow = createServer((_request, response) => {
-  // The first two attempts get no answer; the third answers just within its request limit.
+  // The first two attempts get no answer; the third answers well within its request limit.
   if (++slowRequests <= 2) return;
   setTimeout(() => {
     response.writeHead(200, { "content-type": "application/x-amz-json-1.1" });
     response.end(JSON.stringify({ CiphertextBlob: Buffer.from("wrapped").toString("base64") }));
-  }, 480);
+  }, 300);
 });
 let ports: { silent: number; stalled: number; slow: number };
 
