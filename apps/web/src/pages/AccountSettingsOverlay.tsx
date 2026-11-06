@@ -4,6 +4,7 @@ import {
   APP_LOCALE_LABELS,
   accountDisplay,
   displayName,
+  localTimezone,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
 } from "@rakazo/core";
@@ -49,7 +50,7 @@ import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
-import { localTimezone, sameTimeZone, timezoneOptions } from "../lib/local-timezone";
+import { sameTimeZone, timezoneOptions } from "../lib/local-timezone";
 import { usePasskeysSupported } from "../lib/passkeys";
 import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { responseStreamingPreference } from "../lib/response-streaming";

@@ -1,6 +1,6 @@
 import type { Me } from "@rakazo/contracts";
+import { localTimezone } from "@rakazo/core";
 import { useCallback, useEffect, useRef } from "react";
-import { localTimezone } from "../../lib/local-timezone";
 import type { createSpaceRpc } from "../../lib/rpc";
 
 /**

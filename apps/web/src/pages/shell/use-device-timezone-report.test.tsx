@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import type { Me } from "@rakazo/contracts";
+import { localTimezone } from "@rakazo/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { localTimezone } from "../../lib/local-timezone";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { useDeviceTimezoneReport } from "./use-device-timezone-report";
 
