@@ -12,6 +12,7 @@ import {
   ATTEST_SCRIPT,
   attestImageEnsurer,
   attestRestrictedEgress,
+  expectedAttestImage,
   parseAttestation,
   REQUIRED_V4_DROPS,
   REQUIRED_V6_DROPS,
@@ -233,7 +234,11 @@ describe("egress attestation", () => {
     } as unknown as Docker;
     const context = mkdtempSync(path.join(tmpdir(), "rakazo-attest-"));
     writeFileSync(path.join(context, "Dockerfile"), "FROM scratch\n");
-    await expect(attestImageEnsurer(docker, context)()).rejects.toThrow(/no network/);
+    // The message must name the exact tag, so offline operators know what to
+    // build or load (Docker's own reason goes to the log instead).
+    await expect(attestImageEnsurer(docker, context)()).rejects.toThrow(
+      `could not build ${expectedAttestImage(context)} from infra/sandboxes/egress-attest; build or load that exact tag on the Docker host (see docs/self-host-restricted-network.md)`,
+    );
   });
 
   // docker-modem only streams log responses when `follow` is set; without it
@@ -457,6 +462,23 @@ describe("egress attestation", () => {
     }
   });
 
+  it("fails closed when the attestation container is never created", async () => {
+    // The deadline bounds the whole attestation lifecycle — creation, start,
+    // logs, cleanup — not just the container's exit.
+    vi.useFakeTimers();
+    try {
+      const docker = {
+        createContainer: vi.fn(() => new Promise(() => {})),
+      } as unknown as Docker;
+      const probe = attestRestrictedEgress(docker, "attest:test");
+      const assertion = expect(probe).rejects.toThrow(/the attestation did not finish in time/);
+      await vi.advanceTimersByTimeAsync(61_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // The attest script must read the same iptables backend Docker and the
   // installer wrote to: Debian's default `iptables` is the nft variant, so the
   // script picks per family the variant whose FORWARD and DOCKER-USER chains
@@ -519,6 +541,53 @@ describe("egress attestation", () => {
     expect(run.status).toBe(0);
     expect(run.stdout).toContain("iptables-ambiguous");
     expect(() => verifyAttestation(run.stdout)).toThrow(/could not read v4 iptables/);
+  });
+
+  // The strongest form of the single-source check: an attestation dump built
+  // directly from the installer's --print output must verify. If either side
+  // drifts — the rules the installer writes or the rules attestation requires —
+  // this fails.
+  it("accepts an attestation dump built from the installer's --print output", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "rakazo-attest-"));
+    for (const tool of ["iptables", "ip6tables"]) {
+      writeFileSync(path.join(dir, tool), "#!/usr/bin/env bash\nexit 99\n", { mode: 0o755 });
+    }
+    const script = path.resolve(
+      import.meta.dirname,
+      "../../../../infra/compose/restrict-computer-egress.sh",
+    );
+    const printed = spawnSync("bash", ["-c", `PATH="${dir}:$PATH" bash '${script}' --print`], {
+      encoding: "utf8",
+    });
+    expect(printed.status).toBe(0);
+    // --print emits one reverse pass of -I commands; per chain, the final order
+    // is the reverse of the printed order.
+    const sections: Record<string, string[]> = { V4USER: [], V4INPUT: [], V6USER: [], V6INPUT: [] };
+    for (const line of printed.stdout.split("\n")) {
+      const match = /^(ip6?tables) -I (DOCKER-USER|INPUT) 1 (.+)$/.exec(line.trim());
+      if (!match) continue;
+      const family = match[1] === "iptables" ? "V4" : "V6";
+      const section = `${family}${match[2] === "INPUT" ? "INPUT" : "USER"}`;
+      sections[section]?.unshift(`-A ${match[2]} ${match[3]}`);
+    }
+    const dump = [
+      "==RAKAZO-V4USER==",
+      (sections.V4USER ?? []).join("\n"),
+      "==RAKAZO-V4INPUT==",
+      (sections.V4INPUT ?? []).join("\n"),
+      "==RAKAZO-V4FORWARD==",
+      "-A FORWARD -j DOCKER-USER",
+      "==RAKAZO-V6USER==",
+      (sections.V6USER ?? []).join("\n"),
+      "==RAKAZO-V6INPUT==",
+      (sections.V6INPUT ?? []).join("\n"),
+      "==RAKAZO-V6FORWARD==",
+      "-A FORWARD -j DOCKER-USER",
+      "==RAKAZO-IFINET6==",
+      "00000000000000000000000000000001 01 80 10 80 lo",
+      "==RAKAZO-DONE==",
+    ].join("\n");
+    expect(() => verifyAttestation(dump)).not.toThrow();
   });
 
   // The required lists are parsed from the installer, so this cross-checks the

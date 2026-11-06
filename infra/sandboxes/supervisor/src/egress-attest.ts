@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { getLogger } from "@rakazo/logging";
 import type Docker from "dockerode";
 import { followProgress } from "./computer-image.js";
 import { EgressNotEnforced } from "./egress-probe.js";
@@ -87,30 +87,44 @@ export function attestImageEnsurer(docker: Docker, context: string) {
   };
 }
 
-async function provideAttestImage(docker: Docker, context: string) {
-  // The tag carries the Dockerfile's content hash, so a changed build context
-  // rebuilds the image instead of attesting with a stale one forever.
-  const dockerfile = await readFile(path.join(context, "Dockerfile")).catch(() => {
+/**
+ * The image name the supervisor builds and runs the attestation from, derived
+ * from the Dockerfile's content hash: a changed build context means a new tag,
+ * so a stale image is never attested with. Also exposed for
+ * `--print-attest-tag`, which tells offline operators the exact tag to preload.
+ */
+export function expectedAttestImage(context: string) {
+  let dockerfile: Buffer;
+  try {
+    dockerfile = readFileSync(path.join(context, "Dockerfile"));
+  } catch {
     throw new Error(`cannot attest restricted egress: no Dockerfile in ${context}`);
-  });
-  const image = `${ATTEST_IMAGE}:${createHash("sha256").update(dockerfile).digest("hex").slice(0, 16)}`;
+  }
+  return `${ATTEST_IMAGE}:${createHash("sha256").update(dockerfile).digest("hex").slice(0, 16)}`;
+}
+
+async function provideAttestImage(docker: Docker, context: string) {
+  const image = expectedAttestImage(context);
   try {
     await docker.getImage(image).inspect();
     return image;
   } catch (error) {
     if ((error as { statusCode?: number })?.statusCode !== 404) throw error;
   }
-  await followProgress((abortSignal) =>
-    docker.buildImage({ context, src: ["Dockerfile"] }, { t: image, version: "2", abortSignal }),
-  ).catch((error: unknown) => {
-    // Offline hosts cannot run this build; the message names the exact tag to
-    // preload (see docs/self-host-restricted-network.md).
-    throw new Error(
-      `cannot attest restricted egress: building ${image} failed: ${error instanceof Error ? error.message : String(error)}`,
+  try {
+    await followProgress((abortSignal) =>
+      docker.buildImage({ context, src: ["Dockerfile"] }, { t: image, version: "2", abortSignal }),
     );
-  });
-  await docker.getImage(image).inspect();
-  return image;
+    await docker.getImage(image).inspect();
+    return image;
+  } catch (error) {
+    // Docker's own reason can name registry hosts and signed URLs, so it goes
+    // to the log; the caller gets the tag to build or load instead.
+    getLogger().error("attestation image build failed", error, { "container.image.name": image });
+    throw new Error(
+      `could not build ${image} from infra/sandboxes/egress-attest; build or load that exact tag on the Docker host (see docs/self-host-restricted-network.md)`,
+    );
+  }
 }
 
 /**
@@ -205,7 +219,11 @@ function chainHasPrefix(rules: string[], wanted: string[], chain: string) {
   for (let i = 0; i < wanted.length; i += 1) {
     if (normalized[i] !== wanted[i]) {
       throw new Error(
-        `cannot verify restricted egress: ${chain} rule ${i + 1} precedes the managed rule`,
+        `cannot verify restricted egress: ${chain} rule ${i + 1} precedes the managed rule (${rules
+          .slice(0, i)
+          .join(
+            "; ",
+          )}); re-run infra/compose/restrict-computer-egress.sh to put the managed rules back on top (see docs/self-host-docker-computers.md)`,
       );
     }
   }
@@ -378,8 +396,27 @@ export const ATTEST_SCRIPT = [
  * Reads the host's live firewall through a throwaway host-network container and
  * throws unless every required rule is in place. `EgressNotEnforced` means the
  * rules are provably missing; any other error means they could not be verified.
+ * The whole lifecycle — creation, start, logs, cleanup — is deadline-bounded:
+ * a Docker request that never returns must not hold the provision. Leftovers
+ * of a timed-out attempt carry the probe label and are collected by the
+ * periodic cleanup.
  */
 export async function attestRestrictedEgress(docker: Docker, image: string) {
+  await Promise.race([
+    attestOnce(docker, image),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error("could not verify restricted egress: the attestation did not finish in time"),
+          ),
+        ATTEST_DEADLINE_MS + 30_000,
+      ).unref(),
+    ),
+  ]);
+}
+
+async function attestOnce(docker: Docker, image: string) {
   let container: Docker.Container | undefined;
   try {
     container = await docker.createContainer({

@@ -355,6 +355,17 @@ describe("egress probe", () => {
     }
   });
 
+  it("reports a partially removed ruleset even when the DNS list is misconfigured", async () => {
+    const partialRuleset = validAttestation().replace(
+      "-A DOCKER-USER -i rakazo-c+ -d 10.0.0.0/8 -j DROP\n",
+      "",
+    );
+    const { docker } = fakeDocker({ attestOutput: partialRuleset });
+    await expect(
+      verifyRestrictedEgress(docker, "computer:test", ["2606:4700::1111"], ensureAttestImage),
+    ).rejects.toBeInstanceOf(EgressNotEnforced);
+  });
+
   it("refuses failed DNS without falling back to open egress", async () => {
     const { docker, container, network } = fakeDocker({ statusCode: 5 });
     const error = await verifyRestrictedEgress(

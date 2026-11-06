@@ -81,6 +81,11 @@ sudo iptables-nft -D FORWARD -j DOCKER-USER && sudo iptables-nft -I FORWARD 1 -j
 sudo ip6tables-nft -D FORWARD -j DOCKER-USER && sudo ip6tables-nft -I FORWARD 1 -j DOCKER-USER
 ```
 
+A foreign rule above the managed prefix inside `INPUT` or `DOCKER-USER` (which Tailscale and
+libvirt can also insert) is repaired the same way the installer repairs a stale prefix: re-run
+`sudo bash infra/compose/restrict-computer-egress.sh`, which re-inserts the managed rules at the
+top. The start error names the rules it found above them.
+
 When `SANDBOX_COMPUTER_EGRESS` is unset, the Compose files use `auto`: the supervisor runs the
 same check and uses restricted egress if the ruleset is in place, otherwise open egress with a
 warning in its log. It keeps the first completed answer; a check that could not finish (a Docker

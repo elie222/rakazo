@@ -62,7 +62,7 @@ import {
   screenUrlWithToken,
   xdotoolCommand,
 } from "./computer-spec.js";
-import { attestImageEnsurer } from "./egress-attest.js";
+import { attestImageEnsurer, expectedAttestImage } from "./egress-attest.js";
 import {
   cleanupAbandonedProbeNetworks,
   EgressNotEnforced,
@@ -1336,6 +1336,12 @@ function closeListeningServer(server: {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  if (process.argv.includes("--print-attest-tag")) {
+    // Offline installs cannot build the attestation image on the Docker host;
+    // this prints the exact content-hash tag to build elsewhere and preload.
+    console.log(expectedAttestImage(attestContext));
+    process.exit(0);
+  }
   // A rejected startup keeps Node's default: the error is printed and the process exits.
   void startSupervisor();
 }
