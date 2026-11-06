@@ -1,11 +1,11 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import { FakeSandboxProvider } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, createRepos } from "@rakazo/db";
+import { asSystem, bootstrapUserSpace, createRepos } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AppHandles } from "./app.js";
 import { createApp } from "./app.js";
@@ -340,6 +340,72 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     const again = await scim("POST", "/Users", userResource(address, "directory-grace"));
     expect(again.status).toBe(201);
     expect(await accountOf(address)).toMatchObject({ id: grace.id, deactivatedAt: null });
+  });
+
+  it("takes a turned-off person out of a teammate's space, handing what they made to its owner", async () => {
+    const owner = await system.user.create({
+      data: { id: randomUUID(), name: "Olive", email: "olive@example.test", emailVerified: true },
+    });
+    const personal = await bootstrapUserSpace(system, owner, {
+      signupsEnabled: "true",
+      signupAllowlist: "",
+    });
+    const { organizationId } = await system.space.findUniqueOrThrow({
+      where: { id: personal.spaceId },
+    });
+    const spaceId = randomUUID();
+    await system.space.create({
+      data: { id: spaceId, organizationId, name: "Launch", createdByUserId: owner.id },
+    });
+    await system.spaceMember.create({
+      data: {
+        id: randomUUID(),
+        spaceId,
+        organizationId,
+        userId: owner.id,
+        role: "owner",
+        createdAt: new Date(),
+      },
+    });
+    const address = "nora@example.test";
+    const resource = (await (
+      await scim("POST", "/Users", userResource(address, "directory-nora"))
+    ).json()) as { id: string };
+    const nora = await accountOf(address);
+    // As accepting the owner's invite would: a guest of the organization, a member of the space.
+    const joined = { organizationId, userId: nora.id, createdAt: new Date() };
+    await system.member.create({ data: { id: randomUUID(), ...joined, role: "guest" } });
+    await system.spaceMember.create({
+      data: { id: randomUUID(), ...joined, spaceId, role: "member" },
+    });
+    const bot = await createRepos(system).createBot(
+      { userId: nora.id, spaceId, email: address, isDeploymentOwner: false },
+      { name: "Scout", description: "", instructions: "", notifyOnFinish: false },
+    );
+
+    const off = await scim("PATCH", `/Users/${resource.id}`, {
+      schemas: [PATCH_SCHEMA],
+      Operations: [{ op: "Replace", path: "active", value: "False" }],
+    });
+    expect([200, 204]).toContain(off.status);
+    expect(await system.spaceMember.count({ where: { userId: nora.id } })).toBe(0);
+    expect(await system.member.count({ where: { userId: nora.id } })).toBe(0);
+    expect(await system.bot.findUniqueOrThrow({ where: { id: bot.id } })).toMatchObject({
+      userId: owner.id,
+      spaceId,
+    });
+    expect(await system.thread.findFirstOrThrow({ where: { botId: bot.id } })).toMatchObject({
+      userId: owner.id,
+    });
+
+    // Turning them back on restores sign-in, not the membership: the owner invites them again.
+    const on = await scim("PATCH", `/Users/${resource.id}`, {
+      schemas: [PATCH_SCHEMA],
+      Operations: [{ op: "Replace", path: "active", value: "True" }],
+    });
+    expect([200, 204]).toContain(on.status);
+    expect((await accountOf(address)).deactivatedAt).toBeNull();
+    expect(await system.spaceMember.count({ where: { userId: nora.id } })).toBe(0);
   });
 
   it("takes over an existing account without changing it, and leaves others alone", async () => {

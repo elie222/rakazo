@@ -353,10 +353,11 @@ export async function leaveSpace(prisma: PrismaClient, input: SpaceRef): Promise
 }
 
 /**
- * Before deleting an account: leave every Space it was invited into, so what it made there passes
- * to each Space's owner. Its own organizations go with the account, shared Spaces included.
+ * Before deleting or after deactivating an account: leave every Space it was invited into, so what
+ * it made there passes to each Space's owner. Spaces in its own organizations are left alone: they
+ * go with a deleted account and stay with a deactivated one.
  */
-export async function prepareAccountDeletion(
+export async function leaveInvitedSpaces(
   prisma: PrismaClient,
   userId: string,
 ): Promise<Array<SpaceDeparture & { spaceId: string }>> {

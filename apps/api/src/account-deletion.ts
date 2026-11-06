@@ -16,7 +16,7 @@ import {
   deletePageShareSecrets,
   keepOrganizationTrialUse,
   listStalledOrganizationDeletions,
-  prepareAccountDeletion,
+  leaveInvitedSpaces,
   recordAuditEvent,
   recordComputerRunEnd,
   releaseOrganizationDeletionClaim,
@@ -57,7 +57,7 @@ export async function deleteAccountContent(
   // instead of being torn down with it. None of them is claimed above: each keeps another full
   // member. As after leaving: tell members, stop the cancelled runs' work, free held screens,
   // and start others' waiting follow-ups.
-  const departures = await prepareAccountDeletion(deps.prisma, userId);
+  const departures = await leaveInvitedSpaces(deps.prisma, userId);
   for (const departure of departures) {
     await afterSpaceDeparture(deps, { spaceId: departure.spaceId, userId }, departure);
   }

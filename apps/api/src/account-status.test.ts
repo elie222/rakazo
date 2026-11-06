@@ -12,6 +12,7 @@ vi.mock("@rakazo/db", async (original) => ({
       return 1;
     },
   ),
+  leaveInvitedSpaces: vi.fn(async () => [{ spaceId: "space-2" }]),
 }));
 
 describe("ending a deactivated account's access", () => {
@@ -34,10 +35,19 @@ describe("ending a deactivated account's access", () => {
       devices: { prisma: { userDevice: { findMany: vi.fn(async () => []) } }, devices: {} },
       pushTokens: { remove: step("pushes") },
       events: { notify: step("notify") },
+      afterDeparture: step("left space-2"),
     } as unknown as AccountStatusDeps;
 
     await expect(endDeactivatedAccess(deps, "user-1")).rejects.toThrow(AggregateError);
-    expect(calls).toEqual(["sessions", "pushes", "call pushes", "link codes", "screens", "notify"]);
+    expect(calls).toEqual([
+      "sessions",
+      "pushes",
+      "call pushes",
+      "link codes",
+      "screens",
+      "notify",
+      "left space-2",
+    ]);
   });
 
   it("disconnects the other computers when one fails", async () => {

@@ -52,6 +52,7 @@ try {
     process.exitCode = 1;
   } else {
     const active = action === "reactivate";
+    const events = createThreadEvents(prisma, realtime);
     const outcome = await setAccountActive(
       {
         prisma,
@@ -63,7 +64,13 @@ try {
             forwardSecret: userDeviceForwardSecret(env.encryptionKey),
           }),
         },
-        events: createThreadEvents(prisma, realtime),
+        events,
+        // Without the API's computers and jobs: open chats hear of it now, and screens and
+        // waiting follow-ups are picked up by lease expiry and the job reconciler.
+        afterDeparture: async (_actor, departure) => {
+          for (const { threadId, seq } of departure.events)
+            await events.notify(threadId, seq).catch(() => undefined);
+        },
       },
       user.id,
       active,
