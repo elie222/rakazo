@@ -11,7 +11,9 @@ async function meTimezone(page: Page): Promise<string | null> {
 }
 
 // One account under two device zones: created under Europe/London, signed back into under
-// Pacific/Auckland. Tests in a file run in order, so the visits build on each other.
+// Pacific/Auckland. The visits build on each other, so the file runs in order on one worker.
+test.describe.configure({ mode: "serial" });
+
 const stamp = Date.now();
 const followEmail = `timezone-follow-${stamp}@rakazo.test`;
 
