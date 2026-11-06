@@ -8,7 +8,9 @@ test("a completed subagent card folds, opens from its header, and fills its widt
   await completeOnboarding(page);
 
   const composer = page.getByPlaceholder(/Message/);
-  await composer.fill("delegate to a helper: list three venue ideas");
+  await composer.fill(
+    `delegate to a helper: list three venue ideas, then run python3 -c "import hashlib,pathlib;p=pathlib.Path('notes/venues.md');print(p.name,hashlib.sha256(p.read_bytes()).hexdigest())"`,
+  );
   await page.keyboard.press("Enter");
 
   const card = page.getByTestId("subagent-card");
@@ -25,6 +27,8 @@ test("a completed subagent card folds, opens from its header, and fills its widt
   await header.click();
   await expect(header).toHaveAttribute("aria-expanded", "true");
   await expect(body).toContainText("done. i handled");
+  const task = card.getByTestId("subagent-task");
+  expect(await task.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   await page.mouse.move(1, 1);
   await captureScreenshot(page, testInfo, "subagent-card-open");
   await header.click();
