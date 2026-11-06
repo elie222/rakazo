@@ -7,7 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 const { bots, client, toast } = vi.hoisted(() => {
   const bots = { list: vi.fn(), update: vi.fn() };
-  const toast = Object.assign(vi.fn(), { error: vi.fn() });
+  const toast = Object.assign(vi.fn(), { error: vi.fn(), dismiss: vi.fn() });
   return { bots, client: { bots }, toast };
 });
 
@@ -119,7 +119,9 @@ it("asks only when the main model changes and some bots would not follow", async
   const action = toast.mock.calls[0]![1].action as { onClick: () => void };
   await act(async () => action.onClick());
   expect(bots.update).toHaveBeenCalledTimes(2);
-  unmount();
+  // Leaving this Space's settings takes its notice with it.
+  await unmount();
+  expect(toast.dismiss).toHaveBeenCalledWith("space-bots-model");
 });
 
 it("drops switched bots even when the refresh after the switch fails", async () => {

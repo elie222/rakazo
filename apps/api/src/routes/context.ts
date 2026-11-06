@@ -234,7 +234,8 @@ export function createRouterContext(deps: RouterDeps) {
               { credentialId: choice.credentialId },
             )
           : null,
-        chatCatalog(actor),
+        // Only an account-listed model needs the live catalog; the rest are known offline.
+        canonicalPiProviderId(choice.provider) === CHATGPT_OAUTH_PROVIDER ? chatCatalog(actor) : [],
       ]);
       const entry = catalog.find(
         (entry) =>

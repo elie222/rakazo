@@ -87,6 +87,9 @@ export function SpaceBotsModelButton({ mainModelKey }: { mainModelKey: string })
     });
   }, [load, mainModelKey, switchAll, t]);
 
+  // The notice acts on this Space's bots, so it goes when this view does.
+  useEffect(() => () => void toast.dismiss("space-bots-model"), []);
+
   if (!pinned.length) return null;
   return (
     <Popover open={open} onOpenChange={setOpen}>
