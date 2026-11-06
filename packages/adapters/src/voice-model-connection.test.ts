@@ -55,6 +55,14 @@ describe("resolveVoiceKey", () => {
     expect(prisma.secret.findFirst).not.toHaveBeenCalled();
   });
 
+  it("treats the marker as a pasted key for a provider that cannot use the model connection", async () => {
+    const { prisma, deps: d } = deps({});
+    await expect(resolveVoiceKey(d, scope, "openai", MODEL_CONNECTION_VOICE_SECRET)).resolves.toBe(
+      MODEL_CONNECTION_VOICE_SECRET,
+    );
+    expect(prisma.userModelCredential.findMany).not.toHaveBeenCalled();
+  });
+
   it("uses the API key of the newest xAI model connection", async () => {
     const { deps: d } = deps({
       credentials: [credential("old", 1_000), credential("new", 2_000)],

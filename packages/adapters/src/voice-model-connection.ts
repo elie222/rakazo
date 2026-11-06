@@ -39,7 +39,10 @@ export async function resolveVoiceKey(
   plaintext: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  if (!isModelConnectionVoiceSecret(plaintext)) return plaintext;
+  // Only a provider the catalog lets use the model connection may; elsewhere it is a pasted key.
+  if (!isModelConnectionVoiceSecret(plaintext) || !voiceCatalogEntry(provider)?.modelConnection) {
+    return plaintext;
+  }
   const missing = () =>
     new VoiceAccountError(
       undefined,
