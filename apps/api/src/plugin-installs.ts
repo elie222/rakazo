@@ -14,6 +14,7 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
   availableInSpace,
+  isUniqueViolation,
   runAsSystemInTransaction,
   spaceAvailability,
 } from "@rakazo/db";
@@ -255,10 +256,6 @@ function installDto(row: {
   };
 }
 
-function uniqueViolation(error: unknown) {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
-}
-
 export async function installPlugin(
   deps: PluginInstallDeps,
   actor: Actor,
@@ -334,7 +331,7 @@ export async function installPlugin(
       });
       return installDto(row);
     } catch (error) {
-      if (uniqueViolation(error)) {
+      if (isUniqueViolation(error)) {
         throw new ORPCError("CONFLICT", { message: "Plugin or skill is already installed" });
       }
       throw error;
@@ -422,7 +419,7 @@ export async function setPluginParts(
       });
       return installDto(row);
     } catch (error) {
-      if (uniqueViolation(error)) {
+      if (isUniqueViolation(error)) {
         throw new ORPCError("CONFLICT", { message: "A plugin skill name is already in use" });
       }
       throw error;

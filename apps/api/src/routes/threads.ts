@@ -17,14 +17,16 @@ import {
   createExternalConversationRepos,
   createThreadMessageInTransaction,
   IsolationError,
+  isUniqueViolation,
   loadMessageAuthor,
   lockSpaceGroup,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
+  withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { RouterDeps } from "../router.js";
 import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
-import { withSerializableRetry } from "../serializable-retry.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
 import {
   isBackgroundRun,
@@ -55,7 +57,6 @@ import {
   botsRunOwnModels,
   computerContext,
   HEARTBEAT,
-  isUniqueViolation,
   modelSetup,
   THREAD_MESSAGE_PAGE_SIZE,
   withHeartbeats,
@@ -253,7 +254,7 @@ export function threadsRoutes(ctx: RouterContext) {
             sent = await send(actor, input, startRoutines);
           } else {
             // Only the routines: they all commit or none does.
-            const started = await withSerializableRetry(() =>
+            const started = await withTransactionRetry(() =>
               deps.prisma.$transaction(startRoutines),
             );
             for (const run of started) {
@@ -461,7 +462,7 @@ export function threadsRoutes(ctx: RouterContext) {
           });
           await touchGroupUpdatedAt(tx, target.groupId);
           return { runId: run?.id, eventSeq: event.seq, message };
-        });
+        }, THREAD_LOCK_TRANSACTION_OPTIONS);
         if (committed) {
           deps.analytics?.capture(
             context.actor.userId,

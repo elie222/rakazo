@@ -598,6 +598,7 @@ model Space {
   runs                        Run[]
   routines                    Routine[]
   scratchpadItems             ScratchpadItem[]
+  botEmailMessages            BotEmailMessage[]
   taughtSkills                TaughtSkill[]
   agentSkills                 AgentSkill[]
   agentImports                AgentImport[]
@@ -948,6 +949,7 @@ model Bot {
   crossSpaceCommunication Boolean @default(true)
   dailyCheckIns Boolean @default(true)
   fleetManagement        Boolean @default(true)
+  replyMode              String  @default("chat")
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
   taughtSkills      TaughtSkill[]
@@ -968,6 +970,8 @@ model Bot {
   ticketComments    TicketComment[]   @relation("TicketCommentAuthorBot")
 
   externalConversations ExternalConversation[]
+  emailAddress      BotEmailAddress?
+  emailMessages     BotEmailMessage[]
 
   @@unique([spaceId, spawnKey])
   @@index([spaceId, userId, archivedAt, pinned, updatedAt])
@@ -1429,6 +1433,8 @@ model Routine {
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
   messageProvider String?
+  /// Email trigger: whose authenticated mail starts it ("owner" or "domain"); null without one.
+  emailSenders   String?
   modelProvider  String?
   modelId        String?
   thinkingLevel  String?
@@ -1447,6 +1453,49 @@ model Routine {
   @@index([active, nextRunAt])
   @@index([spaceId, botId])
   @@map("routines")
+}
+
+/// A bot's inbound email name. The row outlives its bot, so a name is never handed out twice.
+model BotEmailAddress {
+  name      String   @id
+  botId     String?  @unique
+  bot       Bot?     @relation(fields: [botId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  /// Last time the owner was told their own mail could not be verified; spaces those notes out.
+  unverifiedNoticeAt DateTime?
+
+  @@map("bot_email_addresses")
+}
+
+/// Mail delivered to a bot's address, whoever sent it, and mail the bot sent. Kept until it is deleted.
+model BotEmailMessage {
+  id          String    @id @default(cuid())
+  spaceId     String
+  space       Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId       String
+  bot         Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  /// The same message, however often it is delivered, is saved once per bot.
+  key         String
+  /// The sender's Message-ID and the thread it answers, for replies.
+  messageId   String?
+  references  String[]
+  fromAddress String
+  fromName    String
+  /// Signed by the From address's own domain (DKIM), so the sender is not forged.
+  verified    Boolean
+  /// The bot sent this one; its other messages are mail it received.
+  sent        Boolean   @default(false)
+  to          String[]
+  cc          String[]
+  subject     String
+  text        String
+  /// Kept files ({ artifactId, name, mimeType, size }) and names of refused ones ({ name }).
+  attachments Json      @default("[]")
+  receivedAt  DateTime  @default(now())
+
+  @@unique([botId, key])
+  @@index([botId, receivedAt])
+  @@map("bot_email_messages")
 }
 
 model ScratchpadItem {

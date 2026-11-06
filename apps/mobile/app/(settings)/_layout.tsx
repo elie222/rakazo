@@ -112,6 +112,15 @@ export default function SettingsLayout() {
       <Stack.Screen name="team-conversation" />
       <Stack.Screen name="integrations" options={glassHeaderOptions(t("Integrations"))} />
       <Stack.Screen name="skills" options={glassHeaderOptions(t("Skills"))} />
+      <Stack.Screen name="bot-templates" options={glassHeaderOptions(t("Bot templates"))} />
+      {/* The template's name heads the page itself. */}
+      <Stack.Screen
+        name="bot-template"
+        options={{
+          ...glassHeaderOptions(""),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
       {/* Titled by the screen once the skill loads. */}
       <Stack.Screen name="skill" options={glassHeaderOptions("")} />
       <Stack.Screen

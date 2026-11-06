@@ -217,11 +217,3 @@ export async function* withHeartbeats<T>(
     void source.return(undefined).catch(() => {});
   }
 }
-
-export function isUniqueViolation(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
-}
-
-export function isRecordNotFound(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2025");
-}

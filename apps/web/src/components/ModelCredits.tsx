@@ -48,7 +48,6 @@ import {
   formatBillingPrice,
 } from "../lib/billing";
 import type { RpcClient } from "../lib/rpc";
-import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 import { AccountMenu } from "./AccountMenu";
 
@@ -241,9 +240,11 @@ export function CreditAmountSelect({
 
 export function CreditChoice({
   status,
+  client,
   dismissible = false,
 }: {
   status: BillingStatus;
+  client: RpcClient;
   dismissible?: boolean;
 }) {
   const { t, i18n } = useLingui();
@@ -275,12 +276,12 @@ export function CreditChoice({
     setError(null);
     try {
       if (ownKey && status.byokFreeUntil) {
-        go((await rpc.billing.checkout({ interval })).url);
+        go((await client.billing.checkout({ interval })).url);
       } else if (ownKey) {
-        const { url } = await rpc.billing.selectFunding({ funding: "byok", interval });
+        const { url } = await client.billing.selectFunding({ funding: "byok", interval });
         go(url ?? "/onboarding");
       } else {
-        const { url } = await rpc.billing.purchaseCredits({
+        const { url } = await client.billing.purchaseCredits({
           amountCents: amount,
           monthly: true,
         });
