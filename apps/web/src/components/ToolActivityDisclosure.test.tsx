@@ -283,6 +283,29 @@ describe("ToolSteps", () => {
     root.unmount();
   });
 
+  it("shows only the exit code for a call that ran and printed nothing", () => {
+    seedToolCallRecords("run-1", [
+      { executionId: "x1", name: "write_file", status: "done", exitCode: 0, durationMs: 12 },
+    ]);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    flushSync(() =>
+      root.render(
+        <ToolSteps
+          live={false}
+          source={MESSAGE}
+          steps={[{ label: "Write file", count: 1, executionId: "x1", detail: "/tmp/a.py" }]}
+        />,
+      ),
+    );
+    flushSync(() =>
+      container.querySelector<HTMLButtonElement>('[data-testid="tool-step"]')?.click(),
+    );
+    expect(container.querySelector('[data-testid="tool-step-empty"]')).toBeNull();
+    expect(container.querySelector('[data-testid="tool-step-exit"]')?.textContent).toBe("exit 0");
+    root.unmount();
+  });
+
   it("says when a call left no output and keeps rows without a call id plain", () => {
     seedToolCallRecords("run-1", [{ executionId: "x1", name: "remember", status: "done" }]);
     const container = document.createElement("div");

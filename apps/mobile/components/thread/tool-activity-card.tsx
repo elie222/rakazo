@@ -320,7 +320,7 @@ function StepPanel({
             {running ? "▍" : ""}
           </Text>
         </ScrollView>
-      ) : record?.error ? null : (
+      ) : record?.error || exit ? null : (
         <Text style={[styles.section, styles.empty, muted]}>
           {loading
             ? t("Loading…")

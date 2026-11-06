@@ -269,7 +269,7 @@ function ToolStepDetail({
             />
           ) : null}
         </pre>
-      ) : record?.error ? null : (
+      ) : record?.error || exit ? null : (
         <div
           className="px-2.5 py-1.5 font-sans text-muted-foreground"
           data-testid="tool-step-empty"
