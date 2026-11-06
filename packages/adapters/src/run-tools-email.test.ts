@@ -49,12 +49,14 @@ function fakeRun(
   let listed = 0;
   const copyEarlierFiles = vi.fn();
   const matches = (email: Row, where: Record<string, unknown>) => {
-    const since = (where.receivedAt as { gt: Date } | undefined)?.gt;
+    const since = (where.receivedAt as { gt?: Date } | undefined)?.gt;
+    const before = (where.receivedAt as { lt?: Date } | undefined)?.lt;
     const query = (where.OR as Array<Record<string, { contains: string }>> | undefined)?.[0];
     const words = query ? Object.values(query)[0]?.contains.toLowerCase() : undefined;
     return (
       email.botId === where.botId &&
       (!since || email.receivedAt > since) &&
+      (!before || email.receivedAt < before) &&
       (!words ||
         [email.fromAddress, email.fromName, email.subject, email.text].some((field) =>
           field.toLowerCase().includes(words),
@@ -67,13 +69,14 @@ function fakeRun(
         botEmailMessage: {
           findFirst: async ({ where }: { where: { id: string; botId: string } }) =>
             inbox.find((email) => email.id === where.id && email.botId === where.botId) ?? null,
-          findMany: async ({ where }: { where: Record<string, unknown> }) => {
+          findMany: async ({ where, take }: { where: Record<string, unknown>; take?: number }) => {
             listed += 1;
             // Mail that arrives while the bot waits shows up on the second look.
             if (listed === 2 && options.arriving) inbox.push(options.arriving);
             return inbox
               .filter((email) => matches(email, where))
-              .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime());
+              .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime())
+              .slice(0, take);
           },
           deleteMany: async ({
             where,
@@ -157,6 +160,20 @@ describe("read_email", () => {
     expect(waited.emails).toEqual([expect.objectContaining({ id: "late" })]);
     expect(again.emails).toEqual([]);
     expect(again.nextSince).toBe(waited.nextSince);
+  });
+
+  it("pages back to older mail", async () => {
+    const { call } = fakeRun([
+      row({ id: "a", receivedAt: new Date("2026-11-01T00:00:00.000Z") }),
+      row({ id: "b", receivedAt: new Date("2026-11-02T00:00:00.000Z") }),
+      row({ id: "c", receivedAt: new Date("2026-11-03T00:00:00.000Z") }),
+    ]);
+
+    const first = (await call({ limit: 2 })).emails as Array<{ id: string; receivedAt: string }>;
+    const older = (await call({ limit: 2, before: first.at(-1)?.receivedAt })).emails;
+
+    expect(first.map((email) => email.id)).toEqual(["c", "b"]);
+    expect(older).toEqual([expect.objectContaining({ id: "a" })]);
   });
 
   it("masks secrets the bot holds when an email repeats them", async () => {

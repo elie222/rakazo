@@ -19,6 +19,7 @@ const ReadEmailSchema = z
     id: z.string().trim().min(1).max(100).optional(),
     query: z.string().trim().max(200).optional(),
     since: z.iso.datetime({ offset: true }).optional(),
+    before: z.iso.datetime({ offset: true }).optional(),
     waitSeconds: z.number().int().min(0).max(READ_EMAIL_MAX_WAIT_SECONDS).optional(),
     textOffset: z.number().int().min(0).optional(),
     limit: z.number().int().min(1).max(20).optional(),
@@ -112,7 +113,14 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
   const startedAt = Date.now();
   const where = {
     botId: bot.id,
-    ...(input.since ? { receivedAt: { gt: new Date(input.since) } } : {}),
+    ...(input.since || input.before
+      ? {
+          receivedAt: {
+            ...(input.since ? { gt: new Date(input.since) } : {}),
+            ...(input.before ? { lt: new Date(input.before) } : {}),
+          },
+        }
+      : {}),
     ...(input.query
       ? {
           OR: (["fromAddress", "fromName", "subject", "text"] as const).map((field) => ({
