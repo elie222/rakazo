@@ -598,7 +598,7 @@ msgstr ""
 msgid "Access key secret"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Access token (optional)"
 msgstr "存取權杖（選填）"
 
@@ -653,7 +653,7 @@ msgstr "動態"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Add"
@@ -758,6 +758,7 @@ msgstr "新增供應商"
 msgid "Add rule"
 msgstr ""
 
+#: src/pages/McpServerForm.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "新增伺服器"
@@ -788,7 +789,7 @@ msgid "Added"
 msgstr "已新增"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
 msgstr "正在新增…"
@@ -806,7 +807,7 @@ msgstr ""
 msgid "Adds"
 msgstr "將新增"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -1083,7 +1084,7 @@ msgstr "已封存"
 msgid "Archived"
 msgstr "已封存"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Arguments"
 msgstr "參數"
 
@@ -1139,11 +1140,11 @@ msgstr "身分驗證失敗。"
 msgid "Authorization code"
 msgstr "授權碼"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Authorization parameters (optional)"
 msgstr "授權參數（選填）"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Authorization server"
 msgstr "授權伺服器"
 
@@ -1196,7 +1197,7 @@ msgstr "頭像工作室"
 #: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -1783,7 +1784,7 @@ msgstr "第 {index} 欄"
 msgid "Comfortable"
 msgstr "寬鬆"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Command"
 msgstr "命令"
@@ -3195,7 +3196,7 @@ msgstr "拖放或貼上圖片"
 msgid "Duplicate"
 msgstr "複製"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Each name can be used once."
 msgstr "每個名稱只能使用一次。"
 
@@ -3296,7 +3297,7 @@ msgstr "測試前請輸入 API 金鑰。"
 msgid "Environment ID"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Environment variables"
 msgstr "環境變數"
 
@@ -3471,7 +3472,7 @@ msgstr "標記變化的欄位"
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "要比較的欄位，例如 id, modifiedTime（選填）"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "File"
 msgstr "檔案"
@@ -3697,13 +3698,13 @@ msgstr "標頭「{header}」"
 
 #: src/components/ModelHeadersEditor.tsx
 #: src/components/vault/VaultItemEditor.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Header name"
 msgstr "標頭名稱"
 
 #: src/components/ModelHeadersEditor.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Header value"
 msgstr "標頭值"
 
@@ -4016,7 +4017,7 @@ msgstr "剛剛"
 msgid "Keep memories"
 msgstr "保留記憶"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Keep tool results whole"
 msgstr "保留完整工具結果"
 
@@ -4582,7 +4583,7 @@ msgstr ""
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4942,11 +4943,11 @@ msgstr ""
 msgid "OAuth authorization was cancelled."
 msgstr "OAuth 授權已取消。"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "OAuth client ID (optional)"
 msgstr "OAuth 客戶端 ID（選填）"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "OAuth client secret (optional)"
 msgstr "OAuth 客戶端金鑰（選填）"
 
@@ -5087,7 +5088,7 @@ msgstr "開啟瀏覽器的列印對話框。目的地請選擇「另存為 PDF�
 msgid "Optional"
 msgstr "選填"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Optional header value"
 msgstr "選填標頭值"
 
@@ -5574,7 +5575,7 @@ msgstr "正在重建電腦"
 msgid "Recruiting & HR"
 msgstr "招募與人力資源"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Redirect URI"
 msgstr "重新導向 URI"
 
@@ -5636,7 +5637,7 @@ msgstr "重新載入"
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -6013,7 +6014,7 @@ msgstr "週六"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -6062,7 +6063,7 @@ msgstr "儲存中…"
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -6083,7 +6084,7 @@ msgstr "排程執行延遲"
 msgid "Scheduled routines"
 msgstr "排程例行任務"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Scopes (optional)"
 msgstr "範圍（選填）"
 
@@ -6249,12 +6250,12 @@ msgstr "已傳送"
 msgid "Serenity endpoint is required."
 msgstr "請填寫 Serenity 端點。"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Server name"
 msgstr "伺服器名稱"
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -6666,7 +6667,7 @@ msgstr "已停止。"
 msgid "Stopping…"
 msgstr "正在停止…"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Stored encrypted"
 msgstr "已加密儲存"
 
@@ -7368,7 +7369,7 @@ msgstr "使用 {0}"
 msgid "Use {hostLabel}"
 msgstr "使用 {hostLabel}"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "存取權杖請使用 {oauthEnvReference}。"
 
@@ -7454,7 +7455,7 @@ msgstr "正在使用你的 API 金鑰。免費方案將於 {freeUntil} 結束。
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Value"
 msgstr "值"
 

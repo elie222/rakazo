@@ -597,7 +597,7 @@ msgstr "Identyfikator klucza dostępu"
 msgid "Access key secret"
 msgstr "Sekret klucza dostępu"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Access token (optional)"
 msgstr "Token dostępu (opcjonalnie)"
 
@@ -652,7 +652,7 @@ msgstr "Aktywność"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Add"
@@ -757,6 +757,7 @@ msgstr "Dodaj dostawcę"
 msgid "Add rule"
 msgstr "Dodaj regułę"
 
+#: src/pages/McpServerForm.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "Dodaj serwer"
@@ -787,7 +788,7 @@ msgid "Added"
 msgstr "Dodano"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
 msgstr "Dodawanie…"
@@ -805,7 +806,7 @@ msgstr "Druga linia adresu"
 msgid "Adds"
 msgstr "Zawiera"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -1082,7 +1083,7 @@ msgstr "zarchiwizowane"
 msgid "Archived"
 msgstr "Zarchiwizowane"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Arguments"
 msgstr "Argumenty"
 
@@ -1138,11 +1139,11 @@ msgstr "Uwierzytelnianie nie powiodło się."
 msgid "Authorization code"
 msgstr "Kod autoryzacji"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Authorization parameters (optional)"
 msgstr "Parametry autoryzacji (opcjonalnie)"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Authorization server"
 msgstr "Serwer autoryzacji"
 
@@ -1195,7 +1196,7 @@ msgstr "Studio awatara"
 #: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -1782,7 +1783,7 @@ msgstr "kolumna {index}"
 msgid "Comfortable"
 msgstr "Przestronny"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Command"
 msgstr "Polecenie"
@@ -3194,7 +3195,7 @@ msgstr "Przeciągnij, upuść lub wklej obraz"
 msgid "Duplicate"
 msgstr "Duplikuj"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Each name can be used once."
 msgstr "Każdej nazwy można użyć raz."
 
@@ -3295,7 +3296,7 @@ msgstr "Przed testem wpisz klucz API."
 msgid "Environment ID"
 msgstr "Identyfikator środowiska"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Environment variables"
 msgstr "Zmienne środowiskowe"
 
@@ -3470,7 +3471,7 @@ msgstr "Pola wskazujące zmianę"
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Pola do porównania, np. id, modifiedTime (opcjonalnie)"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "File"
 msgstr "Plik"
@@ -3696,13 +3697,13 @@ msgstr "Nagłówek \"{header}\""
 
 #: src/components/ModelHeadersEditor.tsx
 #: src/components/vault/VaultItemEditor.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Header name"
 msgstr "Nazwa nagłówka"
 
 #: src/components/ModelHeadersEditor.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Header value"
 msgstr "Wartość nagłówka"
 
@@ -4015,7 +4016,7 @@ msgstr "przed chwilą"
 msgid "Keep memories"
 msgstr "Zachowaj wspomnienia"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Keep tool results whole"
 msgstr "Zachowuj pełne wyniki narzędzi"
 
@@ -4581,7 +4582,7 @@ msgstr "Moje komputery"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4941,11 +4942,11 @@ msgstr "Numer"
 msgid "OAuth authorization was cancelled."
 msgstr "Anulowano autoryzację OAuth."
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "OAuth client ID (optional)"
 msgstr "Identyfikator klienta OAuth (opcjonalnie)"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "OAuth client secret (optional)"
 msgstr "Sekret klienta OAuth (opcjonalnie)"
 
@@ -5086,7 +5087,7 @@ msgstr "Otwiera okno drukowania przeglądarki. Jako drukarkę wybierz Zapisz jak
 msgid "Optional"
 msgstr "Opcjonalne"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Optional header value"
 msgstr "Opcjonalna wartość nagłówka"
 
@@ -5573,7 +5574,7 @@ msgstr "Odtwarzanie komputera"
 msgid "Recruiting & HR"
 msgstr "Rekrutacja i HR"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Redirect URI"
 msgstr "Adres URI przekierowania"
 
@@ -5635,7 +5636,7 @@ msgstr "Wczytaj ponownie"
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -6012,7 +6013,7 @@ msgstr "sobota"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -6061,7 +6062,7 @@ msgstr "Zapisywanie..."
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -6082,7 +6083,7 @@ msgstr "Harmonogram jest opóźniony"
 msgid "Scheduled routines"
 msgstr "Zaplanowane rutyny"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Scopes (optional)"
 msgstr "Zakresy (opcjonalnie)"
 
@@ -6248,12 +6249,12 @@ msgstr "Wysłano"
 msgid "Serenity endpoint is required."
 msgstr "Punkt końcowy Serenity jest wymagany."
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Server name"
 msgstr "Nazwa serwera"
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -6665,7 +6666,7 @@ msgstr "Zatrzymano."
 msgid "Stopping…"
 msgstr "Zatrzymywanie…"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Stored encrypted"
 msgstr "Zapisane w postaci zaszyfrowanej"
 
@@ -7367,7 +7368,7 @@ msgstr "Użyj {0}"
 msgid "Use {hostLabel}"
 msgstr "Użyj {hostLabel}"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "Użyj {oauthEnvReference} jako tokenu dostępu."
 
@@ -7453,7 +7454,7 @@ msgstr "Korzystasz z własnego klucza API. Bezpłatny plan kończy się {freeUnt
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Value"
 msgstr "Wartość"
 
