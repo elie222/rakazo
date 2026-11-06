@@ -131,3 +131,27 @@ it("offers the text from the click when the message changes before the failure",
   expect(field?.value).toBe("Answer text");
   Reflect.deleteProperty(navigator, "clipboard");
 });
+
+it("drops the copied confirmation when the message changes before it ends", async () => {
+  stubExecCommand(() => true);
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="More"]');
+  await click(trigger);
+  await click(menuItem("Copy"));
+  expect(trigger?.getAttribute("aria-label")).toBe("Copied");
+
+  const changed: ThreadMessage = { ...message, blocks: [{ kind: "text", text: "Changed text" }] };
+  act(() =>
+    root.render(
+      <MessageHoverActions
+        message={changed}
+        side="start"
+        onReply={vi.fn()}
+        onMarkUnread={vi.fn()}
+        onReact={vi.fn<(message: ThreadMessage, reaction: MessageReaction) => Promise<void>>()}
+      />,
+    ),
+  );
+
+  expect(trigger?.getAttribute("aria-label")).toBe("More");
+  expect(trigger?.querySelector(".lucide-check")).toBeNull();
+});

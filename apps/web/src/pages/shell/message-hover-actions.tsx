@@ -34,16 +34,24 @@ export function MessageHoverActions({
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
-  const [copied, copy, copyFailed, resetCopy, copyFailedText] = useCopyText();
+  const [copiedNow, copy, copyFailed, resetCopy, copyFailedText] = useCopyText();
+  // The text the last successful copy put on the clipboard: a message that changes during the
+  // confirmation no longer shows as copied.
+  const [copiedText, setCopiedText] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
 
   // Streaming progress bubbles keep hover free for selection / stop clicks.
   if (message.id.startsWith("progress:")) return null;
 
+  const copied = copiedNow && copiedText === copyableMessageText(message);
+
   function copyMessage() {
     const text = copyableMessageText(message);
-    if (text) copy(text);
+    if (!text) return;
+    void copy(text).then((ok) => {
+      if (ok) setCopiedText(text);
+    });
   }
 
   const iconButtonClass =
