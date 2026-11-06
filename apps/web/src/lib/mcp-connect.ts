@@ -76,7 +76,7 @@ export async function connectMcpEndpoint(input: {
     create: (config) => rpc.mcp.servers.create(config),
   });
   const result = await connectMcpOauth(server.id);
-  if (result !== "cancelled" && input.botId)
+  if ((result === "connected" || result === "already_connected") && input.botId)
     await rpc.mcp.assignments.approve({ botId: input.botId, serverId: server.id });
   return result;
 }

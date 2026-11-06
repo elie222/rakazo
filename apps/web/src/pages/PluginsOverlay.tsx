@@ -679,8 +679,12 @@ export function PluginsOverlay({
     setCatalogFeedError(null);
     setPending(`catalog:${endpoint}`);
     try {
-      if ((await connectMcpEndpoint({ name, endpoint, botId: activeBotId })) === "cancelled")
+      const result = await connectMcpEndpoint({ name, endpoint, botId: activeBotId });
+      if (result === "cancelled") return;
+      if (result === "authorization_not_requested") {
+        setCatalogFeedError(t`This server did not request browser authorization.`);
         return;
+      }
       setView("manage");
       await refresh();
     } catch (err) {
