@@ -367,6 +367,45 @@ describe("mobile API authentication", () => {
     );
   });
 
+  it("drops a sign-in whose session changes while its token is being written", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let writing!: () => void;
+    const started = new Promise<void>((resolve) => {
+      writing = resolve;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key) => {
+      if (key !== "rakazo.session_token") return;
+      writing();
+      await held;
+    });
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) =>
+      input.endsWith("/api/auth/sign-out")
+        ? jsonResponse({ success: true })
+        : jsonResponse({ token: "fake-session-late" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = signIn("ada@example.test", "correct horse");
+    const rejection = expect(pending).rejects.toThrow("Could not continue");
+    await started;
+    const clearing = clearSessionToken();
+    release();
+    await clearing;
+    await rejection;
+
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/auth\/sign-out$/),
+        expect.objectContaining({
+          headers: expect.objectContaining({ authorization: "Bearer fake-session-late" }),
+        }),
+      ),
+    );
+  });
+
   it("emails a sign-in code and persists the session the code returns", async () => {
     const fetchMock = vi
       .fn()

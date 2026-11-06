@@ -681,7 +681,11 @@ async function authenticate(
       if (!(await clearSpace()))
         throw new Error(t("Could not save your sign-in on this device. Try again."));
       saved =
-        apiBase === currentApiBase() && (await replaceSessionTokenIfCurrent(generation, token));
+        apiBase === currentApiBase() &&
+        (await replaceSessionTokenIfCurrent(generation, token)) &&
+        // A change that lands while the token is being written clears it again.
+        currentSessionGeneration() === generation + 1 &&
+        apiBase === currentApiBase();
     } catch (error) {
       throw new Error(sessionSaveErrorText(error));
     }
