@@ -21,9 +21,10 @@ export type InboundAttachmentStore = (input: {
 >;
 
 /**
- * Stores inbound files in order. Files past `limit`, past the download deadline, or that
- * fail become `[file: name (unavailable)]` lines; the sender controls the name, so it is
- * sanitized before it can reach a prompt. Only audio keeps its bytes, for transcription.
+ * Stores inbound files in order. Files past `limit`, or that the store rejects, become
+ * `[file: name (unavailable)]` lines; the sender controls the name, so it is sanitized
+ * before it can reach a prompt. The store enforces the download deadline itself, after
+ * looking up a file a replayed delivery already saved. Only audio keeps its bytes.
  */
 export async function storeInboundAttachments(
   store: InboundAttachmentStore | undefined,
@@ -36,11 +37,7 @@ export async function storeInboundAttachments(
   const { downloadDeadline } = options;
   for (const [index, attachment] of attachments.entries()) {
     const label = `[file: ${sanitizeMessagingLabel(attachment.name)} (unavailable)]`;
-    if (
-      !store ||
-      index >= options.limit ||
-      (downloadDeadline !== undefined && Date.now() >= downloadDeadline)
-    ) {
+    if (!store || index >= options.limit) {
       unavailable.push(label);
       continue;
     }

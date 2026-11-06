@@ -618,22 +618,30 @@ describe("team chat bridge", () => {
       ).toBe(0);
     });
 
-    it("skips remaining history files after the shared download deadline", async () => {
+    it("shares one download deadline across history files", async () => {
       vi.useFakeTimers();
       try {
         const { bridge, storeAttachment, sendUserMessage } = setup({
           knownThread: false,
           history: [earlier("100.1", ["a.png"]), earlier("100.2", ["b.png"])],
         });
-        storeAttachment.mockImplementationOnce(async () => {
-          vi.setSystemTime(Date.now() + 2_000);
-          throw new Error("Attachment download timed out");
-        });
+        storeAttachment
+          .mockImplementationOnce(async () => {
+            vi.setSystemTime(Date.now() + 2_000);
+            throw new Error("Attachment download timed out");
+          })
+          // The store still runs past the deadline, so a replayed file can be found; a new
+          // download is rejected.
+          .mockImplementationOnce(async () => {
+            throw new Error("Attachment download timed out");
+          });
         await bridge.receive(mention, { queueAgent: false });
-        expect(storeAttachment).toHaveBeenCalledOnce();
-        expect(storeAttachment.mock.calls[0]?.[0]).toMatchObject({
-          downloadDeadline: expect.any(Number),
-        });
+        expect(storeAttachment).toHaveBeenCalledTimes(2);
+        const deadlines = storeAttachment.mock.calls.map(
+          ([input]) => (input as { downloadDeadline?: number }).downloadDeadline,
+        );
+        expect(deadlines[0]).toEqual(expect.any(Number));
+        expect(deadlines[1]).toBe(deadlines[0]);
         expect(sendUserMessage.mock.calls[1]?.[0]).toMatchObject({
           blocks: [{ kind: "text", text: "message 100.2\n[file: b.png (unavailable)]" }],
         });
