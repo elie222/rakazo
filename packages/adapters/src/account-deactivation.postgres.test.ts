@@ -106,6 +106,31 @@ describePostgres("a deactivated account's work (PostgreSQL)", () => {
     });
   });
 
+  it("starts a teammate's follow-up that waited behind a stopped run", async () => {
+    const erin = await person();
+    const teammate = await person();
+    const running = await run(erin, "running");
+    const message = await system.message.create({
+      data: {
+        threadId: erin.threadId,
+        seq: 1_000,
+        role: "user",
+        authorUserId: teammate.userId,
+        blocks: [{ kind: "text", text: "Also this" }],
+      },
+    });
+    await system.steeringMessage.create({
+      data: { messageId: message.id, botId: erin.botId, userId: teammate.userId },
+    });
+    await deactivate(erin);
+
+    expect(await cancelDeactivatedAccountRuns(system, { notify }, erin.userId)).toBe(1);
+    expect(await status(running.id)).toBe("cancelled");
+    expect(
+      await system.run.findFirstOrThrow({ where: { threadId: erin.threadId, status: "queued" } }),
+    ).toMatchObject({ userId: teammate.userId, sourceMessageId: message.id });
+  });
+
   it("announces each chat whose runs were stopped, even when a later chat fails", async () => {
     const dana = await person();
     const helper = await createRepos(system).createBot(

@@ -21,6 +21,7 @@ import {
   clearEndedExecutionRunBinding,
   createGroupRepos,
   createThreadMessageInTransaction,
+  isUniqueViolation,
   recordComputerRunEnd,
   recordComputerRunSeen,
 } from "@rakazo/db";
@@ -592,6 +593,7 @@ export async function sleepComputerIfIdle(
           runningSince: null,
           controlHolder: "none",
           controlLeaseId: null,
+          controlUserId: null,
           controlLeaseExpiresAt: null,
           controlBotId: null,
           controlRunId: null,
@@ -696,6 +698,7 @@ export async function sleepComputerIfIdle(
       runningSince: null,
       controlHolder: "none",
       controlLeaseId: null,
+      controlUserId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
       controlRunId: null,
@@ -756,6 +759,7 @@ async function suspendStoppedComputer(
       runningSince: null,
       controlHolder: "none",
       controlLeaseId: null,
+      controlUserId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
       controlRunId: null,
@@ -882,7 +886,7 @@ async function postComputerNote(
       if (seq !== undefined) await deps.events.notify(threadId, seq).catch(() => undefined);
     } catch (cause) {
       // A competing worker already wrote the same nonce. Other failures are retried next tick.
-      if (!(cause && typeof cause === "object" && "code" in cause && cause.code === "P2002")) {
+      if (!isUniqueViolation(cause)) {
         getLogger().error("computer.notice_failed", cause);
       }
     }

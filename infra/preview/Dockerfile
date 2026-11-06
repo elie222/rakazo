@@ -14,6 +14,8 @@ RUN mkdir -p /etc/postgresql-common/createcluster.d \
   && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
   && apt-get install -y --no-install-recommends postgresql-18 \
   && rm -rf /var/lib/apt/lists/*
+# Cached with this image, but changes whenever its server image or boot setup changes.
+RUN openssl rand -hex 16 > /app/infra/preview/image-id
 ENV NODE_ENV=production
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini", "-g", "--"]

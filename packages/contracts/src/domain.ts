@@ -10,7 +10,14 @@ import {
 } from "./cloudflare-ai-gateway.js";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
 import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
-import { Id, MemoryScope, RunStatus, SandboxKind, ThinkingLevelSchema } from "./ids.js";
+import {
+  Id,
+  MemoryScope,
+  ReplyModeSchema,
+  RunStatus,
+  SandboxKind,
+  ThinkingLevelSchema,
+} from "./ids.js";
 import {
   McpHeadersSchema,
   McpRemoteEndpointSchema,
@@ -137,6 +144,7 @@ export const BotSchema = z.object({
   crossSpaceCommunication: z.boolean().optional(),
   dailyCheckIns: z.boolean().optional(),
   fleetManagement: z.boolean().default(true),
+  replyMode: ReplyModeSchema.default("chat"),
   disabledBuiltinTools: z.array(z.string()).default([]),
   webhookConfigured: z.boolean(),
   /** Present when created with an idempotency key (e.g. onboarding:first). */
@@ -385,6 +393,8 @@ export const SpaceSchema = z.object({
   canRename: z.boolean().optional(),
   /** True only when the current member may delete this non-default space. */
   canDelete: z.boolean().optional(),
+  /** True when more than one person belongs to the space. */
+  shared: z.boolean().optional(),
   /** Every bot deleting the space removes, archived and other members' included. */
   botCount: z.number().int().nonnegative().optional(),
   bots: z.array(SpaceBotSchema),
@@ -393,6 +403,43 @@ export const SpaceSchema = z.object({
   botSections: z.array(BotSectionSchema),
 });
 export type Space = z.infer<typeof SpaceSchema>;
+
+export const SpaceRoleSchema = z.enum(["owner", "member"]);
+export type SpaceRole = z.infer<typeof SpaceRoleSchema>;
+
+export const SpaceMemberSchema = z.object({
+  userId: Id,
+  name: z.string(),
+  email: z.string(),
+  image: z.string().nullable(),
+  role: SpaceRoleSchema,
+});
+export type SpaceMember = z.infer<typeof SpaceMemberSchema>;
+
+export const SpaceMembersSchema = z.object({
+  spaceName: z.string(),
+  members: z.array(SpaceMemberSchema),
+  /** True when the current member owns the space and may invite or remove people. */
+  canManage: z.boolean(),
+  /** For the owner: links created but not yet used or expired. */
+  openInvites: z.number().int().nonnegative().optional(),
+});
+export type SpaceMembers = z.infer<typeof SpaceMembersSchema>;
+
+export const SpaceInviteLinkSchema = z.object({
+  url: z.string().url(),
+  expiresAt: z.string(),
+});
+export type SpaceInviteLink = z.infer<typeof SpaceInviteLinkSchema>;
+
+export const SpaceInvitePreviewSchema = z.object({
+  spaceId: Id,
+  spaceName: z.string(),
+  inviterName: z.string(),
+  /** True when the signed-in person already belongs to the space. */
+  alreadyMember: z.boolean(),
+});
+export type SpaceInvitePreview = z.infer<typeof SpaceInvitePreviewSchema>;
 
 export const SpaceNavigationSchema = z.object({
   current: z.object({
@@ -459,6 +506,7 @@ export const UpdateBotInput = z
     crossSpaceCommunication: z.boolean().optional(),
     dailyCheckIns: z.boolean().optional(),
     fleetManagement: z.boolean().optional(),
+    replyMode: ReplyModeSchema.optional(),
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),
     /** Write only while these settings still hold, as an undo does. */
     expectedSettings: BotSettingsValuesSchema.optional(),
@@ -522,6 +570,13 @@ export function routineModelIssues(
 
 export const ROUTINE_MENTION_BATCH_MAX = 100;
 
+export const ROUTINE_TRIGGER_REQUIRED =
+  "Add a schedule, webhook, GitHub, message, email, or change trigger";
+
+/** Whose authenticated mail starts an email routine: the bot owner, or anyone at the owner's domain. */
+export const RoutineEmailSendersSchema = z.enum(["owner", "domain"]);
+export type RoutineEmailSenders = z.infer<typeof RoutineEmailSendersSchema>;
+
 export const RoutineSchema = z.object({
   id: Id,
   botId: Id,
@@ -539,6 +594,8 @@ export const RoutineSchema = z.object({
     .max(50)
     .regex(/^[a-z0-9._-]+$/i)
     .nullable(),
+  /** Null unless mail to the bot's address starts this routine. Absent on older servers. */
+  emailSenders: RoutineEmailSendersSchema.nullable().default(null),
   /** Null runs this routine on its bot's model. */
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
@@ -551,7 +608,7 @@ export const RoutineSchema = z.object({
   /** Computed by the server; absent on older servers. Not a worker-health diagnosis. */
   scheduleDelayed: z.boolean().optional(),
   createdAt: z.string(),
-  /** False when another Space member created it; only its creator can change it. */
+  /** Older servers send false for another member's routine; any member can now change it. */
   editable: z.boolean().optional(),
 });
 export type Routine = z.infer<typeof RoutineSchema>;
@@ -574,6 +631,7 @@ export const CreateRoutineInput = z
       .regex(/^[a-z0-9._-]+$/i)
       .nullable()
       .default(null),
+    emailSenders: RoutineEmailSendersSchema.nullable().default(null),
     modelProvider: z.string().trim().min(1).max(80).nullable().default(null),
     modelId: z.string().trim().min(1).max(200).nullable().default(null),
     thinkingLevel: ThinkingLevelSchema.nullable().default(null),
@@ -586,11 +644,12 @@ export const CreateRoutineInput = z
       !value.webhookEnabled &&
       !value.githubEnabled &&
       !value.messageProvider &&
+      !value.emailSenders &&
       !value.watch
     ) {
       ctx.addIssue({
         code: "custom",
-        message: "Add a schedule, webhook, GitHub, message, or change trigger",
+        message: ROUTINE_TRIGGER_REQUIRED,
         path: ["crons"],
       });
     }
@@ -1058,6 +1117,9 @@ export const IntegrationCatalogSurfaceSchema = z.object({
 });
 export type IntegrationCatalogSurface = z.infer<typeof IntegrationCatalogSurfaceSchema>;
 
+/** The longest query the integration catalog search accepts. */
+export const CATALOG_SEARCH_QUERY_MAX_LENGTH = 253;
+
 export const IntegrationCatalogResultSchema = z.object({
   domain: z.string(),
   name: z.string(),
@@ -1066,6 +1128,16 @@ export const IntegrationCatalogResultSchema = z.object({
   surfaces: z.array(IntegrationCatalogSurfaceSchema),
 });
 export type IntegrationCatalogResult = z.infer<typeof IntegrationCatalogResultSchema>;
+
+/** A remote MCP service that connects with a bearer token. */
+export const McpSourcePresetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** Fixed endpoint; omitted when the person enters their own. */
+  url: z.string().url().optional(),
+  urlPlaceholder: z.string().optional(),
+});
+export type McpSourcePreset = z.infer<typeof McpSourcePresetSchema>;
 
 export type { McpTransport } from "./mcp.js";
 
@@ -1197,6 +1269,33 @@ export const McpServerSchema = z.object({
 });
 export type McpServer = z.infer<typeof McpServerSchema>;
 
+export type McpServerConnection =
+  | "disabled"
+  | "needs_client"
+  | "needs_sign_in"
+  | "not_working"
+  | "connected"
+  | "not_connected";
+
+/** The one state every client shows for a saved server. */
+export function mcpServerConnection(
+  server: Pick<McpServer, "enabled" | "health" | "oauthClientId" | "oauthStatus">,
+): McpServerConnection {
+  if (!server.enabled) return "disabled";
+  if (server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId)
+    return "needs_client";
+  if (server.oauthStatus === "reconnect") return "needs_sign_in";
+  if (server.health.status === "error") return "not_working";
+  if (server.oauthStatus === "connected" || server.health.status === "ok") return "connected";
+  return "not_connected";
+}
+
+/** Whether Sign in or Reconnect can help: on, not connected, not signed in (even if failing). */
+export function mcpServerNeedsSignIn(server: Parameters<typeof mcpServerConnection>[0]): boolean {
+  const state = mcpServerConnection(server);
+  return state !== "disabled" && state !== "connected" && server.oauthStatus !== "connected";
+}
+
 export const BotMcpServerSchema = z.object({
   id: Id,
   botId: Id,
@@ -1314,6 +1413,10 @@ export const ComputerStatusSchema = z.object({
   terminalAvailable: z.boolean(),
   /** Set only while the user should see that the disk is nearly full. */
   diskFullPercent: z.number().int().min(0).max(100).optional(),
+  /** True when other people share the Space, and with it this computer and its browser sign-ins. */
+  shared: z.boolean().optional(),
+  /** True when another person in the Space has control, so this viewer only watches. */
+  controlledByOther: z.boolean().optional(),
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 
@@ -1390,6 +1493,7 @@ export const RunSchema = z.object({
   status: RunStatus,
   trigger: RunTriggerSchema,
   routineId: Id.nullable(),
+  routineName: z.string().nullable().optional(),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   error: z.string().nullable(),
@@ -1743,6 +1847,8 @@ export const VoiceCatalogEntrySchema = z.object({
   description: z.string(),
   transcribe: z.boolean(),
   keyless: z.boolean().optional(),
+  /** The connection takes an optional speech model id that overrides the provider default. */
+  speechModel: z.boolean().optional(),
 });
 export type VoiceCatalogEntry = z.infer<typeof VoiceCatalogEntrySchema>;
 
@@ -1948,6 +2054,8 @@ export const MeSchema = z.object({
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
   sandboxProvider: z.string(),
+  /** Whether Settings may choose where computers run. Absent from older servers. */
+  computerSettingsEnabled: z.boolean().optional(),
   /** Whether this account can add stdio MCP servers here. Absent from older servers. */
   mcpStdioEnabled: z.boolean().default(false),
   avatarStyle: AvatarStyleSchema,
@@ -2030,8 +2138,8 @@ export const BYOK_TIERS: Record<ByokTier, ByokTierTerms> = {
   },
   max: {
     name: "Max",
-    monthlyPriceCents: 14900,
-    annualPriceCents: 142800,
+    monthlyPriceCents: 9900,
+    annualPriceCents: 94800,
     computerAllowanceCents: 4000,
     computerSize: "xlarge",
   },

@@ -5,20 +5,40 @@ import type {
   ApprovalMode,
   SettingsScope,
 } from "@rakazo/contracts";
-import { humanizeToolName, toolNameFromLabel } from "@rakazo/core";
+import type { ApprovalRuleChoice } from "@rakazo/core";
+import {
+  APPROVAL_RULE_EFFECTS,
+  approvalRuleApplies,
+  approvalRuleChoices,
+  approvalRuleEffectChoices,
+  approvalRuleLabel,
+} from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
-import { Button, Input, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
+import {
+  Button,
+  Command,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+  ListSearchInput,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
+import { useListSearch } from "../lib/use-list-search";
 import { errorText } from "../lib/user-error";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
 import { SpendingLimitSettings } from "./SpendingLimitSettings";
 
 const segmented = "rounded-lg bg-muted p-1";
-const segment = "h-7 px-3 text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm";
+const segment = "h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm";
 
 /** Approvals for the account, or for the bound Space when it customizes them. */
 export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
@@ -33,8 +53,6 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
   const autoReview = autoReviewQuery.data ?? null;
   const loading = rulesQuery.isPending || autoReviewQuery.isPending;
   const loadFailed = rulesQuery.error ?? autoReviewQuery.error;
-  const [adding, setAdding] = useState(false);
-  const [tool, setTool] = useState("");
   const [saving, setSaving] = useState(false);
   const [actionError, setError] = useState<string | null>(null);
   const error =
@@ -99,24 +117,40 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
   const setEffect = (rule: ActionApprovalRule, effect: ActionApprovalRule["effect"]) =>
     save(() => putRule({ ...rule, effect }), t`Could not save rule`);
 
-  const addTool = () =>
-    save(async () => {
-      const name = toolNameFromLabel(tool);
-      // An existing rule keeps its effect; changing it stays an explicit choice in the list.
-      const exists = rules.some(
-        (rule) => rule.matchKind === "tool" && rule.matchValue.toLowerCase() === name.toLowerCase(),
-      );
-      if (!exists)
-        await putRule({ effect: "require_approval", matchKind: "tool", matchValue: name });
-      setTool("");
-      setAdding(false);
-    }, t`Could not save rule`);
+  // An app or tool that already has a rule is not offered, so a pick always adds one.
+  const addRule = (choice: ApprovalRuleChoice) =>
+    save(
+      () =>
+        putRule({
+          effect: "require_approval",
+          matchKind: choice.matchKind,
+          matchValue: choice.matchValue,
+        }),
+      t`Could not save rule`,
+    );
 
   const removeRule = (rule: ActionApprovalRule) =>
     save(async () => {
       await rpc.approvalRules.remove({ scope, id: rule.id });
       await setRules((current) => current.filter((other) => other.id !== rule.id));
     }, t`Could not remove rule`);
+
+  const modeDetail =
+    autoReview?.mode === "auto" && !autoReview.checkerAvailable
+      ? t`Add a model in Settings to use this.`
+      : autoReview?.mode === "auto"
+        ? t`A model approves routine actions and asks you about the rest.`
+        : autoReview?.mode === "never"
+          ? t`Asks only before purchases and the first use of your computer. Only Block rules apply.`
+          : autoReview?.mode === "ask"
+            ? t`Asks before sending, spending or changing anything in your apps.`
+            : null;
+  const groupTitles: Record<ActionApprovalRule["effect"], string> = {
+    always_allow: t`Always allow`,
+    require_approval: t`Always ask`,
+    deny: t`Blocked`,
+  };
+  const groups = APPROVAL_RULE_EFFECTS.map((effect) => ({ effect, title: groupTitles[effect] }));
 
   return (
     <div data-testid="approval-settings" className="space-y-8">
@@ -143,113 +177,171 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
             </ToggleGroup>
           }
         >
-          {autoReview?.mode === "auto" && !autoReview.checkerAvailable ? (
-            <p className="mt-1 text-[13px] text-muted-foreground">
-              <Trans>Add a model in Settings to use this.</Trans>
-            </p>
+          {modeDetail ? (
+            <p className="mt-1 text-body-sm text-muted-foreground">{modeDetail}</p>
           ) : null}
         </SettingsRow>
       </SettingsGroup>
       {/* Spending is the person's own across every Space, so it is set with the account's approvals. */}
       {scope === "account" ? <SpendingLimitSettings /> : null}
-      <Button
-        variant="outline"
-        size="sm"
+      <AddRulePicker
+        choices={approvalRuleChoices(rules)}
         disabled={loading || Boolean(loadFailed) || saving}
-        onClick={() => setAdding(!adding)}
-        aria-expanded={adding}
-      >
-        <Trans>Add rule</Trans>
-      </Button>
-      {adding ? (
-        <form
-          className="flex items-center gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (tool.trim()) void addTool();
-          }}
-        >
-          <Input
-            aria-label={t`Tool name`}
-            placeholder={t`Tool name`}
-            value={tool}
-            maxLength={253}
-            disabled={saving}
-            onChange={(event) => setTool(event.target.value)}
-          />
-          <Button type="submit" size="sm" disabled={saving || !tool.trim()}>
-            <Trans>Save</Trans>
-          </Button>
-        </form>
-      ) : null}
-      {rules.length > 0 ? (
-        <SettingsGroup title={<Trans>Rules</Trans>} data-testid="approval-rules">
-          {rules.map((rule) => (
-            <SettingsRow
-              key={rule.id}
-              label={ruleLabel(rule)}
-              control={
-                <>
-                  {rule.matchKind === "category" ? (
-                    <span className="text-[13px] text-muted-foreground">
-                      {rule.effect === "always_allow" ? (
-                        <Trans>Allow</Trans>
-                      ) : rule.effect === "deny" ? (
-                        <Trans>Block</Trans>
-                      ) : (
-                        <Trans>Ask</Trans>
-                      )}
-                    </span>
-                  ) : (
-                    <ToggleGroup
-                      aria-label={ruleLabel(rule)}
-                      value={[rule.effect]}
-                      onValueChange={([next]) => {
-                        if (
-                          next === "always_allow" ||
-                          next === "require_approval" ||
-                          next === "deny"
-                        ) {
-                          void setEffect(rule, next);
-                        }
-                      }}
+        onPick={(choice) => void addRule(choice)}
+      />
+      {groups.map(({ effect, title }) => {
+        const matching = rules.filter((rule) => rule.effect === effect);
+        if (matching.length === 0) return null;
+        // Never ask runs everything a block does not stop, so these rules wait for another mode.
+        const unused = !approvalRuleApplies(autoReview?.mode, effect);
+        return (
+          <div
+            key={effect}
+            data-unused={unused || undefined}
+            className={unused ? "opacity-50" : undefined}
+          >
+            <SettingsGroup title={title} data-testid={`approval-rules-${effect}`}>
+              {matching.map((rule) => (
+                <SettingsRow
+                  key={rule.id}
+                  label={approvalRuleLabel(rule)}
+                  control={
+                    <RuleControls
+                      rule={rule}
                       disabled={saving}
-                      spacing={1}
-                      className={segmented}
-                    >
-                      <ToggleGroupItem value="always_allow" className={segment}>
-                        <Trans>Allow</Trans>
-                      </ToggleGroupItem>
-                      <ToggleGroupItem value="require_approval" className={segment}>
-                        <Trans>Ask</Trans>
-                      </ToggleGroupItem>
-                      <ToggleGroupItem value="deny" className={segment}>
-                        <Trans>Block</Trans>
-                      </ToggleGroupItem>
-                    </ToggleGroup>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t`Remove`}
-                    className="text-destructive hover:text-destructive"
-                    disabled={saving}
-                    onClick={() => void removeRule(rule)}
-                  >
-                    <Trash2 />
-                  </Button>
-                </>
-              }
-            />
-          ))}
-        </SettingsGroup>
-      ) : null}
-      {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
+                      onEffect={(next) => void setEffect(rule, next)}
+                      onRemove={() => void removeRule(rule)}
+                    />
+                  }
+                />
+              ))}
+            </SettingsGroup>
+          </div>
+        );
+      })}
+      {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
     </div>
   );
 }
 
-/** A site reads as itself; a tool, connector or older category by its name. */
-function ruleLabel(rule: ActionApprovalRule): string {
-  return rule.matchKind === "site" ? rule.matchValue : humanizeToolName(rule.matchValue);
+/** A searchable list of the tools a rule can name, so nobody types a tool's name. */
+function AddRulePicker({
+  choices,
+  disabled,
+  onPick,
+}: {
+  choices: ApprovalRuleChoice[];
+  disabled: boolean;
+  onPick: (choice: ApprovalRuleChoice) => void;
+}) {
+  const { t } = useLingui();
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const { query, setQuery, visible } = useListSearch(choices, {
+    text: (choice) => [choice.label, choice.matchValue],
+  });
+  const item = (choice: ApprovalRuleChoice) => (
+    <CommandItem
+      key={`${choice.matchKind}:${choice.matchValue}`}
+      value={`${choice.matchKind}:${choice.matchValue}`}
+      onSelect={() => {
+        setOpen(false);
+        setQuery("");
+        onPick(choice);
+      }}
+    >
+      {choice.label}
+    </CommandItem>
+  );
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setQuery("");
+      }}
+    >
+      <PopoverTrigger
+        render={<Button variant="outline" size="sm" disabled={disabled} />}
+        data-testid="approval-rule-add"
+      >
+        <Trans>Add rule</Trans>
+      </PopoverTrigger>
+      <PopoverContent initialFocus={searchRef} className="w-72 gap-0 p-0" align="start">
+        <Command label={t`Search tools`} shouldFilter={false}>
+          <ListSearchInput
+            command
+            inputRef={searchRef}
+            query={query}
+            setQuery={setQuery}
+            label={t`Search tools`}
+            placeholder={t`Search`}
+          />
+          <CommandList label={t`Tools`}>
+            {visible.length === 0 ? (
+              <p className="py-6 text-center text-body-sm text-muted-foreground">
+                <Trans>No matches</Trans>
+              </p>
+            ) : null}
+            <CommandGroup>{visible.map(item)}</CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** The effects a rule can take, side by side, then remove. */
+function RuleControls({
+  rule,
+  disabled,
+  onEffect,
+  onRemove,
+}: {
+  rule: ActionApprovalRule;
+  disabled: boolean;
+  onEffect: (effect: ActionApprovalRule["effect"]) => void;
+  onRemove: () => void;
+}) {
+  const { t } = useLingui();
+  const label = approvalRuleLabel(rule);
+  const effects = approvalRuleEffectChoices(rule);
+  const options: Record<ActionApprovalRule["effect"], string> = {
+    always_allow: t`Allow`,
+    require_approval: t`Ask`,
+    deny: t`Block`,
+  };
+  return (
+    <>
+      {effects.length === 0 ? null : (
+        <ToggleGroup
+          aria-label={label}
+          value={[rule.effect]}
+          onValueChange={([next]) => {
+            const effect = effects.find((option) => option === next);
+            if (effect && effect !== rule.effect) onEffect(effect);
+          }}
+          disabled={disabled}
+          spacing={1}
+          className={segmented}
+        >
+          {effects.map((effect) => (
+            <ToggleGroupItem key={effect} value={effect} className={segment}>
+              {options[effect]}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      )}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={t`Remove ${label}`}
+        className="text-destructive hover:text-destructive"
+        disabled={disabled}
+        onClick={onRemove}
+      >
+        <Trash2 />
+      </Button>
+    </>
+  );
 }

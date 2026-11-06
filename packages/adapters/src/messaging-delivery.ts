@@ -17,10 +17,13 @@ import {
   createThreadMessageInTransaction,
   crossSpaceCommunicationAllowed,
   runAsSystem,
+  SpaceDeletionInProgressError,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { MessagingSendError } from "./chat-sdk-surface.js";
 import { splitOutboundBody } from "./messaging-platforms.js";
+import { isUserProgressClientNonce } from "./user-progress.js";
 
 /**
  * Margin under vendor consecutive-outbound caps (sendblue enforces one hard):
@@ -100,7 +103,26 @@ export async function mirrorMessagingOutbound(
   });
 }
 
-async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<void> {
+/**
+ * Queues the interim messages a running 1:1 chat run has posted so far, such as a message_user
+ * update. Cards and files wait for the end-of-run mirror, which sees the whole reply (a page the
+ * reply links goes with the reply, not as its own title), and so does everything posted after
+ * them, to keep the app's order. The run is not marked mirrored, which still means its reply is
+ * out, and the outbox keys rows by message, so the end-of-run mirror never sends these twice.
+ * Group runs post once, when they end.
+ */
+export async function mirrorMessagingProgress(
+  deps: MessagingDeliveryDeps,
+  runId: string,
+): Promise<void> {
+  await mirrorRun(deps, runId, true);
+}
+
+async function mirrorRun(
+  deps: MessagingDeliveryDeps,
+  runId: string,
+  progress = false,
+): Promise<void> {
   const run = await deps.prisma.run.findUnique({
     where: { id: runId },
     include: { sourceMessage: true },
@@ -114,11 +136,11 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
         block.kind === "channel_message",
     );
     if (channelBlock) {
-      await mirrorChannelRun(deps, run, channelBlock);
+      if (!progress) await mirrorChannelRun(deps, run, channelBlock);
       return;
     }
-  } else if (run.trigger !== "bot_message") {
-    // Mirror inbound messaging runs and delegated bot_message replies only.
+  } else if (progress || run.trigger !== "bot_message") {
+    // Mirror inbound messaging runs and, once they end, delegated bot_message replies only.
     // Do not push in-app user/routine runs out to the linked chat.
     return;
   }
@@ -126,7 +148,9 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   const identity = await deps.prisma.messagingIdentity.findUnique({
     where: { botId: run.botId },
   });
-  if (!identity) return;
+  // The linked DM is one person's chat. In a shared Space another member's run on this bot, such
+  // as a reply to their message_bot, stays in the app instead of reaching that person's chat app.
+  if (!identity || identity.userId !== run.userId) return;
 
   // bot_message runs can carry the bot's user-facing reply after a delegate wake.
   // extractText keeps only text and page titles, so inter-bot chatter blocks never leak out.
@@ -143,7 +167,7 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   // The whole reply takes one explicit, non-overlapping range, like a group
   // reply, so a concurrent DM mirror cannot interleave its parts.
   const linkedPages = linkedPageIds(messages);
-  const rows = messages.flatMap((message) => {
+  const rowsByMessage = messages.map((message) => {
     const body = extractText(message.blocks, linkedPages);
     const parts = body ? splitOutboundBody(identity.provider, body) : [];
     return [
@@ -163,6 +187,16 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
       })),
     ];
   });
+  // While the run is going, send its interim messages up to the first other message that sends
+  // anything, such as a card or a file: it waits for the whole reply, and nothing posted after it
+  // goes ahead of it.
+  const held = progress
+    ? rowsByMessage.findIndex(
+        (rows, index) =>
+          rows.length > 0 && !isUserProgressClientNonce(messages[index]!.clientNonce),
+      )
+    : -1;
+  const rows = (held === -1 ? rowsByMessage : rowsByMessage.slice(0, held)).flat();
   if (rows.length === 0) return;
   // Atomic dedupe: a concurrent messaging.deliver for the same run loses on
   // the idempotencyKey unique key instead of throwing P2002.
@@ -339,7 +373,11 @@ async function fanOutToPeers(
             crossSpaceSenderBotId: identity.botId,
           })
           .catch((error: unknown) => {
-            if (error instanceof CrossSpaceCommunicationBlockedError) return null;
+            if (
+              error instanceof CrossSpaceCommunicationBlockedError ||
+              error instanceof SpaceDeletionInProgressError
+            )
+              return null;
             throw error;
           });
         if (sent?.runId) {
@@ -371,7 +409,7 @@ async function fanOutToPeers(
             type: "thread.message.created",
             payload: { messageId: created.id, role: "user", blocks: [block] },
           });
-        })
+        }, THREAD_LOCK_TRANSACTION_OPTIONS)
         .catch((error: unknown) => {
           if (error instanceof CrossSpaceCommunicationBlockedError) return null;
           throw error;

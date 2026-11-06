@@ -1,8 +1,8 @@
-import { isRetryableError } from "@rakazo/core";
+import { isRetryableError, reconcileRefreshedThread } from "@rakazo/core";
 import { useFocusEffect } from "expo-router";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useEffect } from "react";
-import { mergeMobileSnapshot, mobileThreadRefreshResult, rpc, selectedSpaceId } from "./api";
+import { mobileThreadRefreshResult, rpc, selectedSpaceId } from "./api";
 import { onConversationCleared } from "./conversation-cleared";
 import { useI18n } from "./i18n";
 import { isIntegrationsScopeCurrent } from "./integrations-cache";
@@ -38,6 +38,7 @@ export function useThreadSync({
   messageId,
   readOnly,
   foreground,
+  focused,
   sessionEpoch,
   activeBotId,
   activeGroupId,
@@ -56,6 +57,7 @@ export function useThreadSync({
   messageId?: string;
   readOnly: boolean;
   foreground: boolean;
+  focused: boolean;
   sessionEpoch: number;
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
@@ -155,9 +157,10 @@ export function useThreadSync({
       snapshotOrigin.current = scope;
       pendingSave.current = null;
       writeSavedThread(scope, savedChatTarget(next), next);
-      commitSnap(
-        mergeMobileSnapshot(snapRef.current, next, expandedHistoryThread.current === next.threadId),
-      );
+      // A refresh at the cursor already applied keeps a waiting_takeover its events set. The
+      // computer screen loads its own status, so the thread's copy is not reconciled here.
+      const preserveHistory = expandedHistoryThread.current === next.threadId;
+      commitSnap(reconcileRefreshedThread(snapRef.current, next, null, preserveHistory).snapshot);
       setShowingSaved(false);
     }
     if (isCurrentTarget(targetBotId, targetGroupId)) {
@@ -187,6 +190,7 @@ export function useThreadSync({
     botId,
     groupId,
     foreground,
+    focused,
     readOnly,
     sessionEpoch,
     messageId,
@@ -196,6 +200,7 @@ export function useThreadSync({
     jumpScrollTarget,
     jumpAnchor,
     snapRef,
+    terminalRunIds: history.terminalRunIds,
     readVisibleTarget,
     showSavedThread,
     refresh,

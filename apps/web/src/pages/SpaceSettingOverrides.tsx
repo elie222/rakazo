@@ -1,22 +1,13 @@
 import { useLingui } from "@lingui/react/macro";
 import type { SpaceSetting } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-} from "@rakazo/ui-web";
+import { Button } from "@rakazo/ui-web";
 import type { QueryKey } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { VaultSettings } from "../components/VaultSettings";
 import { useSpaceQueries } from "../lib/query";
@@ -110,7 +101,7 @@ export function SpaceSettingOverrides({
 
   if (overrides.data === undefined) {
     return overrides.isError ? (
-      <div role="alert" className="text-[12.5px] text-destructive">
+      <div role="alert" className="text-body-sm text-destructive">
         {errorText(overrides.error)}
         <Button variant="ghost" size="sm" onClick={() => void overrides.refetch()}>
           {t`Retry`}
@@ -133,7 +124,7 @@ export function SpaceSettingOverrides({
                   <>
                     <p>{label}</p>
                     {custom ? null : (
-                      <p className="text-[13px] text-muted-foreground">{t`Your defaults`}</p>
+                      <p className="text-body-sm text-muted-foreground">{t`Your defaults`}</p>
                     )}
                   </>
                 }
@@ -161,36 +152,21 @@ export function SpaceSettingOverrides({
         })}
       </SettingsGroup>
       {actionError ? (
-        <p role="alert" className="text-[12.5px] text-destructive">
+        <p role="alert" className="text-body-sm text-destructive">
           {actionError}
         </p>
       ) : null}
       {confirmingReset && confirmTitle ? (
-        <AlertDialog
-          open
-          onOpenChange={(open) => {
-            if (!open && !pending) setConfirmingReset(null);
-          }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{confirmTitle}</AlertDialogTitle>
-              <AlertDialogDescription>{t`This can't be undone.`}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={pending !== null}>{t`Cancel`}</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={pending !== null}
-                onClick={() =>
-                  void setOverride(confirmingReset, false).then(() => setConfirmingReset(null))
-                }
-              >
-                {t`Delete`}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmDialog
+          onCancel={() => setConfirmingReset(null)}
+          title={confirmTitle}
+          description={t`This can't be undone.`}
+          busy={pending !== null}
+          onConfirm={() =>
+            void setOverride(confirmingReset, false).then(() => setConfirmingReset(null))
+          }
+          confirmLabel={t`Delete`}
+        />
       ) : null}
     </div>
   );

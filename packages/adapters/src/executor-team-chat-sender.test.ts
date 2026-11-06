@@ -54,7 +54,10 @@ async function teamChatRun(input: {
     leaseFence: 0,
   };
   const prisma = {
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    space: { findUnique: vi.fn(async () => null) },
     $queryRaw: vi.fn(async () => []),
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),

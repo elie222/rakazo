@@ -13,7 +13,12 @@ import {
   isOneShotRoutineCrons,
   nextRoutineRunDateAcross,
 } from "@rakazo/core";
-import { accountDeactivated } from "@rakazo/db";
+import {
+  accountDeactivated,
+  isUniqueViolation,
+  SpaceDeletionInProgressError,
+  spaceTakesWork,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { protectedComputerLifecycleRefusal } from "./desktop-command-guard.js";
@@ -21,7 +26,6 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import { routineRunModelPin } from "./model-selection.js";
 import { findPendingRoutineTick, routineTimerNonce } from "./routine-coalescing.js";
 import { nextRoutineWatchAt, parseRoutineWatch, tickRoutineWatch } from "./routine-watch.js";
-import { isUniqueViolation } from "./run-messages.js";
 import { notifyRun } from "./run-notifications.js";
 import { listAgentSkillRecords } from "./skill-tools.js";
 
@@ -212,9 +216,12 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     userId: routine.userId,
   });
   const claimed = await deps.prisma.$transaction(async (tx) => {
+    if (!(await spaceTakesWork(tx, routine.spaceId))) return null;
+    // The owner is part of the claim: a routine taken over mid-check runs as no one stale.
     const updated = await tx.routine.updateMany({
       where: {
         id: routine.id,
+        userId: routine.userId,
         active: true,
         nextRunAt: scheduledAt,
         bot: { archivedAt: null },
@@ -380,9 +387,13 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
       active: true,
       crons: true,
       nextRunAt: true,
+      userId: true,
       bot: { select: { archivedAt: true } },
+      space: { select: { deletingAt: true } },
     },
   });
+  // As in wakeRoutine: a Space being deleted runs nothing.
+  if (routine?.space?.deletingAt) return;
   const laterRun = await deps.prisma.run.findFirst({
     where: { routineId: failed.routineId, createdAt: { gt: failed.createdAt } },
     select: { id: true },
@@ -394,8 +405,10 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
     return;
   }
   // A one-time routine turns itself off when it fires, so only a recurring one counts as paused.
+  // A routine someone else has since taken over must not retry on its former owner's accounts.
   if (
     !routine ||
+    routine.userId !== failed.userId ||
     (!routine.active && !isOneShotRoutineCrons(routine.crons)) ||
     routine.bot.archivedAt
   ) {
@@ -413,11 +426,13 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
   let retry: { id: string; taskId: string } | null;
   try {
     retry = await deps.prisma.$transaction(async (tx) => {
+      if (!(await spaceTakesWork(tx, failed.spaceId))) throw new SpaceDeletionInProgressError();
       // Claim the still-eligible routine without changing its state. One-shot routines
       // may already be inactive; match their crons so an edit cannot revive a paused routine.
       const claimed = await tx.routine.updateMany({
         where: {
           id: failed.routineId!,
+          userId: failed.userId,
           active: routine.active,
           ...(!routine.active ? { crons: { equals: routine.crons } } : {}),
           bot: { archivedAt: null },
@@ -482,6 +497,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
   } catch (error) {
     // retryOfRunId is unique: another delivery of this job already queued the retry.
     if (isUniqueViolation(error)) return;
+    if (error instanceof SpaceDeletionInProgressError) return;
     throw error;
   }
   if (!retry) {

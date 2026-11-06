@@ -46,6 +46,7 @@ function fixture(status = "queued") {
   };
   const computerUpdate = {
     create: vi.fn(async () => row),
+    findUnique: vi.fn(async () => row),
     findUniqueOrThrow: vi.fn(async () => row),
     findMany: vi.fn(async ({ where, take }: { where: Where; take: number }) =>
       rows
@@ -78,6 +79,7 @@ function fixture(status = "queued") {
   };
   const prisma = {
     $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
     computer,
     bot: { findFirst: vi.fn(async () => ({ userId: "user" })) },
     computerUpdate,
@@ -454,6 +456,7 @@ describe("background computer maintenance", () => {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
@@ -573,6 +576,7 @@ describe("background computer maintenance", () => {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
@@ -610,6 +614,7 @@ describe("background computer maintenance", () => {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
@@ -689,6 +694,7 @@ describe("background computer maintenance", () => {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,

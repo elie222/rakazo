@@ -8,6 +8,7 @@ import {
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { Prisma } from "@rakazo/db";
 
 const RECENT_LIMIT = 20;
 const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
@@ -61,16 +62,16 @@ export async function listSpaceRuns(
   filter: "active" | "recent",
 ): Promise<RunActivityRow[]> {
   const rows = await prisma.run.findMany({
-    where: {
-      spaceId: actor.spaceId,
-      userId: actor.userId,
-      bot: { archivedAt: null },
-      // Background ticket work belongs on the board, not in the activity list.
-      trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
-      ...(filter === "active"
-        ? { status: { in: [...ACTIVE_RUN_STATUSES] } }
-        : { status: { in: [...TERMINAL_STATUSES] } }),
-    },
+    where:
+      filter === "active"
+        ? {
+            spaceId: actor.spaceId,
+            bot: { archivedAt: null },
+            // Background ticket work belongs on the board, not in the activity list.
+            trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
+            status: { in: [...ACTIVE_RUN_STATUSES] },
+          }
+        : { spaceId: actor.spaceId, id: { in: await latestFinishedRunPerChat(prisma, actor) } },
     include: {
       bot: { select: { name: true, archivedAt: true, notifyOnFinish: true } },
       task: { select: { prompt: true } },
@@ -86,7 +87,6 @@ export async function listSpaceRuns(
       filter === "active"
         ? [{ updatedAt: "desc" }, { id: "desc" }]
         : [{ completedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
-    take: filter === "recent" ? RECENT_LIMIT : undefined,
   });
 
   return rows.map((row) => ({
@@ -109,4 +109,23 @@ export async function listSpaceRuns(
       : row.updatedAt
     ).toISOString(),
   }));
+}
+
+/** Recent lists chats keyed like `activitySections`, so one busy chat must not push the others out of the limit. */
+async function latestFinishedRunPerChat(prisma: PrismaClient, actor: Actor): Promise<string[]> {
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM (
+      SELECT DISTINCT ON (COALESCE('group:' || t."groupId", 'bot:' || r."botId")) r.id, r."completedAt", r."updatedAt"
+      FROM runs r
+      JOIN threads t ON t.id = r."threadId"
+      JOIN bots b ON b.id = r."botId"
+      WHERE r."spaceId" = ${actor.spaceId}
+        AND b."archivedAt" IS NULL
+        AND r.trigger NOT IN (${Prisma.join([...BACKGROUND_RUN_TRIGGERS])})
+        AND r.status IN (${Prisma.join([...TERMINAL_STATUSES])})
+      ORDER BY COALESCE('group:' || t."groupId", 'bot:' || r."botId"), r."completedAt" DESC, r."updatedAt" DESC, r.id DESC
+    ) latest
+    ORDER BY "completedAt" DESC, "updatedAt" DESC, id DESC
+    LIMIT ${RECENT_LIMIT}`;
+  return rows.map((row) => row.id);
 }

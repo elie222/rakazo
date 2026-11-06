@@ -1,19 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { PaymentWalletStatus } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-} from "@rakazo/ui-web";
+import { Button } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
 import { useState } from "react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
@@ -72,7 +64,7 @@ export function PaymentWalletSettingsPanel({
   return (
     <div data-testid="payment-wallet-settings" className="space-y-3">
       {shownError ? (
-        <p role="alert" className="text-[13px] text-destructive">
+        <p role="alert" className="text-body-sm text-destructive">
           {shownError}
         </p>
       ) : null}
@@ -85,7 +77,7 @@ export function PaymentWalletSettingsPanel({
                 {status.status === "connecting" ? (
                   <p
                     data-testid="payment-wallet-code"
-                    className="mt-1 font-mono text-[20px] tracking-[0.2em] text-foreground"
+                    className="mt-1 font-mono text-heading2 tracking-[0.2em] text-foreground"
                   >
                     {status.userCode}
                   </p>
@@ -128,26 +120,13 @@ export function PaymentWalletSettingsPanel({
         </SettingsGroup>
       ) : null}
       {confirming ? (
-        <AlertDialog
-          open
-          onOpenChange={(open) => {
-            if (!open && !pending) setConfirming(false);
-          }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t`Disconnect ${name}?`}</AlertDialogTitle>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={pending}>
-                <Trans>Cancel</Trans>
-              </AlertDialogCancel>
-              <AlertDialogAction variant="destructive" disabled={pending} onClick={disconnect}>
-                <Trans>Disconnect</Trans>
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmDialog
+          onCancel={() => setConfirming(false)}
+          title={t`Disconnect ${name}?`}
+          busy={pending}
+          onConfirm={disconnect}
+          confirmLabel={<Trans>Disconnect</Trans>}
+        />
       ) : null}
     </div>
   );

@@ -1,11 +1,10 @@
 import type { ProductEvent, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
-import { foldPeerReplies } from "@rakazo/core";
+import { foldPeerReplies, reduceThreadSnapshot } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { DEFAULT_BOT_AVATAR_COLOR } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { useMemo, useRef } from "react";
 import { rpc } from "../../src/lib/rpc";
-import { reduceThreadSnapshot } from "../../src/lib/thread-events";
 import { Transcript } from "../../src/pages/shell/transcript";
 
 export const BOT = { botId: "bot-1", name: "Chief", color: DEFAULT_BOT_AVATAR_COLOR };
@@ -78,6 +77,7 @@ export function FixtureTranscript({
         scrollRequest={null}
         onScrollRequestHandled={noop}
         followRequest={0}
+        callHoldsSpeaker={false}
         artifactTarget={{ botId: BOT.botId }}
         transcript={transcript}
         showToolActivity={showToolActivity}

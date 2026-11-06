@@ -136,6 +136,7 @@ async function runTurn({
     {
       $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
       user: { findUnique: vi.fn(async () => null) },
+      spaceMember: { findUnique: async () => ({ id: "member-1" }) },
       run: {
         findUnique: vi.fn(async () => run),
         findUniqueOrThrow: vi.fn(async () => run),
@@ -220,6 +221,12 @@ async function runTurn({
       { userId: USER_ID, role: "main", position: 1, thinkingLevel: null, ...BACKUP },
     ],
   );
+  // The run's lease runs in a transaction too.
+  Object.assign(tx, {
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
+    run: prisma.run,
+  });
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const executor = createRunExecutor({
     prisma,

@@ -5,13 +5,6 @@ import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { deriveMcpSlug, isRetryableError } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Button,
   Checkbox,
   Dialog,
@@ -41,6 +34,7 @@ import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Ellipsis, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorNotice } from "../components/ErrorNotice";
 import type { AgentAccess } from "../components/integrations/agent-access";
 import { AgentAccessControl } from "../components/integrations/agent-access";
@@ -501,7 +495,7 @@ export function McpServersOverlay({
               <ChevronLeft />
             </Button>
           ) : null}
-          <h3 className="text-[17px] font-medium text-foreground">
+          <h3 className="text-heading3 font-medium text-foreground">
             {editing ? editing.name : <Trans>Add server</Trans>}
           </h3>
         </div>
@@ -571,7 +565,7 @@ export function McpServersOverlay({
             onOpenChange={setAdvancedOpen}
             className="group rounded-xl border border-border"
             summary={<Trans>Advanced</Trans>}
-            summaryClassName="w-full flex items-center justify-between px-3 py-2.5 text-sm text-foreground"
+            summaryClassName="w-full flex items-center justify-between px-3 py-2.5 text-body text-foreground"
           >
             <div className="space-y-4 border-t border-border p-3">
               <Field>
@@ -657,7 +651,7 @@ export function McpServersOverlay({
                           aria-label={t`Value`}
                           autoComplete="off"
                           spellCheck={false}
-                          className="col-span-full min-h-24 font-mono text-xs"
+                          className="col-span-full min-h-24 font-mono text-label"
                           value={row.value}
                           onChange={(e) =>
                             updateEnvRow(row.id, {
@@ -683,7 +677,7 @@ export function McpServersOverlay({
                     <Trans>Add</Trans>
                   </Button>
                   {oauthClientId.trim() ? (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                       <Trans>Use {oauthEnvReference} for the access token.</Trans>
                     </p>
                   ) : null}
@@ -844,14 +838,14 @@ export function McpServersOverlay({
       >
         <div className="min-w-0 space-y-0.5">
           <div className="flex items-baseline gap-2">
-            <span className="truncate text-sm font-medium text-foreground">{server.name}</span>
+            <span className="truncate text-body font-medium text-foreground">{server.name}</span>
             {working && server.health.toolCount !== null ? (
-              <span className="shrink-0 text-xs text-muted-foreground">
+              <span className="shrink-0 text-label text-muted-foreground">
                 <Plural value={server.health.toolCount} one="# tool" other="# tools" />
               </span>
             ) : null}
           </div>
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="truncate text-label text-muted-foreground">
             {server.endpoint ?? server.command ?? server.slug}
           </p>
           <McpServerHealthLine health={server.health} checking={testing} />
@@ -963,35 +957,18 @@ export function McpServersOverlay({
           )}
         </div>
         {deleting ? (
-          <AlertDialog
-            open
-            onOpenChange={(open) => {
-              if (!open) setDeleting(null);
-            }}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {reachesOtherSpaces(deleting.availability, spaceCount) ? (
-                    <Trans>Remove from every space?</Trans>
-                  ) : (
-                    t`Delete ${deleting.name}?`
-                  )}
-                </AlertDialogTitle>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>
-                  <Trans>Cancel</Trans>
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  variant="destructive"
-                  onClick={() => void deleteServer(deleting)}
-                >
-                  <Trans>Delete</Trans>
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <ConfirmDialog
+            onCancel={() => setDeleting(null)}
+            title={
+              reachesOtherSpaces(deleting.availability, spaceCount) ? (
+                <Trans>Remove from every space?</Trans>
+              ) : (
+                t`Delete ${deleting.name}?`
+              )
+            }
+            onConfirm={() => void deleteServer(deleting)}
+            confirmLabel={<Trans>Delete</Trans>}
+          />
         ) : null}
       </DialogContent>
     </Dialog>

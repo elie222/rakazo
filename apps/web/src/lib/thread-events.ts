@@ -1,60 +1,11 @@
 import type {
   ComputerStatus,
   ProductEvent,
-  Run,
   RunStatus,
-  RunTrigger,
-  ThreadMessage,
   ThreadMessagePage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { RUN_TRIGGERS } from "@rakazo/contracts";
-import {
-  isActive,
-  isBackgroundRunTrigger,
-  isRunTerminalEvent,
-  mergeThreadHistory,
-  prependThreadHistoryPage,
-  progressMessageId,
-  QUEUE_HOLDING_RUN_STATUSES,
-  reduceLiveMessageBlocks,
-  replyMetadata,
-  runFailureError,
-  settleRunSubagents,
-  stopsRunHelpers,
-  subagentBlockFromPayload,
-  takeLiveMessage,
-  updateCloudAgentMessages,
-  upsertMessageById,
-} from "@rakazo/core";
-
-const runTriggers = new Set<string>(RUN_TRIGGERS);
-
-function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Run {
-  const trigger = event.payload.trigger;
-  return {
-    id: event.runId ?? previous?.id ?? event.id,
-    botId: event.botId,
-    threadId: event.threadId,
-    taskId: previous?.taskId ?? event.runId ?? event.id,
-    userId: previous?.userId,
-    status: "running",
-    trigger:
-      typeof trigger === "string" && runTriggers.has(trigger)
-        ? (trigger as RunTrigger)
-        : (previous?.trigger ?? "user"),
-    routineId:
-      typeof event.payload.routineId === "string"
-        ? event.payload.routineId
-        : (previous?.routineId ?? null),
-    modelProvider: previous?.modelProvider ?? null,
-    modelId: previous?.modelId ?? null,
-    error: null,
-    startedAt: previous?.startedAt ?? event.createdAt,
-    completedAt: null,
-    createdAt: previous?.createdAt ?? event.createdAt,
-  };
-}
+import { activeThreadRuns, isActive, prependThreadHistoryPage } from "@rakazo/core";
 
 const computerStates: ReadonlySet<unknown> = new Set<ComputerStatus["state"]>([
   "stopped",
@@ -63,60 +14,6 @@ const computerStates: ReadonlySet<unknown> = new Set<ComputerStatus["state"]>([
   "suspended",
   "error",
 ]);
-
-export function activeThreadRuns(
-  snapshot: ThreadSnapshot | null,
-): NonNullable<ThreadSnapshot["activeRuns"]> {
-  return snapshot?.activeRuns ?? (snapshot?.run ? [snapshot.run] : []);
-}
-
-/**
- * Reflect a committed direct-message send before its follow-up snapshot arrives.
- *
- * threads.send returns only after the message and run are durable. Keeping that
- * receipt prevents a transient snapshot/SSE interruption from showing a stored
- * user bubble with no working state. A matching live run always wins, and the
- * next durable event or refresh still supplies the authoritative status.
- */
-export function applyThreadSendReceipt(
-  snapshot: ThreadSnapshot | null,
-  receipt: { botId: string; runId: string; taskId: string; createdAt?: string },
-  terminalRunIds: ReadonlySet<string> = new Set(),
-): ThreadSnapshot | null {
-  if (
-    !snapshot ||
-    snapshot.groupId ||
-    snapshot.botId !== receipt.botId ||
-    snapshot.run?.id === receipt.runId ||
-    terminalRunIds.has(receipt.runId)
-  ) {
-    return snapshot;
-  }
-  const currentRuns = activeThreadRuns(snapshot);
-  if (currentRuns.some((run) => QUEUE_HOLDING_RUN_STATUSES.some((s) => s === run.status)))
-    return snapshot;
-  const createdAt = receipt.createdAt ?? new Date().toISOString();
-  const run: Run = {
-    id: receipt.runId,
-    botId: receipt.botId,
-    threadId: snapshot.threadId,
-    taskId: receipt.taskId,
-    status: "queued",
-    trigger: "user",
-    routineId: null,
-    modelProvider: null,
-    modelId: null,
-    error: null,
-    startedAt: null,
-    completedAt: null,
-    createdAt,
-  };
-  return {
-    ...snapshot,
-    run,
-    activeRuns: [...currentRuns.filter((r) => isActive(r.status as RunStatus)), run],
-  };
-}
 
 /** Reason the newest run stopped, until the reader dismisses that run's failure. */
 export function threadRunError(
@@ -145,100 +42,6 @@ export function clearActiveThreadRuns(snapshot: ThreadSnapshot): ThreadSnapshot 
   };
 }
 
-export function mergeThreadSnapshot(
-  prev: ThreadSnapshot | null,
-  next: ThreadSnapshot,
-  preserveLoadedHistory = false,
-): ThreadSnapshot {
-  // A threads.get started before SSE caught up must not wipe newer live state
-  // (e.g. ask cards applied after send's post-refresh request was already in flight).
-  if (prev && prev.threadId === next.threadId && prev.cursor > next.cursor) return prev;
-  return mergeThreadHistory(prev, next, preserveLoadedHistory);
-}
-
-/**
- * Apply a threads.get refresh without clobbering newer event-sourced takeover state.
- *
- * A refresh that started earlier can still return running+busyBotName after the client
- * already applied waiting_takeover. That stale snapshot shares the cursor already applied.
- * A newer cursor is the release (or a later run) and replaces the waiting status.
- * Cursor comparisons only apply within the same thread.
- * Stop clears run/busy optimistically in the shell so an in-flight refresh cannot revive
- * the run before its run.cancelled event lands; an older-cursor refresh must keep that
- * cleared local state (see Shell stopRun).
- */
-export function reconcileRefreshedThread(
-  prev: ThreadSnapshot | null,
-  snap: ThreadSnapshot,
-  prevComputer: ComputerStatus | null,
-  preserveLoadedHistory = false,
-): { snapshot: ThreadSnapshot; computer: ComputerStatus | null } {
-  const sameThread = Boolean(prev && prev.threadId === snap.threadId);
-
-  if (sameThread && prev && snap.cursor < prev.cursor) {
-    // A subscription can advance the cursor with progress before the send-triggered refresh
-    // returns the new run record. Hydrate that matching run without rolling the transcript back.
-    // Optimistic stop removes the matching progress message, so an older refresh cannot revive it.
-    const refreshedRun = snap.run;
-    const hasMatchingLiveProgress = Boolean(
-      refreshedRun &&
-        prev.messages.some(
-          (message) =>
-            message.runId === refreshedRun.id && message.id === `progress:${refreshedRun.id}`,
-        ),
-    );
-    if (!prev.run && refreshedRun && hasMatchingLiveProgress) {
-      return {
-        snapshot: {
-          ...prev,
-          run: refreshedRun,
-          activeRuns: snap.activeRuns,
-          computer: snap.computer,
-        },
-        computer: snap.computer ?? null,
-      };
-    }
-    // Progress can advance the thread cursor while embedded computer status from threads.get
-    // is still useful — but only while a live run remains. Preserve event-sourced
-    // waiting_takeover clears and optimistic stop clears.
-    const preserveLocalComputer =
-      prev.run?.status === "waiting_takeover" ||
-      !prev.run ||
-      !isActive(prev.run.status as RunStatus);
-    return {
-      snapshot: prev,
-      computer: preserveLocalComputer ? prevComputer : (snap.computer ?? null),
-    };
-  }
-
-  let snapshot = mergeThreadSnapshot(prev, snap, preserveLoadedHistory);
-  let computer = snap.computer ?? null;
-
-  const localWaiting =
-    sameThread &&
-    prev?.cursor === snapshot.cursor &&
-    prev?.run?.status === "waiting_takeover" &&
-    snapshot.run?.id === prev.run.id &&
-    snapshot.run.status !== "waiting_takeover" &&
-    isActive(snapshot.run.status as RunStatus);
-
-  if (localWaiting && snapshot.run) {
-    const runId = snapshot.run.id;
-    snapshot = {
-      ...snapshot,
-      run: { ...snapshot.run, status: "waiting_takeover" },
-      activeRuns: snapshot.activeRuns?.map((run) =>
-        run.id === runId ? { ...run, status: "waiting_takeover" } : run,
-      ),
-    };
-    if (computer?.busyBotName) computer = { ...computer, busyBotName: null };
-  } else if (snapshot.run?.status === "waiting_takeover" && computer?.busyBotName) {
-    computer = { ...computer, busyBotName: null };
-  }
-
-  return { snapshot, computer };
-}
-
 export function prependThreadMessagePage(
   prev: ThreadSnapshot | null,
   page: ThreadMessagePage,
@@ -246,347 +49,19 @@ export function prependThreadMessagePage(
   return prependThreadHistoryPage(prev, page);
 }
 
-export function isThreadSnapshotEvent(event: ProductEvent): boolean {
-  return (
-    event.type === "thread.cleared" ||
-    event.type === "thread.progress" ||
-    event.type === "thread.subagent" ||
-    event.type === "thread.cloud_agent" ||
-    event.type === "agent.tool.called" ||
-    event.type === "agent.tool.completed" ||
-    event.type === "thread.message.created" ||
-    event.type === "thread.message.updated" ||
-    event.type === "thread.message.reaction" ||
-    event.type === "run.started" ||
-    event.type === "run.waiting_input" ||
-    event.type === "computer.takeover.requested" ||
-    event.type === "computer.takeover.released" ||
-    isRunTerminalEvent(event)
-  );
-}
-
-export function reduceThreadSnapshot(
-  prev: ThreadSnapshot | null,
-  event: ProductEvent,
-): ThreadSnapshot | null {
-  if (!prev) return prev;
-  if (stopsRunHelpers(event)) {
-    const messages = settleRunSubagents(prev.messages, event.runId);
-    if (messages !== prev.messages) prev = { ...prev, messages };
-  }
-
-  if (event.type === "thread.cleared") {
-    return {
-      ...prev,
-      cursor: event.seq,
-      messages: [],
-      olderCursor: null,
-      run: null,
-      activeRuns: [],
-    };
-  }
-  if (event.type === "run.started") {
-    // Background runs (ticket work) stay invisible in the transcript; the server
-    // already filters their events and snapshots, this guards a late arrival.
-    if (isBackgroundRunTrigger(event.payload.trigger as string | undefined)) {
-      return { ...prev, cursor: event.seq };
-    }
-    if (!event.runId) {
-      return {
-        ...prev,
-        cursor: event.seq,
-        members: updateMemberStatus(prev.members, event.botId, "running"),
-      };
-    }
-    const previousRun =
-      prev.activeRuns?.find((candidate) => candidate.id === event.runId) ??
-      (prev.run?.id === event.runId ? prev.run : undefined);
-    const run = runFromStartedEvent(event, previousRun);
-    if (!run.userId && prev.run?.id === run.id) run.userId = prev.run.userId;
-    const without = (prev.activeRuns ?? (prev.run ? [prev.run] : [])).filter(
-      (candidate) => candidate.id !== run.id,
-    );
-    // Paused cards remain answerable when new work starts in any thread.
-    const activeRuns = [...without.filter((r) => isActive(r.status as RunStatus)), run];
-    return {
-      ...prev,
-      cursor: event.seq,
-      members: updateMemberStatus(prev.members, event.botId, "running"),
-      // A group failure lives only in run; keep it until dismiss so a late member start
-      // cannot wipe the banner (activeRuns still tracks the new work).
-      run: prev.groupId && prev.run?.status === "failed" && prev.run.id !== run.id ? prev.run : run,
-      activeRuns,
-    };
-  }
-  if (event.type === "run.waiting_input" || event.type === "computer.takeover.requested") {
-    const status = event.type === "run.waiting_input" ? "waiting_input" : "waiting_takeover";
-    const runId = event.runId;
-    const userId =
-      event.type === "run.waiting_input" &&
-      typeof event.payload.userId === "string" &&
-      event.payload.userId.length > 0
-        ? event.payload.userId
-        : undefined;
-    const knownInRun = Boolean(runId && prev.run?.id === runId);
-    const knownInActive = Boolean(
-      runId && prev.activeRuns?.some((candidate) => candidate.id === runId),
-    );
-    // Peer bot_message runs are omitted from snapshots while busy; the first wait
-    // event is how an open thread learns they need ask/takeover UI.
-    const needsInsert = Boolean(runId) && !knownInRun && !knownInActive;
-    const runChanged = Boolean(
-      knownInRun &&
-        prev.run &&
-        (prev.run.status !== status || (userId && prev.run.userId !== userId)),
-    );
-    const activeRunChanged = Boolean(
-      knownInActive &&
-        prev.activeRuns?.some(
-          (candidate) =>
-            candidate.id === runId &&
-            (candidate.status !== status || (userId && candidate.userId !== userId)),
-        ),
-    );
-    const members = updateMemberStatus(prev.members, event.botId, status);
-    // Ask pauses delete progress events server-side; drop the live bubble so a missed
-    // message.created cannot leave "working…" stuck next to waiting_input.
-    const liveId = progressMessageId(event);
-    const messages =
-      event.type === "run.waiting_input" && prev.messages.some((message) => message.id === liveId)
-        ? prev.messages.filter((message) => message.id !== liveId)
-        : prev.messages;
-    if (
-      !runChanged &&
-      !activeRunChanged &&
-      !needsInsert &&
-      members === prev.members &&
-      messages === prev.messages
-    ) {
-      return prev;
-    }
-    if (needsInsert && runId) {
-      const waitingRun: Run = {
-        id: runId,
-        botId: event.botId,
-        threadId: event.threadId,
-        taskId: runId,
-        ...(userId ? { userId } : {}),
-        status,
-        trigger: "bot_message",
-        routineId: null,
-        modelProvider: null,
-        modelId: null,
-        error: null,
-        startedAt: event.createdAt,
-        completedAt: null,
-        createdAt: event.createdAt,
-      };
-      const baseActive = prev.activeRuns ?? (prev.run ? [prev.run] : []);
-      const activeRuns = [...baseActive.filter((candidate) => candidate.id !== runId), waitingRun];
-      const promoteWaiting =
-        !prev.run ||
-        (prev.run.status !== "waiting_input" && prev.run.status !== "waiting_takeover");
-      return {
-        ...prev,
-        cursor: event.seq,
-        members,
-        messages,
-        run: promoteWaiting ? waitingRun : prev.run,
-        activeRuns,
-      };
-    }
-    return {
-      ...prev,
-      cursor: event.seq,
-      members,
-      messages,
-      run:
-        runChanged && prev.run ? { ...prev.run, status, ...(userId ? { userId } : {}) } : prev.run,
-      activeRuns: activeRunChanged
-        ? prev.activeRuns?.map((candidate) =>
-            candidate.id === runId
-              ? { ...candidate, status, ...(userId ? { userId } : {}) }
-              : candidate,
-          )
-        : prev.activeRuns,
-    };
-  }
-  if (event.type === "computer.takeover.released") {
-    const runId = event.runId;
-    const settle = <T extends { id: string; status: string }>(candidate: T): T =>
-      runId && candidate.id === runId && candidate.status === "waiting_takeover"
-        ? { ...candidate, status: "queued" }
-        : candidate;
-    const nextRun = prev.run ? settle(prev.run) : prev.run;
-    const activeChanged = Boolean(
-      runId &&
-        prev.activeRuns?.some(
-          (candidate) => candidate.id === runId && candidate.status === "waiting_takeover",
-        ),
-    );
-    const nextActive = activeChanged ? prev.activeRuns?.map(settle) : prev.activeRuns;
-    const releasedWaiting = nextRun !== prev.run || activeChanged;
-    const members =
-      releasedWaiting &&
-      prev.members?.some(
-        (member) => member.botId === event.botId && member.status === "waiting_takeover",
-      )
-        ? updateMemberStatus(prev.members, event.botId, "queued")
-        : prev.members;
-    if (!releasedWaiting && members === prev.members) {
-      return prev.cursor === event.seq ? prev : { ...prev, cursor: event.seq };
-    }
-    return {
-      ...prev,
-      cursor: event.seq,
-      members,
-      run: nextRun,
-      activeRuns: nextActive,
-    };
-  }
-  if (isRunTerminalEvent(event)) {
-    const activeRuns = prev.activeRuns?.filter((candidate) => candidate.id !== event.runId);
-    const nextMemberRun = activeRuns?.find((candidate) => candidate.botId === event.botId);
-    const failure = runFailureError(event);
-    const primaryEnded = prev.run?.id === event.runId ? prev.run : null;
-    // In a group the failing run may be a member run rather than the displayed one, so look
-    // it up in activeRuns as well or its error would be dropped with it.
-    const endedRun =
-      primaryEnded ?? prev.activeRuns?.find((candidate) => candidate.id === event.runId) ?? null;
-    return {
-      ...prev,
-      cursor: event.seq,
-      messages: prev.messages.filter((message) => message.id !== progressMessageId(event)),
-      members: updateMemberStatus(prev.members, event.botId, nextMemberRun?.status ?? "idle"),
-      // A failed run stays in run (activeRuns already excludes it) so the transcript can say
-      // why it stopped, matching what threads.get returns on the next load.
-      run:
-        endedRun && failure
-          ? { ...endedRun, status: "failed", error: failure }
-          : primaryEnded
-            ? (activeRuns?.[0] ?? null)
-            : prev.run,
-      activeRuns,
-    };
-  }
-  if (event.type === "thread.progress") {
-    const liveId = progressMessageId(event);
-    const { previous, remaining } = takeLiveMessage(prev.messages, liveId);
-    const blocks = reduceLiveMessageBlocks(previous?.blocks ?? [], {
-      type: "progress",
-      payload: event.payload,
-    });
-    const streaming: ThreadMessage = {
-      id: liveId,
-      threadId: event.threadId,
-      seq: event.seq,
-      role: "bot",
-      blocks,
-      botId: event.botId,
-      runId: event.runId,
-      createdAt: event.createdAt,
-    };
-    return { ...prev, cursor: event.seq, messages: [...remaining, streaming] };
-  }
-  if (event.type === "agent.tool.called") {
-    const liveId = progressMessageId(event);
-    const { previous, remaining } = takeLiveMessage(prev.messages, liveId);
-    const blocks = reduceLiveMessageBlocks(previous?.blocks ?? [], {
-      type: "tool",
-      name: String(event.payload.name ?? ""),
-    });
-    const next: ThreadMessage = {
-      id: liveId,
-      threadId: event.threadId,
-      seq: event.seq,
-      role: "bot",
-      blocks,
-      botId: event.botId,
-      runId: event.runId,
-      createdAt: event.createdAt,
-    };
-    return { ...prev, cursor: event.seq, messages: [...remaining, next] };
-  }
-  if (event.type === "agent.tool.completed") {
-    return { ...prev, cursor: event.seq };
-  }
-  if (event.type === "thread.subagent") {
-    const block = subagentBlockFromPayload(event.payload);
-    const next: ThreadMessage = {
-      id: `subagent:${block.agentId}`,
-      threadId: event.threadId,
-      seq: event.seq,
-      role: "bot",
-      blocks: [block],
-      botId: event.botId,
-      runId: event.runId,
-      createdAt: event.createdAt,
-    };
-    const without: ThreadMessage[] = [];
-    const kept: ThreadMessage[] = [];
-    for (const message of prev.messages) {
-      if (message.id === next.id) continue;
-      if (message.id.startsWith("progress:")) {
-        if (message.runId) kept.push(message);
-      } else {
-        without.push(message);
-      }
-    }
-    return { ...prev, cursor: event.seq, messages: [...without, next, ...kept] };
-  }
-
-  if (event.type === "thread.cloud_agent") {
-    return {
-      ...prev,
-      cursor: event.seq,
-      messages: updateCloudAgentMessages(prev.messages, event.payload ?? {}),
-    };
-  }
-  if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
-    const role = (event.payload.role as ThreadMessage["role"]) ?? "bot";
-    const blocks = (event.payload.blocks as ThreadMessage["blocks"]) ?? [];
-    const id = String(event.payload.messageId ?? event.id);
-    const known = prev.messages.find((message) => message.id === id);
-    const next: ThreadMessage = {
-      id,
-      threadId: event.threadId,
-      seq: event.seq,
-      role,
-      blocks,
-      botId: event.botId,
-      runId: event.runId,
-      callId: typeof event.payload.callId === "string" ? event.payload.callId : known?.callId,
-      ...replyMetadata(event.payload, known),
-      createdAt: known?.createdAt ?? event.createdAt,
-    };
-    const replacedSubagentIds = new Set(
-      blocks.filter((block) => block.kind === "subagent").map((block) => block.agentId),
-    );
-    const liveId = progressMessageId(event);
-    const { remaining } = takeLiveMessage(prev.messages, liveId);
-    const without = remaining.filter((message) => !replacedSubagent(message, replacedSubagentIds));
-    return { ...prev, cursor: event.seq, messages: upsertMessageById(without, next) };
-  }
-  return prev;
-}
-
-function updateMemberStatus(
-  members: ThreadSnapshot["members"],
-  botId: string,
-  status: string,
-): ThreadSnapshot["members"] {
-  const member = members?.find((candidate) => candidate.botId === botId);
-  if (!member || member.status === status) return members;
-  return members?.map((candidate) =>
-    candidate.botId === botId ? { ...candidate, status } : candidate,
-  );
-}
-
 export function userHoldsComputerControl(
-  computer: Pick<ComputerStatus, "controlHolder" | "controlBotId"> | null | undefined,
+  computer:
+    | Pick<ComputerStatus, "controlHolder" | "controlBotId" | "controlledByOther">
+    | null
+    | undefined,
   botId: string | undefined,
 ): boolean {
-  return Boolean(botId && computer?.controlHolder === "user" && computer.controlBotId === botId);
+  return Boolean(
+    botId &&
+      computer?.controlHolder === "user" &&
+      computer.controlBotId === botId &&
+      !computer.controlledByOther,
+  );
 }
 
 /** True when a live bot run is blocking Take control (API would return 409). */
@@ -663,7 +138,8 @@ export function reduceComputerStatus(
     return prev.controlHolder === holder &&
       prev.controlBotId === null &&
       !prev.takeoverRequested &&
-      prev.busyBotName === null
+      prev.busyBotName === null &&
+      !prev.controlledByOther
       ? prev
       : {
           ...prev,
@@ -671,6 +147,7 @@ export function reduceComputerStatus(
           controlBotId: null,
           takeoverRequested: false,
           busyBotName: null,
+          controlledByOther: undefined,
         };
   }
   const status = event.payload.status;
@@ -695,11 +172,6 @@ export function isComputerStatusEvent(event: ProductEvent): boolean {
 
 function isComputerState(value: unknown): value is ComputerStatus["state"] {
   return computerStates.has(value);
-}
-
-function replacedSubagent(message: ThreadMessage, agentIds: ReadonlySet<string>) {
-  if (agentIds.size === 0) return false;
-  return message.blocks.some((block) => block.kind === "subagent" && agentIds.has(block.agentId));
 }
 
 export function screenMissing(options: {

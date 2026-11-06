@@ -36,8 +36,8 @@ export function VaultPageHeader({
       </Button>
       {leading}
       <div className="min-w-0">
-        <h3 className="truncate text-[16px] font-medium text-foreground">{title}</h3>
-        {subtitle ? <p className="text-[12.5px] text-muted-foreground">{subtitle}</p> : null}
+        <h3 className="truncate text-body-lg font-medium text-foreground">{title}</h3>
+        {subtitle ? <p className="text-body-sm text-muted-foreground">{subtitle}</p> : null}
       </div>
     </div>
   );

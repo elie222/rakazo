@@ -7,7 +7,11 @@ function ownBotUpdateCall() {
     deps: {
       prisma: {
         bot: {
-          findUnique: async () => ({ fleetManagement: true }),
+          findUnique: async () => ({
+            fleetManagement: true,
+            modelProvider: "openrouter",
+            modelId: "current-model",
+          }),
           findUniqueOrThrow: async () => ({ instructions: "" }),
         },
       },

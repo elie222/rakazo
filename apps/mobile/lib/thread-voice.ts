@@ -7,7 +7,12 @@ import type { ApiRequestContext, MobileBot, MobileMessage, MobileSnapshot } from
 import { blockText, captureApiRequestContext, rpc } from "./api";
 import { nextAutoSpeakAction } from "./auto-speak";
 import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "./bot-switch";
-import { setCallProviderTranscribe, startCall } from "./call-session";
+import {
+  getSnapshot as getCallSnapshot,
+  setCallProviderTranscribe,
+  startCall,
+} from "./call-session";
+import { loadCallGreetingEnabled } from "./call-sounds";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { available as dictationAvailable } from "./dictation";
 import { useI18n } from "./i18n";
@@ -58,6 +63,8 @@ export function useAutoSpeakReply({
     const decision = nextAutoSpeakAction({
       botId: currentBot.id,
       autoSpeak: currentBot.autoSpeak,
+      // An active call owns the speaker; the gate only seeds while it lasts.
+      callActive: getCallSnapshot() !== null,
       focused: AppState.currentState === "active" && navigation.isFocused(),
       snapshotReady: snap?.botId === currentBot.id && !showingSaved,
       lastSpokenBotId: autoSpokenBotId.current,
@@ -123,6 +130,8 @@ export function useSpeakMessages({
   const router = useRouter();
   return useCallback(
     (message: MobileMessage) => {
+      // An active call owns the speaker; a manual read must not cut into it.
+      if (getCallSnapshot()) return;
       const startIndex = visibleMessages.findIndex((candidate) => candidate.id === message.id);
       const fromHere = startIndex === -1 ? [message] : visibleMessages.slice(startIndex);
       const items = fromHere.flatMap((candidate) => {
@@ -205,13 +214,14 @@ export function useThreadVoiceCall({
     voiceCallStarting.current = true;
     const loadVoiceStatus = () => rpc("voice/status");
     try {
-      const [plan, callerName] = await Promise.all([
+      const [plan, callerName, greet] = await Promise.all([
         resolveVoiceCallPlan({
           loadDeviceVoiceEnabled,
           dictationAvailable,
           loadVoiceStatus,
         }),
         loadCallCallerName(() => rpc("me")),
+        loadCallGreetingEnabled().catch(() => true),
       ]);
       if (activeBotId.current !== targetBotId) return;
       if (plan.kind === "settings") {
@@ -239,7 +249,7 @@ export function useThreadVoiceCall({
         botColor: mentionBots.find((bot) => bot.id === targetBotId)?.color,
         botAvatarSet: mentionBots.find((bot) => bot.id === targetBotId)?.avatarSet,
         transcribe: plan.transcribe,
-        greeting: callGreeting(botName, callerName, switchedHere),
+        greeting: greet ? callGreeting(botName, callerName, switchedHere) : undefined,
         session: setupSession,
         requestContext,
         switchBot: (text) => {

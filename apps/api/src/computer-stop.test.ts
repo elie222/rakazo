@@ -67,6 +67,7 @@ describe("Stop during a computer reconnect", () => {
       });
       const stop = vi.spyOn(sandbox, "stop");
       const prisma = {
+        spaceMember: { count: vi.fn(async () => 1) },
         bot: {
           findFirst: vi.fn(async () => ({
             id: "bot",

@@ -4,19 +4,21 @@ import type {
   ModelCatalogEntry,
   ModelCredential,
   Routine,
+  RoutineEmailSenders,
   RoutineWatch,
   RoutineWatchInput,
 } from "@rakazo/contracts";
 import { ROUTINE_WATCH_DEFAULT_MINUTES, ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
-import type { CronFreq, CronLabels, CronPreset } from "@rakazo/core";
+import type { CronFreq, CronLabels, CronPreset, RoutineDraft } from "@rakazo/core";
 import {
   credentialForModel,
   cronFromPreset,
   defaultCronPreset,
+  draftFromRoutine,
   ENGLISH_CRON_LABELS,
+  emptyRoutineDraft,
   formatCron,
   isOneShotRoutineCrons,
-  presetFromCron,
 } from "@rakazo/core";
 import {
   Button,
@@ -43,6 +45,7 @@ import {
   Eye,
   GitBranch,
   Globe,
+  Mail,
   MessageSquare,
   Pause,
   Plus,
@@ -50,6 +53,8 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { BotEmailAddressField } from "../components/BotEmailAddressField";
+import { authClient } from "../lib/auth";
 import { cronLabels } from "../lib/cron";
 import {
   connectedModelOptions,
@@ -88,14 +93,10 @@ const SCHEDULE_PRESETS: CronFreq[] = [
   "Advanced",
 ];
 
-export type RoutineDraftState = {
-  name: string;
-  prompt: string;
-  schedules: CronPreset[];
+export type RoutineDraftState = RoutineDraft & {
   webhookEnabled: boolean;
   githubEnabled: boolean;
   messageProvider: string | null;
-  active: boolean;
   runAtLocal: string;
   /** Empty runs this routine on the bot's model. */
   modelKey: string;
@@ -183,15 +184,12 @@ export function watchFromDraft(
   };
 }
 
-export function emptyRoutineDraft(): RoutineDraftState {
+export function emptyRoutineDraftState(): RoutineDraftState {
   return {
-    name: "",
-    prompt: "",
-    schedules: [],
+    ...emptyRoutineDraft(),
     webhookEnabled: false,
     githubEnabled: false,
     messageProvider: null,
-    active: true,
     runAtLocal: "",
     modelKey: "",
     thinkingLevel: "",
@@ -199,15 +197,12 @@ export function emptyRoutineDraft(): RoutineDraftState {
   };
 }
 
-export function draftFromRoutine(routine: Routine): RoutineDraftState {
+export function draftStateFromRoutine(routine: Routine): RoutineDraftState {
   return {
-    name: routine.name,
-    prompt: routine.prompt,
-    schedules: routine.crons.map(presetFromCron),
+    ...draftFromRoutine(routine),
     webhookEnabled: routine.webhookEnabled,
     githubEnabled: routine.githubEnabled,
     messageProvider: routine.messageProvider,
-    active: routine.active,
     runAtLocal: routineNeedsOneShotArm(routine, routine.crons) ? defaultArmRunAtLocal() : "",
     modelKey:
       routine.modelProvider && routine.modelId
@@ -229,6 +224,7 @@ export function routineTriggerSummary(
   if (routine.messageProvider === "slack") parts.push(t`Slack message`);
   else if (routine.messageProvider === "teams") parts.push(t`Teams message`);
   else if (routine.messageProvider) parts.push(t`Message event`);
+  if (routine.emailSenders) parts.push(t({ message: "Email", context: "routine trigger" }));
   for (const cron of routine.crons) parts.push(formatCron(cron, labels));
   if (routine.watch) parts.push(t`When something changes`);
   return parts.length > 0 ? parts.join(", ") : t`No trigger`;
@@ -303,10 +299,10 @@ function RoutineListRow({
           )}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14.5px] font-medium text-foreground" dir="auto">
+          <span className="block truncate text-body-lg font-medium text-foreground" dir="auto">
             {routine.name}
           </span>
-          <span className="flex min-w-0 gap-2 text-[12.5px] text-muted-foreground/80">
+          <span className="flex min-w-0 gap-2 text-body-sm text-muted-foreground/80">
             <span className="truncate">{routineTriggerSummary(routine, scheduleLabels)}</span>
             {routine.modelProvider && routine.modelId ? (
               <span className="truncate">{routine.modelId}</span>
@@ -316,7 +312,7 @@ function RoutineListRow({
       </button>
       {running ? (
         <>
-          <span className="shrink-0 text-[12.5px] text-warning">
+          <span className="shrink-0 text-body-sm text-warning">
             <Trans>Running</Trans>
           </span>
           <Button
@@ -333,6 +329,7 @@ function RoutineListRow({
 }
 
 export function RoutineEditor({
+  bot,
   draft,
   onChange,
   editing,
@@ -350,6 +347,7 @@ export function RoutineEditor({
   onDelete,
   onEnsureWebhook,
 }: {
+  bot: { id: string; name: string };
   draft: RoutineDraftState;
   onChange: (next: RoutineDraftState) => void;
   editing: Routine | null;
@@ -376,6 +374,8 @@ export function RoutineEditor({
     refetchInterval: 15_000,
     select: (routines) => routines.find((routine) => routine.id === editing?.id) ?? null,
   });
+  // Null when this server receives no email or the bot is another member's, which hides the trigger.
+  const email = useQuery(queries.bots.emailAddress.queryOptions({ input: { botId: bot.id } })).data;
   const scheduleDelayed =
     !scheduleStatus.isError &&
     (scheduleStatus.data === undefined
@@ -416,6 +416,7 @@ export function RoutineEditor({
     draft.webhookEnabled ||
     draft.githubEnabled ||
     Boolean(draft.messageProvider) ||
+    Boolean(draft.emailSenders) ||
     Boolean(draft.watch);
   const canTest = Boolean(editing) && !saving && !running;
   const needsOneShotArm =
@@ -458,7 +459,7 @@ export function RoutineEditor({
         >
           <ChevronLeft />
         </Button>
-        <div className="text-[15.5px] font-medium text-foreground">
+        <div className="text-body-lg font-medium text-foreground">
           <Trans>Routine</Trans>
         </div>
         <Button
@@ -475,7 +476,7 @@ export function RoutineEditor({
       <div className="mb-5 flex items-center justify-between gap-3">
         <label
           htmlFor={`${fieldId}-active`}
-          className="flex items-center gap-2.5 text-sm text-foreground/75"
+          className="flex items-center gap-2.5 text-body text-foreground/75"
         >
           <Switch
             id={`${fieldId}-active`}
@@ -495,12 +496,12 @@ export function RoutineEditor({
       </div>
 
       {draft.active && scheduleDelayed ? (
-        <p role="status" className="mb-5 text-sm text-warning">
+        <p role="status" className="mb-5 text-body text-warning">
           <Trans>Schedule delayed</Trans>
         </p>
       ) : null}
 
-      <label htmlFor={`${fieldId}-name`} className="block text-sm text-muted-foreground">
+      <label htmlFor={`${fieldId}-name`} className="block text-body text-muted-foreground">
         <Trans>Name</Trans>
         <Input
           id={`${fieldId}-name`}
@@ -511,7 +512,7 @@ export function RoutineEditor({
         />
       </label>
 
-      <label htmlFor={`${fieldId}-prompt`} className="mt-5 block text-sm text-muted-foreground">
+      <label htmlFor={`${fieldId}-prompt`} className="mt-5 block text-body text-muted-foreground">
         <Trans>Instruction</Trans>
         <Textarea
           id={`${fieldId}-prompt`}
@@ -523,10 +524,10 @@ export function RoutineEditor({
         />
       </label>
 
-      <div className="mt-5 text-sm text-muted-foreground">
+      <div className="mt-5 text-body text-muted-foreground">
         <div className="flex items-baseline gap-2">
           <Trans>When to run</Trans>
-          <span className="text-xs text-muted-foreground/70">{timezone}</span>
+          <span className="text-label text-muted-foreground/70">{timezone}</span>
           <Popover>
             <PopoverTrigger
               render={
@@ -548,7 +549,7 @@ export function RoutineEditor({
               ) : null}
             </PopoverTrigger>
             <PopoverContent align="end" className="w-96 max-w-[calc(100vw-2rem)] p-4">
-              <label htmlFor={`${fieldId}-model`} className="block text-sm text-muted-foreground">
+              <label htmlFor={`${fieldId}-model`} className="block text-body text-muted-foreground">
                 <Trans>Model</Trans>
                 <NativeSelect
                   id={`${fieldId}-model`}
@@ -576,7 +577,7 @@ export function RoutineEditor({
               {thinkingOptions.length ? (
                 <label
                   htmlFor={`${fieldId}-thinking`}
-                  className="mt-5 block text-sm text-muted-foreground"
+                  className="mt-5 block text-body text-muted-foreground"
                 >
                   <Trans>Thinking</Trans>
                   <NativeSelect
@@ -669,8 +670,21 @@ export function RoutineEditor({
             />
           ) : null}
 
+          {/* Shown without email too, so a server that stopped receiving mail still lets it go. */}
+          {draft.emailSenders ? (
+            <EmailTriggerCard
+              key={bot.id}
+              bot={bot}
+              domain={email?.domain ?? null}
+              address={email?.address ?? null}
+              senders={draft.emailSenders}
+              onChange={(emailSenders) => onChange({ ...draft, emailSenders })}
+              onRemove={() => onChange({ ...draft, emailSenders: null })}
+            />
+          ) : null}
+
           {needsOneShotArm ? (
-            <label htmlFor={`${fieldId}-run-at`} className="block text-sm text-muted-foreground">
+            <label htmlFor={`${fieldId}-run-at`} className="block text-body text-muted-foreground">
               <Trans>Run at</Trans>
               <Input
                 id={`${fieldId}-run-at`}
@@ -730,6 +744,16 @@ export function RoutineEditor({
               <Trans>When something changes</Trans>
             </DropdownMenuItem>
 
+            {email ? (
+              <DropdownMenuItem
+                disabled={Boolean(draft.emailSenders)}
+                onClick={() => onChange({ ...draft, emailSenders: "owner" })}
+              >
+                <Mail />
+                {t({ message: "Email", context: "routine trigger" })}
+              </DropdownMenuItem>
+            ) : null}
+
             <DropdownMenuItem disabled={draft.githubEnabled} onClick={() => void addGithub()}>
               <GitBranch />
               <Trans>Git event</Trans>
@@ -743,7 +767,7 @@ export function RoutineEditor({
         </DropdownMenu>
 
         {!hasTriggers ? (
-          <p className="mt-2 text-xs text-muted-foreground/70">
+          <p className="mt-2 text-label text-muted-foreground/70">
             <Trans>Add a trigger to run this routine.</Trans>
           </p>
         ) : null}
@@ -755,7 +779,7 @@ export function RoutineEditor({
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="mt-3 text-[13px] text-destructive">
+        <p role="alert" className="mt-3 text-body-sm text-destructive">
           {error}
         </p>
       ) : null}
@@ -789,7 +813,7 @@ function WatchTriggerCard({
     <div className="rounded-xl border border-border p-3" data-testid="routine-watch-card">
       <div className="flex items-center gap-2.5 px-0.5">
         <Eye size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
-        <span className="flex-1 text-[14.5px] text-foreground">
+        <span className="flex-1 text-body-lg text-foreground">
           <Trans>When something changes</Trans>
         </span>
         <Button
@@ -830,7 +854,7 @@ function WatchTriggerCard({
             placeholder="curl -s https://example.com/status"
             value={watch.command}
             onChange={(e) => onChange({ ...watch, command: e.target.value })}
-            className="font-mono text-[13px]"
+            className="font-mono text-body-sm"
           />
         ) : null}
         {watch.kind === "tool" ? (
@@ -840,14 +864,14 @@ function WatchTriggerCard({
               placeholder="brain_changed"
               value={watch.tool}
               onChange={(e) => onChange({ ...watch, tool: e.target.value })}
-              className="font-mono text-[13px]"
+              className="font-mono text-body-sm"
             />
             <Textarea
               aria-label={t`Tool arguments (JSON)`}
               value={watch.args}
               onChange={(e) => onChange({ ...watch, args: e.target.value })}
               rows={2}
-              className="font-mono text-[13px]"
+              className="font-mono text-body-sm"
             />
           </>
         ) : null}
@@ -857,12 +881,12 @@ function WatchTriggerCard({
             placeholder={t`Fields to compare, e.g. id, modifiedTime (optional)`}
             value={watch.track}
             onChange={(e) => onChange({ ...watch, track: e.target.value })}
-            className="font-mono text-[13px]"
+            className="font-mono text-body-sm"
           />
         ) : null}
         <label
           htmlFor={`${id}-every`}
-          className="flex items-center gap-2 text-[13.5px] text-muted-foreground"
+          className="flex items-center gap-2 text-body text-muted-foreground"
         >
           <Trans>Check every</Trans>
           <Input
@@ -892,7 +916,7 @@ function WatchTriggerCard({
         </label>
         <label
           htmlFor={`${id}-loud`}
-          className="flex items-center gap-2 text-[13.5px] text-muted-foreground"
+          className="flex items-center gap-2 text-body text-muted-foreground"
         >
           <Switch
             id={`${id}-loud`}
@@ -904,7 +928,7 @@ function WatchTriggerCard({
         {status ? (
           <p
             data-testid="routine-watch-status"
-            className={`text-[12.5px] ${state?.outcome === "failed" ? "text-destructive" : "text-muted-foreground/80"}`}
+            className={`text-body-sm ${state?.outcome === "failed" ? "text-destructive" : "text-muted-foreground/80"}`}
           >
             {status}
           </p>
@@ -926,7 +950,7 @@ function MessageTriggerCard({ provider, onRemove }: { provider: string; onRemove
     <div className="rounded-xl border border-border p-3">
       <div className="flex items-center gap-2.5 px-0.5">
         <MessageSquare size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
-        <span className="flex-1 text-[14.5px] text-foreground">{label}</span>
+        <span className="flex-1 text-body-lg text-foreground">{label}</span>
         <Button
           variant="ghost"
           size="icon-xs"
@@ -937,9 +961,66 @@ function MessageTriggerCard({ provider, onRemove }: { provider: string; onRemove
           <X />
         </Button>
       </div>
-      <p className="mt-2.5 text-[13.5px] text-muted-foreground/70">
+      <p className="mt-2.5 text-body text-muted-foreground/70">
         <Trans>Runs when this bot receives a verified message from this provider.</Trans>
       </p>
+    </div>
+  );
+}
+
+function EmailTriggerCard({
+  bot,
+  domain,
+  address,
+  senders,
+  onChange,
+  onRemove,
+}: {
+  bot: { id: string; name: string };
+  /** Null while loading, or when this server no longer receives email. */
+  domain: string | null;
+  address: string | null;
+  senders: RoutineEmailSenders;
+  onChange: (senders: RoutineEmailSenders) => void;
+  onRemove: () => void;
+}) {
+  const { t } = useLingui();
+  const ownerEmail = authClient.useSession().data?.user.email ?? "";
+  const ownerDomain = ownerEmail.slice(ownerEmail.lastIndexOf("@") + 1);
+
+  return (
+    <div className="rounded-xl border border-border p-3">
+      <div className="flex items-center gap-2.5 px-0.5">
+        <Mail size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
+        <span className="flex-1 text-body-lg text-foreground">
+          <Trans>When an email arrives</Trans>
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={t`Remove email trigger`}
+          onClick={onRemove}
+          className="text-muted-foreground"
+        >
+          <X />
+        </Button>
+      </div>
+      {domain ? (
+        <div className="mt-2.5 space-y-2.5 text-body">
+          <BotEmailAddressField bot={bot} domain={domain} address={address} />
+          {ownerDomain ? (
+            <NativeSelect
+              aria-label={t`Who can start it`}
+              className="w-full"
+              value={senders}
+              onChange={(event) => onChange(event.target.value as RoutineEmailSenders)}
+            >
+              <NativeSelectOption value="owner">{t`Only me`}</NativeSelectOption>
+              <NativeSelectOption value="domain">{t`Anyone at @${ownerDomain}`}</NativeSelectOption>
+            </NativeSelect>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -981,7 +1062,7 @@ function InboundTriggerCard({
             ? "Authorization: Bearer …"
             : placeholder;
   const cellClass =
-    "break-all rounded-lg bg-muted px-2.5 py-1.5 font-mono text-xs text-foreground/75";
+    "break-all rounded-lg bg-muted px-2.5 py-1.5 font-mono text-label text-foreground/75";
 
   return (
     <div className="rounded-xl border border-border p-3">
@@ -991,7 +1072,7 @@ function InboundTriggerCard({
         ) : (
           <Globe size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
         )}
-        <span className="flex-1 text-[14.5px] text-foreground">
+        <span className="flex-1 text-body-lg text-foreground">
           {kind === "github" ? <Trans>Git event</Trans> : <Trans>When a webhook fires</Trans>}
         </span>
         <Button
@@ -1004,7 +1085,7 @@ function InboundTriggerCard({
           <X />
         </Button>
       </div>
-      <div className="mt-2.5 space-y-2.5 text-[13.5px]">
+      <div className="mt-2.5 space-y-2.5 text-body">
         <div className="block text-muted-foreground/70">
           <Trans>POST to</Trans>
           <div className={`mt-1 ${cellClass}`}>{postValue}</div>

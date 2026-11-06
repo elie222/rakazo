@@ -92,6 +92,7 @@ async function failRun(scenario: Scenario) {
     throw scenario.error;
   });
   const prisma = {
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
@@ -227,7 +228,9 @@ async function failRun(scenario: Scenario) {
     scratchpadItem: { findMany: vi.fn(async () => []) },
     externalEffect: { findMany: vi.fn(async () => []) },
     artifact: { findMany: vi.fn(async () => []) },
-    $transaction: vi.fn(async () => null),
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
   };
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const enqueue = vi.fn(async (job: { name: string }) => {
@@ -335,8 +338,8 @@ describe("routine failure notifications", () => {
       expect.anything(),
     );
     expect(countUnreadInboxChats).toHaveBeenCalledWith(prisma, {
-      userId: "user-1",
       spaceId: "space-1",
+      userId: "user-1",
     });
   });
 
@@ -509,7 +512,8 @@ describe("backing off a routine after its model connection refuses it", () => {
   it("counts a refusal of the user's own key", async () => {
     const { prisma } = await failRun({ error: refusedKey(), personalKey: true });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    // The run's lease is one transaction, the refusal count the other.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
   });
 
   it("counts a run pinned to a provider the user has no connection for", async () => {
@@ -518,7 +522,8 @@ describe("backing off a routine after its model connection refuses it", () => {
       pinnedTo: { provider: "anthropic", modelId: "claude-sonnet-4-5" },
     });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    // The run's lease is one transaction, the refusal count the other.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
   });
 
   it("counts a daily quota that resets hours from now, without a quick retry", async () => {
@@ -534,14 +539,16 @@ describe("backing off a routine after its model connection refuses it", () => {
       personalKey: true,
     });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    // The run's lease is one transaction, the refusal count the other.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
     expect(retries).toEqual([]);
   });
 
   it("counts a spent computer allowance, without a quick retry", async () => {
     const { prisma, retries } = await failRun({ error: new SandboxAllowanceUsedError() });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    // The run's lease is one transaction, the refusal count the other.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
     expect(retries).toEqual([]);
   });
 
@@ -559,7 +566,8 @@ describe("backing off a routine after its model connection refuses it", () => {
   ] satisfies Array<[string, Scenario]>)("does not count %s", async (_label, scenario) => {
     const { prisma } = await failRun(scenario);
 
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    // Only the run's lease.
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
   });
 });
 
@@ -576,6 +584,7 @@ interface RetryScenario {
   enqueueFails?: boolean;
   routineNotify?: boolean;
   missingRoutine?: boolean;
+  routineOwner?: string;
   missingTask?: boolean;
   pausedBeforeCreate?: boolean;
   archivedBeforeCreate?: boolean;
@@ -605,6 +614,8 @@ function retryHarness(scenario: RetryScenario = {}) {
     error: overloaded().message,
   };
   const tx = {
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
     routine: {
       updateMany: vi.fn(async () => ({
         count: scenario.pausedBeforeCreate || scenario.archivedBeforeCreate ? 0 : 1,
@@ -629,6 +640,7 @@ function retryHarness(scenario: RetryScenario = {}) {
     },
   };
   const prisma = {
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => failed),
@@ -657,6 +669,7 @@ function retryHarness(scenario: RetryScenario = {}) {
           : {
               notify: scenario.routineNotify ?? true,
               active: scenario.active ?? true,
+              userId: scenario.routineOwner ?? "user-1",
               crons: scenario.oneShot ? ["@once"] : ["0 9 * * *"],
               nextRunAt:
                 scenario.nextRunAt === undefined
@@ -694,6 +707,7 @@ describe("running a routine retry", () => {
         prisma.routine.findUnique.mockResolvedValueOnce({
           notify: true,
           active: false,
+          userId: "user-1",
           crons: ["0 9 * * *"],
           nextRunAt: null,
           bot: { archivedAt: null },
@@ -715,6 +729,7 @@ describe("running a routine retry", () => {
     ["paused", { active: false }],
     ["archived", { archived: true }],
     ["missing its routine", { missingRoutine: true }],
+    ["now someone else's", { routineOwner: "user-2" }],
     ["missing its task", { missingTask: true }],
   ] satisfies Array<[string, RetryScenario]>)(
     "notifies when the retry is abandoned because it is %s",
@@ -788,7 +803,7 @@ describe("running a routine retry", () => {
       await executor.retryRoutineRun("run-1");
 
       expect(tx.routine.updateMany).toHaveBeenCalledWith({
-        where: { id: "routine-1", active: true, bot: { archivedAt: null } },
+        where: { id: "routine-1", userId: "user-1", active: true, bot: { archivedAt: null } },
         data: { active: true },
       });
       expect(tx.task.create).not.toHaveBeenCalled();
@@ -911,6 +926,7 @@ describe("running a routine retry", () => {
     expect(tx.routine.updateMany).toHaveBeenCalledWith({
       where: {
         id: "routine-1",
+        userId: "user-1",
         active: false,
         crons: { equals: ["@once"] },
         bot: { archivedAt: null },

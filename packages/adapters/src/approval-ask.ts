@@ -1,5 +1,5 @@
 import type { ToolBatch } from "@rakazo/adapter-kit";
-import type { MessageBlock } from "@rakazo/contracts";
+import type { AskReceipt, MessageBlock } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
   batchActions,
@@ -21,7 +21,13 @@ export const MAX_FETCH_URL_LENGTH = 2_048;
 
 /** A fleet card built from the resolved request: a title and the lines under it. */
 /** `onceOnly`: the card never offers Always allow, as for a purchase. */
-export type FleetCardSummary = { title: string; lines: string[]; onceOnly?: boolean };
+/** `receipt`: a payment's order, which apps draw in place of the lines. */
+export type FleetCardSummary = {
+  title: string;
+  lines: string[];
+  onceOnly?: boolean;
+  receipt?: AskReceipt;
+};
 
 /**
  * The child instruction card shows the whole new text, so its detail holds the longest
@@ -33,13 +39,31 @@ export function approvalDetailLength(toolName: string): number {
     : MAX_APPROVAL_DETAIL_LENGTH;
 }
 
+function redactReceipt(receipt: AskReceipt, secrets: string[]): AskReceipt {
+  const clean = (text: string) => redactSecrets(text, secrets);
+  return {
+    ...receipt,
+    ...(receipt.button ? { button: clean(receipt.button) } : {}),
+    items: receipt.items.map((item) => ({ name: clean(item.name), amount: clean(item.amount) })),
+    ...(receipt.amount ? { amount: clean(receipt.amount) } : {}),
+    ...(receipt.total ? { total: clean(receipt.total) } : {}),
+  };
+}
+
 export function buildApprovalAskBlock(
   effectId: string,
   toolName: string,
   args: Record<string, unknown>,
   secrets: string[],
-  options?: { reviewReason?: string; summary?: FleetCardSummary; batch?: ToolBatch },
+  options?: {
+    reviewReason?: string;
+    summary?: FleetCardSummary;
+    batch?: ToolBatch;
+    /** The approval asks every time, so the card never offers Always allow. */
+    onceOnly?: boolean;
+  },
 ): MessageBlock {
+  const onceOnly = toolRequiresExplicitApproval(toolName) || Boolean(options?.onceOnly);
   if (options?.summary) {
     // Built from what was resolved before the effect was recorded, not from what the model typed.
     return {
@@ -51,9 +75,12 @@ export function buildApprovalAskBlock(
         approvalDetailLength(toolName),
       ),
       detailFormat: toolName === "set_child_instructions" ? "code" : "text",
+      ...(options.summary.receipt
+        ? { receipt: redactReceipt(options.summary.receipt, secrets) }
+        : {}),
       status: "pending",
       actions:
-        toolRequiresExplicitApproval(toolName) || options.summary.onceOnly
+        onceOnly || options.summary.onceOnly
           ? [
               { id: "allow", label: "Allow once" },
               { id: "deny", label: "Deny" },
@@ -183,7 +210,7 @@ export function buildApprovalAskBlock(
             { id: "allow", label: "Create space", outcome: "created" },
             { id: "deny", label: "Cancel", outcome: "cancelled" },
           ]
-        : toolRequiresExplicitApproval(toolName)
+        : onceOnly
           ? [
               { id: "allow", label: "Allow once" },
               { id: "deny", label: "Deny" },
@@ -339,7 +366,7 @@ function pickScopeLabel(args: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-function truncate(value: string, maxLength: number): string {
+export function truncate(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
 }
 

@@ -1,22 +1,27 @@
+import { AppLocaleSchema } from "@rakazo/contracts";
 import { matchUiLocale } from "@rakazo/core";
 
-export const UI_LOCALES = ["en", "zh-CN", "zh-TW", "ru", "de", "nl", "ja", "es", "pl"] as const;
+/** The app languages mobile ships catalogs for. */
+const SHIPPED_LOCALES = [
+  "en",
+  "zh-CN",
+  "zh-TW",
+  "ru",
+  "de",
+  "nl",
+  "ja",
+  "es",
+  "pl",
+] as const satisfies readonly (typeof AppLocaleSchema.options)[number][];
 
-export type UiLocale = (typeof UI_LOCALES)[number];
+export type UiLocale = (typeof SHIPPED_LOCALES)[number];
+
+/** Mobile's languages, in the order every app lists them. */
+export const UI_LOCALES = AppLocaleSchema.options.filter((locale): locale is UiLocale =>
+  (SHIPPED_LOCALES as readonly string[]).includes(locale),
+);
 
 export const UI_LOCALE_STORAGE_KEY = "rakazo.uiLocale";
-
-export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
-  en: "English",
-  "zh-CN": "简体中文",
-  "zh-TW": "繁體中文",
-  ru: "Русский",
-  de: "Deutsch",
-  nl: "Nederlands",
-  ja: "日本語",
-  es: "Español",
-  pl: "Polski",
-};
 
 export function htmlLangForLocale(locale: string): string {
   return locale === "zh-CN" ? "zh-CN" : locale;

@@ -22,6 +22,7 @@ import {
   createRepos,
   InstructionConflictError,
   IsolationError,
+  isRecordNotFound,
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -456,6 +457,10 @@ type FleetBot = {
   section: string | null;
   pinned: boolean;
   createdByMe: boolean;
+  /** As update_bot's own read shows it; a bot on the space default is marked "(default)". */
+  model: string;
+  /** "default" when the bot follows the space's default thinking level. */
+  thinkingLevel: string;
 };
 type FleetGroup = {
   id: string;
@@ -481,7 +486,7 @@ export function instructionsVersionOf(bot: { instructionHistory: unknown }): str
 }
 
 export async function listFleet(
-  deps: Pick<FleetDeps, "prisma">,
+  deps: FleetPrepareDeps,
   run: FleetRun,
   args: { bot_id?: unknown },
 ): Promise<FleetListing | { error: string }> {
@@ -502,7 +507,7 @@ export async function listFleet(
     };
   }
   if (detail) return { bot: detail, bots: [], groups: [], sections: [], truncated: false };
-  const [bots, groups, sections] = await Promise.all([
+  const [bots, groups, sections, fallback] = await Promise.all([
     prisma.bot.findMany({
       where: activeBotsWhere(run),
       select: {
@@ -511,23 +516,27 @@ export async function listFleet(
         description: true,
         pinned: true,
         section: { select: { name: true } },
+        modelProvider: true,
+        modelId: true,
+        thinkingLevel: true,
       },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: FLEET_BOT_LIMIT + 1,
     }),
     visibleGroups(prisma, run),
     prisma.botSection.findMany({
-      where: { spaceId: run.spaceId, userId: run.userId },
+      where: { spaceId: run.spaceId },
       select: { name: true },
       orderBy: { position: "asc" },
       take: FLEET_SECTION_LIMIT + 1,
     }),
+    deps.modelChange.defaultModel(),
   ]);
   const listedBots = bots.slice(0, FLEET_BOT_LIMIT);
   // Only the listed bots need the creator flag, so this read is bounded by the bot cap.
   const children = await prisma.bot.findMany({
     where: {
-      ...createdByWhere({ botId: run.botId, userId: run.userId, spaceId: run.spaceId }),
+      ...createdByWhere({ botId: run.botId, spaceId: run.spaceId }),
       archivedAt: null,
       id: { in: listedBots.map((bot) => bot.id) },
     },
@@ -542,6 +551,9 @@ export async function listFleet(
       section: bot.section ? singleLine(bot.section.name) : null,
       pinned: bot.pinned,
       createdByMe: childIds.has(bot.id),
+      // Everyone's model in one read, so nobody has to ask each bot to inspect itself.
+      model: botModelLabel(bot, fallback),
+      thinkingLevel: bot.thinkingLevel ?? "default",
     })),
     groups: groups.slice(0, FLEET_GROUP_LIMIT),
     sections: sections.slice(0, FLEET_SECTION_LIMIT).map((section) => singleLine(section.name)),
@@ -578,7 +590,7 @@ async function visibleGroups(prisma: PrismaClient, run: FleetRun): Promise<Fleet
   let cursor: string | undefined;
   for (;;) {
     const page = await prisma.chatGroup.findMany({
-      where: { spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+      where: { spaceId: run.spaceId, archivedAt: null },
       select: {
         id: true,
         name: true,
@@ -706,7 +718,7 @@ export async function createFleetGroup(
   const { name, botIds } = parsed.data;
   const wanted = new Set(botIds);
   const sameName = await deps.prisma.chatGroup.findMany({
-    where: { spaceId: run.spaceId, userId: run.userId, archivedAt: null, name },
+    where: { spaceId: run.spaceId, archivedAt: null, name },
     select: {
       id: true,
       name: true,
@@ -975,7 +987,7 @@ export async function setChildBotModel(
       },
     });
   } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "P2025")
+    if (isRecordNotFound(error))
       return { error: "That bot's model changed since you approved; ask again." };
     throw error;
   }
@@ -1164,7 +1176,7 @@ async function resolveBot(prisma: PrismaClient, run: FleetRun, args: Record<stri
   );
 }
 
-/** One active group of the user, by `group_id` or exact `group_name`. Groups have no creator. */
+/** One active group of the space, by `group_id` or exact `group_name`. Groups have no creator. */
 async function resolveGroup(prisma: PrismaClient, run: FleetRun, args: Record<string, unknown>) {
   const id = text(args.group_id);
   const name = text(args.group_name);
@@ -1173,7 +1185,6 @@ async function resolveGroup(prisma: PrismaClient, run: FleetRun, args: Record<st
   const groups = await prisma.chatGroup.findMany({
     where: {
       spaceId: run.spaceId,
-      userId: run.userId,
       archivedAt: null,
       ...(id ? { id } : { name }),
     },
@@ -1265,6 +1276,15 @@ function memberNames(members: Member[]): string {
   return members.map((member) => singleLine(member.name)).join(", ");
 }
 
+/** A bot's model as its own settings read shows it: the space default is marked "(default)". */
+export function botModelLabel(
+  bot: { modelProvider: string | null; modelId: string | null },
+  fallback: { provider: string | null; model: string | null },
+): string {
+  if (bot.modelProvider && bot.modelId) return modelLabel(bot.modelProvider, bot.modelId);
+  return `${modelLabel(fallback.provider, fallback.model)} (default)`;
+}
+
 export function modelLabel(provider: string | null, model: string | null): string {
   if (!provider || !model) return "Default model";
   const catalog = [...listPiCatalog(), scriptedCatalogEntry];
@@ -1323,7 +1343,7 @@ export async function updateOwnBotFromTool(
     loadArtifact: async (id) => {
       if (!deps.artifacts) return null;
       const row = await deps.prisma.artifact.findFirst({
-        where: { id, spaceId: run.spaceId, userId: run.userId },
+        where: { id, spaceId: run.spaceId },
         select: { mimeType: true, storageKey: true },
       });
       if (!row || !isAttachmentImageMimeType(row.mimeType)) return null;
