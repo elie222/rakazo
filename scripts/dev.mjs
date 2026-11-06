@@ -68,6 +68,7 @@ if (runWith && !setting("RAKAZO_DEV_RUNNING_WITH")) {
     env: { ...process.env, RAKAZO_DEV_RUNNING_WITH: "1" },
   });
   if (result.error) throw new Error(`RAKAZO_DEV_RUN_WITH could not start ${command}`);
+  if (result.signal) process.kill(process.pid, result.signal);
   process.exit(result.status ?? 1);
 }
 
