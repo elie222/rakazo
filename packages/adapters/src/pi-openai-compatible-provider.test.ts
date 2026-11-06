@@ -1377,6 +1377,33 @@ describe("anthropic-messages wire protocol", () => {
     expect(typeof body.thinking.budget_tokens).toBe("number");
   });
 
+  it("uses adaptive thinking with an effort for models the built-in catalog marks adaptive", async () => {
+    const modelId = "claude-opus-5-5";
+    const models = registerOpenAiCompatibleRuntime(createModels(), {
+      ...input,
+      modelId,
+      apiProtocol: "anthropic-messages",
+      allowPrivate: true,
+      reasoning: true,
+    });
+    const provider = models.getProvider(OPENAI_COMPATIBLE_PROVIDER_ID)!;
+    const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, modelId)!;
+    expect(model.compat).toEqual({ forceAdaptiveThinking: true });
+    let body: Record<string, any> = {};
+    await provider
+      .streamSimple(model, normalizeContext({ messages: [] }), {
+        apiKey: "fake-api-key",
+        reasoning: "high",
+        fetch: async (_url, init) => {
+          body = JSON.parse(String(init?.body));
+          return anthropicTextResponse();
+        },
+      })
+      .result();
+    expect(body.thinking).toMatchObject({ type: "adaptive" });
+    expect(body.output_config).toMatchObject({ effort: "high" });
+  });
+
   it("probes /v1/models with Anthropic auth headers", async () => {
     let seenHeaders: Headers | undefined;
     let seenUrl = "";

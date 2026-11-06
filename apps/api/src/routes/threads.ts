@@ -20,6 +20,7 @@ import {
   isUniqueViolation,
   loadMessageAuthor,
   lockSpaceGroup,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
   withTransactionRetry,
 } from "@rakazo/db";
@@ -490,7 +491,7 @@ export function threadsRoutes(ctx: RouterContext) {
           });
           await touchGroupUpdatedAt(tx, target.groupId);
           return { runId: run?.id, eventSeq: event.seq, message };
-        });
+        }, THREAD_LOCK_TRANSACTION_OPTIONS);
         if (committed) {
           deps.analytics?.capture(
             context.actor.userId,

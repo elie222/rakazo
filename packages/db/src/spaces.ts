@@ -665,7 +665,7 @@ export async function claimSpacesLeavingWithAccount(
         { organizationId: { in: organizationIds } },
         { memberships: { some: { userId }, every: { userId } } },
         // A Space they own elsewhere: claimed below only when no other full member shares it.
-        // One that keeps a full member is handed to them afterwards (prepareAccountDeletion).
+        // One that keeps a full member is handed to them afterwards (leaveInvitedSpaces).
         { memberships: { some: { userId, role: "owner" } } },
         { deletionClaimId: claimId },
       ],

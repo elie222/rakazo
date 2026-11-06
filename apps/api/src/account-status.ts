@@ -1,7 +1,12 @@
 import type { PushTokenStore } from "@rakazo/adapters";
 import type { DirectoryAccountChange } from "@rakazo/auth";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { cancelDeactivatedAccountRuns, recordSecurityEvent, runAsSystem } from "@rakazo/db";
+import type { PrismaClient, SpaceDeparture, ThreadEvents } from "@rakazo/db";
+import {
+  cancelDeactivatedAccountRuns,
+  leaveInvitedSpaces,
+  recordSecurityEvent,
+  runAsSystem,
+} from "@rakazo/db";
 import type { DeviceStore } from "./user-devices.js";
 import { revokeUserDevices } from "./user-devices.js";
 
@@ -10,6 +15,11 @@ export interface AccountStatusDeps {
   pushTokens: Pick<PushTokenStore, "remove">;
   devices: DeviceStore;
   events: Pick<ThreadEvents, "notify">;
+  /** What follows leaving a Space (as after `afterSpaceDeparture`); never throws. */
+  afterDeparture(
+    actor: { spaceId: string; userId: string },
+    departure: SpaceDeparture,
+  ): Promise<void>;
 }
 
 /**
@@ -88,8 +98,8 @@ async function finishStatusChange(
 
 /**
  * Ends what a deactivated account had going: sign-ins, paired computers, notification
- * registrations, views of its bots' screens, and runs. Its bots, chats, memory, files and
- * connections stay. Sign-in and new runs are refused separately for as long as the account
+ * registrations, views of its bots' screens, runs, and membership of other people's Spaces. Its
+ * own bots, chats, memory, files and connections stay. Sign-in and new runs are refused separately for as long as the account
  * stays deactivated. Every step is tried even when an earlier one fails, and running it again
  * is safe; the operator's `account-status.js deactivate` does.
  */
@@ -105,6 +115,17 @@ export async function endDeactivatedAccess(deps: AccountStatusDeps, userId: stri
     // Screen links issued before now stop working; people still allowed get new ones.
     () =>
       prisma.bot.updateMany({ where: { userId }, data: { screenGeneration: { increment: 1 } } }),
+    // Other people's Spaces keep what the account made there, handed to each Space's owner;
+    // Spaces it owns stay its own.
+    // Before the account-wide cancel, so each departure stops its own runs there and starts
+    // the teammates' follow-ups that waited behind them.
+    () =>
+      leaveInvitedSpaces(
+        prisma,
+        userId,
+        (departure) => deps.afterDeparture({ spaceId: departure.spaceId, userId }, departure),
+        { deactivated: true },
+      ),
     () => cancelDeactivatedAccountRuns(prisma, deps.events, userId),
   ];
   const failures: unknown[] = [];

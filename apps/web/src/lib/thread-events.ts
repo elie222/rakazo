@@ -33,6 +33,10 @@ const runTriggers = new Set<string>(RUN_TRIGGERS);
 
 function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Run {
   const trigger = event.payload.trigger;
+  const routineName =
+    typeof event.payload.routineName === "string"
+      ? event.payload.routineName
+      : previous?.routineName;
   return {
     id: event.runId ?? previous?.id ?? event.id,
     botId: event.botId,
@@ -54,6 +58,7 @@ function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Ru
     startedAt: previous?.startedAt ?? event.createdAt,
     completedAt: null,
     createdAt: previous?.createdAt ?? event.createdAt,
+    ...(routineName ? { routineName } : {}),
   };
 }
 

@@ -132,8 +132,13 @@ export function nextProgressNonce(ctx: RunContext) {
   return userProgressClientNonce(ctx.run.id, reply.midTurnProgressCount++);
 }
 
+/** Whether text written before a step may be posted as an interim message at all. */
+export function narrationBecomesMessages(ctx: RunContext) {
+  return ctx.replyMode === "chat" && runPromotesMidTurnNarration(ctx.run.trigger);
+}
+
 export function canPublishDurableNarration(ctx: RunContext) {
-  return runPromotesMidTurnNarration(ctx.run.trigger) && canPublishDurableProgress(ctx.state.reply);
+  return narrationBecomesMessages(ctx) && canPublishDurableProgress(ctx.state.reply);
 }
 
 export function flushPendingTools(reply: ReplyState) {
@@ -219,7 +224,7 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
   const promotes = runPromotesMidTurnNarration(run.trigger);
   if (
     text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH &&
-    (canPublishDurableNarration(ctx) || (beforeConnectCard && promotes))
+    (canPublishDurableNarration(ctx) || (beforeConnectCard && narrationBecomesMessages(ctx)))
   ) {
     reply.workingNotes.length = 0;
     reply.narrationStatusShowing = false;
@@ -257,11 +262,11 @@ export async function publishNarrationBeforeAsk(ctx: RunContext) {
   const extracted = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
   const pending = redactSecretsAfter(reply.narrationSoFar, extracted.text, ctx.secrets).trim();
   reply.narrationSoFar += extracted.text;
+  // Messages mode shows only the latest text, as at the end of a turn.
+  const held =
+    ctx.replyMode === "chat" ? reply.workingNotes : pending ? [] : reply.workingNotes.slice(-1);
   // Held notes were redacted against the secrets known when they were held; check them again.
-  const text = redactSecrets(
-    [...reply.workingNotes, pending].filter(Boolean).join("\n\n"),
-    ctx.secrets,
-  );
+  const text = redactSecrets([...held, pending].filter(Boolean).join("\n\n"), ctx.secrets);
   if (!text) return;
   reply.messageSegments = extracted.remaining;
   reply.currentTextSegment = "";

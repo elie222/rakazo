@@ -141,6 +141,7 @@ export function SettingsOverlays({
     <>
       {overlay?.kind === "settings" && showSettings ? (
         <SettingsOverlay
+          shellRpc={rpc}
           space={settingsSpace}
           spaces={spaces}
           onRenameSpace={renameSpace}

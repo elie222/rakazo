@@ -14,7 +14,7 @@ import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
 import type * as ModelVisionModule from "./model-vision.js";
-import { GROUP_UNADDRESSED_REPLY_GUIDANCE } from "./run-replies.js";
+import { GROUP_UNADDRESSED_REPLY_GUIDANCE, messagesModeReplyGuidance } from "./run-replies.js";
 import { PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
 import { MID_TURN_PROGRESS_MIN_TURN_AGE_MS, userProgressClientNonce } from "./user-progress.js";
 
@@ -70,6 +70,7 @@ async function runTurn(
     appendGate?: (event: AppendEventInput) => Promise<void> | undefined;
     /** The computer has a screen and a page browser, and the model can see. */
     graphical?: boolean;
+    replyMode?: "chat" | "messages";
     /** The run belongs to a group chat; `optional` is whether the send named nobody. */
     group?: { optional: boolean; namedWhileRunning?: boolean };
     /** The run already put a message in the chat, such as an ask card answered by its button. */
@@ -173,6 +174,7 @@ async function runTurn(
         computerId: "computer-1",
         computerSwitching: false,
         memoryScope: null,
+        replyMode: options.replyMode ?? "chat",
         computer: { id: "computer-1", scope: "dedicated" },
       })),
       findMany: vi.fn(async () => []),
@@ -837,6 +839,127 @@ describe("notes that can't be posted as messages", () => {
   });
 });
 
+describe("messages mode", () => {
+  const messagesMode = { replyMode: "messages" as const };
+  const finalText = (finalizeRun: Awaited<ReturnType<typeof runTurn>>["finalizeRun"]) =>
+    finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
+      .map((block) => block.text)
+      .join("");
+  const sentTexts = (messages: Awaited<ReturnType<typeof runTurn>>["messages"]) =>
+    messages.map((message) =>
+      message.blocks.map((block) => ("text" in block ? block.text : "")).join(""),
+    );
+
+  it("tells the model its working text is private and only message_user reaches the person", async () => {
+    const chat = await runTurn("Done.", false);
+    const messages = await runTurn("Done.", false, undefined, [], "fyi", messagesMode);
+    const instructions = (result: typeof chat) => result.runtimeRun.mock.calls[0]![0].instructions;
+    expect(instructions(messages)).toContain(messagesModeReplyGuidance());
+    expect(instructions(chat)).not.toContain(messagesModeReplyGuidance());
+  });
+
+  it("keeps text before and between steps on the steps, even on a long turn", async () => {
+    const { finalizeRun, messages } = await runTurn(
+      "All done.",
+      false,
+      ["Opening the report.", "Totals: March 4, April 7."],
+      [],
+      "fyi",
+      { ...messagesMode, startedAt: new Date(Date.now() - 120_000) },
+    );
+    expect(sentTexts(messages)).toEqual([]);
+    expect(finalText(finalizeRun)).toBe("All done.");
+    expect(stepNotes(finalizeRun)).toEqual(["Opening the report.", "Totals: March 4, April 7."]);
+  });
+
+  it("posts every message_user at once, on a fresh turn and past three", async () => {
+    const updates = ["Starting.", "Found it.", "Checking totals.", "Almost there."];
+    const { finalizeRun, messages } = await runTurn("", false, undefined, [], "fyi", {
+      ...messagesMode,
+      runtime: async function* (request) {
+        for (const [index, message] of updates.entries())
+          await request.executeTool!("message_user", { message }, `call-${index + 1}`);
+        yield { type: "text", text: "Here is the answer." };
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(sentTexts(messages)).toEqual(updates);
+    expect(finalText(finalizeRun)).toBe("Here is the answer.");
+  });
+
+  it("shows the latest text as the reply when nothing follows the last step", async () => {
+    const { finalizeRun } = await runTurn(
+      "",
+      false,
+      ["Checking.", "The draft is posted."],
+      [],
+      "fyi",
+      messagesMode,
+    );
+    expect(finalText(finalizeRun)).toBe("The draft is posted.");
+    expect(stepNotes(finalizeRun)).toEqual(["Checking."]);
+  });
+
+  it("keeps text written before the person's message out of the reply", async () => {
+    const { finalizeRun, messages } = await runTurn("", false, undefined, [], "fyi", {
+      ...messagesMode,
+      runtimeEvents: [
+        { type: "tool", name: "read_file", args: {}, executionId: "call-1" },
+        { type: "text", text: "Totals look off." },
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "Yes, the March total is 4." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(sentTexts(messages)).toEqual([]);
+    expect(finalText(finalizeRun)).toBe("Yes, the March total is 4.");
+    expect(stepNotes(finalizeRun)).toEqual(["Totals look off."]);
+  });
+
+  it("adds no reply after a message_user that ends the turn", async () => {
+    const { finalizeRun, messages } = await runTurn("", false, undefined, [], "fyi", {
+      ...messagesMode,
+      runtime: async function* (request) {
+        yield { type: "text", text: "Found it, telling them now." };
+        yield { type: "tool", name: "message_user", args: {}, executionId: "call-1" };
+        await request.executeTool!("message_user", { message: "The total is 4." }, "call-1");
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(sentTexts(messages)).toEqual(["The total is 4."]);
+    expect(finalText(finalizeRun)).toBe("");
+  });
+
+  it("stays silent when the model chose silence", async () => {
+    const { finalizeRun } = await runTurn("", false, ["Checking.", "NO_RESPONSE"], [], "fyi", {
+      ...messagesMode,
+      doneText: "",
+    });
+    expect(finalText(finalizeRun)).toBe("");
+  });
+
+  it.each(["routine", "reaction", "bot_message", "tickets"])(
+    "leaves %s runs as they are",
+    async (trigger) => {
+      const turn = (replyMode: "chat" | "messages") =>
+        runTurn("", true, ["I will check that.", "The draft is posted."], [], "fyi", {
+          trigger,
+          replyMode,
+          startedAt: new Date(Date.now() - 120_000),
+        });
+      const chat = await turn("chat");
+      const messages = await turn("messages");
+      expect(messages.finalizeRun.mock.calls[0]![0].blocks).toEqual(
+        chat.finalizeRun.mock.calls[0]![0].blocks,
+      );
+      expect(sentTexts(messages.messages)).toEqual(sentTexts(chat.messages));
+      expect(messages.runtimeRun.mock.calls[0]![0].instructions).not.toContain(
+        messagesModeReplyGuidance(),
+      );
+    },
+  );
+});
+
 describe("text written before a question", () => {
   const sentTexts = (messages: Awaited<ReturnType<typeof runTurn>>["messages"]) =>
     messages.map((message) =>
@@ -886,6 +1009,18 @@ describe("text written before a question", () => {
     ]);
   });
 
+  it("posts only the latest text in messages mode", async () => {
+    const { messages } = await runTurn("", false, undefined, [], "fyi", {
+      replyMode: "messages",
+      runtimeEvents: [
+        { type: "text", text: "I looked at the level files." },
+        { type: "tool", name: "read_file", args: {}, executionId: "call-1" },
+        ...ask("Three pyramids are left."),
+      ],
+    });
+    expect(sentTexts(messages)).toEqual(["Three pyramids are left."]);
+  });
+
   it("redacts the text like the reply", async () => {
     const { messages } = await runTurn("", false, undefined, ["fake-secret-value"], "fyi", {
       runtimeEvents: ask("The fake-secret-value is set."),
@@ -902,6 +1037,56 @@ describe("text written before a question", () => {
     });
     expect(sentTexts(messages)).toEqual([]);
     expect(pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it("shows the content being decided on as plain text, redacted and capped", async () => {
+    const detail = `To: person@example.test\nThe token is fake-secret-value.\n${"body ".repeat(1_200)}`;
+    const { pauseRunForInput } = await runTurn("", false, "", ["fake-secret-value"], "fyi", {
+      runtimeEvents: [
+        { type: "tool", name: "ask_user", args: {}, executionId: "ask-1" },
+        {
+          type: "ask",
+          text: "Send this email?",
+          detail,
+          actions: [
+            { id: "choice-1", label: "Send it" },
+            { id: "choice-2", label: "Show me first" },
+          ],
+        },
+      ],
+    });
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+    const blocks = (pauseRunForInput.mock.calls[0] as unknown as [{ blocks: MessageBlock[] }])[0]
+      .blocks;
+    const ask = blocks.find((block) => block.kind === "ask");
+    expect(ask).toMatchObject({ text: "Send this email?", detailFormat: "text" });
+    if (ask?.kind !== "ask") throw new Error("expected ask block");
+    expect(ask.detail).toContain("To: person@example.test");
+    expect(ask.detail).toContain("The token is [redacted].");
+    expect(ask.detail?.length).toBeLessThanOrEqual(4_001);
+  });
+
+  it("keeps a detail-less ask block exactly as it was", async () => {
+    const { pauseRunForInput } = await runTurn("", false, "", [], "fyi", {
+      runtimeEvents: [
+        { type: "tool", name: "ask_user", args: {}, executionId: "ask-1" },
+        { type: "ask", text: "Which order?", actions: [{ id: "choice-1", label: "Art first" }] },
+      ],
+    });
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+    expect(pauseRunForInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [
+          {
+            kind: "ask",
+            text: "Which order?",
+            detail: undefined,
+            status: "pending",
+            actions: [{ id: "choice-1", label: "Art first" }],
+          },
+        ],
+      }),
+    );
   });
 
   it("posts the text on runs that may finish silently", async () => {
