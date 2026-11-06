@@ -259,7 +259,7 @@ export function parseAutoReviewJudgeText(text: string): {
 
 function readStrictVerdict(text: string): z.infer<typeof AutoReviewVerdict> | undefined {
   const trimmed = text.trim();
-  const body = /^```(?:json)?[ \t]*\n([\s\S]*)```$/i.exec(trimmed)?.[1]?.trim() ?? trimmed;
+  const body = /^```(?:json)?[ \t]*\r?\n([\s\S]*)```$/i.exec(trimmed)?.[1]?.trim() ?? trimmed;
   if (!body.startsWith("{")) return undefined;
   try {
     const parsed: unknown = JSON.parse(body);

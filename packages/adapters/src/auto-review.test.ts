@@ -204,6 +204,11 @@ describe("parseAutoReviewJudgeText", () => {
       { decision: "pass", reason: "Fits." },
     ],
     [
+      "one fenced object with CRLF line endings",
+      '```json\r\n{"decision":"pass","reason":"Fits."}\r\n```',
+      { decision: "pass", reason: "Fits." },
+    ],
+    [
       "prose around a pass",
       'Sure:\n{"decision":"pass","reason":"Fits."}\nDone.',
       { decision: "ask" },
