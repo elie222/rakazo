@@ -19,7 +19,10 @@ const ENTRIES = [
 // @chat-adapter/state-memory is left out: it is the Chat SDK's own in-memory state, which
 // every messaging platform needs, not a vendor.
 const OPTIONAL_VENDORS =
-  /^(@aws-sdk\/.+|@daytona\/sdk|@e2b\/desktop|novita-sandbox|@composio\/core|@stripe\/link-sdk|@chat-adapter\/(slack|telegram|whatsapp)|@boatdev\/sdk|@boxd-sh\/sdk|chat-adapter-sendblue|@axiomhq\/js|@sentry\/node)$/;
+  /^(@aws-sdk\/.+|@daytona\/sdk|@e2b\/desktop|novita-sandbox|@composio\/core|@stripe\/link-sdk|@chat-adapter\/(slack|telegram|whatsapp)|@boatdev\/sdk|@boxd-sh\/sdk|chat-adapter-sendblue|@axiomhq\/js|@sentry\/node|@alicloud\/.+|@darabonba\/typescript|@kubernetes\/client-node|@larksuiteoapi\/node-sdk|@photon-ai\/chat-adapter-imessage|mppx|railway)$/;
+// Packages the bundles load only through import() that are not vendor SDKs: an image library,
+// the auth library's own SCIM plugin, and the email parser and DKIM check for inbound mail.
+const LAZY_NON_VENDORS = ["sharp", "@better-auth/scim", "postal-mime", "mailauth"];
 // Known static imports still to make lazy. Remove an entry once its SDK loads on demand.
 const PENDING = [
   "@chat-adapter/slack",
@@ -36,6 +39,9 @@ const PENDING = [
 
 // Vendor SDKs statically imported by each emitted bundle: Map<entry, Set<vendor>>.
 const staticVendors = new Map();
+// Every package each bundle imports, by import kind, across all entries.
+const staticPackages = new Set();
+const dynamicPackages = new Set();
 for (const entry of ENTRIES) {
   const options = serverBuildOptions(path.join(root, entry), path.join(root, "dist/check.js"));
   const { metafile } = await build({
@@ -49,8 +55,12 @@ for (const entry of ENTRIES) {
   const found = new Set();
   for (const output of Object.values(metafile.outputs)) {
     for (const edge of output.imports ?? []) {
-      if (edge.kind !== "import-statement") continue;
       const name = packageName(edge.path);
+      if (edge.path.includes("node_modules/")) {
+        if (edge.kind === "import-statement") staticPackages.add(name);
+        if (edge.kind === "dynamic-import") dynamicPackages.add(name);
+      }
+      if (edge.kind !== "import-statement") continue;
       if (OPTIONAL_VENDORS.test(name)) found.add(name);
     }
   }
@@ -77,6 +87,18 @@ test("every pending vendor SDK is still statically imported somewhere", () => {
     PENDING.filter((name) => !anywhere.has(name)),
     [],
     "Now loaded on demand; remove from PENDING",
+  );
+});
+
+test("every package loaded only on demand is a listed vendor SDK or a known non-vendor", () => {
+  // A vendor SDK missing from OPTIONAL_VENDORS could become a static import unnoticed.
+  assert.deepEqual(
+    [...dynamicPackages]
+      .filter((name) => !staticPackages.has(name))
+      .filter((name) => !OPTIONAL_VENDORS.test(name) && !LAZY_NON_VENDORS.includes(name))
+      .sort(),
+    [],
+    "Add the SDK to OPTIONAL_VENDORS, or a non-vendor package to LAZY_NON_VENDORS",
   );
 });
 
