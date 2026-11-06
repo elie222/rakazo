@@ -1,18 +1,9 @@
 import { Plural, Trans } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { botsWithOwnModel } from "@rakazo/core";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-} from "@rakazo/ui-web";
+import { Button } from "@rakazo/ui-web";
 import { useCallback, useEffect, useState } from "react";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useSpaceRpc } from "../../lib/space-rpc";
 
 /**
@@ -107,35 +98,24 @@ export function SpaceBotsModelNotice({ refreshKey }: { refreshKey?: unknown }) {
           <Trans>Could not switch {failedNames}. Try again.</Trans>
         </p>
       ) : null}
-      <AlertDialog open={confirming} onOpenChange={setConfirming}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              <Plural
-                value={pinned.length}
-                one="Switch # bot to the space default?"
-                other="Switch # bots to the space default?"
-              />
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              <Trans>Their own model is cleared. You can pick one again in each bot.</Trans>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              <Trans>Cancel</Trans>
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setConfirming(false);
-                void switchAllToSpaceModel();
-              }}
-            >
-              <Trans>Switch</Trans>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirming}
+        onCancel={() => setConfirming(false)}
+        variant="default"
+        title={
+          <Plural
+            value={pinned.length}
+            one="Switch # bot to the space default?"
+            other="Switch # bots to the space default?"
+          />
+        }
+        description={<Trans>Their own model is cleared. You can pick one again in each bot.</Trans>}
+        onConfirm={() => {
+          setConfirming(false);
+          void switchAllToSpaceModel();
+        }}
+        confirmLabel={<Trans>Switch</Trans>}
+      />
     </section>
   );
 }

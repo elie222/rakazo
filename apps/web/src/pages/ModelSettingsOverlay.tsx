@@ -10,14 +10,6 @@ import {
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Button,
   Dialog,
   DialogClose,
@@ -29,6 +21,7 @@ import {
 } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import type { ModelCredential } from "../lib/model-auth";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
 import { ModelRoleSettings } from "./ModelRoleSettings";
@@ -382,35 +375,20 @@ export function ModelSettingsOverlay({
           <Trans>No model catalog is available.</Trans>
         </p>
       )}
-      <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              <Trans>Disconnect {disconnectName}?</Trans>
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              <Trans>This removes the connection from every space.</Trans>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              <Trans>Cancel</Trans>
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={pending === "disconnect"}
-              onClick={() => {
-                setConfirmDisconnect(false);
-                setConnectionAt(null);
-                intentRef.current = null;
-                void disconnectCredential();
-              }}
-            >
-              <Trans>Disconnect</Trans>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmDisconnect}
+        onCancel={() => setConfirmDisconnect(false)}
+        title={<Trans>Disconnect {disconnectName}?</Trans>}
+        description={<Trans>This removes the connection from every space.</Trans>}
+        confirmDisabled={pending === "disconnect"}
+        onConfirm={() => {
+          setConfirmDisconnect(false);
+          setConnectionAt(null);
+          intentRef.current = null;
+          void disconnectCredential();
+        }}
+        confirmLabel={<Trans>Disconnect</Trans>}
+      />
     </>
   );
 

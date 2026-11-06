@@ -5,13 +5,6 @@ import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { deriveMcpSlug, isRetryableError } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Button,
   Checkbox,
   Dialog,
@@ -41,6 +34,7 @@ import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Ellipsis, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorNotice } from "../components/ErrorNotice";
 import type { AgentAccess } from "../components/integrations/agent-access";
 import { AgentAccessControl } from "../components/integrations/agent-access";
@@ -963,35 +957,18 @@ export function McpServersOverlay({
           )}
         </div>
         {deleting ? (
-          <AlertDialog
-            open
-            onOpenChange={(open) => {
-              if (!open) setDeleting(null);
-            }}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {reachesOtherSpaces(deleting.availability, spaceCount) ? (
-                    <Trans>Remove from every space?</Trans>
-                  ) : (
-                    t`Delete ${deleting.name}?`
-                  )}
-                </AlertDialogTitle>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>
-                  <Trans>Cancel</Trans>
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  variant="destructive"
-                  onClick={() => void deleteServer(deleting)}
-                >
-                  <Trans>Delete</Trans>
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <ConfirmDialog
+            onCancel={() => setDeleting(null)}
+            title={
+              reachesOtherSpaces(deleting.availability, spaceCount) ? (
+                <Trans>Remove from every space?</Trans>
+              ) : (
+                t`Delete ${deleting.name}?`
+              )
+            }
+            onConfirm={() => void deleteServer(deleting)}
+            confirmLabel={<Trans>Delete</Trans>}
+          />
         ) : null}
       </DialogContent>
     </Dialog>

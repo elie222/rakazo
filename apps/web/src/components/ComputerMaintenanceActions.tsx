@@ -1,14 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Button,
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +12,7 @@ import { useState } from "react";
 import { computerUpdates } from "../lib/computer-updates";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 type Action = "stop" | "recover" | "reset" | "update";
 
@@ -87,54 +80,40 @@ export function ComputerMaintenanceActions({
   // Escape closes the dialog inside the popup, so Shell's Escape handler does not also
   // close the computer overlay.
   const confirmationDialog = (
-    <AlertDialog
+    <ConfirmDialog
       open={confirmAction !== null}
-      onOpenChange={(open) => {
-        if (!open) setConfirmAction(null);
+      onCancel={() => setConfirmAction(null)}
+      title={
+        confirmAction === "recover" ? (
+          <Trans>Recover computer?</Trans>
+        ) : (
+          <Trans>Reset computer?</Trans>
+        )
+      }
+      description={
+        confirmAction === "recover" ? (
+          <Trans>Recovery restores the last saved workspace. Unsaved work may be lost.</Trans>
+        ) : (
+          <Trans>Restore the last saved workspace. Unsaved work on the computer is lost.</Trans>
+        )
+      }
+      error={error}
+      confirmDisabled={pending !== null}
+      onConfirm={() => {
+        if (confirmAction) void run(confirmAction);
       }}
-    >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {confirmAction === "recover" ? (
-              <Trans>Recover computer?</Trans>
-            ) : (
-              <Trans>Reset computer?</Trans>
-            )}
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {confirmAction === "recover" ? (
-              <Trans>Recovery restores the last saved workspace. Unsaved work may be lost.</Trans>
-            ) : (
-              <Trans>Restore the last saved workspace. Unsaved work on the computer is lost.</Trans>
-            )}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
-        <AlertDialogFooter>
-          <AlertDialogCancel>
-            <Trans>Cancel</Trans>
-          </AlertDialogCancel>
-          <AlertDialogAction
-            disabled={pending !== null}
-            variant="destructive"
-            onClick={() => {
-              if (confirmAction) void run(confirmAction);
-            }}
-          >
-            {pending === "recover" ? (
-              <Trans>Recovering…</Trans>
-            ) : confirmAction === "recover" ? (
-              <Trans>Recover computer</Trans>
-            ) : pending === "reset" ? (
-              <Trans>Resetting…</Trans>
-            ) : (
-              <Trans>Reset</Trans>
-            )}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      confirmLabel={
+        pending === "recover" ? (
+          <Trans>Recovering…</Trans>
+        ) : confirmAction === "recover" ? (
+          <Trans>Recover computer</Trans>
+        ) : pending === "reset" ? (
+          <Trans>Resetting…</Trans>
+        ) : (
+          <Trans>Reset</Trans>
+        )
+      }
+    />
   );
 
   if (visibleRecover)
