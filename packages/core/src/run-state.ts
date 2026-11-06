@@ -76,6 +76,23 @@ export function isRunWorking(status: string | null | undefined): boolean {
   return WORKING_RUN_STATUSES.some((working) => working === status);
 }
 
+export function workingRoutineName(
+  runs: readonly {
+    status: string;
+    botId?: string;
+    trigger?: string;
+    routineName?: string | null;
+  }[],
+): string | undefined {
+  const running = runs.filter((candidate) => candidate.status === "running");
+  const [run] = running;
+  if (running.length !== 1 || run?.trigger !== "routine") return undefined;
+  const otherBotWorking = runs.some(
+    (candidate) => isRunWorking(candidate.status) && candidate.botId !== run.botId,
+  );
+  return (!otherBotWorking && run.routineName?.trim()) || undefined;
+}
+
 export function isRunWaitingOnUser(status: string | null | undefined): boolean {
   return WAITING_ON_USER_RUN_STATUSES.some((waiting) => waiting === status);
 }

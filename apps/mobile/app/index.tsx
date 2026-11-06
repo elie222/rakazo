@@ -102,6 +102,7 @@ import {
   subscribeSessionGeneration,
 } from "../lib/session";
 import { useSplitView } from "../lib/split-view";
+import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
 import { useArchivedCount } from "../lib/use-archived-count";
 import { useCollapsedSections } from "../lib/use-collapsed-sections";
 import { useHomeHeader } from "../lib/use-home-header";
@@ -585,10 +586,20 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     },
     [embedded, pathname, router],
   );
+  // Held from the tap, so a second tap while the unsent-message check runs starts nothing.
+  const signingInAgain = useRef(false);
   const signInAgain = useCallback(async () => {
-    // A rejected session cannot sign out on the server; clearing it here is what matters.
-    await signOut().catch(() => undefined);
-    router.replace("/sign-in");
+    if (signingInAgain.current) return;
+    signingInAgain.current = true;
+    try {
+      // Signing out deletes the unsent queue, which an expired session is most likely to hold.
+      if (!(await confirmUnsentSendLoss("sign-out"))) return;
+      // A rejected session cannot sign out on the server; clearing it here is what matters.
+      await signOut().catch(() => undefined);
+      router.replace("/sign-in");
+    } finally {
+      signingInAgain.current = false;
+    }
   }, [router]);
 
   const chooseInboxSpace = useCallback(
