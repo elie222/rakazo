@@ -443,7 +443,7 @@ function SpaceShell() {
       },
     },
   );
-  const { speakingMessageId, speakMessage } = useReadAloud({
+  const { speakingMessageId, speakMessage, callHoldsSpeaker } = useReadAloud({
     active,
     snapshot,
     callBotId: call?.botId,
@@ -1183,6 +1183,7 @@ function SpaceShell() {
               onAddRoutine={addSkillRoutine}
               voiceReady={Boolean(voiceStatus?.ready)}
               speakingMessageId={speakingMessageId}
+              callHoldsSpeaker={callHoldsSpeaker}
               onSpeak={speakMessage}
               onOpenComputer={computerControls.onOpenComputer}
               onOpenImportSetup={openImportSetup}
