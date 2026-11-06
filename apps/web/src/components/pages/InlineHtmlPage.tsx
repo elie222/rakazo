@@ -55,7 +55,7 @@ export function InlineHtmlPage({
       {document === null ? (
         <div className="flex min-h-[240px] items-center justify-center">
           {failed ? (
-            <p className="px-6 text-center text-sm text-muted-foreground">
+            <p className="px-6 text-center text-muted-foreground text-body">
               <Trans>This page couldn't load</Trans>
             </p>
           ) : (
@@ -88,12 +88,12 @@ export function InlineHtmlPage({
               <PageTileIcon />
               <span className="min-w-0">
                 <span
-                  className="relative top-[1px] block truncate text-[15px] leading-[21px] text-foreground"
+                  className="relative top-[1px] block truncate text-body-lg leading-[21px] text-foreground"
                   dir="auto"
                 >
                   {title}
                 </span>
-                <span className="block truncate text-[14px] leading-[20px] text-muted-foreground">
+                <span className="block truncate text-body text-muted-foreground">
                   <Trans>Page</Trans>
                 </span>
               </span>

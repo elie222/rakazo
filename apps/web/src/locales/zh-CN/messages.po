@@ -5009,6 +5009,7 @@ msgstr "打开 {0}"
 msgid "Open {name}"
 msgstr "打开 {name}"
 
+#: src/components/pages/InlineHtmlPage.tsx
 #: src/components/pages/PageCard.tsx
 msgid "Open {title}"
 msgstr "打开 {title}"
@@ -5125,6 +5126,7 @@ msgstr "输出"
 msgid "Owner"
 msgstr "所有者"
 
+#: src/components/pages/InlineHtmlPage.tsx
 #: src/components/pages/PageCard.tsx
 #: src/components/pages/PageView.tsx
 msgid "Page"
@@ -7011,6 +7013,7 @@ msgstr "本月"
 msgid "This page couldn't be shown."
 msgstr "无法显示此页面。"
 
+#: src/components/pages/InlineHtmlPage.tsx
 #: src/components/pages/PageCard.tsx
 #: src/components/pages/PageView.tsx
 #: src/components/pages/PageViewHost.tsx

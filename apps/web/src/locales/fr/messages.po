@@ -5009,6 +5009,7 @@ msgstr "Ouvrir {0}"
 msgid "Open {name}"
 msgstr "Ouvrir {name}"
 
+#: src/components/pages/InlineHtmlPage.tsx
 #: src/components/pages/PageCard.tsx
 msgid "Open {title}"
 msgstr "Ouvrir {title}"
@@ -5125,6 +5126,7 @@ msgstr "Sortie"
 msgid "Owner"
 msgstr "Propriétaire"
 
+#: src/components/pages/InlineHtmlPage.tsx
 #: src/components/pages/PageCard.tsx
 #: src/components/pages/PageView.tsx
 msgid "Page"
@@ -7011,6 +7013,7 @@ msgstr "Ce mois-ci"
 msgid "This page couldn't be shown."
 msgstr "Impossible d'afficher cette page."
 
+#: src/components/pages/InlineHtmlPage.tsx
 #: src/components/pages/PageCard.tsx
 #: src/components/pages/PageView.tsx
 #: src/components/pages/PageViewHost.tsx

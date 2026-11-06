@@ -5009,6 +5009,7 @@ msgstr "{0}を開く"
 msgid "Open {name}"
 msgstr "{name}を開く"
 
+#: src/components/pages/InlineHtmlPage.tsx
 #: src/components/pages/PageCard.tsx
 msgid "Open {title}"
 msgstr "{title} を開く"
@@ -5125,6 +5126,7 @@ msgstr "出力"
 msgid "Owner"
 msgstr "オーナー"
 
+#: src/components/pages/InlineHtmlPage.tsx
 #: src/components/pages/PageCard.tsx
 #: src/components/pages/PageView.tsx
 msgid "Page"
@@ -7011,6 +7013,7 @@ msgstr "今月"
 msgid "This page couldn't be shown."
 msgstr "このページを表示できませんでした。"
 
+#: src/components/pages/InlineHtmlPage.tsx
 #: src/components/pages/PageCard.tsx
 #: src/components/pages/PageView.tsx
 #: src/components/pages/PageViewHost.tsx
