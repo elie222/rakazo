@@ -196,9 +196,9 @@ function TemplateDetail({
             ...(open
               ? [
                   <View key={`${row.key}:body`} style={styles.body}>
-                    <Text selectable style={styles.bodyText}>
+                    <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
                       {row.body}
-                    </Text>
+                    </ChatMarkdown>
                   </View>,
                 ]
               : []),
@@ -249,6 +249,5 @@ function createStyles() {
       backgroundColor: native.groupedCell,
     },
     body: { paddingHorizontal: 16, paddingBottom: 14, paddingTop: 10 },
-    bodyText: { color: native.secondaryLabel, fontSize: 14, lineHeight: 20 },
   });
 }
