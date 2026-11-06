@@ -38,6 +38,23 @@ it("returns the provider's status and the message unwrapped from its envelope", 
   expect(plain.providerMessage).toBe("Request timed out.");
 });
 
+it("keeps the provider's status and message on unusable-output errors", () => {
+  expect(
+    normalizeRunError('403: {"error":{"message":"Provider returned an empty response"}}'),
+  ).toMatchObject({
+    kind: "output",
+    status: 403,
+    providerMessage: "Provider returned an empty response",
+  });
+});
+
+it("reads a limit period and reset date from top-level envelope fields", () => {
+  const error = normalizeRunError(
+    '402: {"error":{"message":"Usage limit exceeded","limit":"weekly","reset_at":"2099-01-01"}}',
+  );
+  expect(error).toMatchObject({ period: "weekly", resetAt: Date.parse("2099-01-01") });
+});
+
 describe("normalizeRunError", () => {
   beforeEach(() => {
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-01T00:00:00Z"));

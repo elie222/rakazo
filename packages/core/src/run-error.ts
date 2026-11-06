@@ -318,6 +318,12 @@ export function normalizeRunError(
     typeof payload.message === "string" ? asRecord(asRecord(parseJson(payload.message)).error) : {};
   if (Object.keys(wrapped).length) payload = wrapped;
   const message = typeof payload.message === "string" ? payload.message : body;
+  const status =
+    [prefix?.[1], prefix?.[2], record.status, record.code, payload.code, payload.httpCode]
+      .map(Number)
+      .find((value) => Number.isInteger(value) && value >= 100 && value <= 599) ??
+    // Bedrock names its modeled exception instead of reporting the HTTP status.
+    (/^AccessDeniedException\b/.test(trimmed) ? 403 : undefined);
   // Output diagnostics can quote generated text that mentions a timeout or a quota.
   if (
     trimmed === MODEL_OUTPUT_LIMIT_ERROR ||
@@ -329,6 +335,8 @@ export function normalizeRunError(
       details,
       recovery: "model",
       kind: "output",
+      ...(status !== undefined ? { status } : {}),
+      providerMessage: message,
     };
   }
   const metadata = asRecord(payload.metadata ?? record.metadata);
@@ -340,12 +348,6 @@ export function normalizeRunError(
       String(value ?? ""),
     ),
   ].join(" ");
-  const status =
-    [prefix?.[1], prefix?.[2], record.status, record.code, payload.code, payload.httpCode]
-      .map(Number)
-      .find((value) => Number.isInteger(value) && value >= 100 && value <= 599) ??
-    // Bedrock names its modeled exception instead of reporting the HTTP status.
-    (/^AccessDeniedException\b/.test(trimmed) ? 403 : undefined);
   const provider = /\bopenrouter\b|openrouter_/i.test(signals)
     ? translate("Your OpenRouter")
     : /\bopenai\b|openai_/i.test(signals)
@@ -388,9 +390,13 @@ export function normalizeRunError(
     const limitPeriod = message.match(
       /\b(daily|weekly|monthly)\b(?:\s+\w+){0,2}\s+(?:limit|quota|cap|budget)|\b(?:limit|quota)\b[^.]{0,20}?\b(daily|weekly|monthly)\b|\bper[ -](day)\b/i,
     );
+    // Some envelopes name the period in a top-level or metadata `limit` field instead.
+    const namedPeriod = /^(daily|weekly|monthly)$/i.exec(
+      String(payload.limit ?? metadata.limit),
+    )?.[1];
     period = limitPeriod?.[3]
       ? "daily"
-      : (((limitPeriod?.[1] ?? limitPeriod?.[2])?.toLowerCase() as
+      : (((limitPeriod?.[1] ?? limitPeriod?.[2] ?? namedPeriod)?.toLowerCase() as
           | "daily"
           | "weekly"
           | "monthly"
@@ -416,7 +422,9 @@ export function normalizeRunError(
         /\bresets?(?:\s+at|\s+on)?\s*[:=]?\s*(\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z)?)/i,
       )?.[1] ??
       metadata.reset_at ??
-      metadata.reset;
+      metadata.reset ??
+      payload.reset_at ??
+      payload.reset;
     if (typeof reset === "string" && /^\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z)?$/.test(reset)) {
       const date = new Date(reset);
       if (
