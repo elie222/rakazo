@@ -552,7 +552,7 @@ export async function gateToolCall(
     bypassApproval: gateDecision === "allow" && gated,
     spend: spends,
   });
-  // Only when the webhook overrode the owner's Always allow; asks every run makes say nothing.
+  // Only when the webhook overrode the owner's Always allow; cards every run shows say nothing.
   const webhookForcedAsk =
     requiresUnattendedApproval &&
     !mandatoryInAnyRun &&
