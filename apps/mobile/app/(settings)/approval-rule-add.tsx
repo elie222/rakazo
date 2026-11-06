@@ -76,7 +76,9 @@ export default function AddApprovalRule() {
           matchKind: choice.matchKind,
           matchValue: choice.matchValue,
         });
-        router.back();
+        // Opened by a link as the first screen, there is nothing to go back to.
+        if (router.canGoBack()) router.back();
+        else router.replace({ pathname: "/approvals", params: spaceId ? { spaceId } : {} });
       } catch (err) {
         setError(errorText(err, t("Could not save that preference")));
       } finally {
@@ -84,7 +86,7 @@ export default function AddApprovalRule() {
         setPending(false);
       }
     },
-    [router, rpc, scope, t],
+    [router, rpc, scope, spaceId, t],
   );
 
   const { visible } = listSearch(choices ?? [], query, {

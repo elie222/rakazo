@@ -22,7 +22,7 @@ const state = vi.hoisted(() => ({
   rules: [] as Rule[],
   headerItems: [] as { label: string; onPress: () => void }[],
   search: null as null | { onChangeText: (event: { nativeEvent: { text: string } }) => void },
-  router: { push: vi.fn(), back: vi.fn() },
+  router: { push: vi.fn(), back: vi.fn(), replace: vi.fn(), canGoBack: vi.fn(() => true) },
 }));
 const { element } = vi.hoisted(() => ({
   element:
@@ -178,6 +178,8 @@ beforeEach(() => {
   state.search = null;
   state.router.push.mockReset();
   state.router.back.mockReset();
+  state.router.replace.mockReset();
+  state.router.canGoBack.mockReset().mockReturnValue(true);
   state.rpc
     .mockReset()
     .mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
@@ -334,6 +336,21 @@ it("saves once and goes back once when a tool is tapped twice", async () => {
   });
   expect(state.rpc.mock.calls.filter(([proc]) => proc === "approvalRules/set")).toHaveLength(1);
   expect(state.router.back).toHaveBeenCalledTimes(1);
+});
+
+it("opens the rules after saving when the picker was the first screen", async () => {
+  state.spaceId = "space-1";
+  state.router.canGoBack.mockReturnValue(false);
+  await act(async () => root.render(createElement(AddApprovalRule)));
+  const shell = [...container.querySelectorAll("span")].find(
+    (node) => node.textContent === "Shell",
+  );
+  await act(async () => shell!.click());
+  expect(state.router.back).not.toHaveBeenCalled();
+  expect(state.router.replace).toHaveBeenCalledWith({
+    pathname: "/approvals",
+    params: { spaceId: "space-1" },
+  });
 });
 
 it("drops Never ask dimming when a later mode read fails", async () => {
