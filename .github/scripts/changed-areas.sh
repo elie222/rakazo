@@ -11,6 +11,7 @@
 # scripts, infra, a package manifest) that typecheck and unit tests cannot trace through the package
 # graph, so they run for every package; docs, agent notes and root markdown do not count. Every
 # Dockerfile counts too: the host safeguard tests read all of them, so none may skip the gate.
+# So do the test setup and stub files the root Vitest config loads for every package.
 # Renames count both paths.
 set -euo pipefail
 
@@ -25,6 +26,9 @@ while IFS= read -r file; do
   case "$file" in
     */Dockerfile*) all_packages=true ;;
     apps/*/package.json | packages/*/package.json | infra/*/package.json) all_packages=true ;;
+    # vitest.config.ts loads these into every package's tests, which the package graph misses.
+    packages/testkit/src/pin-test-env.ts | packages/testkit/src/lingui-core-macro.ts | \
+      packages/chat-ui/src/native-test-stubs.tsx) all_packages=true ;;
     apps/*/* | packages/*/* | infra/sandboxes/supervisor/* | infra/updater/*) ;;
     .agents/skills/pr-watch/*) all_packages=true ;;
     .agents/* | .claude/* | docs/*) ;;

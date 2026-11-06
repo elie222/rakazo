@@ -12,7 +12,6 @@ export * from "./auto-review-factory.js";
 export * from "./aws-kms-key-provider.js";
 export * from "./background-job-handlers.js";
 export * from "./billing-emulator.js";
-export * from "./boat-sandbox.js";
 export * from "./bot-avatar.js";
 export * from "./bot-messages.js";
 export {
@@ -30,7 +29,6 @@ export {
   SPACE_VAULT_NOT_IN_USE,
   storeBotSecret,
 } from "./bot-secrets.js";
-export * from "./boxd-sandbox.js";
 export * from "./browser-emulator.js";
 export * from "./browser-provider-factory.js";
 export * from "./browser-tools.js";
@@ -67,7 +65,6 @@ export * from "./configured-sandbox.js";
 export * from "./createos-sandbox.js";
 export * from "./current-time.js";
 export * from "./cursor-cloud-agent.js";
-export * from "./daytona-sandbox.js";
 export * from "./decision-models.js";
 export * from "./deployment-model.js";
 export * from "./desktop-sandbox.js";
@@ -76,6 +73,7 @@ export * from "./docker-sandbox.js";
 export * from "./e2b-sandbox.js";
 export * from "./elevenlabs-voice.js";
 export * from "./email-emulator.js";
+export * from "./email-provider.js";
 export * from "./executor.js";
 export * from "./expo-push.js";
 export * from "./fake-browser.js";

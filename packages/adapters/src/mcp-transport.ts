@@ -119,6 +119,12 @@ export interface McpClientOptions {
 const DEFAULT_HEADERS = ["accept", "content-type", "authorization", "user-agent"];
 const RESOURCE_HEADERS = new Set(["mcp-session-id", "mcp-protocol-version", "last-event-id"]);
 const DEFAULT_MAX_URL_LENGTH = 2_048;
+/**
+ * An authorization URL is opened by the browser, not fetched by the server, and carries
+ * every scope the MCP server publishes (PostHog lists over 150, about 3,000 characters).
+ * Bound it separately from MCP endpoints, at a size browsers and common web servers accept.
+ */
+export const MAX_AUTHORIZATION_URL_LENGTH = 8_192;
 // A Request owns the abort link for its signal in affected Node versions. Keep
 // that owner alive while a fetch/body still retains the signal, without keeping
 // completed requests alive once the signal is no longer used.

@@ -20,7 +20,12 @@ import type { ConnectOptions, Sandbox, SandboxStatus } from "railway";
 import WebSocket from "ws";
 import { z } from "zod";
 import { computerIdleSleepEnabled, sandboxIdleMs } from "./computer-idle.js";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import {
+  normalizeWorkspacePath,
+  shellQuote,
+  workspaceCwd,
+  workspacePath,
+} from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import {
   INSTALL_LINUX_BROWSER,
@@ -231,7 +236,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
     try {
       const sandbox = await this.connect(computer, context);
       const result = await sandbox.exec(sandboxCommandArgv(request).map(shellQuote).join(" "), {
-        cwd: railwayCwd(request.cwd),
+        cwd: workspaceCwd(WORKSPACE, request.cwd),
         env: { ...COMPUTER_CACHE_ENV, ...request.env },
         timeoutSec: boundedSandboxCommandTimeoutMs(request.timeoutMs) / 1_000,
         maxOutputBytes: MAX_RESPONSE_BYTES,
@@ -710,14 +715,6 @@ function railwayErrorCode(error: unknown) {
   if (/\b(?:not authori[sz]ed|unauthori[sz]ed|forbidden)\b/i.test(message)) return "UNAUTHORIZED";
   if (/\b(?:limit|quota|maximum)\b/i.test(message)) return "LIMIT_EXCEEDED";
   return extensions?.code ?? "REQUEST_FAILED";
-}
-
-function railwayCwd(cwd: string | undefined) {
-  if (!cwd || cwd === "." || cwd === "/" || cwd === WORKSPACE) return WORKSPACE;
-  return workspacePath(
-    WORKSPACE,
-    cwd.startsWith(`${WORKSPACE}/`) ? cwd.slice(WORKSPACE.length + 1) : cwd,
-  );
 }
 
 const PREPARE_RAILWAY_DESKTOP = [

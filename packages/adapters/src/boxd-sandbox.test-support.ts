@@ -312,5 +312,5 @@ async function bytes(data: FsWriteData): Promise<Uint8Array> {
 /** The real boxd adapter over an in-memory boxd, with its desktop snapshot already saved. */
 export function fakeBoxdProvider(boxd = new FakeBoxd()): BoxdSandboxProvider {
   if (!boxd.snapshots.size) boxd.snapshots.set(BOXD_COMPUTER_SNAPSHOT, "ready");
-  return new BoxdSandboxProvider({ apiKey: "test-key" }, boxd.client());
+  return new BoxdSandboxProvider({}, boxd.client());
 }

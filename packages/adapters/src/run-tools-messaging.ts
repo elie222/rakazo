@@ -16,13 +16,12 @@ import { endCallFromTool, requestUserCall } from "./call-request.js";
 import { normalizeWorkspacePath, resolveBotWorkspacePath } from "./computer-support.js";
 import { handoffToGroupBot } from "./group-handoff.js";
 import type { RunContext } from "./run-context.js";
-import { publishMessage } from "./run-messages.js";
 import {
   canPostLongTaskHeadsUp,
   canPublishDurableProgress,
   flushProgress,
-  nextProgressNonce,
   progressSinceBudgetStart,
+  publishInterimMessage,
   publishMidTurnNarration,
   showNarrationStatus,
 } from "./run-progress.js";
@@ -231,7 +230,6 @@ export const messagingTools: ToolHandlers = {
     };
   },
   async message_user(ctx, call) {
-    const { deps, run } = ctx;
     const { args } = call;
     const { reply } = ctx.state;
     const rawMessage = redactSecrets(String(args.message ?? ""), ctx.secrets);
@@ -259,9 +257,7 @@ export const messagingTools: ToolHandlers = {
           : `This update was not posted because the turn just started. Keep working and put anything the person needs in your final reply. Once the turn has run ${MID_TURN_PROGRESS_MIN_TURN_AGE_MS / 1000} seconds, a later update can be posted.`,
       });
     }
-    await publishMessage(deps, run, "bot", [{ kind: "text", text }], true, nextProgressNonce(ctx));
-    reply.midTurnUserTexts.push(text);
-    reply.publishedMidTurnUserMessage = true;
+    await publishInterimMessage(ctx, text, true);
     // The person already has this message; notes written before it are no longer a missing answer.
     if (ctx.replyMode === "messages") {
       reply.workingNotes.length = 0;

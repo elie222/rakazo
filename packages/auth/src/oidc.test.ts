@@ -636,12 +636,28 @@ describe("OIDC callbacks", () => {
   });
   it("hands the native browser callback to Expo with a valid bearer session", async () => {
     setup();
+    const context = await auth.$context;
+    const createVerificationValue = context.internalAdapter.createVerificationValue;
+    vi.spyOn(context.internalAdapter, "createVerificationValue").mockImplementation(
+      async (input) => {
+        if (typeof input.value !== "string" || input.value.length === 0) {
+          throw new Error("verification values must be non-empty strings");
+        }
+        return createVerificationValue.call(context.internalAdapter, input);
+      },
+    );
     const callback = await start(undefined, false, "rakazo://sign-in");
     const authorize = `${issuer}/authorize?state=${new URL(`${origin}${callback}`).searchParams.get("state")}`;
+    const callbackMarkers = rows("verification").filter((row) =>
+      String(row.identifier).startsWith("oidc-callback-"),
+    ).length;
     const proxy = await request(
       `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: authorize })}`,
     );
     expect(proxy.headers.get("location")).toBe(authorize);
+    expect(
+      rows("verification").filter((row) => String(row.identifier).startsWith("oidc-callback-")),
+    ).toHaveLength(callbackMarkers);
     const returned = await request(callback);
     const destination = new URL(returned.headers.get("location")!);
     expect(destination.protocol).toBe("rakazo:");

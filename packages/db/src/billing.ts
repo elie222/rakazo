@@ -3,6 +3,7 @@ import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
 import { BYOK_TIERS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { isUniqueViolation } from "./prisma-errors.js";
 import { IsolationError } from "./scope.js";
 
 const ACCESS_STATUSES = new Set(["trialing", "active", "past_due"]);
@@ -89,8 +90,6 @@ async function markOwnersByokTrialUsed(
 export type ByokTrialCheckoutHold = {
   /** Identifies this attempt's hold, so giving it back cannot touch another session's. */
   expiresAt: Date;
-  /** The hold an earlier open session of the same organization still had, to fall back to. */
-  previousExpiresAt: Date | null;
 };
 
 /**
@@ -100,7 +99,7 @@ export type ByokTrialCheckoutHold = {
  * it. Returns null when a fresh hold for another organization wins the race.
  */
 export async function reserveByokTrialCheckout(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   organizationId: string,
 ): Promise<ByokTrialCheckoutHold | null> {
   const owners = await prisma.member.findMany({
@@ -109,11 +108,6 @@ export async function reserveByokTrialCheckout(
   });
   const ownerIds = owners.filter((owner) => isOwnerRole(owner.role)).map((owner) => owner.userId);
   if (ownerIds.length === 0) return null;
-  // The same organization's earlier open session keeps its hold while this attempt runs.
-  const previous = await prisma.user.findFirst({
-    where: { id: { in: ownerIds }, byokTrialCheckoutOrganizationId: organizationId },
-    select: { byokTrialCheckoutExpiresAt: true },
-  });
   const expiresAt = new Date(Date.now() + BYOK_TRIAL_CHECKOUT_HOLD_MS);
   const { count } = await prisma.user.updateMany({
     where: {
@@ -131,14 +125,12 @@ export async function reserveByokTrialCheckout(
       byokTrialCheckoutExpiresAt: expiresAt,
     },
   });
-  return count === ownerIds.length
-    ? { expiresAt, previousExpiresAt: previous?.byokTrialCheckoutExpiresAt ?? null }
-    : null;
+  return count === ownerIds.length ? { expiresAt } : null;
 }
 
 /**
  * Gives back a hold `reserveByokTrialCheckout` returned once the provider refused to create
- * the session: this attempt's hold goes, and an earlier open session's hold is restored.
+ * the session. A newer attempt's hold has another expiry and stays.
  */
 export async function releaseByokTrialCheckout(
   prisma: PrismaClient,
@@ -150,9 +142,7 @@ export async function releaseByokTrialCheckout(
       byokTrialCheckoutOrganizationId: organizationId,
       byokTrialCheckoutExpiresAt: hold.expiresAt,
     },
-    data: hold.previousExpiresAt
-      ? { byokTrialCheckoutExpiresAt: hold.previousExpiresAt }
-      : { byokTrialCheckoutOrganizationId: null, byokTrialCheckoutExpiresAt: null },
+    data: { byokTrialCheckoutOrganizationId: null, byokTrialCheckoutExpiresAt: null },
   });
 }
 
@@ -173,7 +163,7 @@ export async function extendByokTrialCheckout(
 
 /** Releases every hold the organization's open checkout sessions had on their owners' trial. */
 export async function releaseByokTrialCheckouts(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   organizationId: string,
 ): Promise<void> {
   await prisma.user.updateMany({
@@ -246,7 +236,7 @@ export async function createBillingAccount(
     });
   } catch (error) {
     // An empty update is not a native upsert, so a concurrent create can still collide.
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
+    if (!isUniqueViolation(error)) {
       throw error;
     }
     const existing = await billingAccountForOrganization(prisma, input.organizationId);
@@ -344,6 +334,35 @@ export async function renewCheckoutLease(
     data: { checkoutLeaseExpiresAt: new Date(now.getTime() + ttlMs) },
   });
   return count > 0;
+}
+
+/**
+ * Locks the lease row while this holder still has the checkout lease, so no other claimant
+ * can take it until the transaction ends. Returns false once the lease is lost. Every lock
+ * wait in the transaction is bounded, so a write stuck behind another lock fails and rolls
+ * back instead of holding the lease row while renewals queue behind it.
+ */
+export async function lockCheckoutLease(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  leaseId: string,
+): Promise<boolean> {
+  // Row locks on these tables last milliseconds; 2s stays below Prisma's 5s transaction
+  // timeout, which ends the transaction without cancelling a statement still waiting.
+  await tx.$executeRaw(Prisma.sql`SET LOCAL lock_timeout = '2s'`);
+  const rows = await tx.$queryRaw<unknown[]>(Prisma.sql`
+    SELECT 1 FROM billing_accounts
+    WHERE "organizationId" = ${organizationId} AND "checkoutLeaseId" = ${leaseId}
+      AND "checkoutLeaseExpiresAt" > ${new Date()}
+    FOR UPDATE`);
+  return rows.length > 0;
+}
+
+/** Whether `error` is a lock wait that ran past the bound `lockCheckoutLease` sets. */
+export function isLockTimeout(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  const meta = error.meta as { driverAdapterError?: { cause?: { originalCode?: string } } };
+  return meta?.driverAdapterError?.cause?.originalCode === "55P03";
 }
 
 /** Whether the checkout lease is still recorded for this holder. */

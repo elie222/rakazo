@@ -51,6 +51,7 @@ import {
   readRunTimingFields,
   recordUsage,
   settleReleasedTakeoverCards,
+  spaceTakesWork,
   teamChatRunFromOwner,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
@@ -152,6 +153,7 @@ import { restoreTurnCheckpointEffects, settleRunningHelpers } from "./run-contex
 import { APPROVED_EFFECT_REPLAY_ORDER, buildApprovalContinuation } from "./run-effects.js";
 import {
   BOT_DIRECTORY_LIMIT,
+  botEmailInstruction,
   dockerComputerToolInstruction,
   persistentComputerInstruction,
   runIdentityInstruction,
@@ -343,29 +345,35 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
       const fence = nextFence(run.leaseFence);
       const now = new Date();
-      const leased = await deps.prisma.run.updateMany({
-        where: {
-          id: runId,
-          ...continueRunClaimFence(run),
-          AND: [{ OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] }],
-          OR: [
-            { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
-            {
-              status: { in: ["leased", "running"] },
-              leaseExpiresAt: { lte: now },
-            },
-          ],
-        },
-        data: {
-          status: "leased",
-          leaseOwner: workerId,
-          leaseFence: fence,
-          leaseExpiresAt: new Date(Date.now() + 5 * 60_000),
-          error: null,
-          checkpoint: null,
-          wakeAt: null,
-        },
-      });
+      // A Space being deleted starts nothing; its runs wait for the deletion to end or be called
+      // off. Its lock comes before the run row, so a claim committing meanwhile is seen.
+      const leased = await deps.prisma.$transaction(async (tx) =>
+        !(await spaceTakesWork(tx, run.spaceId))
+          ? { count: 0 }
+          : tx.run.updateMany({
+              where: {
+                id: runId,
+                ...continueRunClaimFence(run),
+                AND: [{ OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] }],
+                OR: [
+                  { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
+                  {
+                    status: { in: ["leased", "running"] },
+                    leaseExpiresAt: { lte: now },
+                  },
+                ],
+              },
+              data: {
+                status: "leased",
+                leaseOwner: workerId,
+                leaseFence: fence,
+                leaseExpiresAt: new Date(Date.now() + 5 * 60_000),
+                error: null,
+                checkpoint: null,
+                wakeAt: null,
+              },
+            }),
+      );
       if (leased.count !== 1) return;
 
       const current = await deps.prisma.run.findUniqueOrThrow({
@@ -1368,6 +1376,21 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           graphical && browser.describe().capabilities.page && !heldForTakeover;
         const disabledBuiltinTools = disabledBuiltinToolSet(bot.disabledBuiltinTools);
         const replyMode = runReplyMode(run.trigger, bot.replyMode, disabledBuiltinTools);
+        const emailName = deps.inboundEmailDomain
+          ? await deps.prisma.botEmailAddress.findUnique({
+              where: { botId: bot.id },
+              select: { name: true },
+            })
+          : null;
+        const botEmail = emailName ? `${emailName.name}@${deps.inboundEmailDomain}` : null;
+        // The inbox is the owner's mail: read only in their own runs, never in a group or channel, and
+        // never for another bot, which may be answering someone else.
+        const emailInbox =
+          Boolean(botEmail) &&
+          run.userId === bot.userId &&
+          run.trigger !== "bot_message" &&
+          !thread.groupId &&
+          !nonOwnerChatRun;
         const userComputerOwnerId = userComputerOwner({
           trigger: run.trigger,
           sourceRole: sourceMessage?.role,
@@ -1416,6 +1439,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             followUpFromUser: sourceMessage?.role === "user",
             userComputer: userComputer === "connected",
             userComputerScreen,
+            emailInbox,
+            emailClaimable:
+              Boolean(deps.inboundEmailDomain) && !emailName && run.userId === bot.userId,
+            emailSend: Boolean(deps.email),
           }),
           // Cross-owner agent connections only exist for chat-linked bots. The chat link is its
           // creator's, and a connected agent's messages run as them, so only their runs may
@@ -1894,7 +1921,22 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               // cache-aware context for connections declaring a cache window.
               contextStrategy: deps.contextStrategy,
               instructions: userTurnInstructions({
-                botInstructions: runIdentityInstruction(bot, run.trigger),
+                botInstructions: [
+                  runIdentityInstruction(bot, run.trigger),
+                  botEmail
+                    ? botEmailInstruction(botEmail, {
+                        // Only the tools this bot has: its owner may turn any of them off.
+                        read: emailInbox && !disabledBuiltinTools.has("read_email"),
+                        send:
+                          emailInbox &&
+                          Boolean(deps.email) &&
+                          !disabledBuiltinTools.has("send_email"),
+                        delete: emailInbox && !disabledBuiltinTools.has("delete_email"),
+                      })
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join("\n"),
                 groupContext: groupReplyOptional
                   ? [groupContext, GROUP_UNADDRESSED_REPLY_GUIDANCE].filter(Boolean).join("\n")
                   : groupContext,

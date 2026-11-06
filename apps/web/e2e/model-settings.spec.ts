@@ -113,6 +113,23 @@ test("model settings cleanup frames", { tag: "@nightly" }, async ({ page }, test
   await expect.poll(async () => (await rpc<unknown[]>(page, "models/backups", {})).length).toBe(1);
   await mainList.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "model-settings-cleanup-5-backup-added");
+
+  // A bot that keeps its own model sits behind a small count by the Main model heading.
+  await page.route("**/rpc/bots/list", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Array<Record<string, unknown>> };
+    const [first, ...rest] = body.json;
+    const pinned = first ? [{ ...first, modelProvider: "openrouter", modelId: firstModel }] : [];
+    await route.fulfill({ response, json: { ...body, json: [...pinned, ...rest] } });
+  });
+  await page.reload();
+  await openUserSettings(page, "models");
+  const bots = page.getByTestId("space-bots-model");
+  await expect(bots).toHaveText("1");
+  await captureScreenshot(page, testInfo, "model-settings-cleanup-6-bot-own-model");
+  await bots.click();
+  await expect(page.getByRole("button", { name: "Use main model", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "model-settings-cleanup-7-bot-own-model-open");
 });
 
 function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {

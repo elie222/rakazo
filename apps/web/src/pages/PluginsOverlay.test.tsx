@@ -12,7 +12,7 @@ const api = vi.hoisted(() => ({
     list: vi.fn(),
     tools: vi.fn(),
   },
-  capabilities: { list: vi.fn(), catalogSearch: vi.fn() },
+  capabilities: { list: vi.fn(), catalogSearch: vi.fn(), sourcePresets: vi.fn() },
   mcp: { servers: { list: vi.fn() }, assignments: { list: vi.fn() } },
   marketplace: { catalog: vi.fn() },
 }));
@@ -116,6 +116,7 @@ beforeEach(() => {
   api.connections.list.mockReset().mockResolvedValue([]);
   api.connections.tools.mockReset().mockResolvedValue([]);
   api.capabilities.list.mockReset().mockResolvedValue([]);
+  api.capabilities.sourcePresets.mockReset().mockResolvedValue([]);
   api.capabilities.catalogSearch
     .mockReset()
     .mockImplementation(async (input: { usePublicCatalog?: boolean }) =>

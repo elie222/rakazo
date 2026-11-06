@@ -2,8 +2,10 @@ import { createHash } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import {
+  applyMcpSourcePreset,
   createPluginMarketplace,
   isTransientFetchError,
+  MCP_SOURCE_PRESETS,
   McpOAuthClientRequiredError,
   persistPreparedSecret,
   pluginPreviewDto,
@@ -11,7 +13,7 @@ import {
   prepareGraphqlInstall,
   previewPluginInstall,
   recordMcpServerHealth,
-  sanitizeComposioError,
+  sanitizeIntegrationError,
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
@@ -22,6 +24,7 @@ import {
   AVAILABILITY_SELECT,
   availableInSpace,
   IsolationError,
+  isUniqueViolation,
   itemSecretIn,
   spaceAvailability,
 } from "@rakazo/db";
@@ -64,7 +67,7 @@ import {
   reviewPluginSubmission,
 } from "../plugin-submissions.js";
 import type { RouterContext } from "./context.js";
-import { computerContext, isUniqueViolation } from "./shared.js";
+import { computerContext } from "./shared.js";
 
 export function mcpRoutes(ctx: RouterContext) {
   const {
@@ -161,6 +164,7 @@ export function mcpRoutes(ctx: RouterContext) {
           createdAt: row.createdAt.toISOString(),
         }));
       }),
+      sourcePresets: authed.capabilities.sourcePresets.handler(() => MCP_SOURCE_PRESETS),
       catalogSearch: authed.capabilities.catalogSearch.handler(async ({ context, input }) => {
         const baseUrl =
           deps.env.integrationsCatalogUrl ??
@@ -221,10 +225,7 @@ export function mcpRoutes(ctx: RouterContext) {
         }
         try {
           if (input.kind === "mcp") {
-            if (config.preset === "treg") {
-              source = "https://treg.to/mcp/";
-              config = { ...config, preset: "treg", auth: { type: "bearer" } };
-            }
+            ({ source, config } = applyMcpSourcePreset(source, config));
             const verified = await verifyMcpInstall({
               source,
               config,
@@ -260,7 +261,7 @@ export function mcpRoutes(ctx: RouterContext) {
             config = prepared.config;
           }
         } catch (error) {
-          const message = sanitizeComposioError(error);
+          const message = sanitizeIntegrationError(error);
           throw new ORPCError("BAD_REQUEST", {
             message: credential ? message.split(credential).join("[redacted]") : message,
           });

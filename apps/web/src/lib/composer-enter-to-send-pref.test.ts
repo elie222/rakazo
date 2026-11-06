@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComposerEnterToSendPref from "./composer-enter-to-send-pref.js";
 
 import {
@@ -47,45 +47,48 @@ describe("normalizeComposerEnterToSend", () => {
   });
 });
 
-describe("get/setComposerEnterToSend", () => {
-  it.each([false, true])("reads the device default with coarse pointer %s", (coarsePointer) => {
-    expect(mod.getComposerEnterToSend(memoryStorage(), coarsePointer)).toBe(!coarsePointer);
-  });
-
-  it.each([false, true])("uses the detected pointer without storage: %s", (coarsePointer) => {
+describe("composerEnterToSendPreference", () => {
+  function stubPointer(coarsePointer: boolean) {
     vi.stubGlobal("window", {
       matchMedia: vi.fn().mockReturnValue({ matches: coarsePointer }),
     });
-    try {
-      expect(mod.getComposerEnterToSend(null)).toBe(!coarsePointer);
-      expect(window.matchMedia).toHaveBeenCalledWith("(pointer: coarse)");
-    } finally {
-      vi.unstubAllGlobals();
-    }
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([false, true])("reads the device default with coarse pointer %s", (coarsePointer) => {
+    stubPointer(coarsePointer);
+    vi.stubGlobal("localStorage", memoryStorage());
+    expect(mod.composerEnterToSendPreference.get()).toBe(!coarsePointer);
+  });
+
+  it.each([false, true])("uses the detected pointer without storage: %s", (coarsePointer) => {
+    stubPointer(coarsePointer);
+    vi.stubGlobal("localStorage", undefined);
+    expect(mod.composerEnterToSendPreference.get()).toBe(!coarsePointer);
+    expect(window.matchMedia).toHaveBeenCalledWith("(pointer: coarse)");
   });
 
   it.each([
     [false, "0", false],
     [true, "1", true],
   ] as const)("stored preference overrides coarse pointer %s", (coarsePointer, raw, expected) => {
-    const storage = memoryStorage({ [COMPOSER_ENTER_TO_SEND_STORAGE_KEY]: raw });
-    expect(mod.getComposerEnterToSend(storage, coarsePointer)).toBe(expected);
+    stubPointer(coarsePointer);
+    vi.stubGlobal("localStorage", memoryStorage({ [COMPOSER_ENTER_TO_SEND_STORAGE_KEY]: raw }));
+    expect(mod.composerEnterToSendPreference.get()).toBe(expected);
   });
 
-  it("reads the default, persists the toggle, and notifies subscribers", () => {
+  it("saves the toggle as 1 or 0", () => {
+    stubPointer(false);
     const storage = memoryStorage();
-    expect(mod.getComposerEnterToSend(storage, false)).toBe(true);
-    let notifications = 0;
-    const unsubscribe = mod.subscribeComposerEnterToSend(() => {
-      notifications += 1;
-    });
-    mod.setComposerEnterToSend(false, storage);
-    expect(mod.getComposerEnterToSend(storage, false)).toBe(false);
+    vi.stubGlobal("localStorage", storage);
+    expect(mod.composerEnterToSendPreference.get()).toBe(true);
+    mod.composerEnterToSendPreference.set(false);
+    expect(mod.composerEnterToSendPreference.get()).toBe(false);
     expect(storage.getItem(COMPOSER_ENTER_TO_SEND_STORAGE_KEY)).toBe("0");
-    expect(notifications).toBe(1);
-    unsubscribe();
-    mod.setComposerEnterToSend(true, storage);
-    expect(notifications).toBe(1);
+    mod.composerEnterToSendPreference.set(true);
     expect(storage.getItem(COMPOSER_ENTER_TO_SEND_STORAGE_KEY)).toBe("1");
   });
 });

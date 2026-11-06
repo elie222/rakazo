@@ -1,15 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray) => strings.join(""),
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: unknown }) => children,
-  useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
-}));
-
-import { BotEmailNameSchema } from "@rakazo/contracts";
-import { suggestedEmailName } from "./RoutineEditor";
+import { describe, expect, it } from "vitest";
+import { BotEmailNameSchema, parseBotEmailName, suggestedEmailName } from "./bot-email.js";
 
 describe("suggestedEmailName", () => {
   it("turns a bot name into an address name the server accepts", () => {
@@ -26,5 +16,14 @@ describe("suggestedEmailName", () => {
   it("drops what an address cannot hold", () => {
     expect(suggestedEmailName("研究")).toBe("");
     expect(suggestedEmailName("a".repeat(80))).toHaveLength(64);
+  });
+});
+
+describe("parseBotEmailName", () => {
+  it("names what is wrong with a name, or returns it ready to claim", () => {
+    expect(parseBotEmailName(" Scout ")).toEqual({ name: "scout" });
+    expect(parseBotEmailName("a")).toEqual({ problem: "length" });
+    expect(parseBotEmailName("postmaster")).toEqual({ problem: "taken" });
+    expect(parseBotEmailName("not ok!")).toEqual({ problem: "characters" });
   });
 });
