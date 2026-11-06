@@ -12,6 +12,8 @@ import { botMessageMaxHops, messageBlockForArtifact, promptTextForAttachments } 
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { clearEndedRunState, teamChatRunClientNonce } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { InboundAttachmentStore } from "./inbound-attachments.js";
+import { storeInboundAttachments } from "./inbound-attachments.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
 import type { TeamChatEngagementJudge } from "./team-chat-judge.js";
 import {
@@ -56,14 +58,7 @@ interface TeamChatBridgeDeps {
   jobs: Pick<JobPublisher, "enqueue">;
   send: (request: TeamChatSendRequest) => Promise<TeamChatSendResult>;
   fetchThreadHistory?: (message: TeamChatInboundMessage) => Promise<TeamChatInboundMessage[]>;
-  storeAttachment?: (input: {
-    spaceId: string;
-    userId: string;
-    botId: string;
-    attachment: MessagingInboundAttachment;
-    clientNonce: string;
-    downloadDeadline?: number;
-  }) => Promise<{ id: string; name: string; mimeType: string; size: number }>;
+  storeAttachment?: InboundAttachmentStore;
   providerId: string;
   botId: string;
   workspaceId?: string;
@@ -584,7 +579,7 @@ export class TeamChatBridge {
    */
   async resolveDeferredMessage(
     externalMessageId: string,
-    resolution: "routine" | "agent",
+    resolution: "routine" | "agent" | "ignored",
     kind: TeamChatInboundMessage["kind"],
   ): Promise<boolean> {
     const target = this.target;
@@ -592,8 +587,9 @@ export class TeamChatBridge {
     const result = await this.deps.prisma.externalMessage.updateMany({
       where: {
         id: externalMessageId,
-        status:
-          resolution === "routine" ? { in: ["deferred", "received", "observed"] } : "deferred",
+        // A routine or a refusal settles a row recovery already handed back to agent routing too;
+        // work the agent started (queueing, running) stays its own.
+        status: resolution === "agent" ? "deferred" : { in: ["deferred", "received", "observed"] },
         externalConversation: this.conversationScope(),
       },
       data:
@@ -603,11 +599,14 @@ export class TeamChatBridge {
               engagementReason: "message_routine_wake",
               nextAttemptAt: null,
             }
-          : {
-              status: kind === "ambient" ? "observed" : "received",
-              engagementReason: null,
-              nextAttemptAt: null,
-            },
+          : resolution === "ignored"
+            ? // Nobody answers it; its transcript copy stays.
+              { status: "ignored", engagementReason: null, nextAttemptAt: null }
+            : {
+                status: kind === "ambient" ? "observed" : "received",
+                engagementReason: null,
+                nextAttemptAt: null,
+              },
     });
     return result.count === 1;
   }
@@ -690,13 +689,14 @@ export class TeamChatBridge {
       if (!conversation.thread) throw new Error("Team chat conversation has no Rakazo thread");
       // Fetchers cannot survive a restart; reuse any completed per-file uploads.
       const stored = attachments
-        ? await this.storeAttachments(
-            message.id,
-            conversation,
-            attachments,
-            fileLimit,
+        ? await storeInboundAttachments(this.deps.storeAttachment, conversation, attachments, {
+            clientNonce: (index) => `teamchat-attachment:${message.id}:${index}`,
+            limit: fileLimit,
             downloadDeadline,
-          )
+          }).then(({ stored, unavailable }) => ({
+            artifacts: stored.map(({ artifact }) => artifact),
+            unavailable,
+          }))
         : {
             artifacts: await this.deps.prisma.artifact.findMany({
               where: {
@@ -740,46 +740,6 @@ export class TeamChatBridge {
     })().finally(() => this.mirroring.delete(message.id));
     this.mirroring.set(message.id, mirroring);
     return mirroring;
-  }
-
-  private async storeAttachments(
-    externalMessageId: string,
-    conversation: { spaceId: string; botId: string; userId: string },
-    attachments: MessagingInboundAttachment[],
-    fileLimit: number,
-    downloadDeadline?: number,
-  ) {
-    const artifacts: Array<{ id: string; name: string; mimeType: string; size: number }> = [];
-    const unavailable: string[] = [];
-    const storeAttachment = this.deps.storeAttachment;
-    for (const [index, attachment] of attachments.entries()) {
-      if (
-        !storeAttachment ||
-        index >= fileLimit ||
-        (downloadDeadline !== undefined && Date.now() >= downloadDeadline)
-      ) {
-        unavailable.push(`[file: ${attachment.name} (unavailable)]`);
-        continue;
-      }
-      try {
-        artifacts.push(
-          await storeAttachment({
-            spaceId: conversation.spaceId,
-            userId: conversation.userId,
-            botId: conversation.botId,
-            attachment,
-            clientNonce: `teamchat-attachment:${externalMessageId}:${index}`,
-            ...(downloadDeadline !== undefined ? { downloadDeadline } : {}),
-          }),
-        );
-      } catch (error) {
-        getLogger().warn("team chat attachment was not stored", {
-          reason: error instanceof Error ? error.message : String(error),
-        });
-        unavailable.push(`[file: ${attachment.name} (unavailable)]`);
-      }
-    }
-    return { artifacts, unavailable };
   }
 
   /**

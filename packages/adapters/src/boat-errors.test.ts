@@ -164,7 +164,7 @@ describe("Boat API errors", () => {
     }, "fake-key");
     const error = await call().catch((failure: unknown) => failure);
     expect(error).toBeInstanceOf(SandboxRateLimitError);
-    expect((error as Error).cause).toBeInstanceOf(ResponseError);
+    expect((error as Error).cause).toBeInstanceOf(BoatApiError);
     expect(((error as Error).cause as Error).message).toContain("HTTP 429, rate_limited");
   });
 

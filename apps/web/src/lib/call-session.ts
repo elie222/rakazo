@@ -14,8 +14,10 @@ import {
   isFarewell,
   isRunTerminalEvent,
   isSecretAskBlock,
+  isThreadSnapshotEvent,
   newClientId,
   pendingCallSecretAsk,
+  reduceThreadSnapshot,
   runThreadSubscription,
   speechFromBlocks,
   spokenMemory,
@@ -31,7 +33,6 @@ import {
 } from "./logo-avatar-activity.js";
 import { reportClientError } from "./monitoring";
 import { recheckSessionOnUnauthorized, rpc } from "./rpc.js";
-import { isThreadSnapshotEvent, reduceThreadSnapshot } from "./thread-events.js";
 import { speaker } from "./tts.js";
 import { errorText } from "./user-error";
 

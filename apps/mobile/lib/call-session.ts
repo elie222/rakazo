@@ -17,6 +17,7 @@ import {
   pendingCallSecretAsk,
   readJsonObjectWithin,
   recognitionLocaleTag,
+  reduceThreadSnapshot,
   retryDelayMs,
   spokenMemory,
 } from "@rakazo/core";
@@ -25,7 +26,6 @@ import { File } from "expo-file-system";
 import { useSyncExternalStore } from "react";
 import type { ApiRequestContext, MobileSnapshot } from "./api";
 import {
-  applyMobileThreadEvent,
   blockText,
   captureApiRequestContext,
   configureSessionEndHangUp,
@@ -1032,7 +1032,7 @@ function watchReplies(
               return;
             }
             const previous = snapshot;
-            snapshot = applyMobileThreadEvent(snapshot, event) ?? snapshot;
+            snapshot = reduceThreadSnapshot(snapshot, event) ?? snapshot;
             if (!snapshot) return;
             if (snapshot !== previous) onThread(snapshot);
             const message = latestSpokenCallReply(snapshot.messages, watchedCallId);

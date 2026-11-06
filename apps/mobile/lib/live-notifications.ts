@@ -139,10 +139,10 @@ export async function resumeLiveNotifications(
   token: string,
   spaceId: string,
   mutedBotId?: string,
-): Promise<void> {
-  if (!nativeNotifications || !token) return;
+): Promise<boolean> {
+  if (!nativeNotifications || !token) return false;
   const parsed = normalizeApiBase(endpoint);
-  if (!parsed.ok || apiBaseWarning(parsed.url)) return;
+  if (!parsed.ok || apiBaseWarning(parsed.url)) return false;
   const headers = nativeServerHeaders(parsed.url);
   if (mutedBotId && nativeNotifications.resumeAfterMute) {
     await nativeNotifications.resumeAfterMute(
@@ -156,6 +156,7 @@ export async function resumeLiveNotifications(
   } else {
     await nativeNotifications.resume(parsed.url, token, spaceId, getActiveUiLocale(), headers);
   }
+  return true;
 }
 
 /** The Android poller calls the server itself, so it needs the server's headers too. */

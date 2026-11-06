@@ -1,11 +1,14 @@
 import type { Routine } from "@rakazo/contracts";
-import { defaultCronPreset } from "@rakazo/core";
+import type { RoutineDraft } from "@rakazo/core";
+import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, BackHandler, ScrollView, Text, View } from "react-native";
+import { useBotEmail } from "../components/bot-email";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { GrowingTextInput } from "../components/growing-text-input";
 import { NativeActionButton } from "../components/native-action-button";
+import { RoutineEmailTrigger } from "../components/routine-email-trigger";
 import { RoutineScheduleEditor } from "../components/routine-schedule-editor";
 import {
   SettingsGroup,
@@ -19,10 +22,7 @@ import { dateLocaleForUi, useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import { deviceTimeZone, routineTriggerRows } from "../lib/routine";
-import type { RoutineDraft } from "../lib/routine-draft";
 import {
-  draftFromRoutine,
-  emptyRoutineDraft,
   routineDraftChanged,
   routineSaveRequest,
   routineScheduleLocked,
@@ -85,6 +85,7 @@ export default function RoutineDetail() {
       {botId && editable && (creating || editing) ? (
         <RoutineEditor
           botId={botId}
+          botName={botName ?? ""}
           routine={routine}
           onCancel={() => setEditing(false)}
           onSaved={(saved) => {
@@ -273,12 +274,14 @@ function RoutineView({
 /** The form for a new routine, or for one opened with Edit. Save and Cancel live in the header. */
 function RoutineEditor({
   botId,
+  botName,
   routine,
   onCancel,
   onSaved,
   onDeleted,
 }: {
   botId: string;
+  botName: string;
   routine: Routine | null;
   onCancel: () => void;
   onSaved: (routine: Routine) => void;
@@ -294,6 +297,7 @@ function RoutineEditor({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const busy = useRef(false);
+  const email = useBotEmail(botId);
   const dirty = routineDraftChanged(draft, base);
   const locked = routineScheduleLocked(base);
 
@@ -322,7 +326,7 @@ function RoutineEditor({
           ? t("Name this routine.")
           : request.error === "prompt"
             ? t("Write what this routine should do.")
-            : t("Add a schedule to run this routine."),
+            : t("Add a trigger to run this routine."),
       );
       return;
     }
@@ -370,7 +374,10 @@ function RoutineEditor({
     );
   }
 
-  const canSave = dirty && !saving;
+  // A newly added email trigger needs the bot's address first; the server refuses it without one.
+  const awaitingAddress =
+    Boolean(draft.emailSenders) && !base?.emailSenders && !email.address?.address;
+  const canSave = dirty && !saving && !awaitingAddress;
   return (
     <>
       <Stack.Screen
@@ -467,9 +474,9 @@ function RoutineEditor({
               }
             />
           ))}
-          {/* A change trigger checks on its own interval, so it never shares a schedule. */}
-          {base?.watch ? null : (
-            <SettingsGroup>
+          <SettingsGroup>
+            {/* A change trigger checks on its own interval, so it never shares a schedule. */}
+            {base?.watch ? null : (
               <SettingsRow
                 key="add"
                 accessibilityRole="button"
@@ -477,10 +484,29 @@ function RoutineEditor({
                 title={t("Add schedule")}
                 onPress={() => update({ schedules: [...draft.schedules, defaultCronPreset()] })}
               />
-            </SettingsGroup>
-          )}
+            )}
+            {email.address && !draft.emailSenders ? (
+              <SettingsRow
+                key="email"
+                accessibilityRole="button"
+                tinted
+                title={t("Add email trigger")}
+                onPress={() => update({ emailSenders: "owner" })}
+              />
+            ) : null}
+          </SettingsGroup>
         </View>
       )}
+      {draft.emailSenders ? (
+        <RoutineEmailTrigger
+          botId={botId}
+          botName={botName}
+          email={email}
+          senders={draft.emailSenders}
+          onChange={(emailSenders) => update({ emailSenders })}
+          onRemove={() => update({ emailSenders: null })}
+        />
+      ) : null}
       {base ? (
         <SettingsGroup>
           <SettingsRow

@@ -1,6 +1,6 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { copyableMessageText } from "./message-text.js";
+import { copyableMessageText, selectableMessageText } from "./message-text.js";
 
 function message(blocks: ThreadMessage["blocks"]): ThreadMessage {
   return { id: "m_1", threadId: "t_1", seq: 1, role: "bot", blocks, createdAt: "2026-08-29" };
@@ -61,5 +61,31 @@ describe("copyableMessageText", () => {
         ]),
       ),
     ).toBe("Alice (iMessage): hello");
+  });
+
+  it("leaves out card chrome between text and channel messages", () => {
+    expect(
+      copyableMessageText(
+        message([
+          { kind: "text", text: "Hello" },
+          {
+            kind: "channel_message",
+            provider: "sendblue",
+            transport: "SMS",
+            channelId: "ch-1",
+            fromAddress: "+15551234567",
+            fromLabel: "Sender",
+            text: "Reply",
+          },
+          { kind: "card", lines: [] },
+        ]),
+      ),
+    ).toBe("Hello\nSender (SMS): Reply");
+  });
+
+  it("keeps leading whitespace for selection while copying trims it", () => {
+    const indented = message([{ kind: "text", text: "    indented\nnext  " }]);
+    expect(selectableMessageText(indented)).toBe("    indented\nnext  ");
+    expect(copyableMessageText(indented)).toBe("indented\nnext");
   });
 });

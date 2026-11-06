@@ -8,6 +8,7 @@ import {
   byokYearlySwitchSavings,
   COMPUTER_SIZE_SPECS,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
+  isCancelledTrial,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
@@ -48,9 +49,9 @@ import {
   formatBillingPrice,
 } from "../lib/billing";
 import type { RpcClient } from "../lib/rpc";
-import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 import { AccountMenu } from "./AccountMenu";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
 type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
@@ -241,9 +242,11 @@ export function CreditAmountSelect({
 
 export function CreditChoice({
   status,
+  client,
   dismissible = false,
 }: {
   status: BillingStatus;
+  client: RpcClient;
   dismissible?: boolean;
 }) {
   const { t, i18n } = useLingui();
@@ -275,12 +278,12 @@ export function CreditChoice({
     setError(null);
     try {
       if (ownKey && status.byokFreeUntil) {
-        go((await rpc.billing.checkout({ interval })).url);
+        go((await client.billing.checkout({ interval })).url);
       } else if (ownKey) {
-        const { url } = await rpc.billing.selectFunding({ funding: "byok", interval });
+        const { url } = await client.billing.selectFunding({ funding: "byok", interval });
         go(url ?? "/onboarding");
       } else {
-        const { url } = await rpc.billing.purchaseCredits({
+        const { url } = await client.billing.purchaseCredits({
           amountCents: amount,
           monthly: true,
         });
@@ -658,77 +661,76 @@ export function ModelCreditsSettings({
                 <Trans>Start plan now</Trans>
               </Button>
             </>
+          ) : isCancelledTrial(status) ? (
+            <>
+              <p className="mt-2 text-body text-muted-foreground">
+                <Trans>Cancelled trials have no computer hours.</Trans>
+              </p>
+              {status.canManage && status.hasCustomer ? (
+                <Button
+                  className="mt-5"
+                  variant="secondary"
+                  disabled={pending}
+                  onClick={() =>
+                    void action(async () => {
+                      const { url } = await client.billing.portal();
+                      window.location.assign(url);
+                    })
+                  }
+                >
+                  <Trans>Renew plan</Trans>
+                </Button>
+              ) : null}
+            </>
           ) : null}
         </div>
       ) : null}
-      <AlertDialog open={endTrialOpen} onOpenChange={setEndTrialOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              <Trans>Start your plan now?</Trans>
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {price ? (
-                <Trans>Your trial ends and your card is charged {price} today.</Trans>
-              ) : (
-                <Trans>Your trial ends and your card is charged today.</Trans>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              <Trans>Cancel</Trans>
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={pending}
-              onClick={() =>
-                void action(async () => {
-                  setEndTrialOpen(false);
-                  await client.billing.endTrial();
-                  await refresh();
-                })
-              }
-            >
-              <Trans>Start plan</Trans>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog open={yearlyOpen} onOpenChange={setYearlyOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              <Trans>Switch to yearly?</Trans>
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {status.state === "trialing" ? (
-                <Trans>Your plan becomes {annualPrice} / year when your trial ends.</Trans>
-              ) : (
-                <Trans>
-                  Your card is charged {annualPrice} today, less the unused part of this month.
-                </Trans>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              <Trans>Cancel</Trans>
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={pending}
-              onClick={() =>
-                void action(async () => {
-                  setYearlyOpen(false);
-                  await client.billing.switchToYearly();
-                  await refresh();
-                })
-              }
-            >
-              <Trans>Switch</Trans>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={endTrialOpen}
+        onCancel={() => setEndTrialOpen(false)}
+        variant="default"
+        title={<Trans>Start your plan now?</Trans>}
+        description={
+          price ? (
+            <Trans>Your trial ends and your card is charged {price} today.</Trans>
+          ) : (
+            <Trans>Your trial ends and your card is charged today.</Trans>
+          )
+        }
+        confirmDisabled={pending}
+        onConfirm={() =>
+          void action(async () => {
+            setEndTrialOpen(false);
+            await client.billing.endTrial();
+            await refresh();
+          })
+        }
+        confirmLabel={<Trans>Start plan</Trans>}
+      />
+      <ConfirmDialog
+        open={yearlyOpen}
+        onCancel={() => setYearlyOpen(false)}
+        variant="default"
+        title={<Trans>Switch to yearly?</Trans>}
+        description={
+          status.state === "trialing" ? (
+            <Trans>Your plan becomes {annualPrice} / year when your trial ends.</Trans>
+          ) : (
+            <Trans>
+              Your card is charged {annualPrice} today, less the unused part of this month.
+            </Trans>
+          )
+        }
+        confirmDisabled={pending}
+        onConfirm={() =>
+          void action(async () => {
+            setYearlyOpen(false);
+            await client.billing.switchToYearly();
+            await refresh();
+          })
+        }
+        confirmLabel={<Trans>Switch</Trans>}
+      />
       <AlertDialog
         open={tierTarget !== null}
         onOpenChange={(open) => {

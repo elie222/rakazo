@@ -31,12 +31,12 @@ import {
   modelRoleTarget,
   Prisma,
   saveModelPreference,
+  withTransactionRetry,
   writeModelRole,
 } from "@rakazo/db";
 import { mayUsePrivateEndpoint } from "./mcp-servers.js";
 import { assertNoDanglingModelPins } from "./model-pins.js";
 import type { RouterDeps } from "./router.js";
-import { withSerializableRetry } from "./serializable-retry.js";
 
 export function prepareAllowedThinkingLevels(
   deps: RouterDeps,
@@ -291,7 +291,7 @@ export async function persistModelCredential(
 ) {
   const prepared = await prepareModelCredential(deps, actor, input, codexCatalog);
   throwIfAborted(input.signal);
-  const cred = await withSerializableRetry(() =>
+  const cred = await withTransactionRetry(() =>
     deps.prisma.$transaction((tx) => writeModelCredential(tx, actor, input, prepared), {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     }),

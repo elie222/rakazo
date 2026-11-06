@@ -12,6 +12,7 @@ import { useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { BotEmailAddressesGroup } from "../../components/bot-email";
 import { useIdentityConfirmation } from "../../components/confirm-identity";
 import { ListSearchInput } from "../../components/list-search-input";
 import { LoadFailure } from "../../components/load-failure";
@@ -372,6 +373,7 @@ export default function Vault() {
             })}
           </SettingsGroup>
         ) : null}
+        {scope === "account" ? <BotEmailAddressesGroup /> : null}
       </ScrollView>
       {openedItem ? (
         <VaultItemSheet

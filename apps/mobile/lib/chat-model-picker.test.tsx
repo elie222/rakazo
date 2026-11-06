@@ -107,9 +107,17 @@ vi.mock("./api", () => ({
   selectedSpaceId: () => "space-fixture",
   rpc: async (procedure: string, input?: unknown, options?: { signal?: AbortSignal }) => {
     const cloudflare = mocks.gateway
-      ? { provider: "cloudflare-ai-gateway", providerName: "Cloudflare AI Gateway" }
+      ? {
+          provider: "cloudflare-ai-gateway",
+          providerName: "Cloudflare AI Gateway",
+          routingFields: ["accountId", "gatewayId"],
+        }
       : mocks.workers
-        ? { provider: "cloudflare-workers-ai", providerName: "Cloudflare Workers AI" }
+        ? {
+            provider: "cloudflare-workers-ai",
+            providerName: "Cloudflare Workers AI",
+            routingFields: ["accountId"],
+          }
         : undefined;
     const result = mocks.rpc(procedure, input);
     if (procedure === "models/connect") {
@@ -193,6 +201,7 @@ vi.mock("./api", () => ({
                   ...entry,
                   provider: cloudflare?.provider ?? entry.provider,
                   providerName: cloudflare?.providerName ?? entry.providerName,
+                  ...(cloudflare ? { routingFields: cloudflare.routingFields } : {}),
                 })),
                 ...(mocks.extraProviders
                   ? ["Anthropic", "Google", "OpenAI", "Other", "Last"].map((name) => ({
@@ -447,6 +456,8 @@ vi.mock("../components/settings-group", () => ({
       footer,
     ),
   SettingsLabel: ({ children }: { children: ReactNode }) => createElement("h2", {}, children),
+  SettingsSwitch: ({ label }: { label: string }) =>
+    createElement("button", { type: "button", role: "switch" }, label),
   SettingsFooter: ({ children }: { children: ReactNode }) => createElement("span", {}, children),
   SettingsRow: ({
     title,
