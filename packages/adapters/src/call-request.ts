@@ -17,12 +17,13 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  isUniqueViolation,
   runAsSystem,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
-import { isUniqueViolation, publishMessage, runLeaseFor } from "./run-messages.js";
+import { publishMessage, runLeaseFor } from "./run-messages.js";
 
 const REASON_MAX = 120;
 const OPENING_MAX = 240;

@@ -64,6 +64,7 @@ import {
   partialReplyClientNonce,
   RunHistoryWriteError,
 } from "./messages.js";
+import { isRecordNotFound } from "./prisma-errors.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
@@ -2201,10 +2202,6 @@ export async function appendEventInTransaction(
       ).count === 1,
   );
   return { ...event, firstResponse };
-}
-
-function isRecordNotFound(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2025");
 }
 
 /** Timing metadata is returned by the transaction that recorded first output. */

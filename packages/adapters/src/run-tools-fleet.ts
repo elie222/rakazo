@@ -5,6 +5,7 @@ import {
   createSpaceForMember,
   InstructionConflictError,
   InvalidSpaceNameError,
+  isRecordNotFound,
   runAsSystem,
   SpaceLimitError,
   THREAD_LOCK_TRANSACTION_OPTIONS,
@@ -355,8 +356,7 @@ export const fleetTools: ToolHandlers = {
           data: settings.data,
         });
       } catch (error) {
-        if (!(error && typeof error === "object" && "code" in error && error.code === "P2025"))
-          throw error;
+        if (!isRecordNotFound(error)) throw error;
         return call.finish({ error: "Your settings changed meanwhile; read them and try again." });
       }
       await publishMessage(deps, run, "bot", [

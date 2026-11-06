@@ -39,6 +39,7 @@ import {
   expireComputerExecutionLeases,
   InstructionConflictError,
   IsolationError,
+  isRecordNotFound,
   recordComputerRunEnd,
   recordSecurityEvent,
   restoreBotUnderComputerQuota,
@@ -56,12 +57,7 @@ import { requireIdentityConfirmation } from "../identity-confirmation.js";
 import type { RouterDeps } from "../router.js";
 import { loadMessagePage } from "../thread-message-pages.js";
 import type { RouterContext } from "./context.js";
-import {
-  computerContext,
-  isRecordNotFound,
-  modelSetup,
-  THREAD_MESSAGE_PAGE_SIZE,
-} from "./shared.js";
+import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
 
 /** Surface a Space deletion race as a retryable conflict instead of a generic failure. */
 function mapSpaceLifecycleError(error: unknown): unknown {
