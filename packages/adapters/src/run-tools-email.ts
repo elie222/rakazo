@@ -249,11 +249,16 @@ const SUBJECT_MAX_CHARS = 500;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_REFERENCES = 20;
 
-const Recipients = z
-  .union([z.email(), z.array(z.email())])
-  .transform((value) =>
-    (Array.isArray(value) ? value : [value]).map((address) => address.trim().toLowerCase()),
-  );
+const Recipients = z.union([z.email(), z.array(z.email())]).transform((value) =>
+  // Only the domain is case-insensitive; the part before the @ goes out exactly as given.
+  (Array.isArray(value) ? value : [value]).map((address) => {
+    const at = address.trim().lastIndexOf("@");
+    return `${address.trim().slice(0, at)}@${address
+      .trim()
+      .slice(at + 1)
+      .toLowerCase()}`;
+  }),
+);
 const SendEmailSchema = z
   .object({
     to: Recipients.refine((list) => list.length > 0, "Name at least one recipient."),
@@ -278,9 +283,13 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
     return call.finish({ error: `Send to at most ${SEND_RECIPIENTS_MAX} people at once.` });
   }
   // An address can carry a secret out as surely as the body, and can't be redacted into another.
-  // Addresses are lowercased, so secrets are compared lowercased too.
+  // Compared lowercased, so a change of case can't slip a secret past.
   const secrets = ctx.secrets.map((secret) => secret.toLowerCase());
-  if ([...input.to, ...cc].some((address) => redactSecrets(address, secrets) !== address)) {
+  if (
+    [...input.to, ...cc].some(
+      (address) => redactSecrets(address.toLowerCase(), secrets) !== address.toLowerCase(),
+    )
+  ) {
     return call.finish({ error: "A recipient's address contains a secret. Don't send it." });
   }
   const name = await deps.prisma.botEmailAddress.findUnique({
@@ -314,6 +323,9 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
   if (!subject) return call.finish({ error: "Give the email a subject." });
   // Secrets this run has used never leave in an email, whatever the bot was asked to write.
   const text = redactSecrets(input.text, ctx.secrets);
+  if (text.length > SEND_TEXT_MAX_CHARS) {
+    return call.finish({ error: "The email is too long once secrets are removed. Shorten it." });
+  }
   // A reply to mail the bot sent answers what that one answered: its own ID is the provider's.
   const parent = original?.messageId ?? original?.references.at(-1);
   const references = original?.messageId
@@ -342,7 +354,12 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
     deps.prisma.botEmailMessage.count({ where: { ...today, botId: bot.id } }),
     deps.prisma.botEmailMessage.count({ where: { ...today, bot: { userId: bot.userId } } }),
   ]);
-  if (mine >= SEND_EMAIL_DAILY_LIMIT || owners >= SEND_EMAIL_OWNER_DAILY_LIMIT) {
+  if (mine >= SEND_EMAIL_DAILY_LIMIT) {
+    return call.finish({
+      error: "You've sent as many emails today as you can. Try again tomorrow.",
+    });
+  }
+  if (owners >= SEND_EMAIL_OWNER_DAILY_LIMIT) {
     return call.finish({
       error: "You've sent as many emails today as your owner's bots can. Try again tomorrow.",
     });

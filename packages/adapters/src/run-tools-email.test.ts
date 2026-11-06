@@ -605,12 +605,12 @@ describe("send_email", () => {
       sent: true,
       id: "sent-1",
       from: "scout@bots.test",
-      to: ["support@shop.test"],
+      to: ["Support@shop.test"],
     });
     expect(send).toHaveBeenCalledWith({
       from: '"Scout Bot" <scout@bots.test>',
       replyTo: "scout@bots.test",
-      to: ["support@shop.test"],
+      to: ["Support@shop.test"],
       subject: "Order 42",
       text: expect.not.stringContaining("hunter2-secret"),
     });
@@ -701,9 +701,9 @@ describe("send_email", () => {
     const { call, send } = sendRun({ sentToday: SEND_EMAIL_DAILY_LIMIT });
     const many = Array.from({ length: 11 }, (_, index) => `p${index}@shop.test`);
 
-    expect((await call({ to: ["a@shop.test"], subject: "Hi", text: "x" })).error).toContain(
-      "Try again tomorrow",
-    );
+    expect(await call({ to: ["a@shop.test"], subject: "Hi", text: "x" })).toEqual({
+      error: "You've sent as many emails today as you can. Try again tomorrow.",
+    });
     expect(
       (
         await sendRun({ ownerSentToday: SEND_EMAIL_OWNER_DAILY_LIMIT }).call({
@@ -712,11 +712,11 @@ describe("send_email", () => {
           text: "x",
         })
       ).error,
-    ).toContain("Try again tomorrow");
+    ).toBe("You've sent as many emails today as your owner's bots can. Try again tomorrow.");
     expect(
       await sendRun().call({ to: ["hunter2-secret@evil.test"], subject: "Hi", text: "x" }),
     ).toEqual({ error: "A recipient's address contains a secret. Don't send it." });
-    // Addresses are lowercased, so a secret with capitals is still caught.
+    // Compared lowercased, so a change of case can't slip a secret past.
     expect(
       await sendRun({ secrets: ["Tok3nXYZ"] }).call({
         to: ["tok3nxyz@evil.test"],
@@ -733,7 +733,23 @@ describe("send_email", () => {
     expect((await sendRun().call({ to: [], subject: "Hi", text: "x" })).error).toContain(
       "Name at least one recipient.",
     );
+    // Masking can lengthen the body, and the limit holds for what would go out.
+    expect(
+      await sendRun({ secrets: ["Q"] }).call({
+        to: ["a@shop.test"],
+        subject: "Hi",
+        text: "Q".repeat(19_000),
+      }),
+    ).toEqual({ error: "The email is too long once secrets are removed. Shorten it." });
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("keeps the part of an address before the @ as written", async () => {
+    const { call, send } = sendRun();
+
+    await call({ to: ["Ada.Lovelace@Shop.TEST"], subject: "Hi", text: "x" });
+
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: ["Ada.Lovelace@shop.test"] }));
   });
 
   it("is offered only where the inbox is read and email can go out, under the usual approvals", () => {
