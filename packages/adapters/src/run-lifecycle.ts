@@ -6,6 +6,7 @@ import {
 import type { RunStatus } from "@rakazo/contracts";
 import {
   assertTransition,
+  BACKGROUND_HELPER_TRIGGER,
   displayName,
   isTerminal,
   nextFence,
@@ -16,6 +17,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { isTooManyDatabaseConnections, spaceTakesWork } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
+import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { sleepDeferReason } from "./computer-idle.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
@@ -116,7 +118,12 @@ export async function failRunBeforeTurn(
       { forceUnread: true },
     ).catch((error) => getLogger().error("bot message failure return", error));
   }
-  if (!failed.continuationRunId) {
+  if (run.trigger === BACKGROUND_HELPER_TRIGGER) {
+    // The chat that started the helper hears about its failure there, so it sends no push.
+    await returnHelperOutcome(deps, run, { status: "failed", text: message }).catch((error) =>
+      getLogger().error("background helper failure return", error),
+    );
+  } else if (!failed.continuationRunId) {
     await notifyRun(deps, run, {
       kind: "failure",
       title: `${displayName(botName, "Bot")} failed`,

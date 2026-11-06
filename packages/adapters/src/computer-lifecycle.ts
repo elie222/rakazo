@@ -18,6 +18,7 @@ import type { ComputerSize, ComputerUpdate } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   abortableDelay,
+  COMPUTER_USING_RUNS,
   isRetryableError,
   parseScreenLeaseId,
   screenLeaseId,
@@ -153,6 +154,7 @@ async function hasLiveForeignRunLease(
     where: {
       status: { in: [...ACTIVE_RUN_STATUSES] },
       bot: { computerId },
+      ...COMPUTER_USING_RUNS,
       leaseExpiresAt: { gt: new Date() },
       ...(exceptRunId ? { id: { not: exceptRunId } } : {}),
     },
@@ -1073,6 +1075,7 @@ export async function replaceComputer(
       where: {
         status: { in: [...ACTIVE_RUN_STATUSES] },
         bot: { computerId },
+        ...COMPUTER_USING_RUNS,
       },
       select: { id: true },
     });
@@ -1157,6 +1160,7 @@ export async function replaceComputer(
           where: {
             status: { in: [...ACTIVE_RUN_STATUSES] },
             bot: { computerId },
+            ...COMPUTER_USING_RUNS,
           },
           select: { id: true },
         });

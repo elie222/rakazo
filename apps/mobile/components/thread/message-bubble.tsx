@@ -178,6 +178,12 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
         onOpenBot={props.onOpenBot}
         onHelperToggle={props.onHelperToggle}
         userBubble={props.userBubble}
+        // A saved running card is a background helper's; a live one belongs to this turn.
+        stopHelper={
+          first.kind === "subagent" && message.botId && !message.id.startsWith("subagent:")
+            ? { botId: message.botId, messageId: message.id }
+            : undefined
+        }
       />
     ) : (
       <MessageBubbleContent

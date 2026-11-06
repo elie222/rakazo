@@ -956,6 +956,44 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(
       call(asInvitee, "skills/start", { botId: otherBot.id, goal: "Book a table" }),
     ).resolves.toMatchObject({ status: 409 });
+    // A background helper never uses the computer, so it doesn't keep teaching away, and the
+    // teacher's own helper keeps working through the lesson.
+    await system.run.updateMany({
+      where: { botId: bot.id, status: "running" },
+      data: { trigger: "helper" },
+    });
+    const helperThread = await system.thread.create({
+      data: { spaceId: home, helperBotId: otherBot.id, userId: invitee.id },
+    });
+    const helperTask = await system.task.create({
+      data: {
+        spaceId: home,
+        botId: otherBot.id,
+        threadId: helperThread.id,
+        userId: invitee.id,
+        prompt: "Compare menus",
+        status: "running",
+      },
+    });
+    const ownHelper = await system.run.create({
+      data: {
+        spaceId: home,
+        botId: otherBot.id,
+        threadId: helperThread.id,
+        taskId: helperTask.id,
+        userId: invitee.id,
+        status: "running",
+        trigger: "helper",
+      },
+    });
+    expect(
+      JSON.stringify(
+        await call(asInvitee, "skills/start", { botId: otherBot.id, goal: "Book a table" }),
+      ),
+    ).not.toContain("working for someone else");
+    await expect(
+      system.run.findUniqueOrThrow({ where: { id: ownHelper.id } }),
+    ).resolves.toMatchObject({ status: "running" });
 
     // A member removed while holding the screen frees it at once, not when the lease runs out.
     await system.computer.update({

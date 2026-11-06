@@ -441,6 +441,7 @@ export const JA_MESSAGES: Record<string, string> = {
     "このアーティファクトの全{count}個のバージョンを削除します。この操作は元に戻せません。",
   Versions: "バージョン",
   Stop: "停止",
+  Stopped: "停止済み",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "すべてのメッセージを削除し、現在の作業を停止します。ボット、コンピューター、メモリ、ルーティンは保持されます。",
   "Type your answer": "回答を入力",

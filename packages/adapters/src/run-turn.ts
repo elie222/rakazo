@@ -11,6 +11,7 @@ import {
   TransientModelError,
 } from "@rakazo/adapter-kit";
 import {
+  BACKGROUND_HELPER_TRIGGER,
   containsSecret,
   displayName,
   humanizeToolName,
@@ -27,6 +28,7 @@ import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { MAX_APPROVAL_DETAIL_LENGTH, truncate } from "./approval-ask.js";
 import { isToolPauseResult } from "./approval-effect.js";
+import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { holdComputerExecutionLeaseForTakeover } from "./computer-lifecycle.js";
@@ -906,6 +908,11 @@ export async function completeRun(ctx: RunContext) {
       botMessageOutcome.intent,
     ).catch((error) => getLogger().error("bot message result return", error));
   }
+  if (run.trigger === BACKGROUND_HELPER_TRIGGER) {
+    await returnHelperOutcome(deps, run, { status: "completed", text }).catch((error) =>
+      getLogger().error("background helper result return", error),
+    );
+  }
   const notifyBody = completionNotificationPreview(text);
   if (runSendsFinishNotification(run.trigger) && notifyBody && !completed.continuationRunId) {
     await notifyRun(deps, run, {
@@ -1051,6 +1058,11 @@ export async function failRun(
       "status",
       { forceUnread: true },
     ).catch((returnError) => getLogger().error("bot message failure return", returnError));
+  }
+  if (run.trigger === BACKGROUND_HELPER_TRIGGER) {
+    await returnHelperOutcome(deps, run, { status: "failed", text: message }).catch((returnError) =>
+      getLogger().error("background helper failure return", returnError),
+    );
   }
   // A refusal of the deployment's own key is the operator's problem, not the user's.
   const refusal =

@@ -6640,6 +6640,7 @@ msgstr ""
 msgid "Steps"
 msgstr "실행 단계"
 
+#: src/components/SubagentCard.tsx
 #: src/pages/RoutineList.tsx
 #: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
@@ -6658,6 +6659,10 @@ msgstr "읽기 중지"
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Stop teaching"
 msgstr "가르치기 종료"
+
+#: src/components/SubagentCard.tsx
+msgid "Stopped"
+msgstr "중지됨"
 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts

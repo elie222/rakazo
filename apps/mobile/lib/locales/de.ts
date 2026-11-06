@@ -460,6 +460,7 @@ export const DE_MESSAGES: Record<string, string> = {
     "Das löscht alle {count} Versionen dieses Artefakts. Das lässt sich nicht rückgängig machen.",
   Versions: "Versionen",
   Stop: "Stoppen",
+  Stopped: "Gestoppt",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Das entfernt alle Nachrichten und stoppt die laufende Arbeit. Bot, Computer, Erinnerungen und Routinen bleiben erhalten.",
   "Type your answer": "Gib deine Antwort ein",

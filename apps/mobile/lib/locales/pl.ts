@@ -451,6 +451,7 @@ export const PL_MESSAGES: Record<string, string> = {
     "Wszystkie wersje tego artefaktu ({count}) zostaną usunięte. Tej operacji nie można cofnąć.",
   Versions: "Wersje",
   Stop: "Zatrzymaj",
+  Stopped: "Zatrzymano",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Wszystkie wiadomości zostaną usunięte, a bieżąca praca zatrzymana. Bot, komputer, pamięć i rutyny zostaną zachowane.",
   "Type your answer": "Wpisz odpowiedź",

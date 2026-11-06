@@ -817,6 +817,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   Starting: "正在启动",
   "Starting…": "正在启动…",
   Stop: "停止",
+  Stopped: "已停止",
   Submit: "提交",
   "Take control": "接管控制",
   "Clean up": "清理",

@@ -457,6 +457,7 @@ function toAgentTool(
           instructions: raw.instructions ? String(raw.instructions) : "",
           model_provider: raw.model_provider ? String(raw.model_provider) : "",
           model_id: raw.model_id ? String(raw.model_id) : "",
+          ...(raw.background === true ? { background: true } : {}),
         };
       }
       if (tool.name === "spawn_bot") {
@@ -616,7 +617,8 @@ function toAgentTool(
                   details: found,
                 };
               }
-              if (tool.name === "run_subagent") {
+              // A background helper is its own run, which the executor starts like any tool effect.
+              if (tool.name === "run_subagent" && args.background !== true) {
                 const result = await executeSubagent(host, executionId, args);
                 return {
                   content: [{ type: "text", text: result }],

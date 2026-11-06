@@ -836,6 +836,7 @@ export const RU_MESSAGES: Record<string, string> = {
   Starting: "Запуск",
   "Starting…": "Запуск…",
   Stop: "Остановить",
+  Stopped: "Остановлено",
   Submit: "Отправить",
   "Take control": "Взять управление",
   "Clean up": "Очистить",

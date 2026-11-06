@@ -6640,6 +6640,7 @@ msgstr ""
 msgid "Steps"
 msgstr "Шаги"
 
+#: src/components/SubagentCard.tsx
 #: src/pages/RoutineList.tsx
 #: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
@@ -6658,6 +6659,10 @@ msgstr "Остановить озвучивание"
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Stop teaching"
 msgstr "Остановить обучение"
+
+#: src/components/SubagentCard.tsx
+msgid "Stopped"
+msgstr "Остановлено"
 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts

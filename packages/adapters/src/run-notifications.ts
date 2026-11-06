@@ -1,6 +1,7 @@
 import type { NotificationMessage } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
+  BACKGROUND_HELPER_TRIGGER,
   isBackgroundRunTrigger,
   plainTextFromMarkdown,
   redactSecrets,
@@ -137,7 +138,12 @@ export function publishChatAlert(
 }
 
 export function runSendsFinishNotification(trigger: string): boolean {
-  return trigger !== "created" && !isBackgroundRunTrigger(trigger);
+  // A background helper's result is announced by the turn that passes it on.
+  return (
+    trigger !== "created" &&
+    trigger !== BACKGROUND_HELPER_TRIGGER &&
+    !isBackgroundRunTrigger(trigger)
+  );
 }
 
 /** User-facing text for completion notifications; empty when only tool/step activity remains. */

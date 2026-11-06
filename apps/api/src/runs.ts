@@ -2,15 +2,24 @@ import type { Actor, RunActivityRow } from "@rakazo/contracts";
 import { MessageBlock } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  BACKGROUND_HELPER_TRIGGER,
   BACKGROUND_RUN_TRIGGERS,
   botMessageContext,
   displayName,
+  HELPER_RESULT_TRIGGER,
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma } from "@rakazo/db";
 
 const RECENT_LIMIT = 20;
+// Background ticket work belongs on the board, not in the activity list. A background helper and
+// the turn passing on its result show in the chat, on the helper's card.
+const ACTIVITY_HIDDEN_TRIGGERS = [
+  ...BACKGROUND_RUN_TRIGGERS,
+  BACKGROUND_HELPER_TRIGGER,
+  HELPER_RESULT_TRIGGER,
+] as const;
 const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
 
 function promptSnippet(prompt: string, max = 120): string {
@@ -67,8 +76,7 @@ export async function listSpaceRuns(
         ? {
             spaceId: actor.spaceId,
             bot: { archivedAt: null },
-            // Background ticket work belongs on the board, not in the activity list.
-            trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
+            trigger: { notIn: [...ACTIVITY_HIDDEN_TRIGGERS] },
             status: { in: [...ACTIVE_RUN_STATUSES] },
           }
         : { spaceId: actor.spaceId, id: { in: await latestFinishedRunPerChat(prisma, actor) } },
@@ -121,7 +129,7 @@ async function latestFinishedRunPerChat(prisma: PrismaClient, actor: Actor): Pro
       JOIN bots b ON b.id = r."botId"
       WHERE r."spaceId" = ${actor.spaceId}
         AND b."archivedAt" IS NULL
-        AND r.trigger NOT IN (${Prisma.join([...BACKGROUND_RUN_TRIGGERS])})
+        AND r.trigger NOT IN (${Prisma.join([...ACTIVITY_HIDDEN_TRIGGERS])})
         AND r.status IN (${Prisma.join([...TERMINAL_STATUSES])})
       ORDER BY COALESCE('group:' || t."groupId", 'bot:' || r."botId"), r."completedAt" DESC, r."updatedAt" DESC, r.id DESC
     ) latest

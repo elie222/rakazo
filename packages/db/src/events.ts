@@ -6,6 +6,7 @@ import {
   ThreadActivityPayloadSchema,
 } from "@rakazo/contracts";
 import {
+  BACKGROUND_HELPER_TRIGGER,
   callIdFromClientNonce,
   isConversationalRun,
   messageBypassesTakeoverWait,
@@ -248,8 +249,15 @@ export async function clearThread(
     const activeRuns = await tx.run.findMany({
       where: {
         spaceId: input.spaceId,
-        threadId: input.threadId,
-        ...(input.groupId ? {} : { botId: input.botId }),
+        ...(input.groupId
+          ? { threadId: input.threadId }
+          : {
+              OR: [
+                { threadId: input.threadId, botId: input.botId },
+                // Background helpers this chat started work in threads of their own.
+                { trigger: BACKGROUND_HELPER_TRIGGER, sourceMessage: { threadId: input.threadId } },
+              ],
+            }),
         status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
       },
       select: { id: true, taskId: true, userId: true, spaceId: true },
@@ -258,8 +266,20 @@ export async function clearThread(
     const runIds = (await cancelRunsInTransaction(tx, activeRuns, now)).map((run) => run.id);
     // Expire as tombstones so a still-open provider screen claim cannot reset fencing to 1.
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
-    await tx.message.deleteMany({ where: { threadId: input.threadId } });
-    await tx.event.deleteMany({ where: { threadId: input.threadId } });
+    // Helpers start only from the bot's own chat, so every thread the bot's helpers wrote goes
+    // with it, including imported ones that have no runs.
+    const helperThreads = { spaceId: input.spaceId, helperBotId: input.botId };
+    const cleared = input.groupId
+      ? { threadId: input.threadId }
+      : { OR: [{ threadId: input.threadId }, { thread: helperThreads }] };
+    await tx.message.deleteMany({ where: cleared });
+    await tx.event.deleteMany({ where: cleared });
+    if (!input.groupId) {
+      await tx.thread.updateMany({
+        where: { ...helperThreads, historyCompactionSummary: { not: null } },
+        data: { historyCompactionSummary: null, historyCompactionGeneration: { increment: 1 } },
+      });
+    }
     if (thread.nextMessageSeq > 0) {
       // nextMessageSeq is not reset, so mark every deleted message as already compacted.
       // Leaving the cursor behind would let compaction re-summarize deleted history (or, reset

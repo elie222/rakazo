@@ -64,6 +64,7 @@ vi.mock("../components/change-undo", () => ({
 }));
 vi.mock("../components/McpApprovalCard", () => ({ McpApprovalCard: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/native-action-button", () => ({ NativeActionButton: () => null }));
 
 import { MessageBubble } from "../components/thread/message-bubble";
 

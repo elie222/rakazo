@@ -3,11 +3,11 @@ import { DEFAULT_CONTEXT_STRATEGY, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
 import { disabledBuiltinToolSet } from "@rakazo/contracts";
 import {
+  BACKGROUND_HELPER_TRIGGER,
   botMessageAllowsSilence,
   expandSkillReferencesInPrompt,
   formatSkillRunPrompt,
   formatSkillsCatalogInstruction,
-  isBackgroundRunTrigger,
   isCallClientNonce,
   isMessagingChannelRun,
   isOwnerStartedRun,
@@ -44,6 +44,7 @@ import { enrichLogContext, getLogger } from "@rakazo/logging";
 import { formatAgentEnvironmentInstruction } from "./agent-environment.js";
 import { createApprovedEffectReplayQueue } from "./approval-effect.js";
 import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
+import { backgroundHelpersAllowed } from "./background-helpers.js";
 import { loadBotMessageContext } from "./bot-messages.js";
 import {
   commandCredentialRedactions,
@@ -177,6 +178,7 @@ import {
   BUILTIN_AGENT_TOOL_NAMES,
   followUpsOffered,
   offeredFleetTools,
+  offersAgentConnectionTools,
   selectBuiltinToolsForRun,
 } from "./run-tool-selection.js";
 import { applyTool } from "./run-tools.js";
@@ -328,7 +330,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         },
       });
       if (!leaseTarget.computerId) throw new Error("Bot has no computer");
-      if (leaseTarget.computerSwitching) {
+      // A background helper never uses the computer, so it neither waits for a switch nor holds
+      // the bot's next turn.
+      const backgroundHelper = run.trigger === BACKGROUND_HELPER_TRIGGER;
+      if (leaseTarget.computerSwitching && !backgroundHelper) {
         await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint, heldForTakeover);
         return;
       }
@@ -354,14 +359,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       }
       let computerLease: ComputerExecutionLease | null = null;
       try {
-        computerLease = await acquireComputerExecutionLease(deps.prisma, {
-          computerId: leaseTarget.computerId,
-          runId,
-          botId: run.botId,
-          workerId,
-          runFence: fence,
-        });
-        if (!computerLease && leaseTarget.computer?.scope === "dedicated") {
+        computerLease = backgroundHelper
+          ? null
+          : await acquireComputerExecutionLease(deps.prisma, {
+              computerId: leaseTarget.computerId,
+              runId,
+              botId: run.botId,
+              workerId,
+              runFence: fence,
+            });
+        if (!computerLease && !backgroundHelper && leaseTarget.computer?.scope === "dedicated") {
           computerLease = await acquireDedicatedScreenLeaseFence(deps.prisma, {
             computerId: leaseTarget.computerId,
             runId,
@@ -1282,11 +1289,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           // Cross-owner agent connections only exist for chat-linked bots. The chat link is its
           // creator's, and a connected agent's messages run as them, so only their runs may
           // open, approve or use one.
-          ...(hasMessagingIdentity &&
-          run.userId === bot.userId &&
-          bot.crossSpaceCommunication === true &&
-          !isBackgroundRunTrigger(run.trigger) &&
-          run.trigger !== "created"
+          ...(run.userId === bot.userId &&
+          offersAgentConnectionTools({
+            hasMessagingIdentity,
+            crossSpaceCommunication: bot.crossSpaceCommunication === true,
+            trigger: run.trigger,
+          })
             ? agentConnectionTools.filter((tool) => !disabledBuiltinTools.has(tool.name))
             : []),
         ];
@@ -1786,7 +1794,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   ? redactSecrets(ticketContext, runSecrets)
                   : undefined,
                 hasHistoricalContext: historicalContext.length > 0,
-                historyRetrievalEnabled: contextStrategy !== "current",
+                // A background helper is not offered the history tools, so it gets no guidance on them.
+                historyRetrievalEnabled:
+                  contextStrategy !== "current" &&
+                  tools.some((tool) => tool.name === "search_history"),
                 computerInstruction,
                 pageBrowserAllowed,
                 taskCatalogInstruction,
@@ -1797,15 +1808,22 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 agentSkillsLine,
                 taughtSkillsLine,
                 replyGuidance: runReplyGuidance(run.trigger, replyMode),
-                disabledBuiltinTools: isStrategicInitiativeRun(run)
-                  ? new Set(
-                      builtinAgentTools
-                        .map((tool) => tool.name)
-                        .filter((name) => !strategicBuiltins.some((tool) => tool.name === name)),
-                    )
-                  : disabledBuiltinTools,
+                // These runs get a narrow tool set, so guidance names only the tools they have.
+                disabledBuiltinTools:
+                  isStrategicInitiativeRun(run) || run.trigger === BACKGROUND_HELPER_TRIGGER
+                    ? new Set(
+                        builtinAgentTools
+                          .map((tool) => tool.name)
+                          .filter((name) => !strategicBuiltins.some((tool) => tool.name === name)),
+                      )
+                    : disabledBuiltinTools,
                 offeredFleetTools: offeredFleetTools(strategicBuiltins),
                 followUpsOffered: followUpsOffered(strategicBuiltins, ownerStartedRun),
+                backgroundHelpersAllowed: backgroundHelpersAllowed({
+                  threadBotId: thread.botId,
+                  botId: bot.id,
+                  trigger: run.trigger,
+                }),
                 userComputer,
               })
                 .filter((instruction): instruction is string => Boolean(instruction))
