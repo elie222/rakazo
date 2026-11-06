@@ -105,3 +105,20 @@ it("keeps deletion bound to the archived bot's space through confirmation", asyn
   );
   expect(deleted).toHaveBeenCalledOnce();
 });
+
+it("keeps group deletion bound to the group's own space through confirmation", async () => {
+  const requestContext = {
+    apiBase: "https://example.test",
+    headers: { "x-rakazo-space-id": "space-b" },
+  };
+  const deleted = vi.fn();
+  rpc.mockResolvedValueOnce({ ok: true });
+  confirmDeleteGroup({ id: "group-b", name: "Team" }, deleted, requestContext);
+  alert.mock.calls[0]![2][1].onPress();
+  await vi.waitFor(() => expect(deleted).toHaveBeenCalledOnce());
+  expect(rpc).toHaveBeenCalledWith(
+    "groups/remove",
+    { groupId: "group-b" },
+    { requestContext, skipSpaceAuthRecovery: true },
+  );
+});

@@ -25,7 +25,9 @@ export type InboxSpaceItem =
       key: string;
       title: string;
       space?: InboxSpace;
+      /** A named section's heading, with the space it belongs to. */
       sectionId?: string;
+      spaceId?: string;
       collapsed?: boolean;
       count?: number;
     };
@@ -99,7 +101,6 @@ export function inboxNeedsCreateHint(items: readonly { type: string; count?: num
 export function spaceInboxItems(
   spaces: InboxSpace[],
   collapsed: ReadonlySet<string> = new Set(),
-  editableSpaceId?: string,
 ): InboxSpaceItem[] {
   return spaces.flatMap((space): InboxSpaceItem[] => {
     const chats = [
@@ -132,8 +133,8 @@ export function spaceInboxItems(
           type: "heading",
           key,
           title: group.title,
-          ...(space.id === editableSpaceId && group.key.startsWith("section:")
-            ? { sectionId: group.key.slice("section:".length) }
+          ...(group.key.startsWith("section:")
+            ? { sectionId: group.key.slice("section:".length), spaceId: space.id }
             : {}),
           collapsed: collapsed.has(key),
           count: group.bots.length,

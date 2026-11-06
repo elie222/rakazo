@@ -7,10 +7,12 @@ import type { MobileBot, MobileGroup, MobileSpace } from "./api";
 import { rpc } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
 import { confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
+import { confirmDeleteSection } from "./confirm-delete-section";
 import type { InboxRowAction } from "./inbox-swipe";
 import { applyUnreadOverrides, withoutArchiving } from "./inbox-swipe";
 import { afterChatNotifyChange, dismissThreadNotifications } from "./live-notifications";
 import { removeFromSearchInbox } from "./search-inbox";
+import { promptSectionName } from "./section-name-prompt";
 import { useInboxChatActions } from "./use-inbox-chat-actions";
 
 const session = vi.hoisted(() => ({ space: "space-a", generation: 1, alert: vi.fn() }));
@@ -44,7 +46,19 @@ vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation
 vi.mock("./user-error", () => ({ errorText: (_error: unknown, fallback: string) => fallback }));
 
 type Actions = ReturnType<typeof useInboxChatActions>;
-type Chat = { id: string; name?: string; spaceId?: string; threadId?: string };
+type Chat = { id: string; name?: string; spaceId?: string; threadId?: string; sectionId?: string };
+const section = (id: string, name: string) => ({
+  id,
+  name,
+  position: 0,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+});
+// The selected space and another, each with its own sections.
+const sectionsBySpace = new Map([
+  ["space-a", [section("section-a", "Ideas")]],
+  ["space-b", [section("section-b", "Clients")]],
+]);
 
 let root: Root | undefined;
 const sent = (call: unknown[]) => call.slice(0, 2);
@@ -85,7 +99,7 @@ async function handlers(
       setBots: update("bots"),
       setGroups: update("groups"),
       setSpaces: update("spaces"),
-      botSections: [],
+      sectionsBySpace,
     });
     return null;
   }
@@ -111,8 +125,16 @@ async function handlers(
       chat: Chat,
       change: { pinned?: boolean; notifyOnFinish?: boolean },
     ) => current().updateChat(kind, chat as MobileBot, change),
+    editSectionFromMenu: (kind: "bot" | "group", chat: Chat, mode: "create" | "rename") =>
+      current().editSectionFromMenu(kind, chat as MobileBot, mode),
+    deleteSection: (target: { id: string; name: string; spaceId?: string }) =>
+      current().deleteSection(target),
   };
 }
+
+const spaceHeader = (call: unknown[] | undefined) =>
+  (call?.[2] as { requestContext?: { headers: Record<string, string> } } | undefined)
+    ?.requestContext?.headers["x-rakazo-space-id"];
 
 it("reports a saved bot mute even when its inbox row has no thread id", async () => {
   const actions = await handlers(async () => undefined);
@@ -269,11 +291,103 @@ it.each([
     // Nothing is removed until the alert is confirmed.
     expect(rpc).not.toHaveBeenCalled();
     expect(h.loadBots).not.toHaveBeenCalled();
-    expect(confirm).toHaveBeenCalledWith({ id: "x", name: "Ada" }, expect.any(Function));
-    vi.mocked(confirm).mock.calls[0]![1]!();
+    expect(confirm).toHaveBeenCalledOnce();
+    const [target, deleted, ...rest] = vi.mocked(confirm).mock.calls[0]!;
+    expect(target).toEqual({ id: "x", name: "Ada" });
+    // A chat in the selected space is deleted with the default request, as before.
+    expect(rest.every((arg) => arg === undefined)).toBe(true);
+    deleted();
     expect(h.loadBots).toHaveBeenCalledTimes(1);
   },
 );
+
+it.each([
+  ["bot", confirmDeleteBot, 3],
+  ["group", confirmDeleteGroup, 2],
+] as const)("deletes a %s from another space in that space", async (kind, confirm, index) => {
+  const h = await handlers(async () => ({ ok: true }));
+  await h.runRowAction(kind, { id: "x", name: "Ada", spaceId: "space-b" }, "delete");
+  expect(vi.mocked(confirm).mock.calls[0]?.[index]).toEqual({
+    apiBase: "",
+    headers: { authorization: "Bearer token", "x-rakazo-space-id": "space-b" },
+    sessionGeneration: 1,
+  });
+});
+
+it("resumes a muted bot's notifications for its own space, not the selected one", async () => {
+  const actions = await handlers(async () => undefined);
+  await actions.updateChat("bot", { id: "x", spaceId: "space-b" }, { notifyOnFinish: true });
+  expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith("", null, "space-b", {
+    botId: "x",
+    threadId: undefined,
+    notify: true,
+  });
+});
+
+it("keeps another space's read change on its row after the request", async () => {
+  const h = await handlers(async () => ({ ok: true }));
+  h.state.spaces = [
+    { id: "space-a", bots: [], groups: [] },
+    { id: "space-b", bots: [{ id: "x", unread: true }], groups: [{ id: "x", unread: true }] },
+  ] as unknown as MobileSpace[];
+  await h.runRowAction("bot", { id: "x", spaceId: "space-b" }, "read");
+  // The reload may still be on its way; the row must not go back to unread meanwhile.
+  expect(h.state.spaces[1]!.bots[0]!.unread).toBe(false);
+  expect(h.state.spaces[1]!.groups[0]!.unread).toBe(true);
+});
+
+it.each([
+  ["selected", "space-a", "section-a", "Ideas"],
+  ["other", "space-b", "section-b", "Clients"],
+] as const)(
+  "renames a section from the row menu of a chat in the %s space within that space",
+  async (_label, spaceId, sectionId, name) => {
+    const h = await handlers(async () => ({ ok: true }));
+    h.editSectionFromMenu("bot", { id: "x", spaceId, sectionId }, "rename");
+    const prompt = vi.mocked(promptSectionName).mock.calls[0]![0];
+    expect(prompt.defaultValue).toBe(name);
+    prompt.onSubmit("Renamed");
+    await vi.waitFor(() => expect(h.loadBots).toHaveBeenCalledOnce());
+    expect(sent(vi.mocked(rpc).mock.calls[0]!)).toEqual([
+      "botSections/update",
+      { sectionId, name: "Renamed" },
+    ]);
+    expect(spaceHeader(vi.mocked(rpc).mock.calls[0])).toBe(
+      spaceId === "space-a" ? undefined : spaceId,
+    );
+  },
+);
+
+it("does not rename a section the chat's own space doesn't have", async () => {
+  const h = await handlers(async () => ({ ok: true }));
+  // The selected space's section, on a chat from another space.
+  h.editSectionFromMenu("bot", { id: "x", spaceId: "space-b", sectionId: "section-a" }, "rename");
+  expect(promptSectionName).not.toHaveBeenCalled();
+});
+
+it("creates a section from the row menu in the chat's own space", async () => {
+  const h = await handlers(async () => ({ ok: true }));
+  h.editSectionFromMenu("group", { id: "x", spaceId: "space-b" }, "create");
+  vi.mocked(promptSectionName).mock.calls[0]![0].onSubmit("Clients");
+  await vi.waitFor(() => expect(h.loadBots).toHaveBeenCalledOnce());
+  expect(sent(vi.mocked(rpc).mock.calls[0]!)).toEqual([
+    "botSections/create",
+    { groupId: "x", name: "Clients" },
+  ]);
+  expect(spaceHeader(vi.mocked(rpc).mock.calls[0])).toBe("space-b");
+});
+
+it("deletes a section from its heading in that heading's space", async () => {
+  const h = await handlers(async () => ({ ok: true }));
+  h.deleteSection({ id: "section-b", name: "Clients", spaceId: "space-b" });
+  vi.mocked(confirmDeleteSection).mock.calls[0]![2]();
+  await vi.waitFor(() => expect(h.loadBots).toHaveBeenCalledOnce());
+  expect(sent(vi.mocked(rpc).mock.calls[0]!)).toEqual([
+    "botSections/remove",
+    { sectionId: "section-b" },
+  ]);
+  expect(spaceHeader(vi.mocked(rpc).mock.calls[0])).toBe("space-b");
+});
 
 it("hides an archived chat at the tap and keeps it hidden from a reload until it settles", async () => {
   let finish!: (value: unknown) => void;

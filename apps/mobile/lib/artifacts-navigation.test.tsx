@@ -40,18 +40,21 @@ vi.mock("@expo/ui/community/menu", () => ({
     onPressAction,
   }: {
     children?: ReactNode;
-    actions: { id: string; title: string }[];
+    actions: { id: string; title: string; subactions?: { id: string; title: string }[] }[];
     onPressAction: (event: { nativeEvent: { event: string } }) => void;
   }) =>
     createElement(
       "menu",
       null,
       children,
-      actions.map((action) =>
-        createElement(
-          "li",
-          { key: action.id, onClick: () => onPressAction({ nativeEvent: { event: action.id } }) },
-          action.title,
+      // A submenu's own entries stand in for it, as only they can be picked.
+      actions.flatMap((action) =>
+        (action.subactions ?? [action]).map((entry) =>
+          createElement(
+            "li",
+            { key: entry.id, onClick: () => onPressAction({ nativeEvent: { event: entry.id } }) },
+            entry.title,
+          ),
         ),
       ),
     ),
@@ -94,7 +97,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderHeader(platform: string) {
+function renderHeader(
+  platform: string,
+  createSpaces = [{ id: "space-personal", name: "Personal" }],
+) {
   header.platform.OS = platform;
   act(() =>
     root.render(
@@ -103,6 +109,7 @@ function renderHeader(platform: string) {
         activityMode={false}
         toggleActivityMode={toggleActivityMode}
         runCreateAction={runCreateAction}
+        createSpaces={createSpaces}
         columnInsets={{ left: 0, right: 0 }}
       />,
     ),
@@ -129,3 +136,29 @@ it.each(["android", "ios"])("creates from the %s menu", (platform) => {
   for (const item of container.querySelectorAll("li")) act(() => item.click());
   expect(runCreateAction.mock.calls).toEqual([["bot"], ["group"], ["space"]]);
 });
+
+it.each(["android", "ios"])(
+  "creates in the space picked from the %s menu's submenus",
+  (platform) => {
+    renderHeader(platform, [
+      { id: "space-personal", name: "Personal" },
+      { id: "space-work", name: "Work" },
+    ]);
+    const items = Array.from(container.querySelectorAll("li"));
+    expect(items.map((item) => item.textContent)).toEqual([
+      "Personal",
+      "Work",
+      "Personal",
+      "Work",
+      "New private space",
+    ]);
+    for (const item of items) act(() => item.click());
+    expect(runCreateAction.mock.calls).toEqual([
+      ["bot", "space-personal"],
+      ["bot", "space-work"],
+      ["group", "space-personal"],
+      ["group", "space-work"],
+      ["space"],
+    ]);
+  },
+);

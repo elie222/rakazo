@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
-import type { CreateAction } from "../lib/create-chooser";
-import { createMenuActions, isCreateAction } from "../lib/create-chooser";
+import type { CreateAction, CreateSpace } from "../lib/create-chooser";
+import { createMenuActions, createMenuChoice } from "../lib/create-chooser";
 import { useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
 import { CREATE_MENU_GAP, createHomeStyles } from "./home-styles";
@@ -17,13 +17,15 @@ export function InboxHeader({
   activityMode,
   toggleActivityMode,
   runCreateAction,
+  createSpaces,
   columnInsets,
   title,
 }: {
   initials: string;
   activityMode: boolean;
   toggleActivityMode: () => void;
-  runCreateAction: (action: CreateAction) => void;
+  runCreateAction: (action: CreateAction, spaceId?: string) => void;
+  createSpaces: readonly CreateSpace[];
   columnInsets: { left: number; right: number };
   title?: ReactNode;
 }) {
@@ -72,11 +74,12 @@ export function InboxHeader({
           <NativeSymbol ios="magnifyingglass" android="search" size={17} />
         </HeaderButton>
         <MenuView
-          actions={createMenuActions(t, Platform.OS)}
+          actions={createMenuActions(t, Platform.OS, createSpaces)}
           {...(Platform.OS === "android" ? { style: { marginBottom: -CREATE_MENU_GAP } } : {})}
           colorScheme={appearance}
           onPressAction={({ nativeEvent }) => {
-            if (isCreateAction(nativeEvent.event)) runCreateAction(nativeEvent.event);
+            const choice = createMenuChoice(nativeEvent.event);
+            if (choice) runCreateAction(...choice);
           }}
         >
           <View

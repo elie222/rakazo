@@ -47,7 +47,13 @@ vi.mock("./native", () => ({
 const toggleActivityMode = vi.fn();
 const runCreateAction = vi.fn();
 
-function Inbox({ embedded = false }: { embedded?: boolean }) {
+function Inbox({
+  embedded = false,
+  createSpaces = [{ id: "space-personal", name: "Personal" }],
+}: {
+  embedded?: boolean;
+  createSpaces?: { id: string; name: string }[];
+}) {
   useHomeHeader({
     nativeHeader: !embedded,
     ready: true,
@@ -56,6 +62,7 @@ function Inbox({ embedded = false }: { embedded?: boolean }) {
     activityMode: false,
     toggleActivityMode,
     runCreateAction,
+    createSpaces,
   });
   return <p>{embedded ? "Embedded inbox" : "Compact inbox"}</p>;
 }
@@ -71,6 +78,7 @@ beforeEach(() => {
     home.options = { ...home.options, ...next };
   });
   home.push.mockReset();
+  runCreateAction.mockReset();
   home.t.mockImplementation((text: string) => text);
   container = document.createElement("div");
   document.body.append(container);
@@ -135,6 +143,37 @@ it("wires the compact header items to their actions", () => {
   expect(home.push.mock.calls).toEqual([["/account"], ["/search"]]);
   expect(toggleActivityMode).toHaveBeenCalledOnce();
   expect(runCreateAction.mock.calls).toEqual([["bot"], ["group"], ["space"]]);
+  expect(create.menu.items.map((item: { type: string }) => item.type)).toEqual([
+    "action",
+    "action",
+    "action",
+  ]);
+});
+
+it("asks which space a new bot or group chat goes in when there are several", () => {
+  const spaces = [
+    { id: "space-personal", name: "Personal" },
+    { id: "space-work", name: "Work" },
+  ];
+  act(() => root.render(<Inbox createSpaces={spaces} />));
+  const [, , create] = home.options.unstable_headerRightItems();
+  const [bot, group, space] = create.menu.items;
+  for (const [item, label, icon] of [
+    [bot, "New bot", "person.crop.circle.badge.plus"],
+    [group, "New group chat", "person.2"],
+  ]) {
+    expect(item).toMatchObject({ type: "submenu", label, icon: { type: "sfSymbol", name: icon } });
+    expect(item.items.map((entry: { label: string }) => entry.label)).toEqual(["Personal", "Work"]);
+  }
+  expect(space).toMatchObject({ type: "action", label: "New private space" });
+  bot.items[1].onPress();
+  group.items[0].onPress();
+  space.onPress();
+  expect(runCreateAction.mock.calls).toEqual([
+    ["bot", "space-work"],
+    ["group", "space-personal"],
+    ["space"],
+  ]);
 });
 
 it("shows a translated, safe-area-centred placeholder only in the split pane", () => {
