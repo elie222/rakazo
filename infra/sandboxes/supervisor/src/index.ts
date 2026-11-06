@@ -1348,21 +1348,29 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
 // In both modes, once the rules are in place, a configured SANDBOX_COMPUTER_DNS that no server
 // answers fails the provision the same way, so the next one probes again.
 let autoEgressSettled: Promise<void> | undefined;
-// One shared re-check for provisions that waited on an earlier probe: each
-// waiter must be covered by a verification that finished after it arrived, but
-// a burst of concurrent starts shares one re-check instead of each running its
-// own probe; the next provision after it settles starts a new one.
-let autoEgressRecheck: Promise<void> | undefined;
+// One in-flight verification shared by concurrent provisions (never cached
+// after it settles): each provision is still covered by a check that finishes
+// after it arrived — an earlier settled success never covers a later start —
+// while a burst of starts shares one probe instead of each creating a network
+// from the engine's small address pools.
+let egressVerification: Promise<void> | undefined;
+async function verifyEgressNow() {
+  egressVerification ??= verifyRestrictedEgress(
+    docker,
+    COMPUTER_IMAGE,
+    computerDns,
+    ensureAttestImage,
+  ).finally(() => {
+    egressVerification = undefined;
+  });
+  await egressVerification;
+}
+
 async function ensureRestrictedEgressEnforced() {
   if (screenNetworkMode === "internal") return;
   if (computerEgressSetting === "auto") {
     const firstProbe = !autoEgressSettled;
-    autoEgressSettled ??= verifyRestrictedEgress(
-      docker,
-      COMPUTER_IMAGE,
-      computerDns,
-      ensureAttestImage,
-    ).then(
+    autoEgressSettled ??= verifyEgressNow().then(
       () => {
         computerEgressMode = "restricted";
         getLogger().info("restricted computer egress verified");
@@ -1378,21 +1386,16 @@ async function ensureRestrictedEgressEnforced() {
       },
     );
     await autoEgressSettled;
+    // A provision that waited on an earlier probe must still be covered by a
+    // verification that finished after it arrived; the shared gate gives the
+    // waiters one such check, and the next provision after it settles a new one.
     if (!firstProbe && computerEgressMode === "restricted") {
-      autoEgressRecheck ??= verifyRestrictedEgress(
-        docker,
-        COMPUTER_IMAGE,
-        computerDns,
-        ensureAttestImage,
-      ).finally(() => {
-        autoEgressRecheck = undefined;
-      });
-      await autoEgressRecheck;
+      await verifyEgressNow();
     }
     return;
   }
   if (computerEgressMode !== "restricted") return;
-  await verifyRestrictedEgress(docker, COMPUTER_IMAGE, computerDns, ensureAttestImage);
+  await verifyEgressNow();
 }
 
 async function findBotContainer(botId: string, spaceId: string) {

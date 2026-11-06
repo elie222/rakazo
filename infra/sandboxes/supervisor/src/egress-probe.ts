@@ -98,6 +98,31 @@ export async function verifyRestrictedEgress(
   const suffix = randomBytes(4).toString("hex").slice(0, 7);
   const name = `${EGRESS_PROBE_NETWORK}-${suffix}`;
   const bridge = `rakazo-c${suffix}`;
+  // Every step is bounded, including the Docker calls before and after the
+  // probe container: a request that never returns must not hold the provision
+  // (and its cleanup) forever. A timed-out attempt leaves its network behind
+  // for the periodic cleanup, which only touches probes older than any
+  // deadline-bounded run can be.
+  await Promise.race([
+    probeFromNamedBridge(docker, image, dns, ensureAttestImage, name, bridge),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(new Error("could not verify restricted egress: the probe did not finish in time")),
+        PROBE_DEADLINE_MS + 30_000,
+      ).unref(),
+    ),
+  ]);
+}
+
+async function probeFromNamedBridge(
+  docker: Docker,
+  image: string,
+  dns: string[] | undefined,
+  ensureAttestImage: () => Promise<string>,
+  name: string,
+  bridge: string,
+) {
   await docker.createNetwork({
     Name: name,
     Driver: "bridge",
@@ -143,6 +168,15 @@ export async function verifyRestrictedEgress(
     if (verdict === "metadata-reachable") {
       throw new EgressNotEnforced("a computer bridge reached the metadata endpoint");
     }
+    if (verdict === "inconclusive") {
+      // The probe could not finish, so the rules are neither shown missing nor
+      // verified: say that, not the install remediation, and let `auto` retry
+      // instead of falling back to open on a guess — even if a later check
+      // would have found the rules missing.
+      throw new Error(
+        `could not verify restricted egress: the probe exited ${result?.StatusCode ?? "late"}; see the supervisor log`,
+      );
+    }
     // Behavioral checks passed; attest the live firewall itself, so a partially
     // removed ruleset cannot pass as verified. The attestation runs the
     // supervisor-built probe image, never the configurable computer image, and
@@ -170,14 +204,6 @@ export async function verifyRestrictedEgress(
     if (verdict === "dns-unreachable") {
       throw new Error(
         "No SANDBOX_COMPUTER_DNS server answered from a restricted computer network; set servers reachable from there, such as public resolvers (see docs/self-host-docker-computers.md)",
-      );
-    }
-    if (verdict === "inconclusive") {
-      // The probe could not finish, so the rules are neither shown missing nor
-      // verified: say that, not the install remediation, and let `auto` retry
-      // instead of falling back to open on a guess.
-      throw new Error(
-        `could not verify restricted egress: the probe exited ${result?.StatusCode ?? "late"}; see the supervisor log`,
       );
     }
   } finally {

@@ -289,6 +289,51 @@ describe("egress probe", () => {
     ).rejects.toBeInstanceOf(EgressNotEnforced);
   });
 
+  it("refuses a probe that could not finish even when the rules are missing", async () => {
+    // An inconclusive probe decides nothing: it must not fall through to the
+    // attestation, where missing rules would read as EgressNotEnforced and
+    // let auto settle open.
+    const missingRules = validAttestation().replace(
+      "-A DOCKER-USER -i rakazo-c+ -d 10.0.0.0/8 -j DROP\n",
+      "",
+    );
+    const { docker } = fakeDocker({ statusCode: 6, attestOutput: missingRules });
+    const error = await verifyRestrictedEgress(
+      docker,
+      "computer:test",
+      undefined,
+      ensureAttestImage,
+    ).catch((error) => error);
+    expect(error.constructor).toBe(Error);
+    expect(error.message).toMatch(/the probe exited 6/);
+  });
+
+  it("fails closed when the probe setup never completes", async () => {
+    // The deadline bounds every Docker call, not just the probe container: a
+    // network creation that never returns must not hold the provision forever.
+    vi.useFakeTimers();
+    try {
+      const container = {
+        start: vi.fn().mockResolvedValue(undefined),
+        wait: vi.fn().mockResolvedValue({ StatusCode: 0 }),
+        logs: vi.fn(),
+        remove: vi.fn().mockResolvedValue(undefined),
+      };
+      const network = { remove: vi.fn().mockResolvedValue(undefined) };
+      const docker = {
+        createNetwork: vi.fn(() => new Promise(() => {})),
+        getNetwork: vi.fn().mockReturnValue(network),
+        createContainer: vi.fn().mockResolvedValue(container),
+      } as unknown as Docker;
+      const probe = verifyRestrictedEgress(docker, "computer:test", undefined, ensureAttestImage);
+      const assertion = expect(probe).rejects.toThrow(/did not finish in time/);
+      await vi.advanceTimersByTimeAsync(91_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("refuses failed DNS without falling back to open egress", async () => {
     const { docker, container, network } = fakeDocker({ statusCode: 5 });
     const error = await verifyRestrictedEgress(
