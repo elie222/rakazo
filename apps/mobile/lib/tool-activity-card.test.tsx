@@ -125,8 +125,17 @@ describe("mobile tool activity card", () => {
     toolCallRecords.seed("run-1", [
       { executionId: "x1", name: "shell", status: "running", command: "pnpm test", output: "RUN" },
     ]);
+    // The first call is still running: its step has no outcome yet.
+    const running = {
+      ...steps,
+      steps: steps.steps.map((step, index) =>
+        index === 0
+          ? { label: step.label, count: 1, executionId: "x1", detail: step.detail }
+          : step,
+      ),
+    };
     act(() =>
-      root.render(<ToolActivityCard block={steps} live runId="run-1" threadId="thread-1" />),
+      root.render(<ToolActivityCard block={running} live runId="run-1" threadId="thread-1" />),
     );
     expect(rows()).toHaveLength(3);
     act(() => rows()[0]!.click());
