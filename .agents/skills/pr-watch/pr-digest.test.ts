@@ -13,7 +13,8 @@ const fixture = JSON.parse(readFileSync(process.env.FIXTURE, "utf8"));
 const print = (value) => console.log(typeof value === "string" ? value : JSON.stringify(value));
 if (args[0] === "repo" && args[1] === "view") print("example/project");
 else if (args[0] === "pr" && args[1] === "view") {
-  if (args.includes("--jq")) print("abc");
+  if (args.includes("isCrossRepository")) print(fixture.fork ?? false);
+  else if (args.includes("--jq")) print("abc");
   else print({ headRefOid: "abc", state: "OPEN", mergeable: "MERGEABLE", headRefName: "topic", reviewDecision: "" });
 } else if (args[0] === "api") {
   const endpoint = args.find((arg) => arg === "graphql" || arg.startsWith("repos/"));
@@ -75,6 +76,7 @@ function runDigest(
     check?: object;
     checks?: object[];
     statuses?: object[][];
+    fork?: boolean;
     steps?: Record<string, object[]>;
     deadline?: number;
   },
@@ -318,20 +320,30 @@ describe("pr-digest", () => {
       expect(result.status).toBe(10);
     });
 
+    const deployAuth = {
+      context: "Vercel",
+      state: "failure",
+      description: "Authorization required to deploy.",
+    };
+
     it("ignores the deploy authorization failure fork PRs always get", () => {
-      const forkDeploy = {
-        context: "Vercel",
-        state: "failure",
-        description: "Authorization required to deploy.",
-      };
       const passed = { ...running, status: "completed", conclusion: "success" };
       const result = runDigest(
-        { checks: [running, running, passed], statuses: [[], [forkDeploy]] },
+        { checks: [running, running, passed], statuses: [[], [deployAuth]], fork: true },
         "--watch",
         "1",
       );
       expect(result.status).toBe(0);
       expect(result.stdout).not.toContain("STATUS Vercel");
+    });
+
+    it("still wakes for that failure on a same-repo PR", () => {
+      const result = runDigest(
+        { check: running, statuses: [[], [deployAuth]], fork: false },
+        "--watch",
+        "1",
+      );
+      expect(result.status).toBe(10);
     });
 
     it("keeps waiting on a failure that was already there", () => {
