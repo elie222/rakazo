@@ -4,7 +4,13 @@ import { MCP_APP_MIME_TYPE } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, IsolationError, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createOwnedArtifact, listSpaceArtifacts } from "./artifacts.js";
+import {
+  createOwnedArtifact,
+  getOwnedArtifact,
+  getSpaceArtifactById,
+  listSpaceArtifacts,
+  resolveSendAttachments,
+} from "./artifacts.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
@@ -137,6 +143,56 @@ describePostgres("artifact upload nonce (PostgreSQL)", () => {
       }),
     );
     expect(sameName.version).toBe(1);
+  });
+
+  it("keeps temporary tool files out of the lists, attachments and version history", async () => {
+    const temporary = await system.artifact.create({
+      data: {
+        spaceId,
+        userId,
+        botId: otherBotId,
+        name: "export.csv",
+        mimeType: "text/csv",
+        size: 5,
+        hash: "tool-file-hash",
+        storageKey: "blob-tool-file",
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    });
+    const listed = await runAsTenant(actor, () =>
+      listSpaceArtifacts({ prisma }, actor, { botId: otherBotId }),
+    );
+    expect(listed.items.map((item) => item.id)).not.toContain(temporary.id);
+    await expect(
+      runAsTenant(actor, () =>
+        resolveSendAttachments({ prisma }, actor, otherBotId, [temporary.id]),
+      ),
+    ).rejects.toBeInstanceOf(IsolationError);
+    // Nor can it be opened by id or through its version family.
+    await expect(
+      runAsTenant(actor, () =>
+        getSpaceArtifactById({ prisma, artifacts }, actor, { artifactId: temporary.id }),
+      ),
+    ).rejects.toBeInstanceOf(IsolationError);
+    await expect(
+      runAsTenant(actor, () =>
+        getOwnedArtifact({ prisma, artifacts }, actor, {
+          botId: otherBotId,
+          artifactId: temporary.id,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(IsolationError);
+
+    // A file the user saves under the same name starts its own history.
+    const saved = await runAsTenant(actor, () =>
+      createOwnedArtifact({ prisma, artifacts }, actor, {
+        botId: otherBotId,
+        name: "export.csv",
+        mimeType: "text/csv",
+        contentBase64: Buffer.from("a,b").toString("base64"),
+      }),
+    );
+    expect(saved.version).toBe(1);
   });
 
   it("refuses a nonce reused for another chat", async () => {

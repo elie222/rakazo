@@ -70,6 +70,7 @@ vi.mock("@rakazo/ui-web", async () => {
       "DropdownMenuContent",
       "DropdownMenuSeparator",
       "Field",
+      "FieldDescription",
       "FieldError",
       "FieldGroup",
       "FieldLabel",
@@ -494,6 +495,133 @@ it("never shows stored stdio arguments and sends none back when they were not ed
       id: "srv_2",
       config: expect.objectContaining({ args: [] }),
     });
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+function stdioServer(outputEnv?: string | null) {
+  return {
+    id: "srv_3",
+    slug: "mail",
+    name: "mail",
+    description: "",
+    transport: "stdio",
+    endpoint: null,
+    command: "npx",
+    hasArgs: false,
+    envKeys: [],
+    fileKeys: [],
+    headerKeys: [],
+    oauthStatus: "none",
+    oauthClientId: null,
+    hasSecret: false,
+    outputEnv,
+    health: { status: "unknown" },
+    enabled: true,
+  } as unknown as McpServer;
+}
+
+async function setInput(input: HTMLInputElement | null, value: string) {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setter?.call(input, value);
+    input?.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function saveEdit(host: HTMLElement) {
+  const save = await vi.waitFor(() => {
+    const button = Array.from(host.querySelectorAll("button")).find(
+      (item) => item.textContent === "Save",
+    );
+    expect(button).toBeDefined();
+    return button;
+  });
+  await act(async () => save?.click());
+}
+
+it("loads a stdio server's output folder variable and sends it back unchanged on save", async () => {
+  const stored = stdioServer("FILES_DOWNLOAD_DIR");
+  mocks.list.mockReset().mockResolvedValue([stored]);
+  mocks.update.mockReset().mockResolvedValue(stored);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(overlay("srv_3")));
+    await vi.waitFor(() =>
+      expect(host.querySelector<HTMLInputElement>("#mcp-output-env")?.value).toBe(
+        "FILES_DOWNLOAD_DIR",
+      ),
+    );
+    await saveEdit(host);
+    expect(mocks.update).toHaveBeenCalledWith({
+      id: "srv_3",
+      config: expect.objectContaining({ outputEnv: "FILES_DOWNLOAD_DIR" }),
+    });
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("uppercases the output folder variable and replaces a stored one", async () => {
+  const stored = stdioServer("OLD_DIR");
+  mocks.list.mockReset().mockResolvedValue([stored]);
+  mocks.update.mockReset().mockResolvedValue(stored);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(overlay("srv_3")));
+    const input = await vi.waitFor(() => {
+      const found = host.querySelector<HTMLInputElement>("#mcp-output-env");
+      expect(found?.value).toBe("OLD_DIR");
+      return found;
+    });
+    await setInput(input, "mail-dir");
+    expect(input?.value).toBe("MAIL_DIR");
+    await saveEdit(host);
+    expect(mocks.update).toHaveBeenCalledWith({
+      id: "srv_3",
+      config: expect.objectContaining({ outputEnv: "MAIL_DIR" }),
+    });
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("clears a stored output folder variable with null when the field is emptied", async () => {
+  const stored = stdioServer("FILES_DOWNLOAD_DIR");
+  mocks.list.mockReset().mockResolvedValue([stored]);
+  mocks.update.mockReset().mockResolvedValue(stored);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(overlay("srv_3")));
+    const input = await vi.waitFor(() => {
+      const found = host.querySelector<HTMLInputElement>("#mcp-output-env");
+      expect(found?.value).toBe("FILES_DOWNLOAD_DIR");
+      return found;
+    });
+    await setInput(input, "");
+    await saveEdit(host);
+    expect(mocks.update).toHaveBeenCalledWith({
+      id: "srv_3",
+      config: expect.objectContaining({ outputEnv: null }),
+    });
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("does not offer an output folder variable for remote servers", async () => {
+  const remote = { ...stdioServer(), id: "srv_4", transport: "streamable_http" } as McpServer;
+  mocks.list.mockReset().mockResolvedValue([remote]);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(overlay("srv_4")));
+    await vi.waitFor(() => expect(host.querySelector("#mcp-endpoint")).not.toBeNull());
+    expect(host.querySelector("#mcp-output-env")).toBeNull();
   } finally {
     await act(async () => root.unmount());
   }

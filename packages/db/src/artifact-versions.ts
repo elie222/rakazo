@@ -3,9 +3,13 @@ import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { isUniqueViolation } from "./prisma-errors.js";
 
-/** Files people and bots see: an MCP app's HTML is kept as an artifact only for its chat card. */
+/**
+ * Files people and bots see. An MCP app's HTML is kept as an artifact only for its chat card,
+ * and a temporary tool file (one with an expiry) only until a tool hands it to another.
+ */
 export const LISTED_ARTIFACT = {
   mimeType: { not: MCP_APP_MIME_TYPE },
+  expiresAt: null,
 } satisfies Prisma.ArtifactWhereInput;
 
 export async function resolveNextArtifactVersion(
@@ -23,7 +27,8 @@ export async function resolveNextArtifactVersion(
       botId: params.botId,
       groupId: params.groupId ?? null,
       name: { equals: params.name, mode: "insensitive" },
-      // An MCP app's hidden HTML never starts or joins a file's version history.
+      // An MCP app's hidden HTML or a temporary tool file never starts or joins a file's
+      // version history.
       ...LISTED_ARTIFACT,
     },
     orderBy: [{ version: "desc" }, { createdAt: "desc" }],

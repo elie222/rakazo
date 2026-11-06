@@ -5108,6 +5108,10 @@ msgstr "다른 모델 직접 입력…"
 msgid "Output"
 msgstr "출력"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Output folder variable"
+msgstr "출력 폴더 변수"
+
 #: src/components/pages/SharePopover.tsx
 #: src/components/SpaceMembersSettings.tsx
 #: src/lib/identity-display.ts
@@ -5423,6 +5427,10 @@ msgstr "Rakazo"
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Rakazo gives this variable a private folder. Files the server saves there can be passed to other tools, and are deleted 3 hours after their last use."
+msgstr "Rakazo가 이 변수에 비공개 폴더를 지정합니다. 서버가 해당 폴더에 저장한 파일은 다른 도구로 전달할 수 있으며, 마지막으로 사용한 지 3시간 후에 삭제됩니다."
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."

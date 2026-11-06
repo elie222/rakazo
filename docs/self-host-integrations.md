@@ -122,6 +122,25 @@ If a server shows its tools in **Settings** but a bot never uses them, run the
 [diagnostics report](./self-host.md#reporting-a-problem). Its **Assignment** column names any
 space or owner mismatch that keeps the server's tools from that bot.
 
+### Files tools hand to other tools
+
+A file a tool returns (an image, audio or embedded file in an MCP result, or a file a stdio
+server writes to the folder its **output folder variable** names) is kept as a temporary file,
+and the bot sees a short mention instead of the bytes. To pass it on, the bot writes
+`{{file:ID}}` (replaced with the file's base64 content) or `{{file_url:ID}}` (replaced with a
+download link) in another tool's arguments, and Rakazo substitutes it right before that tool
+runs. Only the space, user and bot that produced a file can use it.
+
+A temporary file is deleted 3 hours after it was last created or used: each substitution or
+link pushes that back, and the worker removes expired files from storage and the database every
+10 minutes. Temporary files are stored like other files (encrypted at rest when content
+encryption is on) but never appear in file lists, search or account exports. A file larger
+than `MAX_UPLOAD_SIZE_MB` is not kept.
+
+A download link is `API_URL/api/tool-files/<token>`, served without sign-in, valid for 10
+minutes and 3 downloads. Set `API_URL` on the API and worker to an address the receiving
+tool can reach: for a remote service, the deployment's public HTTPS origin.
+
 ## Apps and connectors
 
 Plugins use [Composio](https://composio.dev) when `COMPOSIO_API_KEY` is set. Pipedream is an

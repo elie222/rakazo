@@ -61,6 +61,7 @@ import {
   createSecretStore,
   createStrategicInitiativeReconciler,
   createTicketChangeNotifier,
+  createToolFileStore,
   createWebProvider,
   deploymentModelUsageLookup,
   EmailEmulator,
@@ -98,6 +99,7 @@ import {
   StripeBillingProvider,
   sandboxProviderOptionsFromEnv,
   stripeBillingConfigFromEnv,
+  toolFileSweeper,
   toTeamChatInbound,
   UserDeviceHub,
   UserDevices,
@@ -212,6 +214,7 @@ import {
   TEAM_CHAT_STARTUP_SHUTDOWN_MS,
   TeamChatStartupRetries,
 } from "./team-chat-startup.js";
+import { mountToolFileDownloads } from "./tool-file-downloads.js";
 import { endUserDeviceSession, mountUserDeviceRoutes } from "./user-devices.js";
 import { mountVoiceHttpRoutes, transcribeInboundVoice, voiceAccountErrorStatus } from "./voice.js";
 import { mountWebhookHttpRoutes } from "./webhook.js";
@@ -437,6 +440,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const home = createAgentHomeStore(env.dataDir, prisma);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
+  // Signed download links point at this API, so a tool can fetch a file another tool made.
+  const toolFiles = createToolFileStore({
+    prisma,
+    artifacts,
+    publicBaseUrl: env.apiUrl,
+    maxBytes: env.maxUploadSizeBytes,
+  });
   const memory = new MarkdownMemoryStore(prisma);
   const mcp = new McpConnector(
     prisma,
@@ -448,6 +458,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       network: remoteConnectors,
       events,
       allowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
+      toolFiles,
     },
     mcpOAuth,
   );
@@ -694,6 +705,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     memoryProviders,
     home,
     artifacts,
+    toolFiles,
     connector: stack.connector,
     connectors: stack.connector,
     listConnectedPluginSlugs: (userId) => integrationSettings.listConnectedPluginSlugs(userId),
@@ -779,6 +791,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         ),
         reconcileAuditLog: createAuditLogReconciler(prisma, auditLogConfig()),
         reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
+        reconcileToolFiles: toolFileSweeper(toolFiles),
       })
     : undefined;
   reconciler?.start();
@@ -991,6 +1004,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountScreenTarget(app, prisma, env.screenProxySecret);
   mountScriptAssets(app);
   mountSharedPages(app, prisma, requestClientIp);
+  mountToolFileDownloads(app, toolFiles, requestClientIp);
   const auditAuthResponse = createAuthResponseAudit();
   // Account and session tables, signup bootstrap and account deletion span tenants;
   // webhooks authenticate a bot or provider, then resolve the tenant from it.

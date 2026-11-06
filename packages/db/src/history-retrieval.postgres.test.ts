@@ -34,7 +34,7 @@ postgres("history retrieval (PostgreSQL)", () => {
       CREATE TEMP TABLE runs (id text PRIMARY KEY, "spaceId" text, "userId" text, "threadId" text, "botId" text,
         "sourceMessageId" text, status text, "createdAt" timestamptz, "completedAt" timestamptz);
       CREATE TEMP TABLE artifacts (id text PRIMARY KEY, "spaceId" text, "userId" text, "botId" text, "groupId" text,
-        "runId" text, name text, "mimeType" text, size integer, "createdAt" timestamptz);
+        "runId" text, name text, "mimeType" text, size integer, "createdAt" timestamptz, "expiresAt" timestamptz);
       INSERT INTO bots VALUES ('synthetic-bot','synthetic-space','synthetic-user',NULL);
       INSERT INTO threads VALUES ('synthetic-thread','synthetic-space','synthetic-user','synthetic-bot');
       INSERT INTO messages SELECT 'm-' || n, 'synthetic-thread', n, 'user', NULL, NULL,

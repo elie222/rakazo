@@ -212,6 +212,7 @@ export async function getOwnedArtifact(
       botId: input.botId,
       groupId: null,
       spaceId: actor.spaceId,
+      expiresAt: null,
     },
   });
   if (!row) throw new IsolationError();
@@ -231,6 +232,7 @@ export async function getSpaceArtifact(
       id: input.artifactId,
       groupId: input.groupId,
       spaceId: actor.spaceId,
+      expiresAt: null,
     },
   });
   if (!row) throw new IsolationError();
@@ -250,6 +252,8 @@ export async function getSpaceArtifactById(
     where: {
       id: input.artifactId,
       spaceId: actor.spaceId,
+      // Temporary tool files are reachable only through the tool file store.
+      expiresAt: null,
     },
   });
   if (!row) throw new IsolationError();
@@ -401,6 +405,8 @@ export async function listSpaceArtifacts(
       SELECT * FROM "artifacts"
       WHERE "spaceId" = ${actor.spaceId} ${botFilter}
         AND "createdAt" <= ${asOf} AND "mimeType" <> ${MCP_APP_MIME_TYPE}
+        -- Temporary tool files are not the user's files (LISTED_ARTIFACT).
+        AND "expiresAt" IS NULL
     ),
     latest AS (
       SELECT DISTINCT ON (COALESCE("rootArtifactId", id))
@@ -462,7 +468,7 @@ export async function listArtifactVersions(
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId },
+    where: { id: input.familyId, spaceId: actor.spaceId, expiresAt: null },
     select: { id: true, rootArtifactId: true },
   });
   if (!anchor) throw new IsolationError();
@@ -491,7 +497,7 @@ export async function deleteArtifactFamily(
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId },
+    where: { id: input.familyId, spaceId: actor.spaceId, expiresAt: null },
     select: { id: true, rootArtifactId: true, botId: true },
   });
   if (!anchor) throw new IsolationError();
@@ -644,6 +650,8 @@ export async function resolveSendAttachments(
       botId,
       groupId: null,
       spaceId: actor.spaceId,
+      // A temporary tool file would vanish from the message once it expires.
+      expiresAt: null,
     },
   });
   return toAttachmentResolution(ids, rows);
@@ -663,6 +671,7 @@ export async function resolveGroupSendAttachments(
     where: {
       id: { in: ids },
       spaceId: actor.spaceId,
+      expiresAt: null,
       OR: [
         { groupId },
         // Uploads from before group ownership was stored, still tied to a current member.

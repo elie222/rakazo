@@ -1205,6 +1205,16 @@ export const McpServerConfigInput = z.discriminatedUnion("transport", [
       .default({}),
     /** Update: omit to keep the stored files, send the complete set to replace them. */
     files: McpStdioFilesSchema.optional(),
+    /**
+     * Env variable that receives a Rakazo-managed output folder. Files the server writes there
+     * and names in a result become temporary tool files. Omit to keep, null to clear.
+     */
+    outputEnv: z
+      .string()
+      .regex(/^[A-Z_][A-Z0-9_]*$/)
+      .max(128)
+      .nullable()
+      .optional(),
     secret: z.string().max(16384).optional(),
     oauthClient: McpStdioOAuthClientInput,
   }),
@@ -1241,6 +1251,8 @@ export const McpServerSchema = z.object({
   envKeys: z.array(z.string()),
   /** Env variables that receive a credential file's path instead of a value. */
   fileKeys: z.array(z.string()),
+  /** Stdio only: the env variable that receives the server's output folder. */
+  outputEnv: z.string().nullable().optional(),
   headerKeys: z.array(z.string()),
   hasSecret: z.boolean(),
   oauthStatus: z.enum(["none", "connected", "reconnect"]),

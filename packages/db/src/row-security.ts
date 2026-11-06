@@ -165,6 +165,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "AuditEvent",
   "Page",
   "PageVersion",
+  "ToolFileDownloadToken",
 ]);
 
 /**

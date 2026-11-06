@@ -315,7 +315,8 @@ async function* spaceRecords(
   };
   for (let cursor = ""; ; ) {
     const roots = await prisma.artifact.findMany({
-      where: { ...tenant, id: { gt: cursor }, rootArtifactId: null },
+      // Temporary tool files are deleted within hours and are not the user's files.
+      where: { ...tenant, id: { gt: cursor }, rootArtifactId: null, expiresAt: null },
       orderBy: { id: "asc" },
       take: PAGE,
     });

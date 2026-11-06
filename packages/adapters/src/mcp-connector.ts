@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
@@ -57,6 +57,7 @@ import {
   oauthMaterialSecrets,
   TOKEN_REFRESH_SKEW_MS,
 } from "./mcp-oauth.js";
+import { mcpFileEnvDefaults } from "./mcp-output-defaults.js";
 import type { InstalledMcpBin } from "./mcp-package-installer.js";
 import {
   DEFAULT_MCP_INSTALL_TIMEOUT_MS,
@@ -71,6 +72,15 @@ import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { ConnectorRedirectError, isMcpSessionGoneError } from "./remote-mcp.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
+import type { ToolFileSubstitution } from "./tool-file-args.js";
+import {
+  LOCAL_FILE_PATH_UNSUPPORTED,
+  materializeToolFilePaths,
+  restoreToolFilePlaceholders,
+  toolFilePlaceholdersIn,
+} from "./tool-file-args.js";
+import { captureMcpBinaryContent, importOutputFiles } from "./tool-file-capture.js";
+import type { ToolFileStore } from "./tool-files.js";
 
 type SessionEntry = {
   session: McpSession;
@@ -83,6 +93,8 @@ type SessionEntry = {
   accessTokenExpiresAt?: number;
   /** Private directory holding the process's credential files; removed with the session. */
   credentialDir?: string;
+  /** A stdio process's private working directory (cwd, temp and output); removed with it. */
+  workspaceDir?: string;
   /** A local process, reaped after {@link McpConnectorOptions.idleMs} without use. */
   stdio: boolean;
   lastUsedAt: number;
@@ -234,7 +246,17 @@ export type McpConnectorOptions = {
   credentialTempRoot?: string;
   /** How long a run waits for one server's tool list; 0 waits for the transport's own timeouts. */
   discoveryTimeoutMs?: number;
+  /**
+   * Keeps files tools produce (MCP images, audio, binary resources, and files a stdio server
+   * saves in its workspace) out of the model's context. Without it results pass through as-is.
+   */
+  toolFiles?: ToolFileStore;
 };
+
+/** Env variable every stdio process gets: the folder for files it hands to other tools. */
+export const MCP_OUTPUT_DIR_ENV = "RAKAZO_OUTPUT_DIR";
+/** Env variable every stdio process gets: the folder `{{file_path:ID}}` copies are written to. */
+export const MCP_INPUT_DIR_ENV = "RAKAZO_INPUT_DIR";
 
 function positiveInteger(value: string | undefined, allowZero = false): number | undefined {
   if (!value?.trim()) return undefined;
@@ -349,8 +371,12 @@ function credentialContentSecrets(content: string): string[] {
   return values;
 }
 
-/** Stop the process, then remove the credential files it was launched with. */
-async function closeEntry(entry: { session: McpSession; credentialDir?: string }): Promise<void> {
+/** Stop the process, then remove the credential files and workspace it was launched with. */
+async function closeEntry(entry: {
+  session: McpSession;
+  credentialDir?: string;
+  workspaceDir?: string;
+}): Promise<void> {
   await closeMcpResource(() =>
     entry.session.close(async () => {
       if (entry.credentialDir)
@@ -358,8 +384,40 @@ async function closeEntry(entry: { session: McpSession; credentialDir?: string }
           // Filesystem errors can include credential paths; report only the failure.
           getLogger().warn("MCP credential file cleanup failed");
         });
+      if (entry.workspaceDir)
+        await rm(entry.workspaceDir, { recursive: true, force: true }).catch(() => {
+          getLogger().warn("MCP workspace cleanup failed");
+        });
     }),
   );
+}
+
+const ENV_NAME = /^[A-Z_][A-Z0-9_]*$/;
+
+/** Temporary tool files a call may use or create belong to its space, user and agent. */
+function toolFileScope(context: AdapterContext) {
+  return { spaceId: context.spaceId, userId: context.userId, botId: context.botId ?? null };
+}
+
+/** The folders inside a stdio process's workspace. */
+function workspaceFolders(workspaceDir: string) {
+  return {
+    temp: join(workspaceDir, "tmp"),
+    output: join(workspaceDir, "out"),
+    input: join(workspaceDir, "in"),
+  };
+}
+
+/** Remove `dir` when the process exits on its own, too. */
+function removeOnClose(session: McpSession, dir: string): void {
+  const previousOnClose = session.client.onclose;
+  session.client.onclose = () => {
+    try {
+      previousOnClose?.();
+    } finally {
+      void rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  };
 }
 
 export class McpConnector implements ConnectorProvider {
@@ -694,14 +752,54 @@ export class McpConnector implements ConnectorProvider {
     // oauthMaterialSecrets(material) so in-place token refresh stays covered.
     let material: OAuthMaterial | undefined;
     let launchSecrets: string[] = [];
+    let workspaceDir: string | undefined;
+    // Private copies made for `{{file_path:ID}}`; their paths turn back into placeholders.
+    let paths: ToolFileSubstitution[] = [];
     const sessionKey = this.sessionKey(assignment.server, context);
+    const wantsPaths = toolFilePlaceholdersIn(call.args).some(
+      (placeholder) => placeholder.form === "path",
+    );
+    if (wantsPaths && assignment.server.transport !== "stdio") {
+      yield { type: "error", message: LOCAL_FILE_PATH_UNSUPPORTED };
+      return;
+    }
     try {
       const toolName = call.route.toolName;
-      const result = await this.withSession(assignment.server, context, (session) => {
-        material = this.sessions.get(sessionKey)?.material;
-        launchSecrets = this.sessions.get(sessionKey)?.launchSecrets ?? [];
-        return session.callTool(toolName, call.args, { signal: context.signal });
+      const called = await this.withSession(assignment.server, context, async (session) => {
+        const entry = this.sessions.get(sessionKey);
+        material = entry?.material;
+        launchSecrets = entry?.launchSecrets ?? [];
+        workspaceDir = entry?.session === session ? entry.workspaceDir : undefined;
+        if (!wantsPaths)
+          return {
+            result: await session.callTool(toolName, call.args, { signal: context.signal }),
+          };
+        if (!workspaceDir) return { refused: LOCAL_FILE_PATH_UNSUPPORTED };
+        const prepared = await materializeToolFilePaths(
+          call.args,
+          this.options.toolFiles,
+          toolFileScope(context),
+          workspaceFolders(workspaceDir).input,
+        );
+        if (!prepared.ok) return { refused: prepared.error };
+        paths = prepared.substitutions;
+        try {
+          return {
+            result: await session.callTool(toolName, prepared.args, { signal: context.signal }),
+          };
+        } finally {
+          await prepared.cleanup();
+        }
       });
+      if (called.refused !== undefined) {
+        yield { type: "error", message: called.refused };
+        return;
+      }
+      const result = await this.keepFilesOutOfContext(
+        restoreToolFilePlaceholders(called.result, paths),
+        workspaceDir,
+        context,
+      );
       const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
       yield { type: "result", data: redactConnectorPayload(result, secrets) };
       const app = await readMcpApp(
@@ -719,8 +817,34 @@ export class McpConnector implements ConnectorProvider {
       // A thrown call means the transport or auth broke; drop the session so the next call reconnects.
       const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
       await this.evict(sessionKey);
-      yield { type: "error", message: sanitizeConnectorError(error, secrets) };
+      yield {
+        type: "error",
+        message: restoreToolFilePlaceholders(sanitizeConnectorError(error, secrets), paths),
+      };
     }
+  }
+
+  /**
+   * Store the files a result carries as temporary tool files and leave mentions in their place:
+   * paths it names inside the process's workspace, then images, audio and binary resources.
+   * Without a store, or outside an agent, the result is returned unchanged.
+   */
+  private async keepFilesOutOfContext(
+    result: unknown,
+    workspaceDir: string | undefined,
+    context: AdapterContext,
+  ): Promise<unknown> {
+    const store = this.options.toolFiles;
+    if (!store || !context.botId) return result;
+    const target = { store, scope: toolFileScope(context), runId: context.runId ?? null };
+    // `in` holds only the copies this server was handed; they are never imported back.
+    const imported = workspaceDir
+      ? await importOutputFiles(result, [workspaceDir], target, [
+          workspaceFolders(workspaceDir).input,
+        ])
+      : result;
+    // Capture never fails a call that already ran; at worst the result keeps its content.
+    return captureMcpBinaryContent(imported, target).catch(() => imported);
   }
 
   /**
@@ -929,7 +1053,11 @@ export class McpConnector implements ConnectorProvider {
         const remaining = (this.inFlight.get(session) ?? 1) - 1;
         this.inFlight.set(session, remaining);
         if (remaining === 0 && this.expired.has(session))
-          await closeEntry({ session, credentialDir: entry?.credentialDir });
+          await closeEntry({
+            session,
+            credentialDir: entry?.credentialDir,
+            workspaceDir: entry?.workspaceDir,
+          });
       }
     }
   }
@@ -1000,10 +1128,11 @@ export class McpConnector implements ConnectorProvider {
         recordId,
         accessTokenExpiresAt,
         credentialDir,
+        workspaceDir,
         launchSecrets,
       }) => {
         if (this.connecting.get(sessionKey)?.invalidated) {
-          await closeEntry({ session, credentialDir });
+          await closeEntry({ session, credentialDir, workspaceDir });
           throw new Error("Secret changed during MCP connection; retry");
         }
         connected = {
@@ -1015,6 +1144,7 @@ export class McpConnector implements ConnectorProvider {
           recordId,
           accessTokenExpiresAt,
           credentialDir,
+          workspaceDir,
           stdio: server.transport === "stdio",
           lastUsedAt: Date.now(),
           launchSecrets,
@@ -1044,10 +1174,12 @@ export class McpConnector implements ConnectorProvider {
     recordId?: string;
     accessTokenExpiresAt?: number;
     credentialDir?: string;
+    workspaceDir?: string;
     launchSecrets?: string[];
   }> {
     let session = new McpSession({ name: `rakazo-${server.slug}` });
     let credentialDir: string | undefined;
+    let workspaceDir: string | undefined;
     const launchSecrets: string[] = [];
     // Hoisted so a throw after the secret is decoded can still hand the material out.
     let material: OAuthMaterial | undefined;
@@ -1191,15 +1323,7 @@ export class McpConnector implements ConnectorProvider {
           credentialDir = await mkdtemp(
             join(this.options.credentialTempRoot ?? tmpdir(), "rakazo-mcp-"),
           );
-          const dir = credentialDir;
-          const previousOnClose = session.client.onclose;
-          session.client.onclose = () => {
-            try {
-              previousOnClose?.();
-            } finally {
-              void rm(dir, { recursive: true, force: true }).catch(() => undefined);
-            }
-          };
+          removeOnClose(session, credentialDir);
           launchEnv = { ...launchEnv };
           for (const [key, content] of resolvedFiles) {
             const path = join(credentialDir, key);
@@ -1207,8 +1331,34 @@ export class McpConnector implements ConnectorProvider {
             launchEnv[key] = path;
           }
         }
+        // Every process works in a private folder removed with it: its working directory, its
+        // temp folder, `out` for files it saves for other tools (paths a result names inside
+        // the workspace become temporary tool files, see execute) and `in` for the private
+        // copies `{{file_path:ID}}` hands it.
+        workspaceDir = await mkdtemp(
+          join(this.options.credentialTempRoot ?? tmpdir(), "rakazo-mcp-ws-"),
+        );
+        await chmod(workspaceDir, 0o700);
+        removeOnClose(session, workspaceDir);
+        const folders = workspaceFolders(workspaceDir);
+        for (const dir of Object.values(folders)) await mkdir(dir, { mode: 0o700 });
+        launchEnv = {
+          ...launchEnv,
+          TMPDIR: folders.temp,
+          [MCP_OUTPUT_DIR_ENV]: folders.output,
+          [MCP_INPUT_DIR_ENV]: folders.input,
+        };
+        // A known package's file folders, and the server's own output setting, point at the
+        // workspace whatever the user configured, so files move between tools with no setup.
+        const known = mcpFileEnvDefaults(npx?.spec);
+        const outputEnv = (server as McpServer & { outputEnv?: string | null }).outputEnv;
+        for (const key of [...(known.outputEnv ?? []), ...(outputEnv ? [outputEnv] : [])])
+          if (ENV_NAME.test(key)) launchEnv[key] = folders.output;
+        for (const key of known.inputEnv ?? [])
+          if (ENV_NAME.test(key)) launchEnv[key] = folders.input;
         await session.connectStdio({
           command,
+          cwd: workspaceDir,
           args: npx ? npx.binArgs : args,
           installedBin,
           env: launchEnv,
@@ -1270,10 +1420,11 @@ export class McpConnector implements ConnectorProvider {
         recordId,
         accessTokenExpiresAt: accessTokenExpiresAtMs,
         credentialDir,
+        workspaceDir,
         launchSecrets,
       };
     } catch (error) {
-      await closeEntry({ session, credentialDir }).catch(() => undefined);
+      await closeEntry({ session, credentialDir, workspaceDir }).catch(() => undefined);
       // Redact here, while the material is still in hand. This one rejection is handed
       // to every caller waiting on the same pending connect, and none of them can see
       // the secrets: the session never reached `sessions`. Sanitizing per caller would
