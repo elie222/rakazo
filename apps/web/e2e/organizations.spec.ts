@@ -7,8 +7,9 @@ type OrganizationList = {
 };
 
 test.afterEach(async ({ page }) => {
-  // Finish intercepted responses before the browser context is disposed.
-  await page.unrouteAll({ behavior: "wait" });
+  // Not "wait": a handler whose fulfill() lost a race to the route teardown never settles,
+  // and "wait" would then hang the test to its timeout.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 function selectedSpace(page: Page) {
@@ -65,14 +66,23 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await captureScreenshot(page, testInfo, "org-create-dialog");
 
   // Hold the new organization on onboarding's model step so its account menu can be seen.
-  await page.route("**/rpc/me", async (route) => {
-    try {
-      const response = await route.fetch();
-      const body = (await response.json()) as { json: Record<string, unknown> };
-      await route.fulfill({ response, json: { json: { ...body.json, needsModel: true } } });
-    } catch {
-      await route.abort().catch(() => {});
-    }
+  // The rewrites are tracked so they can be finished before interception stops: waiting on
+  // Playwright's own bookkeeping can hang when a fulfill() loses a race to the teardown.
+  let holdModelStep = true;
+  const rewrites = new Set<Promise<void>>();
+  await page.route("**/rpc/me", (route) => {
+    if (!holdModelStep) return route.fallback();
+    const rewrite = (async () => {
+      try {
+        const response = await route.fetch();
+        const body = (await response.json()) as { json: Record<string, unknown> };
+        await route.fulfill({ response, json: { json: { ...body.json, needsModel: true } } });
+      } catch {
+        await route.abort().catch(() => {});
+      }
+    })();
+    rewrites.add(rewrite);
+    return rewrite.finally(() => rewrites.delete(rewrite));
   });
   await create.getByRole("button", { name: "Create", exact: true }).click();
   await page.waitForURL(/\/onboarding/);
@@ -94,7 +104,9 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
     "false",
   );
   await captureScreenshot(page, testInfo, "org-account-menu-onboarding");
-  await page.unrouteAll({ behavior: "wait" });
+  holdModelStep = false;
+  await Promise.all([...rewrites]);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.getByRole("menuitemradio", { name: "Personal" }).click();
   await chatOpened(page, "");
   expect(await selectedSpace(page)).toBe(personal.defaultSpaceId);

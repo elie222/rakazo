@@ -1,4 +1,4 @@
-import { reportUiLocale } from "@rakazo/core";
+import { APP_LOCALE_LABELS, reportUiLocale } from "@rakazo/core";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
 import { Checkmark } from "../../components/row-accessories";
@@ -10,7 +10,7 @@ import { resumeLiveNotifications } from "../../lib/live-notifications";
 import { native, useThemedStyles } from "../../lib/native";
 import { useSideInsets } from "../../lib/side-insets";
 import type { UiLocale } from "../../lib/ui-locale";
-import { UI_LOCALE_LABELS, UI_LOCALES } from "../../lib/ui-locale";
+import { UI_LOCALES } from "../../lib/ui-locale";
 
 export default function Language() {
   const sideInsets = useSideInsets();
@@ -52,7 +52,7 @@ export default function Language() {
       <SettingsGroup accessibilityLabel={t("Language")}>
         {UI_LOCALES.map((code) => {
           const selected = code === locale;
-          const label = UI_LOCALE_LABELS[code];
+          const label = APP_LOCALE_LABELS[code];
           return (
             <SettingsRow
               key={code}

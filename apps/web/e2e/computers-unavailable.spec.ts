@@ -20,24 +20,25 @@ function stopComputer(computer: unknown) {
   record.screenAvailable = false;
 }
 
-test("unavailable computers explain setup and open computer settings", async ({
-  page,
-}, testInfo) => {
+test("unavailable computers say so plainly and link setup help", async ({ page }, testInfo) => {
   await signup(page, `computers-off-${Date.now()}@rakazo.test`, "password12", "Computers Off");
   await completeOnboarding(page);
-  await page.route("**/rpc/me", (route) =>
-    patchJson(route, (body) => {
+  let sandboxProvider = "none";
+  let meFails = false;
+  await page.route("**/rpc/me", (route) => {
+    if (meFails) return route.fulfill({ status: 500, json: {} });
+    return patchJson(route, (body) => {
       if (!body.json) return;
-      body.json.sandboxProvider = "none";
-      body.json.isDeploymentOwner = true;
-    }),
-  );
+      body.json.sandboxProvider = sandboxProvider;
+      body.json.computerSettingsEnabled = true;
+    });
+  });
   await page.route("**/rpc/bootstrap", (route) =>
     patchJson(route, (body) => {
       const me = asRecord(body.json?.me);
       if (me) {
-        me.sandboxProvider = "none";
-        me.isDeploymentOwner = true;
+        me.sandboxProvider = sandboxProvider;
+        me.computerSettingsEnabled = true;
       }
       const thread = asRecord(body.json?.thread);
       stopComputer(thread?.computer);
@@ -59,44 +60,54 @@ test("unavailable computers explain setup and open computer settings", async ({
   await openBotPanelTab(page, "Computer");
   const preview = page.getByTestId("computer-preview");
   const hint = preview.getByTestId("computers-unavailable-hint");
-  await expect(hint).toBeVisible();
-  await expect(hint.getByText(/Computers are off/)).toBeVisible();
+  await expect(hint.getByText("Computers are off on this server.", { exact: true })).toBeVisible();
+  await expect(hint).not.toContainText("SANDBOX_");
+  await expect(hint).not.toContainText(".env");
   await expect(hint.getByRole("button", { name: "Check again" })).toBeVisible();
   await expect(hint.getByRole("button", { name: "Open computer settings" })).toBeVisible();
-  await expect(hint.getByRole("button", { name: "Copy .env example" })).toBeVisible();
+  await expect(hint.getByRole("link", { name: "Setup help" })).toHaveAttribute(
+    "href",
+    "https://github.com/elie222/rakazo/blob/main/docs/self-host-sandbox-providers.md",
+  );
   await expect(preview.getByTestId("computer-preview-open")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "computers-unavailable-preview");
 
   await hint.getByRole("button", { name: "Check again" }).click();
-  await expect(hint.getByText(/Computers are off/)).toBeVisible();
+  await expect(hint.getByText("Computers are off on this server.", { exact: true })).toBeVisible();
   await expect(hint.getByRole("button", { name: "Check again" })).toBeEnabled();
 
   await hint.getByRole("button", { name: "Open computer settings" }).click();
   const settings = page.getByTestId("user-settings");
   await expect(settings).toHaveAttribute("data-settings-section", "computer");
-  await expect(settings.getByTestId("computers-setup-settings")).toBeVisible();
   await expect(settings.getByTestId("settings-nav-computer")).toHaveAttribute(
     "aria-current",
     "page",
   );
-  await page.evaluate(() => {
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: {
-        writeText: async (text: string) => {
-          document.documentElement.dataset.copiedSandboxEnv = text;
-        },
-      },
-    });
-  });
-  await settings.getByRole("button", { name: "Copy .env example" }).click();
-  await expect(page.locator("html")).toHaveAttribute(
-    "data-copied-sandbox-env",
-    /# SANDBOX_PROVIDER=novita/,
-  );
-  await expect(page.locator("html")).toHaveAttribute(
-    "data-copied-sandbox-env",
-    /pnpm sandbox:novita-template/,
-  );
+  const settingsHint = settings.getByTestId("computers-unavailable-hint");
+  await expect(
+    settingsHint.getByText("Computers are off on this server.", { exact: true }),
+  ).toBeVisible();
+  await expect(settingsHint.getByRole("link", { name: "Setup help" })).toBeVisible();
   await captureScreenshot(page, testInfo, "computers-unavailable-settings");
+
+  meFails = true;
+  await settingsHint.getByRole("button", { name: "Check again" }).click();
+  const failure = settings.getByRole("alert");
+  await expect(failure).toHaveAttribute("data-testid", "computers-unavailable-hint");
+  await expect(
+    failure.getByText(
+      /^Could not verify computer setup \(.+\)\. Fix the connection, then check again\.$/,
+    ),
+  ).toBeVisible();
+  await expect(failure.getByRole("link", { name: "Setup help" })).toBeVisible();
+  meFails = false;
+
+  sandboxProvider = "docker";
+  await settingsHint.getByRole("button", { name: "Check again" }).click();
+  const recovered = settingsHint.getByText(
+    "Computers are available. Reload or open a bot to continue.",
+  );
+  await expect(recovered).toBeVisible();
+  await expect(recovered).toBeHidden({ timeout: 10_000 });
+  await expect(settingsHint).toHaveCount(0);
 });

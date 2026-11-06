@@ -66,6 +66,16 @@ function cachedSpaces() {
     .map((query) => query.queryKey[2]);
 }
 
+function listKey(spaceId: string) {
+  return [
+    "server:https://app.example.test",
+    "session:1",
+    `space:${spaceId}`,
+    "organizations/list",
+    {},
+  ];
+}
+
 beforeEach(() => {
   queryClient.clear();
   state.selected = "space-a1";
@@ -171,6 +181,21 @@ describe("selectSpaceAcrossOrganizations", () => {
     await expect(selectSpaceAcrossOrganizations("space-b2")).resolves.toBe(true);
     expect(state.selectSpace).toHaveBeenCalledWith("space-b2");
   });
+
+  it("remembers the left Space from the cached list when the fresh read fails", async () => {
+    state.selected = "space-a2";
+    queryClient.setQueryData(listKey("space-a2"), list);
+    await queryClient.invalidateQueries({ queryKey: listKey("space-a2") });
+    state.rpc.mockRejectedValueOnce(Object.assign(new Error("Bad gateway"), { status: 502 }));
+    seed("space-a2");
+    const epoch = organizationSwitchEpoch();
+
+    await expect(selectSpaceAcrossOrganizations("space-b2")).resolves.toBe(true);
+
+    expect(state.remembered["org-work"]).toBe("space-a2");
+    expect(cachedSpaces()).toEqual([]);
+    expect(organizationSwitchEpoch()).toBe(epoch + 1);
+  });
 });
 
 it("opens the Space the server chose after deleting an organization", async () => {
@@ -212,14 +237,6 @@ describe("organizationSwitchActions", () => {
 });
 
 describe("the organization list", () => {
-  const listKey = (spaceId: string) => [
-    "server:https://app.example.test",
-    "session:1",
-    `space:${spaceId}`,
-    "organizations/list",
-    {},
-  ];
-
   it("follows the selected Space when the server's answer has not caught up", () => {
     state.selected = "space-b1";
     expect(

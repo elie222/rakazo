@@ -141,6 +141,21 @@ services:
 Then change `SANDBOX_COMPUTER_EGRESS` from `open` to `restricted` in `.env` and recreate the
 supervisor. Docker Desktop has not been tested this way.
 
+## IPv6 for computers
+
+Computer networks are created with IPv6 in open egress mode (Docker Engine 27+): Docker
+allocates a private ULA /64 per network and masquerades outbound traffic through the host's
+IPv6 address, so computers reach IPv6-only sites, while names with both address families
+stay on IPv4 (RFC 6724 address selection with a ULA source). Restricted egress stays
+IPv4-only: the host ruleset and the startup check enforce and verify IPv4 only. An existing
+computer picks IPv6 up when its network is created again: a stop releases the network, and
+the next start creates a new one. Docker 26, Docker-in-Docker without `ip6_tables` and
+hosts with IPv6 disabled fall back to IPv4-only networks; the supervisor logs a warning and
+computers start unchanged. A computer can also stay on IPv4 for longer when its IPv4-only
+network could not be removed (another user keeps it); IPv4 keeps working, and IPv6 returns
+once that network is gone — for example after `docker network rm` of the computer's
+`rakazo-computer-*` network while it is stopped.
+
 ## Shared host folders
 
 `SANDBOX_COMPUTER_MOUNTS` mounts host directories into every bot computer (Docker sandboxes

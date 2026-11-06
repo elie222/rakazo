@@ -104,7 +104,7 @@ function FormField({
 }) {
   return (
     <div className={`flex min-w-0 flex-col gap-1.5 ${className ?? ""}`}>
-      <Label htmlFor={id} className="text-[12.5px] font-normal text-muted-foreground">
+      <Label htmlFor={id} className="text-body-sm font-normal text-muted-foreground">
         {label}
       </Label>
       {children}
@@ -138,7 +138,7 @@ export function VaultItemEditor({
           onDone={() => onOpenChange(false)}
           header={
             <DialogHeader>
-              <DialogTitle className="pe-8 text-[16px]">{props.heading}</DialogTitle>
+              <DialogTitle className="pe-8 text-body-lg">{props.heading}</DialogTitle>
             </DialogHeader>
           }
         />
@@ -446,7 +446,7 @@ function EditorForm({
         <>
           {siteField("https://www.example.com")}
           {initial?.replacedSite ? (
-            <p className="-mt-2 break-all text-[12.5px] text-muted-foreground">
+            <p className="-mt-2 break-all text-body-sm text-muted-foreground">
               {t`Replaces the login saved for ${initial.replacedSite}`}
             </p>
           ) : null}
@@ -476,7 +476,7 @@ function EditorForm({
               {brand !== "Card" ? (
                 <span
                   data-testid="vault-card-brand"
-                  className="pointer-events-none absolute inset-y-0 end-2 my-auto h-fit rounded-full bg-accent px-2 py-0.5 text-[11.5px] text-muted-foreground"
+                  className="pointer-events-none absolute inset-y-0 end-2 my-auto h-fit rounded-full bg-accent px-2 py-0.5 text-label text-muted-foreground"
                 >
                   {brand}
                 </span>
@@ -595,7 +595,7 @@ function EditorForm({
             {commandVariable ? (
               <span
                 data-testid={reserved ? "vault-editor-variable-error" : "vault-editor-variable"}
-                className={`text-[12px] ${reserved ? "text-destructive" : "text-muted-foreground"}`}
+                className={`text-label ${reserved ? "text-destructive" : "text-muted-foreground"}`}
               >
                 {reserved
                   ? t`${commandVariable} is reserved and cannot be used as a command variable. Choose another name.`
@@ -620,7 +620,7 @@ function EditorForm({
         </Button>
       )}
       {error ? (
-        <p role="alert" className="text-[13px] text-destructive">
+        <p role="alert" className="text-body-sm text-destructive">
           {error}
         </p>
       ) : null}
@@ -636,7 +636,7 @@ function EditorForm({
             />
             <Label
               htmlFor={id("remember")}
-              className="text-[13px] font-normal text-muted-foreground"
+              className="text-body-sm font-normal text-muted-foreground"
             >
               <Trans>Save to Vault</Trans>
             </Label>

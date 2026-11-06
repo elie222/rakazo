@@ -110,6 +110,41 @@ describe("email languages", () => {
     expect(emailLocale(null, headers("en-US,pl;q=0.9"))).toBe("en");
   });
 
+  it("prefers the highest acceptable supported language in the request", () => {
+    expect(emailLocale(null, headers("en;q=0,fr;q=1"))).toBe("fr");
+    expect(emailLocale(null, headers("de;q=0.1,es;q=0.9"))).toBe("es");
+    expect(emailLocale(null, headers("de;q=0.5,fr"))).toBe("fr");
+    expect(emailLocale(null, headers("fr;q=0.8,de;q=0.8"))).toBe("fr");
+    expect(emailLocale(null, headers("it;q=1,ES-cl;Q=0.9,en;q=0.8"))).toBe("es");
+    expect(emailLocale(null, headers("zh-Hant-TW;q=0.9,pt-PT;q=0.8"))).toBe("zh-TW");
+    expect(emailLocale(null, headers("en-US;q=0.8,fr;q=0.7"))).toBe("en");
+    expect(emailLocale(null, headers("fr;q=0.,de;q=1."))).toBe("de");
+  });
+
+  it.each([
+    ["zh_Hans_CN", "zh-CN"],
+    ["zh_Hans_CN;q=0.9,en;q=0.8", "zh-CN"],
+    ["zh_Hant_TW;q=0.9,fr;q=0.8", "zh-TW"],
+    ["pt_BR;q=0.9,fr;q=0.8", "pt-BR"],
+    ["en_US;q=1,fr;q=0.5", "en"],
+    ["zh_Hans_CN;q=0,fr;q=0.5", "fr"],
+    ["zh_Hans_CN;q=bogus,fr;q=0.5", "fr"],
+    ["zh__Hans_CN;q=1,fr;q=0.5", "fr"],
+  ])("matches underscored request tags in %s to %s", (request, locale) => {
+    expect(emailLocale(null, headers(request))).toBe(locale);
+  });
+
+  it("ignores malformed weights and falls back when no supported language is acceptable", () => {
+    for (const invalid of ["-0.1", "1.1", "0.1234", "bogus", "0.5junk", ""]) {
+      expect(emailLocale(null, headers(`de;q=${invalid},fr;q=0.1`))).toBe("fr");
+    }
+    expect(emailLocale(null, headers("de;q=0,fr;q=0"))).toBe("en");
+    expect(emailLocale(null, headers("en;q=0"))).toBe("en");
+    expect(emailLocale(null, headers("*;q=1,fr;q=0.5"))).toBe("fr");
+    expect(emailLocale("es", headers("en;q=1,es;q=0"))).toBe("es");
+    expect(emailLocale("it", headers("fr;q=1"))).toBe("en");
+  });
+
   it("renders Polish account emails with exact links, escaped codes and names", async () => {
     const url = "https://app.example.test/reset?token=fake&callbackURL=%2Fsign-in";
     const name = "Żaneta <Account>";

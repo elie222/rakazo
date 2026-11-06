@@ -107,3 +107,18 @@ export function filterConnectionCatalogItems(
 
 export const EMPTY_PLUGIN_CATALOG_MESSAGE =
   "Configure a plugin catalog on the server to connect apps.";
+
+/** Loading or unavailable catalogs cannot establish that there are no matching apps. */
+export function integrationCatalogsReady({
+  catalogLoaded,
+  catalogFailed,
+  pluginsLoaded,
+  pluginsUnavailable,
+}: {
+  catalogLoaded: boolean;
+  catalogFailed: boolean;
+  pluginsLoaded: boolean;
+  pluginsUnavailable: boolean;
+}): boolean {
+  return catalogLoaded && !catalogFailed && pluginsLoaded && !pluginsUnavailable;
+}

@@ -74,6 +74,7 @@ describe("model credit checkout", () => {
       },
       billingAccount: {
         findUnique: vi.fn().mockResolvedValue(account),
+        findFirst: vi.fn().mockResolvedValue({ organizationId: "org-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       modelCreditAccount: {

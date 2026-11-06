@@ -42,6 +42,7 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 - [CodeRabbit](https://www.coderabbit.ai/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [Greptile](https://www.greptile.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [Snyk](https://snyk.io/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Incredibuild](https://www.incredibuild.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 
 ## Stack
 
@@ -103,7 +104,7 @@ Or [deploy on Railway](https://railway.com/new/template/rakazo-template); see th
 ## Local development (source checkout)
 
 You need Node.js 22.22.2 or newer in the 22.x line, Node.js 24.x, or Node.js 26+;
-pnpm 9; and Docker. Node.js 23.x and 25.x are not supported.
+pnpm 12; and Docker. Node.js 23.x and 25.x are not supported.
 
 ```bash
 git clone https://github.com/elie222/rakazo.git
@@ -146,6 +147,17 @@ doesn't have gets its own database on the same server, copied from the shared on
 so unmerged schema changes stay out of it. When the default ports are taken, for example by
 another git worktree, it moves to the next free block and prints the URL. Set `WEB_PORT` and
 `API_PORT` to choose ports yourself.
+
+To try a checkout from your phone or another computer, install [Tailscale](https://tailscale.com)
+on each device and set `RAKAZO_DEV_TAILNET=1` in `.env`. `pnpm dev` then serves the web app over
+HTTPS at `https://<machine>.<tailnet>.ts.net:<web port>`, reachable only from devices on your
+tailnet, and stops serving it when you quit. Sign in at that URL on every device, including the
+one running it. The first run may ask you to turn on HTTPS certificates for your tailnet.
+
+To keep keys in a secrets manager instead of `.env`, set `RAKAZO_DEV_RUN_WITH` to the command
+that runs another with your secrets added, for example `op run --env-file=dev.env --` or
+`infisical run --env=dev --projectId=<project> --`. `pnpm dev` then starts inside it, and the
+values it adds win over `.env`.
 
 To run Postgres from the Compose file instead, start it with the `postgres-host` overlay, which
 publishes loopback `127.0.0.1:5433`, and point `DATABASE_URL` and `DATABASE_MIGRATION_URL` at it:
@@ -239,14 +251,14 @@ Mobile build and release instructions live in [docs/mobile-release.md](./docs/mo
 ## UI language
 
 The web (and Electron-hosted) UI supports English, Deutsch, 한국어, Türkçe, हिन्दी,
-Português (Brasil), 简体中文, 繁體中文, Español, Русский, Français, עברית, Nederlands, and 日本語 under
+Português (Brasil), 简体中文, 繁體中文, Español, Русский, Français, עברית, Nederlands, 日本語, and Polski under
 **Settings → Language**. The Expo app ships English, 简体中文, 繁體中文, Русский, Deutsch,
-Nederlands, and 日本語 catalogs, and **Account → Language** lists all seven. A device language or
+Nederlands, 日本語, Español, and Polski catalogs, and **Account → Language** lists all nine. A device language or
 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` still selects the starting catalog before a saved choice.
-The marketing
-homepage (`apps/www`) is available in en/de/ko/zh/ja via footer language links (`/`, `/de/`,
-`/ko/`, `/zh/`, `/ja/`); other marketing pages stay English. The Russian marketing homepage and
-native Electron setup/menu remain separate follow-up work.
+Native Electron setup and menus also support the web UI's languages, following the saved app
+choice or, on first launch, the system language. The marketing homepage (`apps/www`) offers all
+15 languages through footer links, including `/zh/` and `/zh-tw/`; other marketing pages remain
+primarily English.
 
 ## Development
 
@@ -271,6 +283,10 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow and test m
 
 ## Documentation
 
+Chinese guides cover [self-hosting](./docs/zh-CN/self-host.md), [models](./docs/zh-CN/self-host-models.md),
+[backups](./docs/zh-CN/self-host-backups.md), [upgrading](./docs/zh-CN/self-host-upgrading.md), and
+[restricted networks](./docs/zh-CN/self-host-restricted-network.md).
+
 - [Self-hosting](./docs/self-host.md)
 - [Self-host configuration](./docs/self-host-configuration.md)
 - [Self-host secrets](./docs/self-host-secrets.md)
@@ -284,6 +300,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow and test m
 - [Backup and restore](./docs/self-host-backups.md)
 - [Upgrading](./docs/self-host-upgrading.md)
 - [Logs and monitoring](./docs/self-host-observability.md)
+- [Audit log](./docs/self-host-audit-log.md)
 - [Apps and clients](./docs/self-host-clients.md)
 - [Billing](./docs/self-host-billing.md)
 - [Computer runtime and isolation](./docs/computer-runtime.md)

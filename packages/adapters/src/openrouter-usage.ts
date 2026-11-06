@@ -1,4 +1,5 @@
 import type { AgentUsage, ModelUsageLookup } from "@rakazo/adapter-kit";
+import { readBoundedJsonResponse } from "@rakazo/core";
 import { z } from "zod";
 
 /** Attribution is restricted to OpenRouter inference endpoints, never compatible/custom hosts. */
@@ -27,6 +28,7 @@ export function openRouterInferenceFetch(fetcher: typeof fetch, userId?: string)
   };
 }
 
+const MAX_USAGE_RESPONSE_BYTES = 64 * 1024;
 const tokens = z.number().int().nonnegative().nullable().optional();
 const generationSchema = z.object({
   data: z.object({
@@ -58,7 +60,9 @@ export class OpenRouterUsageLookup implements ModelUsageLookup {
     );
     if (response.status === 404) return null;
     if (!response.ok) throw new Error(`OpenRouter usage lookup failed (${response.status})`);
-    const { data } = generationSchema.parse(await response.json());
+    const { data } = generationSchema.parse(
+      await readBoundedJsonResponse(response, MAX_USAGE_RESPONSE_BYTES),
+    );
     if (data.id !== providerRequestId) throw new Error("Provider returned a different generation");
     // A bring-your-own-key generation's total is only OpenRouter's fee.
     const upstreamCost = data.is_byok ? data.upstream_inference_cost : 0;

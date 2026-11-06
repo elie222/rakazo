@@ -1,9 +1,10 @@
 import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
+import { MCP_APP_MIME_TYPE } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, IsolationError, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createOwnedArtifact } from "./artifacts.js";
+import { createOwnedArtifact, listSpaceArtifacts } from "./artifacts.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
@@ -107,6 +108,35 @@ describePostgres("artifact upload nonce (PostgreSQL)", () => {
     );
     expect(new Set(uploads.map((artifact) => artifact.id)).size).toBe(1);
     expect(await system.artifact.count({ where: { spaceId, clientNonce: "send-5:0" } })).toBe(1);
+  });
+
+  it("keeps an MCP app's document out of the artifact list", async () => {
+    await upload("send-6:0", { botId });
+    await system.artifact.create({
+      data: {
+        spaceId,
+        userId,
+        botId,
+        name: "Forecast app.html",
+        mimeType: MCP_APP_MIME_TYPE,
+        size: 5,
+        hash: "app-hash",
+        storageKey: "blob-app",
+      },
+    });
+    const listed = await runAsTenant(actor, () => listSpaceArtifacts({ prisma }, actor, { botId }));
+    expect(new Set(listed.items.map((item) => item.name))).toEqual(new Set(["notes.txt"]));
+
+    // A file that happens to share the app document's name starts its own history.
+    const sameName = await runAsTenant(actor, () =>
+      createOwnedArtifact({ prisma, artifacts }, actor, {
+        botId,
+        name: "Forecast app.html",
+        mimeType: "text/html",
+        contentBase64: Buffer.from("<p>mine</p>").toString("base64"),
+      }),
+    );
+    expect(sameName.version).toBe(1);
   });
 
   it("refuses a nonce reused for another chat", async () => {

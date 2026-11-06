@@ -3,6 +3,8 @@
 Back up the database and application data, keep encrypted copies off the server, and recover to
 a snapshot or a moment in time.
 
+English | [简体中文](./zh-CN/self-host-backups.md)
+
 ## Source checkout backups
 
 ```bash

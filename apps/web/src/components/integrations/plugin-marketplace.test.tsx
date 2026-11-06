@@ -101,9 +101,13 @@ const server = {
   installId: install.id,
   name: "notes: notes-mcp",
   endpoint: "https://notes.example.test/mcp",
+  enabled: true,
   oauthStatus: "none",
   health: { status: "unknown", message: null, toolCount: null, checkedAt: null },
 } as McpServer;
+
+const ok = { status: "ok", message: null, toolCount: 1, checkedAt: null } as const;
+const failed = { status: "error", message: "HTTP 500", toolCount: null, checkedAt: null } as const;
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -198,6 +202,23 @@ describe("plugin detail", () => {
     expect(container.querySelector("[role=alert]")?.textContent).toContain("Sign-in cancelled");
     await click("Use in this bot");
     expect(api.approve).toHaveBeenCalledWith({ botId: "bot-1", serverId: server.id });
+  });
+
+  it("offers the shared troubleshooting guide for a documented sign-in error", async () => {
+    api.connect.mockRejectedValue(
+      Object.assign(new Error("Sign-in configuration mismatch"), {
+        code: "MCP_OAUTH_REDIRECT_MISMATCH",
+      }),
+    );
+    await render({ install, servers: [server] });
+    await click("Sign in");
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert?.querySelector("a")?.getAttribute("href")).toBe(
+      "https://rakazo.com/docs/troubleshooting/#mcp-oauth-redirect-mismatch",
+    );
+    api.connect.mockRejectedValue(new Error("Could not sign in"));
+    await click("Sign in");
+    expect(container.querySelector('[role="alert"] a')).toBeNull();
   });
 
   it("removes the connector only after confirmation and keeps the skills", async () => {
@@ -296,4 +317,27 @@ describe("plugin detail", () => {
     expect(container.querySelector('[aria-label="Connected"]')).not.toBeNull();
     expect(() => button("Sign in")).toThrow();
   });
+
+  it.each([
+    ["signed in", { oauthStatus: "connected" }, true, []],
+    ["signed in with a failed check", { oauthStatus: "connected", health: failed }, false, []],
+    ["never signed in with a failed check", { health: failed }, false, ["Sign in"]],
+    ["disabled", { oauthStatus: "connected", enabled: false }, false, []],
+    [
+      "signed out after an ok check",
+      { oauthStatus: "reconnect", health: ok },
+      false,
+      ["Reconnect"],
+    ],
+  ] as const)(
+    "marks a connector %s the way Your apps does",
+    async (_, change, connected, actions) => {
+      await render({ install, servers: [{ ...server, ...change }] });
+      expect(container.querySelector('[aria-label="Connected"]') !== null).toBe(connected);
+      const signIn = [...container.querySelectorAll("button")]
+        .map((node) => node.textContent?.trim())
+        .filter((text) => text === "Sign in" || text === "Reconnect");
+      expect(signIn).toEqual(actions);
+    },
+  );
 });

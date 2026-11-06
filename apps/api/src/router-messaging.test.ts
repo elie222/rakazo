@@ -73,6 +73,7 @@ function messagingDeps(
   const defaultChannel = { id: "ch-1", provider: "sendblue", name: "Family", members: [] };
   const connectionState = connection ? { ...connection } : null;
   const prisma = {
+    spaceMember: { count: vi.fn(async () => 1) },
     messagingIdentity: {
       findFirst: vi.fn(async () => resolvedIdentity),
       findMany: vi.fn(

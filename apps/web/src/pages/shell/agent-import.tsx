@@ -32,11 +32,13 @@ import {
 import {
   Button,
   Checkbox,
+  CopyTextFallback,
   Input,
   Label,
   NativeSelect,
   NativeSelectOption,
   Textarea,
+  useCopyText,
 } from "@rakazo/ui-web";
 import {
   Collapsible,
@@ -62,7 +64,7 @@ const STATUS_WARNINGS: ReadonlySet<AgentImportWarning> = new Set([
 ]);
 
 const sectionClass = "mt-6";
-const headingClass = "text-sm text-foreground";
+const headingClass = "text-body text-foreground";
 
 export function AgentImportForm({
   onClose,
@@ -97,7 +99,7 @@ export function AgentImportForm({
   const [description, setDescription] = useState("");
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [reply, setReply] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copied, copy, copyFailed, resetCopy] = useCopyText();
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   // Bumped by every new read, so a slower earlier one never lands over it.
@@ -328,15 +330,6 @@ export function AgentImportForm({
     setBusy(false);
   }
 
-  async function copyPrompt() {
-    try {
-      await navigator.clipboard.writeText(AGENT_IMPORT_PROMPT);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  }
-
   const selectedInstructions = plan?.instructions.filter((item) => !unchecked.has(item.id)) ?? [];
   const chosen = <T extends { id: string }>(items: T[] | undefined) =>
     (items ?? []).filter((item) => !unchecked.has(item.id));
@@ -414,7 +407,7 @@ export function AgentImportForm({
             disabled={disabled}
             onCheckedChange={(checked) => toggle(id, checked)}
           />
-          <CollapsibleTrigger className="group flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-sm text-start text-[14px] text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+          <CollapsibleTrigger className="group flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-sm text-start text-body text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
             <span className="truncate" dir="auto">
               {title}
             </span>
@@ -428,12 +421,12 @@ export function AgentImportForm({
         <CollapsibleContent>
           <div className="ms-7 mt-1" data-testid="agent-import-content">
             {description ? (
-              <p className="mb-1 text-[13px] text-muted-foreground" dir="auto">
+              <p className="mb-1 text-body-sm text-muted-foreground" dir="auto">
                 {description}
               </p>
             ) : null}
             <pre
-              className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted px-3 py-2 font-mono text-[12px] text-foreground"
+              className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted px-3 py-2 font-mono text-label text-foreground"
               dir="auto"
             >
               {content}
@@ -489,7 +482,7 @@ export function AgentImportForm({
   };
   // Its own line under the name, so a long status never cuts the name short.
   const note = (text: string) => (
-    <span className="ms-7 -mt-1 mb-1 basis-full text-[12.5px] text-muted-foreground" dir="auto">
+    <span className="ms-7 -mt-1 mb-1 basis-full text-body-sm text-muted-foreground" dir="auto">
       {text}
     </span>
   );
@@ -505,13 +498,16 @@ export function AgentImportForm({
             disabled={creating}
             onClick={() => {
               stopReading();
-              if (plan) setPlan(null);
-              else onClose();
+              if (plan) {
+                // A copy that failed while the preview was open must not greet the return.
+                resetCopy();
+                setPlan(null);
+              } else onClose();
             }}
           >
             <ArrowLeft size={16} strokeWidth={1.8} />
           </Button>
-          <span className="text-[13.5px] text-muted-foreground">
+          <span className="text-body text-muted-foreground">
             <Trans>Import an agent</Trans>
           </span>
         </div>
@@ -531,7 +527,7 @@ export function AgentImportForm({
         <p
           role="alert"
           data-testid="agent-import-error"
-          className="mb-3 text-[13px] text-destructive"
+          className="mb-3 text-body-sm text-destructive"
         >
           {error}
         </p>
@@ -565,7 +561,7 @@ export function AgentImportForm({
                 })}
               </ul>
               {tooLong ? (
-                <p role="alert" className="mt-2 text-[13px] text-destructive">
+                <p role="alert" className="mt-2 text-body-sm text-destructive">
                   <Trans>Instructions are too long. Untick some files.</Trans>
                 </p>
               ) : null}
@@ -626,7 +622,7 @@ export function AgentImportForm({
               <h3 className={headingClass}>
                 <Trans>Skills</Trans>
               </h3>
-              <p className="mt-1 text-[12.5px] text-muted-foreground">
+              <p className="mt-1 text-body-sm text-muted-foreground">
                 <Trans>Skills join the library all your bots share.</Trans>
               </p>
               <ul className="mt-2">
@@ -734,7 +730,7 @@ export function AgentImportForm({
           ) : null}
           {secretsAvailable ? (
             <section className={sectionClass} data-testid="agent-import-keys">
-              <Label className="min-h-9 gap-3 font-normal text-[14px] text-foreground">
+              <Label className="min-h-9 gap-3 font-normal text-body text-foreground">
                 <Checkbox
                   checked={includeSecrets}
                   disabled={busy}
@@ -766,7 +762,7 @@ export function AgentImportForm({
                 </CollapsibleTrigger>
               </h3>
               <CollapsibleContent>
-                <ul className="mt-2 text-[13px] text-muted-foreground">
+                <ul className="mt-2 text-body-sm text-muted-foreground">
                   {plan.skipped.map((entry, index) => (
                     <li key={`${index}:${entry.path}`} className="py-1">
                       <span>{entry.path}</span>
@@ -874,9 +870,15 @@ export function AgentImportForm({
             <h3 className={headingClass}>
               <Trans>Another assistant</Trans>
             </h3>
-            <Button variant="outline" className="mt-2" onClick={() => void copyPrompt()}>
+            <Button variant="outline" className="mt-2" onClick={() => copy(AGENT_IMPORT_PROMPT)}>
               {copied ? <Trans>Copied</Trans> : <Trans>Copy prompt</Trans>}
             </Button>
+            <CopyTextFallback
+              open={copyFailed}
+              onOpenChange={resetCopy}
+              text={AGENT_IMPORT_PROMPT}
+              label={t`Copy prompt`}
+            />
             <Textarea
               aria-label={t`Paste the reply`}
               value={reply}

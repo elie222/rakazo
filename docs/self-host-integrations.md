@@ -103,6 +103,15 @@ without use. When a server fails to start, the reason (including the end of its 
 credentials redacted) appears on the server in **Settings**, and its bots are told it is
 unavailable instead of silently losing its tools.
 
+Tool discovery keeps at most `MCP_MAX_TOOLS` tools (default 250) and reads at most
+`MCP_MAX_PAGES` pages (default 20) per server, for both remote and stdio MCP servers.
+Set positive safe integers in `.env`, for example `MCP_MAX_TOOLS=1000` and
+`MCP_MAX_PAGES=100`, to change them. Unset, blank or invalid values fall back to the
+respective default. Discovery stops when either bound is reached or the server has no
+next page, and remains subject to the existing response-size and timeout limits.
+Docker deployments need both settings on the API and worker; recreate those containers
+after changing them.
+
 A run never waits long on one server. It gives each server `MCP_DISCOVERY_TIMEOUT_MS` (default
 20000) to list its tools, then goes on without it; a package still installing finishes in the
 background and its tools appear on a later turn. After a failure, runs skip that server for 30
@@ -250,7 +259,7 @@ PAYMENT_WALLET_PROVIDER=link
 PAYMENT_WALLET_CLIENT_ID=
 ```
 
-Users then see a Link connect button in Settings. Connecting opens Link's sign-in page with a code to confirm. Once connected, bots get `request_purchase`, `purchase_status` and `paid_request`. Each request names the amount and reason; the user approves or denies it in Link.
+Users then see a Link connect button in Settings. Connecting opens Link's sign-in page with a code to confirm. Once connected, bots get `request_purchase`, `purchase_status` and `paid_request`. Each request names the amount and reason; the user approves or denies it in Link. A purchase also counts against the user's [spending limit](./approvals.md#spending-limit), if they set one, before Link is asked.
 
 Link is available to users in the US and Canada only.
 

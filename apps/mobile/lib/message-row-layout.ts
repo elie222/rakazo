@@ -1,4 +1,4 @@
-import { isSecretAskBlock } from "@rakazo/core";
+import { isApprovalAskBlock, isSecretAskBlock } from "@rakazo/core";
 import type { MobileMessage } from "./api";
 import { isCenteredAgentEvent, THREAD_COLUMN_GUTTER } from "./message-presentation";
 
@@ -19,15 +19,23 @@ export function messageRowLayout(
 ) {
   const wideAsk = blocks.some(isSecretAskBlock);
   const full = wideAsk || isCenteredAgentEvent(blocks);
-  // Connect cards fill the bubble width instead of shrinking to their button.
-  const appConnect = blocks.some(
-    (block) => block.kind === "app_connect" || block.kind === "mcp_approval",
+  const fillsBubble = blocks.some(
+    (block) =>
+      block.kind === "app_connect" ||
+      block.kind === "mcp_approval" ||
+      block.kind === "app" ||
+      (block.kind === "ask" &&
+        block.status !== "answered" &&
+        Boolean(block.actions?.length) &&
+        !isApprovalAskBlock(block) &&
+        !block.instructionUpdate &&
+        !block.settingsUpdate),
   );
   const gutter = activityBotId ? (inGroup ? 28 : 36) : 0;
   return {
-    width: full ? "100%" : appConnect && !activityBotId ? "90%" : undefined,
+    width: full ? "100%" : fillsBubble && !activityBotId ? "90%" : undefined,
     maxWidth: full ? "100%" : activityBotId ? undefined : "90%",
-    menuFullWidth: wideAsk || appConnect,
+    menuFullWidth: wideAsk || fillsBubble,
     menuMaxWidth: wideAsk
       ? columnWidth - COLUMN_PADDING - gutter
       : isCenteredAgentEvent(blocks)

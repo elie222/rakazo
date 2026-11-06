@@ -8,10 +8,15 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
+  activeThreadRuns,
   anySignal,
   createRefreshCoalescer,
   isRunTerminalEvent,
   isRunWorking,
+  isThreadSnapshotEvent,
+  reconcileRefreshedThread,
+  reduceThreadSnapshot,
+  rememberTerminalRun,
   runThreadSubscription,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
@@ -28,15 +33,15 @@ import type { SpaceQueries } from "../../lib/query";
 import { queryClient } from "../../lib/query";
 import type { createSpaceRpc } from "../../lib/rpc";
 import {
-  activeThreadRuns,
   isComputerStatusEvent,
-  isThreadSnapshotEvent,
   prependThreadMessagePage,
-  reconcileRefreshedThread,
   reduceComputerStatus,
-  reduceThreadSnapshot,
 } from "../../lib/thread-events";
-import { transcriptCanSnapAfterFrame, transcriptIsNearEnd } from "../../lib/transcript-scroll";
+import {
+  firstVisibleTranscriptRow,
+  transcriptCanSnapAfterFrame,
+  transcriptIsNearEnd,
+} from "../../lib/transcript-scroll";
 import type { useBrowserNotifications } from "./use-browser-notifications";
 import type { ComputerState } from "./use-computer";
 import type { ThreadState } from "./use-thread-state";
@@ -274,6 +279,10 @@ export function useThreadSync({
       return;
     pinnedAroundRef.current = null;
     const scrollElement = messageScroll.current;
+    // Hold the first visible row steady: a plain height delta would also count
+    // content appended at the bottom while the older page was loading.
+    const anchorRow = firstVisibleTranscriptRow(scrollElement);
+    const anchorTop = anchorRow?.offsetTop ?? null;
     const previousHeight = scrollElement?.scrollHeight ?? 0;
     const epoch = historyEpoch.current;
     const before = snapshot.olderCursor;
@@ -293,7 +302,11 @@ export function useThreadSync({
       updateSnapshot((prev) => prependThreadMessagePage(prev, page));
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
-        if (element) element.scrollTop += element.scrollHeight - previousHeight;
+        if (!element) return;
+        element.scrollTop +=
+          anchorRow?.isConnected && anchorTop !== null
+            ? anchorRow.offsetTop - anchorTop
+            : element.scrollHeight - previousHeight;
       });
     } finally {
       setLoadingOlder(false);
@@ -348,13 +361,7 @@ export function useThreadSync({
         ),
       beforeEvent: (event) => {
         webLogoAvatarActivity.apply(avatarSource, event);
-        if (isRunTerminalEvent(event) && event.runId) {
-          terminalRunReceipts.current.add(event.runId);
-          if (terminalRunReceipts.current.size > 100) {
-            const oldest = terminalRunReceipts.current.values().next().value;
-            if (oldest !== undefined) terminalRunReceipts.current.delete(oldest);
-          }
-        }
+        rememberTerminalRun(terminalRunReceipts.current, event);
       },
       applyEvent: (event) =>
         applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef),
@@ -367,7 +374,7 @@ export function useThreadSync({
           true,
           currentBot?.name ?? active.name,
           currentBot?.notifyOnFinish ?? false,
-          false,
+          undefined,
         );
         if (event.type === "thread.cleared") resetHistory();
         if (event.type === "bot.archived") {
@@ -399,6 +406,10 @@ export function useThreadSync({
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void snapshotRefresh.invalidate().catch(() => undefined);
         } else if (isComputerStatusEvent(event)) {
+          // In a shared Space the event does not say who took control; the snapshot does.
+          if (event.type === "computer.takeover.granted" && computerRef.current?.shared) {
+            void snapshotRefresh.invalidate().catch(() => undefined);
+          }
           void refreshComputerScreen(active.id).catch(() => undefined);
         }
         if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
@@ -463,7 +474,7 @@ export function useThreadSync({
           true,
           eventBot?.name ?? activeGroup.name,
           true,
-          true,
+          groupId,
         );
         if (event.type === "thread.message.created" && event.payload.role === "bot") {
           markGroupReadOnReply(groupId);

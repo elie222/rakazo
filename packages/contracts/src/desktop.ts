@@ -113,6 +113,11 @@ export interface RakazoDesktop {
     /** Relying parties this build is associated with for system passkeys (macOS); others fail. */
     rpIds: () => Promise<string[]>;
   };
+  /** Absent on older desktop releases. */
+  server?: {
+    /** Opens the desktop setup window to pick another Rakazo server. */
+    change: () => Promise<void>;
+  };
   /** Absent on older desktop releases, which have no Settings… menu item. */
   settings?: {
     /** The app menu's Settings… item; the OS claims Cmd+, before any page keydown can. */

@@ -415,6 +415,27 @@ export function inferScript(
       },
     ];
   }
+  // A wallet purchase: the wallet owner approves it in the wallet, so no card asks here.
+  if (lower.includes("buy from the fixture shop")) {
+    return [
+      {
+        assistant: "i will ask your wallet for that purchase.",
+        toolCalls: [
+          {
+            name: "request_purchase",
+            args: {
+              merchantName: "Fixture Shop",
+              merchantUrl: "https://shop.example.test/checkout",
+              amount: 2_340,
+              currency: "usd",
+              reason:
+                "The owner asked to buy the groceries already in the cart at this shop, and the checkout page shows this total.",
+            },
+          },
+        ],
+      },
+    ];
+  }
   // The site is not in the message, so the owner did not name it and the call asks.
   const paidRequest = /paid request card(?: on (\w+))?/.exec(lower);
   if (paidRequest) {
@@ -473,6 +494,23 @@ code-a
 code-b
 \`\`\``,
         complete: true,
+      },
+    ];
+  }
+  if (lower.includes("send the draft on the card")) {
+    // Background resumes retain the task and append the answered question.
+    if (/\nAnswer:/.test(prompt)) return [{ assistant: "thanks. sent.", complete: true }];
+    return [
+      {
+        assistant: "the draft is on the card. pick one to continue.",
+        ask: {
+          text: "Send this email to Ana?",
+          detail: "To: ana@example.test\nSubject: Demo\n\nThe draft body.",
+          actions: [
+            { id: "choice-1", label: "Send it" },
+            { id: "choice-2", label: "Show me first" },
+          ],
+        },
       },
     ];
   }
@@ -665,7 +703,8 @@ code-b
       },
     ];
   }
-  if (/^run\s+/.test(lower)) {
+  // An inbound routine run opens with "Run routine"; its payload picks the branch, not this one.
+  if (/^run\s+(?!routine ")/.test(lower)) {
     return [
       {
         assistant:

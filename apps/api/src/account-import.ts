@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { WriteStream } from "node:fs";
 import { createReadStream, createWriteStream } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -38,8 +39,8 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { checkPageSource } from "@rakazo/page-kit/validate";
-import { Unzip, UnzipInflate } from "fflate";
 import type { Hono } from "hono";
+import { inflateEntry, parseZipArchive, readExact, ZipFormatError } from "./account-zip-reader.js";
 import { cancelBody } from "./http-body.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
 import { deleteSpaceWithContent } from "./space-deletion.js";
@@ -58,8 +59,13 @@ export const ACCOUNT_IMPORT_LIMITS = {
 type ArchiveLimits = typeof ACCOUNT_IMPORT_LIMITS & { artifactBytes: number };
 
 /** Bounds what one push can inflate to (deflate expands at most ~1032x). */
-const PUSH_SLICE_BYTES = 16 * 1024;
 const MESSAGE_BATCH_SIZE = 500;
+
+/** Prefix of the private spool files, exposed so tests can assert cleanup. */
+export const SPOOL_PREFIX = "rakazo-account-import-archive-";
+
+/** Slice size for streaming a spilled entry back to its sink. */
+const READ_SPILL_BYTES = 16 * 1024;
 
 export class AccountImportError extends Error {
   constructor(
@@ -129,89 +135,122 @@ export interface ArchiveSink {
 }
 
 /**
- * Streams the zip once. fflate inflates synchronously inside `push`, so input goes in small
- * slices and the queued output is handed to the sink before the next slice is read.
+ * Spools the upload to a private temp file, enforcing the body limit as it
+ * arrives. The spool is deleted on every failure here — a body error, a
+ * limit breach, or a write failure — and the original error is rethrown.
+ */
+async function spoolBody(
+  body: AsyncIterable<Uint8Array>,
+  maxBytes: number,
+  spoolDir = tmpdir(),
+): Promise<{ handle: FileHandle; path: string }> {
+  const spoolPath = path.join(spoolDir, `${SPOOL_PREFIX}${randomUUID()}`);
+  const handle = await open(spoolPath, "w+", 0o600);
+  let size = 0;
+  try {
+    for await (const chunk of body) {
+      size += chunk.byteLength;
+      if (size > maxBytes) throw tooLarge();
+      await handle.write(chunk);
+    }
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await rm(spoolPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
+  return { handle, path: spoolPath };
+}
+
+/**
+ * Reads the archive from its spooled file. Entries come from the central
+ * directory in local-header order and are inflated incrementally, so a zip
+ * stored inside the export is opaque data — its inner headers are never
+ * mistaken for entries. Each entry inflates into a spill file first, so a
+ * whole entry never sits in memory — and a failed entry never reaches the
+ * sink. The spool and spill are deleted on every path.
  */
 export async function readArchive(
   body: AsyncIterable<Uint8Array>,
   limits: ArchiveLimits,
   sink: ArchiveSink,
+  options?: { spoolDir?: string },
 ): Promise<void> {
-  type Event = { entry: ArchiveEntry } | { data: Uint8Array; final: boolean };
-  const queue: Event[] = [];
-  let failure: unknown;
-  let index = 0;
-  let unpacked = 0;
-  let open = false;
-  const unzip = new Unzip((file) => {
-    try {
-      if (failure) return;
-      if (file.compression !== 0 && file.compression !== 8) throw unreadable();
-      const entry = parseEntryName(file.name, index++);
-      const maxBytes = entryLimit(entry, limits);
-      let size = 0;
-      queue.push({ entry });
-      file.ondata = (error, data, final) => {
-        if (failure) return;
-        if (error) {
-          failure = unreadable();
-          return;
-        }
-        size += data.byteLength;
-        unpacked += data.byteLength;
-        if (size > maxBytes || unpacked > limits.unpackedBytes) {
-          failure =
-            entry.kind === "artifact"
-              ? new AccountImportError(
-                  `An artifact in the export exceeds the ${attachmentSizeLabel(maxBytes)} limit.`,
-                )
-              : entry.kind === "home"
+  const spool = await spoolBody(body, limits.bodyBytes, options?.spoolDir);
+  try {
+    const entries = await parseZipArchive(spool.handle);
+    let failure: unknown;
+    let index = 0;
+    let unpacked = 0;
+    let entryOpen = false;
+    for (const zipEntry of entries) {
+      if (failure) break;
+      // The spill holds this entry's inflated bytes until the whole entry
+      // verifies, so a limit breach or corrupt stream discards it before
+      // the sink ever sees the entry — and heap stays bounded no matter
+      // how large the entry is.
+      const spillPath = `${spool.path}.entry`;
+      const spill = await open(spillPath, "w+", 0o600);
+      try {
+        const entry = parseEntryName(zipEntry.name, index++);
+        const maxBytes = entryLimit(entry, limits);
+        let size = 0;
+        const pending: Uint8Array[] = [];
+        const flush = async () => {
+          for (const chunk of pending.splice(0)) await spill.write(chunk);
+        };
+        await inflateEntry(
+          spool.handle,
+          zipEntry,
+          (data) => {
+            size += data.byteLength;
+            unpacked += data.byteLength;
+            if (size > maxBytes || unpacked > limits.unpackedBytes) {
+              // Thrown out of the inflation at once: a bomb stops inflating
+              // here instead of running to the end of the entry.
+              throw entry.kind === "artifact"
                 ? new AccountImportError(
-                    `A workspace file in the export exceeds the ${attachmentSizeLabel(maxBytes)} limit.`,
+                    `An artifact in the export exceeds the ${attachmentSizeLabel(maxBytes)} limit.`,
                   )
-                : tooLarge();
-          file.terminate();
-          return;
+                : entry.kind === "home"
+                  ? new AccountImportError(
+                      `A workspace file in the export exceeds the ${attachmentSizeLabel(maxBytes)} limit.`,
+                    )
+                  : tooLarge();
+            }
+            pending.push(data);
+          },
+          flush,
+        );
+        await flush();
+        // The whole entry verified: hand it to the sink from the spill.
+        await sink.open(entry);
+        entryOpen = true;
+        let position = 0;
+        while (position < size) {
+          const want = Math.min(READ_SPILL_BYTES, size - position);
+          const chunk = new Uint8Array(want);
+          await readExact(spill, position, chunk);
+          position += want;
+          if (chunk.byteLength) await sink.write(chunk);
         }
-        queue.push({ data, final });
-      };
-      file.start();
-    } catch (error) {
-      failure ??= error;
-    }
-  });
-  unzip.register(UnzipInflate);
-  const drain = async () => {
-    if (failure) throw failure;
-    for (const event of queue.splice(0)) {
-      if ("entry" in event) {
-        await sink.open(event.entry);
-        open = true;
-        continue;
-      }
-      if (event.data.byteLength) await sink.write(event.data);
-      if (event.final) {
-        open = false;
+        entryOpen = false;
         await sink.close();
+      } catch (error) {
+        failure ??= error;
+      } finally {
+        await spill.close().catch(() => undefined);
+        await rm(spillPath, { force: true }).catch(() => undefined);
       }
+      if (failure) throw failure;
     }
-  };
-  const push = (chunk: Uint8Array, final: boolean) => {
-    try {
-      unzip.push(chunk, final);
-    } catch {
-      failure ??= unreadable();
-    }
-  };
-  for await (const chunk of body) {
-    for (let offset = 0; offset < chunk.byteLength; offset += PUSH_SLICE_BYTES) {
-      push(chunk.subarray(offset, offset + PUSH_SLICE_BYTES), false);
-      await drain();
-    }
+    if (index === 0 || entryOpen) throw unreadable();
+  } catch (error) {
+    if (error instanceof ZipFormatError) throw unreadable();
+    throw error;
+  } finally {
+    await spool.handle.close().catch(() => undefined);
+    await rm(spool.path, { force: true }).catch(() => undefined);
   }
-  push(new Uint8Array(0), true);
-  await drain();
-  if (index === 0 || open) throw unreadable();
 }
 
 /**
@@ -835,6 +874,7 @@ class AccountImporter implements ArchiveSink {
             teamChatRules: record.teamChatRules,
             crossSpaceCommunication: record.crossSpaceCommunication,
             dailyCheckIns: record.dailyCheckIns,
+            replyMode: record.replyMode,
             createdAt: new Date(record.createdAt),
           },
         });

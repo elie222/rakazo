@@ -287,7 +287,7 @@ test("activity filters keep retry when a refresh fails", async ({ page }, testIn
   await expect(aside.getByRole("status", { name: "Loading activity…" })).toBeVisible();
   await expect(aside.getByText("No runs match these filters.")).toHaveCount(0);
   await expect.poll(() => releaseHang !== null).toBe(true);
-  releaseHang?.();
+  releaseHang!();
   await expect(aside.getByRole("status", { name: "Loading activity…" })).toBeHidden({
     timeout: 20_000,
   });

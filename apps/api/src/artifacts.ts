@@ -8,6 +8,7 @@ import {
   attachmentMaxCount,
   attachmentSizeLabel,
   isAttachmentAudioMimeType,
+  MCP_APP_MIME_TYPE,
 } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
@@ -18,7 +19,7 @@ import {
   validateAttachmentMimeType,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
+import { IsolationError, isRecordNotFound, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
 
 export async function createOwnedArtifact(
   deps: {
@@ -128,7 +129,6 @@ async function storeOwnedArtifact(
     deps.prisma,
     {
       spaceId: actor.spaceId,
-      userId: actor.userId,
       botId: input.botId,
       groupId: input.groupId,
       name: input.name,
@@ -212,7 +212,6 @@ export async function getOwnedArtifact(
       botId: input.botId,
       groupId: null,
       spaceId: actor.spaceId,
-      userId: actor.userId,
     },
   });
   if (!row) throw new IsolationError();
@@ -232,7 +231,6 @@ export async function getSpaceArtifact(
       id: input.artifactId,
       groupId: input.groupId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
     },
   });
   if (!row) throw new IsolationError();
@@ -252,7 +250,6 @@ export async function getSpaceArtifactById(
     where: {
       id: input.artifactId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
     },
   });
   if (!row) throw new IsolationError();
@@ -322,6 +319,7 @@ type ArtifactListCursor = {
   createdAt: string;
   id: string;
   botId: string | null;
+  madeByBots: boolean;
   // Freezes the version set for this page sequence.
   asOf: string;
 };
@@ -355,12 +353,20 @@ function decodeArtifactListCursor(value: string): ArtifactListCursor {
     throw new ArtifactListCursorError();
   }
   const botId = cursorBotId(record.botId);
+  const madeByBots = record.madeByBots ?? false;
+  if (typeof madeByBots !== "boolean") throw new ArtifactListCursorError();
   const createdAt = new Date(record.createdAt);
   const asOf = new Date(record.asOf);
   if (Number.isNaN(createdAt.getTime()) || Number.isNaN(asOf.getTime())) {
     throw new ArtifactListCursorError();
   }
-  return { createdAt: createdAt.toISOString(), id: record.id, botId, asOf: asOf.toISOString() };
+  return {
+    createdAt: createdAt.toISOString(),
+    id: record.id,
+    botId,
+    madeByBots,
+    asOf: asOf.toISOString(),
+  };
 }
 
 function cursorBotId(value: unknown): string | null {
@@ -371,18 +377,21 @@ function cursorBotId(value: unknown): string | null {
 export async function listSpaceArtifacts(
   deps: { prisma: Pick<PrismaClient, "artifact" | "$queryRaw"> },
   actor: Actor,
-  input: { botId?: string; cursor?: string; limit?: number },
+  input: { botId?: string; madeByBots?: boolean; cursor?: string; limit?: number },
 ) {
   const take = Math.min(Math.max(input.limit ?? 30, 1), 60);
   const scopeBotId = input.botId ?? null;
   const botFilter = scopeBotId ? Prisma.sql`AND "botId" = ${scopeBotId}` : Prisma.empty;
+  const madeByBots = input.madeByBots ?? false;
+  const madeByBotsFilter = madeByBots ? Prisma.sql`AND latest."runId" IS NOT NULL` : Prisma.empty;
 
   let asOf = new Date();
   let cursorFilter = Prisma.empty;
   if (input.cursor) {
     // Position is stored on the cursor so a deleted row cannot replay the first page.
     const cursor = decodeArtifactListCursor(input.cursor);
-    if (cursor.botId !== scopeBotId) throw new ArtifactListCursorError();
+    if (cursor.botId !== scopeBotId || cursor.madeByBots !== madeByBots)
+      throw new ArtifactListCursorError();
     asOf = new Date(cursor.asOf);
     cursorFilter = Prisma.sql`AND (latest."createdAt", latest.id) < (${new Date(cursor.createdAt)}, ${cursor.id})`;
   }
@@ -390,8 +399,8 @@ export async function listSpaceArtifacts(
   const rows = await deps.prisma.$queryRaw<ListSpaceRow[]>(Prisma.sql`
     WITH scoped AS (
       SELECT * FROM "artifacts"
-      WHERE "spaceId" = ${actor.spaceId} AND "userId" = ${actor.userId} ${botFilter}
-        AND "createdAt" <= ${asOf}
+      WHERE "spaceId" = ${actor.spaceId} ${botFilter}
+        AND "createdAt" <= ${asOf} AND "mimeType" <> ${MCP_APP_MIME_TYPE}
     ),
     latest AS (
       SELECT DISTINCT ON (COALESCE("rootArtifactId", id))
@@ -410,7 +419,7 @@ export async function listSpaceArtifacts(
            counts."versionCount"
     FROM latest
     JOIN counts ON counts."familyId" = COALESCE(latest."rootArtifactId", latest.id)
-    WHERE true ${cursorFilter}
+    WHERE true ${madeByBotsFilter} ${cursorFilter}
     ORDER BY latest."createdAt" DESC, latest.id DESC
     LIMIT ${take + 1}
   `);
@@ -440,6 +449,7 @@ export async function listSpaceArtifacts(
             createdAt: last.createdAt.toISOString(),
             id: last.id,
             botId: scopeBotId,
+            madeByBots,
             asOf: asOf.toISOString(),
           })
         : null,
@@ -452,7 +462,7 @@ export async function listArtifactVersions(
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId, userId: actor.userId },
+    where: { id: input.familyId, spaceId: actor.spaceId },
     select: { id: true, rootArtifactId: true },
   });
   if (!anchor) throw new IsolationError();
@@ -460,7 +470,6 @@ export async function listArtifactVersions(
   const rows = await deps.prisma.artifact.findMany({
     where: {
       spaceId: actor.spaceId,
-      userId: actor.userId,
       OR: [{ id: rootId }, { rootArtifactId: rootId }],
     },
     orderBy: { version: "desc" },
@@ -482,7 +491,7 @@ export async function deleteArtifactFamily(
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId, userId: actor.userId },
+    where: { id: input.familyId, spaceId: actor.spaceId },
     select: { id: true, rootArtifactId: true, botId: true },
   });
   if (!anchor) throw new IsolationError();
@@ -492,7 +501,6 @@ export async function deleteArtifactFamily(
     const members = await deps.prisma.artifact.findMany({
       where: {
         spaceId: actor.spaceId,
-        userId: actor.userId,
         OR: [{ id: rootId }, { rootArtifactId: rootId }],
       },
       select: { id: true, storageKey: true, botId: true },
@@ -538,7 +546,7 @@ async function deleteArtifactRootIfChildless(
     try {
       await tx.artifact.delete({ where: { id: root.id } });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      if (isRecordNotFound(error)) {
         outcome = "gone";
         return;
       }
@@ -585,7 +593,7 @@ async function deleteArtifactRowIfPresent(
   try {
     await prisma.artifact.delete({ where: { id } });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") return;
+    if (isRecordNotFound(error)) return;
     throw error;
   }
 }
@@ -636,7 +644,6 @@ export async function resolveSendAttachments(
       botId,
       groupId: null,
       spaceId: actor.spaceId,
-      userId: actor.userId,
     },
   });
   return toAttachmentResolution(ids, rows);
@@ -656,7 +663,6 @@ export async function resolveGroupSendAttachments(
     where: {
       id: { in: ids },
       spaceId: actor.spaceId,
-      userId: actor.userId,
       OR: [
         { groupId },
         // Uploads from before group ownership was stored, still tied to a current member.

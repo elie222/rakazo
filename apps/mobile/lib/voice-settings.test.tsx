@@ -35,6 +35,7 @@ vi.mock("./device-voice", () => ({
   saveDeviceVoiceEnabled: state.save,
 }));
 vi.mock("./call-sounds", () => ({
+  loadCallGreetingEnabled: async () => true,
   loadCallSoundsEnabled: async () => true,
   loadWaitSoundEnabled: async () => true,
   saveCallSoundsEnabled: vi.fn(),
@@ -105,7 +106,7 @@ vi.mock("react-native", () => {
 });
 
 const catalog = [
-  { id: "fish-audio", name: "Fish Audio", transcribe: true },
+  { id: "fish-audio", name: "Fish Audio", transcribe: true, speechModel: true },
   { id: "other", name: "Other provider", transcribe: false },
   { id: "new", name: "New provider", transcribe: false },
 ];

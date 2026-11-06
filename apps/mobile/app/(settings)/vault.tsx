@@ -12,9 +12,11 @@ import { useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { BotEmailAddressesGroup } from "../../components/bot-email";
 import { useIdentityConfirmation } from "../../components/confirm-identity";
 import { ListSearchInput } from "../../components/list-search-input";
 import { LoadFailure } from "../../components/load-failure";
+import { LongPressMenu } from "../../components/long-press-menu";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
 import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
@@ -327,12 +329,17 @@ export default function Vault() {
                 : { ios: "exclamationmark.triangle", android: "warning-outline" };
               return (
                 // A long press opens the row's actions; a tap opens the item.
-                <MenuView
+                <LongPressMenu
                   key={item.name}
-                  shouldOpenOnLongPress
                   actions={[
-                    ...(readable ? [{ id: "edit", title: t("Edit") }] : []),
-                    { id: "remove", title: t("Remove"), attributes: { destructive: true } },
+                    ...(readable
+                      ? [{ id: "edit", title: t("Edit"), attributes: { disabled: pending } }]
+                      : []),
+                    {
+                      id: "remove",
+                      title: t("Remove"),
+                      attributes: { destructive: true, disabled: pending },
+                    },
                   ]}
                   colorScheme={colorScheme}
                   onPressAction={(event) => {
@@ -341,28 +348,32 @@ export default function Vault() {
                   }}
                   title={item.title}
                 >
-                  <SettingsRow
-                    accessibilityRole="button"
-                    dimmed={pending}
-                    onPress={() => setOpened(item.name)}
-                    title={item.title}
-                    detail={vaultItemSubtitle(item) || undefined}
-                    chevron="right"
-                    leading={
-                      <View style={styles.tile}>
-                        <NativeSymbol
-                          ios={symbol.ios}
-                          android={symbol.android as never}
-                          size={17}
-                        />
-                      </View>
-                    }
-                  />
-                </MenuView>
+                  {(onLongPress) => (
+                    <SettingsRow
+                      accessibilityRole="button"
+                      dimmed={pending}
+                      onPress={() => setOpened(item.name)}
+                      onLongPress={onLongPress}
+                      title={item.title}
+                      detail={vaultItemSubtitle(item) || undefined}
+                      chevron="right"
+                      leading={
+                        <View style={styles.tile}>
+                          <NativeSymbol
+                            ios={symbol.ios}
+                            android={symbol.android as never}
+                            size={17}
+                          />
+                        </View>
+                      }
+                    />
+                  )}
+                </LongPressMenu>
               );
             })}
           </SettingsGroup>
         ) : null}
+        {scope === "account" ? <BotEmailAddressesGroup /> : null}
       </ScrollView>
       {openedItem ? (
         <VaultItemSheet

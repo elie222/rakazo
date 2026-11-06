@@ -154,7 +154,7 @@ export function ChatFindBar({
       />
       {query.trim() ? (
         <span
-          className="shrink-0 px-1 text-xs tabular-nums text-muted-foreground"
+          className="shrink-0 px-1 text-label tabular-nums text-muted-foreground"
           aria-live="polite"
         >
           {current + 1}/{ranges.length}

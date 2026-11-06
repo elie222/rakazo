@@ -2008,6 +2008,55 @@ describe("Pi runtime ordered model fallback", () => {
     expect(providerState.stream.mock.calls[1]?.[2]).toMatchObject({ reasoning: undefined });
   });
 
+  it("runs a reasoning backup at its own effort, not the main model's", async () => {
+    const reasoningPrimary = { ...primary, reasoning: true };
+    const reasoningBackup = { ...backupA, reasoning: true };
+    providerState.models.set(`${primary.provider}/${primary.id}`, reasoningPrimary);
+    providerState.models.set(`${backupA.provider}/${backupA.id}`, reasoningBackup);
+    const input = request([
+      { provider: backupA.provider, id: backupA.id, apiKey: "reasoning-backup-key" },
+    ]);
+    input.model.reasoning = true;
+    input.model.thinkingLevel = "high";
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      target.provider === primary.provider
+        ? stream(target, message(target, [], "error", "429 rate_limit_error"))
+        : stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),
+    );
+
+    await run(input);
+
+    expect(providerState.stream.mock.calls[1]?.[2]).toMatchObject({ reasoning: "medium" });
+  });
+
+  it("keeps a backup's own effort when its role row sets one", async () => {
+    const reasoningPrimary = { ...primary, reasoning: true };
+    providerState.models.set(`${primary.provider}/${primary.id}`, reasoningPrimary);
+    providerState.models.set(`${backupA.provider}/${backupA.id}`, {
+      ...backupA,
+      reasoning: true,
+    });
+    const input = request([
+      {
+        provider: backupA.provider,
+        id: backupA.id,
+        apiKey: "reasoning-backup-key",
+        thinkingLevel: "low",
+      },
+    ]);
+    input.model.reasoning = true;
+    input.model.thinkingLevel = "high";
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      target.provider === primary.provider
+        ? stream(target, message(target, [], "error", "429 rate_limit_error"))
+        : stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),
+    );
+
+    await run(input);
+
+    expect(providerState.stream.mock.calls[1]?.[2]).toMatchObject({ reasoning: "low" });
+  });
+
   it.each([...IMAGE_RETURNING_COMPUTER_TOOLS, "write_effect"])(
     "requires image-capable backups only when %s can return screenshots",
     async (toolName) => {

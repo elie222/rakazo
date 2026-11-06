@@ -64,7 +64,13 @@ describePostgres("backing off a routine on refused model accounts (PostgreSQL)",
     const now = new Date();
 
     await Promise.all(
-      Array.from({ length: 4 }, () => backOffRoutineAfterAccountError(deps, routine.id, now)),
+      Array.from({ length: 4 }, () =>
+        backOffRoutineAfterAccountError(
+          deps,
+          { routineId: routine.id, userId: routine.userId },
+          now,
+        ),
+      ),
     );
 
     const row = await system.routine.findUniqueOrThrow({ where: { id: routine.id } });
@@ -80,10 +86,13 @@ describePostgres("backing off a routine on refused model accounts (PostgreSQL)",
   it("returns a held routine to its cadence once a run gets through", async () => {
     const { routine, deps } = await fixture();
     for (let count = 0; count < 3; count++) {
-      await backOffRoutineAfterAccountError(deps, routine.id);
+      await backOffRoutineAfterAccountError(deps, {
+        routineId: routine.id,
+        userId: routine.userId,
+      });
     }
 
-    await clearRoutineBackoff(deps, routine.id);
+    await clearRoutineBackoff(deps, { routineId: routine.id, userId: routine.userId });
 
     const row = await system.routine.findUniqueOrThrow({ where: { id: routine.id } });
     expect(row.accountFailures).toBe(0);

@@ -43,6 +43,7 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
   private readonly inFlight = new Set<Promise<void>>();
   private readonly shutdown = new AbortController();
   private accepting = true;
+  private draining?: Promise<void>;
 
   constructor(
     private readonly config: SmtpEmailConfig,
@@ -82,20 +83,28 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
     return delivery;
   }
 
-  async drain(): Promise<void> {
+  drain(): Promise<void> {
     this.accepting = false;
-    const deadline = Date.now() + this.drainTimeoutMs;
-    while (this.inFlight.size > 0) {
-      const completed = await settlesWithin(this.inFlight, Math.max(0, deadline - Date.now()));
-      if (completed) continue;
-      this.shutdown.abort();
-      this.inFlight.clear();
+    this.draining ??= this.finishDrain();
+    return this.draining;
+  }
+
+  private async finishDrain(): Promise<void> {
+    try {
+      const deadline = Date.now() + this.drainTimeoutMs;
+      while (this.inFlight.size > 0) {
+        const completed = await settlesWithin(this.inFlight, Math.max(0, deadline - Date.now()));
+        if (completed) continue;
+        this.shutdown.abort();
+        this.inFlight.clear();
+        return;
+      }
+    } finally {
       try {
         this.transport.close();
       } catch {
         // Cleanup must continue even when the transport cannot close cleanly.
       }
-      return;
     }
   }
 
@@ -106,12 +115,13 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
       }
       try {
         await this.transport.sendMail({
-          from: this.config.from,
+          from: message.from ?? this.config.from,
           to: message.to,
+          ...(message.cc?.length ? { cc: message.cc } : {}),
           subject: message.subject,
           text: message.text,
           html: message.html,
-          replyTo: this.config.replyTo,
+          replyTo: message.replyTo ?? this.config.replyTo,
           headers: message.headers,
         });
         return;

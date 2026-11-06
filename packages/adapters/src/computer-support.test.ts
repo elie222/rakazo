@@ -5,7 +5,41 @@ import {
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
   teamBotWorkspaceDirectory,
+  workspaceCwd,
 } from "./computer-support.js";
+
+describe("workspaceCwd", () => {
+  const root = "/home/user/rakazo-home";
+
+  it("maps empty, '.', '/', the root and home aliases to the root", () => {
+    for (const cwd of [undefined, "", ".", "/", root, "/home/rakazo", "/home/user"]) {
+      expect(workspaceCwd(root, cwd, ["/home/user"])).toBe(root);
+    }
+  });
+
+  it("keeps paths inside the root, a home alias or the bot-visible home", () => {
+    expect(workspaceCwd(root, `${root}/notes/a`, ["/home/user"])).toBe(`${root}/notes/a`);
+    expect(workspaceCwd(root, "/home/rakazo/notes", ["/home/user"])).toBe(`${root}/notes`);
+    expect(workspaceCwd(root, "/home/user/notes", ["/home/user"])).toBe(`${root}/notes`);
+    expect(workspaceCwd(root, "notes/a")).toBe(`${root}/notes/a`);
+    expect(workspaceCwd(root, "/etc")).toBe(`${root}/etc`);
+  });
+
+  it("rejects '..' and '.' segments, including under an absolute workspace path", () => {
+    for (const cwd of [
+      `${root}/../etc`,
+      `${root}/notes/../../..`,
+      "/home/rakazo/../etc",
+      "/home/user/../../etc",
+      "../etc",
+      "notes/./a",
+    ]) {
+      expect(() => workspaceCwd(root, cwd, ["/home/user"])).toThrow(
+        "Path escapes the computer workspace",
+      );
+    }
+  });
+});
 
 describe("Team Computer bot folders", () => {
   it("uses the bot folder for relative paths and cwd", () => {

@@ -3,6 +3,7 @@ import { Button, cn } from "@rakazo/ui-web";
 import { TextQuote } from "lucide-react";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { isDetachedRange } from "../../lib/quote-selection";
 
 export const QuoteSelectionButton = memo(function QuoteSelectionButton({
   range,
@@ -21,7 +22,7 @@ export const QuoteSelectionButton = memo(function QuoteSelectionButton({
 
   useLayoutEffect(() => {
     const update = () => {
-      if (range.collapsed || !document.contains(range.commonAncestorContainer)) {
+      if (isDetachedRange(range)) {
         setPlacement(null);
         return;
       }

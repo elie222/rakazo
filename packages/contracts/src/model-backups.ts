@@ -1,7 +1,6 @@
-import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./domain.js";
-import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./domain.js";
+import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./model-connections.js";
+import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./model-connections.js";
 import { canonicalPiProviderId } from "./model-provider.js";
-import { compatibleConnectionName } from "./openai-compatible-ui.js";
 
 export type ConnectedBackupOption = ModelBackupChoice & {
   label: string;
@@ -33,14 +32,14 @@ export function modelRoleChoiceKey(
  * does not already say which provider it is (a renamed key or a signed-in account).
  */
 export function connectionDisplayName(
-  credential: Pick<ModelCredential, "provider" | "label" | "baseUrl">,
+  credential: Pick<ModelCredential, "provider" | "label" | "endpointName">,
   providerName: string,
   /** Other names a default label may carry, such as the catalog's "Anthropic" for "Claude subscription". */
   defaultNames: readonly string[] = [],
 ): string {
   const provider =
     credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-      ? compatibleConnectionName(credential.baseUrl, providerName)
+      ? (credential.endpointName ?? providerName)
       : providerName;
   const label = credential.label.trim();
   if (

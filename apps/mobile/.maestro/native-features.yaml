@@ -122,6 +122,18 @@ tags:
     timeout: 5000
 - takeScreenshot: "46b-vault-new-item"
 - back
+
+# A long press on a row opens its menu instead of the row's own tap action.
+- openLink: "rakazo:///archived-bots"
+- extendedWaitUntil:
+    visible: "Archived fixture"
+    timeout: 15000
+- longPressOn: "Archived fixture"
+- extendedWaitUntil:
+    visible: "Restore"
+    timeout: 5000
+- takeScreenshot: "46c-archived-bot-menu"
+- back
 - openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
 - extendedWaitUntil:
     visible: "Message Researcher"

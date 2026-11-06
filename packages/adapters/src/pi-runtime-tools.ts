@@ -12,6 +12,8 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
+import { batchActions, humanizeToolName, redactSecrets } from "@rakazo/core";
+import { MAX_APPROVAL_DETAIL_LENGTH } from "./approval-ask.js";
 import {
   isInternalTermination,
   isTerminatingReplyResult,
@@ -38,6 +40,7 @@ import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
 import { textContentArg } from "./tool-text.js";
 import { isVerbatimMcpResult } from "./verbatim-mcp-result.js";
+import { positiveIntegerArg } from "./workspace-file-tools.js";
 
 export interface ToolCallBudget {
   count: number;
@@ -117,6 +120,15 @@ function useToolAgentTool(
   };
 }
 
+/** Each tool's definition under the name the model calls it, as toAgentTools exposes it. */
+export function agentToolDefinitions(toolDefs: readonly ConnectorTool[]) {
+  const { listed, deferred } = partitionTools(toolDefs);
+  return new Map([
+    ...deferred.map((tool) => [tool.name, tool] as const),
+    ...namedAgentTools(listed).map(({ tool, name }) => [name, tool] as const),
+  ]);
+}
+
 /** Shared canonical mapping for checkpoint validation and runtime exposure. */
 export function namedAgentTools(toolDefs: readonly ConnectorTool[]) {
   // Registration order is incidental. Canonicalize before allocating collision suffixes
@@ -172,10 +184,41 @@ export function normalizeAgentToolName(name: string): string {
 
 const ACTIVITY_DETAIL_LIMIT = 90;
 
+const MAX_STEP_ACTIONS = 3;
+const STEP_ACTION_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+
+/**
+ * What a call's steps show: the actions a batch runs, else the tool's label. Empty when neither
+ * applies, so callers fall back to the tool name.
+ */
+export function connectorStepNames(tool: ConnectorTool | undefined, args: unknown): string[] {
+  const actions = batchStepActions(tool, args);
+  if (actions.length > 0) return actions;
+  return tool?.label ? [tool.label] : [];
+}
+
+/** The model writes these names, so show only a few that look like tool names. */
+function batchStepActions(tool: ConnectorTool | undefined, args: unknown): string[] {
+  if (!tool?.batch) return [];
+  const { actions, complete } = batchActions(tool.batch, args);
+  if (!complete || actions.length > MAX_STEP_ACTIONS) return [];
+  if (!actions.every((action) => STEP_ACTION_NAME.test(action))) return [];
+  return actions.map(humanizeToolName);
+}
+
 /** One human-readable line describing a tool call, shown live in the thread. */
-export function describeToolActivity(toolName: string, args: unknown): string {
+export function describeToolActivity(
+  toolName: string,
+  args: unknown,
+  findTool?: (name: string) => ConnectorTool | undefined,
+): string {
   const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
-  if (toolName === USE_TOOL) return describeToolActivity(String(record.name), record.arguments);
+  if (toolName === USE_TOOL)
+    return describeToolActivity(String(record.name), record.arguments, findTool);
+  const tool = findTool?.(toolName);
+  const actions = batchStepActions(tool, args);
+  if (actions.length > 0) return `Using ${actions.join(", ")}`;
+  if (tool?.label) return tool.label;
   if (toolName === FIND_TOOL) return "Finding a tool";
   const detail = (value: unknown): string => {
     const text = sanitizeSensitiveText(String(value ?? ""))
@@ -344,8 +387,16 @@ function toAgentTool(
       }
       if (tool.name === "ask_user") {
         const options = Array.isArray(raw.options) ? raw.options.map(String) : raw.options;
+        // The content the user is deciding about, shown on the card under the question;
+        // redacted and capped here so recorded arguments never hold the raw value. A
+        // non-string value is dropped, not passed through: Pi coerces numbers and
+        // booleans to strings only after this point, past redaction, and a rejected
+        // object would echo its raw value in the validation error the model sees.
         return {
           question: String(raw.question ?? "What should I use?"),
+          ...(typeof raw.detail === "string" && raw.detail
+            ? { detail: redactedAskUserDetail(raw.detail, host.request.secrets) }
+            : {}),
           // Keep a missing/invalid options value as-is so schema minItems can reject it;
           // coercing to [] would look like a valid empty list upstream.
           options,
@@ -368,7 +419,18 @@ function toAgentTool(
         };
       }
       if (tool.name === "list_files") return { path: String(raw.path ?? "") };
-      if (tool.name === "read_file" || tool.name === "open_path") {
+      if (tool.name === "read_file") {
+        const offset = positiveIntegerArg(raw.offset);
+        const limit = positiveIntegerArg(raw.limit);
+        return {
+          path: String(raw.path ?? ""),
+          // Values that are not positive integers are dropped so one bad
+          // argument cannot fail the read; the executor revalidates.
+          ...(offset !== undefined ? { offset } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+        };
+      }
+      if (tool.name === "open_path") {
         return { path: String(raw.path ?? "") };
       }
       if (tool.name === "launch_app") {
@@ -495,6 +557,9 @@ function toAgentTool(
                   type: "ask",
                   ...(host.request.onCheckpoint ? { executionId } : {}),
                   text: String(args.question ?? "What should I use?"),
+                  ...(typeof args.detail === "string" && args.detail
+                    ? { detail: args.detail }
+                    : {}),
                   actions: options.map((label, index) => ({
                     id: `choice-${index + 1}`,
                     label,
@@ -752,6 +817,75 @@ export function toolCallBudgetExceededMessage(limit: number) {
   return `I stopped after reaching the limit of ${limit} tool calls in this turn. Send another message to continue.`;
 }
 
+/**
+ * The ask card's detail is the one tool argument the product keeps outside the tool call
+ * itself: on the card, in the turn checkpoint and in the recorded session. Redact and cap
+ * it once, at the argument boundary, so every downstream copy holds the safe value.
+ */
+export function redactedAskUserDetail(
+  detail: string,
+  secrets: readonly string[] | undefined,
+): string {
+  const redacted = redactSecrets(detail, secrets ?? []);
+  // A draft within the schema's maxLength is kept as redacted, unchanged. Only a
+  // longer one (redaction can expand a short secret past the limit) is cut, one
+  // unit below the limit so the appended ellipsis stays within it, stepping back
+  // over a surrogate pair the cut would split.
+  if (redacted.length <= MAX_APPROVAL_DETAIL_LENGTH) return redacted;
+  let capped = redacted.slice(0, MAX_APPROVAL_DETAIL_LENGTH - 1);
+  const last = capped.charCodeAt(capped.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) capped = capped.slice(0, -1);
+  return `${capped}…`;
+}
+
+/** The arguments an ask_user call carries: directly, or nested in a use_tool wrapper
+ * (the wrapper's own normalizer unwraps them, but the streamed message records the
+ * nested object verbatim). */
+function askUserScrubTarget(call: {
+  name?: string;
+  arguments?: unknown;
+}): Record<string, unknown> | undefined {
+  // A provider can stream malformed arguments (a bare string or number); argument
+  // preparation rejects those later, so there is nothing to scrub here.
+  const args = asObject(call.arguments);
+  if (call.name === "ask_user") return args;
+  if (call.name !== USE_TOOL || args?.name !== "ask_user") return undefined;
+  return asObject(args.arguments);
+}
+
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+}
+
+/** Redacts the ask card's detail in a streamed assistant message, in place, so the session
+ * transcript, the turn checkpoint and later provider payloads never hold the raw value. */
+export function redactAskUserDetailInMessage(
+  message: { role: string; content?: unknown },
+  secrets: readonly string[] | undefined,
+): void {
+  if (message.role !== "assistant" || !Array.isArray(message.content)) return;
+  for (const part of message.content) {
+    const call = part as { type?: string; name?: string; arguments?: unknown };
+    if (call?.type !== "toolCall") continue;
+    // A use_tool wrapper can carry ask_user's arguments as a bare string, which argument
+    // preparation rejects but the message keeps; redact it whole so no kept copy holds a raw
+    // secret. (Unparseable direct arguments reach here as {} plus the parser's argumentsError.)
+    const wrapper = call.name === USE_TOOL ? asObject(call.arguments) : undefined;
+    if (wrapper?.name === "ask_user" && typeof wrapper.arguments === "string") {
+      wrapper.arguments = redactSecrets(wrapper.arguments, secrets ?? []);
+    }
+    const args = askUserScrubTarget(call);
+    if (!args) continue;
+    if (typeof args.detail === "string") {
+      if (args.detail) args.detail = redactedAskUserDetail(args.detail, secrets);
+    } else if ("detail" in args) {
+      // A non-string detail never reaches the card (the argument normalizer drops
+      // it); drop it here too, so no kept copy holds the raw value.
+      delete args.detail;
+    }
+  }
+}
+
 export function toolCallBudgetFor(runId: string): ToolCallBudget {
   const existing = toolCallBudgetsByRun.get(runId);
   if (existing) {
@@ -808,4 +942,58 @@ function beginToolCall(host: ToolHost): boolean {
 function endToolCall(host: ToolHost) {
   host.toolCallBudget.inFlight = Math.max(0, host.toolCallBudget.inFlight - 1);
   maybeAbortToolCallBudget(host);
+}
+
+export function createGate(max: number) {
+  let active = 0;
+  const waiters: Array<() => void> = [];
+  return {
+    async acquire() {
+      if (active >= max) {
+        await new Promise<void>((resolve) => {
+          waiters.push(resolve);
+        });
+      }
+      active += 1;
+    },
+    release() {
+      active = Math.max(0, active - 1);
+      waiters.shift()?.();
+    },
+  };
+}
+
+export function createQueue(): EventQueue {
+  const items: AgentRuntimeEvent[] = [];
+  let wake: (() => void) | undefined;
+  let closed = false;
+  let failure: Error | undefined;
+  return {
+    push(event) {
+      items.push(event);
+      wake?.();
+    },
+    fail(error) {
+      failure = error;
+      closed = true;
+      wake?.();
+    },
+    close() {
+      closed = true;
+      wake?.();
+    },
+    async *iterate() {
+      while (true) {
+        if (items.length) {
+          yield items.shift()!;
+          continue;
+        }
+        if (failure) throw failure;
+        if (closed) return;
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+      }
+    },
+  };
 }

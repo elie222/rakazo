@@ -28,12 +28,13 @@ class RakazoCallService : Service() {
       stopSelf()
       return START_NOT_STICKY
     }
-    val title = intent?.getStringExtra(EXTRA_TITLE)?.takeIf(String::isNotBlank) ?: getString(
+    val copyContext = localizedContext(this, NotificationStorage(this).locale)
+    val title = intent?.getStringExtra(EXTRA_TITLE)?.takeIf(String::isNotBlank) ?: copyContext.getString(
       R.string.rakazo_call_title,
     )
-    createChannel()
+    createChannel(copyContext)
     try {
-      startForegroundCompat(title)
+      startForegroundCompat(copyContext, title)
     } catch (_: Exception) {
       report(started = false)
       stopSelf()
@@ -55,11 +56,11 @@ class RakazoCallService : Service() {
     super.onDestroy()
   }
 
-  private fun startForegroundCompat(title: String) {
+  private fun startForegroundCompat(copyContext: Context, title: String) {
     val notification = builder()
       .setSmallIcon(R.drawable.ic_rakazo_notification)
       .setContentTitle(title)
-      .setContentText(getString(R.string.rakazo_call_text))
+      .setContentText(copyContext.getString(R.string.rakazo_call_text))
       .setContentIntent(openApp())
       .setOngoing(true)
       .setOnlyAlertOnce(true)
@@ -110,11 +111,11 @@ class RakazoCallService : Service() {
     )
   }
 
-  private fun createChannel() {
+  private fun createChannel(copyContext: Context) {
     if (Build.VERSION.SDK_INT < 26) return
     val manager = getSystemService(NotificationManager::class.java)
     manager.createNotificationChannel(
-      NotificationChannel(CHANNEL_ID, getString(R.string.rakazo_call_channel), NotificationManager.IMPORTANCE_LOW),
+      NotificationChannel(CHANNEL_ID, copyContext.getString(R.string.rakazo_call_channel), NotificationManager.IMPORTANCE_LOW),
     )
   }
 

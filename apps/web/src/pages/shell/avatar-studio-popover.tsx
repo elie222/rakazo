@@ -83,7 +83,7 @@ export function BotLookPicker({
         <div>
           {organicIdentities ? null : (
             <div className="mb-2 flex items-center justify-between">
-              <div className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+              <div className="text-caption font-medium tracking-wider text-muted-foreground uppercase">
                 <Trans>Shape</Trans>
               </div>
               <Button
@@ -96,7 +96,7 @@ export function BotLookPicker({
                   const next = defaultBotAvatarValue(value);
                   if (next !== value) onChange(next);
                 }}
-                className={`px-3 py-1 text-xs font-medium transition-colors ${
+                className={`px-3 py-1 text-label font-medium transition-colors ${
                   isDefaultLook
                     ? "bg-secondary text-foreground"
                     : "text-muted-foreground hover:text-foreground"
@@ -134,7 +134,7 @@ export function BotLookPicker({
 
       <div>
         {organicIdentities ? null : (
-          <div className="mb-2 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+          <div className="mb-2 text-caption font-medium tracking-wider text-muted-foreground uppercase">
             <Trans>Color</Trans>
           </div>
         )}
@@ -274,7 +274,7 @@ export function AvatarStudioPopover({
           data-testid="avatar-studio"
         >
           <DialogHeader className="flex-row items-center justify-between space-y-0">
-            <DialogTitle className="text-[14px] font-semibold tracking-tight">
+            <DialogTitle className="text-body font-semibold tracking-tight">
               <Trans>Avatar Studio</Trans>
             </DialogTitle>
             <DialogDescription className="sr-only">
@@ -309,10 +309,10 @@ export function AvatarStudioPopover({
           >
             <div className="flex items-center justify-between border-b border-border pb-1">
               <TabsList className="rounded-full">
-                <TabsTrigger value="bot" className="rounded-full px-3 text-xs">
+                <TabsTrigger value="bot" className="rounded-full px-3 text-label">
                   <Trans>Bot</Trans>
                 </TabsTrigger>
-                <TabsTrigger value="upload" className="rounded-full px-3 text-xs">
+                <TabsTrigger value="upload" className="rounded-full px-3 text-label">
                   <Trans>Upload</Trans>
                 </TabsTrigger>
               </TabsList>
@@ -322,7 +322,7 @@ export function AvatarStudioPopover({
                 size="sm"
                 type="button"
                 onClick={restoreDefaultAvatar}
-                className="text-xs text-muted-foreground"
+                className="text-label text-muted-foreground"
               >
                 <Trans>Reset</Trans>
               </Button>
@@ -368,10 +368,10 @@ export function AvatarStudioPopover({
                 <div className="mb-2 grid size-10 place-items-center rounded-full bg-secondary text-muted-foreground">
                   <Upload size={18} strokeWidth={1.8} />
                 </div>
-                <p className="text-[12.5px] font-medium text-muted-foreground">
+                <p className="text-body-sm font-medium text-muted-foreground">
                   <Trans>Drag, drop, or paste an image</Trans>
                 </p>
-                <span className="mt-3 rounded-lg bg-secondary px-3 py-1.5 text-xs font-medium text-foreground">
+                <span className="mt-3 rounded-lg bg-secondary px-3 py-1.5 text-label font-medium text-foreground">
                   <Trans>Choose file</Trans>
                 </span>
               </button>

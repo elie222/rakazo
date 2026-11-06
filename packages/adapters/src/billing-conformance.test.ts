@@ -162,6 +162,24 @@ for (const [name, create] of Object.entries(factories)) {
       });
     });
 
+    it("expires every open checkout of the customer", async () => {
+      const harness = create();
+      const { customerId } = await harness.provider.createCustomer({
+        email: "owner@example.com",
+        organizationId: "org_3b",
+      });
+      await harness.provider.createCheckout({ customerId, seats: 1, ...urls });
+      await harness.provider.expireOpenCheckouts(customerId);
+      expect(() => harness.completeCheckout(customerId)).toThrow();
+      await harness.provider.expireOpenCheckouts(customerId);
+      await harness.provider.createCheckout({ customerId, seats: 2, ...urls });
+      harness.completeCheckout(customerId);
+      expect(await harness.provider.getCustomerSubscription(customerId)).toMatchObject({
+        status: "active",
+        seats: 2,
+      });
+    });
+
     it("is active immediately without a trial and returns null before any subscription", async () => {
       const harness = create();
       const { customerId } = await harness.provider.createCustomer({
@@ -281,6 +299,27 @@ describe("offline monthly credit renewals", () => {
     expect((await provider.getCustomerSubscription(customerId))?.currentPeriodEndsAt).toEqual(
       new Date(NOW + 3 * month),
     );
+  });
+});
+
+describe("offline checkout cancellation", () => {
+  it("expires every kind of open checkout session when canceling", async () => {
+    const provider = new BillingEmulator({ modelCredits: true, now });
+    const { customerId } = await provider.createCustomer({
+      email: "billing@example.test",
+      organizationId: "fixture",
+    });
+    const urls = {
+      successUrl: "https://example.test/success",
+      cancelUrl: "https://example.test/cancel",
+    };
+    await provider.createByokCheckout({ customerId, amountCents: 4900, ...urls });
+    await provider.createCreditCheckout({ customerId, amountCents: 1000, monthly: true, ...urls });
+    await provider.cancelCustomerSubscriptions(customerId);
+    expect(() => provider.completeByokCheckout(customerId)).toThrow();
+    expect(() => provider.completeCreditCheckout(customerId)).toThrow();
+    expect(await provider.listCreditPurchases(customerId)).toEqual([]);
+    expect(await provider.getCustomerSubscription(customerId)).toBeNull();
   });
 });
 

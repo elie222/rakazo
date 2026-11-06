@@ -69,7 +69,7 @@ export function ChatHeader({
           />
         ) : null}
         <span className="min-w-0">
-          <span className="block truncate text-[15px] font-medium text-foreground" dir="auto">
+          <span className="block truncate text-body-lg font-medium text-foreground" dir="auto">
             {inGroup
               ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
               : (active?.name ?? t`Select a bot`)}

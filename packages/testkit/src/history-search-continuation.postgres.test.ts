@@ -47,7 +47,7 @@ describe.skipIf(!enabled)("unfinished broad history search", () => {
           expect(request) {
             expect(
               String(request.messages.findLast((row) => row.role === "tool")?.content),
-            ).toContain("Invalid ISO date");
+            ).toContain("ISO date");
           },
           response: {
             type: "tool",

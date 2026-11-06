@@ -10,6 +10,7 @@ import {
   provisionMessagingIdentity,
   runAsSystem,
   runAsTenant,
+  SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadTarget } from "./thread-target.js";
@@ -113,6 +114,23 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       ),
     );
   }
+  it.each(["bot", "group"] as const)(
+    "refuses a %s chat message in a Space that is being deleted",
+    async (kind) => {
+      await system.space.update({
+        where: { id: actor.spaceId },
+        data: {
+          deletingAt: new Date(),
+          deletionClaimId: `organization-deletion:${actor.spaceId}:x`,
+        },
+      });
+      await expect(send(kind === "bot" ? privateTarget() : groupTarget)).rejects.toBeInstanceOf(
+        SpaceDeletionInProgressError,
+      );
+      await expect(system.run.count({ where: { spaceId: actor.spaceId } })).resolves.toBe(0);
+    },
+  );
+
   it("serializes simultaneous text sends into one run and steering", async () => {
     const [first, second] = await Promise.all([
       send(privateTarget(), "First simultaneous message", "parallel-send-first"),

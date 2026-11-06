@@ -149,12 +149,14 @@ async function switchNow(
 
 /**
  * Selects a Space a notification or link points at. One in another organization switches to it,
- * remembering where this one was left; the opened chat stays on top.
+ * remembering where this one was left; the opened chat stays on top. A failed list read falls
+ * back to the last one this session had, so the Space being left is still remembered.
  */
 export async function selectSpaceAcrossOrganizations(spaceId: string): Promise<boolean> {
-  const list = await queryClient
-    .fetchQuery({ ...organizationsQuery(), retry: false })
-    .catch(() => undefined);
+  const query = organizationsQuery();
+  const list =
+    (await queryClient.fetchQuery({ ...query, retry: false }).catch(() => undefined)) ??
+    queryClient.getQueryData(query.queryKey);
   return afterPendingSwitch(async () => {
     const leaving = organizationOfSpace(list?.organizations ?? [], selectedSpaceId());
     if (!leaving || leaving.spaceIds.includes(spaceId)) return selectSpace(spaceId);

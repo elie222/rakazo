@@ -33,3 +33,14 @@ name: Bots
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 04-peer-chat
+- openLink: "rakazo:///routine?botId=${RAKAZO_SCREENSHOT_BOT_ID}&botName=Researcher"
+- extendedWaitUntil:
+    visible: "Add schedule"
+    timeout: 15000
+- tapOn: "Add schedule"
+- extendedWaitUntil:
+    visible: ".*How often.*"
+    timeout: 5000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 05-new-routine

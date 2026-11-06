@@ -14,7 +14,12 @@ import type * as ExpoSpeech from "expo-speech";
 import { Platform } from "react-native";
 import { promptAiConsent } from "./ai-consent";
 import type { ApiRequestContext } from "./api";
-import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
+import {
+  aiConsentCoalesceKey,
+  captureApiRequestContext,
+  rpc,
+  subscribeConfirmedSpaceSwitch,
+} from "./api";
 import { voiceForBot } from "./bot-voices";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";
@@ -114,6 +119,14 @@ export function stopSpeaking(owner?: SpeechOwner): void {
 // queue belongs to the session that started it, and the next session must
 // neither hear it nor see its speaker in the dock.
 subscribeSessionGeneration(() => {
+  stopVoicePlayback();
+  announcedSpeaker = undefined;
+});
+
+// A confirmed switch to another Space or organization ends playback the same
+// way: the rest of the queue belongs to the conversation being left, and the
+// next Space must neither hear it nor see its speaker in the dock.
+subscribeConfirmedSpaceSwitch(() => {
   stopVoicePlayback();
   announcedSpeaker = undefined;
 });

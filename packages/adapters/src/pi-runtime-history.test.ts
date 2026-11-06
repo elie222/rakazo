@@ -230,10 +230,13 @@ describe("Pi history replay", () => {
       history: [
         { id: "m1", role: "user", content: "Do it" },
         { id: "m2", role: "assistant", content: "  " },
-        { id: "m3", role: "system", content: "internal" },
+        { id: "m3", role: "system", content: "Stopped." },
       ],
     });
-    expect(view(messages)).toEqual([{ role: "user", content: "Do it" }]);
+    expect(view(messages)).toEqual([
+      { role: "user", content: "Do it" },
+      { role: "user", content: "System note: Stopped." },
+    ]);
   });
 
   it("removes the current message from history by id or by raw text, whatever its label", async () => {

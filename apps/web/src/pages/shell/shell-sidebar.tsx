@@ -346,7 +346,7 @@ function ShellSidebarFooter({
   return (
     <>
       {freeUntil && !mini ? (
-        <div className="mx-2.5 flex items-center justify-between gap-2 ps-2.5 text-sm text-muted-foreground">
+        <div className="mx-2.5 flex items-center justify-between gap-2 ps-2.5 text-body text-muted-foreground">
           <span className="min-w-0 truncate">
             <Trans>Free plan ends {day}</Trans>
           </span>

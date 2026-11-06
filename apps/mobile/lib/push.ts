@@ -4,7 +4,8 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
-import { rpc } from "./api";
+import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "./api";
+import { resumeLiveNotifications } from "./live-notifications";
 import { currentSessionGeneration } from "./session";
 
 async function notificationsAllowed() {
@@ -23,9 +24,29 @@ export async function registerPushToken() {
     if (!projectId) return;
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     if (!token) return;
+    const generation = currentSessionGeneration();
+    const apiBase = currentApiBase();
+    const sessionToken = await loadSessionToken();
+    // A sign-in still saving its token registers again once the session lands.
+    if (!sessionToken) return;
+    if (generation !== currentSessionGeneration() || apiBase !== currentApiBase()) return;
+    // The server can push the moment this registration lands, before any Space load
+    // resumes native notifications; sync the session first, so Android's signed-out
+    // drop rule sees this account instead of the blank of a fresh sign-in. A rejected
+    // resume means native never stored this session: registering would have Android
+    // drop every push, so leave the token unregistered for the next attempt to retry.
+    // A server native notifications skip (public http) keeps no native session, so it
+    // gets plain pushes, which the drop rule never sees.
+    let nativeSession: boolean;
+    try {
+      nativeSession = await resumeLiveNotifications(apiBase, sessionToken, selectedSpaceId() ?? "");
+    } catch {
+      return;
+    }
     await rpc("notifications/registerPush", {
       token,
       ...(Platform.OS === "android" &&
+      nativeSession &&
       requireOptionalNativeModule<{ supportsSenderAvatars?: boolean }>("RakazoNotifications")
         ?.supportsSenderAvatars
         ? { presentation: "android_sender" as const }

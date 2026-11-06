@@ -9,7 +9,7 @@ import {
   VoiceAccountError,
 } from "@rakazo/adapter-kit";
 import { MODEL_IMAGE_INPUT_ERROR } from "@rakazo/core";
-import { IsolationError } from "@rakazo/db";
+import { IsolationError, SpaceDeletionInProgressError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
@@ -89,6 +89,16 @@ describe("logUnexpectedRpcError", () => {
 
     expect(() => handleRpcError(rejection, ["threads", "send"])).not.toThrow();
     expect(sink.events).toEqual([]);
+  });
+
+  it("answers work refused in a Space being deleted as a conflict, without an error report", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+
+    expect(() => handleRpcError(new SpaceDeletionInProgressError(), ["threads", "send"])).toThrow(
+      expect.objectContaining({ code: "CONFLICT" }),
+    );
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
   });
 
   it("names the procedure and every cause behind an opaque failure", () => {

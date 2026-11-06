@@ -3,32 +3,28 @@ import { getArtifactById } from "./artifacts";
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 
 import type { RpcInput } from "@rakazo/contracts";
-import {
-  dismissableAskMessageIds,
-  isServerUnreachable,
-  withLiveStreamingProgress,
-} from "@rakazo/core";
+import { isServerUnreachable, mergeThreadSnapshot, reduceThreadSnapshot } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promptAiConsent } from "./ai-consent";
 import type { MobileMessage, MobileModelCredential, MobileSnapshot } from "./api.js";
 import {
   adoptDeletedSpaceFallback,
-  applyMobileThreadEvent,
   authHeaders,
   blockText,
   captureApiRequestContext,
   changePassword,
   clearSpace,
+  configureSessionEndHangUp,
   currentApiBase,
   deleteAccount,
   fetchAccountSecurity,
+  flushPendingSignOut,
   IDLE_TIMEOUT_MS,
   isServerReachable,
   loadApiBase,
   MAX_MOBILE_AUTH_RESPONSE_BYTES,
   MAX_MOBILE_RPC_RESPONSE_BYTES,
-  mergeMobileSnapshot,
   mobileThreadRefreshResult,
   passwordResetCapabilities,
   prependMobileMessagePage,
@@ -54,11 +50,12 @@ import {
   updateAccountName,
 } from "./api.js";
 import { artifactCacheSession } from "./artifact-cache-session";
-import { resumeLiveNotifications } from "./live-notifications.js";
+import { resumeLiveNotifications, stopLiveNotifications } from "./live-notifications.js";
 import { threadRefreshDelayMs } from "./refresh";
 import {
   clearSessionToken,
   currentSessionGeneration,
+  loadSessionToken,
   replaceSessionTokenIfCurrent,
   restoreSessionToken,
   saveSessionToken,
@@ -165,6 +162,8 @@ describe("mobile API authentication", () => {
       await expect(authenticate("new@example.test", "password", "New User")).rejects.toThrow(
         "Could not save your sign-in on this device. Try again.",
       );
+      // A sign-in that reports failure leaves no session in use.
+      expect((await authHeaders()).authorization).toBeUndefined();
     });
 
     it("preserves human storage error messages", async () => {
@@ -221,11 +220,7 @@ describe("mobile API authentication", () => {
       vi.mocked(SecureStore.getItemAsync).mockResolvedValue("fake-session");
       vi.stubGlobal(
         "fetch",
-        vi.fn(async (input) =>
-          String(input).endsWith("/rpc/notifications/unregisterPush")
-            ? jsonResponse({ json: null })
-            : new Response(body, { status }),
-        ),
+        vi.fn(async () => new Response(body, { status })),
       );
 
       await expect(request()).rejects.toThrow(message);
@@ -299,6 +294,171 @@ describe("mobile API authentication", () => {
       }),
     );
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("rakazo.session_token", "signup-token");
+  });
+
+  describe.each([
+    ["sign-in", () => signIn("ada@example.test", "correct horse")],
+    ["sign-up", () => signUp("ada@example.test", "correct horse", "Ada")],
+    ["sign-in code", () => signInWithCode("ada@example.test", "123456")],
+  ])("a %s that finishes after a server change", (_name, authenticate) => {
+    it.each([
+      ["https://second.example.test", () => saveApiBase("https://second.example.test")],
+      ["http://127.0.0.1:3100", () => resetApiBase()],
+    ])(
+      "is dropped and signed out on the first server when switching to %s",
+      async (next, change) => {
+        const storage = new Map<string, string>();
+        vi.mocked(SecureStore.getItemAsync).mockImplementation(
+          async (key) => storage.get(key) ?? null,
+        );
+        vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+          storage.set(key, value);
+        });
+        vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+          storage.delete(key);
+        });
+        await saveApiBase("https://first.example.test", { "x-gateway": "fake-gateway-key" });
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
+          if (input.startsWith("https://first.example.test/api/auth/sign-")) {
+            await held;
+            return jsonResponse({ token: "fake-session-first" });
+          }
+          if (input.endsWith("/api/auth/sign-out")) return jsonResponse({ success: true });
+          return jsonResponse({ json: { id: "user" } });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const pending = authenticate();
+        const rejection = expect(pending).rejects.toThrow("Could not continue");
+        await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+        await expect(change()).resolves.toMatchObject({ ok: true });
+        expect(currentApiBase()).toBe(next);
+        release();
+        await rejection;
+
+        expect(await loadSessionToken()).toBe("");
+        expect(storage.get("rakazo.session_token") ?? "").toBe("");
+        await vi.waitFor(() =>
+          expect(fetchMock).toHaveBeenCalledWith(
+            "https://first.example.test/api/auth/sign-out",
+            expect.objectContaining({
+              credentials: "omit",
+              headers: expect.objectContaining({
+                authorization: "Bearer fake-session-first",
+                "x-gateway": "fake-gateway-key",
+              }),
+            }),
+          ),
+        );
+        const [, authInit] = fetchMock.mock.calls[0] ?? [];
+        expect(authInit?.credentials).toBe("omit");
+
+        fetchMock.mockClear();
+        await rpc("me").catch(() => undefined);
+        const [url, init] = fetchMock.mock.calls[0] ?? [];
+        expect(url).toMatch(new RegExp(`^${next.replaceAll(".", "\\.")}/`));
+        expect(new Headers(init?.headers).get("authorization")).toBeNull();
+
+        await resetApiBase();
+      },
+    );
+  });
+
+  it("drops a sign-in whose session changes while its token is being written", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let writing!: () => void;
+    const started = new Promise<void>((resolve) => {
+      writing = resolve;
+    });
+    // A store that keeps what it accepts: the dropped sign-in's revocation is delivered from it.
+    const storage = new Map<string, string>();
+    mockSecureStore(storage);
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token") {
+        writing();
+        await held;
+      }
+      storage.set(key, value);
+    });
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) =>
+      input.endsWith("/api/auth/sign-out")
+        ? jsonResponse({ success: true })
+        : jsonResponse({ token: "fake-session-late" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = signIn("ada@example.test", "correct horse");
+    const rejection = expect(pending).rejects.toThrow("Could not continue");
+    await started;
+    const clearing = clearSessionToken();
+    release();
+    await clearing;
+    await rejection;
+
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/auth\/sign-out$/),
+        expect.objectContaining({
+          headers: expect.objectContaining({ authorization: "Bearer fake-session-late" }),
+        }),
+      ),
+    );
+  });
+
+  it("keeps a dropped sign-in's revocation pending until its server answers", async () => {
+    const storage = new Map<string, string>();
+    mockSecureStore(storage);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let firstServerUp = false;
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
+      if (input.startsWith("http://127.0.0.1:3100/api/auth/sign-in/")) {
+        await held;
+        return jsonResponse({ token: "fake-session-first" });
+      }
+      if (input.startsWith("http://127.0.0.1:3100/") && !firstServerUp)
+        throw new TypeError("Network request failed");
+      return jsonResponse({ success: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = signIn("ada@example.test", "correct horse");
+    const rejection = expect(pending).rejects.toThrow("Could not continue");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await expect(saveApiBase("https://second.example.test")).resolves.toMatchObject({ ok: true });
+    release();
+    await rejection;
+
+    // The first server cannot be reached, so the revocation stays recorded for it.
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([url]) => url === "http://127.0.0.1:3100/api/auth/sign-out"),
+      ).toBe(true),
+    );
+    expect(pendingSignOutRecords(storage)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "fake-session-first" },
+    ]);
+
+    firstServerUp = true;
+    await flushPendingSignOut(true);
+    expect(pendingSignOutRecords(storage)).toEqual([]);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "http://127.0.0.1:3100/api/auth/sign-out",
+      expect.objectContaining({
+        credentials: "omit",
+        headers: expect.objectContaining({ authorization: "Bearer fake-session-first" }),
+      }),
+    );
+    await resetApiBase();
   });
 
   it("emails a sign-in code and persists the session the code returns", async () => {
@@ -461,7 +621,6 @@ describe("mobile API authentication", () => {
       .fn()
       .mockResolvedValueOnce(new Response("Not found", { status: 404 }))
       .mockResolvedValueOnce(jsonResponse({ status: true }))
-      .mockResolvedValueOnce(jsonResponse({}))
       .mockResolvedValueOnce(jsonResponse({ success: true }));
     vi.stubGlobal("fetch", fetchMock);
     await expect(fetchAccountSecurity()).resolves.toEqual({
@@ -475,8 +634,8 @@ describe("mobile API authentication", () => {
     await changePassword("old-password", "new-password");
     await deleteAccount("new-password");
     expect(fetchMock.mock.calls[1]?.[0]).toContain("/api/auth/change-password");
-    expect(fetchMock.mock.calls[3]?.[0]).toContain("/api/auth/delete-user");
-    expect(JSON.parse(fetchMock.mock.calls[3]?.[1]?.body)).toEqual({ password: "new-password" });
+    expect(fetchMock.mock.calls[2]?.[0]).toContain("/api/auth/delete-user");
+    expect(JSON.parse(fetchMock.mock.calls[2]?.[1]?.body)).toEqual({ password: "new-password" });
   });
 
   it.each([401, 500])("does not fall back for account-security HTTP %s", async (status) => {
@@ -1148,82 +1307,70 @@ describe("mobile API authentication", () => {
     }
   });
 
-  it("clears the local session even when the sign-out request fails", async () => {
-    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+  it("signs out locally and keeps the revocation pending when the server cannot be reached", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => Promise.reject(new Error("offline"))),
     );
 
     await expect(signOut()).resolves.toBeUndefined();
-    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
+    expect(store.has("rakazo.session_token")).toBe(false);
+    // The old server keeps the session and the push registration until the revocation lands.
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
   });
 
-  it("unregisters push delivery before invalidating the session", async () => {
-    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ json: null }))
-      .mockResolvedValueOnce(jsonResponse({}));
+  it("preserves the session for retry when sign-out cannot snapshot it", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    await selectSpace("space-support");
+    vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(new Error("device locked"));
+    vi.mocked(SecureStore.deleteItemAsync).mockClear();
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
     vi.stubGlobal("fetch", fetchMock);
+
+    await expect(signOut()).rejects.toThrow("Could not clear the local session");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();
+    expect(store.get("rakazo.session_token")).toBe("session-token");
+    expect(store.get("rakazo.space_id")).toBe("space-support");
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    await expect(authHeaders()).resolves.toMatchObject({ authorization: "Bearer session-token" });
 
     await signOut();
 
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
-      "http://127.0.0.1:3100/api/auth/sign-out",
-    ]);
+    // Delivery runs after sign-out returns and still carries the captured bearer.
+    await vi.waitFor(() => expect(fetchMock.mock.calls).toHaveLength(1));
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init?.headers).toMatchObject({ authorization: "Bearer session-token" });
+    }
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(selectedSpaceId()).toBeNull();
   });
 
   it("sends sign-out with a JSON body so the server ends the session", async () => {
-    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ json: null }))
-      .mockResolvedValueOnce(jsonResponse({ success: true }));
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ success: true }));
     vi.stubGlobal("fetch", fetchMock);
 
     await signOut();
 
-    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
-    expect(init.headers).toMatchObject({ "content-type": "application/json" });
-    expect(init.body).toBe("{}");
-  });
-
-  it("continues sign-out when push unregistration times out", async () => {
-    vi.useFakeTimers();
-    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
-    const fetchMock = vi
-      .fn()
-      .mockImplementationOnce(
-        (_url, options: RequestInit) =>
-          new Promise((_resolve, reject) => {
-            options.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
-              once: true,
-            });
-          }),
-      )
-      .mockResolvedValueOnce(jsonResponse({}));
-    vi.stubGlobal("fetch", fetchMock);
-
-    const pending = signOut();
-    await vi.advanceTimersByTimeAsync(8_000);
-    await pending;
-
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
-      "http://127.0.0.1:3100/api/auth/sign-out",
-    ]);
-    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
+    await vi.waitFor(() => {
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.headers).toMatchObject({ "content-type": "application/json" });
+      expect(init.body).toBe("{}");
+    });
   });
 
   it("clears the local session when the sign-out request stalls", async () => {
     vi.useFakeTimers();
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ json: null }))
-      .mockImplementationOnce(() => new Promise<Response>(() => undefined));
+    const fetchMock = vi.fn().mockImplementationOnce(() => new Promise<Response>(() => undefined));
     vi.stubGlobal("fetch", fetchMock);
 
     const pending = signOut();
@@ -1234,20 +1381,772 @@ describe("mobile API authentication", () => {
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.space_id");
   });
 
-  it("unregisters push delivery before deleting the account", async () => {
+  it("clears the local session before a silent server answers", async () => {
+    vi.useFakeTimers();
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn((_url: string) => new Promise<Response>(() => undefined));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = signOut();
+    // No request timeout has fired yet: this device is already signed out.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+
+    // The visible sign-out does not wait for the delivery: it resolves while the
+    // request still hangs.
+    await pending;
+    await vi.advanceTimersByTimeAsync(8_000);
+
+    // The request timed out; the record stays for the next connectivity window.
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+  });
+
+  it.each([200, 503])(
+    "does not repeat what a flush during the local clear delivered (sign-out %s)",
+    async (status) => {
+      const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+      mockSecureStore(store);
+      const fetchMock = vi.fn<typeof globalThis.fetch>(async () => new Response("{}", { status }));
+      vi.stubGlobal("fetch", fetchMock);
+      let finishClear!: () => void;
+      const clearHeld = new Promise<void>((release) => {
+        finishClear = release;
+      });
+      vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+        if (key === "rakazo.session_token") await clearHeld;
+        store.delete(key);
+      });
+
+      const signingOut = signOut();
+      // The record is saved while the local clear still waits, and a flush delivers it in that
+      // window. After a hard answer the sign-out's own delivery finds no record left to send.
+      await vi.waitFor(() => expect(pendingSignOutRecords(store)).toHaveLength(1));
+      await flushPendingSignOut(true);
+      finishClear();
+      await signingOut;
+
+      await vi.waitFor(() =>
+        expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+          "http://127.0.0.1:3100/api/auth/sign-out",
+          ...(status === 200 ? [] : ["http://127.0.0.1:3100/api/auth/sign-out"]),
+        ]),
+      );
+      expect(pendingSignOutRecords(store)).toEqual(
+        status === 200 ? [] : [{ apiBase: "http://127.0.0.1:3100", token: "session-token" }],
+      );
+    },
+  );
+
+  it("joins the earlier sign-out's delivery instead of resending it", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
+    mockSecureStore(store);
+    let releaseFirst!: (response: Response) => void;
+    const heldResponse = new Promise<Response>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let calls = 0;
+    const fetchMock = vi.fn<typeof globalThis.fetch>((_url) => {
+      calls += 1;
+      if (calls === 1) return heldResponse;
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Account A signs out; the old server holds its revocation. Account B signs in
+    // on the same server and signs out; B's delivery completes while A's is in flight.
+    await signOut();
+    store.set("rakazo.session_token", "token-b");
+    await signOut();
+    await vi.waitFor(() =>
+      expect(pendingSignOutRecords(store)).toEqual([
+        { apiBase: "http://127.0.0.1:3100", token: "token-a" },
+      ]),
+    );
+
+    const flushing = flushPendingSignOut(true);
+    // The pass joins A's held delivery and stays pending; a pass that resends it finishes
+    // on its own.
+    const raced = await Promise.race([
+      flushing.then(() => "settled"),
+      new Promise((resolve) => setTimeout(() => resolve("waiting"), 100)),
+    ]);
+    expect(raced).toBe("waiting");
+    releaseFirst(jsonResponse({}));
+    await flushing;
+
+    const bearers = fetchMock.mock.calls.map(
+      ([, init]) => (init?.headers as Record<string, string> | undefined)?.authorization,
+    );
+    expect(bearers).toEqual(["Bearer token-a", "Bearer token-b"]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("joins a delivery a launch flush already started for the pending record", async () => {
+    // An interrupted sign-out left the session active and its revocation pending.
+    const store = new Map<string, string>([
+      ["rakazo.session_token", "session-token"],
+      [
+        "rakazo.pending_sign_out",
+        JSON.stringify([
+          {
+            apiBase: "http://127.0.0.1:3100",
+            token: "session-token",
+            headers: {},
+            recordedAt: Date.now(),
+          },
+        ]),
+      ],
+    ]);
+    mockSecureStore(store);
+    let releaseFirst!: (response: Response) => void;
+    const heldResponse = new Promise<Response>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let calls = 0;
+    const fetchMock = vi.fn<typeof globalThis.fetch>((_url) => {
+      calls += 1;
+      if (calls === 1) return heldResponse;
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    // The launch flush starts delivering the pending record; its request is held.
+    const flushing = flushPendingSignOut(true);
+    await vi.waitFor(() => expect(calls).toBe(1));
+    // Signing out again must join that delivery, not replace it with another one.
+    await signOut();
+    releaseFirst(jsonResponse({}));
+    await flushing;
+
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    // The sign-out re-recorded its revocation; a later pass delivers it once more.
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+  });
+
+  it("delivers the captured revocation when the record cannot be persisted", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.pending_sign_out") throw new Error("device locked");
+      store.set(key, value);
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await signOut();
+
+    // The write failed, so the store holds no record to deliver: the captured
+    // revocation still reaches the server.
+    await vi.waitFor(() =>
+      expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+        "http://127.0.0.1:3100/api/auth/sign-out",
+      ]),
+    );
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("does not deliver when the local clear fails and the next pass delivers the record", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key !== "rakazo.session_token") store.delete(key);
+      else throw new Error("device locked");
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key !== "rakazo.session_token") store.set(key, value);
+      else throw new Error("device locked");
+    });
+
+    await expect(signOut()).rejects.toThrow("Could not clear the local session");
+    expect(fetchMock).not.toHaveBeenCalled();
+    // The record stays, and the settled wait lets the next pass deliver it.
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+
+    await flushPendingSignOut(true);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("clears the pending revocation when the server answers", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    await signOut();
+    expect(pendingSignOutRecords(store).length).toBe(1);
+    // Sign-out returns before its delivery finishes; settle it on this offline stub.
+    await flushPendingSignOut(true);
+
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await flushPendingSignOut(true);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("delivers a pending revocation on the next answered request", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    await signOut();
+    await flushPendingSignOut(true);
+
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ json: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await rpc("bots/list");
+    await flushPendingSignOut(true);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/bots/list",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    const [, revocationInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(revocationInit.headers).toMatchObject({ authorization: "Bearer session-token" });
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("retries a stored revocation on an answered request after the launch could not read it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const record = {
+      apiBase: "http://127.0.0.1:3100",
+      token: "token-a",
+      headers: {},
+      recordedAt: Date.now(),
+    };
+    const store = new Map<string, string>([["rakazo.pending_sign_out", JSON.stringify([record])]]);
+    mockSecureStore(store);
+    let storeLocked = true;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.pending_sign_out" && storeLocked) throw new Error("device locked");
+      return store.get(key) ?? null;
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ json: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.resetModules();
+    const restartedApi = await import("./api.js");
+    await restartedApi.loadApiBase();
+    // Joins the launch retry, which cannot read the store.
+    await restartedApi.flushPendingSignOut(true);
+    storeLocked = false;
+
+    vi.setSystemTime(Date.now() + 61_000);
+    await restartedApi.rpc("bots/list");
+    await vi.waitFor(() => {
+      const signOuts = fetchMock.mock.calls.filter(([url]) =>
+        String(url).endsWith("/api/auth/sign-out"),
+      );
+      expect(signOuts).toHaveLength(1);
+      const [, init] = signOuts[0] as [string, RequestInit];
+      expect(init.headers).toMatchObject({ authorization: "Bearer token-a" });
+    });
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    vi.useRealTimers();
+  });
+
+  it("spaces non-forced retries, keeping launch retries immediate", async () => {
+    vi.useFakeTimers();
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    await signOut();
+    await flushPendingSignOut(true);
+
+    // A proxy keeps refusing the old server's revocation, so its record stays.
+    const deadServer = vi.fn<typeof globalThis.fetch>(
+      async () => new Response("{}", { status: 403 }),
+    );
+    vi.stubGlobal("fetch", deadServer);
+    await flushPendingSignOut(true);
+    expect(deadServer.mock.calls.length).toBe(1);
+
+    // Answered requests within the spacing window start no new attempt.
+    await flushPendingSignOut();
+    expect(deadServer.mock.calls.length).toBe(1);
+
+    vi.advanceTimersByTime(61_000);
+    await flushPendingSignOut();
+    expect(deadServer.mock.calls.length).toBe(2);
+
+    // A launch retry is never spaced out.
+    await flushPendingSignOut(true);
+    expect(deadServer.mock.calls.length).toBe(3);
+    expect(pendingSignOutRecords(store).length).toBe(1);
+  });
+
+  it("keeps a revocation for each signed-out server", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    await signOut();
+    await flushPendingSignOut(true);
+    await saveApiBase("https://second-server.example");
+
+    // Signed in on the second server, then offline sign-out there as well.
+    store.set("rakazo.session_token", "token-b");
+    await signOut();
+    await flushPendingSignOut(true);
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "https://second-server.example", token: "token-b" },
+      { apiBase: "http://127.0.0.1:3100", token: "token-a" },
+    ]);
+
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await flushPendingSignOut(true);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://second-server.example/api/auth/sign-out",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    await resetApiBase();
+  });
+
+  it("does not delete a revocation recorded while another is delivering", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    await signOut();
+    await flushPendingSignOut(true);
+
+    // The retry of the first record is waiting on the network when a server switch
+    // records a second one on the same server; finishing the first must leave it alone.
+    const deferred: ((response: Response) => void)[] = [];
+    const fetchStarted = new Promise<void>((resolveStarted) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn<typeof globalThis.fetch>(() => {
+          if (deferred.length > 0) return Promise.resolve(jsonResponse({}));
+          return new Promise<Response>((resolve) => {
+            resolveStarted();
+            deferred.push(resolve);
+          });
+        }),
+      );
+    });
+    const delivering = flushPendingSignOut(true);
+    await fetchStarted;
+    store.set("rakazo.session_token", "token-b");
+    await saveApiBase("https://second-server.example");
+    deferred[0]?.(jsonResponse({}));
+    await delivering;
+
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "token-b" },
+    ]);
+    await resetApiBase();
+  });
+
+  it("replaces a stored record list this app cannot read", async () => {
+    const store = new Map<string, string>([
+      ["rakazo.session_token", "session-token"],
+      ["rakazo.pending_sign_out", "not a record list"],
+    ]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => {
+      throw new Error("offline");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await flushPendingSignOut(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await signOut();
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+  });
+
+  it("retries a revocation recorded while the flush's deciding read waits", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    // The flush's deciding read — the one that may mark the store absent — waits while a
+    // sign-out records its revocation; the empty store the read saw first must not silence
+    // the retries that answered requests later trigger.
+    let pendingListReads = 0;
+    const decidingReadStarted = new Promise<void>((resolveStarted) => {
+      vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+        if (key !== "rakazo.pending_sign_out") return store.get(key) ?? null;
+        const stored = store.get(key) ?? null;
+        pendingListReads += 1;
+        if (pendingListReads === 2) {
+          resolveStarted();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        return stored;
+      });
+    });
+
+    const flushing = flushPendingSignOut(true);
+    await decidingReadStarted;
+    const signingOut = signOut();
+    await signingOut;
+    await flushing;
+
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await flushPendingSignOut();
+
+    // The sign-out's own background delivery may also reach this mock first.
+    expect(fetchMock.mock.calls.slice(-1).map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it.each([200, 401])("retries a same-origin login page with status %s", async (status) => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn(async () => {
+      const response = new Response("<html>Sign in</html>", { status });
+      Object.defineProperties(response, {
+        redirected: { value: true },
+        url: { value: "http://127.0.0.1:3100/login" },
+      });
+      return response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await signOut();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await flushPendingSignOut(true);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(pendingSignOutRecords(store)).toHaveLength(1);
+  });
+
+  it.each([200, 401])("accepts a same-origin redirected status %s", async (status) => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        const response = new Response("{}", { status });
+        Object.defineProperties(response, {
+          redirected: { value: true },
+          url: { value: `${input}/` },
+        });
+        return response;
+      }),
+    );
+
+    await signOut();
+    // The delivery runs in the background; a forced flush waits for it.
+    await flushPendingSignOut(true);
+
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it.each([
+    [200, true, ""],
+    [401, true, ""],
+    [200, true, "https://other-server.example"],
+    [401, true, "https://other-server.example"],
+    [200, false, "https://other-server.example"],
+    [401, false, "https://other-server.example"],
+  ])("retains the record for status %s, redirected %s, URL %s", async (status, redirected, url) => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        const response = new Response("{}", { status });
+        Object.defineProperties(response, {
+          redirected: { value: redirected },
+          url: { value: url },
+        });
+        return response;
+      }),
+    );
+
+    await signOut();
+
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({})),
+    );
+    await flushPendingSignOut(true);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("keeps the pending revocation unless the server reports the session invalid", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    await signOut();
+
+    // A proxy can refuse with 403 without the request reaching the server at all.
+    for (const status of [500, 429, 403] as const) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("{}", { status })),
+      );
+      await flushPendingSignOut(true);
+      expect(pendingSignOutRecords(store).length).toBe(1);
+    }
+
+    // An invalid session is final: the server has nothing left to revoke.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status: 401 })),
+    );
+    await flushPendingSignOut(true);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("drops a pending revocation older than the session lifetime", async () => {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const store = new Map<string, string>([
+      [
+        "rakazo.pending_sign_out",
+        JSON.stringify([
+          {
+            apiBase: "https://old.example",
+            token: "expired-token",
+            headers: {},
+            recordedAt: Date.now() - 31 * dayMs,
+          },
+          {
+            apiBase: "https://old.example",
+            token: "fresh-token",
+            headers: {},
+            recordedAt: Date.now(),
+          },
+        ]),
+      ],
+    ]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await flushPendingSignOut(true);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://old.example/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("does not deliver an expired revocation when the prune write fails", async () => {
+    const store = new Map<string, string>([
+      [
+        "rakazo.pending_sign_out",
+        JSON.stringify([
+          {
+            apiBase: "https://old.example",
+            token: "expired-token",
+            headers: {},
+            recordedAt: Date.now() - 31 * 24 * 60 * 60 * 1000,
+          },
+        ]),
+      ],
+    ]);
+    mockSecureStore(store);
+    vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("device locked"));
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await flushPendingSignOut(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // The next pass that can write retires it.
+    await flushPendingSignOut(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("bounds the stored revocations, dropping the oldest", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    for (let index = 0; index <= 100; index += 1) {
+      store.set("rakazo.session_token", `token-${index}`);
+      await signOut();
+    }
+
+    const records = pendingSignOutRecords(store);
+    expect(records.length).toBe(100);
+    expect(records.some((record) => record.token === "token-0")).toBe(false);
+    expect(records.some((record) => record.token === "token-100")).toBe(true);
+  });
+
+  it("sends the revocation to the recorded server with redirect error and its own headers", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
+    mockSecureStore(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("offline"))),
+    );
+    await signOut();
+    // The switch has no session, so it records nothing; it only makes the current
+    // connection settings belong to another server with its own header.
+    await saveApiBase("https://second-server.example", { "x-proxy": "current-secret" });
+
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await flushPendingSignOut(true);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    for (const [, init] of fetchMock.mock.calls as [string, RequestInit][]) {
+      expect(init.redirect).toBe("error");
+      expect(init.headers).not.toHaveProperty("x-proxy");
+    }
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    await resetApiBase();
+  });
+
+  it("retries a persisted pending revocation on launch against its own server", async () => {
+    const store = new Map<string, string>([
+      [
+        "rakazo.pending_sign_out",
+        JSON.stringify([
+          {
+            apiBase: "https://old.example",
+            token: "old-token",
+            headers: {},
+            recordedAt: Date.now(),
+          },
+        ]),
+      ],
+    ]);
+    mockSecureStore(store);
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await loadApiBase();
+    await flushPendingSignOut(true);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://old.example/api/auth/sign-out",
+    ]);
+    const [, firstInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(firstInit.headers).toMatchObject({ authorization: "Bearer old-token" });
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("resolves a dying server switch's record at launch", async () => {
+    const provisional = (token: string) => ({
+      apiBase: "http://127.0.0.1:3100",
+      token,
+      headers: {},
+      recordedAt: Date.now(),
+      provisional: true,
+    });
+
+    // The switch never completed: its session is still the active one, so the record goes.
+    const uncompleted = new Map<string, string>([
+      ["rakazo.session_token", "token-a"],
+      ["rakazo.pending_sign_out", JSON.stringify([provisional("token-a")])],
+    ]);
+    mockSecureStore(uncompleted);
+    const noFetch = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", noFetch);
+    await loadApiBase();
+    await flushPendingSignOut(true);
+    expect(noFetch.mock.calls).toEqual([]);
+    expect(pendingSignOutRecords(uncompleted)).toEqual([]);
+    expect(uncompleted.get("rakazo.session_token")).toBe("token-a");
+
+    // The switch committed but died before promoting: the record is promoted and delivered.
+    const committed = new Map<string, string>([
+      ["rakazo.api_base", "https://second-server.example"],
+      ["rakazo.pending_sign_out", JSON.stringify([provisional("token-a")])],
+    ]);
+    mockSecureStore(committed);
+    const deliverFetch = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", deliverFetch);
+    await loadApiBase();
+    await flushPendingSignOut(true);
+    expect(deliverFetch.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(committed)).toEqual([]);
+    await resetApiBase();
+  });
+
+  it("does not unregister push delivery when deleting the account", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ json: null }))
-      .mockResolvedValueOnce(jsonResponse({}));
+    const fetchMock = vi.fn(async (_url: string | URL | Request) => jsonResponse({}));
     vi.stubGlobal("fetch", fetchMock);
 
     await deleteAccount("correct horse");
 
+    // Deleting the user removes the push rows on the server; unregistering first would
+    // drop this device's notifications whenever the deletion fails.
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
       "http://127.0.0.1:3100/api/auth/delete-user",
     ]);
+  });
+
+  it("keeps push registered when the account deletion fails", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const fetchMock = vi.fn(async (_url: string | URL | Request) =>
+      jsonResponse({ message: "Invalid password" }, { status: 400 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteAccount("wrong horse")).rejects.toThrow("Invalid password");
+
+    // A wrong password must not leave this device without notifications or incoming
+    // calls; the server still knows the registration until the account is gone for real.
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/api/auth/delete-user",
+    ]);
+    expect(SecureStore.deleteItemAsync).not.toHaveBeenCalledWith("rakazo.session_token");
   });
 
   it("sends authenticated RPC input and reports structured RPC errors", async () => {
@@ -1386,6 +2285,49 @@ describe("mobile API authentication", () => {
       expect(String(url)).toContain("/rpc/aiConsent/status");
       expect(init?.body).not.toContain("private content");
     }
+  });
+
+  it("asks about every mentioned routine's recipients before a combined send", async () => {
+    vi.mocked(promptAiConsent).mockClear();
+    vi.mocked(promptAiConsent).mockResolvedValue(false);
+    // A paused routine on another bot is reported only by a check for that routine.
+    const recipient = {
+      key: "routine-model",
+      name: "Example AI",
+      use: "model",
+      detail: "",
+      allowed: false,
+    };
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const query = JSON.parse(String(init?.body)).json;
+      return jsonResponse({
+        json: {
+          scope: "account-space",
+          version: "2026-09-14",
+          recipients: query.routineId === "routine-paused" ? [recipient] : [],
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      rpc("threads/sendWithRoutines", {
+        botId: "bot-1",
+        clientNonce: "nonce-1",
+        text: "private content",
+        routineIds: ["routine-active", "routine-paused"],
+      }),
+    ).rejects.toThrow("AI data sharing");
+    expect(promptAiConsent).toHaveBeenCalledWith(recipient, undefined);
+    expect(fetchMock.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
+      "/rpc/aiConsent/status",
+      "/rpc/aiConsent/status",
+      "/rpc/aiConsent/status",
+    ]);
+    expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).json)).toEqual([
+      { uses: ["model", "memory"], botId: "bot-1" },
+      { uses: ["model", "memory"], routineId: "routine-active" },
+      { uses: ["model", "memory"], routineId: "routine-paused" },
+    ]);
   });
 
   it.each([true, false])("explains the mobile upgrade requirement with JSON=%s", async (json) => {
@@ -1620,6 +2562,1003 @@ describe("mobile API authentication", () => {
     await resetApiBase();
   });
 
+  it("keeps the previous server's revocation pending when switching servers signed in", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+
+    await expect(saveApiBase("https://second-server.example")).resolves.toMatchObject({ ok: true });
+
+    // The old server keeps the session and the push registration after a local switch.
+    expect(pendingSignOutRecords(store)).toEqual([
+      { apiBase: "http://127.0.0.1:3100", token: "session-token" },
+    ]);
+    await resetApiBase();
+  });
+
+  it("records the switch's revocation before discarding the old session", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+
+    await expect(saveApiBase("https://second-server.example")).resolves.toMatchObject({ ok: true });
+
+    const recorded = vi
+      .mocked(SecureStore.setItemAsync)
+      .mock.calls.findIndex(([key]) => key === "rakazo.pending_sign_out");
+    const discarded = vi
+      .mocked(SecureStore.deleteItemAsync)
+      .mock.calls.findIndex((call) => call[0] === "rakazo.session_token");
+    expect(recorded).toBeGreaterThanOrEqual(0);
+    expect(discarded).toBeGreaterThanOrEqual(0);
+    // A process kill between the two leaves the revocation durable, not neither.
+    const recordedOrder = vi.mocked(SecureStore.setItemAsync).mock.invocationCallOrder[
+      recorded
+    ] as number;
+    const discardedOrder = vi.mocked(SecureStore.deleteItemAsync).mock.invocationCallOrder[
+      discarded
+    ] as number;
+    expect(recordedOrder).toBeLessThan(discardedOrder);
+    await resetApiBase();
+  });
+
+  it("a rolled-back server switch leaves no pending revocation", async () => {
+    for (const failure of ["clear", "endpoint"] as const) {
+      const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+      mockSecureStore(store);
+      if (failure === "clear") {
+        vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+          if (key === "rakazo.session_token") throw new Error("device locked");
+          store.delete(key);
+        });
+        vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+          if (key === "rakazo.session_token") throw new Error("device locked");
+          store.set(key, value);
+        });
+      } else {
+        vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+          if (key === "rakazo.api_base") throw new Error("device locked");
+          store.set(key, value);
+        });
+      }
+
+      const saved = saveApiBase("https://second-server.example");
+      await expect(saved).resolves.toMatchObject({ ok: false });
+      // The switch rolled back, so the session it recorded a revocation for stays in use.
+      expect(pendingSignOutRecords(store)).toEqual([]);
+    }
+  });
+
+  it("aborts a server switch when the revocation cannot be recorded", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await saveApiBase("https://second-server.example");
+    store.set("rakazo.session_token", "session-token");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.pending_sign_out") throw new Error("device locked");
+      store.set(key, value);
+    });
+
+    // Without the record the old server keeps its session forever, so the switch stops.
+    await expect(resetApiBase()).resolves.toEqual({
+      ok: false,
+      error: "Could not save the previous server session",
+    });
+    expect(store.get("rakazo.session_token")).toBe("session-token");
+    expect(store.get("rakazo.api_base")).toBe("https://second-server.example");
+
+    await expect(saveApiBase("https://third-server.example")).resolves.toEqual({
+      ok: false,
+      error: "Could not save the previous server session",
+    });
+    expect(store.get("rakazo.session_token")).toBe("session-token");
+    // Restore writable storage so the cleanup switch can record its own revocation.
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      store.set(key, value);
+    });
+    await resetApiBase();
+  });
+
+  it("a flush racing a failing server switch cannot revoke the old session", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
+    mockSecureStore(store);
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token") throw new Error("device locked");
+      store.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token") {
+        // An answered request retries the record at the moment the switch starts clearing.
+        await flushPendingSignOut();
+        throw new Error("device locked");
+      }
+      store.delete(key);
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const next =
+      currentApiBase() === "https://second-server.example"
+        ? "https://third-server.example"
+        : "https://second-server.example";
+
+    await expect(saveApiBase(next)).resolves.toMatchObject({ ok: false });
+
+    expect(fetchMock.mock.calls).toEqual([]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    expect(store.get("rakazo.session_token")).toBe("token-a");
+  });
+
+  it("delivers a provisional record a failed promotion left behind", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
+    mockSecureStore(store);
+    let pendingWrites = 0;
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.pending_sign_out") {
+        pendingWrites += 1;
+        // The switch's own write lands; the promotion at commit does not.
+        if (pendingWrites === 2) throw new Error("device locked");
+        store.set(key, value);
+        return;
+      }
+      store.set(key, value);
+    });
+
+    await expect(saveApiBase("https://second-server.example")).resolves.toMatchObject({ ok: true });
+    const stored = JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]") as {
+      provisional?: boolean;
+    }[];
+    expect(stored.length).toBe(1);
+    expect(stored[0]?.provisional).toBe(true);
+
+    // An ordinary flush — not a launch — resolves the leftover record and delivers it.
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await flushPendingSignOut();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    await resetApiBase();
+  });
+
+  it("a reconcile suspended mid-read leaves a starting switch's record alone", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
+    store.set(
+      "rakazo.pending_sign_out",
+      JSON.stringify([
+        {
+          apiBase: "http://127.0.0.1:3100",
+          token: "token-a",
+          headers: {},
+          recordedAt: Date.now(),
+          provisional: true,
+        },
+      ]),
+    );
+    mockSecureStore(store);
+    let releaseSessionRead: (() => void) | undefined;
+    let sessionReads = 0;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token") {
+        sessionReads += 1;
+        if (sessionReads === 1)
+          await new Promise<void>((resolve) => {
+            releaseSessionRead = resolve;
+          });
+      }
+      return store.get(key) ?? null;
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token") throw new Error("device locked");
+      store.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token") throw new Error("device locked");
+      store.set(key, value);
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    // The reconcile suspends reading the session; the switch starts while it waits.
+    const settling = flushPendingSignOut(true);
+    await vi.waitFor(() => expect(sessionReads).toBeGreaterThanOrEqual(1));
+    const switching = saveApiBase("https://second-server.example");
+    await vi.waitFor(() => expect(sessionReads).toBeGreaterThanOrEqual(2));
+    releaseSessionRead?.();
+    await settling;
+    await expect(switching).resolves.toMatchObject({ ok: false });
+
+    expect(fetchMock.mock.calls).toEqual([]);
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    expect(store.get("rakazo.session_token")).toBe("token-a");
+  });
+
+  it.each(["save", "reset"])(
+    "serializes a %s behind an earlier switch rollback",
+    async (change) => {
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      await saveApiBase("https://old-server.example");
+      await restoreSessionToken("token-a");
+      let failEndpointWrite: (() => void) | undefined;
+      let endpointWrites = 0;
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        if (key === "rakazo.api_base") {
+          endpointWrites += 1;
+          if (endpointWrites === 1) {
+            await new Promise((_resolve, reject) => {
+              failEndpointWrite = () => reject(new Error("device locked"));
+            });
+          }
+        }
+        store.set(key, value);
+      });
+      const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+      vi.stubGlobal("fetch", fetchMock);
+
+      // This switch clears the old credentials, then parks before committing.
+      const first = saveApiBase("https://second-server.example");
+      await vi.waitFor(() => expect(failEndpointWrite).toBeTruthy());
+      const second =
+        change === "save" ? saveApiBase("https://third-server.example") : resetApiBase();
+      try {
+        // Give the overlapping transaction and reconciliation the same storage window.
+        await flushPendingSignOut(true);
+        expect(fetchMock.mock.calls).toEqual([]);
+      } finally {
+        failEndpointWrite?.();
+      }
+      await expect(first).resolves.toMatchObject({ ok: false });
+      await expect(second).resolves.toMatchObject({ ok: true });
+      expect(currentApiBase()).toBe(
+        change === "save" ? "https://third-server.example" : "http://127.0.0.1:3100",
+      );
+      expect(store.has("rakazo.session_token")).toBe(false);
+      expect(pendingSignOutRecords(store)).toEqual([
+        { apiBase: "https://old-server.example", token: "token-a" },
+      ]);
+      await resetApiBase();
+    },
+  );
+
+  it.each(["save", "reset"])(
+    "a %s rollback preserves a newer explicit sign-out record",
+    async (change) => {
+      vi.spyOn(Date, "now").mockReturnValue(Date.now());
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      if (change === "reset") await saveApiBase("https://old-server.example");
+      const apiBase = currentApiBase();
+      await restoreSessionToken("token-a");
+      await selectSpace("space-old");
+      let releaseRollback!: () => void;
+      const rollbackStarted = new Promise<void>((resolve) => {
+        vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+          if (key === "rakazo.space_rollback" && value) {
+            resolve();
+            await new Promise<void>((release) => {
+              releaseRollback = release;
+            });
+            throw new Error("device locked");
+          }
+          store.set(key, value);
+        });
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          throw new Error("offline");
+        }),
+      );
+
+      const switching =
+        change === "save" ? saveApiBase("https://second-server.example") : resetApiBase();
+      await rollbackStarted;
+      // The provisional record is durable; the old session has not been cleared yet.
+      const signingOut = signOut();
+      try {
+        await vi.waitFor(() => {
+          const records = JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]");
+          expect(records).toHaveLength(1);
+          expect(records[0].provisional).toBeUndefined();
+        });
+      } finally {
+        releaseRollback();
+      }
+      await expect(switching).resolves.toMatchObject({ ok: false });
+      await signingOut;
+      expect(pendingSignOutRecords(store)).toEqual([{ apiBase, token: "token-a" }]);
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        store.set(key, value);
+      });
+      await resetApiBase();
+    },
+  );
+
+  it("aborts a server switch when the session cannot be read", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    let sessionReads = 0;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token") {
+        sessionReads += 1;
+        // The switch's own read fails; a later read would see the session again.
+        if (sessionReads === 1) throw new Error("device locked");
+      }
+      return store.get(key) ?? null;
+    });
+
+    await expect(saveApiBase("https://second-server.example")).resolves.toEqual({
+      ok: false,
+      error: "Could not save the previous server session",
+    });
+    // Without knowing whether the old server has a session, the switch clears nothing.
+    expect(store.get("rakazo.session_token")).toBe("session-token");
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    await resetApiBase();
+  });
+
+  it.each(["the call hang-up", "the space rollback write"])(
+    "a save never clears a session that replaced the recorded one during %s",
+    async (during) => {
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      await restoreSessionToken("token-a");
+      await selectSpace("space-old");
+      // An earlier failed switch left the selection stored only in its rollback record.
+      store.delete("rakazo.space_id");
+      const signIn = () => saveSessionToken("token-b");
+      if (during === "the call hang-up") {
+        configureSessionEndHangUp(signIn);
+      } else {
+        vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+          if (key === "rakazo.space_rollback" && value) await signIn();
+          store.set(key, value);
+        });
+      }
+      let result: Awaited<ReturnType<typeof saveApiBase>>;
+      try {
+        result = await saveApiBase("https://second-server.example");
+      } finally {
+        configureSessionEndHangUp(undefined);
+        mockSecureStore(store);
+      }
+
+      if (during === "the call hang-up") {
+        // The switch reads the session after the hang-up, so it revokes the session it clears.
+        expect(result).toMatchObject({ ok: true });
+        expect(store.has("rakazo.session_token")).toBe(false);
+        expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-b"]);
+      } else {
+        // A session that changed after the read stops the switch before it clears anything.
+        expect(result).toMatchObject({ ok: false });
+        expect(store.get("rakazo.session_token")).toBe("token-b");
+        expect(pendingSignOutRecords(store)).toEqual([]);
+        expect(store.get("rakazo.space_id")).toBe("space-old");
+      }
+      await resetApiBase();
+    },
+  );
+
+  it("a save stops while a session save started during the hang-up is still running", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    await selectSpace("space-old");
+    let releaseSave!: () => void;
+    const saveHeld = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    let saving: Promise<void> | undefined;
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token" && value === "token-b") await saveHeld;
+      // The save completes while the switch writes the Space rollback.
+      if (key === "rakazo.space_rollback" && value) {
+        releaseSave();
+        await saving;
+      }
+      store.set(key, value);
+    });
+    configureSessionEndHangUp(async () => {
+      saving = saveSessionToken("token-b");
+    });
+    let result: Awaited<ReturnType<typeof saveApiBase>>;
+    try {
+      result = await saveApiBase("https://second-server.example");
+    } finally {
+      configureSessionEndHangUp(undefined);
+      releaseSave();
+      await saving;
+      mockSecureStore(store);
+    }
+
+    expect(result).toMatchObject({ ok: false });
+    expect(store.get("rakazo.session_token")).toBe("token-b");
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    await resetApiBase();
+  });
+
+  it("a save revokes a stored session that a failed save during the hang-up left unsent", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    await selectSpace("space-old");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token" && value === "token-b") throw new Error("device locked");
+      store.set(key, value);
+    });
+    configureSessionEndHangUp(() => saveSessionToken("token-b"));
+    let result: Awaited<ReturnType<typeof saveApiBase>>;
+    try {
+      result = await saveApiBase("https://second-server.example");
+    } finally {
+      configureSessionEndHangUp(undefined);
+      mockSecureStore(store);
+    }
+
+    // The failed save left token-a stored; a restart would send it, so the switch revokes it.
+    expect(result).toMatchObject({ ok: true });
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
+    await resetApiBase();
+  });
+
+  it.each(["save", "reset"])(
+    "a %s rolled back after clearing a stored session a failed save left unsent keeps its revocation",
+    async (change) => {
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      if (change === "reset") await saveApiBase("https://old-server.example");
+      await restoreSessionToken("token-a");
+      await selectSpace("space-old");
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        if (key === "rakazo.session_token" && value === "token-b") throw new Error("device locked");
+        if (change === "save" && key === "rakazo.api_base") throw new Error("device locked");
+        store.set(key, value);
+      });
+      vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+        if (change === "reset" && key === "rakazo.api_base") throw new Error("device locked");
+        store.delete(key);
+      });
+      configureSessionEndHangUp(() => saveSessionToken("token-b"));
+      let result: Awaited<ReturnType<typeof saveApiBase>>;
+      try {
+        result = await (change === "save"
+          ? saveApiBase("https://second-server.example")
+          : resetApiBase());
+      } finally {
+        configureSessionEndHangUp(undefined);
+        mockSecureStore(store);
+      }
+
+      // The rollback does not bring token-a back, so its revocation stays owed.
+      expect(result).toMatchObject({ ok: false });
+      expect(store.has("rakazo.session_token")).toBe(false);
+      expect(await authHeaders()).not.toHaveProperty("authorization");
+      expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
+      await resetApiBase();
+    },
+  );
+
+  it.each([
+    ["save", "nothing"],
+    ["save", "a sign-in during the rollback"],
+    ["save", "a sign-in after the rollback"],
+    ["reset", "nothing"],
+    ["reset", "a sign-in during the rollback"],
+    ["reset", "a sign-in after the rollback"],
+  ])(
+    "a %s rolled back after clearing an unsent stored session revokes it unless %s reactivates it",
+    async (change, reactivation) => {
+      const store = new Map<string, string>();
+      mockSecureStore(store);
+      if (change === "reset") await saveApiBase("https://old-server.example");
+      const previous = currentApiBase();
+      await restoreSessionToken("token-a");
+      await selectSpace("space-old");
+      let rollingBack = false;
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        if (key === "rakazo.session_token" && value === "token-b") throw new Error("device locked");
+        if (change === "save" && key === "rakazo.api_base") {
+          rollingBack = true;
+          throw new Error("device locked");
+        }
+        // The rollback restores the Space; a sign-in that returns token-a lands meanwhile.
+        if (
+          key === "rakazo.space_id" &&
+          rollingBack &&
+          reactivation === "a sign-in during the rollback"
+        ) {
+          rollingBack = false;
+          await saveSessionToken("token-a");
+        }
+        store.set(key, value);
+      });
+      vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+        if (change === "reset" && key === "rakazo.api_base") {
+          rollingBack = true;
+          throw new Error("device locked");
+        }
+        store.delete(key);
+      });
+      configureSessionEndHangUp(() => saveSessionToken("token-b"));
+      let result: Awaited<ReturnType<typeof saveApiBase>>;
+      try {
+        result = await (change === "save"
+          ? saveApiBase("https://second-server.example")
+          : resetApiBase());
+      } finally {
+        configureSessionEndHangUp(undefined);
+        mockSecureStore(store);
+      }
+      if (reactivation === "a sign-in after the rollback") await saveSessionToken("token-a");
+      const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+      vi.stubGlobal("fetch", fetchMock);
+      await flushPendingSignOut(true);
+
+      expect(result).toMatchObject({ ok: false });
+      const signOuts = fetchMock.mock.calls.filter(([url]) =>
+        String(url).endsWith("/api/auth/sign-out"),
+      );
+      if (reactivation === "nothing") {
+        expect(signOuts.map(([url]) => url)).toEqual([`${previous}/api/auth/sign-out`]);
+        const [, init] = signOuts[0] as [string, RequestInit];
+        expect(init.headers).toMatchObject({
+          authorization: "Bearer token-a",
+        });
+      } else {
+        // The session in use again is not revoked.
+        expect(signOuts).toEqual([]);
+        expect(store.get("rakazo.session_token")).toBe("token-a");
+      }
+      expect(pendingSignOutRecords(store)).toEqual([]);
+      await resetApiBase();
+    },
+  );
+
+  it("a save stopped by a session change stores a Space selected during its restoring write", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    await selectSpace("space-old");
+    let selecting: Promise<boolean> | undefined;
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_rollback" && value) await saveSessionToken("token-b");
+      if (key === "rakazo.space_id" && value === "space-old" && !selecting) {
+        // A new selection lands before the switch's restoring write.
+        selecting = selectSpace("space-new");
+        await selecting;
+      }
+      store.set(key, value);
+    });
+    let result: Awaited<ReturnType<typeof saveApiBase>>;
+    try {
+      result = await saveApiBase("https://second-server.example");
+    } finally {
+      mockSecureStore(store);
+    }
+
+    expect(selecting).toBeDefined();
+    expect(result).toMatchObject({ ok: false });
+    expect(selectedSpaceId()).toBe("space-new");
+    expect(store.get("rakazo.space_id")).toBe("space-new");
+    expect(store.has("rakazo.space_rollback")).toBe(false);
+    await resetApiBase();
+  });
+
+  it("a save stopped by a session change stores the last Space selected during its repair", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    await selectSpace("space-old");
+    let selecting: Promise<boolean> | undefined;
+    let reselecting: Promise<boolean> | undefined;
+    let newWrites = 0;
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_rollback" && value) await saveSessionToken("token-b");
+      if (key === "rakazo.space_id" && value === "space-old" && !selecting) {
+        selecting = selectSpace("space-new");
+        await selecting;
+      }
+      // The second write of space-new is the switch's repair; another selection lands first.
+      if (key === "rakazo.space_id" && value === "space-new" && ++newWrites === 2) {
+        reselecting = selectSpace("space-newest");
+        await reselecting;
+      }
+      store.set(key, value);
+    });
+    let result: Awaited<ReturnType<typeof saveApiBase>>;
+    try {
+      result = await saveApiBase("https://second-server.example");
+    } finally {
+      mockSecureStore(store);
+    }
+
+    expect(reselecting).toBeDefined();
+    expect(result).toMatchObject({ ok: false });
+    expect(selectedSpaceId()).toBe("space-newest");
+    expect(store.get("rakazo.space_id")).toBe("space-newest");
+    expect(store.has("rakazo.space_rollback")).toBe(false);
+    await resetApiBase();
+  });
+
+  it("a save stopped by a session change keeps a Space selected while it read the old one", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    await clearSpace();
+    // Stored but not yet cached, so the switch reads the selection from the store.
+    store.set("rakazo.space_id", "space-old");
+    let selecting: Promise<boolean> | undefined;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      const value = store.get(key) ?? null;
+      if (key === "rakazo.space_id" && !selecting) {
+        // A new selection lands after the switch read the old one.
+        selecting = selectSpace("space-new");
+        await selecting;
+      }
+      return value;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_rollback" && value) await saveSessionToken("token-b");
+      store.set(key, value);
+    });
+    let result: Awaited<ReturnType<typeof saveApiBase>>;
+    try {
+      result = await saveApiBase("https://second-server.example");
+    } finally {
+      mockSecureStore(store);
+    }
+
+    expect(selecting).toBeDefined();
+    expect(result).toMatchObject({ ok: false });
+    expect(store.get("rakazo.space_id")).toBe("space-new");
+    expect(store.has("rakazo.space_rollback")).toBe(false);
+    await resetApiBase();
+  });
+
+  it("a reset that cannot store the old server again keeps its session revoked, not restored", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await saveApiBase("https://old-server.example");
+    await restoreSessionToken("token-a");
+    await selectSpace("space-old");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.api_base") throw new Error("device locked");
+      store.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.server_headers") throw new Error("device locked");
+      store.delete(key);
+    });
+    let result: Awaited<ReturnType<typeof resetApiBase>>;
+    try {
+      result = await resetApiBase();
+    } finally {
+      mockSecureStore(store);
+    }
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await flushPendingSignOut(true);
+
+    // The next launch opens the default server, so the old session is revoked, not restored.
+    expect(result).toMatchObject({ ok: false });
+    expect(store.has("rakazo.api_base")).toBe(false);
+    expect(store.has("rakazo.session_token")).toBe(false);
+    const signOuts = fetchMock.mock.calls.filter(([url]) =>
+      String(url).endsWith("/api/auth/sign-out"),
+    );
+    expect(signOuts.map(([url]) => url)).toEqual(["https://old-server.example/api/auth/sign-out"]);
+    const [, init] = signOuts[0] as [string, RequestInit];
+    expect(init.headers).toMatchObject({ authorization: "Bearer token-a" });
+    await resetApiBase();
+  });
+
+  it("a reset that cannot store the old server again signs in to the server the next launch opens", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await saveApiBase("https://old-server.example");
+    await restoreSessionToken("token-a");
+    await selectSpace("space-old");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.api_base") throw new Error("device locked");
+      store.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.server_headers") throw new Error("device locked");
+      store.delete(key);
+    });
+    let result: Awaited<ReturnType<typeof resetApiBase>>;
+    try {
+      result = await resetApiBase();
+    } finally {
+      mockSecureStore(store);
+    }
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async (url) =>
+      String(url).endsWith("/api/auth/sign-in/email")
+        ? jsonResponse({ token: "token-c" })
+        : jsonResponse({}),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await signIn("ada@example.com", "correct horse");
+    await loadApiBase();
+
+    // The token comes from the server a restart opens, so it is never sent to another one.
+    expect(result).toMatchObject({ ok: false });
+    const signIns = fetchMock.mock.calls.filter(([url]) =>
+      String(url).endsWith("/api/auth/sign-in/email"),
+    );
+    expect(signIns.map(([url]) => url)).toEqual([`${currentApiBase()}/api/auth/sign-in/email`]);
+    expect(currentApiBase()).toBe("http://127.0.0.1:3100");
+    expect(await authHeaders(null)).toMatchObject({ authorization: "Bearer token-c" });
+    await resetApiBase();
+  });
+
+  it("a sign-out during a running session save stops without clearing and records nothing", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    let releaseSave!: () => void;
+    const saveHeld = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token" && value === "token-b") await saveHeld;
+      store.set(key, value);
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const saving = saveSessionToken("token-b");
+    const signingOut = signOut();
+    releaseSave();
+    await saving;
+
+    await expect(signingOut).rejects.toThrow("Could not clear the local session");
+    expect(store.get("rakazo.session_token")).toBe("token-b");
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a sign-out stops without clearing a session saved while it wrote its record", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      // A sign-in saves its token while the sign-out writes the revocation record.
+      if (key === "rakazo.pending_sign_out") await saveSessionToken("token-b");
+      store.set(key, value);
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof globalThis.fetch>(async () => jsonResponse({})),
+    );
+
+    await expect(signOut()).rejects.toThrow("Could not clear the local session");
+    mockSecureStore(store);
+    expect(store.get("rakazo.session_token")).toBe("token-b");
+    // The record for the session the user signed out of stays for delivery.
+    expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
+  });
+
+  it("a rolled-back switch keeps the revocation of a session it could only restore in memory", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.api_base") throw new Error("device locked");
+      if (key === "rakazo.session_token") throw new Error("device locked");
+      store.set(key, value);
+    });
+    let result: Awaited<ReturnType<typeof saveApiBase>>;
+    try {
+      result = await saveApiBase("https://second-server.example");
+    } finally {
+      mockSecureStore(store);
+    }
+
+    // A restart would not find token-a, so its revocation record stays for the next retry.
+    expect(result).toMatchObject({ ok: false });
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(await authHeaders(null)).toMatchObject({ authorization: "Bearer token-a" });
+    expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
+  });
+
+  it("a flush keeps the revocation of a rolled-back session kept only in memory", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.api_base") throw new Error("device locked");
+      if (key === "rakazo.session_token") throw new Error("device locked");
+      store.set(key, value);
+    });
+    try {
+      await saveApiBase("https://second-server.example");
+    } finally {
+      mockSecureStore(store);
+    }
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await flushPendingSignOut(true);
+
+    // token-a is still in use, so it is not revoked; a restart loses it, so the record stays.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
+  });
+
+  it("a flush during a save of a memory-only session does not revoke it", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.api_base") throw new Error("device locked");
+      if (key === "rakazo.session_token") throw new Error("device locked");
+      store.set(key, value);
+    });
+    try {
+      await saveApiBase("https://second-server.example");
+    } finally {
+      mockSecureStore(store);
+    }
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await flushPendingSignOut(true);
+    let releaseSave!: () => void;
+    const saveHeld = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token") await saveHeld;
+      store.set(key, value);
+    });
+    // The same token is saved again; a flush runs while its write is held.
+    const saving = saveSessionToken("token-a");
+    await flushPendingSignOut(true);
+    releaseSave();
+    await saving;
+    mockSecureStore(store);
+    await flushPendingSignOut(true);
+
+    // token-a is in use and now stored, so it is never revoked and its record is dropped.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(store.get("rakazo.session_token")).toBe("token-a");
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("a hung session save defers only the current server's switch records", async () => {
+    const record = (apiBase: string, token: string) => ({
+      apiBase,
+      token,
+      headers: {},
+      recordedAt: Date.now(),
+      provisional: true,
+    });
+    const store = new Map<string, string>([
+      [
+        "rakazo.pending_sign_out",
+        JSON.stringify([
+          record("https://old-server.example", "token-a"),
+          record(currentApiBase(), "token-c"),
+        ]),
+      ],
+    ]);
+    mockSecureStore(store);
+    let releaseSave!: () => void;
+    const saveHeld = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token") await saveHeld;
+      store.set(key, value);
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const signOuts = () =>
+      fetchMock.mock.calls
+        .filter(([url]) => String(url).endsWith("/api/auth/sign-out"))
+        .map(([url, init]) => [url, new Headers(init?.headers).get("authorization")]);
+    const saving = saveSessionToken("token-b");
+    await flushPendingSignOut(true);
+
+    // The other server's session cannot be the one being saved here, so it is revoked now.
+    expect(signOuts()).toEqual([
+      ["https://old-server.example/api/auth/sign-out", "Bearer token-a"],
+    ]);
+    expect(pendingSignOutRecords(store).map((entry) => entry.token)).toEqual(["token-c"]);
+
+    releaseSave();
+    await saving;
+    await flushPendingSignOut(true);
+    expect(signOuts()).toEqual([
+      ["https://old-server.example/api/auth/sign-out", "Bearer token-a"],
+      [`${currentApiBase()}/api/auth/sign-out`, "Bearer token-c"],
+    ]);
+  });
+
+  it("a server switch stops when a session is saved while it clears the old one", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    const previous = currentApiBase();
+    await restoreSessionToken("token-a");
+    let signIn = true;
+    vi.mocked(stopLiveNotifications).mockImplementation(async () => {
+      // A sign-in on the old server saves its token while the clear stops notifications.
+      if (signIn) {
+        signIn = false;
+        await saveSessionToken("token-b");
+      }
+    });
+    let result: Awaited<ReturnType<typeof saveApiBase>>;
+    try {
+      result = await saveApiBase("https://second-server.example");
+    } finally {
+      vi.mocked(stopLiveNotifications).mockImplementation(async () => undefined);
+    }
+
+    // The old server's token is never sent to the new server.
+    expect(result).toEqual({ ok: false, error: "Could not clear the previous server session" });
+    expect(currentApiBase()).toBe(previous);
+    expect(store.get("rakazo.session_token")).toBe("token-b");
+    expect(await authHeaders(null)).toMatchObject({ authorization: "Bearer token-b" });
+    // The cleared session is gone from the device, so its revocation stays.
+    expect(pendingSignOutRecords(store).map((record) => record.token)).toEqual(["token-a"]);
+  });
+
+  it("a sign-out does not record a session saved while it reads the active one", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    let signedIn: Promise<void> | undefined;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      const value = store.get(key) ?? null;
+      // A sign-in saves its token while the sign-out reads the active session.
+      if (key === "rakazo.session_token" && !signedIn) {
+        signedIn = saveSessionToken("fake-session-new");
+        await signedIn;
+      }
+      return value;
+    });
+
+    await expect(signOut()).rejects.toThrow("Could not clear the local session");
+
+    // The new session stays in use, so nothing may revoke it later.
+    expect(store.get("rakazo.session_token")).toBe("fake-session-new");
+    expect(await authHeaders(null)).toMatchObject({ authorization: "Bearer fake-session-new" });
+    expect(pendingSignOutRecords(store)).toEqual([]);
+  });
+
+  it("a sign-out after a failed session save revokes the stored token it clears", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await restoreSessionToken("token-a");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.session_token" && value === "token-b") throw new Error("device locked");
+      store.set(key, value);
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await saveSessionToken("token-b").catch(() => undefined);
+    await signOut();
+
+    await vi.waitFor(() => {
+      const signOuts = fetchMock.mock.calls.filter(([url]) =>
+        String(url).endsWith("/api/auth/sign-out"),
+      );
+      expect(signOuts).toHaveLength(1);
+      const [, init] = signOuts[0] as [string, RequestInit];
+      expect(init.headers).toMatchObject({ authorization: "Bearer token-a" });
+    });
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(await authHeaders()).not.toHaveProperty("authorization");
+  });
+
+  it("records no revocation when switching servers without a session", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+
+    await expect(saveApiBase("https://second-server.example")).resolves.toMatchObject({ ok: true });
+
+    expect(pendingSignOutRecords(store)).toEqual([]);
+    await resetApiBase();
+  });
+
   it("refuses to switch endpoints when SecureStore cannot clear credentials", async () => {
     await selectSpace("space-support");
     vi.mocked(SecureStore.deleteItemAsync).mockRejectedValue(new Error("device locked"));
@@ -1763,7 +3702,7 @@ describe("mobile API authentication", () => {
 
     await expect(saveApiBase(next)).resolves.toEqual({
       ok: false,
-      error: "Could not clear the previous server session",
+      error: "Could not save the previous server session",
     });
     expect(currentApiBase()).toBe(previous);
     expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();
@@ -2262,6 +4201,33 @@ describe("mobile API authentication", () => {
     } finally {
       unsubscribe();
     }
+  });
+
+  it("keeps the unsent queue of a session the server rejects", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "revoked-token"]]);
+    mockSecureStore(store);
+    await loadApiBase();
+    const clear = vi.fn();
+    configureUnsentSends({
+      request: vi.fn(),
+      serverReachable: () => true,
+      passwordChanging: () => false,
+      scope: () => null,
+      disk: { clear, save: vi.fn() } as unknown as UnsentDisk,
+      errorText: String,
+      notDelivered: vi.fn(),
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized")),
+    );
+
+    // The rejection ends the session, but the queue must survive it: the app reports
+    // those messages before a sign-in deletes them.
+    await expect(rpc("bots/list")).rejects.toThrow("Unauthorized");
+
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(clear).not.toHaveBeenCalled();
   });
 
   it("checks Space access before treating a 401 as a rejected session", async () => {
@@ -3384,7 +5350,7 @@ describe("discarded mobile thread refresh cursor", () => {
       },
     ];
     return events.reduce<MobileSnapshot>(
-      (view, event) => (event.seq > cursor ? (applyMobileThreadEvent(view, event) ?? view) : view),
+      (view, event) => (event.seq > cursor ? (reduceThreadSnapshot(view, event) ?? view) : view),
       onScreen,
     );
   }
@@ -3403,7 +5369,7 @@ describe("discarded mobile thread refresh cursor", () => {
   });
 
   it("keeps a live message applied while a refresh snapshot was in flight", () => {
-    const live = applyMobileThreadEvent(fetched, {
+    const live = reduceThreadSnapshot(fetched, {
       type: "thread.message.created",
       seq: 6,
       payload: {
@@ -3428,88 +5394,6 @@ describe("discarded mobile thread refresh cursor", () => {
 });
 
 describe("mobile thread event reduction", () => {
-  it("appends an emoji reply with its exact target", () => {
-    const initial = snapshot([mobileMessage("message-1", [{ kind: "text", text: "Done" }])]);
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.message.created",
-      seq: 4,
-      payload: {
-        messageId: "reaction-1",
-        role: "user",
-        blocks: [{ kind: "text", text: "❤️" }],
-        replyToMessageId: "message-1",
-      },
-    });
-
-    expect(next?.messages.find((message) => message.id === "reaction-1")).toMatchObject({
-      role: "user",
-      blocks: [{ kind: "text", text: "❤️" }],
-      replyToMessageId: "message-1",
-    });
-    expect(next?.cursor).toBe(4);
-  });
-
-  it("appends a quoted reply carrying its excerpt", () => {
-    const initial = snapshot([mobileMessage("message-1", [{ kind: "text", text: "Done" }])]);
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.message.created",
-      seq: 4,
-      createdAt: "2026-10-08T12:00:00.000Z",
-      payload: {
-        messageId: "reply-1",
-        role: "user",
-        blocks: [{ kind: "text", text: "why this?" }],
-        replyToMessageId: "message-1",
-        replyQuote: "Done",
-        replyPreview: { role: "user", text: "Done" },
-      },
-    });
-
-    expect(next?.messages.find((message) => message.id === "reply-1")).toMatchObject({
-      role: "user",
-      replyToMessageId: "message-1",
-      replyQuote: "Done",
-      replyPreview: { role: "user", text: "Done" },
-      createdAt: "2026-10-08T12:00:00.000Z",
-    });
-
-    const updated = applyMobileThreadEvent(next, {
-      type: "thread.message.updated",
-      seq: 5,
-      payload: { messageId: "reply-1", role: "user", blocks: [{ kind: "text", text: "Updated" }] },
-    });
-    expect(updated?.messages.find((message) => message.id === "reply-1")).toMatchObject({
-      replyToMessageId: "message-1",
-      replyQuote: "Done",
-      replyPreview: { role: "user", text: "Done" },
-      createdAt: "2026-10-08T12:00:00.000Z",
-    });
-  });
-
-  it("keeps a message in its call when an update leaves the call id out", () => {
-    const spoken: MobileMessage = {
-      ...mobileMessage("message-1", [{ kind: "text", text: "Hi" }]),
-      callId: "call-1",
-    };
-    const initial = snapshot([spoken]);
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.message.updated",
-      seq: 5,
-      payload: {
-        messageId: "message-1",
-        role: "bot",
-        blocks: [{ kind: "text", text: "Hi. Talk soon." }],
-      },
-    });
-
-    expect(next?.messages.find((message) => message.id === "message-1")).toMatchObject({
-      callId: "call-1",
-    });
-  });
-
   it("prepends ordered history pages without duplicating the boundary message", () => {
     const initial = snapshot([mobileMessage("m-2", [], 2), mobileMessage("m-3", [], 3)], 2);
 
@@ -3538,513 +5422,24 @@ describe("mobile thread event reduction", () => {
     );
     const refreshed = snapshot([mobileMessage("m-1", [], 1), mobileMessage("m-2", [], 2)], 1);
 
-    const next = mergeMobileSnapshot(initial, refreshed, true);
+    const next = mergeThreadSnapshot(initial, refreshed, true);
 
     expect(next.messages.map((item) => item.id)).toEqual(["m-0", "m-1", "m-2"]);
     expect(next.olderCursor).toBeNull();
   });
 
-  it("shows peer-started group work without hiding a waiting member", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "waiting-run", botId: "bot-1", status: "waiting_input" },
-      activeRuns: [{ id: "waiting-run", botId: "bot-1", status: "waiting_input" }],
-      members: [
-        { botId: "bot-1", name: "Writer", color: "blue", status: "waiting_input" },
-        { botId: "bot-2", name: "Researcher", color: "green", status: "idle" },
-      ],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      seq: 9,
-      runId: "peer-run",
-      botId: "bot-2",
-      payload: { trigger: "user_message" },
-    });
-
-    expect(next?.cursor).toBe(9);
-    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "running", error: null });
-    expect(next?.activeRuns).toEqual([
-      { id: "waiting-run", botId: "bot-1", status: "waiting_input" },
-      { id: "peer-run", botId: "bot-2", status: "running", error: null },
-    ]);
-    expect(next?.members?.map((member) => member.status)).toEqual(["waiting_input", "running"]);
-  });
-
-  it("keeps group member status in sync with run lifecycle events, like web", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      botId: undefined,
-      groupId: "group-1",
-      members: [
-        { botId: "bot-1", name: "Writer", color: "blue", status: "idle" },
-        { botId: "bot-2", name: "Researcher", color: "green", status: "idle" },
-      ],
-    };
-    const statuses = (state: MobileSnapshot | null) =>
-      state?.members?.map((member) => member.status);
-
-    const started = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      seq: 4,
-      botId: "bot-1",
-      runId: "run-1",
-    });
-    expect(statuses(started)).toEqual(["running", "idle"]);
-    const waiting = applyMobileThreadEvent(started, {
-      type: "run.waiting_input",
-      seq: 5,
-      botId: "bot-1",
-      runId: "run-1",
-    });
-    expect(statuses(waiting)).toEqual(["waiting_input", "idle"]);
-    const resumed = applyMobileThreadEvent(waiting, {
-      type: "run.started",
-      seq: 6,
-      botId: "bot-1",
-      runId: "run-1",
-    });
-    const takeover = applyMobileThreadEvent(resumed, {
-      type: "computer.takeover.requested",
-      seq: 7,
-      botId: "bot-1",
-      runId: "run-1",
-    });
-    expect(statuses(takeover)).toEqual(["waiting_takeover", "idle"]);
-    const released = applyMobileThreadEvent(takeover, {
-      type: "computer.takeover.released",
-      seq: 8,
-      botId: "bot-1",
-      runId: "run-1",
-    });
-    expect(statuses(released)).toEqual(["queued", "idle"]);
-    const completed = applyMobileThreadEvent(released, {
-      type: "run.completed",
-      seq: 9,
-      botId: "bot-1",
-      runId: "run-1",
-    });
-    expect(statuses(completed)).toEqual(["idle", "idle"]);
-  });
-
-  it("marks a waiting peer that the snapshot omitted", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      members: [{ botId: "bot-2", name: "Researcher", color: "green", status: "running" }],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.waiting_input",
-      seq: 9,
-      botId: "bot-2",
-      runId: "peer-run",
-    });
-
-    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "waiting_input" });
-    expect(next?.members?.[0]?.status).toBe("waiting_input");
-  });
-
-  it.each(["run.completed", "run.failed", "run.cancelled"])(
-    "settles a member on %s to its next active run, or idle",
-    (type) => {
-      const initial: MobileSnapshot = {
-        ...snapshot(),
-        groupId: "group-1",
-        run: { id: "run-1", botId: "bot-1", status: "running" },
-        activeRuns: [
-          { id: "run-1", botId: "bot-1", status: "running" },
-          { id: "run-2", botId: "bot-1", status: "waiting_input" },
-          { id: "run-3", botId: "bot-2", status: "running" },
-        ],
-        members: [
-          { botId: "bot-1", name: "Writer", color: "blue", status: "running" },
-          { botId: "bot-2", name: "Researcher", color: "green", status: "running" },
-        ],
-      };
-
-      const first = applyMobileThreadEvent(initial, {
-        type,
-        seq: 9,
-        botId: "bot-1",
-        runId: "run-1",
-      });
-      expect(first?.members?.map((member) => member.status)).toEqual(["waiting_input", "running"]);
-      const last = applyMobileThreadEvent(first, {
-        type,
-        seq: 10,
-        botId: "bot-2",
-        runId: "run-3",
-      });
-      expect(last?.members?.map((member) => member.status)).toEqual(["waiting_input", "idle"]);
-    },
-  );
-
-  it("consumes background run starts without changing visible work or members", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "waiting-run", botId: "bot-1", status: "waiting_input" },
-      activeRuns: [{ id: "waiting-run", botId: "bot-1", status: "waiting_input" }],
-      members: [{ botId: "bot-1", name: "Writer", color: "blue", status: "waiting_input" }],
-    };
-    const event = {
-      type: "run.started",
-      seq: 9,
-      runId: "ticket-run",
-      botId: "bot-1",
-      payload: { trigger: "tickets" },
-    };
-
-    const next = applyMobileThreadEvent(initial, event);
-
-    expect(next?.cursor).toBe(9);
-    expect(next?.run).toBe(initial.run);
-    expect(next?.activeRuns).toBe(initial.activeRuns);
-    expect(next?.members).toBe(initial.members);
-    expect(next?.messages).toBe(initial.messages);
-    expect(applyMobileThreadEvent(next, event)).toBe(next);
-  });
-
-  it("updates only the matching member and cursor when a start omits its run ID", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "waiting-run", botId: "bot-1", status: "waiting_takeover" },
-      activeRuns: [{ id: "waiting-run", botId: "bot-1", status: "waiting_takeover" }],
-      members: [
-        { botId: "bot-1", name: "Writer", color: "blue", status: "waiting_takeover" },
-        { botId: "bot-2", name: "Researcher", color: "green", status: "idle" },
-      ],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      seq: 9,
-      botId: "bot-2",
-    });
-
-    expect(next).toEqual({
-      ...initial,
-      cursor: 9,
-      members: [
-        initial.members![0],
-        { botId: "bot-2", name: "Researcher", color: "green", status: "running" },
-      ],
-    });
-    expect(next?.run).toBe(initial.run);
-    expect(next?.activeRuns).toBe(initial.activeRuns);
-    expect(next?.members?.[0]).toBe(initial.members?.[0]);
-    expect(applyMobileThreadEvent(next, { type: "run.started", seq: 9, botId: "bot-2" })).toBe(
-      next,
-    );
-  });
-
-  it("does not invent members for a start with an unknown bot or run ID", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      members: [{ botId: "bot-1", name: "Writer", color: "blue", status: "idle" }],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      seq: 9,
-      botId: "unknown-bot",
-    });
-
-    expect(next).toEqual({ ...initial, cursor: 9 });
-    expect(next?.members).toBe(initial.members);
-    expect(applyMobileThreadEvent(initial, { type: "run.started" })).toBe(initial);
-  });
-
-  it("does not infer a started run's bot from the snapshot", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      members: [{ botId: "bot-1", name: "Writer", color: "blue", status: "idle" }],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      runId: "unattributed-run",
-    });
-
-    expect(next?.cursor).toBe(3);
-    expect(next?.run).toEqual({ id: "unattributed-run", status: "running", error: null });
-    expect(next?.activeRuns).toEqual([{ id: "unattributed-run", status: "running", error: null }]);
-    expect(next?.members).toBe(initial.members);
-  });
-
-  it("deduplicates a restarted run and retains every other active lifecycle state", () => {
-    const retained = [
-      { id: "queued-run", status: "queued" },
-      { id: "leased-run", status: "leased" },
-      { id: "running-run", status: "running" },
-      { id: "ask-run", status: "waiting_input" },
-      { id: "takeover-run", status: "waiting_takeover" },
-    ];
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      run: retained[3]!,
-      activeRuns: [
-        ...retained,
-        { id: "resumed-run", botId: "bot-2", status: "waiting_input" },
-        { id: "resumed-run", botId: "bot-2", status: "running" },
-        { id: "completed-run", status: "completed" },
-        { id: "failed-run", status: "failed" },
-        { id: "cancelled-run", status: "cancelled" },
-      ],
-    };
-    const event = { type: "run.started", seq: 9, runId: "resumed-run", botId: "bot-2" };
-
-    const next = applyMobileThreadEvent(initial, event);
-    const replayed = applyMobileThreadEvent(next, event);
-
-    expect(next?.run).toEqual({
-      id: "resumed-run",
-      botId: "bot-2",
-      status: "running",
-      error: null,
-    });
-    expect(next?.activeRuns).toEqual([
-      ...retained,
-      { id: "resumed-run", botId: "bot-2", status: "running", error: null },
-    ]);
-    expect(replayed?.activeRuns).toEqual(next?.activeRuns);
-  });
-
-  it("retains a waiting primary run when the snapshot omits activeRuns", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      run: { id: "waiting-run", botId: "bot-1", status: "waiting_takeover" },
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      runId: "peer-run",
-      botId: "bot-2",
-    });
-
-    expect(next?.activeRuns).toEqual([
-      { id: "waiting-run", botId: "bot-1", status: "waiting_takeover" },
-      { id: "peer-run", botId: "bot-2", status: "running", error: null },
-    ]);
-    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "running", error: null });
-  });
-
-  it("retains an unrelated group failure until that failed run starts again", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "failed-run", botId: "bot-1", status: "failed", error: "Provider unavailable" },
-      activeRuns: [{ id: "waiting-run", botId: "bot-2", status: "waiting_input" }],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      seq: 9,
-      runId: "peer-run",
-      botId: "bot-3",
-    });
-
-    expect(next?.run).toBe(initial.run);
-    expect(next?.activeRuns).toEqual([
-      { id: "waiting-run", botId: "bot-2", status: "waiting_input" },
-      { id: "peer-run", botId: "bot-3", status: "running", error: null },
-    ]);
-    const restarted = applyMobileThreadEvent(next, {
-      type: "run.started",
-      seq: 10,
-      runId: "failed-run",
-      botId: "bot-1",
-    });
-    expect(restarted?.cursor).toBe(10);
-    expect(restarted?.run).toEqual({
-      id: "failed-run",
-      botId: "bot-1",
-      status: "running",
-      error: null,
-    });
-    expect(restarted?.activeRuns).toEqual([
-      { id: "waiting-run", botId: "bot-2", status: "waiting_input" },
-      { id: "peer-run", botId: "bot-3", status: "running", error: null },
-      { id: "failed-run", botId: "bot-1", status: "running", error: null },
-    ]);
-  });
-
-  it("replaces an unrelated failure when a direct thread starts work", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      run: { id: "failed-run", status: "failed", error: "Provider unavailable" },
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.started",
-      seq: 9,
-      runId: "new-run",
-      botId: "bot-1",
-    });
-
-    expect(next?.run).toEqual({ id: "new-run", botId: "bot-1", status: "running", error: null });
-    expect(next?.activeRuns).toEqual([
-      { id: "new-run", botId: "bot-1", status: "running", error: null },
-    ]);
-  });
-
-  it("accumulates progress deltas for the same run", () => {
-    const first = applyMobileThreadEvent(snapshot(), {
-      type: "thread.progress",
-      runId: "run-1",
-      payload: { delta: "Hel" },
-    });
-    const second = applyMobileThreadEvent(first, {
-      type: "thread.progress",
-      runId: "run-1",
-      payload: { delta: "lo" },
-    });
-
-    expect(second?.messages).toEqual([
-      {
-        id: "progress:run-1",
-        role: "bot",
-        runId: "run-1",
-        blocks: [{ kind: "progress", text: "Hello" }],
-      },
-    ]);
-  });
-
-  it("keeps hidden token progress so re-enabling streaming stays continuous", () => {
-    const afterTokens = applyMobileThreadEvent(snapshot(), {
-      type: "thread.progress",
-      seq: 4,
-      runId: "run-1",
-      payload: { text: "Lis", streaming: true },
-    });
-    const afterDelta = applyMobileThreadEvent(afterTokens, {
-      type: "thread.progress",
-      seq: 5,
-      runId: "run-1",
-      payload: { delta: "bon", streaming: true },
-    });
-
-    expect(afterDelta?.cursor).toBe(5);
-    expect(afterDelta?.messages).toEqual([
-      {
-        id: "progress:run-1",
-        role: "bot",
-        runId: "run-1",
-        blocks: [{ kind: "progress", text: "Lisbon" }],
-      },
-    ]);
-    expect(withLiveStreamingProgress(afterDelta, false)?.messages).toEqual([]);
-
-    const afterComplete = applyMobileThreadEvent(afterDelta, {
-      type: "thread.message.created",
-      seq: 6,
-      runId: "run-1",
-      payload: {
-        messageId: "m-final",
-        role: "bot",
-        blocks: [{ kind: "text", text: "Lisbon" }],
-      },
-    });
-    expect(afterComplete?.messages).toEqual([
-      expect.objectContaining({
-        id: "m-final",
-        blocks: [{ kind: "text", text: "Lisbon" }],
-      }),
-    ]);
-  });
-
-  it("resumes from retained tokens after streaming is turned back on mid-reply", () => {
-    const afterPrefix = applyMobileThreadEvent(snapshot(), {
-      type: "thread.progress",
-      seq: 4,
-      runId: "run-1",
-      payload: { text: "Lis", streaming: true },
-    });
-    expect(withLiveStreamingProgress(afterPrefix, false)?.messages).toEqual([]);
-
-    const afterResume = applyMobileThreadEvent(afterPrefix, {
-      type: "thread.progress",
-      seq: 5,
-      runId: "run-1",
-      payload: { delta: "bon", streaming: true },
-    });
-    expect(withLiveStreamingProgress(afterResume, true)?.messages).toEqual([
-      {
-        id: "progress:run-1",
-        role: "bot",
-        runId: "run-1",
-        blocks: [{ kind: "progress", text: "Lisbon" }],
-      },
-    ]);
-  });
-
-  it("preserves progress from a legacy run-only snapshot", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot([
-        {
-          ...mobileMessage("progress:run-legacy", [{ kind: "progress", text: "Still working" }]),
-          runId: "run-legacy",
-        },
-      ]),
-      run: { id: "run-legacy", status: "running" },
-      activeRuns: undefined,
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.progress",
-      runId: "run-new",
-      payload: { text: "New work" },
-    });
-
-    expect(next?.messages.map((item) => item.id)).toEqual([
-      "progress:run-legacy",
-      "progress:run-new",
-    ]);
-  });
-
-  it("preserves concurrent progress when active-run metadata lags", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot([
-        {
-          ...mobileMessage("progress:run-concurrent", [
-            { kind: "progress", text: "Concurrent work" },
-          ]),
-          runId: "run-concurrent",
-        },
-      ]),
-      run: { id: "run-current", status: "running" },
-      activeRuns: [{ id: "run-current", status: "running" }],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.progress",
-      runId: "run-current",
-      payload: { text: "Current work" },
-    });
-
-    expect(next?.messages.map((item) => item.id)).toEqual([
-      "progress:run-concurrent",
-      "progress:run-current",
-    ]);
-  });
-
   it("holds live tool steps until mobile narration reaches a sentence boundary", () => {
-    const narration = applyMobileThreadEvent(snapshot(), {
+    const narration = reduceThreadSnapshot(snapshot(), {
       type: "thread.progress",
       runId: "run-1",
       payload: { text: "Let me check " },
     });
-    const pending = applyMobileThreadEvent(narration, {
+    const pending = reduceThreadSnapshot(narration, {
       type: "agent.tool.called",
       runId: "run-1",
       payload: { name: "SLACK_FIND_CHANNELS" },
     });
-    const completed = applyMobileThreadEvent(pending, {
+    const completed = reduceThreadSnapshot(pending, {
       type: "thread.progress",
       runId: "run-1",
       payload: { delta: "now." },
@@ -4098,286 +5493,6 @@ describe("mobile thread event reduction", () => {
     ).toBe("Alex (Slack): Hello from the group");
   });
 
-  it("deduplicates durable messages and replaces matching transient subagent state", () => {
-    const initial = snapshot([
-      mobileMessage("message-1", [{ kind: "text", text: "old" }]),
-      mobileMessage("subagent:research", [
-        {
-          kind: "subagent",
-          agentId: "research",
-          name: "Research",
-          task: "Search",
-          status: "running",
-        },
-      ]),
-      mobileMessage("subagent:other", [
-        { kind: "subagent", agentId: "other", name: "Other", task: "Wait", status: "running" },
-      ]),
-      {
-        ...mobileMessage("progress:run-1", [{ kind: "progress", text: "draft" }]),
-        runId: "run-1",
-      },
-    ]);
-    const completed = {
-      kind: "subagent" as const,
-      agentId: "research",
-      name: "Research",
-      task: "Search",
-      status: "completed" as const,
-      result: "Done",
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      id: "event-1",
-      type: "thread.message.created",
-      seq: 9,
-      runId: "run-1",
-      payload: { messageId: "message-1", role: "bot", blocks: [completed] },
-    });
-
-    expect(next?.messages.map((item) => item.id)).toEqual(["message-1", "subagent:other"]);
-    expect(next?.messages[0]?.blocks).toEqual([completed]);
-  });
-
-  it("keeps a replayed bot-to-bot marker in its durable transcript position", () => {
-    const peerBlock = {
-      kind: "bot_message_received" as const,
-      fromBotId: "bot-peer",
-      fromBotName: "Peer",
-      text: "Please check this.",
-    };
-    const initial = snapshot([
-      mobileMessage("peer-message", [peerBlock], 1),
-      mobileMessage("newer-message", [{ kind: "text", text: "Working on it." }], 2),
-    ]);
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.message.created",
-      seq: 9,
-      payload: { messageId: "peer-message", role: "user", blocks: [peerBlock] },
-    });
-
-    expect(next?.messages.map((message) => message.id)).toEqual(["peer-message", "newer-message"]);
-  });
-
-  it("clears loaded history and active state when another client clears the thread", () => {
-    const initial = snapshot([mobileMessage("message-1", [{ kind: "text", text: "old" }])], 1);
-    initial.run = { id: "run-1", status: "running" };
-
-    const next = applyMobileThreadEvent(initial, { type: "thread.cleared", seq: 12 });
-
-    expect(next).toMatchObject({ cursor: 12, messages: [], olderCursor: null, run: null });
-  });
-
-  it("applies the durable waiting-input run transition", () => {
-    const initial: MobileSnapshot = { ...snapshot(), run: { id: "run-1", status: "running" } };
-    const waiting = applyMobileThreadEvent(initial, {
-      type: "run.waiting_input",
-      runId: "run-1",
-      seq: 8,
-    });
-
-    expect(waiting?.run?.status).toBe("waiting_input");
-    expect(waiting?.cursor).toBe(8);
-    const repeated = applyMobileThreadEvent(waiting, {
-      type: "run.waiting_input",
-      runId: "run-1",
-      seq: 9,
-    });
-    expect(repeated?.cursor).toBe(9);
-    expect(repeated?.run).toBe(waiting?.run);
-  });
-
-  it("applies the waiting-input owner only to its run", () => {
-    const type = "run.waiting_input";
-    const status = "waiting_input";
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      run: { id: "run-1", status: "running", userId: "old-owner" },
-      activeRuns: [
-        { id: "run-1", status: "running", userId: "old-owner" },
-        { id: "run-2", status: "running", userId: "other-owner" },
-      ],
-    };
-    const waiting = applyMobileThreadEvent(initial, {
-      type,
-      runId: "run-1",
-      payload: { userId: "owner-1" },
-    });
-
-    expect(waiting?.run).toEqual({ id: "run-1", status, userId: "owner-1" });
-    expect(waiting?.activeRuns).toEqual([
-      { id: "run-1", status, userId: "owner-1" },
-      { id: "run-2", status: "running", userId: "other-owner" },
-    ]);
-
-    const corrected = applyMobileThreadEvent(waiting, {
-      type,
-      runId: "run-1",
-      payload: { userId: "owner-2" },
-    });
-    expect(corrected?.run?.userId).toBe("owner-2");
-    expect(corrected?.activeRuns?.[0]?.userId).toBe("owner-2");
-
-    const repeated = applyMobileThreadEvent(corrected, {
-      type,
-      runId: "run-1",
-      payload: { userId: "owner-2" },
-    });
-    expect(repeated).toBe(corrected);
-
-    const legacy = applyMobileThreadEvent(corrected, { type, runId: "run-1" });
-    expect(legacy?.run?.userId).toBe("owner-2");
-    expect(legacy?.activeRuns?.[0]?.userId).toBe("owner-2");
-  });
-
-  it("records the owner of an inserted waiting group run without changing another run", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "run-1", status: "waiting_input", userId: "owner-1" },
-      activeRuns: [{ id: "run-1", status: "waiting_input", userId: "owner-1" }],
-    };
-    const waiting = applyMobileThreadEvent(initial, {
-      type: "run.waiting_input",
-      runId: "run-2",
-      botId: "bot-2",
-      payload: { userId: "owner-2" },
-    });
-
-    expect(waiting?.run).toEqual(initial.run);
-    expect(waiting?.activeRuns).toEqual([
-      initial.run,
-      { id: "run-2", botId: "bot-2", status: "waiting_input", userId: "owner-2" },
-    ]);
-    const withoutRunId = applyMobileThreadEvent(waiting, {
-      type: "run.waiting_input",
-      payload: { userId: "unknown-owner" },
-    });
-    expect(withoutRunId?.run).toEqual(waiting?.run);
-    expect(withoutRunId?.activeRuns).toEqual(waiting?.activeRuns);
-  });
-
-  it("hydrates a late owner on an already-waiting group run", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "run-newer", status: "running", userId: "other-owner" },
-      activeRuns: [
-        { id: "run-newer", status: "running", userId: "other-owner" },
-        { id: "run-waiting", status: "waiting_input" },
-      ],
-    };
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.waiting_input",
-      runId: "run-waiting",
-      payload: { userId: "owner" },
-    });
-    expect(next?.run).toBe(initial.run);
-    expect(next?.activeRuns).toEqual([
-      initial.run,
-      { id: "run-waiting", status: "waiting_input", userId: "owner" },
-    ]);
-  });
-
-  it("does not infer an owner from a legacy waiting event or takeover payload", () => {
-    const legacy = applyMobileThreadEvent(snapshot(), {
-      type: "run.waiting_input",
-      runId: "run-1",
-    });
-    expect(legacy?.run).toEqual({ id: "run-1", status: "waiting_input" });
-    const takeover = applyMobileThreadEvent(snapshot(), {
-      type: "computer.takeover.requested",
-      runId: "run-2",
-      payload: { userId: "owner" },
-    });
-    expect(takeover?.run).toEqual({ id: "run-2", status: "waiting_takeover" });
-  });
-
-  it.each([undefined, "group-1"])(
-    "allows only the owner to dismiss a live secret ask in %s",
-    (groupId) => {
-      const ask = {
-        ...mobileMessage("ask-1", [
-          { kind: "ask", text: "Secret", input: "secret", status: "pending" },
-        ]),
-        runId: "run-1",
-      };
-      const initial: MobileSnapshot = {
-        ...snapshot([ask]),
-        groupId,
-        run: { id: "run-1", status: "running" },
-        activeRuns: [{ id: "run-1", status: "running" }],
-      };
-      const waiting = applyMobileThreadEvent(initial, {
-        type: "run.waiting_input",
-        runId: "run-1",
-        payload: { userId: "owner" },
-      });
-
-      expect(dismissableAskMessageIds(waiting, "owner")).toEqual(new Set(["ask-1"]));
-      expect(dismissableAskMessageIds(waiting, "other")).toEqual(new Set());
-      expect(
-        dismissableAskMessageIds(
-          applyMobileThreadEvent(initial, { type: "run.waiting_input", runId: "run-1" }),
-          "owner",
-        ),
-      ).toEqual(new Set());
-    },
-  );
-
-  it("applies computer takeover requests as waiting_takeover", () => {
-    const progress = mobileMessage("progress:run-1", [{ kind: "progress", text: "working…" }], 1);
-    const initial: MobileSnapshot = {
-      ...snapshot([progress]),
-      run: { id: "run-1", status: "running" },
-      activeRuns: [{ id: "run-1", status: "running" }],
-    };
-    const waiting = applyMobileThreadEvent(initial, {
-      type: "computer.takeover.requested",
-      runId: "run-1",
-      seq: 10,
-    });
-
-    expect(waiting?.run?.status).toBe("waiting_takeover");
-    expect(waiting?.activeRuns?.[0]?.status).toBe("waiting_takeover");
-    expect(waiting?.messages.some((message) => message.id.startsWith("progress:"))).toBe(false);
-    expect(waiting?.cursor).toBe(10);
-
-    const released = applyMobileThreadEvent(
-      {
-        ...initial,
-        run: { id: "run-1", status: "waiting_takeover" },
-        activeRuns: [
-          { id: "run-1", status: "waiting_takeover" },
-          { id: "run-2", status: "waiting_takeover" },
-        ],
-      },
-      {
-        type: "computer.takeover.released",
-        runId: "run-1",
-        seq: 11,
-      },
-    );
-    expect(released?.run?.status).toBe("queued");
-    expect(released?.activeRuns).toEqual([
-      { id: "run-1", status: "queued" },
-      { id: "run-2", status: "waiting_takeover" },
-    ]);
-    expect(released?.cursor).toBe(11);
-
-    const running = applyMobileThreadEvent(
-      {
-        ...snapshot(),
-        run: { id: "run-1", status: "running" },
-        activeRuns: [{ id: "run-1", status: "running" }],
-      },
-      { type: "computer.takeover.released", runId: "run-1", seq: 12 },
-    );
-    expect(running?.run?.status).toBe("running");
-    expect(running?.activeRuns?.[0]?.status).toBe("running");
-  });
-
   it("lets a newer refresh replace waiting_takeover with queued", () => {
     const waiting: MobileSnapshot = {
       ...snapshot(),
@@ -4392,206 +5507,17 @@ describe("mobile thread event reduction", () => {
       activeRuns: [{ id: "run-1", status: "queued" }],
     };
 
-    const next = mergeMobileSnapshot(waiting, refreshed);
+    const next = mergeThreadSnapshot(waiting, refreshed);
 
     expect(next.cursor).toBe(12);
     expect(next.run?.status).toBe("queued");
     expect(next.activeRuns?.[0]?.status).toBe("queued");
   });
 
-  it("inserts a peer takeover run that was absent from the open snapshot", () => {
-    const progress = mobileMessage(
-      "progress:run-peer",
-      [{ kind: "progress", text: "working…" }],
-      1,
-    );
-    const initial: MobileSnapshot = {
-      ...snapshot([progress]),
-      run: { id: "run-user", status: "running" },
-      activeRuns: [{ id: "run-user", status: "running" }],
-      computer: {
-        state: "running",
-        controlHolder: "bot",
-        screenAvailable: true,
-        mode: "team",
-        busyBotName: "Peer",
-      },
-    };
-
-    const waiting = applyMobileThreadEvent(initial, {
-      type: "computer.takeover.requested",
-      runId: "run-peer",
-      botId: "bot-peer",
-      seq: 12,
-    });
-
-    expect(waiting?.run).toEqual({ id: "run-peer", botId: "bot-peer", status: "waiting_takeover" });
-    expect(waiting?.activeRuns).toEqual([
-      { id: "run-user", status: "running" },
-      { id: "run-peer", botId: "bot-peer", status: "waiting_takeover" },
-    ]);
-    expect(waiting?.messages.some((message) => message.id.startsWith("progress:"))).toBe(false);
-    expect(waiting?.computer?.busyBotName).toBeNull();
-  });
-
-  it("advances the cursor for durable message events", () => {
-    const next = applyMobileThreadEvent(snapshot(), {
-      type: "thread.message.created",
-      seq: 11,
-      payload: { messageId: "message-1", role: "bot", blocks: [{ kind: "text", text: "Done" }] },
-    });
-
-    expect(next?.cursor).toBe(11);
-  });
-
-  it("preserves ask actions and runId on created messages", () => {
-    const initial = snapshot();
-    const askBlock = {
-      kind: "ask",
-      text: "Review before writing",
-      detail: "title: Result",
-      status: "pending",
-      actions: [
-        { id: "allow", label: "Allow once" },
-        { id: "always", label: "Always allow" },
-        { id: "deny", label: "Deny" },
-      ],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.message.created",
-      runId: "run-1",
-      payload: { messageId: "message-ask", role: "bot", blocks: [askBlock] },
-    });
-
-    expect(next?.messages.at(-1)).toMatchObject({
-      id: "message-ask",
-      runId: "run-1",
-      blocks: [askBlock],
-    });
-  });
-
-  it("updates a waiting group run without replacing the newer active run", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      run: { id: "run-newer", status: "running" },
-      activeRuns: [
-        { id: "run-newer", status: "running" },
-        { id: "run-waiting", status: "running" },
-      ],
-    };
-
-    const waiting = applyMobileThreadEvent(initial, {
-      type: "run.waiting_input",
-      runId: "run-waiting",
-    });
-
-    expect(waiting?.run).toEqual({ id: "run-newer", status: "running" });
-    expect(waiting?.activeRuns).toEqual([
-      { id: "run-newer", status: "running" },
-      { id: "run-waiting", status: "waiting_input" },
-    ]);
-  });
-
-  it("clears only the terminal run's live progress", () => {
-    const runA = { id: "run-a", status: "running" };
-    const runB = { id: "run-b", status: "running" };
-    const initial: MobileSnapshot = {
-      ...snapshot([
-        {
-          ...mobileMessage("progress:run-a", [{ kind: "progress", text: "A" }]),
-          runId: runA.id,
-        },
-        {
-          ...mobileMessage("progress:run-b", [{ kind: "progress", text: "B" }]),
-          runId: runB.id,
-        },
-      ]),
-      run: runA,
-      activeRuns: [runA, runB],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.cancelled",
-      seq: 10,
-      runId: runA.id,
-    });
-
-    expect(next?.messages.map((item) => item.id)).toEqual(["progress:run-b"]);
-    expect(next?.run).toEqual(runB);
-    expect(next?.activeRuns).toEqual([runB]);
-    expect(next?.cursor).toBe(10);
-  });
-
-  it("keeps a failed member run's error while another member run is still active", () => {
-    const runA = { id: "run-a", status: "running" };
-    const runB = { id: "run-b", status: "running" };
-    const initial: MobileSnapshot = {
-      ...snapshot([
-        {
-          ...mobileMessage("progress:run-b", [{ kind: "progress", text: "B" }]),
-          runId: runB.id,
-        },
-      ]),
-      run: runA,
-      activeRuns: [runA, runB],
-    };
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "run.failed",
-      seq: 11,
-      runId: runB.id,
-      payload: { error: "member exploded" },
-    });
-
-    expect(next?.activeRuns).toEqual([runA]);
-    expect(next?.run).toEqual({ id: runB.id, status: "failed", error: "member exploded" });
-    expect(next?.messages).toEqual([]);
-  });
-
-  it("updates a cloud agent card from thread.cloud_agent", () => {
-    const initial = snapshot([
-      mobileMessage("msg-ca", [
-        {
-          kind: "cloud_agent",
-          agentId: "ca-1",
-          title: "Add README",
-          status: "running",
-          url: "https://example.test/agents/ca-1",
-        },
-      ]),
-    ]);
-
-    const next = applyMobileThreadEvent(initial, {
-      type: "thread.cloud_agent",
-      seq: 9,
-      payload: {
-        messageId: "msg-ca",
-        agentId: "ca-1",
-        title: "Add README",
-        status: "finished",
-        url: "https://example.test/agents/ca-1",
-        branch: "cursor/add-readme",
-        prUrl: "https://github.com/example/repo/pull/1",
-      },
-    });
-
-    expect(next?.cursor).toBe(9);
-    expect(next?.messages[0]?.blocks[0]).toEqual({
-      kind: "cloud_agent",
-      agentId: "ca-1",
-      title: "Add README",
-      status: "finished",
-      url: "https://example.test/agents/ca-1",
-      branch: "cursor/add-readme",
-      prUrl: "https://github.com/example/repo/pull/1",
-    });
-  });
-
   it("starts an idle run from live events and selects the active safety cadence", () => {
     const initial: MobileSnapshot = { ...snapshot(), run: null, activeRuns: [] };
     expect(threadRefreshDelayMs(initial.run?.status, { liveSubscribed: true })).toBe(60_000);
-    const started = applyMobileThreadEvent(initial, {
+    const started = reduceThreadSnapshot(initial, {
       type: "run.started",
       runId: "run-remote",
       botId: "bot-1",
@@ -4599,65 +5525,22 @@ describe("mobile thread event reduction", () => {
       payload: { trigger: "routine" },
     });
     expect(started?.cursor).toBe(12);
-    expect(started?.run).toEqual({
+    expect(started?.run).toMatchObject({
       id: "run-remote",
       botId: "bot-1",
       status: "running",
+      trigger: "routine",
       error: null,
     });
     expect(started?.activeRuns).toEqual([started?.run]);
     expect(threadRefreshDelayMs(started?.run?.status, { liveSubscribed: true })).toBe(30_000);
-    const finished = applyMobileThreadEvent(started, {
+    const finished = reduceThreadSnapshot(started, {
       type: "run.completed",
       runId: "run-remote",
       seq: 13,
     });
     expect(finished?.run).toBeNull();
     expect(finished?.activeRuns).toEqual([]);
-  });
-
-  it("resumes a waiting run without duplicating it or dropping other paused runs", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      run: { id: "run-1", status: "waiting_input" },
-      activeRuns: [
-        { id: "run-1", status: "waiting_input" },
-        { id: "run-2", status: "waiting_takeover" },
-        { id: "run-old", status: "completed" },
-      ],
-    };
-    const next = applyMobileThreadEvent(initial, { type: "run.started", runId: "run-1" });
-    expect(next?.run?.status).toBe("running");
-    expect(next?.activeRuns).toEqual([
-      { id: "run-2", status: "waiting_takeover" },
-      { id: "run-1", status: "running", error: null },
-    ]);
-  });
-
-  it("ignores background run starts and preserves group failures on member starts", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      groupId: "group-1",
-      run: { id: "run-failed", status: "failed", error: "Failed" },
-      activeRuns: [],
-    };
-    expect(
-      applyMobileThreadEvent(initial, {
-        type: "run.started",
-        runId: "run-background",
-        payload: { trigger: "tickets" },
-      }),
-    ).toBe(initial);
-    const next = applyMobileThreadEvent(initial, { type: "run.started", runId: "run-new" });
-    expect(next?.run).toBe(initial.run);
-    expect(next?.activeRuns).toEqual([{ id: "run-new", status: "running", error: null }]);
-  });
-
-  it("leaves the snapshot unchanged for unrelated events", () => {
-    const initial = snapshot();
-    expect(applyMobileThreadEvent(initial, { type: "thread.unrecognized" })).toBe(initial);
-    expect(applyMobileThreadEvent(initial, { type: "run.checkpointed" })).toBe(initial);
-    expect(applyMobileThreadEvent(null, { type: "thread.progress" })).toBeNull();
   });
 });
 
@@ -4669,6 +5552,20 @@ function mockSecureStore(store: Map<string, string>) {
   vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
     store.set(key, value);
   });
+}
+
+function pendingSignOutRecords(store: Map<string, string>): { apiBase: string; token: string }[] {
+  const raw = store.get("rakazo.pending_sign_out");
+  if (!raw) return [];
+  const parsed: unknown = JSON.parse(raw);
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((entry): entry is { apiBase: string; token: string } => {
+      if (!entry || typeof entry !== "object") return false;
+      const record = entry as { apiBase?: unknown; token?: unknown };
+      return typeof record.apiBase === "string" && typeof record.token === "string";
+    })
+    .map((record) => ({ apiBase: record.apiBase, token: record.token }));
 }
 
 function deferredFetch() {
@@ -4738,42 +5635,6 @@ function mobileMessage(id: string, blocks: MobileMessage["blocks"], seq?: number
   return { id, threadId: "thread-1", seq, role: "bot", blocks };
 }
 
-describe("mobile clipboard text", () => {
-  it("copies message content with transport labels and omits card chrome", async () => {
-    const { copyableMobileMessageText } = await import("./api");
-    expect(
-      copyableMobileMessageText({
-        id: "message",
-        role: "bot",
-        blocks: [
-          { kind: "text", text: "Hello" },
-          {
-            kind: "channel_message",
-            provider: "sendblue",
-            transport: "SMS",
-            channelId: "ch-1",
-            fromAddress: "+15551234567",
-            fromLabel: "Sender",
-            text: "Reply",
-          },
-          { kind: "card", lines: [] },
-        ],
-      }),
-    ).toBe("Hello\nSender (SMS): Reply");
-  });
-
-  it("keeps leading whitespace for selection while copying trims it", async () => {
-    const { copyableMobileMessageText, selectableMobileMessageText } = await import("./api");
-    const message: MobileMessage = {
-      id: "message",
-      role: "user",
-      blocks: [{ kind: "text", text: "    indented\nnext  " }],
-    };
-    expect(selectableMobileMessageText(message)).toBe("    indented\nnext  ");
-    expect(copyableMobileMessageText(message)).toBe("indented\nnext");
-  });
-});
-
 it("sends the deletion-code request with a JSON body", async () => {
   const fetchMock = vi.fn(async () => jsonResponse({ status: true }));
   vi.stubGlobal("fetch", fetchMock);
@@ -4792,58 +5653,4 @@ it("localizes non-JSON successful account-security responses", async () => {
     vi.fn(async () => new Response("<html>Gateway error</html>")),
   );
   await expect(fetchAccountSecurity()).rejects.toThrow("Could not load sign-in options");
-});
-
-it("keeps the thread id on live messages so inline cards can act on them", () => {
-  const view = applyMobileThreadEvent(
-    { threadId: "chat", messages: [], olderCursor: null, run: null } as MobileSnapshot,
-    {
-      type: "thread.message.created",
-      seq: 1,
-      payload: { messageId: "card", role: "bot", blocks: [] },
-    } as never,
-  );
-  expect(view?.messages[0]?.threadId).toBe("chat");
-});
-
-describe("stale helper projection", () => {
-  it.each([
-    "run.waiting_input",
-    "computer.takeover.requested",
-    "run.completed",
-    "run.failed",
-    "run.cancelled",
-  ])("settles helpers on %s without reviving them on resume", (type) => {
-    const base = {
-      id: "fixture",
-      threadId: "thread-1",
-      runId: "run-1",
-      seq: 1,
-      createdAt: "2026-01-01T00:00:00.000Z",
-    };
-    const helper = { agentId: "helper", name: "Helper", task: "Check", status: "running" };
-    let next = applyMobileThreadEvent(snapshot(), {
-      ...base,
-      type: "thread.subagent",
-      payload: helper,
-    });
-    next = applyMobileThreadEvent(next, { ...base, seq: 2, type, payload: {} });
-    expect(next?.messages.find((m) => m.id === "subagent:helper")?.blocks[0]).toMatchObject({
-      status: "failed",
-      result: "stopped",
-    });
-    next = applyMobileThreadEvent(next, { ...base, seq: 3, type: "run.started", payload: {} });
-    next = applyMobileThreadEvent(next, {
-      ...base,
-      seq: 4,
-      type: "thread.subagent",
-      payload: { ...helper, agentId: "resumed" },
-    });
-    expect(next?.messages.find((m) => m.id === "subagent:helper")?.blocks[0]).toMatchObject({
-      status: "failed",
-    });
-    expect(next?.messages.find((m) => m.id === "subagent:resumed")?.blocks[0]).toMatchObject({
-      status: "running",
-    });
-  });
 });

@@ -2,18 +2,18 @@ import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapt
 import type { ComputerMode } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
+import { PLOT_TOOL_GUIDE, searchChartCatalog } from "@rakazo/core/plot-catalog";
 import { getLogger } from "@rakazo/logging";
 import { JSDOM } from "jsdom";
 import { displayBotWorkspacePath, resolveBotWorkspacePath } from "./computer-support.js";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import type { PlotSpec } from "./plot-tool.js";
 import {
   assertPlotDataWithinLimits,
-  PLOT_TOOL_GUIDE,
   parsePlotData,
   plotSvgToPng,
   renderPlotSpecToSvg,
-  searchChartCatalog,
 } from "./plot-tool.js";
 import { publishMessage } from "./run-messages.js";
 import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
@@ -28,6 +28,129 @@ export type RunWorkspace = {
 };
 
 const MAX_MODEL_FILE_BYTES = 250_000;
+
+/** An optional argument the model must send as a positive integer; anything else is ignored. */
+export function positiveIntegerArg(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : undefined;
+}
+
+type ReadFileRangeResult = {
+  path: string;
+  content: string;
+  totalLines: number;
+  startLine: number;
+  endLine: number;
+  nextOffset?: number;
+  note?: string;
+};
+
+/**
+ * Picks the line range a read_file call returns. The serialized result always stays within
+ * TOOL_RESULT_TEXT_LIMIT, so the model reads a large file chunk by chunk through nextOffset
+ * and never meets the generic tool-result truncation.
+ */
+function readFileRangeResult(
+  filePath: string,
+  text: string,
+  args: Record<string, unknown>,
+): ReadFileRangeResult | { error: string; path: string; totalLines: number } {
+  const lines = text.split("\n");
+  const totalLines = lines.length;
+  const offset = positiveIntegerArg(args.offset) ?? 1;
+  const limit = positiveIntegerArg(args.limit);
+  if (offset > totalLines) {
+    return {
+      error: `offset ${offset} is past the end of the file, which has ${totalLines} lines`,
+      path: filePath,
+      totalLines,
+    };
+  }
+  const first = offset - 1;
+  const wanted = Math.min(limit ?? totalLines - first, totalLines - first);
+  const rangeResult = (count: number): ReadFileRangeResult => {
+    const endLine = offset + count - 1;
+    return {
+      path: filePath,
+      content: lines.slice(first, first + count).join("\n"),
+      totalLines,
+      startLine: offset,
+      endLine,
+      ...(endLine < totalLines
+        ? {
+            nextOffset: endLine + 1,
+            note: `the file continues; call read_file again with offset: ${endLine + 1}`,
+          }
+        : {}),
+    };
+  };
+  // The full range with no continuation note can be shorter than one line less, so check it
+  // apart; below `wanted` the note is always present and the length grows with every line.
+  if (JSON.stringify(rangeResult(wanted)).length <= TOOL_RESULT_TEXT_LIMIT) {
+    return rangeResult(wanted);
+  }
+  let lo = 0;
+  let hi = wanted - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (JSON.stringify(rangeResult(mid)).length <= TOOL_RESULT_TEXT_LIMIT) lo = mid;
+    else hi = mid - 1;
+  }
+  if (lo > 0) return rangeResult(lo);
+  // Not even one whole line fits: cut the first requested line and say so.
+  const cutBase = {
+    path: filePath,
+    totalLines,
+    startLine: offset,
+    endLine: offset,
+    ...(offset < totalLines ? { nextOffset: offset + 1 } : {}),
+    note:
+      `line ${offset} is longer than the result limit and is cut` +
+      (offset < totalLines ? `; continue with offset: ${offset + 1}` : ""),
+  };
+  const budget = TOOL_RESULT_TEXT_LIMIT - JSON.stringify({ ...cutBase, content: "" }).length;
+  return { ...cutBase, content: jsonEscapedPrefix(lines[first] ?? "", budget) };
+}
+
+/** The longest prefix of `text` whose JSON string form fits in `budget` characters. */
+function jsonEscapedPrefix(text: string, budget: number): string {
+  let used = 0;
+  let index = 0;
+  while (index < text.length) {
+    const code = text.charCodeAt(index);
+    // A valid surrogate pair passes through unescaped; a lone one becomes \uXXXX.
+    let cost: number;
+    let width = 1;
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        cost = 2;
+        width = 2;
+      } else {
+        cost = 6;
+      }
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      cost = 6;
+    } else if (
+      code === 0x22 ||
+      code === 0x5c ||
+      code === 0x08 ||
+      code === 0x09 ||
+      code === 0x0a ||
+      code === 0x0c ||
+      code === 0x0d
+    ) {
+      cost = 2;
+    } else if (code < 0x20) {
+      cost = 6;
+    } else {
+      cost = 1;
+    }
+    if (used + cost > budget) break;
+    used += cost;
+    index += width;
+  }
+  return text.slice(0, index);
+}
 
 export async function listFilesFromTool(
   sandbox: SandboxProvider,
@@ -83,17 +206,18 @@ export async function readFileFromTool(
       size: bytes.byteLength,
     };
   }
+  let decoded: string;
   try {
-    return {
-      path: filePath,
-      content: redactSecrets(new TextDecoder("utf-8", { fatal: true }).decode(bytes), runSecrets),
-    };
+    decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     return {
       error: "file is not UTF-8 text; use open_path to inspect it",
       path: filePath,
     };
   }
+  // Redact the whole decoded text before any line is selected, so a secret is never
+  // split across a chunk boundary by the range cut.
+  return readFileRangeResult(filePath, redactSecrets(decoded, runSecrets), args);
 }
 
 /** render_plot: returns the chart guide or catalog, or renders a chart into the workspace and chat. */

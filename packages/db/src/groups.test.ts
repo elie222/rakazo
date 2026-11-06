@@ -48,14 +48,8 @@ describe("listSpaceGroupsForSpaces", () => {
         },
       ]),
     } as unknown as PrismaClient);
-    const actor = {
-      spaceId: "workspace-1",
-      userId: "user-1",
-      email: "user@example.test",
-      isDeploymentOwner: false,
-    };
 
-    await expect(repos.listSpaceGroupsForSpaces(actor, ["workspace-2"])).resolves.toEqual([
+    await expect(repos.listSpaceGroupsForSpaces(["workspace-2"])).resolves.toEqual([
       {
         id: "group-1",
         spaceId: "workspace-2",
@@ -299,7 +293,6 @@ describe("archiveGroup", () => {
         where: {
           id: "group-1",
           spaceId: actor.spaceId,
-          userId: actor.userId,
         },
         select: { archivedAt: true, thread: { select: { id: true } } },
       }),
@@ -575,7 +568,6 @@ describe("listGroups archived", () => {
     };
     expect(query.where).toEqual({
       spaceId: "space-1",
-      userId: "user-1",
       OR: [
         { archivedAt: { not: null } },
         { members: { some: { bot: { archivedAt: { not: null } } } } },
@@ -593,7 +585,6 @@ describe("listGroups archived", () => {
     expect(listed.map((item) => item.id)).toEqual(["openable"]);
     expect(findMany.mock.calls[0]![0].where).toEqual({
       spaceId: "space-1",
-      userId: "user-1",
       archivedAt: null,
     });
   });

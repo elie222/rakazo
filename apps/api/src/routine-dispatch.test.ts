@@ -19,6 +19,7 @@ describe("routine dispatch DTO", () => {
       webhookEnabled: false,
       githubEnabled: false,
       messageProvider: null,
+      emailSenders: null,
       modelProvider: null,
       modelId: null,
       thinkingLevel: null,

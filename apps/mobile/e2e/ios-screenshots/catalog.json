@@ -65,6 +65,7 @@
       "voice",
       "ai-data-sharing",
       "routine",
+      "routine-runs",
       "bot-settings",
       "group-settings",
       "computer",
@@ -82,7 +83,7 @@
     "id": "bots",
     "title": "Bots",
     "flow": "flows/bots.yaml",
-    "screens": ["bot-profile", "routines", "bot-model", "peer-chat"]
+    "screens": ["bot-profile", "routines", "bot-model", "peer-chat", "routine"]
   },
   {
     "id": "files",
@@ -94,13 +95,27 @@
     "id": "skills",
     "title": "Skills",
     "flow": "flows/skills.yaml",
-    "screens": ["skills", "skill", "plugin"]
+    "screens": ["skills", "skill", "plugin", "bot-templates", "bot-template"]
+  },
+  {
+    "id": "memory",
+    "title": "Memory",
+    "flow": "flows/memory.yaml",
+    "screens": ["memory", "memory-note"]
   },
   {
     "id": "workspace",
     "title": "Workspace",
     "flow": "flows/workspace.yaml",
-    "screens": ["board", "approvals", "vault", "archived-bots", "space"]
+    "screens": [
+      "board",
+      "approvals",
+      "approval-rule-add",
+      "vault",
+      "archived-bots",
+      "space",
+      "space-members"
+    ]
   },
   {
     "id": "messaging",
@@ -112,7 +127,7 @@
     "id": "billing",
     "title": "Billing",
     "flow": "flows/billing.yaml",
-    "screens": ["billing", "wallet"]
+    "screens": ["billing", "wallet", "spending-limit"]
   },
   {
     "id": "new-account",

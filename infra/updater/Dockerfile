@@ -10,7 +10,9 @@ COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-compose \
   /usr/local/libexec/docker/cli-plugins/docker-compose
 COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-buildx \
   /usr/local/libexec/docker/cli-plugins/docker-buildx
-RUN apt-get update \
+COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
+RUN /tmp/apt-security.sh \
+  && apt-get update \
   && apt-get install -y --no-install-recommends git ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
@@ -22,6 +24,7 @@ COPY packages/ui-tokens packages/ui-tokens
 COPY packages/logging packages/logging
 COPY infra/updater infra/updater
 RUN corepack enable && pnpm install --frozen-lockfile --prod --filter "@rakazo/updater..."
+RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 WORKDIR /app/infra/updater
 ARG GIT_SHA
 ENV GIT_SHA=$GIT_SHA

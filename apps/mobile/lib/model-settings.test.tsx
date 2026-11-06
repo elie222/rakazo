@@ -96,7 +96,12 @@ vi.mock("./api", () => ({
     if (procedure === "models/forRole") return [];
     if (procedure === "models/list")
       return [
-        { provider: "openai-compatible", id: "model-fixture", label: "Fixture" },
+        {
+          provider: "openai-compatible",
+          id: "model-fixture",
+          label: "Fixture",
+          endpointPresets: [{ name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" }],
+        },
         { provider: "anthropic", providerName: "Anthropic", id: "claude-fixture", label: "Claude" },
         // Deployment-funded models still leave room for a personal key.
         {
@@ -392,7 +397,7 @@ it("does not offer Ollama Cloud again once it is the saved connection", async ()
 it("opens the Ollama preset through the compatible form with a visible key field", async () => {
   await remount(() => renderConnection({ baseUrl: "https://ollama.com/v1", credentialId: null }));
   expect(field("OpenAI-compatible server URL")?.value).toBe("https://ollama.com/v1");
-  expect(field("API key")?.placeholder).toBe("Ollama API key");
+  expect(field("API key")?.placeholder).toBe("");
   expect(field("API key")?.type).toBe("password");
   expect(
     [...container.querySelectorAll("button")].filter((button) =>

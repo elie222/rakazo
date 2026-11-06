@@ -85,8 +85,8 @@ export async function notifyRun(
   // The icon shows what the inbox shows: unread chats across the user's Spaces. Without a
   // count the push leaves the badge as it is.
   const badge = await countUnreadInboxChats(deps.prisma, {
-    userId: run.userId,
     spaceId: run.spaceId,
+    userId: run.userId,
   }).catch((error) => {
     getLogger().error("unread chat count", error);
     return undefined;

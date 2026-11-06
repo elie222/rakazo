@@ -19,6 +19,7 @@
     "@rakazo/db": "workspace:*",
     "@rakazo/page-kit": "workspace:*",
     "@testcontainers/postgresql": "12.2.1",
+    "fflate": "0.8.3",
     "pngjs": "7.0.0",
     "zod": "4.6.7"
   },

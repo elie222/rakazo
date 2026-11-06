@@ -4,15 +4,15 @@ import type { StuckWorkStatus } from "@rakazo/core";
 import { ACTIVE_RUN_STATUSES, stuckWorkExpiredNonce, stuckWorkStatusMessage } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
+import { notifyRealtime } from "./event-stream.js";
 import {
   appendEventInTransaction,
-  createPendingSteeringRun,
-  discardAnsweredSteering,
-  notifyRealtime,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   transientRunEventsWhere,
 } from "./events.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { clearEndedRunState } from "./run-secrets.js";
+import { createPendingSteeringRun, discardAnsweredSteering } from "./thread-steering.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 export interface ExpireStuckRunInput {
@@ -171,14 +171,16 @@ export async function endTakeoverWaits(
   let ended = 0;
   for (const wait of waits) {
     const expired = await withTransactionRetry(() =>
-      prisma.$transaction((tx) =>
-        expireStuckRun(tx, {
-          runId: wait.id,
-          threadId: wait.threadId,
-          status: "waiting_takeover",
-          updatedAt: wait.updatedAt,
-          now: new Date(),
-        }),
+      prisma.$transaction(
+        (tx) =>
+          expireStuckRun(tx, {
+            runId: wait.id,
+            threadId: wait.threadId,
+            status: "waiting_takeover",
+            updatedAt: wait.updatedAt,
+            now: new Date(),
+          }),
+        THREAD_LOCK_TRANSACTION_OPTIONS,
       ),
     );
     if (!expired) continue;

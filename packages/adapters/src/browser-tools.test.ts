@@ -1070,6 +1070,7 @@ describe("browser tools and purchase approval", () => {
         site: "shop.example.test",
         label: "Pay $5",
         amount: "$5",
+        total: "",
       },
       { kind: "click", ref: "e4" },
     ]);
@@ -1079,7 +1080,7 @@ describe("browser tools and purchase approval", () => {
   });
   it("lets a card for a page that could not be checked cover each click, bound to no site", async () => {
     const unchecked = { steps: [], site: "", label: "", amount: "" };
-    const marked = { approved: true, site: "", label: "", amount: "" };
+    const marked = { approved: true, site: "", label: "", amount: "", total: "" };
     expect(
       await actWith(
         { actions: [click("e1"), { kind: "fill", ref: "e2", text: "x" }, click("e3")] },

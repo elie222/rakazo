@@ -177,7 +177,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
     ).toMatchObject({ routineId: own.id, userId: ownerActor.userId });
   });
 
-  it("batches routine mentions with the same user, space and archive isolation as per-bot reads", async () => {
+  it("batches routine mentions with the same space and archive isolation as per-bot reads", async () => {
     const owner = await signup(app, `routine-mentions-owner-${stamp}@rakazo.test`, "Owner");
     const peer = await signup(app, `routine-mentions-peer-${stamp}@rakazo.test`, "Peer");
     const ownerActor = await rpc<Actor>(app, owner, "me");
@@ -208,10 +208,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
     }
     await rpc(app, owner, "bots/archive", { botId: archived.id }, space.id);
     const botIds = [own.id, other.id, archived.id, cross.id, "missing-bot"];
+    // Members of one space share its bots and routines; archived and other-space bots stay out.
     const ownRows = await rpc<unknown[]>(app, owner, "routines/list", { botId: own.id }, space.id);
-    expect(await rpc(app, owner, "routines/listForMentions", { botIds }, space.id)).toEqual([
-      { botId: own.id, routines: ownRows },
-    ]);
     const peerRows = await rpc<unknown[]>(
       app,
       peer,
@@ -219,9 +217,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
       { botId: other.id },
       space.id,
     );
-    expect(await rpc(app, peer, "routines/listForMentions", { botIds }, space.id)).toEqual([
+    const shared = [
+      { botId: own.id, routines: ownRows },
       { botId: other.id, routines: peerRows },
-    ]);
+    ];
+    expect(await rpc(app, owner, "routines/listForMentions", { botIds }, space.id)).toEqual(shared);
+    expect(await rpc(app, peer, "routines/listForMentions", { botIds }, space.id)).toEqual(shared);
     const crossRows = await rpc<unknown[]>(
       app,
       owner,
@@ -264,6 +265,13 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["spaces/create", { name: "Nope" }],
       ["spaces/rename", { spaceId: "missing-space", name: "Nope" }],
       ["spaces/remove", { spaceId: "missing-space" }],
+      ["spaces/members/list", { spaceId: "missing-space" }],
+      ["spaces/members/remove", { spaceId: "missing-space", userId: "missing-user" }],
+      ["spaces/members/leave", { spaceId: "missing-space" }],
+      ["spaces/invites/create", { spaceId: "missing-space" }],
+      ["spaces/invites/preview", { token: "missing-token" }],
+      ["spaces/invites/accept", { token: "missing-token" }],
+      ["spaces/invites/cancel", { spaceId: "missing-space" }],
       ["organizations/list"],
       ["organizations/create", { name: "Nope" }],
       ["organizations/rename", { organizationId: "missing-organization", name: "Nope" }],
@@ -288,10 +296,15 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/remove", { botId: "missing-bot" }],
       ["bots/importCreate"],
       ["bots/importSetupState"],
+      ["bots/templates"],
+      ["bots/createFromTemplate", { templateId: "morning-briefing", version: 1 }],
       ["bots/reorder"],
       ["bots/restoreInstructions"],
       ["bots/setComputer"],
       ["bots/rotateWebhookSecret"],
+      ["bots/emailAddress", { botId: "missing-bot" }],
+      ["bots/emailAddresses"],
+      ["bots/claimEmailAddress", { botId: "missing-bot", name: "intruder" }],
       ["groups/create", { name: "Nope", botIds: ["missing-a", "missing-b"] }],
       ["groups/list"],
       ["groups/get", { groupId: "missing-group" }],
@@ -403,6 +416,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["agentSkills/update", { skillId: "missing-skill", description: "Nope" }],
       ["agentSkills/remove", { skillId: "missing-skill" }],
       ["capabilities/list"],
+      ["capabilities/sourcePresets"],
       ["capabilities/install", capabilityInput("Unauthenticated")],
       ["capabilities/remove", { id: "missing-capability" }],
       ["capabilities/catalogSearch"],
@@ -546,6 +560,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["paymentWallet/status"],
       ["paymentWallet/connect"],
       ["paymentWallet/disconnect"],
+      ["spendingLimit/get"],
+      ["spendingLimit/set", { limit: null }],
+      ["spendingLimit/payments"],
       ["externalConversations/updatePolicy"],
       ["agentSecrets/list"],
       ["agentSecrets/put"],
@@ -677,6 +694,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/update", { botId: ownerBot.id, name: "Stolen Bot" }],
       ["bots/archive", { botId: ownerBot.id }],
       ["bots/restore", { botId: ownerBot.id }],
+      ["bots/emailAddress", { botId: ownerBot.id }],
+      ["bots/claimEmailAddress", { botId: ownerBot.id, name: "intruder-claim" }],
       ["threads/get", { botId: ownerBot.id }],
       ["threads/messages", { botId: ownerBot.id, before: 1 }],
       ["threads/subscribe", { botId: ownerBot.id, cursor: -1 }],

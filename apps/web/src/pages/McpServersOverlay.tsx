@@ -5,13 +5,6 @@ import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { deriveMcpSlug, isRetryableError } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Button,
   Checkbox,
   Dialog,
@@ -30,6 +23,7 @@ import {
   FieldLabel,
   FieldTitle,
   Input,
+  SectionHeading,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -41,6 +35,8 @@ import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Ellipsis, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { ErrorNotice } from "../components/ErrorNotice";
 import type { AgentAccess } from "../components/integrations/agent-access";
 import { AgentAccessControl } from "../components/integrations/agent-access";
 import {
@@ -52,7 +48,8 @@ import { McpServerHealthLine } from "../components/McpServerHealthLine";
 import { connectMcpOauth, MCP_OAUTH_CHANNEL, mcpOAuthRedirectUri } from "../lib/mcp-connect";
 import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
-import { errorCode, errorText } from "../lib/user-error";
+import type { ErrorDetails } from "../lib/user-error";
+import { errorCode, errorDetails } from "../lib/user-error";
 
 /** How often the list is re-read while a server installs its package or is being tested. */
 const INSTALL_POLL_MS = 2500;
@@ -126,7 +123,7 @@ export function McpServersOverlay({
   const [args, setArgs] = useState("");
   const [verbatimResults, setVerbatimResults] = useState(false);
   const [envRows, setEnvRows] = useState<EnvRow[]>(() => [emptyEnvRow()]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorDetails | null>(null);
   const [saving, setSaving] = useState(false);
   const [oauthPending, setOauthPending] = useState<string | null>(null);
   const [testingIds, setTestingIds] = useState<Set<string>>(() => new Set());
@@ -165,7 +162,7 @@ export function McpServersOverlay({
   // replace() overwrites a bot's whole list, so changes wait for a read of every assignment.
   const assignmentsReady = assignmentsQuery.isSuccess && !assignmentsQuery.isFetching;
   const loadFailed = serversQuery.isError || botsQuery.isError || assignmentsQuery.isError;
-  const shownError = error ?? (loadFailed ? t`Could not load MCP servers` : null);
+  const shownError = error ?? (loadFailed ? errorDetails(t`Could not load MCP servers`) : null);
 
   /** Reads everything again with requests sent after a change. */
   async function refresh() {
@@ -266,15 +263,15 @@ export function McpServersOverlay({
     if (transport === "stdio" && duplicateNames.size > 0) return;
     setError(null);
     if (!name.trim()) {
-      setError(t`Add a server name.`);
+      setError(errorDetails(t`Add a server name.`));
       return;
     }
     if (transport !== "stdio" && !endpoint.trim()) {
-      setError(t`Add an HTTPS server URL.`);
+      setError(errorDetails(t`Add an HTTPS server URL.`));
       return;
     }
     if (transport === "stdio" && !command.trim()) {
-      setError(t`Add a stdio command.`);
+      setError(errorDetails(t`Add a stdio command.`));
       return;
     }
     setSaving(true);
@@ -357,7 +354,7 @@ export function McpServersOverlay({
       if (created.health.status === "unknown" && !created.health.checkedAt)
         void testServer(created, false);
     } catch (err) {
-      setError(errorText(err, editing ? t`Could not save` : t`Could not add MCP server`));
+      setError(errorDetails(err, editing ? t`Could not save` : t`Could not add MCP server`));
     } finally {
       setSaving(false);
     }
@@ -376,11 +373,15 @@ export function McpServersOverlay({
       await refresh();
       if (result === "connected") return;
       if (result === "already_connected") {
-        setError(t`This server is already connected. Disconnect it first to authorize again.`);
+        setError(
+          errorDetails(
+            t`This server is already connected. Disconnect it first to authorize again.`,
+          ),
+        );
         return;
       }
       if (result === "authorization_not_requested") {
-        setError(t`This server did not request browser authorization.`);
+        setError(errorDetails(t`This server did not request browser authorization.`));
         return;
       }
       setOauthPending((current) => (current === server.id ? null : current));
@@ -390,7 +391,7 @@ export function McpServersOverlay({
         startEditing(server, true);
         void refresh().catch(() => undefined);
       }
-      setError(errorText(err, t`Could not start OAuth`));
+      setError(errorDetails(err, t`Could not start OAuth`));
     }
   }
 
@@ -409,7 +410,7 @@ export function McpServersOverlay({
         ]),
       ]);
     } catch (err) {
-      setError(errorText(err, t`Could not update bot access`));
+      setError(errorDetails(err, t`Could not update bot access`));
     }
   }
 
@@ -432,7 +433,7 @@ export function McpServersOverlay({
       if (editing?.id === server.id) resetForm();
       await refresh();
     } catch (err) {
-      setError(errorText(err, t`Could not delete MCP server`));
+      setError(errorDetails(err, t`Could not delete MCP server`));
     }
   }
 
@@ -451,7 +452,7 @@ export function McpServersOverlay({
         toast.error(t`${updated.name} is not working`);
       }
     } catch (err) {
-      setError(errorText(err, t`Could not test MCP server`));
+      setError(errorDetails(err, t`Could not test MCP server`));
     } finally {
       setTestingIds((current) => {
         const next = new Set(current);
@@ -468,7 +469,7 @@ export function McpServersOverlay({
       await rpc.mcp.oauth.disconnect({ serverId: server.id });
       await refresh();
     } catch (err) {
-      setError(errorText(err, t`Could not disconnect OAuth`));
+      setError(errorDetails(err, t`Could not disconnect OAuth`));
     } finally {
       setOauthPending(null);
     }
@@ -495,9 +496,9 @@ export function McpServersOverlay({
               <ChevronLeft />
             </Button>
           ) : null}
-          <h3 className="text-[17px] font-medium text-foreground">
+          <SectionHeading variant="heading">
             {editing ? editing.name : <Trans>Add server</Trans>}
-          </h3>
+          </SectionHeading>
         </div>
         <FieldGroup className="gap-4">
           <Field>
@@ -565,7 +566,7 @@ export function McpServersOverlay({
             onOpenChange={setAdvancedOpen}
             className="group rounded-xl border border-border"
             summary={<Trans>Advanced</Trans>}
-            summaryClassName="w-full flex items-center justify-between px-3 py-2.5 text-sm text-foreground"
+            summaryClassName="w-full flex items-center justify-between px-3 py-2.5 text-body text-foreground"
           >
             <div className="space-y-4 border-t border-border p-3">
               <Field>
@@ -651,7 +652,7 @@ export function McpServersOverlay({
                           aria-label={t`Value`}
                           autoComplete="off"
                           spellCheck={false}
-                          className="col-span-full min-h-24 font-mono text-xs"
+                          className="col-span-full min-h-24 font-mono text-label"
                           value={row.value}
                           onChange={(e) =>
                             updateEnvRow(row.id, {
@@ -677,7 +678,7 @@ export function McpServersOverlay({
                     <Trans>Add</Trans>
                   </Button>
                   {oauthClientId.trim() ? (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                       <Trans>Use {oauthEnvReference} for the access token.</Trans>
                     </p>
                   ) : null}
@@ -838,14 +839,14 @@ export function McpServersOverlay({
       >
         <div className="min-w-0 space-y-0.5">
           <div className="flex items-baseline gap-2">
-            <span className="truncate text-sm font-medium text-foreground">{server.name}</span>
+            <span className="truncate text-body font-medium text-foreground">{server.name}</span>
             {working && server.health.toolCount !== null ? (
-              <span className="shrink-0 text-xs text-muted-foreground">
+              <span className="shrink-0 text-label text-muted-foreground">
                 <Plural value={server.health.toolCount} one="# tool" other="# tools" />
               </span>
             ) : null}
           </div>
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="truncate text-label text-muted-foreground">
             {server.endpoint ?? server.command ?? server.slug}
           </p>
           <McpServerHealthLine health={server.health} checking={testing} />
@@ -922,10 +923,7 @@ export function McpServersOverlay({
         if (!open) onClose();
       }}
     >
-      <DialogContent
-        showCloseButton={false}
-        className="flex max-h-[calc(100%-2rem)] w-[600px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-[600px]"
-      >
+      <DialogContent showCloseButton={false} size="md">
         <DialogHeader className="flex-row items-center justify-between gap-3 border-b border-border px-6 py-5">
           <DialogTitle className="text-heading2 text-foreground">
             <Trans>MCP servers</Trans>
@@ -945,12 +943,9 @@ export function McpServersOverlay({
           </div>
         </DialogHeader>
         {shownError ? (
-          <p
-            role="alert"
-            className="mx-6 mt-5 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive"
-          >
-            {shownError}
-          </p>
+          <div className="mx-6 mt-5 rounded-xl border border-destructive/40 bg-destructive/10 p-3">
+            <ErrorNotice error={shownError} />
+          </div>
         ) : null}
         <div className="rk-scroll min-h-0 overflow-y-auto px-6 py-5">
           {formOpen ? (
@@ -960,35 +955,18 @@ export function McpServersOverlay({
           )}
         </div>
         {deleting ? (
-          <AlertDialog
-            open
-            onOpenChange={(open) => {
-              if (!open) setDeleting(null);
-            }}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {reachesOtherSpaces(deleting.availability, spaceCount) ? (
-                    <Trans>Remove from every space?</Trans>
-                  ) : (
-                    t`Delete ${deleting.name}?`
-                  )}
-                </AlertDialogTitle>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>
-                  <Trans>Cancel</Trans>
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  variant="destructive"
-                  onClick={() => void deleteServer(deleting)}
-                >
-                  <Trans>Delete</Trans>
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <ConfirmDialog
+            onCancel={() => setDeleting(null)}
+            title={
+              reachesOtherSpaces(deleting.availability, spaceCount) ? (
+                <Trans>Remove from every space?</Trans>
+              ) : (
+                t`Delete ${deleting.name}?`
+              )
+            }
+            onConfirm={() => void deleteServer(deleting)}
+            confirmLabel={<Trans>Delete</Trans>}
+          />
         ) : null}
       </DialogContent>
     </Dialog>

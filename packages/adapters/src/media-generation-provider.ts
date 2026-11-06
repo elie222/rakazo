@@ -197,7 +197,7 @@ export class FalMediaGenerationProvider implements MediaGenerationProvider {
         timeoutMs: 60_000,
       });
       const mimeType = video ? "video/mp4" : "image/png";
-      if (result.contentType?.split(";")[0] !== mimeType)
+      if (result.contentType?.split(";")[0]?.trim().toLowerCase() !== mimeType)
         throw new MediaGenerationError("provider_failure");
       const output = { bytes: result.body, mimeType } as GeneratedMedia;
       validateGeneratedMedia(output, mimeType);

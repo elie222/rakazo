@@ -35,7 +35,7 @@ Bot 可以把一台现有的[无影云电脑](https://www.aliyun.com/product/ecs
 
 管理员不用改环境变量，就能把新电脑切换到无影。
 
-1. 先把自己设成管理员：把账号邮箱写进 `.env` 的 `RAKAZO_ADMIN_EMAILS`，然后重启 API。这个邮箱必须是已验证的。
+1. 先把自己设成管理员：把账号邮箱写进 `.env` 的 `RAKAZO_ADMIN_EMAILS`，设置 `COMPUTER_SETTINGS_ENABLED=true`，然后重启 API。这个邮箱必须是已验证的。
 2. 打开 **设置 → Computer**。
 3. 在 **New computers run on** 里选 **Wuying**。
 4. 填写云电脑 ID、终端用户 ID、地域（默认 `cn-hangzhou`）、AccessKey ID 和 Secret、MCP 网关地址和 MCP Token，然后点 **Save**。
@@ -44,18 +44,18 @@ Bot 可以把一台现有的[无影云电脑](https://www.aliyun.com/product/ecs
 连接信息用部署的 `ENCRYPTION_KEY` 加密保存，AccessKey Secret 和 MCP Token 保存后不会再显示。
 以后只想改其他字段时，密钥字段留空即可，会继续使用已保存的值。换了 MCP 网关地址时，需要重新填写所有密钥。URL 和 Token 分别填写；网关必须使用 HTTPS 和公网地址。
 
-选择 **Deployment default** 会让新电脑回到 `SANDBOX_PROVIDER` 指定的沙箱，并删除已保存的无影连接；
+选择 **Default** 会让新电脑回到 `SANDBOX_PROVIDER` 指定的沙箱，并删除已保存的无影连接；
 还在无影上的电脑下次用到时会在默认沙箱上重新启动。
 
 ### 每个账号用自己的云电脑
 
 每个账号都可以在 **设置 → Computer** 配置自己的电脑；管理员展开部署表单下的 **My computers**。
 此表单设置账号自己的 Team Computer 跑在哪里：
-选 **Deployment default** 就用部署默认的电脑（上面管理员的选择，或 `SANDBOX_PROVIDER`）；
+选 **Default** 就用部署默认的电脑（上面管理员的选择，或 `SANDBOX_PROVIDER`）；
 选 **Wuying** 就用这个账号自己的云电脑、自己的 AccessKey 和 MCP 网关。保存前同样会先检查。
 
 连接信息保存在账号上，不属于某个空间，其他人都读不到。Team Computer
-会在下次启动时换过去，留在原来云电脑上的文件仍在那里。Private Computer 始终用部署默认的电脑。切回 **Deployment default** 会删除已保存的连接。
+会在下次启动时换过去，留在原来云电脑上的文件仍在那里。Private Computer 始终用部署默认的电脑。切回 **Default** 会删除已保存的连接。
 只有部署提供电脑、并且 `SANDBOX_PROVIDER` 不是 `desktop` 或 `fake` 时，账号才能选择自己的云电脑。
 
 ## 用环境变量配置
@@ -103,7 +103,7 @@ SDK 的本地模式在屏幕页内加载 `/computer-screen/sdk/ASP/container.htm
 | 画面连上后很快断开 | 有另一个查看端占用了会话，关掉另一个面板或无影客户端 |
 | 保存时提示 `Could not reach the Wuying desktop` | 检查 AccessKey 权限、地域和云电脑 ID；云电脑运行时，MCP 网关必须能响应 |
 | 中文输出是乱码 | 命令没有经过 PowerShell。Rakazo 会把 PowerShell 的输出切换成 UTF-8，其他 shell 仍使用系统代码页 |
-| 设置里没有切换沙箱的选项 | 当前账号不是管理员。检查 `RAKAZO_ADMIN_EMAILS`，并确认邮箱已验证 |
+| 设置里没有切换沙箱的选项 | 在 API 上设置 `COMPUTER_SETTINGS_ENABLED=true`；部署表单还需要管理员账号，检查 `RAKAZO_ADMIN_EMAILS`，并确认邮箱已验证 |
 | 连接 OpenAI 或 Anthropic 时返回 `unsupported_country_region_territory` | 这是模型提供方的地区限制，与无影无关：rakazo 后端所在网络的出口地区不受支持 |
 
 ## 升级现有部署

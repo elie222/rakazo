@@ -3,13 +3,15 @@ import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OAuthMaterial } from "./mcp-oauth.js";
 import {
+  launchArgSecrets,
   McpOAuthBroker,
   McpOAuthClientRequiredError,
   McpReauthorizationRequiredError,
   oauthMaterialSecrets,
   StoredMcpOAuthProvider,
 } from "./mcp-oauth.js";
-import { McpSession } from "./mcp-transport.js";
+import { recordMcpServerHealth } from "./mcp-server-health.js";
+import { MAX_AUTHORIZATION_URL_LENGTH, McpSession } from "./mcp-transport.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -261,6 +263,7 @@ describe("MCP OAuth", () => {
       id: "server-1",
       endpoint,
       secretId: null as string | null,
+      revision: 1,
     };
     let lock = Promise.resolve();
     let credentialLocked = false;
@@ -295,8 +298,13 @@ describe("MCP OAuth", () => {
       },
       mcpServer: {
         findFirst: async () => ({ ...server }),
-        update: async ({ data }: { data: { secretId?: string | null } }) => {
+        update: async ({
+          data,
+        }: {
+          data: { secretId?: string | null; revision?: { increment: number } };
+        }) => {
           if (data.secretId !== undefined) server.secretId = data.secretId;
+          if (data.revision) server.revision += data.revision.increment;
           return { ...server };
         },
       },
@@ -804,7 +812,8 @@ describe("MCP OAuth", () => {
       }),
     );
 
-    await broker.disconnect({ serverId: "server-1", ...shared.context });
+    // The caller resets health for exactly the revision the disconnect committed.
+    expect(await broker.disconnect({ serverId: "server-1", ...shared.context })).toBe(2);
     await provider.saveTokens({ access_token: "issued-access", token_type: "Bearer" });
     expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
     // A second late write from the same flow stays discarded too.
@@ -1034,6 +1043,84 @@ describe("MCP OAuth", () => {
     expect(await broker.statusFor(shared.server, shared.context)).toBe("connected");
   });
 
+  it.each([
+    ["after its tokens were saved, refusing the sign-in", "saved", undefined, 2],
+    ["after it committed", "committed", 2, 3],
+  ] as const)("keeps the check of an edit made %s", async (_, when, completedAt, editedAt) => {
+    const flow: OAuthMaterial = {
+      oauthClient: { client_id: "client-1" },
+      oauth: {
+        codeVerifier: "verifier",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        discoveryState: {
+          authorizationServerUrl: "https://auth.example.test",
+          authorizationServerMetadata: {
+            issuer: "https://auth.example.test",
+            authorization_endpoint: "https://auth.example.test/authorize",
+            token_endpoint: "https://auth.example.test/token",
+            response_types_supported: ["code"],
+          },
+        },
+      },
+    };
+    const shared = sharedCredentials(flow, null);
+    const { broker } = await shared.startProcess(issuingAuthServer().fetch);
+    const session = await shared.beginSession(flow);
+    const health = { status: "unknown" };
+    // The settings API changes the endpoint and that edit's check fails.
+    const edit = () => {
+      shared.server.endpoint = "https://different.example.test/mcp";
+      shared.server.revision += 1;
+      health.status = "error";
+    };
+    const update = shared.tables.mcpServer.update;
+    vi.spyOn(shared.tables.mcpServer, "update").mockImplementation(async (args) => {
+      const result = await update(args);
+      if (when === "saved" && health.status === "unknown" && (await shared.stored()).oauth?.tokens)
+        edit();
+      return result;
+    });
+    const transaction = shared.prisma.$transaction;
+    shared.prisma.$transaction = async (callback, options) => {
+      const settings = shared.lockSettings.length;
+      const result = await transaction(callback, options);
+      // Completion's own locked step is the one that sets a lock timeout.
+      const completing = shared.lockSettings
+        .slice(settings)
+        .some((sql) => sql.includes("lock_timeout"));
+      if (when === "committed" && completing) edit();
+      return result;
+    };
+    const prisma = {
+      mcpServer: {
+        updateMany: async (args: {
+          where: { revision?: number };
+          data: { healthStatus: string };
+        }) => {
+          if (args.where.revision !== shared.server.revision) return { count: 0 };
+          health.status = args.data.healthStatus;
+          return { count: 1 };
+        },
+      },
+    };
+
+    // What the complete route does with the result.
+    const completed = await broker
+      .complete({ sessionId: session.id, state: session.id, code: "code", ...shared.context })
+      .catch(() => undefined);
+    if (completed)
+      await recordMcpServerHealth(
+        prisma as never,
+        completed.serverId,
+        { status: "unknown" },
+        completed.revision,
+      );
+
+    expect(health.status).toBe("error");
+    expect(shared.server.revision).toBe(editedAt);
+    expect(completed?.revision).toBe(completedAt);
+  });
+
   it.each([0, 1])(
     "reads the completion generation consistently with a concurrent credential save (session generation %s)",
     async (generation) => {
@@ -1101,7 +1188,10 @@ describe("MCP OAuth", () => {
         if (generation === 0) {
           await expect(completing).rejects.toThrow("MCP OAuth session is invalid or expired");
         } else {
-          await expect(completing).resolves.toBeUndefined();
+          await expect(completing).resolves.toEqual({
+            serverId: shared.server.id,
+            revision: expect.any(Number),
+          });
         }
       } finally {
         await saving;
@@ -1365,6 +1455,52 @@ describe("MCP OAuth", () => {
     ).toBeUndefined();
   });
 
+  it("allows a long authorization URL from a server that publishes many scopes", async () => {
+    // PostHog's MCP publishes 157 scopes; the SDK asks for all of them, so the authorization
+    // URL runs past the 2,048 characters an MCP endpoint may use.
+    const scope = Array.from({ length: 160 }, (_, index) => `resource_${index}:read`).join(" ");
+    const url = new URL("https://auth.example.test/authorize");
+    url.searchParams.set("client_id", "client");
+    url.searchParams.set("scope", scope);
+    expect(url.href.length).toBeGreaterThan(2_048);
+    const onAuthorization = vi.fn();
+    const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      onAuthorization,
+    });
+
+    await provider.redirectToAuthorization(url);
+
+    expect(provider.authorizationUrl?.searchParams.get("scope")).toBe(scope);
+    expect(onAuthorization).toHaveBeenCalledOnce();
+  });
+
+  it("still refuses an authorization URL past its own limit, including added parameters", async () => {
+    const huge = new URL("https://auth.example.test/authorize");
+    huge.searchParams.set("scope", "x".repeat(MAX_AUTHORIZATION_URL_LENGTH));
+    const onAuthorization = vi.fn();
+    const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      onAuthorization,
+    });
+    await expect(provider.redirectToAuthorization(huge)).rejects.toThrow(/exceeds/);
+
+    // A URL just under the limit cannot be pushed past it by configured extra parameters.
+    const near = new URL("https://auth.example.test/authorize");
+    near.searchParams.set("scope", "x".repeat(MAX_AUTHORIZATION_URL_LENGTH - 200));
+    const padded = new StoredMcpOAuthProvider(
+      "server-1",
+      {
+        oauthClient: {
+          client_id: "client",
+          authorization_params: `prompt=consent&login_hint=${"y".repeat(400)}`,
+        },
+      },
+      async () => undefined,
+      { onAuthorization },
+    );
+    await expect(padded.redirectToAuthorization(near)).rejects.toThrow(/exceeds/);
+    expect(onAuthorization).not.toHaveBeenCalled();
+  });
+
   it("allows localhost HTTP browser authorization URLs", async () => {
     const onAuthorization = vi.fn();
     const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
@@ -1597,7 +1733,7 @@ describe("MCP OAuth", () => {
           .map((value) => JSON.parse(value))
           .some((value) => value.oauth?.tokens?.access_token === "access-token"),
       ).toBe(true);
-      expect(prisma.mcpServer.update).toHaveBeenCalledWith({
+      expect(tx.mcpServer.update).toHaveBeenCalledWith({
         where: { id: "server-1" },
         data: { revision: { increment: 1 } },
       });
@@ -2881,6 +3017,83 @@ describe("MCP OAuth", () => {
     });
 
     expect(secrets).toEqual([key]);
+  });
+
+  it("finds credentials in launch arguments and leaves ordinary arguments readable", () => {
+    const T = "FAKE-TOKEN-0000000000000000";
+    const credentials: string[][] = [
+      ["--api-key", T],
+      [`--api-key=${T}`],
+      ["--apiKey", T],
+      [`--accessToken=${T}`],
+      ["--key", T],
+      ["--access-key", T],
+      ["--private-key", T],
+      ["--secret-access-key", T],
+      ["--pat", T],
+      ["--auth", T],
+      ["--token", T],
+      ["--password", T],
+      ["--secret", T],
+      [`-api-key=${T}`],
+      ["--APIKey", T],
+      ["--api.key", T],
+      ["-token", T],
+      ["-k", T],
+      [`apiKey=${T}`],
+      [`API_KEY=${T}`],
+      [`--env=API_KEY=${T}`],
+      ["-e", `API_KEY=${T}`],
+      ["--header", `Authorization: Bearer ${T}`],
+      ["-H", `X-API-Key: ${T}`],
+      ["--header", "Authorization:Bearer", T],
+      ["--header", `Authorization: Basic ${T}`],
+      ["--header", `Proxy-Authorization: Bearer ${T}`],
+      ["--header", `Ocp-Apim-Subscription-Key: ${T}`],
+      [`postgres://user:${T}@db.example.test/app`],
+      [`DATABASE_URL=postgres://user:${T}@db.example.test/app`],
+      [`https://${T}@git.example.test/`],
+      [`https://${T}:x-oauth-basic@git.example.test/`],
+      [`https://api.example.test/?apiKey=${T}`],
+      ["--url", `https://api.example.test/mcp?token=${T}`],
+      [`https://api.example.test/mcp?authorization=Bearer%20${T}`],
+    ];
+    for (const args of credentials) expect(launchArgSecrets(args), args.join(" ")).toContain(T);
+    // Tokens that start with "-", are lowercase, or are short still count in these positions.
+    expect(launchArgSecrets(["--header", "Authorization:Bearer", `-${T}`])).toContain(`-${T}`);
+    expect(launchArgSecrets(["-k", "sk-live-abcdefgh12345678"])).toContain(
+      "sk-live-abcdefgh12345678",
+    );
+    expect(launchArgSecrets(["https://shorttok@git.example.test/"])).toContain("shorttok");
+    expect(launchArgSecrets(["PAT=abc"])).toContain("abc");
+    expect(launchArgSecrets(["--header", "X-Private-Key: abc"])).toContain("abc");
+    expect(launchArgSecrets(["--header", "Accept:Bearer", "/srv/data"])).toEqual([]);
+
+    const readable = [
+      "--port",
+      "3000",
+      "/srv/data",
+      "-y",
+      "@modelcontextprotocol/server-filesystem",
+      "--verbose",
+      "-y",
+      "mcp-server-sqlite2-extended",
+      "--sort-key",
+      "name",
+      "ssh://git@git.example.test/repo",
+      "ssh://deployuser@git.example.test/repo",
+      "--header",
+      "Accept: application/json",
+      "https://api.example.test/?key=0",
+      "--key",
+      "0",
+    ];
+    expect(launchArgSecrets(readable)).toEqual([]);
+    expect(launchArgSecrets(["--header", "Authorization:Bearer", "--verbose"])).toEqual([]);
+
+    // The server may echo a query value spelled as it was passed, not as it decodes.
+    for (const spelled of ["abc%2fDEF123456", "Abc+DEF123456"])
+      expect(launchArgSecrets([`https://api.example.test/?api_key=${spelled}`])).toContain(spelled);
   });
 
   it("does not start authorization for a server that neither challenges nor publishes OAuth metadata", async () => {

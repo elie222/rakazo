@@ -6,7 +6,7 @@ vi.mock("./run-messages.js", async (importActual) => ({
   publishMessage: (...args: unknown[]) => publishMessage(...args),
 }));
 
-const { pageTools } = await import("./run-tools-pages.js");
+const { holdSharedPageSave, pageTools } = await import("./run-tools-pages.js");
 const { redactBlocks } = await import("./run-messages.js");
 
 const source = (heading: string) =>
@@ -14,8 +14,9 @@ const source = (heading: string) =>
 
 function context(
   tx: Record<string, unknown>,
-  existing?: { currentVersion: number },
+  existing?: { currentVersion: number; visibility?: "private" | "link" },
   secrets: string[] = [],
+  skipApprovals = false,
 ) {
   const prisma = {
     page: {
@@ -24,6 +25,7 @@ function context(
           ? {
               id: "page-1",
               title: "Plan",
+              visibility: existing.visibility ?? "private",
               currentVersion: existing.currentVersion,
               versions: [{ source: source("Plan") }],
             }
@@ -39,11 +41,21 @@ function context(
     thread: { groupId: null },
     secrets,
     state: { tainted: false },
+    trust: { loadAutoReviewPreference: async () => ({ skipApprovals }) },
   } as never;
 }
 
-const call = (args: Record<string, unknown>) =>
-  ({ args, finish: (result: unknown) => result }) as never;
+const call = (args: Record<string, unknown>, approval: Record<string, unknown> = {}) =>
+  ({ args, bypassApproval: false, ...approval, finish: (result: unknown) => result }) as never;
+
+const request = (args: Record<string, unknown>, nextApprovedTool?: string) =>
+  ({ args, nextApprovedTool, heldForApproval: false, fleetSummary: undefined }) as {
+    args: Record<string, unknown>;
+    effectRequest?: unknown;
+    nextApprovedTool: string | undefined;
+    heldForApproval: boolean;
+    fleetSummary: { title: string; lines: string[] } | undefined;
+  };
 
 describe("save_page", () => {
   beforeEach(() => publishMessage.mockReset());
@@ -141,6 +153,10 @@ describe("save_page", () => {
         [secret],
       ),
     ).toEqual([{ kind: "page", pageId: "page-1", version: 1, title: "A [redacted]" }]);
+    // Step labels can come from tool arguments, so they are redacted like notes.
+    expect(
+      redactBlocks([{ kind: "steps", steps: [{ label: `Run ${secret}`, count: 1 }] }], [secret]),
+    ).toEqual([{ kind: "steps", steps: [{ label: "Run [redacted]", count: 1 }] }]);
   });
 
   it("redacts a kept title that holds a secret this run learned after it was saved", async () => {
@@ -164,5 +180,152 @@ describe("save_page", () => {
     });
     expect(JSON.stringify(tx.pageVersion.create.mock.calls)).not.toContain(secret);
     expect(JSON.stringify(publishMessage.mock.calls)).not.toContain(secret);
+  });
+});
+
+describe("saving a page shared by link", () => {
+  const edit = { find: "Hi", replace: "Hello" };
+
+  it("holds a change to a shared page for approval, showing what changes", async () => {
+    const held = request({ pageId: "page-1", edits: [edit], approvedVersion: 9 });
+    await holdSharedPageSave(context({}, { currentVersion: 1, visibility: "link" }), held as never);
+    expect(held.heldForApproval).toBe(true);
+    expect(held.fleetSummary).toEqual({
+      title: "Update shared page “Plan”?",
+      lines: ["-     <Text>Hi</Text>", "+     <Text>Hello</Text>"],
+    });
+    // The approval pins the version the card was shown against, never one the model sent.
+    expect(held.args).toMatchObject({ approvedVersion: 1 });
+    expect(held.effectRequest).toBe(held.args);
+
+    // A whole new source shows only the lines that change too.
+    const whole = request({ pageId: "page-1", source: source("Plan").replace("Hi", "Bye") });
+    await holdSharedPageSave(
+      context({}, { currentVersion: 1, visibility: "link" }),
+      whole as never,
+    );
+    expect(whole.fleetSummary?.lines).toEqual(["-     <Text>Hi</Text>", "+     <Text>Bye</Text>"]);
+  });
+
+  it("lets a save that would fail anyway fail without a card", async () => {
+    const shared = { currentVersion: 1, visibility: "link" as const };
+    for (const args of [
+      { pageId: "page-1", edits: [{ find: "Hi" }] },
+      { pageId: "page-1", edits: [{ find: "Missing", replace: "x" }] },
+      { pageId: "page-1", source: "not a page" },
+    ]) {
+      const held = request(args);
+      expect(await holdSharedPageSave(context({}, shared), held as never)).toBeUndefined();
+      expect(held.heldForApproval).toBe(false);
+    }
+  });
+
+  it("shows only the changed part of a long line", async () => {
+    const row = `const rows = [${Array.from({ length: 300 }, (_, index) => `"r${index}"`).join(", ")}];`;
+    const withRow = source("Plan").replace("const App", `${row}\nconst App`);
+    const ctx = context({}, { currentVersion: 1, visibility: "link" });
+    (
+      ctx as { deps: { prisma: { page: { findFirst: () => Promise<unknown> } } } }
+    ).deps.prisma.page.findFirst = async () => ({
+      title: "Plan",
+      visibility: "link",
+      currentVersion: 1,
+      versions: [{ source: withRow }],
+    });
+    const held = request({ pageId: "page-1", edits: [{ find: '"r150"', replace: '"changed"' }] });
+    expect(await holdSharedPageSave(ctx, held as never)).toBeUndefined();
+    const [removed, added] = held.fleetSummary!.lines;
+    expect(removed).toMatch(/^- ….*"r150".*…$/);
+    expect(added).toMatch(/^\+ ….*"changed".*…$/);
+    expect(removed!.length).toBeLessThan(120);
+  });
+
+  it("shows the title as it will be saved, and skips a save the secret check would refuse", async () => {
+    const shared = { currentVersion: 1, visibility: "link" as const };
+    const titled = request({ pageId: "page-1", title: "  New\nplan ", edits: [edit] });
+    await holdSharedPageSave(context({}, shared), titled as never);
+    expect(titled.fleetSummary?.lines[0]).toBe("Title: New plan");
+
+    const secret = "FAKE_PAGE_SECRET_5521";
+    const leaking = request({ pageId: "page-1", edits: [{ find: "Hi", replace: secret }] });
+    await holdSharedPageSave(context({}, shared, [secret]), leaking as never);
+    expect(leaking.heldForApproval).toBe(false);
+  });
+
+  it("refuses a change too long to show on the card", async () => {
+    const long = Array.from({ length: 400 }, (_, index) => `<Text>Row ${index}</Text>`).join("\n");
+    const held = request({ pageId: "page-1", edits: [{ find: "<Text>Hi</Text>", replace: long }] });
+    const refused = await holdSharedPageSave(
+      context({}, { currentVersion: 1, visibility: "link" }),
+      held as never,
+    );
+    expect(refused?.error).toMatch(/smaller edits/);
+    expect(held.heldForApproval).toBe(false);
+  });
+
+  it("refuses an approved change once the page moved past the version it was shown against", async () => {
+    const tx = { page: { updateMany: vi.fn() }, pageVersion: { create: vi.fn() } };
+    const result = (await pageTools.save_page!(
+      context(tx, { currentVersion: 2, visibility: "link" }),
+      call(
+        { pageId: "page-1", edits: [edit], approvedVersion: 1 },
+        { nextApprovedTool: "save_page" },
+      ),
+    )) as Record<string, unknown>;
+    expect(result).toMatchObject({ unchanged: true, error: expect.stringMatching(/changed/) });
+    expect(tx.page.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not hold a private page, a read, a new page, or any save under Never ask", async () => {
+    const cases = [
+      [request({ pageId: "page-1", edits: [edit] }), context({}, { currentVersion: 1 })],
+      [request({ pageId: "page-1" }), context({}, { currentVersion: 1, visibility: "link" })],
+      [request({ title: "New", source: source("New") }), context({})],
+      [
+        request({ pageId: "page-1", edits: [edit] }),
+        context({}, { currentVersion: 1, visibility: "link" }, [], true),
+      ],
+    ] as const;
+    for (const [held, ctx] of cases) {
+      await holdSharedPageSave(ctx, held as never);
+      expect(held.heldForApproval).toBe(false);
+    }
+  });
+
+  it("keeps an approved replay held so it claims its approval", async () => {
+    const held = request({ pageId: "page-1", edits: [edit] }, "save_page");
+    await holdSharedPageSave(context({}, { currentVersion: 1 }), held as never);
+    expect(held.heldForApproval).toBe(true);
+  });
+
+  it("saves an unapproved change only while the page is still private", async () => {
+    const updateMany = vi.fn(async () => ({ count: 0 }));
+    const tx = { page: { updateMany }, pageVersion: { create: vi.fn() } };
+    const result = (await pageTools.save_page!(
+      context(tx, { currentVersion: 1 }),
+      call({ pageId: "page-1", edits: [edit] }),
+    )) as Record<string, unknown>;
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ visibility: "private" }) }),
+    );
+    // Shared since the check: nothing is published, and the retry asks.
+    expect(result).toMatchObject({ unchanged: true });
+    expect(tx.pageVersion.create).not.toHaveBeenCalled();
+  });
+
+  it("tells the bot a page is shared when it saves an approved change", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const tx = {
+      page: { updateMany, findUniqueOrThrow: vi.fn(async () => ({ title: "Plan" })) },
+      pageVersion: { create: vi.fn() },
+    };
+    const result = (await pageTools.save_page!(
+      context(tx, { currentVersion: 1, visibility: "link" }),
+      call({ pageId: "page-1", edits: [edit] }, { nextApprovedTool: "save_page" }),
+    )) as Record<string, unknown>;
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "page-1", currentVersion: 1 } }),
+    );
+    expect(result).toMatchObject({ version: 2, sharedByLink: true });
   });
 });

@@ -8,10 +8,11 @@ import { describe, expect, it, vi } from "vitest";
 const computerDir = path.resolve(import.meta.dirname, "../../computer");
 
 describe("focus-or-launch desktop helper", () => {
-  it("checks the WM_CLASS matcher and control allowlist offline", () => {
+  // A loaded CI runner can take well over ten seconds to start Python and run these checks.
+  it("checks the WM_CLASS matcher and control allowlist offline", { timeout: 70_000 }, () => {
     const tests = fileURLToPath(new URL("../../computer/test_focus_or_launch.py", import.meta.url));
     expect(() =>
-      execFileSync("python3", [tests], { timeout: 10_000, stdio: "pipe" }),
+      execFileSync("python3", [tests], { timeout: 60_000, stdio: "pipe" }),
     ).not.toThrow();
   });
 

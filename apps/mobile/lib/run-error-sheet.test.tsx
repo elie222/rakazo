@@ -11,6 +11,12 @@ import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../components/thread-
 import { runErrorActionLabel } from "./run-error-presentation";
 import { liveEndRunError } from "./thread-window";
 
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
+
 const viewProps = vi.hoisted(() => [] as { style?: unknown; accessibilityRole?: string }[]);
 vi.mock("react-native", () => ({
   useWindowDimensions: () => ({ width: 402, fontScale: 1 }),

@@ -14,6 +14,7 @@ import type {
   PaymentWalletProvider,
   SandboxProvider,
   SecretStore,
+  TransactionalEmailProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, RunLease, ThreadEvents } from "@rakazo/db";
@@ -25,6 +26,8 @@ import type { TicketChangeNotifier } from "./ticket-changes.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
 
 export interface ExecutorDeps {
+  /** The present moment the agent is told; evals move it to a follow-up's due time. */
+  now?: () => Date;
   maxUploadSizeBytes?: number;
   contextStrategy?: AgentContextStrategy;
   prisma: PrismaClient;
@@ -53,6 +56,10 @@ export interface ExecutorDeps {
   onTicketChange?: TicketChangeNotifier;
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
+  /** The domain bot email addresses are on; absent when this server receives no email. */
+  inboundEmailDomain?: string;
+  /** Sends a bot's email from its own address; absent when this server sends no email. */
+  email?: TransactionalEmailProvider;
   phoneCallCooldownMinutes?: number;
   phoneCallRingSeconds?: number;
   /** Messaging surface; absent means zero identity queries and no chat prompts. */

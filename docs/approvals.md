@@ -44,11 +44,35 @@ In **Auto** and **Ask**, these always show a card, and **Always allow** doesn't 
 
 - Changing a bot's instructions or model, and creating a space.
 - Actions that text you didn't write could be steering, such as changes in a run started by a
-  webhook.
+  webhook. When it asks despite an Always allow, its card says so.
 - A routine that watches a command, or that names a site the run found in outside content.
 
 **Never ask** runs all of them. The one exception is accepting another owner's bot connection, which
 it refuses when someone else started the run or outside content entered it.
+
+## Spending limit
+
+Once a bot can pay, with a card in the Vault or a connected wallet, **Settings → Approvals** also
+shows a **Spending limit**: an amount, in US dollars, euros, pounds or shekels, that resets every
+day, week or month, or never. Days and months follow your timezone; weeks start on Monday. It
+covers every bot and space on your account, and only you can change it.
+
+Every payment you approve counts against it: a checkout's pay button at the total the page shows,
+or the amount the button names if that is more, and a wallet purchase at its exact amount. A pay button counts when the bot's page browser recognizes
+it as paying, the same presses that always ask; on a computer without the page browser, nothing is
+recognized, so only wallet purchases count. A payment that would go over the limit is refused before
+you are asked, and the bot tells you. While a limit is set, a checkout whose total can't be read, or
+is in another currency, is refused too. A wallet purchase that is denied, expires or fails stops
+counting, and so does a press the page refused because it changed. A press that went through still
+counts if the shop later declines it.
+
+Below the limit, **Recent payments** lists the latest payments that count, with the site, the bot,
+when and how much, whether or not a limit is set.
+
+A page in another dollar or pound currency is counted as if it were in US dollars or pounds. That
+is more than it costs for nearly all of them; a Cayman Islands dollar is worth a little more than a US
+dollar, so a price in it counts a little less. A saved card pays whatever the shop charges, so the limit relies on
+the total the page shows; only a wallet's single-use card holds the shop to the approved amount.
 
 ## Per space
 

@@ -69,14 +69,9 @@ export function organizationsRoutes(ctx: RouterContext) {
           return renamed;
         }),
       ),
-      // Audit events keep no foreign key to their organization, so this record outlives it.
       remove: authed.organizations.remove.handler(({ context, input }) =>
         runAsSystem("delete an organization with its content", async () => {
           const { userId } = context.actor;
-          const organization = await deps.prisma.organization.findUnique({
-            where: { id: input.organizationId },
-            select: { name: true },
-          });
           try {
             await deleteOrganization(deps, userId, input.organizationId);
           } catch (error) {
@@ -89,16 +84,6 @@ export function organizationsRoutes(ctx: RouterContext) {
               throw new ORPCError("CONFLICT", { message: error.message });
             throw error;
           }
-          await recordAuditEvent({
-            action: "organization.deleted",
-            actor: { type: "user", id: userId },
-            organizationId: input.organizationId,
-            target: {
-              type: "organization",
-              id: input.organizationId,
-              label: organization?.name ?? null,
-            },
-          });
           return {
             ok: true as const,
             activeSpaceId: await firstOrganizationSpace(deps.prisma, userId),

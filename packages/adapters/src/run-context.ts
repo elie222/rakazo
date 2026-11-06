@@ -8,7 +8,7 @@ import type {
   SemanticMemoryProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
-import type { ComputerMode, MessageBlock } from "@rakazo/contracts";
+import type { ComputerMode, MessageBlock, ReplyMode } from "@rakazo/contracts";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
@@ -209,6 +209,8 @@ export interface RunComputerContext {
   lazy: ReturnType<typeof lazyRunComputer>;
   /** Starts the computer on first use and copies the turn's files before each tool. */
   get: (reason: "tool" | "takeover" | "script", tool?: string) => Promise<ComputerRef>;
+  /** Queue files from earlier messages; `get` copies them before the next computer tool. */
+  copyEarlierFiles: (files: Array<Extract<MessageBlock, { kind: "file" | "image" }>>) => void;
   checkpoint: ReturnType<typeof createRunWorkspaceCheckpoint>;
   hostEnvironment: Awaited<ReturnType<NonNullable<SandboxProvider["environment"]>>> | undefined;
   graphical: boolean;
@@ -273,6 +275,8 @@ export interface RunContext {
   /** Provider context for this run's calls; aborting the run aborts its signal. */
   context: AdapterContext;
   abortController: AbortController;
+  /** Stops the model and its next tool calls; the run's own signal stays live to save and finish. */
+  runtimeAbortController: AbortController;
   fleetRun: FleetRun;
   /** Every value redacted from what this run shows or stores. Grows during the run. */
   secrets: string[];
@@ -290,6 +294,8 @@ export interface RunContext {
   /** A group message that named no member: this member may end without replying. */
   groupReplyOptional: boolean;
   emptyResponseText: string | undefined;
+  /** Messages mode keeps working text on the steps; only message_user and the final answer reach chat. */
+  replyMode: ReplyMode;
   state: RunState;
   settleRunningHelpers: () => Promise<void>;
   stopHeartbeatAfterCompletion: () => void;
