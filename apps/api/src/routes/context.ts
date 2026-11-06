@@ -411,34 +411,31 @@ export function createRouterContext(deps: RouterDeps) {
   });
   const agentSkills = createAgentSkillsService(deps.prisma);
 
-  const authed = os
-    .use(async ({ context, next }) => {
-      const actor = context.actor;
-      if (!actor) throw new ORPCError("UNAUTHORIZED");
-      return asTenant(actor, () => next({ context: { ...context, actor } }));
-    })
-    .use(async ({ context, next, path }, input) => {
-      const result = await next();
-      const event = procedureSecurityEvent(path, input, context.actor);
-      if (event) await recordSecurityEvent(event);
-      return result;
-    });
+  const signedIn = os.middleware(async ({ context, next }) => {
+    const actor = context.actor;
+    if (!actor) throw new ORPCError("UNAUTHORIZED");
+    return asTenant(actor, () => next({ context: { ...context, actor } }));
+  });
+
+  const authed = os.use(signedIn).use(async ({ context, next, path }, input) => {
+    const result = await next();
+    const event = procedureSecurityEvent(path, input, context.actor);
+    if (event) await recordSecurityEvent(event);
+    return result;
+  });
 
   const callsEnabled = authed.use(async ({ next }) => {
     if (!deps.env?.phoneCallsEnabled) throw new ORPCError("NOT_FOUND");
     return next();
   });
 
+  // The flag is checked first so a disabled board is not found even when signed out.
   const boardEnabled = os
     .use(async ({ next }) => {
       if (!deps.env?.ticketBoardEnabled) throw new ORPCError("NOT_FOUND");
       return next();
     })
-    .use(async ({ context, next }) => {
-      const actor = context.actor;
-      if (!actor) throw new ORPCError("UNAUTHORIZED");
-      return asTenant(actor, () => next({ context: { ...context, actor } }));
-    });
+    .use(signedIn);
   const ticketDeps = {
     prisma: deps.prisma,
     ticketBoardEnabled: deps.env?.ticketBoardEnabled,

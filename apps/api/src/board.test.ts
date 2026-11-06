@@ -48,6 +48,14 @@ describe("disabled ticket board", () => {
   );
 });
 
+it("answers a signed-out caller with not found while the board is off", async () => {
+  const client = createRouterClient(
+    createRouter({ prisma: {}, env: { ticketBoardEnabled: false } } as unknown as RouterDeps),
+    { context: { actor: null } },
+  );
+  await expect(client.boards.get()).rejects.toMatchObject({ code: "NOT_FOUND" });
+});
+
 it("rejects an out-of-range ticket reference before querying tickets", async () => {
   const findFirst = vi.fn(async () => null);
   const prisma = {
