@@ -35,6 +35,15 @@ export class ZipFormatError extends Error {
   }
 }
 
+// A malicious archive can declare millions of central-directory records;
+// each record is an object plus a name and extra-field copy held in memory
+// until every record is sorted and validated. Cap the count and the total
+// central-directory size before any record is accumulated: a legitimate
+// account export holds a few hundred entries at most, so 100,000 entries
+// and a 16 MiB directory leave ample headroom.
+export const MAX_ARCHIVE_ENTRIES = 100_000;
+export const MAX_CENTRAL_DIRECTORY_BYTES = 16 * 1024 * 1024;
+
 /** One entry, located by the central directory and its local header. */
 export type ZipEntry = {
   name: string;
@@ -81,7 +90,13 @@ const u16 = (view: DataView, offset: number) => view.getUint16(offset, true);
 const u32 = (view: DataView, offset: number) => view.getUint32(offset, true);
 const u64 = (view: DataView, offset: number) => Number(view.getBigUint64(offset, true));
 
-async function readExact(handle: FileHandle, position: number, buffer: Uint8Array): Promise<void> {
+/** Reads exactly `buffer.length` bytes from `position`, or throws.
+ * Exported so the importer can stream a spilled entry back to its sink. */
+export async function readExact(
+  handle: FileHandle,
+  position: number,
+  buffer: Uint8Array,
+): Promise<void> {
   let read = 0;
   while (read < buffer.byteLength) {
     const { bytesRead } = await handle.read(
@@ -116,9 +131,15 @@ function zip64Values(
     const tag = u16(view, at);
     const size = u16(view, at + 2);
     if (tag === ZIP64_EXTRA_TAG) {
+      // The field's declared length comes from the uploaded bytes; it must
+      // fit inside the extra field itself, or the 8-byte reads below would
+      // throw a RangeError instead of a ZipFormatError.
+      if (at + 4 + size > extra.byteLength) throw new ZipFormatError();
       let cursor = at + 4;
       const take = () => {
-        if (cursor + 8 > at + 4 + size) throw new ZipFormatError();
+        if (cursor + 8 > at + 4 + size || cursor + 8 > extra.byteLength) {
+          throw new ZipFormatError();
+        }
         const value = u64(view, cursor);
         cursor += 8;
         return value;
@@ -197,6 +218,12 @@ async function readCentralDirectory(
     !Number.isSafeInteger(offset)
   )
     throw new ZipFormatError();
+  // Enforce the metadata budget before any record is accumulated: an
+  // archive over either bound is refused here, not after its records have
+  // been read, sorted, and validated.
+  if (entries > MAX_ARCHIVE_ENTRIES || size > MAX_CENTRAL_DIRECTORY_BYTES) {
+    throw new ZipFormatError();
+  }
   if (offset + size > fileSize) throw new ZipFormatError();
   return { entries, size, offset };
 }
@@ -225,7 +252,9 @@ function parseCentralRecord(
     46 + nameLength + extraLength + commentLength,
   );
   const name = decodeName(bytes.subarray(46, 46 + nameLength), (flags & 0x800) !== 0);
-  const extra = bytes.subarray(46 + nameLength, 46 + nameLength + extraLength);
+  // Copy the extra field: the record is a view into a sliding window buffer
+  // that the parser reuses, and keeping the view would pin the window.
+  const extra = bytes.slice(46 + nameLength, 46 + nameLength + extraLength);
   // Only the size sentinels matter for the data descriptor's width: the
   // descriptor carries 8-byte sizes exactly when the sizes needed ZIP64.
   const zip64Sizes = compressedSize === 0xffffffff || uncompressedSize === 0xffffffff;
@@ -391,30 +420,39 @@ async function validateDataDescriptor(
 
 /**
  * Inflates one entry from the file, calling `onData` for each output
- * chunk. The entry's bytes are verified against its recorded CRC; a
- * mismatch, a corrupt deflate stream, or a truncated entry throws
- * `ZipFormatError`. Throws from `onData` abort the inflation at once.
+ * chunk. The entry's bytes are verified against its recorded CRC and its
+ * recorded uncompressed size; a mismatch, a corrupt deflate stream, or a
+ * truncated entry throws `ZipFormatError`. Throws from `onData` abort the
+ * inflation at once. `onFlush`, when given, runs after each compressed-input
+ * slice is pushed, so the caller can drain the output in bounded batches
+ * instead of queueing a whole entry; a throw from it aborts the inflation
+ * and reaches the caller unchanged.
  */
 export async function inflateEntry(
   handle: FileHandle,
   entry: ZipEntry,
   onData: (chunk: Uint8Array, final: boolean) => void,
+  onFlush?: () => Promise<void>,
 ): Promise<void> {
   let crc = 0;
+  let emitted = 0;
   if (entry.method === 0) {
     let remaining = entry.compressedSize;
     let offset = entry.dataOffset;
     if (remaining === 0) {
       onData(new Uint8Array(0), true);
+      await onFlush?.();
     } else {
       while (remaining > 0) {
         const want = Math.min(READ_SLICE_BYTES, remaining);
         const chunk = new Uint8Array(want);
         await readExact(handle, offset, chunk);
         crc = crc32(chunk, crc);
+        emitted += want;
         remaining -= want;
         offset += want;
         onData(chunk, remaining === 0);
+        await onFlush?.();
       }
     }
   } else {
@@ -427,8 +465,19 @@ export async function inflateEntry(
       if (aborted !== null) return;
       try {
         crc = crc32(data, crc);
+        emitted += data.length;
         if (final) sawFinal = true;
         onData(data, final);
+      } catch (error) {
+        aborted = error;
+        throw error;
+      }
+    };
+    // A throw from onFlush must also reach the caller unchanged, not become
+    // a format error; routing it through `aborted` keeps both paths alike.
+    const flush = async () => {
+      try {
+        await onFlush?.();
       } catch (error) {
         aborted = error;
         throw error;
@@ -439,6 +488,7 @@ export async function inflateEntry(
     try {
       if (remaining === 0) {
         inflate.push(new Uint8Array(0), true);
+        await flush();
       } else {
         while (remaining > 0) {
           const want = Math.min(READ_SLICE_BYTES, remaining);
@@ -447,6 +497,7 @@ export async function inflateEntry(
           remaining -= want;
           offset += want;
           inflate.push(chunk, remaining === 0);
+          await flush();
         }
       }
     } catch {
@@ -456,5 +507,9 @@ export async function inflateEntry(
     if (aborted !== null) throw aborted;
     if (!sawFinal) throw new ZipFormatError();
   }
+  // The recorded size is attacker-controlled, but the emitted bytes are not:
+  // an entry that inflates to a different size than recorded is corrupt,
+  // even when its checksum and data descriptor agree with the record.
+  if (emitted !== entry.uncompressedSize) throw new ZipFormatError();
   if (crc !== entry.crc) throw new ZipFormatError();
 }

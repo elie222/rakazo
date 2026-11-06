@@ -1,5 +1,6 @@
-import { readdir } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Actor } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { AccountImportDeps, ArchiveEntry, ArchiveSink } from "./account-import.js";
@@ -10,7 +11,6 @@ import {
   parseEntryName,
   readArchive,
   remapIds,
-  SPOOL_PREFIX,
 } from "./account-import.js";
 import {
   buildArchive,
@@ -64,8 +64,9 @@ class RecordingSink implements ArchiveSink {
   }
 }
 
-async function spoolDirs(): Promise<string[]> {
-  return (await readdir(tmpdir())).filter((name) => name.startsWith(SPOOL_PREFIX));
+/** A fresh directory for one test's spool files, removed afterwards. */
+async function spoolDir(): Promise<string> {
+  return mkdtemp(join(tmpdir(), "rakazo-account-import-test-"));
 }
 
 /** Rewrites an archive's central directory with its records in reverse order. */
@@ -325,16 +326,22 @@ describe("account import archive", () => {
   });
 
   it("leaves no spooled archive behind, on success or failure", async () => {
-    const before = await spoolDirs();
-    const bytes = buildArchive([
-      ["manifest.json", "{}"],
-      ["spaces/s1/records.jsonl", ""],
-    ]);
-    await readArchive(chunked(bytes), limits, new RecordingSink());
-    await expect(
-      readArchive(chunked(new TextEncoder().encode("hello")), limits, new RecordingSink()),
-    ).rejects.toThrow("not a readable Rakazo export");
-    expect(await spoolDirs()).toEqual(before);
+    const dir = await spoolDir();
+    try {
+      const bytes = buildArchive([
+        ["manifest.json", "{}"],
+        ["spaces/s1/records.jsonl", ""],
+      ]);
+      await readArchive(chunked(bytes), limits, new RecordingSink(), { spoolDir: dir });
+      await expect(
+        readArchive(chunked(new TextEncoder().encode("hello")), limits, new RecordingSink(), {
+          spoolDir: dir,
+        }),
+      ).rejects.toThrow("not a readable Rakazo export");
+      expect(await readdir(dir)).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("removes the spool when the upload aborts mid-stream", async () => {
@@ -342,11 +349,15 @@ describe("account import archive", () => {
       yield new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
       throw new Error("Synthetic abort");
     }
-    const before = await spoolDirs();
-    await expect(readArchive(aborting(), limits, new RecordingSink())).rejects.toThrow(
-      "Synthetic abort",
-    );
-    expect(await spoolDirs()).toEqual(before);
+    const dir = await spoolDir();
+    try {
+      await expect(
+        readArchive(aborting(), limits, new RecordingSink(), { spoolDir: dir }),
+      ).rejects.toThrow("Synthetic abort");
+      expect(await readdir(dir)).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("hands every entry to the sink in order, empty ones included", async () => {
@@ -364,6 +375,20 @@ describe("account import archive", () => {
       ["artifact", 0],
       ["home", 5],
     ]);
+  });
+
+  it("imports a large records entry whole, through the spill", async () => {
+    // A multi-megabyte records entry inflates into the spill file, so the
+    // sink still receives every line in order, byte for byte.
+    const lines = "line\n".repeat(400_000);
+    const bytes = buildArchive([
+      ["manifest.json", "{}"],
+      ["spaces/s1/records.jsonl", lines],
+    ]);
+    const sink = new RecordingSink();
+    await readArchive(chunked(bytes), limits, sink);
+    expect(sink.files.map((file) => file.entry.kind)).toEqual(["manifest", "records"]);
+    expect(sink.files.at(-1)?.text).toBe(lines);
   });
 });
 

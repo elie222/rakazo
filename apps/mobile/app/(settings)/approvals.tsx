@@ -1,12 +1,17 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { ActionApprovalRule } from "@rakazo/contracts";
-import { humanizeToolName, toolNameFromLabel } from "@rakazo/core";
-import { useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
+import type { ApprovalMode } from "@rakazo/core";
+import {
+  APPROVAL_RULE_EFFECTS,
+  approvalRuleApplies,
+  approvalRuleEffectChoices,
+  approvalRuleLabel,
+} from "@rakazo/core";
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Alert, Platform, ScrollView, StyleSheet, Text } from "react-native";
+import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadFailure } from "../../components/load-failure";
-import { TextFieldDialog } from "../../components/name-dialog";
 import { NativeActionButton } from "../../components/native-action-button";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
@@ -20,9 +25,9 @@ import { errorText } from "../../lib/user-error";
 type RuleAction = ActionApprovalRule["effect"] | "remove";
 
 /**
- * The tools and sites allowed, asked about or blocked. Rules come from approval cards or are
- * added here by tool name; the approval mode itself is a row in settings. Opened with a Space,
- * it edits that Space's override instead of the account's.
+ * The apps, tools and sites allowed, asked about or blocked, grouped by which. Rules come from
+ * approval cards or are picked from a list; the approval mode itself is a row in settings. Opened
+ * with a Space, it edits that Space's override instead of the account's.
  */
 export default function ApprovalRules() {
   const { spaceId } = useLocalSearchParams<{ spaceId?: string }>();
@@ -31,13 +36,14 @@ export default function ApprovalRules() {
   const scope = target.scope;
   const { t } = useI18n();
   const navigation = useNavigation();
+  const router = useRouter();
   const colorScheme = useResolvedAppearance();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   // Null until the first load lands.
   const [rules, setRules] = useState<ActionApprovalRule[] | null>(null);
-  // The Android field's text while it is open; iOS uses the system prompt.
-  const [draft, setDraft] = useState<string | null>(null);
+  // The approval mode, which decides which rules apply; null until a fresh read lands.
+  const [mode, setMode] = useState<ApprovalMode | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -58,6 +64,13 @@ export default function ApprovalRules() {
         .catch((err: unknown) => {
           if (current) setLoadError(errorText(err, t("Something went wrong. Try again.")));
         });
+      // Dims only once a fresh read confirms the mode, so a failed one never leaves stale dimming.
+      setMode(null);
+      void rpc("autoReview/get", { scope })
+        .then((settings) => {
+          if (current) setMode(settings.mode);
+        })
+        .catch(() => undefined);
       return () => {
         current = false;
       };
@@ -85,7 +98,12 @@ export default function ApprovalRules() {
         setRules((current) => current?.filter((entry) => entry.id !== rule.id) ?? null);
         return;
       }
-      if (action === rule.effect || rule.matchKind === "category") return;
+      if (
+        action === rule.effect ||
+        rule.matchKind === "category" ||
+        !approvalRuleEffectChoices(rule).includes(action)
+      )
+        return;
       const saved = await rpc("approvalRules/set", {
         scope,
         effect: action,
@@ -105,35 +123,6 @@ export default function ApprovalRules() {
       );
     });
 
-  const addTool = (entered: string) =>
-    save(async () => {
-      const name = toolNameFromLabel(entered);
-      // An existing rule keeps its effect; changing it stays an explicit choice in the list.
-      const exists = rules?.some(
-        (rule) => rule.matchKind === "tool" && rule.matchValue.toLowerCase() === name.toLowerCase(),
-      );
-      if (exists) {
-        setDraft(null);
-        return;
-      }
-      const saved = await rpc("approvalRules/set", {
-        scope,
-        effect: "require_approval",
-        matchKind: "tool",
-        matchValue: name,
-      });
-      const value = saved.matchValue.toLowerCase();
-      setRules((current) => [
-        ...(current ?? []).filter(
-          (entry) => entry.matchKind !== "tool" || entry.matchValue.toLowerCase() !== value,
-        ),
-        saved,
-      ]);
-      setDraft(null);
-    });
-  const addToolRef = useRef(addTool);
-  addToolRef.current = addTool;
-
   const canAdd = rules !== null && !loadError;
   useLayoutEffect(() => {
     if (!canAdd) {
@@ -142,22 +131,11 @@ export default function ApprovalRules() {
       );
       return;
     }
-    const open = () => {
-      if (Platform.OS !== "ios") {
-        setError(null);
-        setDraft("");
-        return;
-      }
-      Alert.prompt(t("Add rule"), undefined, [
-        { text: t("Cancel"), style: "cancel" },
-        {
-          text: t("Save"),
-          onPress: (entered?: string) => {
-            if (entered?.trim()) void addToolRef.current(entered);
-          },
-        },
-      ]);
-    };
+    const open = () =>
+      router.push({
+        pathname: "/approval-rule-add",
+        params: target.scope === "space" ? { spaceId: target.spaceId } : {},
+      });
     navigation.setOptions(
       iosAtLeast(26)
         ? {
@@ -176,10 +154,14 @@ export default function ApprovalRules() {
             ),
           },
     );
-  }, [canAdd, navigation, t]);
+  }, [canAdd, navigation, router, t, target]);
 
-  const effectLabel = (effect: ActionApprovalRule["effect"]) =>
-    effect === "always_allow" ? t("Allow") : effect === "deny" ? t("Block") : t("Ask");
+  const groupTitles: Record<ActionApprovalRule["effect"], string> = {
+    always_allow: t("Always allow"),
+    require_approval: t("Always ask"),
+    deny: t("Blocked"),
+  };
+  const groups = APPROVAL_RULE_EFFECTS.map((effect) => ({ effect, title: groupTitles[effect] }));
 
   const failure = error ?? loadError;
   const shownError = error ?? (rules ? loadError : null);
@@ -205,57 +187,45 @@ export default function ApprovalRules() {
             {shownError}
           </Text>
         ) : null}
-        <SettingsGroup>
-          {rules?.map((rule) => {
-            const title =
-              rule.matchKind === "tool" ? humanizeToolName(rule.matchValue) : rule.matchValue;
-            const switchable = rule.matchKind !== "category";
-            return (
-              <MenuView
-                key={rule.id}
-                actions={[
-                  ...(switchable
-                    ? (["always_allow", "require_approval", "deny"] as const).map((effect) => ({
-                        id: effect,
-                        title: effectLabel(effect),
-                        state: rule.effect === effect ? ("on" as const) : ("off" as const),
-                      }))
-                    : []),
-                  { id: "remove", title: t("Remove"), attributes: { destructive: true } },
-                ]}
-                colorScheme={colorScheme}
-                onPressAction={(event) => {
-                  const action = event.nativeEvent.event;
-                  if (!pending && isRuleAction(action)) void applyRuleAction(rule, action);
-                }}
-                title={title}
-              >
-                <SettingsRow
-                  accessible
-                  accessibilityRole="button"
-                  dimmed={pending}
-                  title={title}
-                  value={effectLabel(rule.effect)}
-                />
-              </MenuView>
-            );
-          })}
-        </SettingsGroup>
+        {groups.map(({ effect, title: groupTitle }) => (
+          <SettingsGroup key={effect} label={groupTitle}>
+            {rules
+              ?.filter((rule) => rule.effect === effect)
+              .map((rule) => {
+                const title = approvalRuleLabel(rule);
+                const effects = approvalRuleEffectChoices(rule);
+                return (
+                  <MenuView
+                    key={rule.id}
+                    actions={[
+                      ...groups
+                        .filter((group) => effects.includes(group.effect))
+                        .map((group) => ({
+                          id: group.effect,
+                          title: group.title,
+                          state: rule.effect === group.effect ? ("on" as const) : ("off" as const),
+                        })),
+                      { id: "remove", title: t("Remove"), attributes: { destructive: true } },
+                    ]}
+                    colorScheme={colorScheme}
+                    onPressAction={(event) => {
+                      const action = event.nativeEvent.event;
+                      if (!pending && isRuleAction(action)) void applyRuleAction(rule, action);
+                    }}
+                    title={title}
+                  >
+                    <SettingsRow
+                      accessible
+                      accessibilityRole="button"
+                      dimmed={pending || !approvalRuleApplies(mode, effect)}
+                      title={title}
+                    />
+                  </MenuView>
+                );
+              })}
+          </SettingsGroup>
+        ))}
       </ScrollView>
-      {draft !== null ? (
-        <TextFieldDialog
-          title={t("Add rule")}
-          label={t("Tool name")}
-          submitLabel={t("Save")}
-          value={draft}
-          error={error}
-          saving={pending}
-          input={{ autoCapitalize: "none", autoCorrect: false, maxLength: 253 }}
-          onChange={setDraft}
-          onSubmit={(name) => void addTool(name)}
-          onClose={() => setDraft(null)}
-        />
-      ) : null}
     </SafeAreaView>
   );
 }

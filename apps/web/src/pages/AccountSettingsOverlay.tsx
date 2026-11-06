@@ -29,7 +29,7 @@ import {
   TableRow,
 } from "@rakazo/ui-web/components/ui/table";
 import type { RefObject } from "react";
-import { useId, useRef, useState, useSyncExternalStore } from "react";
+import { useId, useRef, useState } from "react";
 import { AccountAccess, LinkSsoRow } from "../components/AccountAccess";
 import { AccountDataSettings } from "../components/AccountDataSettings";
 import { SuccessPop } from "../components/ai/primitives";
@@ -45,31 +45,14 @@ import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { TrustedLinkSitesSettings } from "../components/TrustedLinkSitesSettings";
 import { authClient } from "../lib/auth";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
-import {
-  getBotsSidebarDensity,
-  setBotsSidebarDensity,
-  subscribeBotsSidebarDensity,
-} from "../lib/bots-sidebar-density-pref";
-import {
-  getComposerEnterToSend,
-  setComposerEnterToSend,
-  subscribeComposerEnterToSend,
-} from "../lib/composer-enter-to-send-pref";
+import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
+import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import { localTimezone, sameTimeZone, timezoneOptions } from "../lib/local-timezone";
 import { usePasskeysSupported } from "../lib/passkeys";
-import {
-  getRemoteImagesPreference,
-  setRemoteImagesPreference,
-} from "../lib/remote-images-preference";
-import {
-  getResponseStreamingPreference,
-  setResponseStreamingPreference,
-} from "../lib/response-streaming";
-import {
-  getToolActivityPreference,
-  setToolActivityPreference,
-} from "../lib/tool-activity-preference";
+import { remoteImagesPreference } from "../lib/remote-images-preference";
+import { responseStreamingPreference } from "../lib/response-streaming";
+import { toolActivityPreference } from "../lib/tool-activity-preference";
 import type { AppearancePreference } from "../lib/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance";
 import type { UiLocale } from "../lib/ui-locale";
@@ -147,31 +130,17 @@ export function GeneralSettingsPanels({
   const [appearance, setAppearance] = useState<AppearancePreference>(() =>
     getUiAppearancePreference(),
   );
-  const sidebarDensity = useSyncExternalStore(
-    subscribeBotsSidebarDensity,
-    getBotsSidebarDensity,
-    () => "comfortable",
-  );
+  const sidebarDensity = botsSidebarDensityPreference.use();
   const sidebarDensityLabelId = useId();
   const botStyleLabelId = useId();
   const [botStyleError, setBotStyleError] = useState<string | null>(null);
-  const [streamReplies, setStreamReplies] = useState(
-    () => getResponseStreamingPreference() === "on",
-  );
+  const streamReplies = responseStreamingPreference.use();
   const streamRepliesId = useId();
-  const [showToolActivity, setShowToolActivity] = useState(
-    () => getToolActivityPreference() === "on",
-  );
+  const showToolActivity = toolActivityPreference.use();
   const showToolActivityId = useId();
-  const enterToSend = useSyncExternalStore(
-    subscribeComposerEnterToSend,
-    getComposerEnterToSend,
-    () => false,
-  );
+  const enterToSend = composerEnterToSendPreference.use();
   const enterToSendId = useId();
-  const [loadRemoteImages, setLoadRemoteImages] = useState(
-    () => getRemoteImagesPreference() === "on",
-  );
+  const loadRemoteImages = remoteImagesPreference.use();
   const loadRemoteImagesId = useId();
   const timezoneId = useId();
   const showPassword = Boolean(
@@ -357,7 +326,7 @@ export function GeneralSettingsPanels({
               data-testid="bots-sidebar-density-select"
               value={[sidebarDensity]}
               onValueChange={([next]) => {
-                if (next) setBotsSidebarDensity(next as BotsSidebarDensity);
+                if (next) botsSidebarDensityPreference.set(next as BotsSidebarDensity);
               }}
               spacing={1}
               className="grid min-w-0 grid-cols-2 rounded-lg bg-muted p-1"
@@ -446,7 +415,7 @@ export function GeneralSettingsPanels({
               id={enterToSendId}
               data-testid="composer-enter-to-send-toggle"
               checked={enterToSend}
-              onCheckedChange={(checked) => setComposerEnterToSend(checked)}
+              onCheckedChange={(checked) => composerEnterToSendPreference.set(checked)}
             />
           }
         />
@@ -461,10 +430,7 @@ export function GeneralSettingsPanels({
               id={streamRepliesId}
               data-testid="response-streaming-toggle"
               checked={streamReplies}
-              onCheckedChange={(checked) => {
-                setStreamReplies(checked);
-                setResponseStreamingPreference(checked ? "on" : "off");
-              }}
+              onCheckedChange={(checked) => responseStreamingPreference.set(checked)}
             />
           }
         />
@@ -479,10 +445,7 @@ export function GeneralSettingsPanels({
               id={showToolActivityId}
               data-testid="tool-activity-toggle"
               checked={showToolActivity}
-              onCheckedChange={(checked) => {
-                setShowToolActivity(checked);
-                setToolActivityPreference(checked ? "on" : "off");
-              }}
+              onCheckedChange={(checked) => toolActivityPreference.set(checked)}
             />
           }
         />
@@ -497,10 +460,7 @@ export function GeneralSettingsPanels({
               id={loadRemoteImagesId}
               data-testid="remote-images-toggle"
               checked={loadRemoteImages}
-              onCheckedChange={(checked) => {
-                setLoadRemoteImages(checked);
-                setRemoteImagesPreference(checked ? "on" : "off");
-              }}
+              onCheckedChange={(checked) => remoteImagesPreference.set(checked)}
             />
           }
         />

@@ -81,6 +81,17 @@ describe("last bot shortcut target", () => {
     expect(JSON.parse(saved.get("rakazo.last_bot_id") ?? "null").spaceId).toBeNull();
   });
 
+  it("does not carry a chat saved without a Space into a later explicit Space", async () => {
+    selectedSpace.id = null;
+    await saveLastBotId("writer", null);
+    expect(await loadLastBotId()).toBe("writer");
+
+    selectedSpace.id = "space-a";
+    expect(await loadLastBotId()).toBe("");
+    selectedSpace.id = null;
+    expect(await loadLastBotId()).toBe("writer");
+  });
+
   it("keeps the later chat when the first identity response is delayed", async () => {
     const started = deferred();
     const release = deferred();

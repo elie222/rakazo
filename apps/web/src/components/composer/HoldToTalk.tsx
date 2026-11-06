@@ -71,7 +71,10 @@ export function useHoldToTalk({
   useEffect(
     () => () => {
       if (noticeTimer.current) clearTimeout(noticeTimer.current);
-      if (recordingRef.current) dictation.stop("cancel");
+      // Words already on their way to the server were meant to be kept, so only a recording
+      // still listening is cancelled; `onText` decides where late words go.
+      if (recordingRef.current && dictation.state.status !== "transcribing")
+        dictation.stop("cancel");
     },
     [],
   );

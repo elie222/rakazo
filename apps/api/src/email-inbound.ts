@@ -11,11 +11,14 @@ import {
   sanitizeMessagingLabel,
 } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  isUniqueViolation,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
 import { cancelBody, readBoundedBytes } from "./http-body.js";
-import { isUniqueViolation } from "./routes/shared.js";
 import type { WebhookDeps } from "./webhook-inbound.js";
 import { deliverWebhookEvent, formatUntrustedDeliveryPayload } from "./webhook-inbound.js";
 
@@ -251,7 +254,7 @@ async function saveToInbox(
   if (found) return { id: found.id, files: found.attachments as InboxFile[] };
   if (options.capped) {
     const recent = await deps.prisma.botEmailMessage.count({
-      where: { botId: bot.id, receivedAt: { gte: new Date(Date.now() - DAY_MS) } },
+      where: { botId: bot.id, sent: false, receivedAt: { gte: new Date(Date.now() - DAY_MS) } },
     });
     if (recent >= INBOX_DAILY_LIMIT) return null;
   }

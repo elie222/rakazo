@@ -15,6 +15,18 @@ sign-in or an app to connect.
 > One bot per job works best: an inbox bot, a research bot, a bot for one client. Each keeps its own
 > history and memory, so it gets better at that job over time.
 
+### Start from a template
+
+**Bot templates** are ready-made bots for common jobs: a morning briefing, inbox triage, pull
+request reviews, and a weekly digest of topics you follow. Open them with **Templates** in
+**Connect apps** or **Skills**. Each template shows an example of what the bot sends and everything it adds before you
+choose **Create bot**.
+
+A template adds the bot's instructions, a skill to your library, and a routine that stays paused
+until you turn it on. Nothing is connected for you: the new chat asks for the apps the bot works
+with, and it still works without them where it can. Creating the same template again opens the bot
+you already made.
+
 ## Talk to it
 
 Type in the composer and press Enter. You can keep chatting while a bot works, and **Stop** ends

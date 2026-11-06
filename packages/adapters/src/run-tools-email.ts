@@ -7,6 +7,7 @@ import { redactConnectorPayload } from "./connector-safety.js";
 import type { RunContext } from "./run-context.js";
 import { isRunTainted, refuseOwnerSettingsChange } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { argsError } from "./tool-args.js";
 
 /** Longest a read_email call waits for mail to arrive, well inside a run's lease renewal. */
 export const READ_EMAIL_MAX_WAIT_SECONDS = 120;
@@ -34,13 +35,6 @@ const DeleteEmailSchema = z
     ids: z.array(z.string().trim().min(1).max(100)).min(1).max(DELETE_EMAIL_MAX_IDS),
   })
   .strict();
-
-/** A tool call's argument problems, on one line. */
-function argsError(error: z.ZodError): string {
-  return error.issues
-    .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
-    .join(" ");
-}
 
 function sender(email: { fromName: string; fromAddress: string }): string {
   return email.fromName ? `${email.fromName} <${email.fromAddress}>` : email.fromAddress;
@@ -88,7 +82,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
       {
         id: email.id,
         from: sender(email),
-        verified: email.verified,
+        ...(email.sent ? { sent: true } : { verified: email.verified }),
         to: email.to,
         ...(email.cc.length ? { cc: email.cc } : {}),
         subject: email.subject,
@@ -118,6 +112,8 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
   const startedAt = Date.now();
   const where = {
     botId: bot.id,
+    // Waiting is for mail to arrive, so what the bot sent never ends it.
+    ...(input.waitSeconds ? { sent: false } : {}),
     ...(input.since || input.before
       ? {
           receivedAt: {
@@ -145,6 +141,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
         fromAddress: true,
         fromName: true,
         verified: true,
+        sent: true,
         subject: true,
         receivedAt: true,
         text: true,
@@ -169,7 +166,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
   const listed = emails.map((email) => ({
     id: email.id,
     from: sender(email),
-    verified: email.verified,
+    ...(email.sent ? { sent: true } : { verified: email.verified }),
     subject: email.subject,
     receivedAt: email.receivedAt.toISOString(),
     preview: redactSecrets(email.text, ctx.secrets)
@@ -194,7 +191,7 @@ async function deleteEmail(ctx: RunContext, call: ToolCall) {
   }
   const { deps, bot, run } = ctx;
   if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });
-  // Only mail it received.
+  // Only mail it received: what the bot sent counts toward the daily sending limit.
   const { count } = await deps.prisma.botEmailMessage.deleteMany({
     where: { id: { in: [...new Set(parsed.data.ids)] }, botId: bot.id, sent: false },
   });
@@ -236,9 +233,173 @@ async function claimEmailAddress(ctx: RunContext, call: ToolCall) {
   return call.finish({ address: `${parsed.data}@${domain}` });
 }
 
-/** The bot's own address and inbox: mail anyone sent to it. */
+/** Emails one bot sends a day at most, so a looping bot cannot spam from the shared domain. */
+export const SEND_EMAIL_DAILY_LIMIT = 50;
+/** Across all of one owner's bots, so more bots never mean more mail from the shared domain. */
+export const SEND_EMAIL_OWNER_DAILY_LIMIT = 200;
+const SEND_RECIPIENTS_MAX = 10;
+const SEND_TEXT_MAX_CHARS = 20_000;
+const SUBJECT_MAX_CHARS = 500;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_REFERENCES = 20;
+
+const Recipients = z.union([z.email(), z.array(z.email())]).transform((value) =>
+  // Only the domain is case-insensitive; the part before the @ goes out exactly as given.
+  (Array.isArray(value) ? value : [value]).map((address) => {
+    const at = address.trim().lastIndexOf("@");
+    return `${address.trim().slice(0, at)}@${address
+      .trim()
+      .slice(at + 1)
+      .toLowerCase()}`;
+  }),
+);
+const SendEmailSchema = z
+  .object({
+    to: Recipients.refine((list) => list.length > 0, "Name at least one recipient."),
+    cc: Recipients.optional(),
+    subject: z.string().trim().max(SUBJECT_MAX_CHARS).optional(),
+    text: z.string().trim().min(1).max(SEND_TEXT_MAX_CHARS),
+    inReplyTo: z.string().trim().min(1).max(100).optional(),
+  })
+  .strict();
+
+/** Email from the bot's own address; replies come back to its inbox. */
+async function sendEmail(ctx: RunContext, call: ToolCall) {
+  const { deps, bot, run } = ctx;
+  const domain = deps.inboundEmailDomain;
+  if (!deps.email || !domain) return call.finish({ error: "This server can't send email." });
+  if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });
+  const parsed = SendEmailSchema.safeParse(call.args);
+  if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
+  const input = parsed.data;
+  const cc = input.cc ?? [];
+  if (input.to.length + cc.length > SEND_RECIPIENTS_MAX) {
+    return call.finish({ error: `Send to at most ${SEND_RECIPIENTS_MAX} people at once.` });
+  }
+  // An address can carry a secret out as surely as the body, and can't be redacted into another.
+  // Compared lowercased, so a change of case can't slip a secret past.
+  const secrets = ctx.secrets.map((secret) => secret.toLowerCase());
+  if (
+    [...input.to, ...cc].some(
+      (address) => redactSecrets(address.toLowerCase(), secrets) !== address.toLowerCase(),
+    )
+  ) {
+    return call.finish({ error: "A recipient's address contains a secret. Don't send it." });
+  }
+  const name = await deps.prisma.botEmailAddress.findUnique({
+    where: { botId: bot.id },
+    select: { name: true },
+  });
+  if (!name) return call.finish({ error: "You don't have an email address yet." });
+  const address = `${name.name}@${domain}`;
+
+  const original = input.inReplyTo
+    ? await deps.prisma.botEmailMessage.findFirst({
+        where: { id: input.inReplyTo, botId: bot.id },
+        select: { subject: true, messageId: true, references: true },
+      })
+    : null;
+  if (input.inReplyTo && !original) {
+    return call.finish({ error: "No email with that id in your inbox." });
+  }
+  // Redacted before lines are joined, so a secret that spans lines still matches.
+  const subject = redactSecrets(
+    input.subject ||
+      (original
+        ? /^re:/i.test(original.subject)
+          ? original.subject
+          : `Re: ${original.subject}`
+        : ""),
+    ctx.secrets,
+  )
+    .replace(/[\r\n]+/g, " ")
+    .slice(0, SUBJECT_MAX_CHARS);
+  if (!subject) return call.finish({ error: "Give the email a subject." });
+  // Secrets this run has used never leave in an email, whatever the bot was asked to write.
+  const text = redactSecrets(input.text, ctx.secrets);
+  if (text.length > SEND_TEXT_MAX_CHARS) {
+    return call.finish({ error: "The email is too long once secrets are removed. Shorten it." });
+  }
+  // A reply to mail the bot sent answers what that one answered: its own ID is the provider's.
+  const parent = original?.messageId ?? original?.references.at(-1);
+  const references = original?.messageId
+    ? [...original.references, original.messageId].slice(-MAX_REFERENCES)
+    : (original?.references ?? []);
+
+  const key = `sent:${call.effectKey}`;
+  // Only what the bot chose: a reply's subject repeats what the sender wrote, outside text that
+  // this result, counted as the bot's own, must not carry.
+  const done = (id: string) =>
+    call.finish({ sent: true, id, from: address, to: input.to, ...(cc.length ? { cc } : {}) });
+  const earlier = await deps.prisma.botEmailMessage.findUnique({
+    where: { botId_key: { botId: bot.id, key } },
+    select: { id: true },
+  });
+  // A finished send is replayed by the gate, so a row found here is an attempt cut off midway.
+  if (earlier) {
+    return call.finish({
+      error:
+        "An earlier attempt to send this email was interrupted and may or may not have gone out. Tell your owner instead of sending it again.",
+      id: earlier.id,
+    });
+  }
+  const today = { sent: true, receivedAt: { gte: new Date(Date.now() - DAY_MS) } };
+  const [mine, owners] = await Promise.all([
+    deps.prisma.botEmailMessage.count({ where: { ...today, botId: bot.id } }),
+    deps.prisma.botEmailMessage.count({ where: { ...today, bot: { userId: bot.userId } } }),
+  ]);
+  if (mine >= SEND_EMAIL_DAILY_LIMIT) {
+    return call.finish({
+      error: "You've sent as many emails today as you can. Try again tomorrow.",
+    });
+  }
+  if (owners >= SEND_EMAIL_OWNER_DAILY_LIMIT) {
+    return call.finish({
+      error: "You've sent as many emails today as your owner's bots can. Try again tomorrow.",
+    });
+  }
+  // Saved before it goes: a retry after a crash finds it and never sends the email twice.
+  const row = await deps.prisma.botEmailMessage.create({
+    data: {
+      spaceId: bot.spaceId,
+      botId: bot.id,
+      key,
+      references,
+      fromAddress: address,
+      fromName: bot.name,
+      verified: true,
+      sent: true,
+      to: input.to,
+      cc,
+      subject,
+      text,
+    },
+    select: { id: true },
+  });
+  try {
+    await deps.email.send({
+      from: `"${bot.name.replace(/["\\\r\n]/g, "")}" <${address}>`,
+      replyTo: address,
+      to: input.to,
+      ...(cc.length ? { cc } : {}),
+      subject,
+      text,
+      ...(parent ? { headers: { "In-Reply-To": parent, References: references.join(" ") } } : {}),
+    });
+  } catch (error) {
+    await deps.prisma.botEmailMessage.delete({ where: { id: row.id } }).catch(() => undefined);
+    // Most failures are refusals, but one can come after the provider took the email.
+    return call.finish({
+      error: `Sending failed (${error instanceof Error ? error.message : String(error)}). It most likely did not go out.`,
+    });
+  }
+  return done(row.id);
+}
+
+/** The bot's own address and inbox: mail anyone sent to it, and mail it sends. */
 export const emailTools: ToolHandlers = {
   read_email: readEmail,
   delete_email: deleteEmail,
   claim_email_address: claimEmailAddress,
+  send_email: sendEmail,
 };

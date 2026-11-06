@@ -1,8 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import type { Machine } from "@boxd-sh/sdk";
-import { Boxd, ConflictError, FilesystemError, NotFoundError, RateLimitError } from "@boxd-sh/sdk";
+import type { Boxd, Machine } from "@boxd-sh/sdk";
 import type {
   AdapterContext,
   CommandRequest,
@@ -25,7 +24,12 @@ import {
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import {
+  normalizeWorkspacePath,
+  shellQuote,
+  workspaceCwd,
+  workspacePath,
+} from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import {
   INSTALL_LINUX_BROWSER,
@@ -66,6 +70,9 @@ const SNAPSHOT_BUILD_TIMEOUT_MS = 30 * 60_000;
 const SNAPSHOT_RETRY_MS = 15 * 60_000;
 /** How long a process waits before looking again while another process saves the snapshot. */
 const SNAPSHOT_LOOKUP_RETRY_MS = 60_000;
+
+/** The SDK loads only when boxd is configured; its error classes are read after a call fails. */
+const boxdSdk = () => import("@boxd-sh/sdk");
 
 /** The boxd SDK calls this provider makes; tests pass a stand-in. */
 export interface BoxdSandboxClient {
@@ -127,10 +134,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
   private baseSnapshotBuild?: Promise<void>;
   private baseSnapshotRetryAt = 0;
 
-  constructor(
-    config: { apiKey: string; org?: string },
-    client: BoxdSandboxClient = new Boxd({ apiKey: config.apiKey }),
-  ) {
+  constructor(config: { org?: string }, client: BoxdSandboxClient) {
     this.client = client;
     this.org = config.org;
   }
@@ -189,7 +193,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
     } catch (error) {
       // A lost reply can hide a machine created under this name.
       await this.client.machines.delete(name).catch(() => undefined);
-      throw providerError(error);
+      throw await providerError(error);
     }
     if (context.signal.aborted) {
       await this.destroy(this.ref(machine.id, request.botId, true), context);
@@ -256,9 +260,12 @@ export class BoxdSandboxProvider implements SandboxProvider {
       await this.ensureRunning(id, context.signal);
       // Added now so its certificate, about 20 seconds for a new machine, is ready by the first
       // screen. A machine created from a snapshot does not get proxies passed to create.
-      await this.client.machines.proxies.create(id, SCREEN_PROXY, SCREEN_PORT).catch((error) => {
-        if (!(error instanceof ConflictError)) throw providerError(error, id);
-      });
+      await this.client.machines.proxies
+        .create(id, SCREEN_PROXY, SCREEN_PORT)
+        .catch(async (error) => {
+          if (!(error instanceof (await boxdSdk()).ConflictError))
+            throw await providerError(error, id);
+        });
       // A computer from the snapshot already has the tools; this only checks for them.
       const result = await this.run(
         id,
@@ -309,7 +316,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
         await this.client.machines.fs.write(id, envFile, environment, { mode: 0o600 });
       }
       result = await this.run(id, envFile ? sourceEnvironmentCommand(envFile, argv) : argv, {
-        cwd: boxdCwd(request.cwd),
+        cwd: workspaceCwd(WORKSPACE, request.cwd, [HOME]),
         timeoutMs,
         signal: context.signal,
       });
@@ -493,8 +500,8 @@ export class BoxdSandboxProvider implements SandboxProvider {
       const machine = await this.client.machines.get(id);
       if (machine.status === "running") await this.client.machines.pause(id);
     } catch (error) {
-      if (error instanceof NotFoundError) return;
-      throw providerError(error);
+      if (error instanceof (await boxdSdk()).NotFoundError) return;
+      throw await providerError(error);
     }
   }
 
@@ -504,7 +511,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
     try {
       await this.client.machines.delete(id);
     } catch (error) {
-      if (!(error instanceof NotFoundError)) throw providerError(error);
+      if (!(error instanceof (await boxdSdk()).NotFoundError)) throw await providerError(error);
     }
   }
 
@@ -517,8 +524,8 @@ export class BoxdSandboxProvider implements SandboxProvider {
       const machine = await this.machine(id);
       if (machine.status === "destroyed" || machine.status === "failed") throw machineGone(id);
       if (machine.status === "stopped") {
-        await this.client.machines.start(id).catch((error: unknown) => {
-          throw providerError(error, id);
+        await this.client.machines.start(id).catch(async (error: unknown) => {
+          throw await providerError(error, id);
         });
         started = true;
         continue;
@@ -598,7 +605,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
         return { ...output, exitCode: aborted ? 130 : 124, timedOut: !aborted, aborted };
       }
       const exit = settled?.[2];
-      if (!exit || exit.status === "rejected") throw providerError(exit?.reason, id);
+      if (!exit || exit.status === "rejected") throw await providerError(exit?.reason, id);
       return { ...output, exitCode: exit.value, timedOut: false, aborted: false };
     } finally {
       clearTimeout(timer);
@@ -619,7 +626,8 @@ export class BoxdSandboxProvider implements SandboxProvider {
       return { path: file.path, executable: file.executable, content };
     } catch (error) {
       // Removed since the listing.
-      if (error instanceof FilesystemError && error.code === "ENOENT") return undefined;
+      if (error instanceof (await boxdSdk()).FilesystemError && error.code === "ENOENT")
+        return undefined;
       throw error;
     }
   }
@@ -662,7 +670,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
     } catch (error) {
       // A cancelled boot says nothing about the snapshot.
       if (signal.aborted) throw error;
-      if (!(error instanceof NotFoundError)) {
+      if (!(error instanceof (await boxdSdk()).NotFoundError)) {
         this.baseSnapshotRetryAt = Date.now() + SNAPSHOT_LOOKUP_RETRY_MS;
         return undefined;
       }
@@ -720,8 +728,8 @@ export class BoxdSandboxProvider implements SandboxProvider {
       try {
         status = (await this.client.snapshots.get(name, this.scope())).status;
       } catch (error) {
-        if (error instanceof NotFoundError) return undefined;
-        throw providerError(error);
+        if (error instanceof (await boxdSdk()).NotFoundError) return undefined;
+        throw await providerError(error);
       }
       if (status !== "pending") return status;
       await delay(2_000, undefined, { signal });
@@ -732,7 +740,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
     try {
       return await this.client.machines.get(id);
     } catch (error) {
-      throw providerError(error, id);
+      throw await providerError(error, id);
     }
   }
 
@@ -740,8 +748,8 @@ export class BoxdSandboxProvider implements SandboxProvider {
     try {
       return (await this.client.machines.get(this.id(computer))).status;
     } catch (error) {
-      if (error instanceof NotFoundError) return undefined;
-      throw providerError(error);
+      if (error instanceof (await boxdSdk()).NotFoundError) return undefined;
+      throw await providerError(error);
     }
   }
 
@@ -764,6 +772,14 @@ export class BoxdSandboxProvider implements SandboxProvider {
   }
 }
 
+export async function createBoxdSandboxProvider(config: {
+  apiKey: string;
+  org?: string;
+}): Promise<BoxdSandboxProvider> {
+  const { Boxd } = await boxdSdk();
+  return new BoxdSandboxProvider(config, new Boxd({ apiKey: config.apiKey }));
+}
+
 function machineGone(id: string, cause?: unknown): Error {
   return Object.assign(new Error(`boxd machine ${id} is gone`, { cause }), {
     name: "SandboxNotFoundError",
@@ -775,7 +791,8 @@ function isMachineGone(error: unknown): boolean {
 }
 
 /** boxd's rate limit and a missing machine, as the errors the computer lifecycle acts on. */
-function providerError(error: unknown, id?: string): unknown {
+async function providerError(error: unknown, id?: string): Promise<unknown> {
+  const { NotFoundError, RateLimitError } = await boxdSdk();
   if (error instanceof RateLimitError) return new SandboxRateLimitError({ cause: error });
   if (id && error instanceof NotFoundError) return machineGone(id, error);
   return error;
@@ -811,17 +828,6 @@ function commandFailure(result: BoxdCommandResult): string {
   if (result.timedOut) return "timed out";
   const last = (result.stderr || result.stdout).trim().split("\n").at(-1)?.slice(0, 300);
   return last ? `exit ${result.exitCode}: ${last}` : `exit ${result.exitCode}`;
-}
-
-function boxdCwd(cwd: string | undefined): string {
-  if (!cwd || cwd === "." || cwd === "/" || cwd === "/home/rakazo" || cwd === HOME)
-    return WORKSPACE;
-  const relative = cwd.startsWith(`${WORKSPACE}/`)
-    ? cwd.slice(WORKSPACE.length + 1)
-    : cwd.startsWith("/home/rakazo/")
-      ? cwd.slice("/home/rakazo/".length)
-      : cwd;
-  return workspacePath(WORKSPACE, relative);
 }
 
 /** `path\0mode\0size\0` for every workspace file, relative to the workspace. */

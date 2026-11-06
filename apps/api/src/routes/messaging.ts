@@ -6,12 +6,12 @@ import {
   crossSpaceCommunicationAllowed,
   formatMessagingLinkCode,
   issueMessagingLinkCode,
+  isUniqueViolation,
   runAsSystem,
   spaceIsShared,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { RouterContext } from "./context.js";
-import { isUniqueViolation } from "./shared.js";
 
 export function messagingRoutes(ctx: RouterContext) {
   const { deps, authed } = ctx;

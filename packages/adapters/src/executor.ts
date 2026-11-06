@@ -51,6 +51,7 @@ import {
   readRunTimingFields,
   recordUsage,
   settleReleasedTakeoverCards,
+  spaceTakesWork,
   teamChatRunFromOwner,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
@@ -344,29 +345,35 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
       const fence = nextFence(run.leaseFence);
       const now = new Date();
-      const leased = await deps.prisma.run.updateMany({
-        where: {
-          id: runId,
-          ...continueRunClaimFence(run),
-          AND: [{ OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] }],
-          OR: [
-            { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
-            {
-              status: { in: ["leased", "running"] },
-              leaseExpiresAt: { lte: now },
-            },
-          ],
-        },
-        data: {
-          status: "leased",
-          leaseOwner: workerId,
-          leaseFence: fence,
-          leaseExpiresAt: new Date(Date.now() + 5 * 60_000),
-          error: null,
-          checkpoint: null,
-          wakeAt: null,
-        },
-      });
+      // A Space being deleted starts nothing; its runs wait for the deletion to end or be called
+      // off. Its lock comes before the run row, so a claim committing meanwhile is seen.
+      const leased = await deps.prisma.$transaction(async (tx) =>
+        !(await spaceTakesWork(tx, run.spaceId))
+          ? { count: 0 }
+          : tx.run.updateMany({
+              where: {
+                id: runId,
+                ...continueRunClaimFence(run),
+                AND: [{ OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] }],
+                OR: [
+                  { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
+                  {
+                    status: { in: ["leased", "running"] },
+                    leaseExpiresAt: { lte: now },
+                  },
+                ],
+              },
+              data: {
+                status: "leased",
+                leaseOwner: workerId,
+                leaseFence: fence,
+                leaseExpiresAt: new Date(Date.now() + 5 * 60_000),
+                error: null,
+                checkpoint: null,
+                wakeAt: null,
+              },
+            }),
+      );
       if (leased.count !== 1) return;
 
       const current = await deps.prisma.run.findUniqueOrThrow({
@@ -1435,6 +1442,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             emailInbox,
             emailClaimable:
               Boolean(deps.inboundEmailDomain) && !emailName && run.userId === bot.userId,
+            emailSend: Boolean(deps.email),
           }),
           // Cross-owner agent connections only exist for chat-linked bots. The chat link is its
           // creator's, and a connected agent's messages run as them, so only their runs may
@@ -1917,8 +1925,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   runIdentityInstruction(bot, run.trigger),
                   botEmail
                     ? botEmailInstruction(botEmail, {
-                        // Only the tools this bot has: its owner may turn either off.
+                        // Only the tools this bot has: its owner may turn any of them off.
                         read: emailInbox && !disabledBuiltinTools.has("read_email"),
+                        send:
+                          emailInbox &&
+                          Boolean(deps.email) &&
+                          !disabledBuiltinTools.has("send_email"),
                         delete: emailInbox && !disabledBuiltinTools.has("delete_email"),
                       })
                     : "",

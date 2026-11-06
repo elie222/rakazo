@@ -22,13 +22,8 @@ const OPTIONAL_VENDORS =
   /^(@aws-sdk\/.+|@daytona\/sdk|@e2b\/desktop|novita-sandbox|@composio\/core|@stripe\/link-sdk|@chat-adapter\/(slack|telegram|whatsapp)|@boatdev\/sdk|@boxd-sh\/sdk|chat-adapter-sendblue|@axiomhq\/js|@sentry\/node)$/;
 // Known static imports still to make lazy. Remove an entry once its SDK loads on demand.
 const PENDING = [
-  "@chat-adapter/slack",
   "@chat-adapter/telegram",
   "@chat-adapter/whatsapp",
-  "@daytona/sdk",
-  "@boatdev/sdk",
-  "@boxd-sh/sdk",
-  "chat-adapter-sendblue",
   // The wallet factory imports its module dynamically, but the bundle inlines that module,
   // so the SDK is a static import of every emitted server bundle.
   "@stripe/link-sdk",

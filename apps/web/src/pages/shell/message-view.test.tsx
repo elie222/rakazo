@@ -88,6 +88,7 @@ function renderView(
         onAddRoutine={vi.fn()}
         voiceReady={false}
         speaking={false}
+        callHoldsSpeaker={false}
         onSpeak={vi.fn()}
         onOpenComputer={vi.fn()}
         showToolActivity={false}
@@ -221,6 +222,7 @@ it("keeps an edit made after a save when the saved status arrives late", async (
         onAddRoutine={vi.fn()}
         voiceReady={false}
         speaking={false}
+        callHoldsSpeaker={false}
         onSpeak={vi.fn()}
         onOpenComputer={vi.fn()}
         showToolActivity={false}
@@ -317,6 +319,29 @@ it("speaks the message it renders", () => {
   act(() => button?.click());
   expect(onSpeak).toHaveBeenCalledTimes(1);
   expect(onSpeak.mock.calls[0]?.[0]).toMatchObject({ id: "message" });
+});
+
+it("disables starting a read while a call holds the speaker, keeping stop available", () => {
+  renderView("bot", [{ kind: "text", text: "Hello" }], {
+    voiceReady: true,
+    callHoldsSpeaker: true,
+  });
+  const startButtons = () => [
+    ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Speak this reply"]'),
+  ];
+  expect(startButtons().length).toBeGreaterThan(0);
+  for (const button of startButtons()) expect(button.disabled).toBe(true);
+
+  renderView("bot", [{ kind: "text", text: "Hello" }], {
+    voiceReady: true,
+    callHoldsSpeaker: true,
+    speaking: true,
+  });
+  const stopButtons = () => [
+    ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Stop speaking"]'),
+  ];
+  expect(stopButtons().length).toBeGreaterThan(0);
+  for (const button of stopButtons()) expect(button.disabled).toBe(false);
 });
 
 it("opens one counted peer line without an inline reply toggle", () => {
