@@ -1,11 +1,13 @@
 import type { Actor } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { releaseComputerControl } from "../computer-control.js";
 import type { RouterDeps } from "../router.js";
 import type { ThreadTarget } from "../thread-target.js";
-import { releaseComputerControl } from "./computer.js";
 import { takeoverReleaser } from "./threads.js";
 
-vi.mock("./computer.js", () => ({ releaseComputerControl: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("../computer-control.js", () => ({
+  releaseComputerControl: vi.fn().mockResolvedValue(undefined),
+}));
 
 const actor = { spaceId: "space-1", userId: "user-1" } as Actor;
 
