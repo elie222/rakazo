@@ -211,8 +211,8 @@ function urlSecrets(text: string): string[] {
   const values: string[] = [];
   const addEncoded = (value: string) => values.push(value, decodeURIComponentSafe(value));
   if (url.password) addEncoded(url.password);
-  // A user name alone is a token only when it reads like one, not like an account name.
-  else if (looksLikeOpaqueToken(decodeURIComponentSafe(url.username))) addEncoded(url.username);
+  // A user name is a token only when it reads like one, not like an account name.
+  if (looksLikeOpaqueToken(decodeURIComponentSafe(url.username))) addEncoded(url.username);
   for (const pair of url.search.slice(1).split("&")) {
     const [[key, value] = []] = new URLSearchParams(pair);
     if (!key || !value) continue;
