@@ -704,7 +704,7 @@ export function McpServersOverlay({
                       autoComplete="off"
                       value={outputEnv}
                       onChange={(e) => setOutputEnv(envName(e.target.value))}
-                      placeholder="GMAIL_MCP_DOWNLOAD_DIR"
+                      placeholder="DOWNLOAD_DIR"
                     />
                     <FieldDescription>
                       <Trans>

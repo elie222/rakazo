@@ -1756,10 +1756,10 @@ describe("MCP pre-registered OAuth client", () => {
   describe("stdio output folder variable", () => {
     const stdio = {
       transport: "stdio" as const,
-      slug: "gmail",
-      name: "Gmail",
+      slug: "mail",
+      name: "Mail",
       command: "npx",
-      args: ["gmail-mcp"],
+      args: ["mail-mcp"],
       env: {},
     };
     const update = { id: "server-1", config: { ...stdio, enabled: true, description: "" } };

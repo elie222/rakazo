@@ -542,7 +542,7 @@ async function saveEdit(host: HTMLElement) {
 }
 
 it("loads a stdio server's output folder variable and sends it back unchanged on save", async () => {
-  const stored = stdioServer("GMAIL_MCP_DOWNLOAD_DIR");
+  const stored = stdioServer("FILES_DOWNLOAD_DIR");
   mocks.list.mockReset().mockResolvedValue([stored]);
   mocks.update.mockReset().mockResolvedValue(stored);
   const host = document.createElement("div");
@@ -551,13 +551,13 @@ it("loads a stdio server's output folder variable and sends it back unchanged on
     await act(async () => root.render(overlay("srv_3")));
     await vi.waitFor(() =>
       expect(host.querySelector<HTMLInputElement>("#mcp-output-env")?.value).toBe(
-        "GMAIL_MCP_DOWNLOAD_DIR",
+        "FILES_DOWNLOAD_DIR",
       ),
     );
     await saveEdit(host);
     expect(mocks.update).toHaveBeenCalledWith({
       id: "srv_3",
-      config: expect.objectContaining({ outputEnv: "GMAIL_MCP_DOWNLOAD_DIR" }),
+      config: expect.objectContaining({ outputEnv: "FILES_DOWNLOAD_DIR" }),
     });
   } finally {
     await act(async () => root.unmount());
@@ -590,7 +590,7 @@ it("uppercases the output folder variable and replaces a stored one", async () =
 });
 
 it("clears a stored output folder variable with null when the field is emptied", async () => {
-  const stored = stdioServer("GMAIL_MCP_DOWNLOAD_DIR");
+  const stored = stdioServer("FILES_DOWNLOAD_DIR");
   mocks.list.mockReset().mockResolvedValue([stored]);
   mocks.update.mockReset().mockResolvedValue(stored);
   const host = document.createElement("div");
@@ -599,7 +599,7 @@ it("clears a stored output folder variable with null when the field is emptied",
     await act(async () => root.render(overlay("srv_3")));
     const input = await vi.waitFor(() => {
       const found = host.querySelector<HTMLInputElement>("#mcp-output-env");
-      expect(found?.value).toBe("GMAIL_MCP_DOWNLOAD_DIR");
+      expect(found?.value).toBe("FILES_DOWNLOAD_DIR");
       return found;
     });
     await setInput(input, "");
