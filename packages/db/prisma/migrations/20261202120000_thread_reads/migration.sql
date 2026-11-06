@@ -41,22 +41,30 @@ CREATE POLICY thread_reads_system ON "thread_reads"
 CREATE FUNCTION thread_reads_mirror_unread() RETURNS trigger
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public
   AS $$
+DECLARE
+  -- Mark as Unread from a message: the old release moved its cursor to just before it.
+  moved boolean := NEW."lastReadSeq" IS DISTINCT FROM OLD."lastReadSeq"
+    AND NEW."nextMessageSeq" = OLD."nextMessageSeq";
 BEGIN
   IF NOT NEW."unread" THEN
     UPDATE "thread_reads" SET "unread" = false WHERE "threadId" = NEW."id";
     RETURN NEW;
   END IF;
+  -- Someone with no read state had read what came before, as markThreadUnreadForMembers does.
   INSERT INTO "thread_reads" ("threadId", "userId", "spaceId", "unread", "lastReadSeq")
   SELECT NEW."id", m."userId", NEW."spaceId", true,
     CASE
-      -- A message it wrote: everything before it was read.
+      WHEN moved THEN NEW."lastReadSeq"
+      -- A reply it wrote: everything before it.
       WHEN NEW."nextMessageSeq" > OLD."nextMessageSeq" THEN GREATEST(NEW."nextMessageSeq" - 2, -1)
-      -- Mark as Unread from a message, or by hand: where it put the divider.
-      ELSE NEW."lastReadSeq"
+      -- Marked unread by hand: all of it.
+      ELSE NEW."nextMessageSeq" - 1
     END
   FROM "space_members" m
   WHERE m."spaceId" = NEW."spaceId"
-  ON CONFLICT ("threadId", "userId") DO UPDATE SET "unread" = true;
+  ON CONFLICT ("threadId", "userId") DO UPDATE SET
+    "unread" = true,
+    "lastReadSeq" = CASE WHEN moved THEN EXCLUDED."lastReadSeq" ELSE "thread_reads"."lastReadSeq" END;
   RETURN NEW;
 END $$;
 CREATE TRIGGER threads_mirror_unread AFTER UPDATE OF "unread" ON "threads"
