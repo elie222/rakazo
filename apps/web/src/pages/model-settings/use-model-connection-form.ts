@@ -5,12 +5,10 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
-  CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  cloudflareModelRouting,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
-  isCloudflareModelProvider,
   modelHeadersInput,
+  modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
@@ -87,10 +85,11 @@ export function useModelConnectionForm({
   );
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
-  const isCloudflare = isCloudflareModelProvider(provider);
-  const cloudflareRoutingReady =
-    !isCloudflare || cloudflareModelRouting({ provider, accountId, gatewayId }) !== undefined;
+  // The catalog names the IDs a provider needs besides its key.
+  const { needsRouting, needsGateway, routingReady } = modelRoutingForm(selected?.routingFields, {
+    accountId,
+    gatewayId,
+  });
 
   function applyFields(fields: ConnectionFormFields) {
     setEnabledModelIds(fields.enabledModelIds);
@@ -253,15 +252,15 @@ export function useModelConnectionForm({
     apiProtocol,
     applyFields,
     baseUrl,
-    cloudflareRoutingReady,
+    routingReady,
     contextWindow,
     enabledModelIds,
     error,
     gatewayId,
     headerRows,
     invalidatePreflight,
-    isCloudflare,
-    isCloudflareGateway,
+    needsRouting,
+    needsGateway,
     isOpenAiCompatible,
     maxImagesPerPrompt,
     maxTokens,

@@ -774,6 +774,7 @@ it("shows Cloudflare account and gateway fields for a new and a saved connection
     billing: "API key",
     auth: "api-key" as const,
     authHint: "API key",
+    routingFields: ["accountId" as const, "gatewayId" as const],
   };
   vi.mocked(rpc.me).mockResolvedValue(account(entry.provider, entry.id));
   models.list.mockResolvedValue([entry]);
@@ -782,8 +783,8 @@ it("shows Cloudflare account and gateway fields for a new and a saved connection
   const fresh = await renderSettings();
   try {
     await pick("Change Main model", "Cloudflare AI Gateway");
-    const accountId = fresh.container.querySelector("#cloudflare-account-id");
-    const gatewayId = fresh.container.querySelector("#cloudflare-gateway-id");
+    const accountId = fresh.container.querySelector("#model-account-id");
+    const gatewayId = fresh.container.querySelector("#model-gateway-id");
     expect(accountId).toBeInstanceOf(HTMLInputElement);
     expect(gatewayId).toBeInstanceOf(HTMLInputElement);
     expect((accountId as HTMLInputElement).value).toBe("");
@@ -809,12 +810,12 @@ it("shows Cloudflare account and gateway fields for a new and a saved connection
   const saved = await renderSettings();
   try {
     await manage();
-    expect(
-      (saved.container.querySelector("#cloudflare-account-id") as HTMLInputElement).value,
-    ).toBe("acct1234");
-    expect(
-      (saved.container.querySelector("#cloudflare-gateway-id") as HTMLInputElement).value,
-    ).toBe("gateway-1");
+    expect((saved.container.querySelector("#model-account-id") as HTMLInputElement).value).toBe(
+      "acct1234",
+    );
+    expect((saved.container.querySelector("#model-gateway-id") as HTMLInputElement).value).toBe(
+      "gateway-1",
+    );
   } finally {
     await saved.unmount();
   }

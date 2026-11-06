@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
-  CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
-  CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   CreateBotInput,
   CreateGroupInput,
   CreateRoutineInput,
   canReactToThreadMessage,
   McpServerConfigInput,
   MessageBlock,
+  MODEL_ROUTING_ID_MESSAGE,
   ModelConnectInputSchema,
   ModelOAuthBeginSchema,
+  modelRoutingForm,
+  modelRoutingReady,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
@@ -137,78 +138,56 @@ describe("contracts", () => {
     expect(valid.success).toBe(true);
   });
 
-  it("validates Workers AI account routing without requiring a gateway", () => {
-    const provider = "cloudflare-workers-ai";
+  it("rejects a routing id that is not a single path segment, for any provider", () => {
+    const provider = "example-gateway";
     expect(
       ModelConnectInputSchema.safeParse({
         provider,
-        accountId: "account-fixture",
         apiKey: "fixture-key",
-      }).success,
-    ).toBe(true);
-    expect(ModelConnectInputSchema.safeParse({ provider, maxTokens: 2048 }).success).toBe(true);
-    for (const accountId of ["", "../account", "account/other", "a".repeat(65)]) {
-      expect(ModelConnectInputSchema.safeParse({ provider, accountId }).success).toBe(false);
-    }
-  });
-
-  it("validates each Cloudflare routing id and allows an update to send only one", () => {
-    const provider = CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
-    expect(
-      ModelConnectInputSchema.safeParse({
-        provider,
-        apiKey: "cf-test-key-value",
-      }).success,
-    ).toBe(true);
-    expect(
-      ModelConnectInputSchema.safeParse({
-        provider,
-        maxTokens: 1024,
-        accountId: "acct9999",
-      }).success,
-    ).toBe(true);
-    expect(
-      ModelConnectInputSchema.safeParse({
-        provider,
-        maxTokens: 1024,
-        gatewayId: "gateway-2",
-      }).success,
-    ).toBe(true);
-    const unsafeAccount = ModelConnectInputSchema.safeParse({
-      provider,
-      apiKey: "cf-test-key-value",
-      accountId: "../account",
-      gatewayId: "gateway-1",
-    });
-    expect(unsafeAccount.success).toBe(false);
-    if (!unsafeAccount.success) {
-      expect(unsafeAccount.error.issues.some((issue) => issue.path[0] === "accountId")).toBe(true);
-      expect(
-        unsafeAccount.error.issues.some(
-          (issue) => issue.message === CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
-        ),
-      ).toBe(true);
-    }
-    const unsafeGateway = ModelConnectInputSchema.safeParse({
-      provider,
-      maxTokens: 1024,
-      gatewayId: "gateway/1",
-    });
-    expect(unsafeGateway.success).toBe(false);
-    if (!unsafeGateway.success) {
-      expect(unsafeGateway.error.issues.some((issue) => issue.path[0] === "gatewayId")).toBe(true);
-    }
-    expect(
-      ModelConnectInputSchema.safeParse({
-        provider,
-        apiKey: "cf-test-key-value",
         accountId: "acct1234",
         gatewayId: "gateway-1",
       }).success,
     ).toBe(true);
+    // An update may send one id, and a blank one is left for the provider to judge.
     expect(
-      ModelConnectInputSchema.safeParse({ provider: "openai", apiKey: "sk-test-key-123" }).success,
+      ModelConnectInputSchema.safeParse({ provider, maxTokens: 1024, gatewayId: "gateway-2" })
+        .success,
     ).toBe(true);
+    expect(
+      ModelConnectInputSchema.safeParse({ provider, maxTokens: 1024, gatewayId: "" }).success,
+    ).toBe(true);
+    for (const field of ["accountId", "gatewayId"] as const) {
+      for (const id of ["../account", "account/other", "a".repeat(65)]) {
+        const result = ModelConnectInputSchema.safeParse({
+          provider,
+          maxTokens: 1024,
+          [field]: id,
+        });
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.issues).toContainEqual(
+            expect.objectContaining({ path: [field], message: MODEL_ROUTING_ID_MESSAGE }),
+          );
+        }
+      }
+    }
+  });
+
+  it("is routing-ready only when every field the provider asks for is valid", () => {
+    expect(modelRoutingReady(undefined, {})).toBe(true);
+    expect(modelRoutingForm(undefined, {})).toEqual({
+      needsRouting: false,
+      needsGateway: false,
+      routingReady: true,
+    });
+    expect(modelRoutingForm(["accountId", "gatewayId"], { accountId: "acct" })).toEqual({
+      needsRouting: true,
+      needsGateway: true,
+      routingReady: false,
+    });
+    expect(modelRoutingReady(["accountId"], { accountId: " acct " })).toBe(true);
+    expect(modelRoutingReady(["accountId", "gatewayId"], { accountId: "acct" })).toBe(false);
+    expect(modelRoutingReady(["accountId"], { accountId: "acct/x" })).toBe(false);
   });
 
   it("lets a built-in connection update maxTokens without a new API key", () => {

@@ -2,12 +2,6 @@ import * as z from "zod";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
 import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
 import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
-import {
-  cloudflareGatewayRoutingId,
-  cloudflareModelConfigMessage,
-  isCloudflareAiGatewayProvider,
-  isCloudflareModelProvider,
-} from "./cloudflare-ai-gateway.js";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
 import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
 import {
@@ -1684,6 +1678,40 @@ export const ModelConnectionLabelSchema = z.string().trim().min(1).max(MAX_MODEL
 
 export const CONNECTION_LABEL_MAX_LENGTH = 80;
 
+/** Ids a provider needs besides its key to route requests, like an account. */
+export const ModelRoutingFieldSchema = z.enum(["accountId", "gatewayId"]);
+export type ModelRoutingField = z.infer<typeof ModelRoutingFieldSchema>;
+
+/** Routing ids are substituted into a URL path, so only a single path segment is accepted. */
+const MODEL_ROUTING_ID = /^[A-Za-z0-9_-]{1,64}$/;
+export const MODEL_ROUTING_ID_MESSAGE =
+  "Use only letters, numbers, dashes, and underscores, up to 64 characters.";
+
+export function modelRoutingId(value: string | null | undefined): string | undefined {
+  const id = value?.trim() ?? "";
+  return MODEL_ROUTING_ID.test(id) ? id : undefined;
+}
+
+/** Every routing id the provider needs is filled in and valid. */
+export function modelRoutingReady(
+  fields: readonly ModelRoutingField[] | undefined,
+  values: Partial<Record<ModelRoutingField, string>>,
+): boolean {
+  return (fields ?? []).every((field) => modelRoutingId(values[field]) !== undefined);
+}
+
+/** What a connection form shows and requires for the routing ids a catalog entry names. */
+export function modelRoutingForm(
+  fields: readonly ModelRoutingField[] | undefined,
+  values: Partial<Record<ModelRoutingField, string>>,
+): { needsRouting: boolean; needsGateway: boolean; routingReady: boolean } {
+  return {
+    needsRouting: Boolean(fields?.length),
+    needsGateway: Boolean(fields?.includes("gatewayId")),
+    routingReady: modelRoutingReady(fields, values),
+  };
+}
+
 export const ModelConnectInputSchema = z
   .object({
     ...ModelContextLimitsSchema.shape,
@@ -1723,24 +1751,11 @@ export const ModelConnectInputSchema = z
         path: ["maxTokens"],
       });
     }
-    if (isCloudflareModelProvider(value.provider)) {
-      if (value.accountId !== undefined && !cloudflareGatewayRoutingId(value.accountId)) {
-        ctx.addIssue({
-          code: "custom",
-          message: cloudflareModelConfigMessage(value.provider),
-          path: ["accountId"],
-        });
-      }
-      if (
-        isCloudflareAiGatewayProvider(value.provider) &&
-        value.gatewayId !== undefined &&
-        !cloudflareGatewayRoutingId(value.gatewayId)
-      ) {
-        ctx.addIssue({
-          code: "custom",
-          message: cloudflareModelConfigMessage(value.provider),
-          path: ["gatewayId"],
-        });
+    // Whether the provider needs an id is the provider's call; a blank one is left to it.
+    for (const field of ModelRoutingFieldSchema.options) {
+      const id = value[field];
+      if (id?.trim() && !modelRoutingId(id)) {
+        ctx.addIssue({ code: "custom", message: MODEL_ROUTING_ID_MESSAGE, path: [field] });
       }
     }
     if (value.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -1836,6 +1851,8 @@ export const ModelCatalogEntrySchema = z.object({
   placeholder: z.boolean().optional(),
   /** Models share one pinned HTTPS models-list URL that can be probed. */
   catalogProbe: z.boolean().optional(),
+  /** Ids the provider needs besides a key; a connection cannot save without them. */
+  routingFields: z.array(ModelRoutingFieldSchema).optional(),
   /** Listed by the provider's live models list but not in the bundled catalog. */
   live: z.literal(true).optional(),
 });

@@ -94,7 +94,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     gatewayId,
     headerRows,
     invalidatePreflight,
-    isCloudflare,
+    needsRouting,
     isOpenAiCompatible,
     maxImagesPerPrompt,
     maxTokens,
@@ -307,7 +307,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     !isOpenAiCompatible &&
     Boolean(credential) &&
     (maxTokens.trim() !== connectionMaxTokensField(provider, credential?.maxTokens) ||
-      (isCloudflare &&
+      (needsRouting &&
         (accountId.trim() !== (credential?.accountId ?? "") ||
           gatewayId.trim() !== (credential?.gatewayId ?? ""))));
 

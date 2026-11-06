@@ -150,14 +150,14 @@ export function OnboardingPage() {
     apiKey,
     apiProtocol,
     baseUrl,
-    cloudflareRoutingReady,
+    routingReady,
     contextWindow,
     error,
     gatewayId,
     headerRows,
     invalidatePreflight,
-    isCloudflare,
-    isCloudflareGateway,
+    needsRouting,
+    needsGateway,
     isOpenAiCompatible,
     maxImagesPerPrompt,
     maxTokens,
@@ -279,7 +279,7 @@ export function OnboardingPage() {
     selected &&
       modelId.trim() &&
       !oauthPending &&
-      cloudflareRoutingReady &&
+      routingReady &&
       (isOpenAiCompatible ? openAiCompatibleReady : acceptsKey && apiKey.trim()),
   );
   // Subscriptions and the common API providers first; every other provider follows by name.
@@ -407,7 +407,7 @@ export function OnboardingPage() {
         await rpc.models.connect({
           provider,
           apiKey,
-          ...(isCloudflare ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
+          ...(needsRouting ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
           modelId,
           label: selected?.providerName ?? provider,
         });
@@ -768,7 +768,7 @@ export function OnboardingPage() {
                     )}
                   </div>
                 ) : null}
-                {isCloudflare && acceptsKey ? (
+                {needsRouting && acceptsKey ? (
                   <div className="mt-4 grid gap-4">
                     <label
                       htmlFor={`${fieldId}-account-id`}
@@ -784,7 +784,7 @@ export function OnboardingPage() {
                         className="mt-2"
                       />
                     </label>
-                    {isCloudflareGateway ? (
+                    {needsGateway ? (
                       <label
                         htmlFor={`${fieldId}-gateway-id`}
                         className="block text-body font-medium text-foreground"

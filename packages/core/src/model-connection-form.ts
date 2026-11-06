@@ -9,7 +9,6 @@ import type {
 } from "@rakazo/contracts";
 import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
-  isCloudflareModelProvider,
   ModelHeaderRowsSchema,
   modelHeadersInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -170,7 +169,10 @@ export type ModelConnectRequest =
  */
 export function modelConnectRequest(input: {
   form: ConnectionFormDraft;
-  selected: Pick<ModelCatalogEntry, "provider" | "providerName" | "id" | "thinkingLevels">;
+  selected: Pick<
+    ModelCatalogEntry,
+    "provider" | "providerName" | "id" | "thinkingLevels" | "routingFields"
+  >;
   credential?: Pick<ModelCredential, "modelId" | "thinkingLevel">;
   credentialId: string | null;
   settingsOnly?: boolean;
@@ -257,7 +259,7 @@ export function modelConnectRequest(input: {
     input: {
       provider: selected.provider,
       ...(newKey ? { apiKey: newKey } : {}),
-      ...(isCloudflareModelProvider(selected.provider)
+      ...(selected.routingFields?.length
         ? { accountId: form.accountId.trim(), gatewayId: form.gatewayId.trim() }
         : {}),
       modelId: selected.id,
