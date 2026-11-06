@@ -14,7 +14,7 @@ import {
 } from "./components.js";
 import { selfRenderingKitNames, selfRenderingMessage } from "./shadow.js";
 
-export { PAGE_KIT_GUIDE } from "./guide.js";
+export { HTML_PAGE_GUIDE, PAGE_KIT_GUIDE } from "./guide.js";
 
 const MAX_REPORTED_ERRORS = 20;
 
@@ -42,6 +42,37 @@ const DECLARATION_ROLES: ReadonlySet<IdentifierRole | null> = new Set([
   IdentifierRole.ObjectShorthandBlockScopedDeclaration,
   IdentifierRole.ImportDeclaration,
 ]);
+
+/** Resources a page may name but the sandbox refuses to load from the network. */
+const REMOTE_RESOURCE =
+  /<(?:script|img|video|audio|source|link)\b[^>]*\b(?:src|href)\s*=\s*["'](?:https?:)?\/\//i;
+
+/**
+ * An HTML page is stored exactly as written and runs in the same sandbox as any artifact, so
+ * there is no syntax or component check to do here. The size bound keeps a page openable, and
+ * the warning names the network loads the sandbox will refuse.
+ */
+export function checkHtmlPageSource(source: string): PageSourceCheck {
+  const bytes = pageSourceBytes(source);
+  if (bytes > PAGE_SOURCE_MAX_BYTES) {
+    return {
+      ok: false,
+      errors: [
+        `The page is ${bytes} bytes; the limit is ${PAGE_SOURCE_MAX_BYTES}. Move data out or split the page.`,
+      ],
+    };
+  }
+  if (!source.trim()) return { ok: false, errors: ["The page is empty."] };
+  return REMOTE_RESOURCE.test(source)
+    ? {
+        ok: true,
+        code: source,
+        warnings: [
+          "External images, fonts, styles, scripts and media do not load in a page's sandbox. Embed them as data: URIs (or a blob the page makes itself), or leave them out.",
+        ],
+      }
+    : { ok: true, code: source };
+}
 
 /**
  * Catches mistakes before the user sees the page, with line numbers the bot can act on. It is

@@ -1,8 +1,13 @@
-import type { MessageBlock } from "@rakazo/contracts";
+import type { MessageBlock, PageFormat } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH, PageTitleSchema } from "@rakazo/contracts";
 import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
 import { isUniqueViolation } from "@rakazo/db";
-import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
+import {
+  checkHtmlPageSource,
+  checkPageSource,
+  HTML_PAGE_GUIDE,
+  PAGE_KIT_GUIDE,
+} from "@rakazo/page-kit/validate";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "./approval-ask.js";
 import type { RunContext } from "./run-context.js";
 import { neverAsks } from "./run-context.js";
@@ -81,6 +86,11 @@ function proposedSource(
   return typeof edits === "string" ? { ok: false, error: edits } : applyPageEdits(current, edits);
 }
 
+/** A page is checked as the format it was created with. */
+function checkSource(format: string, source: string) {
+  return format === "html" ? checkHtmlPageSource(source) : checkPageSource(source);
+}
+
 /** Text kept on each side of a change inside a line, so the card shows where it is. */
 const CHANGE_CONTEXT = 40;
 
@@ -155,6 +165,7 @@ export async function holdSharedPageSave(
     select: {
       title: true,
       visibility: true,
+      format: true,
       currentVersion: true,
       versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
     },
@@ -165,7 +176,7 @@ export async function holdSharedPageSave(
   const current = page.versions[0]?.source ?? "";
   const proposed = proposedSource(current, args);
   if (!proposed.ok) return undefined;
-  const check = checkPageSource(proposed.source);
+  const check = checkSource(page.format, proposed.source);
   if (!check.ok || containsSecret([proposed.source, check.code], ctx.secrets)) return undefined;
   const lines = [
     // The title as it would be stored.
@@ -191,11 +202,18 @@ export async function holdSharedPageSave(
 async function savePage(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, thread } = ctx;
   const { args } = call;
-  if (args.help === true) return { guide: PAGE_KIT_GUIDE };
+  if (args.help === true) return { guide: `${PAGE_KIT_GUIDE}\n\n${HTML_PAGE_GUIDE}` };
   const pageId = argumentGiven(args.pageId) ? String(args.pageId) : undefined;
   const hasSource = argumentGiven(args.source);
   const hasEdits = editsGiven(args);
   if (hasSource && hasEdits) return { error: "Send either source or edits, not both." };
+  const requestedFormat =
+    argumentGiven(args.format) && (args.format === "jsx" || args.format === "html")
+      ? (args.format as PageFormat)
+      : undefined;
+  if (argumentGiven(args.format) && !requestedFormat) {
+    return { error: 'format must be "jsx" (the page kit) or "html" (a self-contained document).' };
+  }
   let title: string | undefined;
   if (argumentGiven(args.title)) {
     const parsed = PageTitleSchema.safeParse(args.title);
@@ -210,6 +228,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
           id: true,
           title: true,
           visibility: true,
+          format: true,
           currentVersion: true,
           versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
         },
@@ -217,6 +236,12 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     : null;
   if (pageId && !page) return { error: "No page with that pageId belongs to this bot or chat." };
   const current = page?.versions[0]?.source ?? "";
+  // A page's format is part of what it is: a JSX page cannot become HTML in place.
+  const format: PageFormat = page
+    ? page.format === "html"
+      ? "html"
+      : "jsx"
+    : (requestedFormat ?? "jsx");
 
   if (page && !hasSource && !hasEdits && !title) {
     // The stored source may hold outside text an earlier run put in the page, so reading it
@@ -226,9 +251,13 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       pageId: page.id,
       version: page.currentVersion,
       title: page.title,
+      format,
       ...(page.visibility === "link" ? { sharedByLink: true } : {}),
       source: current,
     };
+  }
+  if (page && requestedFormat && requestedFormat !== format) {
+    return { error: "A page keeps the format it was created with; save a new page instead." };
   }
   if (!page && hasEdits) return { error: "edits need the pageId of the page to change." };
   if (!page && !hasSource) return { error: "A new page needs source." };
@@ -240,7 +269,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   const proposed = proposedSource(current, args);
   if (!proposed.ok) return { error: proposed.error, unchanged: true };
   const { source } = proposed;
-  const check = checkPageSource(source);
+  const check = checkSource(format, source);
   if (!check.ok) {
     return { error: "The page has problems; nothing was saved.", problems: check.errors };
   }
@@ -257,7 +286,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     !call.bypassApproval &&
     call.nextApprovedTool !== "save_page" &&
     !(await neverAsks(ctx));
-  let saved: { pageId: string; version: number; title: string };
+  let saved: { pageId: string; version: number; title: string; format: PageFormat };
   try {
     saved = await deps.prisma.$transaction(async (tx) => {
       if (!page) {
@@ -268,10 +297,11 @@ async function savePage(ctx: RunContext, call: ToolCall) {
             botId: bot.id,
             groupId: thread.groupId,
             title: title!,
+            format,
             versions: { create: { version: 1, title: title!, source, code: check.code } },
           },
         });
-        return { pageId: created.id, version: 1, title: created.title };
+        return { pageId: created.id, version: 1, title: created.title, format };
       }
       const version = page.currentVersion + 1;
       // Conditional on the version this change was built from, so two saves never interleave.
@@ -300,7 +330,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       await tx.pageVersion.create({
         data: { pageId: page.id, version, title: nextTitle, source, code: check.code },
       });
-      return { pageId: page.id, version, title: nextTitle };
+      return { pageId: page.id, version, title: nextTitle, format };
     });
   } catch (error) {
     if (error instanceof PageChangedError || isUniqueViolation(error)) {
@@ -308,7 +338,12 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     }
     throw error;
   }
-  const block: MessageBlock = { kind: "page", ...saved };
+  const block: MessageBlock = {
+    kind: "page",
+    pageId: saved.pageId,
+    version: saved.version,
+    title: saved.title,
+  };
   const linkText = saved.title.replace(/[\\[\]]/g, "\\$&");
   try {
     // A routine speaks only through its final reply, which may be silence, so refreshing a

@@ -23,6 +23,10 @@ export const PageSourceSchema = z
 export const PageVisibilitySchema = z.enum(["private", "link"]);
 export type PageVisibility = z.infer<typeof PageVisibilitySchema>;
 
+/** JSX against the page kit, or a self-contained HTML document with its own CSS and scripts. */
+export const PageFormatSchema = z.enum(["jsx", "html"]);
+export type PageFormat = z.infer<typeof PageFormatSchema>;
+
 /**
  * A page title is one line: control characters and line breaks fold into single spaces, since
  * the title sits in pills, chips and `[title](page:id)` links that a break would cut.
@@ -37,6 +41,8 @@ export const PageSummarySchema = z.strictObject({
   title: z.string().max(PAGE_TITLE_MAX_LENGTH),
   botId: Id.nullable(),
   groupId: Id.nullable(),
+  /** Absent from a server that predates HTML pages; read it as "jsx". */
+  format: PageFormatSchema.optional(),
   visibility: PageVisibilitySchema,
   currentVersion: z.number().int().positive(),
   pinned: z.boolean(),
@@ -49,7 +55,7 @@ export const PageDetailSchema = z.strictObject({
   ...PageSummarySchema.shape,
   /** The version shown; `currentVersion` is the newest. */
   version: z.number().int().positive(),
-  /** The version's source compiled for the viewer, which carries no compiler. */
+  /** The version's source ready for the viewer: compiled JSX, or the HTML document itself. */
   code: z.string(),
   owner: z.strictObject({ name: z.string(), image: z.string().nullable() }),
   /** Set while anyone with the link can open the page. */
@@ -60,8 +66,10 @@ export type PageDetail = z.infer<typeof PageDetailSchema>;
 /** What anyone with a page's link reads; no owner, bot or ids. */
 export const SharedPageSchema = z.strictObject({
   title: z.string().max(PAGE_TITLE_MAX_LENGTH),
-  /** Compiled for the viewer, as in PageDetail. */
+  /** The source ready for the viewer, as in PageDetail. */
   code: z.string(),
+  /** Absent from a server that predates HTML pages; read it as "jsx". */
+  format: PageFormatSchema.optional(),
   version: z.number().int().positive(),
   updatedAt: IsoDate,
 });

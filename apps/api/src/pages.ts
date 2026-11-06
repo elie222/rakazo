@@ -15,6 +15,7 @@ type PageDeps = { prisma: PrismaClient; secrets: SecretStore; webOrigin: string 
 const summarySelect = {
   id: true,
   title: true,
+  format: true,
   botId: true,
   groupId: true,
   visibility: true,
@@ -30,6 +31,7 @@ function pageSummary(row: SummaryRow): PageSummary {
   return {
     id: row.id,
     title: row.title,
+    format: row.format === "html" ? "html" : "jsx",
     botId: row.botId,
     groupId: row.groupId,
     visibility: row.visibility === "link" ? "link" : "private",
@@ -366,6 +368,7 @@ export async function readSharedPage(
       select: {
         visibility: true,
         title: true,
+        format: true,
         currentVersion: true,
         updatedAt: true,
         id: true,
@@ -385,6 +388,7 @@ export async function readSharedPage(
   return {
     title: page.title,
     code: version.code,
+    format: page.format === "html" ? "html" : "jsx",
     version: page.currentVersion,
     updatedAt: page.updatedAt.toISOString(),
   };

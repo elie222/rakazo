@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  htmlPageViewerDocument,
   PAGE_COPY_MAX_LENGTH,
   pageCopyRequest,
   pageLinkRequest,
@@ -56,6 +57,76 @@ describe("withSandboxedArtifactCsp", () => {
     const wrapped = withSandboxedArtifactCsp(html);
     expect(wrapped.startsWith("<!DOCTYPE html><meta")).toBe(true);
     expect(wrapped.endsWith(html)).toBe(true);
+  });
+});
+
+describe("htmlPageViewerDocument", () => {
+  const page = (body: string) =>
+    `<!DOCTYPE html><html><head><title>Report</title></head><body>${body}</body></html>`;
+
+  it("keeps the author's document and adds only the CSP and the reader's theme", () => {
+    const html = htmlPageViewerDocument({
+      html: page("<h1>Report</h1><script>run()</script>"),
+      theme: "dark",
+    });
+    expect(html.startsWith("<!DOCTYPE html><meta")).toBe(true);
+    expect(html).toContain("<h1>Report</h1><script>run()</script>");
+    expect(html).toContain(SANDBOXED_ARTIFACT_CSP);
+    expect(html).toContain('r.dataset.theme="dark"');
+    expect(html).toContain('r.style.colorScheme="dark"');
+    // The bridge follows the author's markup, so the page's own scripts run first.
+    expect(html.indexOf("<h1>Report</h1>")).toBeLessThan(html.indexOf("rakazo-page:height"));
+    expect(html.indexOf("</html>")).toBeLessThan(html.indexOf("rakazo-page:height"));
+  });
+
+  it("reports its height and hands web links to the app, never navigating the frame away", () => {
+    const html = htmlPageViewerDocument({ html: page(""), theme: "light" });
+    expect(html).toContain('"rakazo-page:height"');
+    expect(html).toContain("new ResizeObserver(report)");
+    // The body's height, not the document element's: the latter is never below the frame
+    // viewport, so an inline page could grow but never shrink back to its content.
+    expect(html).toContain("var h=b.scrollHeight;");
+    expect(html).not.toContain("Math.max(b.scrollHeight");
+    expect(html).toContain('"rakazo-page:open-link"');
+    expect(html).toContain("event.preventDefault()");
+    expect(html).toContain('url.protocol!=="http:"');
+  });
+
+  it("gives a fragment a document and appends the bridge after its content", () => {
+    const html = htmlPageViewerDocument({ html: "<p>content</p>", theme: "light" });
+    expect(html.startsWith("<!DOCTYPE html><meta")).toBe(true);
+    expect(html).toContain("<p>content</p><script>");
+  });
+
+  it("does not splice the bridge into a closing tag the page writes as text", () => {
+    const page = `<html><body><script>const closing = "</body>";</script></body></html>`;
+    const html = htmlPageViewerDocument({ html: page, theme: "light" });
+    // The author's document is untouched, and the bridge follows it whole.
+    expect(html).toContain(page);
+    expect(html).toContain("</html><script>");
+  });
+
+  it("sets the reader's language only when the page does not declare one", () => {
+    expect(htmlPageViewerDocument({ html: page(""), theme: "light", lang: "ja" })).toContain(
+      'if(!r.lang)r.lang="ja"',
+    );
+    // A page that sets its own lang is left alone.
+    const declared = htmlPageViewerDocument({
+      html: '<html lang="fr"><body>x</body></html>',
+      theme: "light",
+      lang: "ja",
+    });
+    expect(declared).toContain('if(!r.lang)r.lang="ja"');
+  });
+
+  it("keeps text that tries to close the bridge script inert", () => {
+    const html = htmlPageViewerDocument({
+      html: page("<script>const x = '</script><script>steal()</script>';</script>"),
+      theme: "light",
+      lang: "</script><script>steal()</script>",
+    });
+    // The author's script is theirs; the bridge never interpolates page text.
+    expect(html).not.toContain('r.lang="</script>');
   });
 });
 

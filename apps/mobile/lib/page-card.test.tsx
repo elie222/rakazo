@@ -41,7 +41,10 @@ vi.mock("react-native-svg", () => ({
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: (href: unknown) => host.pressed.push(href) }),
 }));
-vi.mock("@rakazo/chat-ui/native", () => ({ PageIcon: () => null }));
+vi.mock("@rakazo/chat-ui/native", () => ({
+  PageIcon: () => null,
+  useNativeLinkConfirm: () => () => undefined,
+}));
 vi.mock("../components/sandboxed-html-preview", () => ({
   SandboxedHtmlPreview: () => createElement("iframe"),
 }));
@@ -101,6 +104,22 @@ it("says a preview could not load instead of showing a blank card, and still ope
   host.runtimeFails = false;
   const shown = await card();
   expect(shown.container.textContent).not.toContain("couldn't load");
+  shown.unmount();
+});
+
+it("draws an HTML page whole in the chat instead of the compact preview", async () => {
+  host.runtimeFails = false;
+  host.detail = {
+    id: "page-1",
+    title: "Inline",
+    code: "<!DOCTYPE html><html><body><h1>x</h1></body></html>",
+    format: "html",
+    currentVersion: 1,
+  };
+  const shown = await card();
+  await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)));
+  expect(shown.container.querySelector("iframe")).not.toBeNull();
+  expect(shown.container.textContent).toContain("Inline");
   shown.unmount();
 });
 
