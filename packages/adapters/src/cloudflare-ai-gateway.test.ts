@@ -7,7 +7,7 @@ import {
   withCloudflareAuth,
 } from "./cloudflare-ai-gateway.js";
 import { buildModelConnectPlaintext } from "./model-connect.js";
-import { parseModelSecret } from "./pi-oauth.js";
+import { parseModelSecret } from "./model-secret.js";
 
 const ACCOUNT_ID = "acct1234";
 const GATEWAY_ID = "gateway-1";

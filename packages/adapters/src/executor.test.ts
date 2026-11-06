@@ -14,6 +14,7 @@ import {
   cloudflareModelConfigMessage,
 } from "./cloudflare-ai-gateway.js";
 import { createRunExecutor as createExecutor } from "./executor.js";
+import { serializeModelSecret } from "./model-secret.js";
 import { UnavailableModelForAuthError, validateConnectedModelChoice } from "./model-selection.js";
 import {
   filterImageReturningComputerTools,
@@ -21,7 +22,7 @@ import {
   modelAcceptsImageInput,
 } from "./model-vision.js";
 import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "./openai-compatible-url.js";
-import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js";
+import { RetiredModelCredentialError } from "./pi-oauth.js";
 import { modelsForRequest, resolveRuntimeModel } from "./pi-runtime-models.js";
 import {
   dockerComputerToolInstruction,

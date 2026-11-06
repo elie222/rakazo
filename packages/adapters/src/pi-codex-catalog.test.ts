@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { parseModelSecret } from "./model-secret.js";
 import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
 import type { CodexCatalogModel, CodexCatalogSpaceAuth } from "./pi-codex-catalog.js";
 import {
@@ -14,7 +15,7 @@ import {
 } from "./pi-codex-catalog.js";
 import { liveCatalogEntry } from "./pi-live-catalog.js";
 import { listPiCatalog } from "./pi-models.js";
-import { CHATGPT_OAUTH_PROVIDER, parseModelSecret } from "./pi-oauth.js";
+import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
 
 const SPARK = "gpt-5.3-codex-spark";
 const LUNA = "gpt-6-luna";

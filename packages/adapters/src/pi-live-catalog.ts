@@ -3,6 +3,7 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { parseModelSecret } from "./model-secret.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import { LiveCatalogCache, liveModelCatalogEnabled } from "./pi-live-cache.js";
 import { isChatModelId, liveModelSibling } from "./pi-live-model.js";
@@ -14,7 +15,6 @@ import {
   listPiCatalog,
   probeCatalogProviderModels,
 } from "./pi-models.js";
-import { parseModelSecret } from "./pi-oauth.js";
 
 /** Credential governing each provider/model slot, shared with the run selection path. */
 export type CatalogSpaceAuth = {

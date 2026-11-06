@@ -16,9 +16,9 @@ import { z } from "zod";
 import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { parseModelJson } from "./model-json.js";
+import { secretValuesToRedact } from "./model-secret.js";
 import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
 import { localModelIds } from "./pi-local-provider-id.js";
-import { secretValuesToRedact } from "./pi-oauth.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_TASK_CHARS = 400;

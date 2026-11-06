@@ -4,6 +4,7 @@ import { credentialForModel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { selectConfiguredModel } from "./model-roles.js";
+import { serializeModelSecret } from "./model-secret.js";
 import {
   connectionServesModel,
   defaultCatalogModelId,
@@ -26,7 +27,6 @@ import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
 import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
 import { liveCatalogEntry, providerCatalogCache } from "./pi-live-catalog.js";
 import { listPiCatalog } from "./pi-models.js";
-import { serializeModelSecret } from "./pi-oauth.js";
 
 function credential(provider: string, defaultModel: string | null) {
   return {
