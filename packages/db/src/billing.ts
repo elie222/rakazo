@@ -337,13 +337,18 @@ export async function renewCheckoutLease(
 
 /**
  * Locks the lease row while this holder still has the checkout lease, so no other claimant
- * can take it until the transaction ends. Returns false once the lease is lost.
+ * can take it until the transaction ends. Returns false once the lease is lost. Every lock
+ * wait in the transaction is bounded, so a write stuck behind another lock fails and rolls
+ * back instead of holding the lease row while renewals queue behind it.
  */
 export async function lockCheckoutLease(
   tx: Prisma.TransactionClient,
   organizationId: string,
   leaseId: string,
 ): Promise<boolean> {
+  // Row locks on these tables last milliseconds; 2s stays below Prisma's 5s transaction
+  // timeout, which ends the transaction without cancelling a statement still waiting.
+  await tx.$executeRaw(Prisma.sql`SET LOCAL lock_timeout = '2s'`);
   const rows = await tx.$queryRaw<unknown[]>(Prisma.sql`
     SELECT 1 FROM billing_accounts
     WHERE "organizationId" = ${organizationId} AND "checkoutLeaseId" = ${leaseId}

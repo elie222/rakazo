@@ -520,6 +520,61 @@ dbTests("own-key trial hold lifecycle", () => {
     }
   }, 20_000);
 
+  it("lets go of the lease row when its hold write waits on a locked owner row", async () => {
+    const owner = await ownerWith("ownerlocked");
+    const provider = new BillingEmulator({ modelCredits: true, namespace: `hold-locked-${stamp}` });
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    const waiting = createDb(process.env.DATABASE_URL!, { applicationName: "owner-locked" });
+    const waitingService = createBillingService({
+      prisma: asSystem(waiting.prisma),
+      provider,
+      webOrigin: "https://example.test",
+    });
+    const blocker = await db.pool.connect();
+    try {
+      await service.selectFunding(owner.first.actor, "byok");
+      await blocker.query("BEGIN");
+      await blocker.query('SELECT id FROM "user" WHERE id = $1 FOR UPDATE', [owner.userId]);
+      const reopen = waitingService
+        .selectFunding(owner.first.actor, "byok")
+        .catch((error) => error);
+      await expect
+        .poll(
+          async () =>
+            (
+              await db.pool.query(
+                "SELECT 1 FROM pg_stat_activity WHERE application_name = 'owner-locked' AND wait_event_type = 'Lock' AND query LIKE 'UPDATE%user%'",
+              )
+            ).rowCount,
+          { interval: 10, timeout: 5_000 },
+        )
+        .toBe(1);
+      // While the owner row stays locked, the lease row must come free within the bound, so
+      // renewals and other organizations' work do not queue behind it.
+      const leaseRowFree = async () =>
+        db.pool
+          .query('SELECT 1 FROM billing_accounts WHERE "organizationId" = $1 FOR UPDATE NOWAIT', [
+            owner.first.organizationId,
+          ])
+          .then(
+            () => true,
+            () => false,
+          );
+      await expect.poll(leaseRowFree, { interval: 50, timeout: 4_000 }).toBe(true);
+      await blocker.query("COMMIT");
+      await expect(reopen).resolves.toBeInstanceOf(Error);
+      // The reopen wrote nothing, so the first session keeps holding the owner's trial.
+      await service.selectFunding(owner.second.actor, "byok");
+      const second = await customerOf(owner.second.organizationId);
+      expect(provider.byokCheckouts.get(second)?.trialDays).toBeUndefined();
+    } finally {
+      await blocker.query("ROLLBACK").catch(() => {});
+      blocker.release();
+      await waiting.prisma.$disconnect();
+      await waiting.pool.end();
+    }
+  }, 20_000);
+
   it("keeps an earlier open session's hold when expiring it fails", async () => {
     const owner = await ownerWith("expirefail");
     const provider = new BillingEmulator({ modelCredits: true, namespace: `hold-expire-${stamp}` });
