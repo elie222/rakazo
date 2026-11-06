@@ -40,7 +40,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     ].join("\n"),
     skills: [
       {
-        name: "morning-briefing",
+        name: "Morning briefing",
         description:
           "Write the user's morning briefing from their calendar, inbox, weather and news. Use when asked for a briefing or a summary of the day.",
         body: [
@@ -58,7 +58,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     routines: [
       {
         name: "Morning briefing",
-        prompt: "Send today's briefing with @morning-briefing.",
+        prompt: "Send today's briefing with @Morning briefing.",
         crons: ["30 7 * * 1-5"],
       },
     ],
@@ -93,7 +93,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     ].join("\n"),
     skills: [
       {
-        name: "inbox-triage",
+        name: "Inbox triage",
         description:
           "Sort new email into reply needed, for your information and low priority, and draft replies. Use when asked to triage, sort or catch up on email.",
         body: [
@@ -104,6 +104,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
           "5. Low priority: newsletters, promotions and automatic notifications. Count them; don't list them.",
           "",
           'Report: a bold count line, then numbered reply-needed items (sender, what they want, "Draft ready"), then one line each for the other two groups.',
+          "",
           "If nothing new needs a reply, say so in one line.",
         ].join("\n"),
       },
@@ -111,7 +112,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     routines: [
       {
         name: "Inbox triage",
-        prompt: "Triage my new email with @inbox-triage.",
+        prompt: "Triage my new email with @Inbox triage.",
         crons: ["0 8 * * 1-5", "0 15 * * 1-5"],
       },
     ],
@@ -145,7 +146,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     ].join("\n"),
     skills: [
       {
-        name: "pr-review",
+        name: "PR review",
         description:
           "Review a pull request and draft a review: bugs, security, missing tests. Use when asked to review a PR or check pull requests waiting on the user.",
         body: [
@@ -155,6 +156,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
           "4. End with a suggested verdict: approve, comment, or request changes.",
           "",
           "When checking what's waiting: list open pull requests that request the user's review, oldest first, and review each one. If the code host isn't connected, ask the user to connect it or paste a link.",
+          "",
           "Post nothing until the user says to.",
         ].join("\n"),
       },
@@ -162,7 +164,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     routines: [
       {
         name: "Review waiting pull requests",
-        prompt: "Review the pull requests waiting on me with @pr-review.",
+        prompt: "Review the pull requests waiting on me with @PR review.",
         crons: ["0 9 * * 1-5"],
       },
     ],
@@ -196,7 +198,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     ].join("\n"),
     skills: [
       {
-        name: "topic-watch",
+        name: "Topic watch",
         description:
           "Check the user's watched topics and sites and report what changed since the last digest. Use when asked what's new on something the user follows.",
         body: [
@@ -212,7 +214,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     routines: [
       {
         name: "Weekly digest",
-        prompt: "Send this week's digest with @topic-watch.",
+        prompt: "Send this week's digest with @Topic watch.",
         crons: ["0 9 * * 1"],
       },
     ],

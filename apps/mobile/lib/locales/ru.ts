@@ -1476,6 +1476,7 @@ export const RU_MESSAGES: Record<string, string> = {
   Adds: "Будет добавлено",
   "Works with": "Работает с",
   "Bot templates": "Шаблоны ботов",
+  Templates: "Шаблоны",
   "Recent payments": "Последние платежи",
   "Spending limit": "Лимит расходов",
   Amount: "Сумма",

@@ -18,8 +18,8 @@ sign-in or an app to connect.
 ### Start from a template
 
 **Bot templates** are ready-made bots for common jobs: a morning briefing, inbox triage, pull
-request reviews, and a weekly digest of topics you follow. Open them from **Connect apps** or
-**Skills**. Each template shows an example of what the bot sends and everything it adds before you
+request reviews, and a weekly digest of topics you follow. Open them with **Templates** in
+**Connect apps** or **Skills**. Each template shows an example of what the bot sends and everything it adds before you
 choose **Create bot**.
 
 A template adds the bot's instructions, a skill to your library, and a routine that stays paused

@@ -1289,8 +1289,6 @@ msgid "Bot style"
 msgstr ""
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
-#: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Bot templates"
 msgstr "機器人範本"
@@ -6699,6 +6697,11 @@ msgstr "Teams 訊息"
 #: src/components/ComputerProviderSettings.tsx
 msgid "Template"
 msgstr ""
+
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+msgid "Templates"
+msgstr "範本"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"

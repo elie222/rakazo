@@ -260,7 +260,7 @@ export function SkillsDialog({
                 onClick={onOpenTemplates}
               >
                 <LayoutTemplate />
-                <Trans>Bot templates</Trans>
+                <Trans>Templates</Trans>
               </Button>
             ) : null}
             {!selection && !importing ? (

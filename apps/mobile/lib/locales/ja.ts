@@ -1468,6 +1468,7 @@ export const JA_MESSAGES: Record<string, string> = {
   Adds: "追加されるもの",
   "Works with": "連携するアプリ",
   "Bot templates": "ボットのテンプレート",
+  Templates: "テンプレート",
   "Recent payments": "最近の支払い",
   "Spending limit": "支出上限",
   Amount: "金額",

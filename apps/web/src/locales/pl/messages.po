@@ -1288,8 +1288,6 @@ msgid "Bot style"
 msgstr "Styl bota"
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
-#: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Bot templates"
 msgstr "Szablony botów"
@@ -6698,6 +6696,11 @@ msgstr "Wiadomość Teams"
 #: src/components/ComputerProviderSettings.tsx
 msgid "Template"
 msgstr "Szablon"
+
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+msgid "Templates"
+msgstr "Szablony"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"

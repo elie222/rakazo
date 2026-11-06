@@ -30,7 +30,11 @@ export const BotTemplateSchema = z.strictObject({
   skills: z
     .array(
       z.strictObject({
-        name: slug,
+        // Words a routine can mention as `@Name`.
+        name: z
+          .string()
+          .regex(/^[A-Za-z][\w-]*(?: [A-Za-z][\w-]*){0,5}$/)
+          .max(64),
         description: z.string().min(1).max(2000),
         body: z.string().min(1).max(20_000),
       }),

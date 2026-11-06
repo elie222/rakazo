@@ -1,6 +1,7 @@
 import { BotTemplateSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { looksLikeCredential } from "./agent-import/index.js";
+import { extractRoutineSkillMentions } from "./agent-skill.js";
 import { BOT_TEMPLATES, findBotTemplate } from "./bot-templates.js";
 import { presetFromCron } from "./cron.js";
 import { matchFeaturedConnectorId } from "./featured-connectors.js";
@@ -32,7 +33,7 @@ describe("bot templates", () => {
     for (const template of BOT_TEMPLATES) {
       const names = template.skills.map((skill) => skill.name);
       const mentioned = template.routines.flatMap((routine) =>
-        [...routine.prompt.matchAll(/@([a-z0-9-]+)/g)].map((match) => match[1]),
+        extractRoutineSkillMentions(routine.prompt),
       );
       expect(new Set(mentioned)).toEqual(new Set(names));
     }

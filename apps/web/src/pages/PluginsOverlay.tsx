@@ -1641,7 +1641,7 @@ export function PluginsOverlay({
                 onClick={onOpenTemplates}
               >
                 <LayoutTemplate />
-                <Trans>Bot templates</Trans>
+                <Trans>Templates</Trans>
               </Button>
             ) : null}
             {browsing || view === "manage" ? renderAddMenu() : null}

@@ -1436,6 +1436,7 @@ export const NL_MESSAGES: Record<string, string> = {
   Adds: "Bevat",
   "Works with": "Werkt met",
   "Bot templates": "Botsjablonen",
+  Templates: "Sjablonen",
   "Recent payments": "Recente betalingen",
   "Spending limit": "Bestedingslimiet",
   Amount: "Bedrag",

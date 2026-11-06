@@ -1444,6 +1444,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Adds: "Enthält",
   "Works with": "Funktioniert mit",
   "Bot templates": "Bot-Vorlagen",
+  Templates: "Vorlagen",
   "Recent payments": "Letzte Zahlungen",
   "Spending limit": "Ausgabenlimit",
   Amount: "Betrag",

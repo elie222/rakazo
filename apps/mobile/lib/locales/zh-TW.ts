@@ -1439,6 +1439,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Adds: "將新增",
   "Works with": "搭配使用的應用程式",
   "Bot templates": "機器人範本",
+  Templates: "範本",
   "Recent payments": "最近付款",
   "Spending limit": "支出上限",
   Amount: "金額",

@@ -1441,6 +1441,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   Adds: "将添加",
   "Works with": "配合使用的应用",
   "Bot templates": "Bot 模板",
+  Templates: "模板",
   "Recent payments": "最近付款",
   "Spending limit": "支出上限",
   Amount: "金额",

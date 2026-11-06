@@ -1288,8 +1288,6 @@ msgid "Bot style"
 msgstr ""
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
-#: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Bot templates"
 msgstr "Modelos de bot"
@@ -6698,6 +6696,11 @@ msgstr ""
 #: src/components/ComputerProviderSettings.tsx
 msgid "Template"
 msgstr ""
+
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+msgid "Templates"
+msgstr "Modelos"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"

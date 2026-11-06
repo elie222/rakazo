@@ -7,7 +7,7 @@ import { UI_LOCALES } from "./ui-locale";
 /** A string used only by these files belongs to bot templates. */
 const TEMPLATE_DIR = "src/components/bot-templates/";
 /** Bot template strings that live in shared files. */
-const SHARED_TEMPLATE_STRINGS = ["Bot templates"];
+const SHARED_TEMPLATE_STRINGS = ["Bot templates", "Templates"];
 
 const localesDir = new URL("../locales/", import.meta.url);
 const catalog = (locale: string) =>

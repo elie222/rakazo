@@ -78,7 +78,7 @@ describeIntegration("bot templates", () => {
 
     const skills = await db.agentSkill.findMany({ where: owner });
     expect(skills.map((row) => [row.name, row.content, row.source])).toEqual([
-      ["morning-briefing", buildSkillMd(briefing.skills[0]!), "user"],
+      ["Morning briefing", buildSkillMd(briefing.skills[0]!), "user"],
     ]);
     const routines = await db.routine.findMany({ where: { botId: bot.id } });
     expect(routines.map((row) => [row.name, row.prompt, row.crons, row.active])).toEqual([
@@ -154,14 +154,14 @@ describeIntegration("bot templates", () => {
     expect(fresh.bot.id).not.toBe(replacement.bot.id);
     // Each new copy reuses the unchanged skill the first one added instead of adding another.
     const skills = await db.agentSkill.findMany({ where: owner, select: { name: true } });
-    expect(skills.map((row) => row.name)).toEqual(["inbox-triage"]);
+    expect(skills.map((row) => row.name)).toEqual(["Inbox triage"]);
     const routine = await db.routine.findFirstOrThrow({ where: { botId: fresh.bot.id } });
-    expect(routine.prompt).toBe("Triage my new email with @inbox-triage.");
+    expect(routine.prompt).toBe("Triage my new email with @Inbox triage.");
   });
 
   it("renames its skill on a clash and points the routine at the new name", async () => {
     const cookie = await signup(app, `template-clash-${stamp}@rakazo.test`);
-    const existing = buildSkillMd({ name: "inbox-triage", description: "Mine", body: "Mine." });
+    const existing = buildSkillMd({ name: "Inbox triage", description: "Mine", body: "Mine." });
     await rpc(app, cookie, "agentSkills/create", { content: existing });
     // The name the preview showed in the user's language is the one the bot gets.
     const { bot } = await rpc<Created>(app, cookie, "bots/createFromTemplate", {
@@ -172,10 +172,10 @@ describeIntegration("bot templates", () => {
     expect(bot.name).toBe("Posteingang sortieren");
     const owner = await ownerOf(cookie);
     const skills = await db.agentSkill.findMany({ where: owner, orderBy: { name: "asc" } });
-    expect(skills.map((row) => row.name)).toEqual(["inbox-triage", "inbox-triage-2"]);
+    expect(skills.map((row) => row.name)).toEqual(["Inbox triage", "Inbox triage-2"]);
     expect(skills[0]!.content).toBe(existing);
     const routine = await db.routine.findFirstOrThrow({ where: { botId: bot.id } });
-    expect(routine.prompt).toBe("Triage my new email with @inbox-triage-2.");
+    expect(routine.prompt).toBe("Triage my new email with @Inbox triage-2.");
 
     // Made again after the first copy goes, it reuses the renamed, unchanged skill.
     await rpc(app, cookie, "bots/remove", { botId: bot.id });
@@ -184,9 +184,9 @@ describeIntegration("bot templates", () => {
       version: triage.version,
     });
     const after = await db.agentSkill.findMany({ where: owner, orderBy: { name: "asc" } });
-    expect(after.map((row) => row.name)).toEqual(["inbox-triage", "inbox-triage-2"]);
+    expect(after.map((row) => row.name)).toEqual(["Inbox triage", "Inbox triage-2"]);
     const next = await db.routine.findFirstOrThrow({ where: { botId: again.bot.id } });
-    expect(next.prompt).toBe("Triage my new email with @inbox-triage-2.");
+    expect(next.prompt).toBe("Triage my new email with @Inbox triage-2.");
   });
 
   it("writes nothing when the last write fails", async () => {

@@ -15,16 +15,16 @@ test("a bot template previews what it adds, then creates a bot with a paused rou
     .getByTestId("open-bot-templates")
     .click();
   const dialog = page.getByRole("dialog", { name: "Bot templates", exact: true });
-  const featured = dialog.getByTestId("bot-template-featured");
-  await expect(featured.getByText("Morning briefing", { exact: true })).toBeVisible();
-  await expect(featured.getByText("Needs you", { exact: true })).toBeVisible();
-  await expect(dialog.getByTestId("bot-template-row")).toHaveCount(3);
+  const cards = dialog.getByTestId("bot-template-card");
+  await expect(cards).toHaveCount(4);
+  const briefing = cards.filter({ hasText: "Morning briefing" });
+  await expect(briefing.getByText("Needs you", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "bot-templates");
 
-  await featured.click();
+  await briefing.click();
   const detail = dialog.getByTestId("bot-template-detail");
   await expect(detail.getByRole("heading", { name: "Morning briefing" })).toBeVisible();
-  await expect(detail.getByText("morning-briefing", { exact: true })).toBeVisible();
+  await expect(detail.getByText("Skill", { exact: true })).toBeVisible();
   await expect(detail.getByText(/paused until you turn it on$/)).toBeVisible();
   await captureScreenshot(page, testInfo, "bot-template-detail");
 
@@ -42,6 +42,6 @@ test("a bot template previews what it adds, then creates a bot with a paused rou
 
   // Opening the template again offers the bot it made instead of a second one.
   await page.goto(`/app/${botId}?templates`);
-  await dialog.getByTestId("bot-template-featured").click();
+  await dialog.getByTestId("bot-template-card").filter({ hasText: "Morning briefing" }).click();
   await expect(detail.getByRole("button", { name: "Open", exact: true })).toBeVisible();
 });

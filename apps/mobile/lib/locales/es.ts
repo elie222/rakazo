@@ -1387,6 +1387,7 @@ export const ES_MESSAGES: Record<string, string> = {
   Adds: "Incluye",
   "Works with": "Funciona con",
   "Bot templates": "Plantillas de bots",
+  Templates: "Plantillas",
   "Recent payments": "Pagos recientes",
   "Spending limit": "Límite de gasto",
   Amount: "Importe",

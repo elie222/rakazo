@@ -182,7 +182,7 @@ export async function createBotFromTemplate<PreparedKey>(
       });
       const reused = new Map<string, string>();
       for (const skill of template.skills) {
-        const copy = new RegExp(`^${skill.name}(?:-\\d+)?$`, "i");
+        const copy = new RegExp(`^${escapeRegExp(skill.name)}(?:-\\d+)?$`, "i");
         const row = kept.find(
           (item) =>
             copy.test(item.name) && item.content === renameSkillMd(buildSkillMd(skill), item.name),
@@ -213,4 +213,8 @@ export async function createBotFromTemplate<PreparedKey>(
     },
   };
   return writeImportedBot(services, actor, request, signal);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

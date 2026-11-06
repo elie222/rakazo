@@ -20,7 +20,6 @@ import {
   Check,
   ChevronDown,
   ChevronLeft,
-  ChevronRight,
   Clock,
   GitPullRequest,
   Inbox,
@@ -84,7 +83,6 @@ export function BotTemplatesDialog({
   const templates = useQuery({ ...queries.bots.templates.queryOptions(), staleTime: 0 });
   const [openId, setOpenId] = useState<string | null>(null);
   const open = templates.data?.find((template) => template.id === openId);
-  const [featured, ...others] = templates.data ?? [];
 
   function content() {
     if (templates.error)
@@ -95,7 +93,7 @@ export function BotTemplatesDialog({
           </Button>
         </ErrorNotice>
       );
-    if (!featured)
+    if (!templates.data)
       return (
         <div className="grid place-items-center py-10">
           <Spinner className="size-5 text-muted-foreground" aria-label={t`Loading…`} />
@@ -110,40 +108,19 @@ export function BotTemplatesDialog({
           onChanged={() => void templates.refetch()}
         />
       );
-    const featuredCopy = copy(featured);
     return (
-      <div className="space-y-4">
-        <button
-          type="button"
-          data-testid="bot-template-featured"
-          onClick={() => setOpenId(featured.id)}
-          className={`block w-full space-y-4 rounded-2xl border border-border/70 p-5 text-start focus-visible:outline-none ${ROW_HOVER}`}
-        >
-          <span className="flex items-center gap-3">
-            <TemplateIcon id={featured.id} />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[15px] font-medium text-foreground">
-                {featuredCopy.name}
-              </span>
-              <span className="block truncate text-[13px] text-muted-foreground">
-                {featuredCopy.summary}
-              </span>
-            </span>
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-          </span>
-          <Sample text={featuredCopy.sample} />
-        </button>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {others.map((template) => {
-            const { name, summary } = copy(template);
-            return (
-              <button
-                key={template.id}
-                type="button"
-                data-testid="bot-template-row"
-                onClick={() => setOpenId(template.id)}
-                className={`flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 text-start focus-visible:outline-none ${ROW_HOVER}`}
-              >
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {templates.data.map((template) => {
+          const { name, summary, sample } = copy(template);
+          return (
+            <button
+              key={template.id}
+              type="button"
+              data-testid="bot-template-card"
+              onClick={() => setOpenId(template.id)}
+              className={`flex min-w-0 flex-col gap-3 rounded-2xl border border-border/70 p-4 text-start focus-visible:outline-none ${ROW_HOVER}`}
+            >
+              <span className="flex min-w-0 items-center gap-3">
                 <TemplateIcon id={template.id} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[15px] font-medium text-foreground">
@@ -153,10 +130,14 @@ export function BotTemplatesDialog({
                     {summary}
                   </span>
                 </span>
-              </button>
-            );
-          })}
-        </div>
+              </span>
+              {/* A glimpse of the example; the template's page shows all of it. */}
+              <span className="block h-40 overflow-hidden rounded-xl border border-border/60 bg-background px-3.5 py-2.5 text-[13px] mask-b-from-60%">
+                <ChatMarkdown>{sample}</ChatMarkdown>
+              </span>
+            </button>
+          );
+        })}
       </div>
     );
   }
@@ -342,9 +323,9 @@ function TemplateDetail({
                   />
                 </button>
                 {isOpen && row.body ? (
-                  <pre className="mx-4 mb-3 max-h-64 overflow-auto rounded-lg bg-muted/60 p-3 font-sans text-[13px] whitespace-pre-wrap text-muted-foreground">
-                    {row.body}
-                  </pre>
+                  <div className="mx-4 mb-3 rounded-lg bg-background px-3.5 py-2.5 text-[13px]">
+                    <ChatMarkdown>{row.body}</ChatMarkdown>
+                  </div>
                 ) : null}
               </li>
             );
