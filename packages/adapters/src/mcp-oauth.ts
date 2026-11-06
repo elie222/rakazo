@@ -184,21 +184,27 @@ function urlSecrets(text: string): string[] {
     return [];
   }
   const values: string[] = [];
-  const addEncoded = (value: string) => {
-    values.push(value);
-    try {
-      values.push(decodeURIComponent(value));
-    } catch {}
-  };
+  const addEncoded = (value: string) => values.push(value, decodeURIComponentSafe(value));
   if (url.password) addEncoded(url.password);
-  // A user name alone is a token only when it is long enough not to be an account name.
-  else if (url.username.length >= MIN_NEUTRAL_SECRET_LENGTH) addEncoded(url.username);
-  for (const [key, value] of url.searchParams) {
+  // A user name alone is a token only when it reads like one, not like an account name.
+  else if (looksLikeOpaqueToken(decodeURIComponentSafe(url.username))) addEncoded(url.username);
+  for (const pair of url.search.slice(1).split("&")) {
+    const [[key, value] = []] = new URLSearchParams(pair);
+    if (!key || !value) continue;
     const normalized = splitCamelCase(key).toLowerCase().replace(/-/g, "_");
+    // Both the decoded value and its spelling in the argument, which the server may echo.
     if (isCredentialName(normalized) && looksLikeSecretValue(value, { allowNumeric: true }))
-      values.push(value, encodeURIComponent(value));
+      values.push(value, pair.slice(pair.indexOf("=") + 1));
   }
   return values;
+}
+
+function decodeURIComponentSafe(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 /** Redaction replaces substrings, so a short value under a neutral name would mangle output. */

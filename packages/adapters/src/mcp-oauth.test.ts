@@ -3017,8 +3017,13 @@ describe("MCP OAuth", () => {
       "--sort-key",
       "name",
       "ssh://git@git.example.test/repo",
+      "ssh://deployuser@git.example.test/repo",
     ];
     expect(launchArgSecrets(readable)).toEqual([]);
+
+    // The server may echo a query value spelled as it was passed, not as it decodes.
+    for (const spelled of ["abc%2fDEF123456", "Abc+DEF123456"])
+      expect(launchArgSecrets([`https://api.example.test/?api_key=${spelled}`])).toContain(spelled);
   });
 
   it("does not start authorization for a server that neither challenges nor publishes OAuth metadata", async () => {
