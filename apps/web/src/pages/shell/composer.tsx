@@ -1124,16 +1124,24 @@ const ComposerBody = memo(function Composer({
               {phoneCallsEnabled && draft.trim().length === 0 ? (
                 <HoldToTalkControls talk={talk} disabled={disabled || onCall} />
               ) : null}
-              <Button
-                size="icon"
-                aria-label={t`Send`}
-                disabled={sending || !canSend || disabled}
-                onClick={() => void send()}
-                style={sendStyle}
-                className={sendClassName}
-              >
-                <ArrowUp size={16} strokeWidth={2.2} />
-              </Button>
+              {/* While a bot works, Stop is the action; Send appears only with something to steer
+                  it with, as on mobile, and leaves again once that is sent. */}
+              {canSend ? (
+                <Button
+                  size="icon"
+                  aria-label={t`Send`}
+                  disabled={sending || disabled}
+                  onClick={() => {
+                    void send();
+                    // The button goes with the sent words; keep typing where they were.
+                    textareaRef.current?.focus({ preventScroll: true });
+                  }}
+                  style={sendStyle}
+                  className={`${sendClassName} animate-in fade-in-0 zoom-in-90 duration-150 motion-reduce:animate-none`}
+                >
+                  <ArrowUp size={16} strokeWidth={2.2} />
+                </Button>
+              ) : null}
               <Button
                 variant="outline"
                 size="icon"

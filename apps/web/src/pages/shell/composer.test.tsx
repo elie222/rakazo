@@ -654,24 +654,43 @@ describe("Composer", () => {
     expect(container?.querySelector('[data-testid="mention-chip"]')?.textContent).toBe("@Alice");
   });
 
-  it.each([false, true])(
-    "draws an idle Send button with the primary disabled tokens (running: %s)",
-    (running) => {
-      renderComposer(vi.fn(), { running });
-      const send = container?.querySelector<HTMLButtonElement>('button[aria-label="Send"]');
-      expect(send?.disabled).toBe(true);
-      expect(send?.className.split(" ")).toEqual(
-        expect.arrayContaining([
-          "bg-primary",
-          "hover:bg-primary-hover",
-          "disabled:bg-primary-disabled",
-          "disabled:text-foreground/30",
-          "disabled:opacity-100",
-        ]),
-      );
-      expect(send?.className).not.toContain("disabled:opacity-50");
-    },
-  );
+  it("draws an idle Send button with the primary disabled tokens", () => {
+    renderComposer(vi.fn());
+    const send = container?.querySelector<HTMLButtonElement>('button[aria-label="Send"]');
+    expect(send?.disabled).toBe(true);
+    expect(send?.className.split(" ")).toEqual(
+      expect.arrayContaining([
+        "bg-primary",
+        "hover:bg-primary-hover",
+        "disabled:bg-primary-disabled",
+        "disabled:text-foreground/30",
+        "disabled:opacity-100",
+      ]),
+    );
+    expect(send?.className).not.toContain("disabled:opacity-50");
+  });
+
+  it("shows Send beside Stop while a bot works only when there is something to send", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend, { running: true });
+    const button = (label: string) =>
+      container?.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`) ?? null;
+    expect(button("Stop")).not.toBeNull();
+    expect(button("Send")).toBeNull();
+
+    type(textarea, "check the other folder");
+    expect(button("Send")?.disabled).toBe(false);
+    expect(button("Stop")).not.toBeNull();
+
+    await act(async () => button("Send")?.click());
+    expect(onSend).toHaveBeenCalledWith("check the other folder", [], expect.any(String));
+    expect(button("Send")).toBeNull();
+    expect(document.activeElement).toBe(textarea);
+
+    rerenderComposer({ running: false });
+    expect(button("Stop")).toBeNull();
+    expect(button("Send")?.disabled).toBe(true);
+  });
 
   it("clears the draft once the message is sent", async () => {
     const onSend = vi.fn().mockResolvedValue(true);
