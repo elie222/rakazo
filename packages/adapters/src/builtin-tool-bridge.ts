@@ -48,6 +48,7 @@ export const CORE_BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "schedule_list",
   "search_history",
   "read_history",
+  "read_email",
   "end_call",
 ]);
 
@@ -70,6 +71,7 @@ const AREAS: Array<[area: string, matches: (name: string) => boolean]> = [
   ],
   ["cloud agents", (name) => name.startsWith("cloud_agent_")],
   ["purchases", (name) => name.includes("purchase") || name === "paid_request"],
+  ["email", (name) => name.includes("email")],
 ];
 
 export function isDeferredTool(name: string): boolean {

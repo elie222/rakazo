@@ -37,6 +37,8 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "secret_request",
   "forget_secret",
   "forget_memory",
+  // Permanent, and only for mail the bot received; its owner may still want it.
+  "delete_email",
   "cloud_agent_launch",
   "cloud_agent_reply",
   "cloud_agent_cancel",
@@ -49,6 +51,8 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "feedback",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
+  // Permanent: the owner sees the exact address before it is theirs for good.
+  "claim_email_address",
   "respond_agent_connection",
   "create_space",
   "set_child_instructions",
@@ -63,6 +67,7 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "list_fleet",
   "list_secrets",
   "purchase_status",
+  "read_email",
   "read_file",
   "recall_memory",
   "request_takeover",
@@ -226,6 +231,9 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "ask_user",
   "connect_app",
   "attach_file",
+  // Only confirms the bot's own address.
+  "claim_email_address",
+  "delete_email",
   "end_call",
   "feedback",
   "generate_secret",

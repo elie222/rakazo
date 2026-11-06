@@ -531,6 +531,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Only me": "Nur ich",
   "Anyone at @{domain}": "Jeder bei @{domain}",
   "Remove email trigger": "E-Mail-Auslöser entfernen",
+  "Get an email address": "E-Mail-Adresse anlegen",
+  "Bot email addresses": "E-Mail-Adressen der Bots",
   "Use 2 to 64 characters": "Verwende 2 bis 64 Zeichen",
   "Use letters, numbers, dots, dashes or underscores":
     "Verwende Buchstaben, Ziffern, Punkte, Bindestriche oder Unterstriche",

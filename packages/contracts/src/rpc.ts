@@ -34,7 +34,7 @@ import {
   UpdateTicketInput,
 } from "./board.js";
 import { BotAvatarSetSchema } from "./bot-avatar.js";
-import { BotEmailAddressSchema, BotEmailNameSchema } from "./bot-email.js";
+import { BotEmailAddressesSchema, BotEmailAddressSchema, BotEmailNameSchema } from "./bot-email.js";
 import {
   BotSecretMetadata,
   BotSecretPutInput,
@@ -601,6 +601,7 @@ export const appContract = {
       .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
       .output(z.object({ ok: z.literal(true) })),
     emailAddress: oc.input(botId).output(BotEmailAddressSchema),
+    emailAddresses: oc.output(BotEmailAddressesSchema),
     claimEmailAddress: oc
       .input(z.object({ botId: Id, name: BotEmailNameSchema }))
       .output(z.object({ address: z.string() })),

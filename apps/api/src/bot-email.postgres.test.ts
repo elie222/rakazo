@@ -3,7 +3,12 @@ import type { InboundEmail } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, bootstrapUserSpace, createDb, runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { assertEmailTrigger, botEmailAddress, claimBotEmailAddress } from "./bot-email-address.js";
+import {
+  assertEmailTrigger,
+  botEmailAddress,
+  botEmailAddresses,
+  claimBotEmailAddress,
+} from "./bot-email-address.js";
 import { receiveBotEmail } from "./email-inbound.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -93,6 +98,19 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     );
     await expect(assertEmailTrigger(system, DOMAIN, first.id)).resolves.toBeUndefined();
 
+    const someoneElse = await signup(`eve-${suffix}@example.test`);
+    const theirs = await bot(someoneElse);
+    await claimBotEmailAddress(system, DOMAIN, theirs.id, name("theirs"));
+    await expect(botEmailAddresses(system, DOMAIN, owner)).resolves.toEqual({
+      domain: DOMAIN,
+      addresses: [{ botId: first.id, botName: "Scout", address: `${scout}@${DOMAIN}` }],
+    });
+    await system.bot.update({ where: { id: first.id }, data: { archivedAt: new Date() } });
+    await expect(botEmailAddresses(system, DOMAIN, owner)).resolves.toEqual({
+      domain: DOMAIN,
+      addresses: [],
+    });
+
     await system.bot.delete({ where: { id: first.id } });
     await expect(claimBotEmailAddress(system, DOMAIN, second.id, scout)).rejects.toThrow(
       "That address isn't available",
@@ -150,6 +168,8 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
       text: "Hi",
       automated: false,
       attachments: [],
+      messageId: `<${suffix}@example.test>`,
+      references: [],
     };
     const result = await runAsSystem("test inbound email", () =>
       receiveBotEmail(
@@ -173,6 +193,8 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     for (const skipped of ["mine", "paused", "scheduled", "elsewhere", "member's"]) {
       expect(prompt).not.toContain(`Run routine "${skipped}"`);
     }
+    const saved = await system.botEmailMessage.findMany({ where: { botId: target.id } });
+    expect(saved).toMatchObject([{ verified: true, subject: "Hello", spaceId: owner.spaceId }]);
   });
 
   it("tells the owner once a day when mail from their address fails the check", async () => {
@@ -202,9 +224,11 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
       cc: [],
       subject: "Hi",
       date: null,
-      text: "",
+      text: "Your code is 123456",
       automated: false,
       attachments: [],
+      messageId: null,
+      references: [],
     });
     const notify = vi.fn(async () => undefined);
     const deliver = (from: string) =>
@@ -233,5 +257,14 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     expect(notes).toHaveLength(1);
     expect(notify).toHaveBeenCalledTimes(1);
     expect(thread.unread).toBe(true);
+    // Both copies of the owner's message are one inbox entry; the stranger's is another.
+    const saved = await system.botEmailMessage.findMany({
+      where: { botId: target.id },
+      orderBy: { fromAddress: "asc" },
+    });
+    expect(saved.map((row) => [row.fromAddress, row.verified, row.text])).toEqual([
+      [email, false, "Your code is 123456"],
+      [`stranger-${suffix}@example.test`, false, "Your code is 123456"],
+    ]);
   });
 });

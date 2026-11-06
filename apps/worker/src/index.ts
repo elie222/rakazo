@@ -316,6 +316,8 @@ async function main() {
     onTicketChange: ticketChanges,
     ticketBoardEnabled,
     ...phoneCallSettings(process.env),
+    // Only names the bot's address to it; the API receives the mail.
+    inboundEmailDomain: process.env.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
     cloudAgent,

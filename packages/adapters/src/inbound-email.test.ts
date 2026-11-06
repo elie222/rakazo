@@ -63,7 +63,83 @@ describe("readInboundEmail", () => {
       text: "Please summarize the attached report.",
       automated: false,
       attachments: [],
+      messageId: "<weekly-1@example.test>",
+      references: [],
     });
+  });
+
+  it("keeps the thread a reply answers", async () => {
+    const email = await readInboundEmail(
+      bytes(
+        message([
+          ...plain,
+          "In-Reply-To: <weekly-0@example.test>",
+          "References: <kickoff@example.test> <weekly-0@example.test>",
+        ]),
+      ),
+      { resolver },
+    );
+
+    expect(email.references).toEqual(["<kickoff@example.test>", "<weekly-0@example.test>"]);
+  });
+
+  it("keeps a long thread's newest references", async () => {
+    const ids = Array.from({ length: 150 }, (_, index) => `<r-${index}@example.test>`);
+    const email = await readInboundEmail(
+      bytes(message([...plain, `References: ${ids.join(" ")}`])),
+      {
+        resolver,
+      },
+    );
+
+    expect(email.references).toEqual(ids.slice(-20));
+  });
+
+  it("tells apart unsigned messages that reuse one Message-ID", async () => {
+    const first = await readInboundEmail(bytes(message(plain, "Your code is 111111.\r\n")), {
+      resolver,
+    });
+    const again = await readInboundEmail(bytes(message(plain, "Your code is 111111.\r\n")), {
+      resolver,
+    });
+    const reused = await readInboundEmail(bytes(message(plain, "Your code is 222222.\r\n")), {
+      resolver,
+    });
+
+    expect(again.key).toBe(first.key);
+    expect(reused.key).not.toBe(first.key);
+  });
+
+  it("tells apart unsigned messages that differ only in their files", async () => {
+    const withFile = (content: string) =>
+      readInboundEmail(
+        bytes(
+          message(
+            [
+              ...plain.filter((line) => !line.startsWith("Content-Type")),
+              'Content-Type: multipart/mixed; boundary="b"',
+            ],
+            [
+              "--b",
+              "Content-Type: text/plain",
+              "",
+              "Invoice attached.",
+              "--b",
+              "Content-Type: application/pdf",
+              'Content-Disposition: attachment; filename="invoice.pdf"',
+              "",
+              content,
+              "--b--",
+              "",
+            ].join("\r\n"),
+          ),
+        ),
+        { resolver },
+      );
+
+    const [first, second] = await Promise.all([withFile("first"), withFile("second")]);
+
+    expect(second.key).not.toBe(first.key);
   });
 
   it("does not authenticate unsigned, tampered or unaligned mail", async () => {
@@ -227,7 +303,8 @@ describe("readInboundEmail", () => {
     const email = await readInboundEmail(bytes(await signed(raw)), { resolver });
     const unsigned = await readInboundEmail(bytes(raw), { resolver });
 
-    expect(unsigned.text).toBe("");
+    // The inbox keeps unverified mail too, so its body is read the same way.
+    expect(unsigned.text).toBe(email.text);
     expect(email.text.startsWith("Hello bot & team: €100 €5\n")).toBe(true);
     expect(email.text).not.toContain("steal");
     expect(email.text.endsWith("[…]")).toBe(true);

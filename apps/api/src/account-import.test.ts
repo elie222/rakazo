@@ -1,3 +1,5 @@
+import { readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import type { Actor } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { AccountImportDeps, ArchiveEntry, ArchiveSink } from "./account-import.js";
@@ -8,8 +10,14 @@ import {
   parseEntryName,
   readArchive,
   remapIds,
+  SPOOL_PREFIX,
 } from "./account-import.js";
-import { buildArchive, chunked, manifestFor } from "./account-import.test-support.js";
+import {
+  buildArchive,
+  chunked,
+  incompressibleBytes,
+  manifestFor,
+} from "./account-import.test-support.js";
 
 const actor: Actor = {
   userId: "user-1",
@@ -40,18 +48,74 @@ const deps = {
 const importBytes = (bytes: Uint8Array) => importAccount(deps, actor, chunked(bytes));
 
 class RecordingSink implements ArchiveSink {
-  readonly files: Array<{ entry: ArchiveEntry; text: string }> = [];
+  readonly files: Array<{ entry: ArchiveEntry; text: string; bytes: Uint8Array }> = [];
   private chunks: Uint8Array[] = [];
   async open(entry: ArchiveEntry) {
-    this.files.push({ entry, text: "" });
+    this.files.push({ entry, text: "", bytes: new Uint8Array(0) });
     this.chunks = [];
   }
   async write(chunk: Uint8Array) {
     this.chunks.push(chunk);
   }
   async close() {
-    this.files.at(-1)!.text = Buffer.concat(this.chunks).toString("utf8");
+    const bytes = Buffer.concat(this.chunks);
+    this.files.at(-1)!.text = bytes.toString("utf8");
+    this.files.at(-1)!.bytes = bytes;
   }
+}
+
+async function spoolDirs(): Promise<string[]> {
+  return (await readdir(tmpdir())).filter((name) => name.startsWith(SPOOL_PREFIX));
+}
+
+/** Rewrites an archive's central directory with its records in reverse order. */
+function reverseCentralDirectory(bytes: Uint8Array): Uint8Array {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const eocd = bytes.byteLength - 22;
+  if (view.getUint32(eocd, true) !== 0x06054b50) throw new Error("fixture has no EOCD");
+  const count = view.getUint16(eocd + 10, true);
+  const cdOffset = view.getUint32(eocd + 16, true);
+  const records: Uint8Array[] = [];
+  let offset = cdOffset;
+  for (let index = 0; index < count; index++) {
+    if (view.getUint32(offset, true) !== 0x02014b50) throw new Error("fixture central directory");
+    const length =
+      46 +
+      view.getUint16(offset + 28, true) +
+      view.getUint16(offset + 30, true) +
+      view.getUint16(offset + 32, true);
+    records.push(bytes.subarray(offset, offset + length));
+    offset += length;
+  }
+  const rewritten = new Uint8Array(bytes);
+  let at = cdOffset;
+  for (const record of records.reverse()) {
+    rewritten.set(record, at);
+    at += record.byteLength;
+  }
+  return rewritten;
+}
+
+/** Flips the recorded checksum of the second central-directory record. */
+function corruptCrc(bytes: Uint8Array): Uint8Array {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const eocd = bytes.byteLength - 22;
+  if (view.getUint32(eocd, true) !== 0x06054b50) throw new Error("fixture has no EOCD");
+  const cdOffset = view.getUint32(eocd + 16, true);
+  const firstLength =
+    46 +
+    view.getUint16(cdOffset + 28, true) +
+    view.getUint16(cdOffset + 30, true) +
+    view.getUint16(cdOffset + 32, true);
+  const second = cdOffset + firstLength;
+  if (view.getUint32(second, true) !== 0x02014b50) throw new Error("fixture central directory");
+  const rewritten = new Uint8Array(bytes);
+  new DataView(rewritten.buffer).setUint32(
+    second + 16,
+    view.getUint32(second + 16, true) ^ 1,
+    true,
+  );
+  return rewritten;
 }
 
 const limits = { ...ACCOUNT_IMPORT_LIMITS, artifactBytes: 1024 };
@@ -178,6 +242,111 @@ describe("account import archive", () => {
     await expect(
       readArchive(chunked(bytes), { ...limits, unpackedBytes: 1024 * 1024 }, new RecordingSink()),
     ).rejects.toThrow("too large");
+  });
+
+  it("imports a nested zip as an opaque home file", async () => {
+    const inner = buildArchive([
+      ["f0.bin", incompressibleBytes(64 * 1024)],
+      ["f1.bin", incompressibleBytes(64 * 1024)],
+      ["f2.bin", incompressibleBytes(64 * 1024)],
+      ["f3.bin", incompressibleBytes(64 * 1024)],
+    ]);
+    const bytes = buildArchive([
+      ["manifest.json", JSON.stringify(manifestFor([{ id: "s1", name: "Home" }]))],
+      ["spaces/s1/records.jsonl", ""],
+      ["spaces/s1/homes/b1/archive.zip", inner],
+    ]);
+    const sink = new RecordingSink();
+    await readArchive(chunked(bytes), limits, sink);
+    expect(sink.files.map((file) => file.entry.kind)).toEqual(["manifest", "records", "home"]);
+    expect(sink.files.at(-1)?.bytes).toEqual(inner);
+  });
+
+  it("imports a nested zip as an opaque artifact", async () => {
+    const inner = buildArchive([
+      ["f0.bin", incompressibleBytes(64 * 1024)],
+      ["f1.bin", incompressibleBytes(64 * 1024)],
+      ["f2.bin", incompressibleBytes(64 * 1024)],
+      ["f3.bin", incompressibleBytes(64 * 1024)],
+    ]);
+    const bytes = buildArchive([
+      ["manifest.json", "{}"],
+      ["spaces/s1/records.jsonl", ""],
+      ["spaces/s1/artifacts/a1", inner],
+    ]);
+    const sink = new RecordingSink();
+    await readArchive(chunked(bytes), { ...limits, artifactBytes: 1024 * 1024 }, sink);
+    expect(sink.files.map((file) => file.entry.kind)).toEqual(["manifest", "records", "artifact"]);
+    expect(sink.files.at(-1)?.bytes).toEqual(inner);
+  });
+
+  it("imports a zero-byte nested zip as an opaque home file", async () => {
+    const inner = buildArchive([]);
+    const bytes = buildArchive([
+      ["manifest.json", JSON.stringify(manifestFor([{ id: "s1", name: "Home" }]))],
+      ["spaces/s1/records.jsonl", ""],
+      ["spaces/s1/homes/b1/empty.zip", inner],
+    ]);
+    const sink = new RecordingSink();
+    await readArchive(chunked(bytes), limits, sink);
+    expect(sink.files.map((file) => file.entry.kind)).toEqual(["manifest", "records", "home"]);
+    expect(sink.files.at(-1)?.bytes).toEqual(inner);
+  });
+
+  it("reads entries in local-header order, not central-directory order", async () => {
+    const bytes = reverseCentralDirectory(
+      buildArchive([
+        ["manifest.json", "{}"],
+        ["spaces/s1/records.jsonl", "line\n"],
+      ]),
+    );
+    const sink = new RecordingSink();
+    await readArchive(chunked(bytes), limits, sink);
+    expect(sink.files.map((file) => file.entry.kind)).toEqual(["manifest", "records"]);
+  });
+
+  it("rejects an entry whose bytes do not match its recorded checksum", async () => {
+    const bytes = corruptCrc(
+      buildArchive([
+        ["manifest.json", "{}"],
+        ["spaces/s1/records.jsonl", "line\n"],
+      ]),
+    );
+    await expect(readArchive(chunked(bytes), limits, new RecordingSink())).rejects.toThrow(
+      "not a readable Rakazo export",
+    );
+  });
+
+  it("rejects a body over the body limit while spooling", async () => {
+    const bytes = buildArchive([["manifest.json", "{}"]]);
+    await expect(
+      readArchive(chunked(bytes), { ...limits, bodyBytes: 100 }, new RecordingSink()),
+    ).rejects.toThrow("too large");
+  });
+
+  it("leaves no spooled archive behind, on success or failure", async () => {
+    const before = await spoolDirs();
+    const bytes = buildArchive([
+      ["manifest.json", "{}"],
+      ["spaces/s1/records.jsonl", ""],
+    ]);
+    await readArchive(chunked(bytes), limits, new RecordingSink());
+    await expect(
+      readArchive(chunked(new TextEncoder().encode("hello")), limits, new RecordingSink()),
+    ).rejects.toThrow("not a readable Rakazo export");
+    expect(await spoolDirs()).toEqual(before);
+  });
+
+  it("removes the spool when the upload aborts mid-stream", async () => {
+    async function* aborting(): AsyncIterable<Uint8Array> {
+      yield new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+      throw new Error("Synthetic abort");
+    }
+    const before = await spoolDirs();
+    await expect(readArchive(aborting(), limits, new RecordingSink())).rejects.toThrow(
+      "Synthetic abort",
+    );
+    expect(await spoolDirs()).toEqual(before);
   });
 
   it("hands every entry to the sink in order, empty ones included", async () => {

@@ -1164,6 +1164,10 @@ msgstr "機器人"
 msgid "Bot"
 msgstr "機器人"
 
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Bot email addresses"
+msgstr "Bot 的電子郵件地址"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Bot is watching, not acting"
 msgstr "機器人只觀察，不操作"
@@ -1488,7 +1492,7 @@ msgstr "選擇 Rakazo 的使用方式"
 msgid "City"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Claim"
 msgstr "認領"
 
@@ -1902,14 +1906,17 @@ msgstr "透過 {0} 繼續"
 msgid "Conversations"
 msgstr "對話"
 
+#: src/components/BotEmailAddressField.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
+#: src/components/vault/BotEmailAddresses.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
 msgstr "已複製"
 
@@ -1919,6 +1926,11 @@ msgstr "已複製"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "複製"
+
+#: src/components/BotEmailAddressField.tsx
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Copy {address}"
+msgstr "複製 {address}"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -3052,7 +3064,7 @@ msgctxt "routine trigger"
 msgid "Email"
 msgstr "電子郵件"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Email address"
 msgstr "電子郵件地址"
 
@@ -3444,6 +3456,10 @@ msgstr ""
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "一般"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Get an email address"
+msgstr "取得電子郵件地址"
 
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
@@ -6598,7 +6614,7 @@ msgstr "測試"
 msgid "Testing…"
 msgstr "正在測試…"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "That address isn't available"
 msgstr "此地址無法使用"
 
@@ -7139,7 +7155,7 @@ msgstr "使用 {hostLabel}"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "存取權杖請使用 {oauthEnvReference}。"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Use 2 to 64 characters"
 msgstr "請使用 2 到 64 個字元"
 
@@ -7164,7 +7180,7 @@ msgstr "{label}使用預設值"
 msgid "Use in this bot"
 msgstr "在此機器人中使用"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Use letters, numbers, dots, dashes or underscores"
 msgstr "請使用字母、數字、點、連字號或底線"
 

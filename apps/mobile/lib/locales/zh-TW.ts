@@ -575,6 +575,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Only me": "僅限我",
   "Anyone at @{domain}": "@{domain} 的任何人",
   "Remove email trigger": "移除電子郵件觸發條件",
+  "Get an email address": "取得電子郵件地址",
+  "Bot email addresses": "Bot 的電子郵件地址",
   "Use 2 to 64 characters": "請使用 2 到 64 個字元",
   "Use letters, numbers, dots, dashes or underscores": "請使用字母、數字、點、連字號或底線",
   "That address isn't available": "此地址無法使用",
