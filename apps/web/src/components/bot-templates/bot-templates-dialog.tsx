@@ -29,7 +29,7 @@ import {
   Telescope,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cronLabels } from "../../lib/cron";
 import { useSpaceQueries } from "../../lib/query";
 import { rpc } from "../../lib/rpc";
@@ -187,6 +187,14 @@ function TemplateDetail({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ErrorDetails | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Set when the preview closes, so a request that finishes later doesn't open its bot.
+  const left = useRef(false);
+  useEffect(() => {
+    left.current = false;
+    return () => {
+      left.current = true;
+    };
+  }, []);
   const catalog = useQuery({
     ...queries.connections.catalog.queryOptions({ input: {} }),
     enabled: template.apps.length > 0,
@@ -204,8 +212,9 @@ function TemplateDetail({
         version: template.version,
         name,
       });
-      onOpenBot(bot);
+      if (!left.current) onOpenBot(bot);
     } catch (err) {
+      if (left.current) return;
       const changed = isBotTemplateChanged(err);
       setError(
         errorDetails(
@@ -221,8 +230,10 @@ function TemplateDetail({
   async function openExisting(botId: string) {
     setPending(true);
     try {
-      onOpenBot(await rpc.bots.get({ botId }));
+      const bot = await rpc.bots.get({ botId });
+      if (!left.current) onOpenBot(bot);
     } catch (err) {
+      if (left.current) return;
       setError(errorDetails(err, t`Could not open the bot`));
       setPending(false);
     }

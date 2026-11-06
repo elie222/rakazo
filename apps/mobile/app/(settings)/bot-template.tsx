@@ -3,9 +3,9 @@ import type { Bot, BotTemplateListing } from "@rakazo/contracts";
 import { isBotTemplateChanged } from "@rakazo/contracts";
 import { botTemplateApps, formatCron } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { BotTemplateIcon } from "../../components/bot-template-icon";
 import { ConnectorIcon } from "../../components/connector-icon";
@@ -79,6 +79,17 @@ function TemplateDetail({
   const { botId } = template;
   const [pending, setPending] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Bumped on leaving, so a request that finishes later doesn't open its bot from elsewhere.
+  const focusGeneration = useRef(0);
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        focusGeneration.current += 1;
+        setPending(false);
+      },
+      [],
+    ),
+  );
   const catalog = useQuery(
     { ...rpcQuery("connections/catalog", {}), enabled: template.apps.length > 0 },
     queryClient,
@@ -122,6 +133,7 @@ function TemplateDetail({
   async function create() {
     if (pending) return;
     setPending(true);
+    const generation = focusGeneration.current;
     const askedIn = searchInboxSession();
     try {
       const { bot } = await rpc("bots/createFromTemplate", {
@@ -129,9 +141,11 @@ function TemplateDetail({
         version: template.version,
         name,
       });
+      if (generation !== focusGeneration.current) return;
       addToSearchInbox({ kind: "bot", bot }, askedIn);
       openBot(bot);
     } catch (cause) {
+      if (generation !== focusGeneration.current) return;
       if (isBotTemplateChanged(cause)) {
         Alert.alert(t("This template was just updated. Check it again."));
         onChanged();
@@ -139,22 +153,25 @@ function TemplateDetail({
         Alert.alert(t("Could not create the bot"), errorText(cause, t("Try again.")));
       }
     } finally {
-      setPending(false);
+      if (generation === focusGeneration.current) setPending(false);
     }
   }
 
   async function openExisting(existingId: string) {
     if (pending) return;
     setPending(true);
+    const generation = focusGeneration.current;
     const askedIn = searchInboxSession();
     try {
       const bot = await rpc("bots/get", { botId: existingId });
+      if (generation !== focusGeneration.current) return;
       addToSearchInbox({ kind: "bot", bot }, askedIn);
       openBot(bot);
     } catch (cause) {
+      if (generation !== focusGeneration.current) return;
       Alert.alert(t("Could not load bot"), errorText(cause, t("Try again.")));
     } finally {
-      setPending(false);
+      if (generation === focusGeneration.current) setPending(false);
     }
   }
 
