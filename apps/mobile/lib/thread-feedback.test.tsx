@@ -19,9 +19,11 @@ import {
   configureUnsentSends,
   confirmEchoes,
   deliverSend,
+  hasUnsentSends,
   restoreUnsentSends,
   sendWaitingMessages,
   settleComposer,
+  unsentSendsReadable,
   useThreadFeedback,
 } from "./thread-feedback";
 
@@ -558,6 +560,14 @@ describe("scoped mobile outbox", () => {
     });
     expect(disk.forget).not.toHaveBeenCalled();
   });
+  it("counts a message the server accepted as sent while its echo is pending", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.acceptedSeq).toBeDefined();
+    expect(hasUnsentSends()).toBe(false);
+  });
   it("saves other sends and deletes removed files while one recovery admission fails", async () => {
     reachable = false;
     let stuck: string | undefined;
@@ -659,6 +669,7 @@ describe("scoped mobile outbox", () => {
         throw new Error(message);
       });
       act(() => restoreUnsentSends());
+      expect(unsentSendsReadable()).toBe(false);
       const attempt = feedback.sendAttempt(payload());
       await act(async () => {
         expect(await feedback.send(attempt)).toBe(true);

@@ -1363,6 +1363,7 @@ msgid "Chart failed to render: {error}"
 msgstr "चार्ट रेंडर नहीं हो सका: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -4215,6 +4216,10 @@ msgstr "संदेश…"
 msgid "Messaged {peer}"
 msgstr "{peer} को संदेश भेजा"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr ""
@@ -5558,6 +5563,10 @@ msgstr "कुंजी बदलें"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
+msgstr ""
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "जवाब देता है"
@@ -5758,6 +5767,10 @@ msgstr "चल रहा है"
 #: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "चल रहा है"
+
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "{workingRoutine} चल रहा है…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"

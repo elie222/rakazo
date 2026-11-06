@@ -134,6 +134,9 @@ export const NL_MESSAGES: Record<string, string> = {
   "{count} messages with {peer}": "{count} berichten met {peer}",
   "About {label}": "Over {label}",
   "Manage other bots": "Andere bots beheren",
+  Replies: "Antwoorden",
+  Chat: "Chat",
+  Messages: "Berichten",
   "Allow cross-space bot communication":
     "Communicatie tussen bots in verschillende ruimtes toestaan",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
@@ -229,6 +232,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Couldn't refresh — showing the last loaded messages.":
     "Kon niet vernieuwen — de laatst geladen berichten worden getoond.",
   "Too many unsent messages": "Te veel onverzonden berichten",
+  "Unsent messages": "Onverzonden berichten",
   "Not sent": "Niet verzonden",
   "Not sent. Tap to retry": "Niet verzonden. Tik om opnieuw te proberen",
   Photo: "Foto",
@@ -689,6 +693,7 @@ export const NL_MESSAGES: Record<string, string> = {
   Uninstall: "Verwijderen",
   "Verify and add": "Verifiëren en toevoegen",
   "Working…": "Bezig…",
+  "Running {name}…": "{name} wordt uitgevoerd…",
   "https://example.com/graphql": "https://example.com/graphql",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
@@ -772,6 +777,8 @@ export const NL_MESSAGES: Record<string, string> = {
   Restore: "Herstellen",
   "Scheduled tasks": "Geplande taken",
   "Sign out": "Uitloggen",
+  "Sign out anyway": "Toch uitloggen",
+  "Signing out deletes unsent messages.": "Uitloggen verwijdert onverzonden berichten.",
   "Stream replies": "Antwoorden streamen",
   "Load web images automatically": "Webafbeeldingen automatisch laden",
   System: "Systeem",
@@ -975,6 +982,7 @@ export const NL_MESSAGES: Record<string, string> = {
   Unmute: "Dempen opheffen",
   "Voice chat": "Stemchat",
   "Call sounds": "Gespreksgeluiden",
+  "Call greeting": "Begroeting bij gesprek",
   "Hello {name}, {bot} here.": "Hallo {name}, {bot} hier.",
   "Hello, {bot} here.": "Hallo, {bot} hier.",
   "OK, switching to {name}.": "Oké, ik schakel over naar {name}.",
@@ -1115,6 +1123,9 @@ export const NL_MESSAGES: Record<string, string> = {
   "Start plan": "Abonnement starten",
   "Switch to yearly": "Overstappen op jaarlijks",
   "Switch to yearly?": "Overstappen op jaarlijks?",
+  "Switch anyway": "Toch wisselen",
+  "Switching servers deletes unsent messages.":
+    "Wisselen van server verwijdert onverzonden berichten.",
   "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
     "{vcpus} vCPU, {memoryGb} GB, {hours} computeruren per maand",
   "Switch to {name}?": "Overstappen naar {name}?",

@@ -949,6 +949,7 @@ model Bot {
   crossSpaceCommunication Boolean @default(true)
   dailyCheckIns Boolean @default(true)
   fleetManagement        Boolean @default(true)
+  replyMode              String  @default("chat")
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
   taughtSkills      TaughtSkill[]

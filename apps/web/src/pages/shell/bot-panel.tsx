@@ -5,6 +5,7 @@ import type {
   BotAvatarSet,
   ComputerMode,
   ModelCatalogEntry,
+  ReplyMode,
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
@@ -137,6 +138,7 @@ export function BotSettings({
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
     fleetManagement?: boolean;
+    replyMode?: ReplyMode;
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
     voiceId?: string | null;
@@ -188,6 +190,8 @@ export function BotSettings({
   useEffect(() => setDailyCheckIns(bot.dailyCheckIns ?? true), [bot.dailyCheckIns]);
   const [fleetManagement, setFleetManagement] = useState(bot.fleetManagement);
   useEffect(() => setFleetManagement(bot.fleetManagement), [bot.fleetManagement]);
+  const [replyMode, setReplyMode] = useState(bot.replyMode);
+  useEffect(() => setReplyMode(bot.replyMode), [bot.replyMode]);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [modelKey, setModelKey] = useState(
     bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
@@ -248,6 +252,7 @@ export function BotSettings({
         avatarSet?: BotAvatarSet;
         notifyOnFinish?: boolean;
         fleetManagement?: boolean;
+        replyMode?: ReplyMode;
         crossSpaceCommunication?: boolean;
         dailyCheckIns?: boolean;
         disabledBuiltinTools?: string[];
@@ -337,6 +342,7 @@ export function BotSettings({
       avatarSet?: BotAvatarSet;
       notifyOnFinish?: boolean;
       fleetManagement?: boolean;
+      replyMode?: ReplyMode;
       crossSpaceCommunication?: boolean;
       dailyCheckIns?: boolean;
       disabledBuiltinTools?: string[];
@@ -357,6 +363,10 @@ export function BotSettings({
       }
       if (patchOverrides?.fleetManagement !== undefined) {
         await onSave({ fleetManagement: patchOverrides.fleetManagement });
+        return;
+      }
+      if (patchOverrides?.replyMode !== undefined) {
+        await onSave({ replyMode: patchOverrides.replyMode });
         return;
       }
       const selected = selectedModel;
@@ -465,6 +475,7 @@ export function BotSettings({
         setDailyCheckIns(!patchOverrides.dailyCheckIns);
       if (patchOverrides?.fleetManagement !== undefined)
         setFleetManagement(!patchOverrides.fleetManagement);
+      if (patchOverrides?.replyMode !== undefined) setReplyMode(bot.replyMode);
       setError(errorText(err, t`Could not save`));
     } finally {
       pendingSavesRef.current -= 1;
@@ -494,6 +505,7 @@ export function BotSettings({
     avatarSet?: BotAvatarSet;
     notifyOnFinish?: boolean;
     fleetManagement?: boolean;
+    replyMode?: ReplyMode;
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
     disabledBuiltinTools?: string[];
@@ -779,6 +791,23 @@ export function BotSettings({
                   }}
                 />
               </div>
+            </SettingsGroup>
+            <SettingsGroup label={t`Replies`} plain>
+              <NativeSelect
+                id={`${ids}-reply-mode`}
+                aria-label={t`Replies`}
+                className="w-full"
+                value={replyMode}
+                disabled={saving}
+                onChange={(event) => {
+                  const next = event.target.value as ReplyMode;
+                  setReplyMode(next);
+                  void enqueueSave({ replyMode: next });
+                }}
+              >
+                <NativeSelectOption value="chat">{t`Chat`}</NativeSelectOption>
+                <NativeSelectOption value="messages">{t`Messages`}</NativeSelectOption>
+              </NativeSelect>
             </SettingsGroup>
             <InstructionSettings key={bot.id} bot={bot} />
             <SettingsGroup label={t`How other bots see it`} plain>

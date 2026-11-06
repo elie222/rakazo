@@ -119,6 +119,9 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Search bots": "搜尋機器人",
   "About {label}": "關於 {label}",
   "Manage other bots": "管理其他機器人",
+  Replies: "回覆",
+  Chat: "聊天",
+  Messages: "訊息",
   "Allow cross-space bot communication": "允許跨空間機器人通訊",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "整理側邊欄並編輯機器人。更改群組、指令、模型和例行任務需要你的核准。",
@@ -198,6 +201,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
 
   "Couldn't refresh — showing the last loaded messages.": "無法重新整理——顯示最近載入的訊息。",
   "Too many unsent messages": "未傳送訊息過多",
+  "Unsent messages": "未傳送訊息",
   "Not sent": "未傳送",
   "Not sent · Tap to retry": "未傳送 · 輕點重試",
   Photo: "照片",
@@ -728,6 +732,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Sign in": "登入",
   "Sign in to Rakazo": "登入 Rakazo",
   "Sign out": "登出",
+  "Sign out anyway": "仍要登出",
+  "Signing out deletes unsent messages.": "登出將刪除未傳送的訊息。",
   "Sign up": "註冊",
   "Sign up for Rakazo": "註冊 Rakazo",
   "Sign-in": "登入",
@@ -794,6 +800,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "What this bot is for": "這個機器人的用途",
   Working: "工作中",
   "Working…": "處理中…",
+  "Running {name}…": "正在執行 {name}…",
   "Work stopped, but the thread could not refresh: {detail}":
     "工作已停止，但無法重新整理對話串：{detail}",
   "You have control": "你已接管控制",
@@ -956,6 +963,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Speaks with your phone's own text-to-speech instead of a connected provider.":
     "使用手機內建的文字轉語音功能朗讀，不使用已連接的語音供應商。",
   "Call sounds": "通話提示音",
+  "Call greeting": "通話問候語",
   "Hello {name}, {bot} here.": "你好 {name}，我是 {bot}。",
   "Hello, {bot} here.": "你好，我是 {bot}。",
   "OK, switching to {name}.": "好的，正在切換到 {name}。",
@@ -1090,6 +1098,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Start plan": "開始方案",
   "Switch to yearly": "切換為按年",
   "Switch to yearly?": "切換為按年付費？",
+  "Switch anyway": "仍要切換",
+  "Switching servers deletes unsent messages.": "切換伺服器將刪除未傳送的訊息。",
   "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
     "{vcpus} vCPU、{memoryGb} GB、每月 {hours} 小時電腦時數",
   "Switch to {name}?": "切換到 {name}？",

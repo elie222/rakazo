@@ -1363,6 +1363,7 @@ msgid "Chart failed to render: {error}"
 msgstr "Grafiek kon niet worden weergegeven: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -4215,6 +4216,10 @@ msgstr "Bericht…"
 msgid "Messaged {peer}"
 msgstr "{peer} een bericht gestuurd"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "Berichten"
@@ -5558,6 +5563,10 @@ msgstr "Sleutel vervangen"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
+msgstr ""
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "Reageert op"
@@ -5758,6 +5767,10 @@ msgstr "draait"
 #: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "Draait"
+
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "{workingRoutine} wordt uitgevoerd…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"

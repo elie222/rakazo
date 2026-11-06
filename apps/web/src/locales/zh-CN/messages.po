@@ -1363,6 +1363,7 @@ msgid "Chart failed to render: {error}"
 msgstr "图表渲染失败：{error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr "聊天"
 
@@ -4215,6 +4216,10 @@ msgstr "消息…"
 msgid "Messaged {peer}"
 msgstr "已发给 {peer}"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "消息"
@@ -5558,6 +5563,10 @@ msgstr "替换密钥"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
+msgstr ""
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "回复对象"
@@ -5758,6 +5767,10 @@ msgstr "运行中"
 #: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "运行中"
+
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "正在运行 {workingRoutine}…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"

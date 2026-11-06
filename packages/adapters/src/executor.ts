@@ -190,6 +190,7 @@ import {
   GROUP_UNADDRESSED_REPLY_GUIDANCE,
   runAllowsSilentEmpty,
   runReplyGuidance,
+  runReplyMode,
 } from "./run-replies.js";
 import {
   notifyRoutineRetryAttemptsExhausted,
@@ -312,7 +313,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       // A stopping process must not claim work it cannot finish. The row stays
       // queued or expired for a worker that is still running.
       if (deps.shutdownSignal?.aborted) return;
-      const run = await deps.prisma.run.findUnique({ where: { id: runId } });
+      const run = await deps.prisma.run.findUnique({
+        where: { id: runId },
+        include: { routine: { select: { name: true } } },
+      });
       if (!run) return;
       // Logs and security events raised by this run's tools name its account and space.
       enrichLogContext({
@@ -763,7 +767,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           botId: bot.id,
           type: "run.started",
           runId,
-          payload: { trigger: run.trigger, routineId: run.routineId },
+          payload: {
+            trigger: run.trigger,
+            routineId: run.routineId,
+            ...(run.routine ? { routineName: run.routine.name } : {}),
+          },
         });
 
         const discoveredPromise = deps.connector
@@ -1359,6 +1367,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const pageBrowserAllowed =
           graphical && browser.describe().capabilities.page && !heldForTakeover;
         const disabledBuiltinTools = disabledBuiltinToolSet(bot.disabledBuiltinTools);
+        const replyMode = runReplyMode(run.trigger, bot.replyMode, disabledBuiltinTools);
         const userComputerOwnerId = userComputerOwner({
           trigger: run.trigger,
           sourceRole: sourceMessage?.role,
@@ -1622,6 +1631,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           allowSilentEmptyRun,
           groupReplyOptional,
           emptyResponseText,
+          replyMode,
           state,
           settleRunningHelpers: settleHelpers,
           stopHeartbeatAfterCompletion,
@@ -1909,7 +1919,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 pluginLine,
                 agentSkillsLine,
                 taughtSkillsLine,
-                replyGuidance: runReplyGuidance(run.trigger),
+                replyGuidance: runReplyGuidance(run.trigger, replyMode),
                 disabledBuiltinTools: isStrategicInitiativeRun(run)
                   ? new Set(
                       builtinAgentTools
@@ -1934,6 +1944,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   ),
               ),
               tools,
+              // The live array: secrets learned later in the run redact too.
+              secrets: runSecrets,
               model: mainRunModel,
               computerModel,
               fallbackModels: fallbackModels.map(({ provider, modelId, credentialId }) => ({

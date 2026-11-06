@@ -3516,7 +3516,10 @@ describe("user_computer_shell", () => {
     f.setCalls([call("ls")]);
     await f.run();
     expect(f.results).toEqual([
-      { error: "The user's computer is not connected. Ask them to open the Rakazo desktop app." },
+      {
+        error:
+          'The user\'s computer is not connected. If the task needs it, ask them to open the Rakazo desktop app and turn on "Let bots use this computer" in its settings.',
+      },
     ]);
     expect(requests).toEqual([]);
   });

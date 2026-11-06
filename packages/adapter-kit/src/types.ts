@@ -636,6 +636,12 @@ export interface AgentRunRequest {
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /** Atomically claim durable user steering at the runtime's next safe turn boundary. */
   claimSteering?: (seenIds: string[]) => Promise<AgentSteeringMessage[]>;
+  /**
+   * Known run secret values, live for the run. The runtime redacts them from a tool
+   * argument that is kept outside the tool call itself (the ask card's detail) before
+   * any copy of it is stored, recorded or replayed.
+   */
+  secrets?: readonly string[];
 }
 
 export interface ScriptedTurn {

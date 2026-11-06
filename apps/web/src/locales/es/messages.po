@@ -1363,6 +1363,7 @@ msgid "Chart failed to render: {error}"
 msgstr "No se pudo renderizar el gráfico: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -4215,6 +4216,10 @@ msgstr "Mensaje…"
 msgid "Messaged {peer}"
 msgstr "Mensaje enviado a {peer}"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "Mensajería"
@@ -5558,6 +5563,10 @@ msgstr "Reemplazar clave"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
+msgstr ""
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
 msgstr "Responde a"
@@ -5758,6 +5767,10 @@ msgstr "en ejecución"
 #: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "En ejecución"
+
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "Ejecutando {workingRoutine}…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"

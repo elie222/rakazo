@@ -134,6 +134,9 @@ export const RU_MESSAGES: Record<string, string> = {
   "{count} messages with {peer}": "{count} сообщения с {peer}",
   "About {label}": "О настройке «{label}»",
   "Manage other bots": "Управлять другими ботами",
+  Replies: "Ответы",
+  Chat: "Чат",
+  Messages: "Сообщения",
   "Allow cross-space bot communication": "Разрешить общение ботов из разных пространств",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Упорядочивайте боковую панель и редактируйте ботов. Изменения групп, инструкций, моделей и процедур требуют вашего одобрения.",
@@ -224,6 +227,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Couldn't refresh — showing the last loaded messages.":
     "Не удалось обновить — показаны последние загруженные сообщения.",
   "Too many unsent messages": "Слишком много неотправленных сообщений",
+  "Unsent messages": "Неотправленные сообщения",
   "Not sent": "Не отправлено",
   "Not sent. Tap to retry": "Не отправлено. Нажмите, чтобы повторить",
   Photo: "Фото",
@@ -786,6 +790,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Sign in": "Войти",
   "Sign in to Rakazo": "Войти в Rakazo",
   "Sign out": "Выйти",
+  "Sign out anyway": "Всё равно выйти",
+  "Signing out deletes unsent messages.": "Выход удалит неотправленные сообщения.",
   "Sign up": "Зарегистрироваться",
   "Sign up for Rakazo": "Зарегистрироваться в Rakazo",
   "Sign-in": "Вход",
@@ -851,6 +857,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "What this bot is for": "Для чего нужен этот бот",
   Working: "Выполняется",
   "Working…": "Выполняется…",
+  "Running {name}…": "Выполняется {name}…",
   "Work stopped, but the thread could not refresh: {detail}":
     "Работа остановлена, но диалог не удалось обновить: {detail}",
   "You have control": "Вы управляете",
@@ -1015,6 +1022,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Speaks with your phone's own text-to-speech instead of a connected provider.":
     "Озвучивает встроенным синтезом речи телефона вместо подключённого провайдера.",
   "Call sounds": "Звуки звонка",
+  "Call greeting": "Приветствие в звонке",
   "Hello {name}, {bot} here.": "Привет, {name}, это {bot}.",
   "Hello, {bot} here.": "Привет, это {bot}.",
   "OK, switching to {name}.": "Хорошо, переключаю на {name}.",
@@ -1154,6 +1162,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Start plan": "Начать тариф",
   "Switch to yearly": "Перейти на годовой план",
   "Switch to yearly?": "Перейти на годовой план?",
+  "Switch anyway": "Всё равно сменить",
+  "Switching servers deletes unsent messages.": "Смена сервера удалит неотправленные сообщения.",
   "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
     "{vcpus} vCPU, {memoryGb} ГБ, {hours} часов компьютера в месяц",
   "Switch to {name}?": "Перейти на {name}?",
