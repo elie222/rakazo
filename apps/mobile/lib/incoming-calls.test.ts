@@ -72,6 +72,7 @@ vi.mock("./session", () => ({
 
 import { endCall, hangUp } from "./call-session";
 import {
+  endedStreamCallCount,
   getIncomingCall,
   respondToMobileCall,
   startIncomingCalls,
@@ -344,6 +345,23 @@ describe("mobile incoming calls", () => {
     });
     await vi.advanceTimersByTimeAsync(100);
     expect(getIncomingCall()?.incomingCall.callId).toBe("call-new");
+  });
+  it("forgets ended calls once their ring would have expired", async () => {
+    stop = startIncomingCalls();
+    await tick();
+    for (let i = 0; i < 50; i++) {
+      const ring = {
+        ...block(),
+        callId: `call-${i}`,
+        expiresAt: new Date(Date.now() + 1000).toISOString(),
+      };
+      fake.onEvent?.([{ ...bot, incomingCall: ring }]);
+      fake.onEvent?.([]);
+    }
+    expect(endedStreamCallCount()).toBe(50);
+    await vi.advanceTimersByTimeAsync(1100);
+    fake.onEvent?.([]);
+    expect(endedStreamCallCount()).toBe(0);
   });
   it("shares one roster request between a refresh and a ringing call", async () => {
     const answer = fake.rpc.getMockImplementation()!;

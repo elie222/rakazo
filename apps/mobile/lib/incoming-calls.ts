@@ -58,13 +58,18 @@ let responding = false;
 let activeNativeCall: string | undefined;
 /** Native calls that ended while their answer was still joining. */
 let nativeEnded = new Set<string>();
-/** The calls the latest snapshot lists as ringing. */
-let streamCallIds = new Set<string>();
+/** The calls the latest snapshot lists as ringing, with the time each stops ringing. */
+let streamCalls = new Map<string, number>();
 /**
  * Calls the stream listed and then dropped: they ended on the server. A snapshot that never
- * listed a call proves nothing, since it may predate it.
+ * listed a call proves nothing, since it may predate it. Each is kept only until its ring would
+ * have expired, after which no native state can ring it anyway.
  */
-let endedInStream = new Set<string>();
+let endedInStream = new Map<string, number>();
+function pruneEndedCalls() {
+  const now = Date.now();
+  for (const [id, expiresAt] of endedInStream) if (!(expiresAt > now)) endedInStream.delete(id);
+}
 /** Resolves when the account stream has delivered its first snapshot, which covers every organization. */
 let streamSnapshot: Promise<void> | undefined;
 let snapshotArrived: (() => void) | undefined;
@@ -78,6 +83,10 @@ export function subscribeIncomingCalls(listener: () => void) {
   return () => {
     listeners.delete(listener);
   };
+}
+/** How many ended calls the stream still remembers; for tests of its bound. */
+export function endedStreamCallCount() {
+  return endedInStream.size;
 }
 export function getIncomingCall() {
   return snapshot;
@@ -132,10 +141,17 @@ async function follow(controller: AbortController) {
       await subscribeIncomingCallEvents((incoming) => {
         // Ignore events from an aborted feed so a late callback cannot resolve a newer wait.
         if (controller.signal.aborted || feed !== controller) return;
-        const listed = new Set(incoming.map((call) => call.incomingCall.callId));
-        for (const id of streamCallIds) if (!listed.has(id)) endedInStream.add(id);
-        for (const id of listed) endedInStream.delete(id);
-        streamCallIds = listed;
+        const listed = new Map(
+          incoming.map((call) => [
+            call.incomingCall.callId,
+            Date.parse(call.incomingCall.expiresAt),
+          ]),
+        );
+        for (const [id, expiresAt] of streamCalls)
+          if (!listed.has(id)) endedInStream.set(id, expiresAt);
+        for (const id of listed.keys()) endedInStream.delete(id);
+        streamCalls = listed;
+        pruneEndedCalls();
         snapshotArrived?.();
         for (const previous of calls) {
           if (!incoming.some((call) => call.incomingCall.callId === previous.incomingCall.callId))
@@ -346,6 +362,7 @@ async function drainNative() {
     if (!roster.has(ring.botId)) await loadRoster().catch(() => undefined);
     // A ring the stream listed and then dropped has ended, for example answered on another
     // phone while the answers above were joining; the older native state must not bring it back.
+    pruneEndedCalls();
     if (endedInStream.has(ring.callId)) continue;
     const bot = roster.get(ring.botId);
     if (bot) update(bot, { ...ring, reason: "", opening: "" });
@@ -392,8 +409,8 @@ export function stopIncomingCalls() {
   feed = undefined;
   streamSnapshot = undefined;
   snapshotArrived = undefined;
-  streamCallIds = new Set();
-  endedInStream = new Set();
+  streamCalls = new Map();
+  endedInStream = new Map();
   // Cancel cold-start waits now; a continuation from this feed must not resume later.
   for (const stopWaiting of snapshotWaiters) stopWaiting();
   snapshotWaiters.clear();
