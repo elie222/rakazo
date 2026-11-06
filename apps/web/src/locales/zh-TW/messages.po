@@ -1321,7 +1321,7 @@ msgstr "已取消"
 
 #: src/components/ModelCredits.tsx
 msgid "Cancelled trials have no computer hours."
-msgstr ""
+msgstr "已取消的試用沒有電腦時數。"
 
 #: src/components/vault/kinds.tsx
 msgid "Card"
@@ -5541,7 +5541,7 @@ msgstr "重新命名分組"
 
 #: src/components/ModelCredits.tsx
 msgid "Renew plan"
-msgstr ""
+msgstr "續訂方案"
 
 #: src/lib/billing.ts
 msgid "Renews {day}"

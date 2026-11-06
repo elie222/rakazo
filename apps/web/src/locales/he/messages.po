@@ -1320,7 +1320,7 @@ msgstr "בוטל"
 
 #: src/components/ModelCredits.tsx
 msgid "Cancelled trials have no computer hours."
-msgstr ""
+msgstr "לתקופות ניסיון שבוטלו אין שעות מחשב."
 
 #: src/components/vault/kinds.tsx
 msgid "Card"
@@ -5540,7 +5540,7 @@ msgstr "שינוי שם המקטע"
 
 #: src/components/ModelCredits.tsx
 msgid "Renew plan"
-msgstr ""
+msgstr "חידוש התוכנית"
 
 #: src/lib/billing.ts
 msgid "Renews {day}"

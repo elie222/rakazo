@@ -6,6 +6,7 @@ import {
   byokYearlySwitchSavings,
   COMPUTER_SIZE_SPECS,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
+  isCancelledTrial,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
@@ -101,11 +102,7 @@ export default function BillingScreen() {
   const credits = status.funding === "credits" || (status.balanceUsd ?? 0) > 0 || status.canManage;
   const referral = status.referral;
   const endTrial = status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd;
-  const renewTrial =
-    status.canManage &&
-    status.state === "trialing" &&
-    status.cancelAtPeriodEnd &&
-    status.hasCustomer;
+  const cancelledTrial = isCancelledTrial(status);
   const yearlySavings = byokYearlySwitchSavings(status);
   const annualCents = status.byokAnnualPriceCents;
   const tiers = status.byokTiers ?? [];
@@ -260,7 +257,7 @@ export default function BillingScreen() {
           footer={
             endTrial
               ? t("Trials get fewer hours to prevent abuse.")
-              : renewTrial
+              : cancelledTrial
                 ? t("Cancelled trials have no computer hours.")
                 : undefined
           }
@@ -292,7 +289,7 @@ export default function BillingScreen() {
               }
             />
           ) : null}
-          {renewTrial ? (
+          {cancelledTrial && status.canManage && status.hasCustomer ? (
             <SettingsRow
               title={t("Renew plan")}
               disabled={pending}

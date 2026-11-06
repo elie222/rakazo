@@ -1320,7 +1320,7 @@ msgstr "Anulowano"
 
 #: src/components/ModelCredits.tsx
 msgid "Cancelled trials have no computer hours."
-msgstr ""
+msgstr "Anulowane okresy próbne nie mają godzin pracy komputera."
 
 #: src/components/vault/kinds.tsx
 msgid "Card"
@@ -5540,7 +5540,7 @@ msgstr "Zmień nazwę sekcji"
 
 #: src/components/ModelCredits.tsx
 msgid "Renew plan"
-msgstr ""
+msgstr "Odnów plan"
 
 #: src/lib/billing.ts
 msgid "Renews {day}"

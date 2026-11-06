@@ -1320,7 +1320,7 @@ msgstr "रद्द किया गया"
 
 #: src/components/ModelCredits.tsx
 msgid "Cancelled trials have no computer hours."
-msgstr ""
+msgstr "रद्द किए गए ट्रायल में कंप्यूटर घंटे नहीं होते।"
 
 #: src/components/vault/kinds.tsx
 msgid "Card"
@@ -5540,7 +5540,7 @@ msgstr "अनुभाग का नाम बदलें"
 
 #: src/components/ModelCredits.tsx
 msgid "Renew plan"
-msgstr ""
+msgstr "प्लान रिन्यू करें"
 
 #: src/lib/billing.ts
 msgid "Renews {day}"

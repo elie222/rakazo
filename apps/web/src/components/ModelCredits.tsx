@@ -8,6 +8,7 @@ import {
   byokYearlySwitchSavings,
   COMPUTER_SIZE_SPECS,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
+  isCancelledTrial,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
@@ -658,24 +659,26 @@ export function ModelCreditsSettings({
                 <Trans>Start plan now</Trans>
               </Button>
             </>
-          ) : status.canManage && status.state === "trialing" && status.hasCustomer ? (
+          ) : isCancelledTrial(status) ? (
             <>
               <p className="mt-2 text-body text-muted-foreground">
                 <Trans>Cancelled trials have no computer hours.</Trans>
               </p>
-              <Button
-                className="mt-5"
-                variant="secondary"
-                disabled={pending}
-                onClick={() =>
-                  void action(async () => {
-                    const { url } = await client.billing.portal();
-                    window.location.assign(url);
-                  })
-                }
-              >
-                <Trans>Renew plan</Trans>
-              </Button>
+              {status.canManage && status.hasCustomer ? (
+                <Button
+                  className="mt-5"
+                  variant="secondary"
+                  disabled={pending}
+                  onClick={() =>
+                    void action(async () => {
+                      const { url } = await client.billing.portal();
+                      window.location.assign(url);
+                    })
+                  }
+                >
+                  <Trans>Renew plan</Trans>
+                </Button>
+              ) : null}
             </>
           ) : null}
         </div>

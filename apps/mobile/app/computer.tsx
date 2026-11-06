@@ -1,5 +1,5 @@
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
-import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
+import { isComputerAllowanceUsed } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
 import {
   createScreenReconnect,
@@ -503,7 +503,7 @@ export default function Computer() {
   // Booting shows in the preview; the header and Back stay, and leaving lets the boot finish.
   const bootPending = booting || computer?.state === "booting";
   // Retrying cannot help once the hours are spent; only a plan change can.
-  const allowanceUsed = error?.startsWith(COMPUTER_ALLOWANCE_USED_ERROR) ?? false;
+  const allowanceUsed = computer?.state !== "running" && isComputerAllowanceUsed(error);
   const canRetry = !allowanceUsed && !bootPending && (bootFailed || computer?.state === "error");
   const screenRetry =
     unreachableScreen ||

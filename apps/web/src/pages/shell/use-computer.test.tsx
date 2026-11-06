@@ -431,4 +431,6 @@ it("offers Upgrade instead of a retry once the computer hours are spent", async 
   expect(buttons).toEqual(["Upgrade"]);
   await act(async () => container.querySelector("button")!.click());
   expect(onUpgrade).toHaveBeenCalledOnce();
+  await act(async () => state.commitComputer({ state: "running", kind: "browser" } as never));
+  expect(container.textContent).not.toContain("Upgrade");
 });

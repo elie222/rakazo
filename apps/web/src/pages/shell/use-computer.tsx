@@ -7,7 +7,7 @@ import type {
   Run,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
+import { isComputerAllowanceUsed } from "@rakazo/contracts";
 import {
   createScreenReconnects,
   isRetryableError,
@@ -784,7 +784,7 @@ export function useComputerControls({
             ? t`Computer failed to boot`
             : null));
   // Retrying cannot help once the hours are spent; only a plan change can.
-  const allowanceUsed = computerFailure?.startsWith(COMPUTER_ALLOWANCE_USED_ERROR) ?? false;
+  const allowanceUsed = computer?.state !== "running" && isComputerAllowanceUsed(computerFailure);
   const computerScreenError = computerFailure ? (
     <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-body">
       {screenFailure ? (

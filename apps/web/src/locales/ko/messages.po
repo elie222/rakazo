@@ -1320,7 +1320,7 @@ msgstr "취소됨"
 
 #: src/components/ModelCredits.tsx
 msgid "Cancelled trials have no computer hours."
-msgstr ""
+msgstr "취소된 체험판에는 컴퓨터 시간이 없습니다."
 
 #: src/components/vault/kinds.tsx
 msgid "Card"
@@ -5540,7 +5540,7 @@ msgstr "섹션 이름 바꾸기"
 
 #: src/components/ModelCredits.tsx
 msgid "Renew plan"
-msgstr ""
+msgstr "플랜 갱신"
 
 #: src/lib/billing.ts
 msgid "Renews {day}"
