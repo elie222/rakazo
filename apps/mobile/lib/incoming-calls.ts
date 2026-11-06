@@ -118,6 +118,10 @@ function update(
     calls.push({ ...bot, incomingCall: call });
     if (Platform.OS === "ios" || AppState.currentState !== "active")
       reportNativeCall({ ...bot, incomingCall: call });
+    // Android's in-app screen takes over a ring it starts showing in the foreground, like the
+    // rings it already showed when the app became active; otherwise both would ring.
+    else if (previous?.incomingCall.callId !== call.callId)
+      void native?.endIncomingCall(call.callId);
   }
   emit();
 }
