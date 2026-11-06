@@ -95,7 +95,8 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
       cards: cards.map(rect),
       heads,
       columns,
-      weekWidth: week.querySelector(".rk-cal-columns")!.getBoundingClientRect().width,
+      weekGrid: rect(week.querySelector(".rk-cal-columns")!),
+      weekScroll: { client: week.clientWidth, scroll: week.scrollWidth },
       sunday: rect(sunday),
       sundayText: sunday.textContent,
       dayColumns,
@@ -107,8 +108,12 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
   expect(layout.cards).toHaveLength(2);
   expect(layout.cards[1]!.x).toBeGreaterThan(layout.cards[0]!.x);
   expect(layout.cards[1]!.y).toBeCloseTo(layout.cards[0]!.y, 0);
-  // This width made auto-fit wrap Sunday into a second row.
-  expect(layout.weekWidth).toBeLessThan(7 * 64);
+  // The card is too narrow for seven 64px days, so the week scrolls inside it instead of
+  // wrapping Sunday into a second row or spilling out of the card.
+  expect(layout.weekScroll.scroll).toBeGreaterThan(layout.weekScroll.client);
+  expect(layout.columns[6]!.x + layout.columns[6]!.width).toBeLessThanOrEqual(
+    layout.weekGrid.x + layout.weekGrid.width + 1,
+  );
   expect(layout.heads).toHaveLength(7);
   expect(layout.columns).toHaveLength(7);
   for (let i = 0; i < 7; i++) {
