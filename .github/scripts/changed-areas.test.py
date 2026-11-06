@@ -1,6 +1,7 @@
 """Classify pull-request merge commits in disposable repositories, without network access."""
 
 import pathlib
+import re
 import subprocess
 import tempfile
 import unittest
@@ -105,6 +106,19 @@ class ChangedAreasTests(unittest.TestCase):
         for path, expected in cases:
             with self.subTest(path=path):
                 self.assertEqual(areas(write(path)), expected)
+
+    def test_files_the_root_vitest_config_loads_count_for_every_package(self):
+        # Every package's tests load these, but no package depends on the one that holds them.
+        config = (SCRIPT.parents[2] / "vitest.config.ts").read_text()
+        paths = sorted(
+            path
+            for path in set(re.findall(r'"\./((?:apps|packages)/[^"]+)"', config))
+            if "/node_modules/" not in path
+        )
+        self.assertTrue(paths)
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertEqual(areas(write(path))["all_packages"], "true")
 
     def test_a_rename_out_of_the_web_app_counts_its_old_path(self):
         def move(root):
