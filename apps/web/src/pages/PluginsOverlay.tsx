@@ -1165,7 +1165,9 @@ export function PluginsOverlay({
         >
           <ChevronLeft />
         </Button>
-        <h2 className="text-heading3 font-medium text-foreground">{title}</h2>
+        <SectionHeading as="h2" variant="heading">
+          {title}
+        </SectionHeading>
       </div>
     );
   }
@@ -1588,10 +1590,7 @@ export function PluginsOverlay({
         if (!open) onClose();
       }}
     >
-      <DialogContent
-        showCloseButton={false}
-        className="flex h-[760px] max-h-[calc(100%-2rem)] w-[1080px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[1080px]"
-      >
+      <DialogContent showCloseButton={false} size="2xl" className="bg-card">
         <DialogHeader className="flex-row items-start justify-between px-8 pt-7">
           <DialogTitle className="text-heading2 text-foreground">
             <Trans>Integrations</Trans>
