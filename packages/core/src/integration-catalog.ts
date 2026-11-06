@@ -17,7 +17,8 @@ export function signInMcpServers(results: readonly IntegrationCatalogResult[]): 
   return [...servers.values()];
 }
 
-/** The server already added for this endpoint, or a new one for it. */
+/** The enabled server already added for this endpoint, or a new one for it. A disabled one can't
+ * sign in, so it is left as it is. */
 export async function findOrAddMcpServer(
   server: SignInMcpServer,
   rpc: {
@@ -30,7 +31,9 @@ export async function findOrAddMcpServer(
     }) => Promise<McpServer>;
   },
 ): Promise<McpServer> {
-  const existing = (await rpc.list()).find((row) => row.endpoint === server.endpoint);
+  const existing = (await rpc.list()).find(
+    (row) => row.enabled && row.endpoint === server.endpoint,
+  );
   return (
     existing ??
     rpc.create({
