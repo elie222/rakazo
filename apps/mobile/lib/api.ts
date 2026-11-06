@@ -1132,37 +1132,14 @@ async function readPendingSignOuts(): Promise<PendingSignOutRead> {
     }
     return { ok: true, records };
   } catch {
-    // A list this app cannot read is dropped; the sessions expire server-side regardless.
-    // The drop waits for its turn in the write queue and runs only while the store still
-    // holds this unreadable value, so a revocation recorded after this read survives it.
-    // The step is not awaited: this read can itself run inside a queued step, and the
-    // queue never waits on itself.
-    void queuePendingSignOutWrite(async () => {
-      let current: string | null = null;
-      try {
-        current = await SecureStore.getItemAsync(PENDING_SIGN_OUT_KEY);
-      } catch {
-        return;
-      }
-      if (current !== stored) return;
-      try {
-        await SecureStore.deleteItemAsync(PENDING_SIGN_OUT_KEY);
-      } catch {
-        // Reading it again next time reaches the same conclusion.
-      }
-    });
+    // A list this app cannot read counts as empty, and the next write replaces it; the sessions
+    // expire server-side regardless.
     return { ok: true, records: [] };
   }
 }
 
-async function writePendingSignOuts(records: PendingSignOut[]): Promise<boolean> {
-  try {
-    await SecureStore.setItemAsync(PENDING_SIGN_OUT_KEY, JSON.stringify(records));
-    return true;
-  } catch {
-    // A failed write keeps whatever the store already holds.
-    return false;
-  }
+function writePendingSignOuts(records: PendingSignOut[]): Promise<boolean> {
+  return writeStoredValue(PENDING_SIGN_OUT_KEY, JSON.stringify(records));
 }
 
 /** Records a revocation to deliver later. False when the store could not be read or written. */
@@ -1214,14 +1191,6 @@ async function removePendingSignOut(record: PendingSignOut): Promise<void> {
   });
 }
 
-/** Retires records whose session cannot be alive on any server anymore. */
-async function prunePendingSignOuts(): Promise<void> {
-  await updatePendingSignOuts((records) => {
-    const kept = livePendingSignOuts(records);
-    return kept.length === records.length ? undefined : kept;
-  });
-}
-
 /** Records possible renewal separately from confirmed unregistration delivery. */
 async function markPendingSignOutProgress(
   record: PendingSignOut,
@@ -1260,8 +1229,6 @@ async function promotePendingSignOut(record: PendingSignOut): Promise<void> {
  * so a reconcile that raced a switch's start leaves its records alone.
  */
 async function reconcileProvisionalSignOuts(): Promise<void> {
-  const initial = await readPendingSignOuts();
-  if (!initial.ok || !initial.records.some((record) => record.provisional)) return;
   await queuePendingSignOutWrite(async () => {
     const read = await readPendingSignOuts();
     if (!read.ok || !read.records.some((record) => record.provisional)) return;
@@ -1312,15 +1279,11 @@ async function reconcileProvisionalSignOuts(): Promise<void> {
  * alive. The unregistration's 401 can also mean missing membership, so only the sign-out's
  * success or 401 proves the session is gone; both halves must have a hard answer to complete.
  */
-async function deliverPendingSignOut(
-  record: PendingSignOut,
-): Promise<"delivered" | "retry" | "expired"> {
+async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered" | "retry"> {
   const send = async (path: string, body: string) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
     try {
-      // Pruning can fail, and the preceding request can cross the hard deadline.
-      if (Date.now() - record.recordedAt >= PENDING_SIGN_OUT_HARD_MAX_AGE_MS) return "expired";
       const response = await withAbort(
         // Not fetchServer: it reads the headers configured for the current server, and after
         // a switch those belong to the new one — only the record still carries this server's.
@@ -1331,7 +1294,7 @@ async function deliverPendingSignOut(
           headers: {
             "content-type": "application/json",
             origin: "rakazo://",
-            ...(record.token ? { authorization: `Bearer ${record.token}` } : {}),
+            authorization: `Bearer ${record.token}`,
             ...clientBuild.headers(),
             ...record.headers,
           },
@@ -1367,7 +1330,6 @@ async function deliverPendingSignOut(
   let retrying = false;
   if (!record.unregistered) {
     const unregistered = await send("/rpc/notifications/unregisterPush", '{"json":{}}');
-    if (unregistered === "expired") return "expired";
     // Servers that still refresh this RPC's session can renew it even without a membership.
     if (unregistered !== "retry")
       await markPendingSignOutProgress(record, { renewedAt: Date.now(), unregistered: true });
@@ -1376,78 +1338,60 @@ async function deliverPendingSignOut(
   // The sign-out is attempted even when the unregistration could not get through, like the
   // sign-out they both belong to.
   const signedOut = await send("/api/auth/sign-out", "{}");
-  if (signedOut === "expired") return "expired";
   return retrying || signedOut === "retry" ? "retry" : "delivered";
 }
 
-/** Runs one delivery attempt and removes the record after a hard answer. */
-async function runSignOutDelivery(record: PendingSignOut): Promise<void> {
-  try {
-    if ((await deliverPendingSignOut(record)) !== "retry" && record.token) {
-      await removePendingSignOut(record);
-    }
-  } catch {
-    // Delivery problems never surface; the record waits for the next pass.
-  }
-}
-
 /**
- * Delivers the record as the store holds it now: progress another attempt persisted is
- * never repeated, and an absent record was already delivered. An unreadable store falls
- * back to the captured record, like the delivery always has.
+ * Delivers a record once at a time: callers share the attempt in flight for the same session
+ * (server base, token), so the revocation is never sent twice; unrelated records deliver
+ * independently. A persisted record is delivered as the store holds it now, so progress another
+ * attempt persisted is never repeated and an absent record is not sent again; an unreadable store
+ * falls back to the captured record, as does one that could not be persisted.
  */
-async function deliverStoredSignOutRecord(record: PendingSignOut): Promise<void> {
-  // The queue orders this read with record writes, so persisted progress is visible.
-  const read = await readPendingSignOuts();
-  const stored = !read.ok
-    ? record
-    : read.records.find(
-        (candidate) => samePendingSignOut(candidate, record) && !candidate.provisional,
-      );
-  if (stored) await runSignOutDelivery(stored);
-}
-
-/**
- * Delivers a record once at a time: callers share the attempt already reserved or in
- * flight for the same session (server base, token), so the revocation is never sent
- * twice; unrelated records deliver independently.
- */
-function deliverSignOutRecord(record: PendingSignOut): Promise<void> {
+function deliverSignOutRecord(record: PendingSignOut, persisted = true): Promise<void> {
   const key = `${record.apiBase}\n${record.token}`;
   const inFlight = deliveringSignOuts.get(key);
   if (inFlight) return inFlight;
-  const delivery = runSignOutDelivery(record).finally(() => {
-    if (deliveringSignOuts.get(key) === delivery) deliveringSignOuts.delete(key);
-  });
+  const delivery = (async () => {
+    try {
+      const read = persisted ? await readPendingSignOuts() : ({ ok: false } as const);
+      const current = read.ok
+        ? livePendingSignOuts(read.records).find(
+            (candidate) => samePendingSignOut(candidate, record) && !candidate.provisional,
+          )
+        : record;
+      if (current && (await deliverPendingSignOut(current)) === "delivered") {
+        await removePendingSignOut(current);
+      }
+    } catch {
+      // Delivery problems never surface; the record waits for the next pass.
+    } finally {
+      deliveringSignOuts.delete(key);
+    }
+  })();
   deliveringSignOuts.set(key, delivery);
   return delivery;
-}
-
-/** One delivery pass; a newer delivery registered while it ran keeps the slot. */
-function startPendingSignOutPass(): Promise<void> {
-  const attempt = pendingSignOutPass();
-  flushingPendingSignOut = attempt;
-  void attempt
-    .catch(() => undefined)
-    .finally(() => {
-      if (flushingPendingSignOut === attempt) flushingPendingSignOut = undefined;
-    });
-  return attempt;
 }
 
 async function pendingSignOutPass(): Promise<void> {
   try {
     lastPendingSignOutFlushAt = Date.now();
     await reconcileProvisionalSignOuts();
-    await prunePendingSignOuts();
     // This read decides whether later non-forced flushes may skip the store, so it takes
     // its turn in the write queue: an out-of-queue read can resume after a queued sign-out
     // recorded a revocation and still report the store it saw first, silencing retries.
-    // Delivery stays outside the queue, like every network call.
+    // Records whose session cannot be alive anymore are retired in the same step. Delivery
+    // stays outside the queue, like every network call.
     const read = await queuePendingSignOutWrite(async () => {
       const current = await readPendingSignOuts();
-      pendingSignOutAbsent = current.ok && current.records.length === 0;
-      return current;
+      if (!current.ok) {
+        pendingSignOutAbsent = false;
+        return current;
+      }
+      const live = livePendingSignOuts(current.records);
+      if (live.length !== current.records.length) await writePendingSignOuts(live);
+      pendingSignOutAbsent = live.length === 0;
+      return { ok: true as const, records: live };
     });
     if (!read.ok) return;
     for (const record of read.records) {
@@ -1471,7 +1415,9 @@ export async function flushPendingSignOut(force = false): Promise<void> {
   // Answered requests arrive in bursts; a permanently dead old server must not be hit
   // after each one for the record's whole life. Launch retries are never spaced out.
   if (!force && Date.now() - lastPendingSignOutFlushAt < PENDING_SIGN_OUT_FLUSH_SPACING_MS) return;
-  flushingPendingSignOut ??= startPendingSignOutPass();
+  flushingPendingSignOut ??= pendingSignOutPass().finally(() => {
+    flushingPendingSignOut = undefined;
+  });
   return flushingPendingSignOut;
 }
 
@@ -1492,59 +1438,22 @@ export async function signOut() {
     headers: serverHeaders(apiBase),
     recordedAt: Date.now(),
   };
-  // The delivery slot is reserved before the record is written, but only when it is free:
-  // a pass that sees the record joins this sign-out's delivery instead of starting its own,
-  // even while the local clear still holds the sign-out, and a delivery already in flight
-  // for this session keeps its place and its progress — this sign-out joins it too.
-  const key = `${revocation.apiBase}\n${revocation.token}`;
-  let persisted = false;
-  let settled!: () => void;
-  const reserved = new Promise<void>((release) => {
-    settled = release;
-  });
-  if (!deliveringSignOuts.get(key)) deliveringSignOuts.set(key, reserved);
-  const releaseReservation = () => {
-    settled();
-    if (deliveringSignOuts.get(key) === reserved) deliveringSignOuts.delete(key);
-  };
-  const deliverReserved = () => {
-    // A newer owner of the slot delivers this session's record itself.
-    if (deliveringSignOuts.get(key) !== reserved) {
-      releaseReservation();
-      return;
-    }
-    // A persisted record is delivered as the store holds it, so progress another attempt
-    // persisted is never repeated; a record that could not be persisted is delivered
-    // as captured.
-    void (persisted ? deliverStoredSignOutRecord(revocation) : runSignOutDelivery(revocation))
-      .catch(() => undefined)
-      .finally(releaseReservation);
-  };
-  try {
-    // The record is written before the attempts: an app that dies mid-sign-out still revokes later.
-    if (revocation.token) {
-      // A failed write cannot block the local sign-out; the session still expires server-side.
-      persisted = await savePendingSignOut(revocation);
-    }
-    // A sign-in that saved its token since the read has no record; as in a server switch, the
-    // sign-out stops without clearing it. The record stays for the session the user signed out of.
-    if (generation !== currentSessionGeneration() || sessionSaveInProgress()) {
-      throw new Error(t("Could not clear the local session"));
-    }
-    // The local session clears first: a server that accepts the connection but never answers
-    // must not keep this device signed in for the delivery's two request timeouts.
-    const sessionCleared = await clearSessionToken();
-    const spaceCleared = await clearSpace();
-    if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
-  } catch (error) {
-    // No delivery runs; the slot frees and the record (when written) waits for the next pass.
-    releaseReservation();
-    throw error;
+  // The record is written before the attempts: an app that dies mid-sign-out still revokes later.
+  // A failed write cannot block the local sign-out; the session still expires server-side.
+  const persisted = revocation.token ? await savePendingSignOut(revocation) : false;
+  // A sign-in that saved its token since the read has no record; as in a server switch, the
+  // sign-out stops without clearing it. The record stays for the session the user signed out of.
+  if (generation !== currentSessionGeneration() || sessionSaveInProgress()) {
+    throw new Error(t("Could not clear the local session"));
   }
+  // The local session clears first: a server that accepts the connection but never answers
+  // must not keep this device signed in for the delivery's two request timeouts.
+  const sessionCleared = await clearSessionToken();
+  const spaceCleared = await clearSpace();
+  if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
   // Delivery waits on the same silent server, so it cannot hold the visible sign-out either.
-  // The persisted record covers an attempt that dies with the process, and both halves
-  // authenticate with the record's own token.
-  deliverReserved();
+  // The persisted record covers an attempt that dies with the process.
+  if (revocation.token) void deliverSignOutRecord(revocation, persisted);
 }
 
 export async function deleteAccount(password?: string, token?: string) {
