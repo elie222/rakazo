@@ -65,7 +65,7 @@ import { toolActivityPreference } from "../lib/tool-activity-preference";
 import { useDesktopBadge } from "../lib/use-desktop-badge";
 import { errorText } from "../lib/user-error";
 import { HostComputerPrompt } from "./HostComputerPrompt";
-import { RoutineList } from "./RoutineEditor";
+import { RoutineList } from "./RoutineList";
 import { ArchivedChats } from "./shell/archived-chats";
 import { ChatContextMenu } from "./shell/chat-context-menu";
 import { ChatFindBar } from "./shell/chat-find-bar";

@@ -14,8 +14,8 @@ import {
   runAsTenant,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { reactToThreadMessage } from "./thread-reactions.js";
 import type { ThreadTarget } from "./thread-target.js";
-import { reactToThreadMessage } from "./thread-target.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(databaseUrl);
