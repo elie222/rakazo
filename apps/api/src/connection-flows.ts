@@ -2,6 +2,7 @@ import { ORPCError } from "@orpc/server";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
 import {
+  advisoryLock,
   pickReusableConnection,
   prepareManagedConnectorForTransaction,
   sanitizeIntegrationError,
@@ -88,7 +89,7 @@ async function lockProviderConnectionScope(
   connectorId: string,
   provider: string,
 ): Promise<void> {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('connection-provider'), hashtext(${providerScopeKey(owner, connectorId, provider)}))`;
+  await advisoryLock(tx, "connection-provider", providerScopeKey(owner, connectorId, provider));
 }
 
 /** Like lockProviderConnectionScope, but returns false instead of waiting for a holder. */

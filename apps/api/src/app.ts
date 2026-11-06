@@ -107,11 +107,11 @@ import {
 } from "@rakazo/adapters";
 import type { DirectoryAccountChange } from "@rakazo/auth";
 import {
+  buildTrustedOrigins,
   CLIENT_IP_HEADER,
   createAuth,
   createDirectory,
   isBlockedAuthPath,
-  loopbackTwinOrigins,
 } from "@rakazo/auth";
 import type { Actor, AuthCapabilities } from "@rakazo/contracts";
 import {
@@ -1556,29 +1556,14 @@ export function isTrustedOrigin(
 ) {
   if (!origin) return true;
   if (origin.startsWith("rakazo://")) return true;
-  const allowed = new Set(
-    [env.webOrigin, env.apiUrl, env.authUrl, ...MOBILE_AUTH_ORIGINS].flatMap(originVariants),
-  );
-  return allowed.has(origin);
+  return new Set(trustedRequestOrigins(env)).has(origin);
 }
 
-function originVariants(origin: string): string[] {
-  if (!origin || origin === "rakazo://") return [];
-  const variants = [origin, ...loopbackTwinOrigins(origin)];
-  try {
-    const url = new URL(origin);
-    if (url.protocol === "http:" || url.protocol === "https:") {
-      variants.push(url.origin);
-    }
-    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
-      const v6 = new URL(origin);
-      v6.hostname = "[::1]";
-      variants.push(v6.origin);
-    }
-  } catch {
-    return variants;
-  }
-  return variants;
+export function trustedRequestOrigins(env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl">) {
+  return buildTrustedOrigins({
+    origins: [env.webOrigin, env.apiUrl, env.authUrl, ...MOBILE_AUTH_ORIGINS],
+    requestOrigins: true,
+  });
 }
 
 /**
