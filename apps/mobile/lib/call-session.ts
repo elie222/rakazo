@@ -6,6 +6,7 @@ import {
   abortableDelay,
   CALL_FAREWELL_TIMEOUT_MS,
   callClientNonce,
+  callTurn,
   createCallSendTracker,
   createInterimBargeIn,
   isCallBargeIn,
@@ -13,6 +14,7 @@ import {
   isRetryableError,
   latestSpokenCallReply,
   newClientId,
+  pendingCallSecretAsk,
   readJsonObjectWithin,
   recognitionLocaleTag,
   retryDelayMs,
@@ -82,6 +84,14 @@ export type CallDeps = {
   transcribe: (clip: CallClip, signal: AbortSignal) => Promise<string>;
   /** Resolves with the run the message started, so only that run's reply is spoken. */
   send: (botId: string, text: string, clientNonce: string) => Promise<string | undefined>;
+  /** Answers the open question the bot's waiting run asked. */
+  answer: (
+    botId: string,
+    ask: { runId: string; messageId: string; answer: string },
+    clientNonce: string,
+  ) => Promise<void>;
+  /** Steers the run that is still working. */
+  followUp: (botId: string, text: string, clientNonce: string) => Promise<void>;
   /** Tells the server the caller hung up, so it files the call marker and the wrap-up run. */
   endCall: (botId: string, callId: string) => Promise<void>;
   speak: (botId: string, text: string) => Promise<void>;
@@ -95,6 +105,8 @@ export type CallDeps = {
     botId: string,
     onReply: (messageId: string, text: string, runId?: string) => void,
     onCallEnded: (ended: CallEnded) => void,
+    /** Every update of the call's thread, so a turn can answer what the bot is waiting on. */
+    onThread: (thread: MobileSnapshot) => void,
   ) => () => void;
 };
 
@@ -146,6 +158,10 @@ let consentBlocked = false;
 let botEndedCall = false;
 let hangUpTimer: ReturnType<typeof setTimeout> | null = null;
 let spokenMessageId: string | null = null;
+/** The call's thread as the live feed last reported it. */
+let thread: MobileSnapshot | null = null;
+/** The microphone stays shut while the bot waits on a code typed on screen. */
+let heldForCode = false;
 let failures = 0;
 /** Counts the caller's turns, so a closing cue that ends late starts no waiting sound for a newer turn. */
 let turnSeq = 0;
@@ -250,7 +266,7 @@ export function startCall(
     heard: "",
     exchanges: [],
   };
-  unwatch = deps.watch(call.botId, onReply, onCallEnded);
+  unwatch = deps.watch(call.botId, onReply, onCallEnded, onThread);
   emit();
   void openCall(callId, call.greeting);
   return callId;
@@ -313,6 +329,8 @@ export function endCall(): void {
   botEndedCall = false;
   callRunId = null;
   spokenMessageId = null;
+  thread = null;
+  heldForCode = false;
   failures = 0;
   micOpen = false;
   opening = false;
@@ -385,6 +403,11 @@ async function listen(): Promise<void> {
 /** Opens one microphone session, unless one is already running or the call is muted. */
 async function openMic(): Promise<void> {
   if (!state || micOpen || state.muted) return;
+  // A code is typed on screen: the call must not hear or transcribe it.
+  if (pendingCallSecretAsk(thread)) {
+    heldForCode = true;
+    return;
+  }
   micOpen = true;
   const controller = new AbortController();
   turn = controller;
@@ -484,6 +507,23 @@ async function handleTranscript(raw: string): Promise<void> {
     void switchCall(handOver, text);
     return;
   }
+  const next = callTurn(thread, text);
+  if (next.kind === "enter_code") {
+    heldForCode = true;
+    set({ phase: "listening", heard: "", caption: t("Hang up, then enter the code on screen.") });
+    return;
+  }
+  const closing = isFarewell(text);
+  // An approval is only granted on screen, next to its details; a spoken reply would be refused.
+  if (next.kind === "approve_on_screen") {
+    // Its card was already on screen; only what its run says after the tap is spoken.
+    spokenMessageId = next.messageId;
+    callRunId = next.runId;
+    if (closing) hangUpAfterReply = true;
+    void listen();
+    set({ caption: t("Approve or deny it on screen.") });
+    return;
+  }
   const { botId } = state;
   // The call this turn belongs to: hanging up and calling the same bot again before
   // send resolves must not hand the new call the old run.
@@ -502,7 +542,7 @@ async function handleTranscript(raw: string): Promise<void> {
       if (state?.phase !== "thinking" || callId !== turnCallId || turnSeq !== cueTurn) return;
       deps.waitSound("start");
     });
-  if (isFarewell(text)) {
+  if (closing) {
     hangUpAfterReply = true;
     // A second goodbye replaces this timer. Clear the previous one or it can
     // end the next call after this one has already hung up.
@@ -511,7 +551,20 @@ async function handleTranscript(raw: string): Promise<void> {
   }
   let releasePendingSend: (() => void) | undefined;
   try {
-    const sendRequest = deps.send(botId, text, callClientNonce(turnCallId));
+    const clientNonce = callClientNonce(turnCallId);
+    // A follow-up may be answered by a continuation run, so any reply in the call counts.
+    const sendRequest =
+      next.kind === "answer"
+        ? deps
+            .answer(
+              botId,
+              { runId: next.runId, messageId: next.messageId, answer: next.answer },
+              clientNonce,
+            )
+            .then(() => next.runId)
+        : next.kind === "follow_up"
+          ? deps.followUp(botId, text, clientNonce).then(() => undefined)
+          : deps.send(botId, text, clientNonce);
     releasePendingSend = callSends.track(turnCallId, sendRequest);
     const runId = await sendRequest;
     if (state?.botId === botId && callId === turnCallId) {
@@ -589,6 +642,26 @@ function onReply(messageId: string, text: string, runId?: string): void {
   if (callRunId && runId && runId !== callRunId) return;
   spokenMessageId = messageId;
   speakAndListen(text);
+}
+
+/** Keeps the thread current, and the microphone shut while the bot waits on a typed code. */
+function onThread(next: MobileSnapshot): void {
+  thread = next;
+  if (!state) return;
+  if (pendingCallSecretAsk(next)) {
+    if (!micOpen) return;
+    heldForCode = true;
+    turn?.abort();
+    turn = null;
+    micOpen = false;
+    interim.clear();
+    set({ heard: "" });
+    return;
+  }
+  // The code was entered on screen: listen again unless the bot is about to speak.
+  if (!heldForCode) return;
+  heldForCode = false;
+  if (state.phase === "listening" && !micOpen && !opening) void listen();
 }
 
 /** The bot on the line says it is handing over, then this call hangs up and the other bot rings. */
@@ -709,20 +782,39 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
       throw new Error(t("Something went wrong. Try again."));
     return context;
   };
+  // The server rejected this call's session: stop listening instead of opening the
+  // microphone for another turn. The next ordinary request handles the sign-out.
+  const endOnUnauthorized = async <T>(request: Promise<T>): Promise<T> => {
+    try {
+      return await request;
+    } catch (error) {
+      if ((error as { status?: unknown }).status === 401 && deps.send === own.send) endCall();
+      throw error;
+    }
+  };
   const own: CallDeps = {
     dictate: dictateTurn,
     record: recordClip,
     transcribe: async (clip, signal) => transcribeClip(clip, signal, await callContext()),
-    send: async (botId, text, clientNonce) => {
-      try {
-        return await sendHeard(botId, text, clientNonce, await callContext());
-      } catch (error) {
-        // The server rejected this call's session: stop listening instead of opening the
-        // microphone for another turn. The next ordinary request handles the sign-out.
-        if ((error as { status?: unknown }).status === 401 && deps.send === own.send) endCall();
-        throw error;
-      }
-    },
+    send: (botId, text, clientNonce) =>
+      endOnUnauthorized(
+        callContext().then(async (requestContext) => {
+          const sent = await rpc("threads/send", { botId, clientNonce, text }, { requestContext });
+          return sent.runId;
+        }),
+      ),
+    answer: (botId, ask, clientNonce) =>
+      endOnUnauthorized(
+        callContext().then(async (requestContext) => {
+          await rpc("threads/answer", { botId, ...ask, clientNonce }, { requestContext });
+        }),
+      ),
+    followUp: (botId, text, clientNonce) =>
+      endOnUnauthorized(
+        callContext().then(async (requestContext) => {
+          await rpc("threads/followUp", { botId, text, clientNonce }, { requestContext });
+        }),
+      ),
     endCall: async (botId, id) => closeCall(botId, id, await callContext()),
     speak: (botId, text) => speakReply(botId, text, speechOwner, requestContext),
     stopSpeaking: () => stopSpeaking(speechOwner),
@@ -733,7 +825,8 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
       else if (action === "preload") void preloadWaitSound().catch(() => undefined);
       else releaseWaitSound();
     },
-    watch: (botId, onReply, onEnded) => watchReplies(botId, onReply, onEnded, requestContext),
+    watch: (botId, onReply, onEnded, onThread) =>
+      watchReplies(botId, onReply, onEnded, onThread, requestContext),
   };
   return own;
 }
@@ -853,16 +946,6 @@ async function transcribeClip(
   return body.text ?? "";
 }
 
-async function sendHeard(
-  botId: string,
-  text: string,
-  clientNonce: string,
-  requestContext: ApiRequestContext,
-): Promise<string | undefined> {
-  const sent = await rpc("threads/send", { botId, clientNonce, text }, { requestContext });
-  return sent.runId;
-}
-
 async function closeCall(
   botId: string,
   id: string,
@@ -887,6 +970,7 @@ function watchReplies(
   botId: string,
   onNewReply: (messageId: string, text: string, runId?: string) => void,
   onEnded: (ended: CallEnded) => void,
+  onThread: (thread: MobileSnapshot) => void,
   requestContext?: ApiRequestContext,
 ): () => void {
   const controller = new AbortController();
@@ -911,6 +995,7 @@ function watchReplies(
           );
           lastSeen = latestSpokenCallReply(snapshot.messages, watchedCallId)?.id ?? null;
           cursor = snapshot.cursor ?? 0;
+          onThread(snapshot);
         }
         await subscribeThread(
           { botId },
@@ -924,8 +1009,10 @@ function watchReplies(
               });
               return;
             }
+            const previous = snapshot;
             snapshot = applyMobileThreadEvent(snapshot, event) ?? snapshot;
             if (!snapshot) return;
+            if (snapshot !== previous) onThread(snapshot);
             const message = latestSpokenCallReply(snapshot.messages, watchedCallId);
             if (!message || message.id === lastSeen) return;
             // Wait for the message's own run to settle so half-written blocks are never

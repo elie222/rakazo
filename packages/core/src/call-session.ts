@@ -1,3 +1,8 @@
+import type { MessageBlock } from "@rakazo/contracts";
+import { isApprovalAskBlock, isSecretAskBlock } from "./action-approval.js";
+import { isRunWorking } from "./run-state.js";
+import { spokenDecision } from "./speech-text.js";
+
 /** One line of a call's transcript. */
 export type CallExchange = { role: "user" | "bot"; text: string };
 
@@ -34,4 +39,57 @@ export function createCallSendTracker() {
       );
     },
   };
+}
+
+/** The parts of the call's thread that decide what a spoken turn does. */
+export type CallThread = {
+  run: { id: string; status: string } | null;
+  messages: readonly { id: string; runId?: string; blocks: readonly MessageBlock[] }[];
+};
+
+/**
+ * What the caller's finished turn does:
+ * - `enter_code`: the bot asked for a code or password; it is typed on screen, never spoken.
+ * - `approve_on_screen`: the bot asked for an approval, which is only granted next to its details.
+ * - `answer`: the spoken reply answers the bot's open question.
+ * - `follow_up`: the bot is still working; the turn steers that run.
+ * - `send`: a new message.
+ */
+export type CallTurn =
+  | { kind: "enter_code" }
+  | { kind: "approve_on_screen"; messageId: string; runId: string }
+  | { kind: "answer"; messageId: string; runId: string; answer: string }
+  | { kind: "follow_up" }
+  | { kind: "send" };
+
+export function callTurn(thread: CallThread | null, text: string): CallTurn {
+  const ask = pendingCallAsk(thread);
+  if (ask?.blocks.some(isSecretAskBlock)) return { kind: "enter_code" };
+  if (ask?.blocks.some(isApprovalAskBlock)) {
+    return { kind: "approve_on_screen", messageId: ask.message.id, runId: ask.runId };
+  }
+  if (ask) {
+    const answer = spokenDecision(text) ?? text;
+    return { kind: "answer", messageId: ask.message.id, runId: ask.runId, answer };
+  }
+  return isRunWorking(thread?.run?.status) ? { kind: "follow_up" } : { kind: "send" };
+}
+
+/** The bot is waiting on a code or password, which the call must not listen for. */
+export function pendingCallSecretAsk(thread: CallThread | null): boolean {
+  return Boolean(pendingCallAsk(thread)?.blocks.some(isSecretAskBlock));
+}
+
+/** The newest card the waiting run asked, with its unanswered asks. */
+function pendingCallAsk(thread: CallThread | null) {
+  const run = thread?.run;
+  if (run?.status !== "waiting_input") return undefined;
+  const message = thread?.messages.findLast(
+    (candidate) => candidate.runId === run.id && candidate.blocks.some(unansweredAsk),
+  );
+  return message && { message, runId: run.id, blocks: message.blocks.filter(unansweredAsk) };
+}
+
+function unansweredAsk(block: MessageBlock): boolean {
+  return block.kind === "ask" && block.status !== "answered";
 }
