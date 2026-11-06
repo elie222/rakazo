@@ -201,6 +201,7 @@ import { mountScreenTarget } from "./screen-proxy.js";
 import { mountScriptAssets } from "./script-assets.js";
 import { createAuthResponseAudit } from "./security-audit.js";
 import { mountSharedPages } from "./shared-pages.js";
+import { afterSpaceDeparture } from "./space-departure.js";
 import { createSpeechSummarizer } from "./speech-summary.js";
 import { isDeferredReservationLost, TeamChatBridge } from "./team-chat-bridge.js";
 import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
@@ -1021,7 +1022,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       let unfinished = false;
       for (const change of latest.values())
         await settleDirectoryChange(
-          { prisma, pushTokens, devices: deviceSessions, events },
+          {
+            prisma,
+            pushTokens,
+            devices: deviceSessions,
+            events,
+            afterDeparture: (actor, departure) =>
+              afterSpaceDeparture({ prisma, sandbox, jobs, events }, actor, departure),
+          },
           change,
         ).catch((error) => {
           unfinished = true;

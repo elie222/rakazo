@@ -124,7 +124,10 @@ covers its **To** and **Cc**, which must name the bot. Mail that fails, mail sen
 replies and mailing-list mail are dropped.
 
 Each email trigger then starts only for its owner's own address, or for anyone at the owner's
-email domain when the routine allows it.
+email domain when the routine allows it. Mail that claims the owner's address but fails the check posts a
+note in the bot's chat, at most once a day, without any of its content. That usually means the
+owner's domain does not sign its own mail: Google Workspace and Microsoft 365 need DKIM turned on
+for a custom domain.
 
 The message reaches the bot as outside data, never as instructions, and runs it starts follow the
 stricter [approval](./approvals.md) rules for outside events. Up to four attachments are kept,

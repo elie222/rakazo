@@ -835,6 +835,7 @@ class AccountImporter implements ArchiveSink {
             teamChatRules: record.teamChatRules,
             crossSpaceCommunication: record.crossSpaceCommunication,
             dailyCheckIns: record.dailyCheckIns,
+            replyMode: record.replyMode,
             createdAt: new Date(record.createdAt),
           },
         });

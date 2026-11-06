@@ -1363,6 +1363,7 @@ msgid "Chart failed to render: {error}"
 msgstr "Chart failed to render: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr "Chat"
 
@@ -4215,6 +4216,10 @@ msgstr "Message…"
 msgid "Messaged {peer}"
 msgstr "Messaged {peer}"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr "Messages"
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "Messaging"
@@ -5557,6 +5562,10 @@ msgstr "Replace key"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Replaces the login saved for {0}"
 msgstr "Replaces the login saved for {0}"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
+msgstr "Replies"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"

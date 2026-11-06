@@ -13,6 +13,7 @@ import {
   BotEmailNameSchema,
   ROUTINE_WATCH_DEFAULT_MINUTES,
   ROUTINE_WATCH_MIN_MINUTES,
+  suggestedEmailName,
 } from "@rakazo/contracts";
 import type { CronFreq, CronLabels, CronPreset, RoutineDraft } from "@rakazo/core";
 import {
@@ -102,7 +103,6 @@ export type RoutineDraftState = RoutineDraft & {
   webhookEnabled: boolean;
   githubEnabled: boolean;
   messageProvider: string | null;
-  emailSenders: RoutineEmailSenders | null;
   runAtLocal: string;
   /** Empty runs this routine on the bot's model. */
   modelKey: string;
@@ -196,7 +196,6 @@ export function emptyRoutineDraftState(): RoutineDraftState {
     webhookEnabled: false,
     githubEnabled: false,
     messageProvider: null,
-    emailSenders: null,
     runAtLocal: "",
     modelKey: "",
     thinkingLevel: "",
@@ -210,7 +209,6 @@ export function draftStateFromRoutine(routine: Routine): RoutineDraftState {
     webhookEnabled: routine.webhookEnabled,
     githubEnabled: routine.githubEnabled,
     messageProvider: routine.messageProvider,
-    emailSenders: routine.emailSenders,
     runAtLocal: routineNeedsOneShotArm(routine, routine.crons) ? defaultArmRunAtLocal() : "",
     modelKey:
       routine.modelProvider && routine.modelId
@@ -974,21 +972,6 @@ function MessageTriggerCard({ provider, onRemove }: { provider: string; onRemove
       </p>
     </div>
   );
-}
-
-/**
- * A first address suggestion from the bot's name, such as "research-helper". ASCII only, unlike
- * page anchors: many mail servers still refuse non-ASCII addresses.
- */
-export function suggestedEmailName(botName: string): string {
-  return botName
-    .normalize("NFKD")
-    .toLowerCase()
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64)
-    .replace(/-+$/, "");
 }
 
 function EmailTriggerCard({
