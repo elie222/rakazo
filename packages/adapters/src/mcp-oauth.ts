@@ -133,21 +133,28 @@ export function launchArgSecrets(args: string[]): string[] {
       // `--header Authorization:Bearer <token>` splits the token into the next argument.
       if (/^bearer$/i.test(headerValue)) {
         if (flag[2] === undefined) add(args[index + 2]);
-      } else if (isAuthHeaderKey(headerName) || isConfiguredSecret(headerName, headerValue)) {
+      } else if (isAuthHeaderKey(headerName) || isCredentialArg(headerName, headerValue)) {
         add(headerValue);
       }
     } else if (name === "e" || normalized === "env") {
       addAssignment(value);
     } else if (name.length === 1) {
       if (looksLikeOpaqueToken(value)) add(value);
-    } else if (
-      isCredentialName(normalized) &&
-      looksLikeSecretValue(value, { allowNumeric: true })
-    ) {
+    } else if (isCredentialArg(name, value)) {
       add(value);
     }
   }
   return [...new Set(values)];
+}
+
+/** A flag, query, or header value under a credential name. Only explicit credential names
+ * (`api_key`, `password`) take numeric values, so `?key=0` cannot redact every zero. */
+function isCredentialArg(name: string, value: string): boolean {
+  const normalized = splitCamelCase(name).toLowerCase().replace(/-/g, "_");
+  return (
+    isCredentialName(normalized) &&
+    looksLikeSecretValue(value, { allowNumeric: isExplicitCredentialKey(normalized) })
+  );
 }
 
 /** Flag and query names that carry a credential (`api_key`, `token`, `private_key`, `pat`). */
@@ -191,10 +198,8 @@ function urlSecrets(text: string): string[] {
   for (const pair of url.search.slice(1).split("&")) {
     const [[key, value] = []] = new URLSearchParams(pair);
     if (!key || !value) continue;
-    const normalized = splitCamelCase(key).toLowerCase().replace(/-/g, "_");
     // Both the decoded value and its spelling in the argument, which the server may echo.
-    if (isCredentialName(normalized) && looksLikeSecretValue(value, { allowNumeric: true }))
-      values.push(value, pair.slice(pair.indexOf("=") + 1));
+    if (isCredentialArg(key, value)) values.push(value, pair.slice(pair.indexOf("=") + 1));
   }
   return values;
 }

@@ -3018,6 +3018,11 @@ describe("MCP OAuth", () => {
       "name",
       "ssh://git@git.example.test/repo",
       "ssh://deployuser@git.example.test/repo",
+      "--header",
+      "Accept: application/json",
+      "https://api.example.test/?key=0",
+      "--key",
+      "0",
     ];
     expect(launchArgSecrets(readable)).toEqual([]);
 
