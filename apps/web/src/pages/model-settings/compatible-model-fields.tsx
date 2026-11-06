@@ -123,7 +123,7 @@ export function CompatibleModelFields({
   });
   const hasSearchQuery = query.trim().length > 0;
   return (
-    <div className="block text-[13.5px] text-muted-foreground">
+    <div className="block text-body text-muted-foreground">
       <label className="block" htmlFor="model-base-url">
         <Trans>Server URL</Trans>
         <Input
@@ -149,7 +149,7 @@ export function CompatibleModelFields({
       </div>
       {!isOllamaCloudBaseUrl(baseUrl) ? (
         <Disclosure
-          className="mt-3 text-[13.5px] text-muted-foreground"
+          className="mt-3 text-body text-muted-foreground"
           summary={<Trans>Setup help</Trans>}
         >
           <p className="mt-1">
@@ -242,7 +242,7 @@ export function CompatibleModelFields({
               />
             ) : null}
             {hiddenSelectedCount > 0 ? (
-              <p className="text-[13px] leading-[1.5] text-muted-foreground">
+              <p className="text-body-sm leading-[1.5] text-muted-foreground">
                 <Plural
                   value={hiddenSelectedCount}
                   one="# selected model is hidden by your search."
@@ -275,7 +275,7 @@ export function CompatibleModelFields({
           <Button
             type="button"
             variant="link"
-            className="mt-2 h-auto px-0 text-[13px] leading-[1.5] text-muted-foreground underline"
+            className="mt-2 h-auto px-0 text-body-sm leading-[1.5] text-muted-foreground underline"
             onClick={() => {
               invalidatePreflight();
               stageCompatibleModelId(probeModels[0] ?? "");

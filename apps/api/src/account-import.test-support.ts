@@ -4,6 +4,27 @@ import { Zip, ZipDeflate } from "fflate";
 
 export type ArchiveFile = [name: string, content: string | Uint8Array];
 
+/**
+ * Deterministic incompressible bytes (SplitMix64). A linear congruential
+ * generator is not enough here: fflate's deflate finds structure in its
+ * output and compresses it, so a nested zip built from it never leaks its
+ * inner headers into the outer stream.
+ */
+export function incompressibleBytes(size: number, seed = 0x12345678n): Uint8Array {
+  const bytes = new Uint8Array(size);
+  const view = new DataView(bytes.buffer);
+  let state = BigInt(seed);
+  for (let offset = 0; offset < size; offset += 8) {
+    state = (state + 0x9e3779b97f4a7c15n) & 0xffffffffffffffffn;
+    let value = state;
+    value = ((value ^ (value >> 30n)) * 0xbf58476d1ce4e5b9n) & 0xffffffffffffffffn;
+    value = ((value ^ (value >> 27n)) * 0x94d049bb133111ebn) & 0xffffffffffffffffn;
+    value ^= value >> 31n;
+    view.setBigUint64(offset, value, true);
+  }
+  return bytes;
+}
+
 /** Streams entries the way the exporter does, so data descriptors are exercised too. */
 export function buildArchive(files: ArchiveFile[]): Uint8Array {
   const chunks: Uint8Array[] = [];

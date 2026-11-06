@@ -72,7 +72,7 @@ export function PaymentWalletSettingsPanel({
   return (
     <div data-testid="payment-wallet-settings" className="space-y-3">
       {shownError ? (
-        <p role="alert" className="text-[13px] text-destructive">
+        <p role="alert" className="text-body-sm text-destructive">
           {shownError}
         </p>
       ) : null}
@@ -85,7 +85,7 @@ export function PaymentWalletSettingsPanel({
                 {status.status === "connecting" ? (
                   <p
                     data-testid="payment-wallet-code"
-                    className="mt-1 font-mono text-[20px] tracking-[0.2em] text-foreground"
+                    className="mt-1 font-mono text-heading2 tracking-[0.2em] text-foreground"
                   >
                     {status.userCode}
                   </p>

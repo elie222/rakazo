@@ -243,6 +243,7 @@ export async function queueComputerUpdate(
       },
       data: {
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
@@ -390,6 +391,7 @@ async function releaseConfirmedHandback(
           maintenanceId: null,
           controlHolder: "none",
           controlLeaseId: null,
+          controlUserId: null,
           controlLeaseExpiresAt: null,
           controlBotId: null,
           controlRunId: null,
@@ -481,6 +483,7 @@ async function clearRevokedTakeover(
       maintenanceId: null,
       controlHolder: "none",
       controlLeaseId: null,
+      controlUserId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
       controlRunId: null,

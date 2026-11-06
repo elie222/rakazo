@@ -497,6 +497,23 @@ code-b
       },
     ];
   }
+  if (lower.includes("send the draft on the card")) {
+    // Background resumes retain the task and append the answered question.
+    if (/\nAnswer:/.test(prompt)) return [{ assistant: "thanks. sent.", complete: true }];
+    return [
+      {
+        assistant: "the draft is on the card. pick one to continue.",
+        ask: {
+          text: "Send this email to Ana?",
+          detail: "To: ana@example.test\nSubject: Demo\n\nThe draft body.",
+          actions: [
+            { id: "choice-1", label: "Send it" },
+            { id: "choice-2", label: "Show me first" },
+          ],
+        },
+      },
+    ];
+  }
   const hasChoices =
     lower.includes("tappable choices") ||
     lower.includes("choice buttons") ||

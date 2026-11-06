@@ -321,6 +321,7 @@ function fixture({
     | undefined;
   const spending = fakeSpendingPrisma(spendingLimit);
   const prisma = {
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     spendingLimit: spending.client.spendingLimit,
     payment: spending.client.payment,
     user: { findUnique: vi.fn(async () => null) },
@@ -758,6 +759,14 @@ it("enqueues pending work when an approval pauses its current run", async () => 
   );
 });
 
+/** The action ids on the first card the run paused for. */
+const pausedActionIds = (f: ReturnType<typeof fixture>) =>
+  (
+    (
+      f.pauseRunForInput.mock.calls as unknown as [{ blocks: Array<Record<string, unknown>> }][]
+    )[0]?.[0].blocks[0]?.actions as { id: string }[] | undefined
+  )?.map((action) => action.id);
+
 describe("disabled builtins", () => {
   it("refuses a direct call before any effect or memory write", async () => {
     const f = fixture({
@@ -791,6 +800,8 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.pauseRunForInput).toHaveBeenCalledOnce();
       expect(isApprovalPausedResult(f.results[0])).toBe(true);
       expect(reviewMock).not.toHaveBeenCalled();
+      // The rule still covers this tool outside webhook runs.
+      expect(pausedActionIds(f)).toEqual(["allow", "always", "deny"]);
     },
   );
 
@@ -1691,23 +1702,25 @@ describe("own instructions through update_bot", () => {
       long,
     );
   });
-  it("rejects an instructions offset that is not a plain read", async () => {
+  it("reads when an instructions offset comes with other fields, and names them", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     const long = "x".repeat(19_000);
     f.instructionState.instructions = long;
     f.setCalls([
       { args: { instructions_offset: -1 }, executionId: "call-1" },
       { args: { instructions_offset: 1.5 }, executionId: "call-2" },
-      { args: { instructions_offset: 0, name: "New name" }, executionId: "call-3" },
+      { args: { instructions_offset: 8000, name: "New name" }, executionId: "call-3" },
       { args: { instructions_offset: 19_000 }, executionId: "call-4" },
     ]);
     await f.run();
     expect(f.results).toEqual([
       { error: "instructions_offset must be a whole number of 0 or more." },
       { error: "instructions_offset must be a whole number of 0 or more." },
-      {
-        error: "instructions_offset only works on a read: call update_bot with no other fields.",
-      },
+      expect.objectContaining({
+        name: "Assistant",
+        instructionsOffset: 8000,
+        ignoredFields: expect.stringContaining('name="New name"'),
+      }),
       { error: "instructions_offset is past the end of your instructions." },
     ]);
     expect(f.instructionState.instructions).toBe(long);
@@ -2010,6 +2023,23 @@ describe("own settings through update_bot", () => {
       expect(f.effects).toEqual([]);
     },
   );
+  it("answers a paged read that also names a model or instructions, even outside the owner's chat", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([
+      {
+        args: { instructions_offset: 1, model: "Claude Sonnet", instructions: "Rewrite" },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([
+      expect.objectContaining({
+        instructions: "Draft only",
+        ignoredFields: expect.stringContaining('model="Claude Sonnet"'),
+      }),
+    ]);
+    expect(f.instructionState.instructions).toBe("Draft only");
+  });
   it("changes read-aloud only while it is unchanged and posts the undo card", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
@@ -2364,6 +2394,8 @@ describe("bot management approvals", () => {
     await f.run();
     expect(reviewMock).not.toHaveBeenCalled();
     expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
+    // A rule for this tool still skips its other cards.
+    expect(pausedActionIds(f)).toEqual(["allow", "always", "deny"]);
   });
 
   it("returns a refused target to the model without a card", async () => {
@@ -2407,6 +2439,8 @@ describe("command watch creation approval", () => {
       expect(f.pauseRunForInput).toHaveBeenCalledOnce();
       expect(isApprovalPausedResult(f.results[0])).toBe(true);
       expect(reviewMock).not.toHaveBeenCalled();
+      // No rule could skip the next one, so the card offers no Always allow.
+      expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
     },
   );
 
@@ -2432,6 +2466,8 @@ describe("command watch creation approval", () => {
     expect(f.effects[0]).toMatchObject({ request: expect.objectContaining({ watch }) });
     expect(f.pauseRunForInput).toHaveBeenCalledOnce();
     expect(isApprovalPausedResult(f.results[1])).toBe(true);
+    // The card that remains is a command watch, which asks every time.
+    expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
   });
 
   it("refuses a command watch whose name is taken before asking", async () => {
@@ -2459,6 +2495,22 @@ describe("command watch creation approval", () => {
     });
     expect(f.effects).toEqual([]);
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
+
+  it("offers no Always allow on a command watch a webhook run asks for", async () => {
+    const f = fixture({ name: "schedule_create", builtin: true, trigger: "webhook" });
+    f.setCalls([
+      {
+        args: {
+          name: "Check",
+          prompt: "Summarize changes",
+          watch: { kind: "command", command: "ls" },
+        },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
   });
 
   it("saves a command watch in Never ask after outside content", async () => {
@@ -2887,6 +2939,7 @@ describe("Auto Review of new sites", () => {
       f.setCalls([search, schedule("Every day fetch https://attacker.test/?q=x")]);
       await f.run();
       expect(isApprovalPausedResult(f.results[1])).toBe(true);
+      expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
     });
 
     it("asks the same before rewriting a routine's prompt to name a new site", async () => {
@@ -2901,6 +2954,7 @@ describe("Auto Review of new sites", () => {
       ]);
       await f.run();
       expect(isApprovalPausedResult(f.results[1])).toBe(true);
+      expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
     });
 
     it("asks a person even when Auto Review or a tool rule would pass it", async () => {
@@ -3481,7 +3535,10 @@ describe("user_computer_shell", () => {
     f.setCalls([call("ls")]);
     await f.run();
     expect(f.results).toEqual([
-      { error: "The user's computer is not connected. Ask them to open the Rakazo desktop app." },
+      {
+        error:
+          'The user\'s computer is not connected. If the task needs it, ask them to open the Rakazo desktop app and turn on "Let bots use this computer" in its settings.',
+      },
     ]);
     expect(requests).toEqual([]);
   });

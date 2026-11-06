@@ -81,7 +81,9 @@ export type MessageActionProps = Pick<
 export const MessageBubble = memo(function MessageBubble({
   mentions,
   ...props
-}: ComponentProps<typeof MessageBubbleContent> & { mentions?: readonly ChildBotBlock[] }) {
+}: ComponentProps<typeof MessageBubbleContent> & {
+  mentions?: readonly ChildBotBlock[];
+}) {
   const { members, onOpenBot } = props;
   const userMentions = useMemo(
     () => (members?.length ? { targets: userMentionTargets(members), onOpenBot } : undefined),
@@ -102,7 +104,9 @@ export const MessageBubble = memo(function MessageBubble({
 function MessageBubbleWithMentions({
   mentions,
   ...props
-}: ComponentProps<typeof MessageBubbleContent> & { mentions?: readonly ChildBotBlock[] }) {
+}: ComponentProps<typeof MessageBubbleContent> & {
+  mentions?: readonly ChildBotBlock[];
+}) {
   if (!mentions?.length) return <MessageBubbleBody {...props} />;
   return (
     <MessageMentions
@@ -191,6 +195,7 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
 
 const MessageBubbleContent = memo(function MessageBubbleContent({
   botId,
+  authorName,
   botName,
   showBotSenderName,
   bots,
@@ -212,6 +217,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
 }: {
   onHelperToggle?: MessageRowActions["helperToggle"];
   botId: string;
+  /** Someone else in a shared space wrote this message: named and set apart. */
+  authorName?: string;
   botName?: string;
   showBotSenderName: boolean;
   bots: MobileBot[];
@@ -243,6 +250,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const { t } = useI18n();
   const [peerExpanded, setPeerExpanded] = useState(false);
+  const outgoing = message.role === "user" && !authorName;
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
   const computerBotId = message.botId ?? (groupId ? undefined : botId);
@@ -513,23 +521,23 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     .join("\n");
   if (attachments.length > 0) {
     const speaker =
-      message.role === "bot" ? (memberName(members, message.botId) ?? botName) : undefined;
+      message.role === "bot" ? (memberName(members, message.botId) ?? botName) : authorName;
     const speakerColor =
       message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
     const hasInlineImages = attachments.some(isInlineImageBlock);
     const bubbleStyle = {
       maxWidth: "100%",
       borderRadius: 20,
-      backgroundColor: message.role === "user" ? tokens.chatUser : tokens.muted,
+      backgroundColor: outgoing ? tokens.chatUser : tokens.muted,
       paddingHorizontal: 14,
       paddingVertical: 12,
       gap: 8,
     } as const;
     return (
       <View style={hasInlineImages ? { maxWidth: "100%", gap: 8 } : bubbleStyle}>
-        {(showBotSenderName && speaker) || caption ? (
+        {((showBotSenderName || authorName) && speaker) || caption ? (
           <View style={hasInlineImages ? bubbleStyle : undefined}>
-            {showBotSenderName && speaker ? (
+            {(showBotSenderName || authorName) && speaker ? (
               <Text
                 style={{ color: speakerColor ?? tokens.mutedForeground, ...typeScale.footnote }}
               >
@@ -539,6 +547,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
             {caption ? (
               <MessageCaption
                 role={message.role}
+                received={!outgoing}
                 text={caption}
                 tokens={tokens}
                 colorScheme={colorScheme}
@@ -559,9 +568,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                   artifactId={attachment.artifactId}
                   name={attachment.name ?? t("Image")}
                   mimeType={attachment.mimeType ?? "image/png"}
-                  labelColor={
-                    message.role === "user" ? tokens.chatUserForeground : tokens.foreground
-                  }
+                  labelColor={outgoing ? tokens.chatUserForeground : tokens.foreground}
                   pressableProps={actionProps}
                   onOpen={() =>
                     onPreviewImage({
@@ -589,8 +596,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 >
                   <Text
                     style={{
-                      color:
-                        message.role === "user" ? tokens.chatUserForeground : tokens.foreground,
+                      color: outgoing ? tokens.chatUserForeground : tokens.foreground,
                       fontSize: 15,
                     }}
                   >
@@ -605,7 +611,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 artifactId={attachment.artifactId}
                 name={attachment.name ?? t("File")}
                 mimeType={attachment.mimeType!}
-                labelColor={message.role === "user" ? tokens.chatUserForeground : undefined}
+                labelColor={outgoing ? tokens.chatUserForeground : undefined}
               />
             ) : (
               <Pressable
@@ -627,7 +633,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               >
                 <Text
                   style={{
-                    color: message.role === "user" ? tokens.chatUserForeground : tokens.foreground,
+                    color: outgoing ? tokens.chatUserForeground : tokens.foreground,
                     fontSize: 15,
                   }}
                 >
@@ -636,10 +642,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 {formatFileSize(attachment.size) ? (
                   <Text
                     style={{
-                      color:
-                        message.role === "user"
-                          ? tokens.chatUserForeground
-                          : tokens.mutedForeground,
+                      color: outgoing ? tokens.chatUserForeground : tokens.mutedForeground,
                       marginTop: 4,
                       fontSize: 13,
                     }}
@@ -677,9 +680,10 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   }
   const segments = messagePresentationSegments(message.blocks);
   const speaker =
-    message.role === "bot" ? (memberName(members, message.botId) ?? botName) : undefined;
+    message.role === "bot" ? (memberName(members, message.botId) ?? botName) : authorName;
   const speakerColor =
     message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
+  const showSpeaker = showBotSenderName || Boolean(authorName);
   const firstContent = segments.findIndex((segment) => segment.kind === "content");
   const choiceBlocks = message.blocks.filter(
     (block): block is Extract<MessageBlock, { kind: "choice" }> => block.kind === "choice",
@@ -693,8 +697,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
         <MessageTextCard
           key={`${message.id}-content-${index}`}
           message={{ ...message, blocks: segment.blocks }}
-          speaker={showBotSenderName && index === firstContent ? speaker : undefined}
-          speakerColor={showBotSenderName && index === firstContent ? speakerColor : undefined}
+          outgoing={outgoing}
+          speaker={showSpeaker && index === firstContent ? speaker : undefined}
+          speakerColor={showSpeaker && index === firstContent ? speakerColor : undefined}
           actionProps={actionProps}
           doubleTapSurface={doubleTapSurface}
           userBubble={userBubble}
@@ -740,6 +745,7 @@ const OPEN_BOT_ACTION = "open-bot:";
 
 function MessageTextCard({
   message,
+  outgoing,
   speaker,
   speakerColor,
   actionProps,
@@ -747,6 +753,7 @@ function MessageTextCard({
   userBubble,
 }: {
   message: MobileMessage;
+  outgoing: boolean;
   speaker?: string;
   speakerColor?: string;
   actionProps: MessageActionProps;
@@ -792,7 +799,7 @@ function MessageTextCard({
         flexShrink: 1,
         minWidth: 0,
         maxWidth: "100%",
-        backgroundColor: message.role === "user" ? tokens.chatUser : tokens.muted,
+        backgroundColor: outgoing ? tokens.chatUser : tokens.muted,
         paddingHorizontal: 14,
         paddingVertical: 9,
         borderRadius: 20,
@@ -811,6 +818,7 @@ function MessageTextCard({
       ) : null}
       <MessageCaption
         role={message.role}
+        received={!outgoing}
         text={contentText}
         tokens={tokens}
         colorScheme={colorScheme}

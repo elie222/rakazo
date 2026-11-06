@@ -90,7 +90,11 @@ describe("MCP connector managed stdio launch", () => {
   let root: string;
   let env: Record<string, string>;
   let args: string[] | undefined;
-  const updateMany = vi.fn(async (_args: { data: Record<string, unknown> }) => ({ count: 1 }));
+  const updateMany = vi.fn(
+    async (_args: { where?: { revision?: number }; data: Record<string, unknown> }) => ({
+      count: 1,
+    }),
+  );
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "rakazo-mcp-launch-"));
@@ -355,9 +359,10 @@ describe("MCP connector managed stdio launch", () => {
 
     it("is not retried on every turn, but is again after the backoff or once it works", async () => {
       await publishPackage(root);
-      env = { SILENT: "1" };
+      // Fails at once, so the healthy relaunch below keeps the default startup budget.
+      env = { FAIL_LOUDLY: "1" };
       const launches = vi.spyOn(McpSession.prototype, "connectStdio");
-      const connector = connectorFor({ startupTimeoutMs: 300, discoveryTimeoutMs: 5_000 });
+      const connector = connectorFor({ discoveryTimeoutMs: 5_000 });
       try {
         expect(await connector.discoverTools(contextFor())).toMatchObject([
           { name: "mcp__mail__unavailable" },
@@ -385,12 +390,12 @@ describe("MCP connector managed stdio launch", () => {
 
     it("ends the backoff once another process records a successful check", async () => {
       await publishPackage(root);
-      env = { SILENT: "1" };
+      env = { FAIL_LOUDLY: "1" };
       const server: typeof SERVER & { healthStatus?: string; healthCheckedAt?: Date } = {
         ...SERVER,
       };
       const launches = vi.spyOn(McpSession.prototype, "connectStdio");
-      const connector = connectorFor({ server, startupTimeoutMs: 300, discoveryTimeoutMs: 5_000 });
+      const connector = connectorFor({ server, discoveryTimeoutMs: 5_000 });
       try {
         expect(await connector.discoverTools(contextFor())).toMatchObject([
           { name: "mcp__mail__unavailable" },
@@ -430,7 +435,8 @@ describe("MCP connector managed stdio launch", () => {
           expiresAt: Date.now() + 60_000,
         }),
       );
-      const connector = connectorFor({ discoveryTimeoutMs: 300 });
+      // Also bounds the launch once installed, so leave room for a loaded machine.
+      const connector = connectorFor({ discoveryTimeoutMs: 2_000 });
       try {
         const tools = await connector.discoverTools(contextFor());
         expect(tools).toMatchObject([{ name: "mcp__mail__unavailable" }]);
@@ -539,6 +545,52 @@ describe("MCP connector managed stdio launch", () => {
       await finishInstall?.();
       expect(healthWrites().at(-1)).toMatchObject({ healthStatus: "unknown" });
     } finally {
+      await connector.close();
+    }
+  });
+
+  it("keeps a newer revision's health when an older install settles", async () => {
+    const stored = { revision: 1, healthStatus: "unknown" as unknown };
+    updateMany.mockImplementation(async (args) => {
+      const revision = args.where?.revision;
+      if (revision !== undefined && revision !== stored.revision) return { count: 0 };
+      stored.healthStatus = args.data.healthStatus;
+      return { count: 1 };
+    });
+    let finishInstall: (() => Promise<void> | undefined) | undefined;
+    vi.spyOn(installer, "ensureMcpPackage").mockImplementation(async (_spec, options) => {
+      options?.onInstall?.();
+      finishInstall = options?.onSettled;
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+          once: true,
+        });
+      });
+    });
+    const controller = new AbortController();
+    const connector = connectorFor();
+    try {
+      const discovery = connector.discoverTools({
+        operationId: "test",
+        traceId: "test",
+        spaceId: "w1",
+        userId: "u1",
+        botId: "bot-1",
+        signal: controller.signal,
+      });
+      await vi.waitFor(() => expect(finishInstall).toBeDefined());
+      // An edit elsewhere moved the server on and its check failed.
+      Object.assign(stored, { revision: 2, healthStatus: "error" });
+      controller.abort(new Error("cancelled"));
+      await discovery;
+      await finishInstall?.();
+      expect(stored).toEqual({ revision: 2, healthStatus: "error" });
+      expect(updateMany.mock.calls.map(([args]) => args.where)).toEqual([
+        { id: "server-1", revision: 1 },
+        { id: "server-1", revision: 1 },
+      ]);
+    } finally {
+      updateMany.mockImplementation(async () => ({ count: 1 }));
       await connector.close();
     }
   });

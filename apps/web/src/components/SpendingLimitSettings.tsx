@@ -100,7 +100,7 @@ export function SpendingLimitSettings() {
         control={
           editing ? null : (
             <>
-              <span className="text-[13px] text-muted-foreground">
+              <span className="text-body-sm text-muted-foreground">
                 {limit ? summary(limit) : <Trans>None</Trans>}
               </span>
               <Button variant="outline" size="sm" onClick={edit}>
@@ -111,7 +111,7 @@ export function SpendingLimitSettings() {
         }
       >
         {limit && !editing ? (
-          <p className="mt-1 text-[13px] text-muted-foreground">{spentText(limit)}</p>
+          <p className="mt-1 text-body-sm text-muted-foreground">{spentText(limit)}</p>
         ) : null}
         {editing ? (
           <form
@@ -197,7 +197,7 @@ export function SpendingLimitSettings() {
             ) : null}
           </form>
         ) : null}
-        {error ? <p className="mt-1 text-[13px] text-destructive">{error}</p> : null}
+        {error ? <p className="mt-1 text-body-sm text-destructive">{error}</p> : null}
       </SettingsRow>
       {payments?.length ? <RecentPayments payments={payments} money={money} /> : null}
     </SettingsGroup>
@@ -221,14 +221,14 @@ function RecentPayments({
         {shown.map((payment) => (
           <li key={payment.id} className="flex items-baseline justify-between gap-4 py-2">
             <div className="min-w-0">
-              <p className="truncate text-[13px] text-foreground">{payment.site}</p>
-              <p className="truncate text-[12px] text-muted-foreground">
+              <p className="truncate text-body-sm text-foreground">{payment.site}</p>
+              <p className="truncate text-label text-muted-foreground">
                 {[payment.botName, formatRelativeTime(payment.createdAt)]
                   .filter(Boolean)
                   .join(" · ")}
               </p>
             </div>
-            <span className="shrink-0 text-[13px] tabular-nums text-foreground">
+            <span className="shrink-0 text-body-sm tabular-nums text-foreground">
               {money(payment.amount, payment.currency)}
             </span>
           </li>

@@ -34,6 +34,7 @@ import {
   UpdateTicketInput,
 } from "./board.js";
 import { BotAvatarSetSchema } from "./bot-avatar.js";
+import { BotEmailAddressesSchema, BotEmailAddressSchema, BotEmailNameSchema } from "./bot-email.js";
 import {
   BotSecretMetadata,
   BotSecretPutInput,
@@ -125,6 +126,8 @@ import {
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
   ROUTINE_MENTION_BATCH_MAX,
+  ROUTINE_TRIGGER_REQUIRED,
+  RoutineEmailSendersSchema,
   RoutineSchema,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
@@ -135,6 +138,9 @@ import {
   SignupSurveySchema,
   SkillPlaybookSchema,
   SpaceAvailabilitySchema,
+  SpaceInviteLinkSchema,
+  SpaceInvitePreviewSchema,
+  SpaceMembersSchema,
   SpaceMemoryConfigSchema,
   SpaceNavigationSchema,
   SpaceSchema,
@@ -395,6 +401,29 @@ export const appContract = {
     remove: oc
       .input(z.object({ spaceId: Id }))
       .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
+    members: {
+      list: oc.input(z.object({ spaceId: Id })).output(SpaceMembersSchema),
+      /** Owner only. The removed person's bots, chats and routines stay with the space. */
+      remove: oc
+        .input(z.object({ spaceId: Id, userId: Id }))
+        .output(z.object({ ok: z.literal(true) })),
+      /** Members only; an owner deletes the space instead. */
+      leave: oc
+        .input(z.object({ spaceId: Id }))
+        .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
+    },
+    invites: {
+      /** Owner only. A new single-use link each call. */
+      create: oc.input(z.object({ spaceId: Id })).output(SpaceInviteLinkSchema),
+      preview: oc
+        .input(z.object({ token: z.string().min(1).max(200) }))
+        .output(SpaceInvitePreviewSchema),
+      accept: oc
+        .input(z.object({ token: z.string().min(1).max(200) }))
+        .output(z.object({ spaceId: Id })),
+      /** Owner only. Every unused link stops working, for one that went to the wrong place. */
+      cancel: oc.input(z.object({ spaceId: Id })).output(z.object({ ok: z.literal(true) })),
+    },
   },
   organizations: {
     list: oc.output(OrganizationListSchema),
@@ -571,6 +600,11 @@ export const appContract = {
     remove: oc
       .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
       .output(z.object({ ok: z.literal(true) })),
+    emailAddress: oc.input(botId).output(BotEmailAddressSchema),
+    emailAddresses: oc.output(BotEmailAddressesSchema),
+    claimEmailAddress: oc
+      .input(z.object({ botId: Id, name: BotEmailNameSchema }))
+      .output(z.object({ address: z.string() })),
     rotateWebhookSecret: oc.input(botId).output(
       z.object({
         secret: z.string(),
@@ -872,6 +906,8 @@ export const appContract = {
               .regex(/^[a-z0-9._-]+$/i)
               .nullable()
               .optional(),
+            /** Null removes the email trigger. */
+            emailSenders: RoutineEmailSendersSchema.nullable().optional(),
             /** Null clears the routine's own model and runs it on the bot's. */
             modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
             modelId: z.string().trim().min(1).max(200).nullable().optional(),
@@ -888,11 +924,12 @@ export const appContract = {
               value.webhookEnabled === false &&
               value.githubEnabled === false &&
               value.messageProvider === null &&
+              value.emailSenders === null &&
               value.watch === null
             ) {
               ctx.addIssue({
                 code: "custom",
-                message: "Add a schedule, webhook, GitHub, message, or change trigger",
+                message: ROUTINE_TRIGGER_REQUIRED,
                 path: ["crons"],
               });
             }
@@ -1212,9 +1249,14 @@ export const appContract = {
     status: oc.output(MessagingStatusSchema),
     link: {
       /** Issue a short-lived code the user sends to the line from a chat app. */
-      start: oc
-        .input(z.object({ botId: Id }))
-        .output(z.object({ code: z.string(), expiresAt: z.string() })),
+      start: oc.input(z.object({ botId: Id })).output(
+        z.object({
+          code: z.string(),
+          expiresAt: z.string(),
+          /** Others share the bot's Space, so they can read the chats this link brings in. */
+          shared: z.boolean().optional(),
+        }),
+      ),
     },
     identities: {
       setBot: oc

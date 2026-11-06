@@ -275,6 +275,14 @@ it("starts an ID and a phone visible and a PIN hidden, and the person can flip e
   expect(dialog()).toBeNull();
 });
 
+it("says the bot's browser stays signed in for everyone in a shared space", async () => {
+  const line = "The bot's browser stays signed in for everyone in this space";
+  await render({ ...loginCard, sharedBrowser: true });
+  expect(container.textContent).toContain(line);
+  await render(loginCard);
+  expect(container.textContent).not.toContain(line);
+});
+
 it("starts every field hidden when no label names an identifier", async () => {
   await render({ ...loginCard, loginFields: ["Memorable word", "Card number"] });
   await openEditor();
@@ -391,6 +399,25 @@ it("sizes approval buttons like the other card buttons", async () => {
   }
 });
 
+it("offers Always allow only when the approval card does", async () => {
+  const card: AskBlock = {
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Review before schedule_create",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "always", label: "Always allow this tool" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+  const labels = () => [...container.querySelectorAll("button")].map((item) => item.textContent);
+  await render(card);
+  expect(labels()).toEqual(["Allow once", "Always allow this tool", "Deny"]);
+  await render({ ...card, actions: card.actions!.filter((action) => action.id !== "always") });
+  expect(labels()).toEqual(["Allow once", "Deny"]);
+});
+
 it.each(["Allow in this space", "Allow for this chat"])(
   "says a user's-computer approval labelled %s allows the whole space",
   async (label) => {
@@ -416,6 +443,26 @@ it.each(["Allow in this space", "Allow for this chat"])(
     expect(container.textContent).toContain("Allowed in this space");
   },
 );
+
+it("shows a question's detail as plain text above its options", async () => {
+  await render({
+    kind: "ask",
+    text: "Send this email to Ana?",
+    detail: "To: ana@example.test\nSubject: Demo\n\nThe draft body.",
+    detailFormat: "text",
+    status: "pending",
+    actions: [
+      { id: "choice-1", label: "Send it" },
+      { id: "choice-2", label: "Show me first" },
+    ],
+  });
+  const detail = container.querySelector('[data-testid="ask-detail"]')!;
+  expect(detail.textContent).toBe("To: ana@example.test\nSubject: Demo\n\nThe draft body.");
+  // Plain text sits on the card like the question, not in a code snippet box.
+  expect(detail.classList.contains("font-sans")).toBe(true);
+  expect(detail.classList.contains("bg-background")).toBe(false);
+  expect(button("ASend it")).toBeDefined();
+});
 
 it("gives onboarding choices the same lettered rows as questions", async () => {
   await act(async () =>

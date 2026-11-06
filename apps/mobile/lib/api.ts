@@ -46,6 +46,7 @@ import {
   mergeThreadHistory,
   messagingProviderLabel,
   parseRetryAfter,
+  payloadAuthor,
   prependThreadHistoryPage,
   progressMessageId,
   readBoundedJsonResponse,
@@ -756,11 +757,13 @@ export async function captureApiRequestContext(
   return { apiBase, headers, sessionGeneration: generation };
 }
 
-async function postAuth(path: string, input: Record<string, string>) {
+async function postAuth(path: string, input: Record<string, string>, apiBase = currentApiBase()) {
   return fetchMobileJson<unknown>(
-    `${currentApiBase()}/api/auth/${path}`,
+    `${apiBase}/api/auth/${path}`,
     {
       method: "POST",
+      // The app authenticates by bearer token only; a server's cookie must not outlive a switch.
+      credentials: "omit",
       // Emails sent before an account has a language follow the one this app shows.
       headers: {
         "content-type": "application/json",
@@ -778,7 +781,11 @@ async function authenticate(
   input: Record<string, string>,
   missingSession: string,
 ): Promise<{ verificationRequired: boolean }> {
-  const { response, body, invalidJson } = await postAuth(path, input);
+  const apiBase = currentApiBase();
+  const generation = currentSessionGeneration();
+  // A switch replaces the stored headers, and the cleanup below may still need them for this server.
+  const headers = serverHeaders(apiBase);
+  const { response, body, invalidJson } = await postAuth(path, input, apiBase);
   if (!response.ok || invalidJson) {
     throw new Error(authResponseErrorText(response.status, body, invalidJson));
   }
@@ -786,12 +793,28 @@ async function authenticate(
   if (path === "sign-up/email" && signupRequiresEmailVerification(body))
     return { verificationRequired: true };
   if (!token) throw new Error(missingSession);
-  try {
-    if (!(await clearSpace()))
-      throw new Error(t("Could not save your sign-in on this device. Try again."));
-    await saveSessionToken(token);
-  } catch (error) {
-    throw new Error(sessionSaveErrorText(error));
+  // A server switch or sign-out while the request was in flight: this token belongs to a server
+  // the app no longer uses, so it is never saved and its session is ended there.
+  let saved = false;
+  if (apiBase === currentApiBase() && generation === currentSessionGeneration()) {
+    try {
+      if (!(await clearSpace()))
+        throw new Error(t("Could not save your sign-in on this device. Try again."));
+      // Checked in the same tick the save starts; a failed write leaves no session behind.
+      if (apiBase === currentApiBase() && generation === currentSessionGeneration()) {
+        await saveSessionToken(token);
+        // A change that lands while the token is being written clears it again.
+        saved = currentSessionGeneration() === generation + 1 && apiBase === currentApiBase();
+      }
+    } catch (error) {
+      throw new Error(sessionSaveErrorText(error));
+    }
+  }
+  if (!saved) {
+    // Recorded like a sign-out, so a server that cannot be reached now still ends it later.
+    const revocation: PendingSignOut = { apiBase, token, headers, recordedAt: Date.now() };
+    void deliverSignOutRecord(revocation, await savePendingSignOut(revocation));
+    throw new Error(t("Could not continue"));
   }
   return { verificationRequired: false };
 }
@@ -1293,6 +1316,8 @@ async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered
           method: "POST",
           // Reject redirects where supported; native fetch also needs response validation below.
           redirect: "error",
+          // Bearer only: this server's cookie must not reach the jar other servers share.
+          credentials: "omit",
           headers: {
             "content-type": "application/json",
             origin: "rakazo://",
@@ -1831,7 +1856,8 @@ export type MobileSpace = Space;
 export type MobileSpaceNavigation = SpaceNavigation;
 
 /** A run as live events report it, before a refresh brings the full record. */
-type MobileRun = Pick<Run, "id"> & Partial<Pick<Run, "botId" | "userId">> & { status: string };
+type MobileRun = Pick<Run, "id"> &
+  Partial<Pick<Run, "botId" | "userId" | "routineName">> & { status: string; trigger?: string };
 
 /**
  * A thread as the screen holds it: live events patch it between refreshes, and a saved chat
@@ -2251,6 +2277,10 @@ export function applyMobileThreadEvent(
       id: event.runId,
       status: "running",
       ...(event.botId ? { botId: event.botId } : {}),
+      ...(trigger ? { trigger } : {}),
+      ...(typeof event.payload?.routineName === "string"
+        ? { routineName: event.payload.routineName }
+        : {}),
       error: null,
     };
     const activeRuns = [
@@ -2500,6 +2530,7 @@ export function applyMobileThreadEvent(
       callId: typeof event.payload?.callId === "string" ? event.payload.callId : known?.callId,
       blocks: (event.payload?.blocks as MobileMessage["blocks"]) ?? [],
       botId: event.botId ?? (event.payload?.botId ? String(event.payload.botId) : undefined),
+      ...payloadAuthor(event.payload ?? {}, known),
       ...replyMetadata(event.payload ?? {}, known),
     };
     return {

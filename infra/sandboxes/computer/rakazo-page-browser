@@ -1834,7 +1834,9 @@ PURCHASE_HELPERS = r"""
   const SURROUNDINGS = "header, nav, footer, aside, [role=banner], [role=navigation], [role=contentinfo], [role=complementary]";
   const NOTICE = /cookie|consent|gdpr|onetrust/i;
   const CARD_TOKENS = ["cc-number", "cc-csc", "cc-exp", "cc-exp-month", "cc-exp-year"];
-  const CARD_NAMING = /card[\s_-]*(?:number|no\b|num\b)|cardnumber|cc[\s_-]*(?:num|number)|ccnum|(?<![a-z])(?:cvv2?|cvc2?|csc)(?![a-z])|card[\s_-]*(?:security|verification)|(?:^|[^\d•*x])(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}|מספר[\s_-]*כרטיס|כרטיס[\s_-]*אשראי/i;
+  // What only a payment card's field is called. "Card number" alone is not: membership, frequent-flyer and ID
+  // cards have numbers too, and a payment card's form also asks for its security code.
+  const CARD_NAMING = /(?<![a-z])(?:cvv2?|cvc2?|cvn2?|csc)(?![a-z])|card[\s_-]*(?:security|verification)|(?:credit|debit)[\s_-]*card|(?:^|[^\d•*x])(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}|כרטיס[\s_-]*אשראי/i;
   // A gift card, voucher or coupon number is not the card that pays.
   const NOT_A_CARD = /gift|voucher|coupon|promo|loyalty|rewards?\b|שובר|קופון|מתנה|הטבה/i;
   function cardLike(el) {

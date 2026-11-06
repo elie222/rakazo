@@ -14,6 +14,7 @@ import {
   isBackgroundRunTrigger,
   isRunTerminalEvent,
   mergeThreadHistory,
+  payloadAuthor,
   prependThreadHistoryPage,
   progressMessageId,
   QUEUE_HOLDING_RUN_STATUSES,
@@ -32,6 +33,10 @@ const runTriggers = new Set<string>(RUN_TRIGGERS);
 
 function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Run {
   const trigger = event.payload.trigger;
+  const routineName =
+    typeof event.payload.routineName === "string"
+      ? event.payload.routineName
+      : previous?.routineName;
   return {
     id: event.runId ?? previous?.id ?? event.id,
     botId: event.botId,
@@ -53,6 +58,7 @@ function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Ru
     startedAt: previous?.startedAt ?? event.createdAt,
     completedAt: null,
     createdAt: previous?.createdAt ?? event.createdAt,
+    ...(routineName ? { routineName } : {}),
   };
 }
 
@@ -556,6 +562,7 @@ export function reduceThreadSnapshot(
       botId: event.botId,
       runId: event.runId,
       callId: typeof event.payload.callId === "string" ? event.payload.callId : known?.callId,
+      ...payloadAuthor(event.payload, known),
       ...replyMetadata(event.payload, known),
       createdAt: known?.createdAt ?? event.createdAt,
     };
@@ -583,10 +590,18 @@ function updateMemberStatus(
 }
 
 export function userHoldsComputerControl(
-  computer: Pick<ComputerStatus, "controlHolder" | "controlBotId"> | null | undefined,
+  computer:
+    | Pick<ComputerStatus, "controlHolder" | "controlBotId" | "controlledByOther">
+    | null
+    | undefined,
   botId: string | undefined,
 ): boolean {
-  return Boolean(botId && computer?.controlHolder === "user" && computer.controlBotId === botId);
+  return Boolean(
+    botId &&
+      computer?.controlHolder === "user" &&
+      computer.controlBotId === botId &&
+      !computer.controlledByOther,
+  );
 }
 
 /** True when a live bot run is blocking Take control (API would return 409). */
@@ -663,7 +678,8 @@ export function reduceComputerStatus(
     return prev.controlHolder === holder &&
       prev.controlBotId === null &&
       !prev.takeoverRequested &&
-      prev.busyBotName === null
+      prev.busyBotName === null &&
+      !prev.controlledByOther
       ? prev
       : {
           ...prev,
@@ -671,6 +687,7 @@ export function reduceComputerStatus(
           controlBotId: null,
           takeoverRequested: false,
           busyBotName: null,
+          controlledByOther: undefined,
         };
   }
   const status = event.payload.status;

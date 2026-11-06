@@ -139,7 +139,7 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
 /** Whether every bot runs its own model on one of the member's connections, as a run selects it. */
 export async function botsRunOwnModels(deps: RouterDeps, actor: Actor, botIds: string[]) {
   const bots = await deps.prisma.bot.findMany({
-    where: { id: { in: botIds }, userId: actor.userId, spaceId: actor.spaceId },
+    where: { id: { in: botIds }, spaceId: actor.spaceId },
     select: { modelProvider: true, modelId: true, thinkingLevel: true },
   });
   const credentials = await Promise.all(

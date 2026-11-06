@@ -129,6 +129,7 @@ export function useInboxRenderItem({
                     image: "person.crop.circle.badge.plus",
                     attributes: { disabled: spaceBusy || !!spaceRecoveryId },
                   },
+                  { id: "members", title: t("Members"), image: "person.2" },
                   { id: "settings", title: t("Settings"), image: "gearshape" },
                   ...(canDeleteInboxSpace(item.space)
                     ? [
@@ -151,7 +152,7 @@ export function useInboxRenderItem({
                   else if (nativeEvent.event === "delete") confirmDeleteSpace(item.space);
                   else
                     router.push({
-                      pathname: "/space",
+                      pathname: nativeEvent.event === "members" ? "/space-members" : "/space",
                       params: { spaceId: item.space.id, name: item.space.name },
                     });
                 }}

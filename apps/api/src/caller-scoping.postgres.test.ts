@@ -109,13 +109,14 @@ describePostgres("caller and tenant scoping (PostgreSQL)", () => {
       hostedProvider: TEXT_ONLY.modelProvider,
     });
 
-    it("reads only the caller's own bot in the caller's space", async () => {
+    it("reads the space's bots, whoever created them, and none elsewhere", async () => {
       const own = await bot(shared, userA, TEXT_ONLY);
       const neighbors = await bot(shared, userB, TEXT_ONLY);
       const elsewhere = await bot(other, userA, TEXT_ONLY);
 
       await expect(admit(own.id, hosted())).rejects.toMatchObject({ code: "CONFLICT" });
-      await expect(admit(neighbors.id, hosted())).resolves.toBeUndefined();
+      // Everyone in a space shares its bots, and a run uses the bot's own model.
+      await expect(admit(neighbors.id, hosted())).rejects.toMatchObject({ code: "CONFLICT" });
       await expect(admit(elsewhere.id, hosted())).resolves.toBeUndefined();
     });
 
