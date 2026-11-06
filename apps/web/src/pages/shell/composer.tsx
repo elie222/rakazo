@@ -503,7 +503,7 @@ const ComposerBody = memo(function Composer({
     bindings: typeof mentionBindings,
   ) {
     // One skill per message: a chosen skill, chip or inline, keeps the menu closed.
-    const next = composerPromptSkill(selectedSkill, bindings)
+    const next = composerPromptSkill(selectedSkillRef.current, bindings)
       ? null
       : composerSlashQuery(value, start, end, bindings);
     if (next !== null && slashQuery === null) onSlashOpen?.();

@@ -917,6 +917,32 @@ describe("Composer", () => {
     expect(second.value).toBe("unsent thought");
   });
 
+  it("keeps the slash menu closed when an external draft replacement adds a skill chip", () => {
+    const textarea = renderComposer(vi.fn());
+    type(textarea, "please /sum");
+    expect(container?.querySelector('[data-testid="slash-picker"]')).not.toBeNull();
+
+    act(() => replaceComposerDraft("bot:bot-1", "notes /sum", [], summarize));
+
+    expect(textarea.value).toBe("notes /sum");
+    expect(container?.querySelector('[data-testid="skill-chip"]')?.textContent).toBe("summarize");
+    expect(container?.querySelector('[data-testid="slash-picker"]')).toBeNull();
+  });
+
+  it("opens the slash menu when an external draft replacement removes a skill chip", () => {
+    replaceComposerDraft("bot:bot-1", "notes /sum", [], summarize);
+    const textarea = renderComposer(vi.fn());
+    expect(container?.querySelector('[data-testid="skill-chip"]')).not.toBeNull();
+    expect(container?.querySelector('[data-testid="slash-picker"]')).toBeNull();
+
+    act(() => replaceComposerDraft("bot:bot-1", "please /sum", []));
+
+    expect(textarea.value).toBe("please /sum");
+    expect(container?.querySelector('[data-testid="skill-chip"]')).toBeNull();
+    expect(container?.querySelector('[aria-label="Skill summarize"]')).not.toBeNull();
+    expect(container?.querySelector('[data-testid="slash-picker"]')).not.toBeNull();
+  });
+
   it.each(["Enter", "Tab"])("picks the highlighted slash row with %s instead of sending", (key) => {
     const onSend = vi.fn().mockResolvedValue(true);
     const onSlashAction = vi.fn();
