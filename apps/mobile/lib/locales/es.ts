@@ -440,6 +440,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Type your answer": "Escribe tu respuesta",
   Username: "Nombre de usuario",
   "Waiting for this bot’s response.": "Esperando la respuesta de este bot.",
+  "Waiting on {name}": "Esperando a {name}",
+  "Only the person who started this can answer it": "Solo puede responder quien lo inició",
   "Work stopped, but the thread could not refresh: {detail}":
     "El trabajo se detuvo, pero el hilo no se pudo actualizar: {detail}",
   archived: "archivado",

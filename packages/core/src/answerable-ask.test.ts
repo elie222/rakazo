@@ -4,6 +4,7 @@ import {
   dismissableAskMessageIds,
   resolveAskChoice,
   selectedAskActionLabel,
+  waitingOnAskMessages,
 } from "./answerable-ask.js";
 
 describe("answerableAskMessageIds", () => {
@@ -57,6 +58,53 @@ describe("answerableAskMessageIds", () => {
         messages: [{ id: "ask-1", runId: "run-1", blocks: [{ kind: "ask", status: "answered" }] }],
       }),
     ).toEqual(new Set());
+  });
+});
+
+describe("another member's card in a shared space", () => {
+  const snapshot = {
+    activeRuns: [
+      { id: "run-casey", status: "waiting_input", userId: "casey" },
+      { id: "run-robin", status: "waiting_input", userId: "robin" },
+    ],
+    messages: [
+      {
+        id: "casey-says",
+        author: { id: "casey", name: "Casey" },
+        blocks: [{ kind: "text" }],
+      },
+      { id: "casey-card", runId: "run-casey", blocks: [{ kind: "ask", status: "pending" }] },
+      { id: "robin-card", runId: "run-robin", blocks: [{ kind: "ask", status: "pending" }] },
+      { id: "casey-done", runId: "run-casey", blocks: [{ kind: "ask", status: "answered" }] },
+    ],
+  };
+
+  it("is answerable only by the person whose run asked it", () => {
+    expect(answerableAskMessageIds(snapshot, "robin")).toEqual(new Set(["robin-card"]));
+    expect(answerableAskMessageIds(snapshot, "casey")).toEqual(new Set(["casey-card"]));
+  });
+
+  it("says who another person's pending card waits on, by the name they wrote under", () => {
+    expect(waitingOnAskMessages(snapshot, "robin")).toEqual(
+      new Map([["casey-card", { userId: "casey", name: "Casey" }]]),
+    );
+  });
+
+  it("leaves the name out when none of that person's messages are loaded", () => {
+    expect(waitingOnAskMessages(snapshot, "casey")).toEqual(
+      new Map([["robin-card", { userId: "robin" }]]),
+    );
+  });
+
+  it("keeps every card answerable when the viewer or the run's user is unknown", () => {
+    expect(answerableAskMessageIds(snapshot)).toEqual(new Set(["casey-card", "robin-card"]));
+    expect(waitingOnAskMessages(snapshot)).toEqual(new Map());
+    const older = {
+      run: { id: "run-1", status: "waiting_input" },
+      messages: [{ id: "ask-1", runId: "run-1", blocks: [{ kind: "ask", status: "pending" }] }],
+    };
+    expect(answerableAskMessageIds(older, "robin")).toEqual(new Set(["ask-1"]));
+    expect(waitingOnAskMessages(older, "robin")).toEqual(new Map());
   });
 });
 

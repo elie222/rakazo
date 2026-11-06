@@ -4818,6 +4818,10 @@ msgstr ""
 msgid "Only me"
 msgstr "나만"
 
+#: src/components/AskCard.tsx
+msgid "Only the person who started this can answer it"
+msgstr "이 요청을 시작한 사람만 응답할 수 있습니다"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
 msgstr "나만"
@@ -7296,6 +7300,10 @@ msgstr "잠시 기다린 뒤 다시 테스트하세요."
 #: src/lib/roster-status.ts
 msgid "Waiting in line…"
 msgstr "줄에서 기다리는 중…"
+
+#: src/components/AskCard.tsx
+msgid "Waiting on {name}"
+msgstr "{name}님의 응답을 기다리는 중"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"

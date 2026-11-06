@@ -867,6 +867,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Webhook: "Вебхук",
   "Waiting for sign-in…": "Ожидание входа в систему…",
   "Waiting for this bot’s response.": "Ожидание ответа этого бота.",
+  "Waiting on {name}": "Ждёт ответа: {name}",
+  "Only the person who started this can answer it": "Ответить может только тот, кто это начал",
   "Waiting…": "Ожидание…",
   "What this bot is for": "Для чего нужен этот бот",
   Working: "Выполняется",

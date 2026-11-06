@@ -3,6 +3,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { AskReceipt, LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import type { AskWaitingOn } from "@rakazo/core";
 import {
   isApprovalAskBlock,
   isSecretAskBlock,
@@ -119,6 +120,8 @@ export type AskCardProps = {
   block: AskBlock;
   canAnswer: boolean;
   canDismiss: boolean;
+  /** Another member's pending card: who it waits on. Only that person can answer it. */
+  waitingOn?: AskWaitingOn;
   /** A login card answers with its fields and an empty `text`; `remember` false uses it once. */
   onAnswer: (text: string, fields?: LoginFieldInput[], remember?: false) => Promise<void>;
   /** Turns down a secret request without a value. */
@@ -136,7 +139,18 @@ export function AskCard(props: AskCardProps) {
   );
 }
 
-function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: AskCardProps) {
+/** In a shared space another member's card says who it waits on. */
+export function waitingOnLabel({ name }: AskWaitingOn): string {
+  return name ? t`Waiting on ${name}` : t`Only the person who started this can answer it`;
+}
+
+function PromptAskCard({
+  block,
+  canAnswer,
+  waitingOn,
+  onAnswer,
+  rpc = selectedSpaceRpc,
+}: AskCardProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
   const [answer, setAnswer] = useState(block.instructionUpdate?.after ?? "");
@@ -321,9 +335,9 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
                 askActions,
               )}
         </div>
-      ) : !canAnswer ? (
+      ) : !canAnswer && !(waitingOn && displayActions?.length) ? (
         <div className="mt-3.5 text-body font-medium text-muted-foreground">
-          <Trans>No longer active</Trans>
+          {waitingOn ? waitingOnLabel(waitingOn) : <Trans>No longer active</Trans>}
         </div>
       ) : displayActions?.length ? (
         <div className="mt-3.5 flex flex-wrap gap-2">
@@ -333,7 +347,7 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
               variant={action.id === "allow" ? "default" : "outline"}
               // Wraps long site names like the other cards' buttons.
               className="h-auto min-h-8 min-w-0 whitespace-normal py-1 text-start"
-              disabled={submitting}
+              disabled={!canAnswer || submitting}
               onClick={() =>
                 action.id === "edit" && block.instructionUpdate
                   ? setEditing(true)
@@ -396,6 +410,12 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
           </Button>
         </div>
       )}
+      {/* Another member's card keeps its choices in place, disabled, above who it waits on. */}
+      {waitingOn && !answered && displayActions?.length ? (
+        <div className="mt-3.5 text-body font-medium text-muted-foreground">
+          {waitingOnLabel(waitingOn)}
+        </div>
+      ) : null}
       {error ? <p className="mt-3 text-body-sm text-destructive">{error}</p> : null}
     </BuiCard>
   );

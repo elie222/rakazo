@@ -4818,6 +4818,10 @@ msgstr ""
 msgid "Only me"
 msgstr "Moi uniquement"
 
+#: src/components/AskCard.tsx
+msgid "Only the person who started this can answer it"
+msgstr "Seule la personne qui a lancé ceci peut répondre"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
 msgstr "Vous uniquement"
@@ -7296,6 +7300,10 @@ msgstr "Patientez un instant et testez à nouveau."
 #: src/lib/roster-status.ts
 msgid "Waiting in line…"
 msgstr "En attente dans la file…"
+
+#: src/components/AskCard.tsx
+msgid "Waiting on {name}"
+msgstr "En attente de {name}"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"

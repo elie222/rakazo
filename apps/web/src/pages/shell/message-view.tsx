@@ -7,7 +7,7 @@ import type {
   MessageReaction,
   ThreadMessage,
 } from "@rakazo/contracts";
-import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
+import type { AskWaitingOn, ChildBotBlock, PeerExchange } from "@rakazo/core";
 import { isPeerReceiptBlocks, isToolActivityBlock, otherAuthor } from "@rakazo/core";
 import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
@@ -55,6 +55,7 @@ export const MessageView = memo(function MessageView({
   artifactTarget,
   canAnswer,
   canDismiss,
+  waitingOn,
   message,
   meId,
   mentions,
@@ -87,6 +88,8 @@ export const MessageView = memo(function MessageView({
   artifactTarget: ArtifactTarget;
   canAnswer: boolean;
   canDismiss: boolean;
+  /** Another member's pending card: who it waits on. */
+  waitingOn?: AskWaitingOn;
   message: ThreadMessage;
   /** The signed-in person; anyone else's message is named and set apart. */
   meId?: string;
@@ -625,6 +628,7 @@ export const MessageView = memo(function MessageView({
                   block={block}
                   canAnswer={canAnswer}
                   canDismiss={canDismiss}
+                  waitingOn={waitingOn}
                   onAnswer={(text, fields, remember) =>
                     onAnswer(message, text, fields, undefined, remember)
                   }
