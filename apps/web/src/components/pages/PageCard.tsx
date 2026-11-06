@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatRelativeTime } from "../../lib/relative-time";
 import { PageFrame } from "./PageFrame";
@@ -159,29 +160,21 @@ export function PageCard({
       className="relative w-full max-w-[561px] overflow-hidden pointer-coarse:min-[900px]:max-w-[639px] rounded-[24px] bg-card ring-[0.5px] ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring data-deleted:bg-transparent data-deleted:opacity-70"
     >
       {onOpen ? <PagePreview document={document} title={title} failed={failed} /> : null}
-      <div className="flex h-[73px] items-center gap-[14px] border-t border-foreground/[0.04] px-5">
-        <PageTileIcon />
-        <div className="min-w-0">
-          <div className="relative top-[1px] truncate text-body-lg leading-[21px] text-foreground">
-            {title}
-          </div>
-          <div className="truncate text-body text-muted-foreground">
-            {onOpen === undefined ? (
-              <Trans>Page · Deleted</Trans>
-            ) : updated ? (
-              <Trans>Page · Updated below</Trans>
-            ) : when ? (
-              shared ? (
-                <Trans>Page · Shared · {when}</Trans>
-              ) : (
-                <Trans>Page · {when}</Trans>
-              )
-            ) : (
-              <Trans>Page</Trans>
-            )}
-          </div>
-        </div>
-      </div>
+      <PageFooter title={title}>
+        {onOpen === undefined ? (
+          <Trans>Page · Deleted</Trans>
+        ) : updated ? (
+          <Trans>Page · Updated below</Trans>
+        ) : when ? (
+          shared ? (
+            <Trans>Page · Shared · {when}</Trans>
+          ) : (
+            <Trans>Page · {when}</Trans>
+          )
+        ) : (
+          <Trans>Page</Trans>
+        )}
+      </PageFooter>
       {onOpen ? (
         <button
           type="button"
@@ -190,6 +183,21 @@ export function PageCard({
           className="absolute inset-0 rounded-[24px] outline-none"
         />
       ) : null}
+    </div>
+  );
+}
+
+/** A page's footer row: its tile, its title, and a line about it. */
+export function PageFooter({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="flex h-[73px] items-center gap-[14px] border-t border-foreground/[0.04] px-5">
+      <PageTileIcon />
+      <div className="min-w-0 text-left">
+        <div className="relative top-[1px] truncate text-body-lg leading-[21px] text-foreground">
+          {title}
+        </div>
+        <div className="truncate text-body text-muted-foreground">{children}</div>
+      </div>
     </div>
   );
 }

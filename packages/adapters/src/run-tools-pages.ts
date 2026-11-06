@@ -171,6 +171,8 @@ export async function holdSharedPageSave(
     },
   });
   if (page?.visibility !== "link") return undefined;
+  // A page keeps its format, so a save asking for another one fails without a card.
+  if (argumentGiven(args.format) && args.format !== page.format) return undefined;
   const parsedTitle = hasTitle ? PageTitleSchema.safeParse(args.title) : undefined;
   if (parsedTitle && !parsedTitle.success) return undefined;
   const current = page.versions[0]?.source ?? "";

@@ -72,10 +72,14 @@ describe("htmlPageViewerDocument", () => {
     expect(html.startsWith("<!DOCTYPE html><meta")).toBe(true);
     expect(html).toContain("<h1>Report</h1><script>run()</script>");
     expect(html).toContain(SANDBOXED_ARTIFACT_CSP);
-    expect(html).toContain('r.dataset.theme="dark"');
-    expect(html).toContain('r.style.colorScheme="dark"');
+    // The theme comes before the author's markup, so a script picking colours as it starts sees it.
+    const theme = html.indexOf('document.documentElement.dataset.theme="dark"');
+    expect(theme).toBeGreaterThan(-1);
+    expect(theme).toBeLessThan(html.indexOf("<html>"));
+    expect(html.indexOf('<meta name="color-scheme" content="dark">')).toBeLessThan(
+      html.indexOf("<html>"),
+    );
     // The bridge follows the author's markup, so the page's own scripts run first.
-    expect(html.indexOf("<h1>Report</h1>")).toBeLessThan(html.indexOf("rakazo-page:height"));
     expect(html.indexOf("</html>")).toBeLessThan(html.indexOf("rakazo-page:height"));
   });
 
@@ -83,10 +87,10 @@ describe("htmlPageViewerDocument", () => {
     const html = htmlPageViewerDocument({ html: page(""), theme: "light" });
     expect(html).toContain('"rakazo-page:height"');
     expect(html).toContain("new ResizeObserver(report)");
-    // The body's height, not the document element's: the latter is never below the frame
+    // The root's box, which holds the body's margins; its scroll height is never below the frame
     // viewport, so an inline page could grow but never shrink back to its content.
-    expect(html).toContain("var h=b.scrollHeight;");
-    expect(html).not.toContain("Math.max(b.scrollHeight");
+    expect(html).toContain("var h=Math.ceil(r.getBoundingClientRect().height);");
+    expect(html).not.toContain("scrollHeight");
     expect(html).toContain('"rakazo-page:open-link"');
     expect(html).toContain("event.preventDefault()");
     expect(html).toContain('url.protocol!=="http:"');

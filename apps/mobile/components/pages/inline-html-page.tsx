@@ -1,5 +1,6 @@
 import { useNativeLinkConfirm } from "@rakazo/chat-ui/native";
 import type { PageDetail } from "@rakazo/contracts";
+import { pageLinkRequest } from "@rakazo/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { currentApiBase } from "../../lib/api";
@@ -29,6 +30,8 @@ export function InlineHtmlPage({ detail }: { detail: PageDetail }) {
   const tappedAt = useRef<number | null>(null);
   useEffect(() => {
     let active = true;
+    // A tap on the page before it reloads is not one on the new page.
+    tappedAt.current = null;
     void pageDocument(currentApiBase(), detail.code, theme, t("This page couldn't be shown."), {
       format: "html",
     }).then(
@@ -56,25 +59,19 @@ export function InlineHtmlPage({ detail }: { detail: PageDetail }) {
         return;
       }
       if (!message || typeof message !== "object") return;
-      const {
-        type,
-        height: reported,
-        url,
-      } = message as {
-        type?: unknown;
-        height?: unknown;
-        url?: unknown;
-      };
+      const { type, height: reported } = message as { type?: unknown; height?: unknown };
       if (type === "rakazo-page:height" && typeof reported === "number") {
         if (Number.isFinite(reported)) {
           setHeight(Math.min(Math.max(reported, 0), MAX_PAGE_HEIGHT));
         }
-      } else if (type === "rakazo-page:open-link" && typeof url === "string") {
-        if (!pageActionAllowed(tappedAt.current, Date.now())) return;
-        // One tap, one action: anything else the page asks for after it waits for the next tap.
-        tappedAt.current = null;
-        openLink(url);
+        return;
       }
+      // Only the web and mail links any page may ask for, as in the full view.
+      const url = pageLinkRequest(message);
+      if (!url || !pageActionAllowed(tappedAt.current, Date.now())) return;
+      // One tap, one action: anything else the page asks for after it waits for the next tap.
+      tappedAt.current = null;
+      openLink(url);
     },
     [openLink],
   );

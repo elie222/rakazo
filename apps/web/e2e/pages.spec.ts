@@ -1029,7 +1029,9 @@ test("a bot's HTML page draws whole in the chat and its own script runs", async 
   // The frame left its placeholder for the page's own height, whether that is taller or shorter.
   await expect
     .poll(async () => {
-      const content = await frame.locator("body").evaluate((body) => body.scrollHeight);
+      const content = await frame
+        .locator("html")
+        .evaluate((root) => Math.ceil(root.getBoundingClientRect().height));
       const box = await page.locator(`iframe[title="${title}"]`).last().boundingBox();
       return Math.abs((box?.height ?? 0) - content);
     })

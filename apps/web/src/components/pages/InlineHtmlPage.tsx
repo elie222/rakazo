@@ -1,8 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useEffect, useRef, useState } from "react";
 import { pageFrameHeight } from "../../lib/page-cards";
+import { PageFooter } from "./PageCard";
 import { PageFrame } from "./PageFrame";
-import { PageTileIcon } from "./page-icon";
 
 /**
  * Before the page reports its height, the frame gets a readable placeholder so it can draw and
@@ -31,7 +31,8 @@ export function InlineHtmlPage({
   const box = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(0);
   const [live, setLive] = useState(false);
-  // A page's scripts run only while the page is near view, so a long chat never runs them all.
+  // A page starts once it comes near view, so a long chat never runs every page it holds, and then
+  // keeps running, so what the reader typed or toggled survives scrolling past it.
   useEffect(() => {
     const element = box.current;
     if (!element) return;
@@ -39,9 +40,14 @@ export function InlineHtmlPage({
       setLive(true);
       return;
     }
-    const near = new IntersectionObserver(([entry]) => setLive(entry?.isIntersecting ?? false), {
-      rootMargin: "400px 0px",
-    });
+    const near = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        setLive(true);
+        near.disconnect();
+      },
+      { rootMargin: "400px 0px" },
+    );
     near.observe(element);
     return () => near.disconnect();
   }, []);
@@ -83,20 +89,11 @@ export function InlineHtmlPage({
               type="button"
               aria-label={t`Open ${title}`}
               onClick={onOpen}
-              className="flex h-[73px] w-full items-center gap-[14px] border-t border-foreground/[0.04] px-5 text-left outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-ring"
+              className="block w-full outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <PageTileIcon />
-              <span className="min-w-0">
-                <span
-                  className="relative top-[1px] block truncate text-body-lg leading-[21px] text-foreground"
-                  dir="auto"
-                >
-                  {title}
-                </span>
-                <span className="block truncate text-body text-muted-foreground">
-                  <Trans>Page</Trans>
-                </span>
-              </span>
+              <PageFooter title={title}>
+                <Trans>Page</Trans>
+              </PageFooter>
             </button>
           ) : null}
         </>
