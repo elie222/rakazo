@@ -8,6 +8,20 @@ const COMPOSER_NONCE_STORAGE_PREFIX = "rakazo.composerNonce.";
 type ComposerDraftSubmission = { text: string; bindingRecord: string | null };
 const pendingSubmissions = new Map<string, ComposerDraftSubmission>();
 const acceptedListeners = new Map<string, Set<(text: string) => void>>();
+const replacedDrafts = createKeyedListeners<string>();
+
+/** The composer showing a chat follows its saved draft when something else rewrites it. */
+export const subscribeComposerDraftReplaced = replacedDrafts.subscribe;
+
+/** Rewrites a chat's saved draft from outside its composer; a composer showing it follows. */
+export function replaceComposerDraft(
+  threadKey: string,
+  text: string,
+  bindings: readonly ComposerMentionBinding[],
+): void {
+  writeComposerDraft(threadKey, text, undefined, bindings);
+  replacedDrafts.emit(threadKey, text);
+}
 
 export function beginComposerDraftSubmission(
   threadKey: string,
