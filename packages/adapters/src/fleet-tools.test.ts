@@ -992,6 +992,8 @@ describe("listFleet", () => {
           section: null,
           pinned: false,
           createdByMe: false,
+          model: "Default model (default)",
+          thinkingLevel: "default",
         },
         {
           id: "bot-scout",
@@ -1000,6 +1002,8 @@ describe("listFleet", () => {
           section: "Research",
           pinned: true,
           createdByMe: true,
+          model: "claude-old (Anthropic)",
+          thinkingLevel: "default",
         },
         expect.objectContaining({ id: "bot-writer", createdByMe: true }),
         expect.objectContaining({ id: "bot-ops", createdByMe: false }),

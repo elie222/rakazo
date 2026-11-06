@@ -201,6 +201,7 @@ import { mountScreenTarget } from "./screen-proxy.js";
 import { mountScriptAssets } from "./script-assets.js";
 import { createAuthResponseAudit } from "./security-audit.js";
 import { mountSharedPages } from "./shared-pages.js";
+import { afterSpaceDeparture } from "./space-departure.js";
 import { createSpeechSummarizer } from "./speech-summary.js";
 import { isDeferredReservationLost, TeamChatBridge } from "./team-chat-bridge.js";
 import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
@@ -695,17 +696,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     artifacts,
     connector: stack.connector,
     connectors: stack.connector,
-    listConnectedPluginSlugs: async (userId) => {
-      const provider = await integrationSettings.resolve("composio");
-      if (!provider) return [];
-      return provider.listConnectedExternalIds({
-        userId,
-        spaceId: "",
-        operationId: "connections.sync",
-        traceId: "connections.sync",
-        signal: AbortSignal.timeout(15_000),
-      });
-    },
+    listConnectedPluginSlugs: (userId) => integrationSettings.listConnectedPluginSlugs(userId),
     secrets: [
       env.deploymentModelKey ?? "",
       env.composioApiKey ?? "",
@@ -726,6 +717,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     phoneCallsEnabled: env.phoneCallsEnabled,
     phoneCallRingSeconds: env.phoneCallRingSeconds,
     phoneCallCooldownMinutes: env.phoneCallCooldownMinutes,
+    inboundEmailDomain: env.inboundEmail?.domain,
+    email,
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
     cloudAgent,
@@ -1021,7 +1014,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       let unfinished = false;
       for (const change of latest.values())
         await settleDirectoryChange(
-          { prisma, pushTokens, devices: deviceSessions, events },
+          {
+            prisma,
+            pushTokens,
+            devices: deviceSessions,
+            events,
+            afterDeparture: (actor, departure) =>
+              afterSpaceDeparture({ prisma, sandbox, jobs, events }, actor, departure),
+          },
           change,
         ).catch((error) => {
           unfinished = true;
@@ -1553,8 +1553,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       () => ({
         runtime: env.agentRuntime,
         sandbox: env.sandboxProvider,
-        composio: Boolean(stack.composio),
-        pipedream: Boolean(pipedream),
+        integrations: [stack.composio, pipedream].flatMap((provider) =>
+          provider ? [provider.describe().id] : [],
+        ),
         messaging: Boolean(messaging),
         email: email?.describe().id ?? null,
         billing: billingProvider?.describe().id ?? null,

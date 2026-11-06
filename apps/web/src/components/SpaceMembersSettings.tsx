@@ -2,13 +2,6 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { SpaceMember, SpaceMembers } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Badge,
   Button,
   DropdownMenu,
@@ -25,6 +18,7 @@ import { Copy, MoreHorizontal, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { SettingsGroup } from "./SettingsRows";
 
 type Confirm = { kind: "remove"; member: SpaceMember } | { kind: "leave" };
@@ -228,37 +222,20 @@ export function SpaceMembersSettings({
         </InputGroup>
       ) : null}
       {confirm ? (
-        <AlertDialog
-          open
-          onOpenChange={(open) => {
-            if (!open && !confirming) setConfirm(null);
-          }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                {confirm.kind === "remove" ? (
-                  <Trans>Remove {memberName}?</Trans>
-                ) : (
-                  <Trans>Leave {space.name}?</Trans>
-                )}
-              </AlertDialogTitle>
-            </AlertDialogHeader>
-            {confirmError ? <p className="text-body-sm text-destructive">{confirmError}</p> : null}
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={confirming}>
-                <Trans>Cancel</Trans>
-              </AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={confirming}
-                onClick={() => void runConfirm()}
-              >
-                {confirm.kind === "remove" ? <Trans>Remove</Trans> : <Trans>Leave</Trans>}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmDialog
+          onCancel={() => setConfirm(null)}
+          title={
+            confirm.kind === "remove" ? (
+              <Trans>Remove {memberName}?</Trans>
+            ) : (
+              <Trans>Leave {space.name}?</Trans>
+            )
+          }
+          error={confirmError}
+          busy={confirming}
+          onConfirm={() => void runConfirm()}
+          confirmLabel={confirm.kind === "remove" ? <Trans>Remove</Trans> : <Trans>Leave</Trans>}
+        />
       ) : null}
     </div>
   );

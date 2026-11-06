@@ -24,9 +24,11 @@ import { NativeSwitch } from "../../components/native-switch";
 import { Checkmark } from "../../components/row-accessories";
 import { mobileTokens } from "../../lib/appearance";
 import {
+  loadCallGreetingEnabled,
   loadCallSoundsEnabled,
   loadWaitSoundEnabled,
   playCallCue,
+  saveCallGreetingEnabled,
   saveCallSoundsEnabled,
   saveWaitSoundEnabled,
 } from "../../lib/call-sounds";
@@ -116,6 +118,7 @@ export default function VoiceSettings() {
   const [deviceVoiceReady, setDeviceVoiceReady] = useState(!deviceSettings);
   const [callSounds, setCallSounds] = useState<boolean | null>(null);
   const [waitSound, setWaitSound] = useState<boolean | null>(null);
+  const [callGreeting, setCallGreeting] = useState<boolean | null>(null);
   // Prevent stale reads from overwriting a saved preference.
   const soundPrefsRevision = useRef(0);
   const soundPrefSaving = useRef(false);
@@ -207,17 +210,20 @@ export default function VoiceSettings() {
           setError(errorText(err, t("Could not load voice settings")));
         });
       const soundRevision = soundPrefsRevision.current;
-      void Promise.allSettled([loadCallSoundsEnabled(), loadWaitSoundEnabled()]).then(
-        ([calls, waiting]) => {
-          if (soundPrefSaving.current || soundPrefsRevision.current !== soundRevision) return;
-          setCallSounds(calls.status === "fulfilled" ? calls.value : null);
-          setWaitSound(waiting.status === "fulfilled" ? waiting.value : null);
-          const failed = [calls, waiting].find((result) => result.status === "rejected");
-          if (failed?.status === "rejected") {
-            setError(errorText(failed.reason, t("Could not load voice settings")));
-          }
-        },
-      );
+      void Promise.allSettled([
+        loadCallSoundsEnabled(),
+        loadWaitSoundEnabled(),
+        loadCallGreetingEnabled(),
+      ]).then(([calls, waiting, greeting]) => {
+        if (soundPrefSaving.current || soundPrefsRevision.current !== soundRevision) return;
+        setCallSounds(calls.status === "fulfilled" ? calls.value : null);
+        setWaitSound(waiting.status === "fulfilled" ? waiting.value : null);
+        setCallGreeting(greeting.status === "fulfilled" ? greeting.value : null);
+        const failed = [calls, waiting, greeting].find((result) => result.status === "rejected");
+        if (failed?.status === "rejected") {
+          setError(errorText(failed.reason, t("Could not load voice settings")));
+        }
+      });
     }, [deviceSettings, open, t]),
   );
 
@@ -247,6 +253,11 @@ export default function VoiceSettings() {
   async function toggleWaitSound(next: boolean) {
     if (waitSound === null) return;
     await saveSoundPref(next, setWaitSound, saveWaitSoundEnabled);
+  }
+
+  async function toggleCallGreeting(next: boolean) {
+    if (callGreeting === null) return;
+    await saveSoundPref(next, setCallGreeting, saveCallGreetingEnabled);
   }
 
   async function toggleCallSounds(next: boolean) {
@@ -688,6 +699,17 @@ export default function VoiceSettings() {
                 value={waitSound === true}
                 disabled={waitSound === null}
                 onValueChange={(next) => void toggleWaitSound(next)}
+              />
+            </View>
+            <View style={[styles.groupRow, styles.groupDivider]}>
+              <View style={styles.rowCopy}>
+                <Text style={styles.cardTitle}>{t("Call greeting")}</Text>
+              </View>
+              <NativeSwitch
+                accessibilityLabel={t("Call greeting")}
+                value={callGreeting === true}
+                disabled={callGreeting === null}
+                onValueChange={(next) => void toggleCallGreeting(next)}
               />
             </View>
           </View>

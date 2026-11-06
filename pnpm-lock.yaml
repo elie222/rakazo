@@ -424,6 +424,12 @@ importers:
       '@playwright/test':
         specifier: 1.64.1
         version: 1.64.1
+      '@rakazo/adapters':
+        specifier: workspace:*
+        version: link:../../packages/adapters
+      '@rakazo/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@rolldown/plugin-babel':
         specifier: 0.2.4
         version: 0.2.4(@babel/core@7.29.7)(@babel/plugin-transform-runtime@7.29.7(@babel/core@7.29.7))(@babel/runtime@7.29.7)(rolldown@1.2.14)(vite@8.3.5(@types/node@26.5.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1))

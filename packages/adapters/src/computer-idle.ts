@@ -21,6 +21,7 @@ import {
   clearEndedExecutionRunBinding,
   createGroupRepos,
   createThreadMessageInTransaction,
+  isUniqueViolation,
   recordComputerRunEnd,
   recordComputerRunSeen,
 } from "@rakazo/db";
@@ -885,7 +886,7 @@ async function postComputerNote(
       if (seq !== undefined) await deps.events.notify(threadId, seq).catch(() => undefined);
     } catch (cause) {
       // A competing worker already wrote the same nonce. Other failures are retried next tick.
-      if (!(cause && typeof cause === "object" && "code" in cause && cause.code === "P2002")) {
+      if (!isUniqueViolation(cause)) {
         getLogger().error("computer.notice_failed", cause);
       }
     }

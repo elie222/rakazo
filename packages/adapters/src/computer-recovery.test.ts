@@ -81,12 +81,16 @@ async function fixture(provider: "fake" | "desktop" = "fake") {
       Object.assign(row, { updatedAt: new Date(row.updatedAt.getTime() + 1) }, data),
     ),
   };
+  const prisma = {
+    computer,
+    computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
+    run: { findFirst: vi.fn().mockResolvedValue(null) },
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+  };
   const deps = {
-    prisma: {
-      computer,
-      computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
-    } as unknown as PrismaClient,
+    prisma: prisma as unknown as PrismaClient,
     sandbox,
     home,
     jobs: {} as JobPublisher,

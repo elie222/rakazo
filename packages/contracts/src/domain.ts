@@ -10,7 +10,14 @@ import {
 } from "./cloudflare-ai-gateway.js";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
 import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
-import { Id, MemoryScope, RunStatus, SandboxKind, ThinkingLevelSchema } from "./ids.js";
+import {
+  Id,
+  MemoryScope,
+  ReplyModeSchema,
+  RunStatus,
+  SandboxKind,
+  ThinkingLevelSchema,
+} from "./ids.js";
 import {
   McpHeadersSchema,
   McpRemoteEndpointSchema,
@@ -137,6 +144,7 @@ export const BotSchema = z.object({
   crossSpaceCommunication: z.boolean().optional(),
   dailyCheckIns: z.boolean().optional(),
   fleetManagement: z.boolean().default(true),
+  replyMode: ReplyModeSchema.default("chat"),
   disabledBuiltinTools: z.array(z.string()).default([]),
   webhookConfigured: z.boolean(),
   /** Present when created with an idempotency key (e.g. onboarding:first). */
@@ -498,6 +506,7 @@ export const UpdateBotInput = z
     crossSpaceCommunication: z.boolean().optional(),
     dailyCheckIns: z.boolean().optional(),
     fleetManagement: z.boolean().optional(),
+    replyMode: ReplyModeSchema.optional(),
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),
     /** Write only while these settings still hold, as an undo does. */
     expectedSettings: BotSettingsValuesSchema.optional(),
@@ -1119,6 +1128,16 @@ export const IntegrationCatalogResultSchema = z.object({
   surfaces: z.array(IntegrationCatalogSurfaceSchema),
 });
 export type IntegrationCatalogResult = z.infer<typeof IntegrationCatalogResultSchema>;
+
+/** A remote MCP service that connects with a bearer token. */
+export const McpSourcePresetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** Fixed endpoint; omitted when the person enters their own. */
+  url: z.string().url().optional(),
+  urlPlaceholder: z.string().optional(),
+});
+export type McpSourcePreset = z.infer<typeof McpSourcePresetSchema>;
 
 export type { McpTransport } from "./mcp.js";
 

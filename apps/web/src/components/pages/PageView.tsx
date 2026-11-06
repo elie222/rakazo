@@ -5,6 +5,7 @@ import { Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web"
 import { Pencil, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { desktopBridge, windowChromeKind } from "../../lib/desktop";
 import { DownloadPdfButton } from "./DownloadPdfButton";
 import { PageFrame } from "./PageFrame";
 import { PageLoading, PageNotice } from "./PageNotice";
@@ -70,6 +71,9 @@ export function PageView({
     return () => window.clearTimeout(timer);
   }, [waiting, attempt]);
   const onDrawn = useCallback(() => setDrawn(true), []);
+  // In the macOS app the window controls sit in the top-left corner over a full-window page, so
+  // its top row starts below them, as the main window's rows do.
+  const macChrome = !compact && windowChromeKind(desktopBridge()) === "darwin";
   const control = `grid place-items-center rounded-full p-0 border border-foreground/[0.06] text-foreground outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring ${compact ? "size-11" : "size-[35px]"}`;
   return (
     <Dialog
@@ -92,11 +96,16 @@ export function PageView({
     >
       <DialogContent
         showCloseButton={false}
+        // Full screen, the page covers the chat whole: dimming it underneath would only flash
+        // darker as the page fades in and out. The tablet sheet keeps it over the chat's edges.
+        overlayClassName={
+          compact ? undefined : "bg-transparent supports-backdrop-filter:backdrop-blur-none"
+        }
         initialFocus={closeButton}
         finalFocus={returnFocus}
         data-testid="page-view"
         data-page-print
-        className={`print:static print:h-auto print:overflow-visible print:bg-transparent print:animate-none top-0 left-0 block h-dvh w-screen max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none bg-card p-0 ring-0 sm:max-w-none ease-[cubic-bezier(0.16,1,0.3,1)] data-open:duration-[260ms] data-open:zoom-in-[0.98] data-open:slide-in-from-bottom-3 data-closed:duration-150 data-closed:zoom-out-100 motion-reduce:data-open:zoom-in-100 motion-reduce:data-open:slide-in-from-bottom-0 ${
+        className={`app-no-drag print:static print:h-auto print:overflow-visible print:bg-transparent print:animate-none top-0 left-0 block h-dvh w-screen max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none bg-card p-0 ring-0 sm:max-w-none ease-[cubic-bezier(0.16,1,0.3,1)] data-open:duration-[260ms] data-open:zoom-in-[0.98] data-open:slide-in-from-bottom-3 data-closed:duration-150 data-closed:zoom-out-100 data-closed:fill-mode-forwards motion-reduce:data-open:zoom-in-100 motion-reduce:data-open:slide-in-from-bottom-0 ${
           compact ? "min-[900px]:bg-transparent" : ""
         }`}
       >
@@ -108,15 +117,22 @@ export function PageView({
               : ""
           }`}
         >
+          {/* The desktop app's window drags by the strip above the page, as by the chat's header.
+              The page itself is no-drag, so the drag areas of the window under it don't take its
+              clicks: Electron honors them through anything drawn on top. */}
+          <div
+            aria-hidden="true"
+            className={`app-drag absolute inset-x-0 top-0 print:hidden ${compact ? "h-[50px]" : macChrome ? "h-[70px]" : "h-[34px]"}`}
+          />
           <DialogClose
             ref={closeButton}
             aria-label={t`Close page`}
-            className={`absolute z-10 grid place-items-center print:hidden ${compact ? "top-[6px] left-[6px] size-11" : "top-[6px] left-[11px] size-9"} rounded-full border border-foreground/[0.06] text-foreground/90 outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring`}
+            className={`app-no-drag absolute z-10 grid place-items-center print:hidden ${compact ? "top-[6px] left-[6px] size-11" : `${macChrome ? "top-[42px]" : "top-[6px]"} left-[11px] size-9`} rounded-full border border-foreground/[0.06] text-foreground/90 outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring`}
           >
             <X className={compact ? "size-6" : "size-[18px]"} strokeWidth={compact ? 2.2 : 1.7} />
           </DialogClose>
           <div
-            className={`pointer-events-none absolute inset-x-0 z-10 flex justify-center print:hidden ${compact ? "top-[6px] px-[106px]" : "top-[2px] px-[140px]"}`}
+            className={`pointer-events-none absolute inset-x-0 z-10 flex justify-center print:hidden ${compact ? "top-[6px] px-[106px]" : `${macChrome ? "top-[38px]" : "top-[2px]"} px-[140px]`}`}
           >
             <div className="flex min-w-0 flex-col items-center gap-1">
               {title ? (
@@ -133,7 +149,7 @@ export function PageView({
           </div>
           {/* Touch controls sit 6px in from the sheet's 28px corners: 22px round plus 6 is 28. */}
           <div
-            className={`absolute z-10 flex items-center gap-1.5 print:hidden ${compact ? "top-[6px] right-[6px]" : "top-[6.5px] right-3"}`}
+            className={`app-no-drag absolute z-10 flex items-center gap-1.5 print:hidden ${compact ? "top-[6px] right-[6px]" : `${macChrome ? "top-[42.5px]" : "top-[6.5px]"} right-3`}`}
           >
             {drawn && !stalled && notice === null ? (
               <DownloadPdfButton
@@ -147,7 +163,7 @@ export function PageView({
           {/* After the controls, so Tab reaches Close, Download PDF and Share before the page's stops. */}
           <section
             aria-label={title || undefined}
-            className={`absolute inset-x-0 bottom-0 print:static ${compact ? "top-[50px]" : "top-[34px]"}`}
+            className={`absolute inset-x-0 bottom-0 print:static ${compact ? "top-[50px]" : macChrome ? "top-[70px]" : "top-[34px]"}`}
           >
             {notice ?? (
               <>
@@ -197,7 +213,7 @@ function TitlePill({ title, onRename }: { title: string; onRename?: (title: stri
   const [draft, setDraft] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const pill =
-    "pointer-events-auto flex h-11 max-w-full min-w-0 items-center gap-3 rounded-full ring-[0.5px] ring-foreground/[0.06] pr-[15px] pl-[11px] text-body font-medium text-foreground";
+    "app-no-drag pointer-events-auto flex h-11 max-w-full min-w-0 items-center gap-3 rounded-full ring-[0.5px] ring-foreground/[0.06] pr-[15px] pl-[11px] text-body font-medium text-foreground";
 
   function commit() {
     const next = draft?.trim() ?? "";

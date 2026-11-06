@@ -242,6 +242,18 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     });
   });
 
+  it("falls back to the standard OpenAI voices when the speech model is not Kokoro", async () => {
+    const hosted = serializeAsOwner({
+      baseUrl: "https://speech.example.test/api/v1",
+      apiKey: "test-key-123",
+      ttsModel: "openai/gpt-4o-mini-tts",
+    });
+    const missing = vi.fn().mockResolvedValue(new Response("Not Found", { status: 404 }));
+    const voices = await provider(missing).listVoices(hosted, ctx);
+    expect(voices[0]?.id).toBe("alloy");
+    expect(voices.some((voice) => voice.id === "af_heart")).toBe(false);
+  });
+
   it("speaks MP3 with the saved model and the voice's Kokoro language", async () => {
     const fetchMock = vi
       .fn()

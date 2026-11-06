@@ -74,6 +74,7 @@ import type { EventQueue, ToolCallBudget, ToolHost } from "./pi-runtime-tools.js
 import {
   agentToolDefinitions,
   describeToolActivity,
+  redactAskUserDetailInMessage,
   releaseToolCallBudget,
   toAgentTools,
   toolCallBudgetExceededMessage,
@@ -797,6 +798,9 @@ export class PiAgentRuntime implements AgentRuntime {
           }
           if (event.type === "message_end") {
             stopThinking();
+            // Before any copy is kept: the recording below, and the checkpoint and provider
+            // payloads that reuse this same message object.
+            redactAskUserDetailInMessage(event.message, request.secrets);
             await piSession?.appendMessage(event.message);
           }
           if (event.type === "tool_execution_start") {

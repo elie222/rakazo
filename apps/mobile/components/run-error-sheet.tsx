@@ -5,7 +5,7 @@ import { Platform, ScrollView, Text, useWindowDimensions, View } from "react-nat
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
-import { parseRunDiagnostic, runErrorWhatHappened } from "../lib/run-error-presentation";
+import { runErrorDiagnostic, runErrorWhatHappened } from "../lib/run-error-presentation";
 import { NativeSymbol } from "./native-symbol";
 import { RunErrorAction, RunErrorTextAction } from "./run-error-actions";
 import { RunErrorSheetContainer } from "./run-error-sheet-container";
@@ -60,7 +60,7 @@ export function RunErrorSheet({
   const [technical, setTechnical] = useState(false);
   useEffect(() => setTechnical(false), [details]);
   if (!error) return null;
-  const diagnostic = parseRunDiagnostic(error.details, locale);
+  const diagnostic = runErrorDiagnostic(error, locale);
   const textStyle = { color: tokens.foreground, fontSize: 16, lineHeight: 24 };
   return (
     <RunErrorSheetContainer onClose={onClose} expanded={technical} label={error.summary}>

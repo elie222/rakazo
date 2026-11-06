@@ -2549,6 +2549,30 @@ describe("MCP connector stdio OAuth", () => {
     },
   );
 
+  it("redacts a credential still held in a legacy row's launch arguments", async () => {
+    const token = "FAKE-TOKEN-0000000000000000";
+    vi.spyOn(McpSession.prototype, "connectStdio").mockRejectedValue(
+      new Error(`invalid --api-key ${token}`),
+    );
+    vi.spyOn(McpSession.prototype, "close").mockResolvedValue(undefined);
+    const server = { ...STDIO_SERVER, secretId: null, args: ["--api-key", token] };
+    const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: { findMany: vi.fn(async () => [{ ...ASSIGNMENT, server }]) },
+    };
+    const connector = new McpConnector(prisma as never, {} as never, {
+      stdioEnabled: true,
+      allowedCommands: ["mail-mcp"],
+    });
+
+    const tools = await connector.discoverTools(context);
+
+    expect(tools).toEqual(unavailableOnly("mail"));
+    expect(tools[0]?.description).not.toContain(token);
+    expect(tools[0]?.description).toContain("[redacted]");
+    await connector.close();
+  });
+
   it("waits for active calls before replacing an expiring process", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const launches = stubSession();

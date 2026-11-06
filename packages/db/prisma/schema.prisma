@@ -587,6 +587,9 @@ model Space {
   createdAt                   DateTime                     @default(now())
   deletingAt                  DateTime?
   deletionClaimId             String?
+  /// The attempt holding the claim: every account deletion attempt shares one `deletionClaimId`,
+  /// so its rollback and handover touch only rows still carrying its own attempt id.
+  deletionAttemptId           String?
   memberships                 SpaceMember[]
   invites                     SpaceInvite[]
   bots                        Bot[]
@@ -949,6 +952,7 @@ model Bot {
   crossSpaceCommunication Boolean @default(true)
   dailyCheckIns Boolean @default(true)
   fleetManagement        Boolean @default(true)
+  replyMode              String  @default("chat")
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
   taughtSkills      TaughtSkill[]
