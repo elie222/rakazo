@@ -597,7 +597,7 @@ msgstr ""
 msgid "Access key secret"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Access token (optional)"
 msgstr "アクセストークン（任意）"
 
@@ -606,7 +606,7 @@ msgstr "アクセストークン（任意）"
 msgid "Account"
 msgstr "アカウント"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Account default"
 msgstr "アカウントのデフォルト"
 
@@ -652,7 +652,7 @@ msgstr "アクティビティ"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/plugins/domain-search.tsx
 #: src/pages/plugins/parts.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -758,6 +758,7 @@ msgstr "プロバイダーを追加"
 msgid "Add rule"
 msgstr ""
 
+#: src/pages/McpServerForm.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "サーバーを追加"
@@ -788,7 +789,7 @@ msgid "Added"
 msgstr "追加済み"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/plugins/connector-detail.tsx
 #: src/pages/plugins/parts.tsx
 msgid "Adding…"
@@ -807,7 +808,7 @@ msgstr ""
 msgid "Adds"
 msgstr "追加されるもの"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -860,7 +861,7 @@ msgstr "全期間"
 msgid "Allow"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Allow cross-space bot communication"
 msgstr "スペース間のボット通信を許可"
 
@@ -1084,7 +1085,7 @@ msgstr "アーカイブ済み"
 msgid "Archived"
 msgstr "アーカイブ済み"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Arguments"
 msgstr "引数"
 
@@ -1140,11 +1141,11 @@ msgstr "認証に失敗しました。"
 msgid "Authorization code"
 msgstr "認証コード"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Authorization parameters (optional)"
 msgstr "認証パラメーター（任意）"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Authorization server"
 msgstr "認証サーバー"
 
@@ -1197,7 +1198,7 @@ msgstr "Avatar Studio"
 #: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/NavLinkPage.tsx
 #: src/pages/plugins/connector-detail.tsx
 #: src/pages/plugins/parts.tsx
@@ -1500,7 +1501,7 @@ msgid "Chart failed to render: {error}"
 msgstr "チャートを表示できませんでした: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1655,7 +1656,7 @@ msgid "Clear {0}’s conversation?"
 msgstr "{0}との会話をクリアしますか？"
 
 #: src/pages/BotContextMenu.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Clear conversation"
 msgstr "会話をクリア"
 
@@ -1786,7 +1787,7 @@ msgstr "列 {index}"
 msgid "Comfortable"
 msgstr "ゆったり"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Command"
 msgstr "コマンド"
@@ -1822,6 +1823,7 @@ msgstr "完了"
 
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "コンピューター"
@@ -2855,7 +2857,7 @@ msgstr "ボットのアバターをカスタマイズ"
 msgid "Daily"
 msgstr "毎日"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "未完了の作業を毎日確認"
 
@@ -2898,7 +2900,7 @@ msgstr "デフォルト"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Default ({0})"
 msgstr "デフォルト（{0}）"
 
@@ -3060,7 +3062,7 @@ msgstr "<0>{emailSuggestion}</0> のことですか？"
 msgid "Didn't catch that."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Disable a tool"
 msgstr "ツールを無効にする"
 
@@ -3199,7 +3201,7 @@ msgstr "画像をドラッグ＆ドロップまたは貼り付け"
 msgid "Duplicate"
 msgstr "複製"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Each name can be used once."
 msgstr "各名前は一度だけ使用できます。"
 
@@ -3253,7 +3255,7 @@ msgid "Email verification required"
 msgstr "メールアドレスの確認が必要です"
 
 #. placeholder {0}: humanizeTool(toolName)
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Enable {0}"
 msgstr "{0}を有効にする"
 
@@ -3300,7 +3302,7 @@ msgstr "テストする前にAPIキーを入力してください。"
 msgid "Environment ID"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Environment variables"
 msgstr "環境変数"
 
@@ -3414,7 +3416,7 @@ msgid "Expiry"
 msgstr ""
 
 #: src/components/AccountDataSettings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Export"
 msgstr "エクスポート"
 
@@ -3475,7 +3477,7 @@ msgstr "変更とみなすフィールド"
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "比較するフィールド（例: id, modifiedTime）（任意）"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "File"
 msgstr "ファイル"
@@ -3702,13 +3704,13 @@ msgstr "ヘッダー「{header}」"
 
 #: src/components/ModelHeadersEditor.tsx
 #: src/components/vault/VaultItemEditor.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/plugins/source-form.tsx
 msgid "Header name"
 msgstr "ヘッダー名"
 
 #: src/components/ModelHeadersEditor.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Header value"
 msgstr "ヘッダー値"
 
@@ -3784,7 +3786,7 @@ msgstr "Rakazoを何で知りましたか？"
 msgid "How often"
 msgstr "頻度"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "How other bots see it"
 msgstr "他のボットからの見え方"
 
@@ -3870,7 +3872,7 @@ msgstr "APIキーを含める"
 msgid "Incoming call"
 msgstr "着信"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Inherit default"
 msgstr "デフォルトを継承"
 
@@ -3973,7 +3975,7 @@ msgid "Invite link copied"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Isolated"
 msgstr "分離"
 
@@ -4021,7 +4023,7 @@ msgstr "たった今"
 msgid "Keep memories"
 msgstr "メモリを保持"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Keep tool results whole"
 msgstr ""
 
@@ -4248,7 +4250,7 @@ msgstr "請求を管理"
 msgid "Manage MCP servers"
 msgstr "MCPサーバーを管理"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Manage other bots"
 msgstr "他のボットを管理"
 
@@ -4357,7 +4359,7 @@ msgstr "メモリ {position}"
 msgid "Memory for {title}"
 msgstr "{title}のメモリ"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Memory scope"
 msgstr "メモリの範囲"
 
@@ -4417,7 +4419,7 @@ msgstr "メッセージ…"
 msgid "Messaged {peer}"
 msgstr "{peer}にメッセージを送信しました"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Messages"
 msgstr ""
 
@@ -4474,7 +4476,7 @@ msgstr "モード"
 #: src/pages/Onboarding.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model"
 msgstr "モデル"
 
@@ -4482,7 +4484,7 @@ msgstr "モデル"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "モデル「{modelId}」は一覧にありませんでした。"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model connections"
 msgstr "モデル接続"
 
@@ -4590,7 +4592,7 @@ msgstr ""
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/plugins/source-form.tsx
@@ -4938,7 +4940,7 @@ msgstr "動作していません"
 msgid "Nothing remembered yet"
 msgstr "記憶はまだありません"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Notifications"
 msgstr "通知"
 
@@ -4950,11 +4952,11 @@ msgstr ""
 msgid "OAuth authorization was cancelled."
 msgstr "OAuth認証がキャンセルされました。"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "OAuth client ID (optional)"
 msgstr "OAuthクライアントID（任意）"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "OAuth client secret (optional)"
 msgstr "OAuthクライアントシークレット（任意）"
 
@@ -5095,7 +5097,7 @@ msgstr "ブラウザの印刷ダイアログを開きます。送信先に「PDF
 msgid "Optional"
 msgstr "任意"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Optional header value"
 msgstr "ヘッダー値（任意）"
 
@@ -5269,7 +5271,7 @@ msgstr "一時停止中"
 msgid "Pending"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Permissions"
 msgstr "権限"
 
@@ -5396,7 +5398,7 @@ msgstr "前の設定セクション"
 msgid "Priority"
 msgstr "優先度"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Private"
 msgstr "非公開"
 
@@ -5463,7 +5465,7 @@ msgstr "リアクション"
 msgid "Read from the page, not checked"
 msgstr "ページから読み取り、未確認"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Read replies aloud"
 msgstr "返信を読み上げる"
 
@@ -5582,7 +5584,7 @@ msgstr "コンピューターを再作成中"
 msgid "Recruiting & HR"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Redirect URI"
 msgstr "リダイレクトURI"
 
@@ -5644,7 +5646,7 @@ msgstr "再読み込み"
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/plugins/connector-detail.tsx
 #: src/pages/plugins/manage-view.tsx
@@ -5774,7 +5776,7 @@ msgstr "キーを置き換え"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Replies"
 msgstr ""
 
@@ -6025,7 +6027,7 @@ msgstr "土曜日"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -6074,7 +6076,7 @@ msgstr "保存中..."
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -6095,7 +6097,7 @@ msgstr "予定の実行が遅れています"
 msgid "Scheduled routines"
 msgstr "スケジュール済みのルーティン"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Scopes (optional)"
 msgstr "スコープ（任意）"
 
@@ -6262,12 +6264,12 @@ msgstr ""
 msgid "Serenity endpoint is required."
 msgstr "Serenityのエンドポイントは必須です。"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Server name"
 msgstr "サーバー名"
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -6337,7 +6339,7 @@ msgstr "共有、リンクを知っている人は誰でも閲覧可能"
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Shared"
 msgstr "共有"
 
@@ -6679,7 +6681,7 @@ msgstr "停止しました。"
 msgid "Stopping…"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Stored encrypted"
 msgstr "暗号化して保存済み"
 
@@ -6784,7 +6786,7 @@ msgstr "タスクを教える"
 msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "ティーチング中です。新しいメッセージを送信する前にティーチングを停止してください。"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Team"
 msgstr "チーム"
 
@@ -6922,7 +6924,7 @@ msgstr "友だちは{weeks}週間無料で使えます。"
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Thinking"
 msgstr "思考"
 
@@ -7164,7 +7166,7 @@ msgstr "ツール名"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/plugins/connector-detail.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr "ツール"
 
@@ -7381,7 +7383,7 @@ msgstr "{0}を使用"
 msgid "Use {hostLabel}"
 msgstr "{hostLabel}を使用"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "アクセストークンには{oauthEnvReference}を使用してください。"
 
@@ -7467,7 +7469,7 @@ msgstr "自分の API キーを使用中。無料プランは{freeUntil}に終�
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Value"
 msgstr "値"
 
@@ -7510,7 +7512,7 @@ msgid "View source"
 msgstr ""
 
 #: src/pages/settings-nav.ts
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
@@ -7602,7 +7604,7 @@ msgstr "どんな結果を実演しますか？"
 msgid "What should this routine do each time it runs?"
 msgstr "このルーティンは実行のたびに何をしますか？"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "このボットの用途"
 
@@ -7631,7 +7633,7 @@ msgstr "メールを受信したとき"
 msgid "When bots check with you before acting."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "When it finishes or needs input"
 msgstr "完了時または入力が必要なとき"
 

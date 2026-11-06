@@ -17,10 +17,20 @@ import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
 import {
+  kickModelCredentialRefresh,
+  persistStoredModelSecret,
+  refreshStoredModelCredential,
+  resolveStoredModelAuth,
+  retireToReconnectMarker,
+  withModelCredentialLock,
+} from "./model-credential-refresh.js";
+import {
   HostedModelCreditsRequiredError,
   hostedModelCreditObserver,
 } from "./model-credit-observer.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "./model-roles.js";
+import type { StoredModelSecret } from "./model-secret.js";
+import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
 import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
@@ -35,20 +45,7 @@ import { assertAllowedOpenAiCompatibleUrl } from "./openai-compatible-url.js";
 import { codexLiveModel } from "./pi-codex-catalog.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
-import type { StoredModelSecret } from "./pi-oauth.js";
-import {
-  CHATGPT_OAUTH_PROVIDER,
-  isRetiredModelCredentialError,
-  kickModelCredentialRefresh,
-  parseModelSecret,
-  persistStoredModelSecret,
-  refreshStoredModelCredential,
-  resolveStoredModelAuth,
-  retireToReconnectMarker,
-  secretValuesToRedact,
-  serializeModelSecret,
-  withModelCredentialLock,
-} from "./pi-oauth.js";
+import { CHATGPT_OAUTH_PROVIDER, isRetiredModelCredentialError } from "./pi-oauth.js";
 
 export function runtimeFallbackModel(runtime: AgentRuntime) {
   return runtime.describe().capabilities.scripted ? { provider: "scripted", id: "scripted" } : null;

@@ -597,7 +597,7 @@ msgstr ""
 msgid "Access key secret"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Access token (optional)"
 msgstr "Token de acceso (opcional)"
 
@@ -606,7 +606,7 @@ msgstr "Token de acceso (opcional)"
 msgid "Account"
 msgstr "Cuenta"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Account default"
 msgstr "Predeterminado de la cuenta"
 
@@ -652,7 +652,7 @@ msgstr "Actividad"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/plugins/domain-search.tsx
 #: src/pages/plugins/parts.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -758,6 +758,7 @@ msgstr "Añadir proveedor"
 msgid "Add rule"
 msgstr ""
 
+#: src/pages/McpServerForm.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "Agregar servidor"
@@ -788,7 +789,7 @@ msgid "Added"
 msgstr "Agregado"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/plugins/connector-detail.tsx
 #: src/pages/plugins/parts.tsx
 msgid "Adding…"
@@ -807,7 +808,7 @@ msgstr ""
 msgid "Adds"
 msgstr "Incluye"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -860,7 +861,7 @@ msgstr "Todo el tiempo"
 msgid "Allow"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Allow cross-space bot communication"
 msgstr "Permitir la comunicación entre bots de distintos espacios"
 
@@ -1084,7 +1085,7 @@ msgstr "archivado"
 msgid "Archived"
 msgstr "Archivado"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Arguments"
 msgstr "Argumentos"
 
@@ -1140,11 +1141,11 @@ msgstr "Error de autenticación."
 msgid "Authorization code"
 msgstr "Código de autorización"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Authorization parameters (optional)"
 msgstr "Parámetros de autorización (opcional)"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Authorization server"
 msgstr "Servidor de autorización"
 
@@ -1197,7 +1198,7 @@ msgstr "Estudio de avatares"
 #: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/NavLinkPage.tsx
 #: src/pages/plugins/connector-detail.tsx
 #: src/pages/plugins/parts.tsx
@@ -1500,7 +1501,7 @@ msgid "Chart failed to render: {error}"
 msgstr "No se pudo renderizar el gráfico: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1655,7 +1656,7 @@ msgid "Clear {0}’s conversation?"
 msgstr "¿Borrar la conversación de {0}?"
 
 #: src/pages/BotContextMenu.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Clear conversation"
 msgstr "Borrar conversación"
 
@@ -1786,7 +1787,7 @@ msgstr "columna {index}"
 msgid "Comfortable"
 msgstr "Cómoda"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Command"
 msgstr "Comando"
@@ -1822,6 +1823,7 @@ msgstr "Completado"
 
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "Computadora"
@@ -2855,7 +2857,7 @@ msgstr "Personalizar avatar del bot"
 msgid "Daily"
 msgstr "Diario"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "Seguimiento diario del trabajo pendiente"
 
@@ -2898,7 +2900,7 @@ msgstr "Predeterminado"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Default ({0})"
 msgstr "Predeterminado ({0})"
 
@@ -3060,7 +3062,7 @@ msgstr "¿Quisiste decir <0>{emailSuggestion}</0>?"
 msgid "Didn't catch that."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Disable a tool"
 msgstr "Desactivar una herramienta"
 
@@ -3199,7 +3201,7 @@ msgstr "Arrastra, suelta o pega una imagen"
 msgid "Duplicate"
 msgstr "Duplicar"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Each name can be used once."
 msgstr "Cada nombre solo se puede usar una vez."
 
@@ -3253,7 +3255,7 @@ msgid "Email verification required"
 msgstr "Se requiere verificar el correo"
 
 #. placeholder {0}: humanizeTool(toolName)
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Enable {0}"
 msgstr "Activar {0}"
 
@@ -3300,7 +3302,7 @@ msgstr "Introduce una clave de API antes de probar."
 msgid "Environment ID"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Environment variables"
 msgstr "Variables de entorno"
 
@@ -3414,7 +3416,7 @@ msgid "Expiry"
 msgstr ""
 
 #: src/components/AccountDataSettings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Export"
 msgstr "Exportar"
 
@@ -3475,7 +3477,7 @@ msgstr "Campos que indican un cambio"
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Campos para comparar, p. ej. id, modifiedTime (opcional)"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "File"
 msgstr "Archivo"
@@ -3702,13 +3704,13 @@ msgstr "Encabezado \"{header}\""
 
 #: src/components/ModelHeadersEditor.tsx
 #: src/components/vault/VaultItemEditor.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/plugins/source-form.tsx
 msgid "Header name"
 msgstr "Nombre del encabezado"
 
 #: src/components/ModelHeadersEditor.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Header value"
 msgstr "Valor del encabezado"
 
@@ -3784,7 +3786,7 @@ msgstr "¿Cómo nos conociste?"
 msgid "How often"
 msgstr "Con qué frecuencia"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "How other bots see it"
 msgstr "Cómo lo ven otros bots"
 
@@ -3870,7 +3872,7 @@ msgstr "Incluir claves de API"
 msgid "Incoming call"
 msgstr "Llamada entrante"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Inherit default"
 msgstr "Heredar predeterminado"
 
@@ -3973,7 +3975,7 @@ msgid "Invite link copied"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Isolated"
 msgstr "Aislado"
 
@@ -4021,7 +4023,7 @@ msgstr "ahora mismo"
 msgid "Keep memories"
 msgstr "Conservar memorias"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Keep tool results whole"
 msgstr ""
 
@@ -4248,7 +4250,7 @@ msgstr "Administrar facturación"
 msgid "Manage MCP servers"
 msgstr "Gestionar servidores MCP"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Manage other bots"
 msgstr "Gestionar otros bots"
 
@@ -4357,7 +4359,7 @@ msgstr "Memoria {position}"
 msgid "Memory for {title}"
 msgstr "Memoria para {title}"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Memory scope"
 msgstr "Alcance de memoria"
 
@@ -4417,7 +4419,7 @@ msgstr "Mensaje…"
 msgid "Messaged {peer}"
 msgstr "Mensaje enviado a {peer}"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Messages"
 msgstr ""
 
@@ -4474,7 +4476,7 @@ msgstr "Modo"
 #: src/pages/Onboarding.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model"
 msgstr "Modelo"
 
@@ -4482,7 +4484,7 @@ msgstr "Modelo"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "El modelo \"{modelId}\" no aparece en la lista."
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model connections"
 msgstr "Conexiones de modelos"
 
@@ -4590,7 +4592,7 @@ msgstr ""
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/plugins/source-form.tsx
@@ -4938,7 +4940,7 @@ msgstr "No funciona"
 msgid "Nothing remembered yet"
 msgstr "Aún no hay recuerdos"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Notifications"
 msgstr "Notificaciones"
 
@@ -4950,11 +4952,11 @@ msgstr ""
 msgid "OAuth authorization was cancelled."
 msgstr "Se canceló la autorización OAuth."
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "OAuth client ID (optional)"
 msgstr "ID de cliente OAuth (opcional)"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "OAuth client secret (optional)"
 msgstr "Secreto de cliente OAuth (opcional)"
 
@@ -5095,7 +5097,7 @@ msgstr "Abre el diálogo de impresión del navegador. Elige Guardar como PDF com
 msgid "Optional"
 msgstr "Opcional"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Optional header value"
 msgstr "Valor de encabezado opcional"
 
@@ -5269,7 +5271,7 @@ msgstr "En pausa"
 msgid "Pending"
 msgstr "Pendiente"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Permissions"
 msgstr "Permisos"
 
@@ -5396,7 +5398,7 @@ msgstr "Secciones de configuración anteriores"
 msgid "Priority"
 msgstr "Prioridad"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Private"
 msgstr "Privado"
 
@@ -5463,7 +5465,7 @@ msgstr "Reacciones"
 msgid "Read from the page, not checked"
 msgstr "Leído de la página, sin verificar"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Read replies aloud"
 msgstr "Leer respuestas en voz alta"
 
@@ -5582,7 +5584,7 @@ msgstr "Recreando la computadora"
 msgid "Recruiting & HR"
 msgstr "Reclutamiento y RR. HH."
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Redirect URI"
 msgstr "URI de redirección"
 
@@ -5644,7 +5646,7 @@ msgstr "Recargar"
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/plugins/connector-detail.tsx
 #: src/pages/plugins/manage-view.tsx
@@ -5774,7 +5776,7 @@ msgstr "Reemplazar clave"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Replies"
 msgstr ""
 
@@ -6025,7 +6027,7 @@ msgstr "sábado"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -6074,7 +6076,7 @@ msgstr "Guardando..."
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -6095,7 +6097,7 @@ msgstr "Ejecución programada retrasada"
 msgid "Scheduled routines"
 msgstr "Rutinas programadas"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Scopes (optional)"
 msgstr "Ámbitos (opcional)"
 
@@ -6262,12 +6264,12 @@ msgstr "Enviado"
 msgid "Serenity endpoint is required."
 msgstr "El endpoint de Serenity es obligatorio."
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Server name"
 msgstr "Nombre del servidor"
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -6337,7 +6339,7 @@ msgstr "Compartir, cualquiera con el enlace puede verla"
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Shared"
 msgstr "Compartido"
 
@@ -6679,7 +6681,7 @@ msgstr "Detenido."
 msgid "Stopping…"
 msgstr "Deteniendo…"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Stored encrypted"
 msgstr "Almacenado cifrado"
 
@@ -6784,7 +6786,7 @@ msgstr "Enseñar una tarea"
 msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "Enseñanza en curso: detén la enseñanza antes de enviar un nuevo mensaje."
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Team"
 msgstr "Equipo"
 
@@ -6922,7 +6924,7 @@ msgstr "Recibe {weeks} semanas gratis."
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Thinking"
 msgstr "Pensando"
 
@@ -7164,7 +7166,7 @@ msgstr "Nombre de la herramienta"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/plugins/connector-detail.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr "Herramientas"
 
@@ -7381,7 +7383,7 @@ msgstr "Usar {0}"
 msgid "Use {hostLabel}"
 msgstr "Usar {hostLabel}"
 
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "Usa {oauthEnvReference} para el token de acceso."
 
@@ -7467,7 +7469,7 @@ msgstr "Usando tu clave de API. El plan gratuito termina el {freeUntil}."
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
-#: src/pages/McpServersOverlay.tsx
+#: src/pages/McpServerForm.tsx
 msgid "Value"
 msgstr "Valor"
 
@@ -7510,7 +7512,7 @@ msgid "View source"
 msgstr "Ver código fuente"
 
 #: src/pages/settings-nav.ts
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
@@ -7602,7 +7604,7 @@ msgstr "¿Qué resultado demostrarás?"
 msgid "What should this routine do each time it runs?"
 msgstr "¿Qué debe hacer esta rutina cada vez que se ejecute?"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "Para qué es este bot"
 
@@ -7631,7 +7633,7 @@ msgstr "Cuando llega un correo"
 msgid "When bots check with you before acting."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "When it finishes or needs input"
 msgstr "Cuando termine o necesite una respuesta"
 
