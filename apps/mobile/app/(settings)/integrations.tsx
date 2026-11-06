@@ -121,6 +121,9 @@ export default function Integrations() {
   const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [mcpError, setMcpError] = useState<string | null>(null);
+  const [signInError, setSignInError] = useState<{ serverId: string; message: string } | null>(
+    null,
+  );
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [pluginInstalls, setPluginInstalls] = useState<CapabilityInstall[]>([]);
   const [pluginEntries, setPluginEntries] = useState<PluginMarketplaceEntry[]>([]);
@@ -627,11 +630,15 @@ export default function Integrations() {
         ) : null}
       </View>
     );
-    if (state !== "needs_client") return row;
+    const error = signInError?.serverId === server.id ? signInError.message : null;
+    if (state !== "needs_client" && !error) return row;
     return (
       <View key={server.id} style={styles.catalogStack}>
         {row}
-        <McpOAuthClientForm server={server} onSaved={retryRefresh} />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {state === "needs_client" ? (
+          <McpOAuthClientForm server={server} onSaved={() => authorizeMcp(server.id)} />
+        ) : null}
       </View>
     );
   }
@@ -943,11 +950,12 @@ export default function Integrations() {
     const isCurrent = captureConnectionScope();
     if (!isCurrent()) return;
     setPending(`oauth:${serverId}`);
-    setMcpError(null);
+    setSignInError(null);
     try {
       await signInToMcpServer(serverId);
     } catch (reason) {
-      if (isCurrent()) setMcpError(errorText(reason, t("Could not start MCP OAuth")));
+      if (isCurrent())
+        setSignInError({ serverId, message: errorText(reason, t("Could not start MCP OAuth")) });
     } finally {
       // A failed sign-in can leave the server needing a client, which the reload shows.
       if (isCurrent()) await refresh().catch(() => undefined);

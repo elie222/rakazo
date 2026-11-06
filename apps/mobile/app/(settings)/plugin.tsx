@@ -474,7 +474,7 @@ function PluginScreen() {
                       ) : null}
                     </View>
                     {mcpServerConnection(server) === "needs_client" ? (
-                      <McpOAuthClientForm server={server} onSaved={load} />
+                      <McpOAuthClientForm server={server} onSaved={() => signIn(server)} />
                     ) : null}
                     <View style={styles.itemActions}>
                       {!mcpServerNeedsSignIn(server) ||

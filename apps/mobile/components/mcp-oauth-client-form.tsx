@@ -4,13 +4,13 @@ import { StyleSheet, Text, TextInput, View } from "react-native";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
-import { signInToMcpServer } from "../lib/mcp-oauth";
 import { native, useThemedStyles } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
 
 /** Saves a client registered with the server's sign-in provider, for providers that cannot
- * register Rakazo themselves, then signs in. */
+ * register Rakazo themselves. `onSaved` signs in and reports its own errors, because the saved
+ * client removes this form. */
 export function McpOAuthClientForm({
   server,
   onSaved,
@@ -63,17 +63,13 @@ export function McpOAuthClientForm({
           },
         },
       });
-      try {
-        await signInToMcpServer(server.id);
-      } finally {
-        // The client is saved even when sign-in fails, so the screen shows it either way.
-        await onSaved().catch(() => undefined);
-      }
     } catch (reason) {
       setError(errorText(reason, t("Could not connect")));
-    } finally {
       setBusy(false);
+      return;
     }
+    await onSaved();
+    setBusy(false);
   }
 
   return (

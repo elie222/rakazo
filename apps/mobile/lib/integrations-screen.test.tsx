@@ -1347,6 +1347,7 @@ it("shows a saved client as saved when the sign-in after it fails", async () => 
   expect(container.textContent).not.toContain("Needs an OAuth client ID");
   const row = container.querySelector('[data-testid="registered-mcp-server"]');
   expect(row?.querySelector("button")?.textContent).toBe("Connect");
+  expect(container.textContent).toContain("Provider unavailable");
 });
 
 it("shows a catalog server added before its sign-in was cancelled", async () => {
