@@ -218,6 +218,25 @@ describe("read_email", () => {
     expect(read).toContain("Your password is");
   });
 
+  it("masks a secret that a page break or the preview would cut in two", async () => {
+    const secret = "correct-horse-battery";
+    const text = `${"x".repeat(7_990)}${secret} end`;
+    const { call } = fakeRun(
+      [row({ id: "email-1", text: `${"y".repeat(150)}${secret}` }), row({ id: "email-2", text })],
+      {
+        secrets: [secret],
+      },
+    );
+
+    const listed = JSON.stringify(await call({}));
+    const first = (await call({ id: "email-2" })).email as { nextTextOffset: number };
+    const rest = JSON.stringify(await call({ id: "email-2", textOffset: first.nextTextOffset }));
+
+    expect(listed).not.toContain("correct-horse");
+    expect(JSON.stringify(first)).not.toContain("correct");
+    expect(rest).not.toContain("battery");
+  });
+
   it("waits for a matching email to arrive", async () => {
     const { call } = fakeRun([], { arriving: row({ id: "late", receivedAt: new Date() }) });
 

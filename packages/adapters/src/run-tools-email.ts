@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { attachmentComputerPath } from "@rakazo/core";
+import { attachmentComputerPath, redactSecrets } from "@rakazo/core";
 import { z } from "zod";
 import { redactConnectorPayload } from "./connector-safety.js";
 import type { RunContext } from "./run-context.js";
@@ -61,7 +61,9 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
     });
     if (!email) return call.finish({ error: "No email with that id in your inbox." });
     const offset = input.textOffset ?? 0;
-    const text = email.text.slice(offset, offset + TEXT_PAGE_CHARS);
+    // Masked whole before paging, so a secret split across two pages is still caught.
+    const body = redactSecrets(email.text, ctx.secrets);
+    const text = body.slice(offset, offset + TEXT_PAGE_CHARS);
     const files = email.attachments as SavedFile[];
     const kept = files.flatMap((file) =>
       file.artifactId && file.mimeType
@@ -89,7 +91,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
         subject: email.subject,
         receivedAt: email.receivedAt.toISOString(),
         text,
-        ...(offset + TEXT_PAGE_CHARS < email.text.length
+        ...(offset + TEXT_PAGE_CHARS < body.length
           ? { nextTextOffset: offset + TEXT_PAGE_CHARS }
           : {}),
         ...(files.length
@@ -167,7 +169,10 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
     verified: email.verified,
     subject: email.subject,
     receivedAt: email.receivedAt.toISOString(),
-    preview: email.text.slice(0, PREVIEW_CHARS).replace(/\s+/g, " ").trim(),
+    preview: redactSecrets(email.text, ctx.secrets)
+      .slice(0, PREVIEW_CHARS)
+      .replace(/\s+/g, " ")
+      .trim(),
     ...((email.attachments as SavedFile[]).length
       ? { files: (email.attachments as SavedFile[]).length }
       : {}),
