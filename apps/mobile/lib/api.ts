@@ -1191,34 +1191,36 @@ async function removePendingSignOut(record: PendingSignOut): Promise<void> {
   });
 }
 
-/** Records possible renewal separately from confirmed unregistration delivery. */
-async function markPendingSignOutProgress(
+/** Rewrites the stored record for the same session; `change` returns nothing to leave it. */
+async function updatePendingSignOut(
   record: PendingSignOut,
-  progress: { renewedAt: number; unregistered?: true },
+  change: (existing: PendingSignOut) => PendingSignOut | undefined,
 ): Promise<void> {
   await updatePendingSignOuts((records) => {
     let updated = false;
     const kept = records.map((existing) => {
-      if (!samePendingSignOut(existing, record)) return existing;
+      const changed = samePendingSignOut(existing, record) ? change(existing) : undefined;
+      if (!changed) return existing;
       updated = true;
-      return { ...existing, ...progress };
+      return changed;
     });
     return updated ? kept : undefined;
   });
 }
 
+/** Records possible renewal separately from confirmed unregistration delivery. */
+function markPendingSignOutProgress(
+  record: PendingSignOut,
+  progress: { renewedAt: number; unregistered?: true },
+): Promise<void> {
+  return updatePendingSignOut(record, (existing) => ({ ...existing, ...progress }));
+}
+
 /** Marks a switch's provisional record deliverable, once the switch has committed. */
-async function promotePendingSignOut(record: PendingSignOut): Promise<void> {
-  await updatePendingSignOuts((records) => {
-    let promoted = false;
-    const kept = records.map((existing) => {
-      if (!existing.provisional || !samePendingSignOut(existing, record)) return existing;
-      promoted = true;
-      const { provisional, ...committed } = existing;
-      return committed;
-    });
-    return promoted ? kept : undefined;
-  });
+function promotePendingSignOut(record: PendingSignOut): Promise<void> {
+  return updatePendingSignOut(record, ({ provisional, ...committed }) =>
+    provisional ? committed : undefined,
+  );
 }
 
 /**
