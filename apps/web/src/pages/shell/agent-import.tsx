@@ -52,7 +52,7 @@ import { readAgentDocument } from "../../lib/agent-document";
 import { agentImportErrorText } from "../../lib/agent-import-errors";
 import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
-import { ComputerModePicker } from "./bot-panel";
+import { ComputerModePicker } from "./bot-settings-sections";
 import { useImportStatusText } from "./import-status";
 
 /** Warnings the status label already says. */
