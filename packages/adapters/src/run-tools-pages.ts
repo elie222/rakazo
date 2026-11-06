@@ -1,10 +1,12 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH, PageTitleSchema } from "@rakazo/contracts";
-import { containsSecret, redactSecrets } from "@rakazo/core";
+import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import type { RunContext } from "./run-context.js";
+import { neverAsks } from "./run-context.js";
 import { isUniqueViolation, publishMessage } from "./run-messages.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import type { ToolRequest } from "./run-tool-request.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
 const MAX_EDITS = 50;
@@ -47,14 +49,67 @@ function parseEdits(value: unknown): PageEdit[] | string {
   return edits;
 }
 
+/**
+ * A bot reaches its own pages and its group's pages, from any of its chats or routines; another
+ * bot's page answers as if it did not exist, since its source may hold that chat's text.
+ */
+function reachablePage(ctx: RunContext, pageId: string) {
+  const { run, bot, thread } = ctx;
+  return {
+    id: pageId,
+    spaceId: run.spaceId,
+    userId: run.userId,
+    OR: thread.groupId ? [{ botId: bot.id }, { groupId: thread.groupId }] : [{ botId: bot.id }],
+  };
+}
+
+function editsGiven(args: Record<string, unknown>): boolean {
+  // Serializers send unused optional fields blank, an empty list included.
+  return Array.isArray(args.edits) ? args.edits.length > 0 : argumentGiven(args.edits);
+}
+
+/**
+ * Anyone with a shared page's link sees each save at once, so a save to one is held for approval,
+ * except under Never ask. An approved replay stays held so it claims the approval it was given.
+ */
+export async function holdSharedPageSave(ctx: RunContext, request: ToolRequest): Promise<void> {
+  const { args } = request;
+  if (args.help === true || !argumentGiven(args.pageId)) return;
+  if (request.nextApprovedTool === "save_page") {
+    request.heldForApproval = true;
+    return;
+  }
+  const hasSource = argumentGiven(args.source);
+  const hasEdits = editsGiven(args);
+  const hasTitle = argumentGiven(args.title);
+  if (!hasSource && !hasEdits && !hasTitle) return;
+  if (await neverAsks(ctx)) return;
+  const page = await ctx.deps.prisma.page.findFirst({
+    where: reachablePage(ctx, String(args.pageId)),
+    select: { title: true, visibility: true },
+  });
+  if (page?.visibility !== "link") return;
+  const edits = hasEdits ? parseEdits(args.edits) : [];
+  const lines = [
+    ...(hasTitle ? [`Title: ${String(args.title)}`] : []),
+    ...(hasSource
+      ? [String(args.source)]
+      : typeof edits === "string"
+        ? []
+        : edits.flatMap((edit) => [`- ${edit.find}`, `+ ${edit.replace}`])),
+  ];
+  const title = page.title.replace(new RegExp(CARD_TITLE_ESCAPED_CHARACTERS, "g"), "\\$&");
+  request.heldForApproval = true;
+  request.fleetSummary = { title: `Update shared page “${title}”?`, lines };
+}
+
 async function savePage(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, thread } = ctx;
   const { args } = call;
   if (args.help === true) return { guide: PAGE_KIT_GUIDE };
   const pageId = argumentGiven(args.pageId) ? String(args.pageId) : undefined;
   const hasSource = argumentGiven(args.source);
-  // Serializers send unused optional fields blank, an empty list included.
-  const hasEdits = Array.isArray(args.edits) ? args.edits.length > 0 : argumentGiven(args.edits);
+  const hasEdits = editsGiven(args);
   if (hasSource && hasEdits) return { error: "Send either source or edits, not both." };
   let title: string | undefined;
   if (argumentGiven(args.title)) {
@@ -63,17 +118,13 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     title = redactSecrets(parsed.data, ctx.secrets).slice(0, PAGE_TITLE_MAX_LENGTH);
   }
 
-  // A bot reaches its own pages and its group's pages, from any of its chats or routines; another
-  // bot's page answers as if it did not exist, since its source may hold that chat's text.
-  const reachable = thread.groupId
-    ? [{ botId: bot.id }, { groupId: thread.groupId }]
-    : [{ botId: bot.id }];
   const page = pageId
     ? await deps.prisma.page.findFirst({
-        where: { id: pageId, spaceId: run.spaceId, userId: run.userId, OR: reachable },
+        where: reachablePage(ctx, pageId),
         select: {
           id: true,
           title: true,
+          visibility: true,
           currentVersion: true,
           versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
         },
@@ -86,7 +137,13 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     // The stored source may hold outside text an earlier run put in the page, so reading it
     // taints this run like any other outside content; saves only confirm this run's own write.
     ctx.state.tainted = true;
-    return { pageId: page.id, version: page.currentVersion, title: page.title, source: current };
+    return {
+      pageId: page.id,
+      version: page.currentVersion,
+      title: page.title,
+      ...(page.visibility === "link" ? { sharedByLink: true } : {}),
+      source: current,
+    };
   }
   if (!page && hasEdits) return { error: "edits need the pageId of the page to change." };
   if (!page && !hasSource) return { error: "A new page needs source." };
@@ -112,6 +169,11 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     };
   }
 
+  const unapproved =
+    page !== null &&
+    !call.bypassApproval &&
+    call.nextApprovedTool !== "save_page" &&
+    !(await neverAsks(ctx));
   let saved: { pageId: string; version: number; title: string };
   try {
     saved = await deps.prisma.$transaction(async (tx) => {
@@ -130,9 +192,15 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       }
       const version = page.currentVersion + 1;
       // Conditional on the version this change was built from, so two saves never interleave.
+      // A save nobody approved also needs the page still private: sharing does not bump the
+      // version, so a page shared since the approval check would publish it.
       // With no new title the page keeps its current one, even a rename made after the read.
       const moved = await tx.page.updateMany({
-        where: { id: page.id, currentVersion: page.currentVersion },
+        where: {
+          id: page.id,
+          currentVersion: page.currentVersion,
+          ...(unapproved ? { visibility: "private" } : {}),
+        },
         data: { currentVersion: version, title, updatedAt: new Date() },
       });
       if (moved.count === 0) throw new PageChangedError();
@@ -174,6 +242,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   }
   const result = {
     ...saved,
+    ...(page?.visibility === "link" ? { sharedByLink: true } : {}),
     mention: `Mention it in your reply as [${linkText}](page:${saved.pageId})`,
   };
   return check.warnings?.length ? { ...result, warnings: check.warnings } : result;

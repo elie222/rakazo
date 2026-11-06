@@ -6,7 +6,7 @@ vi.mock("./run-messages.js", async (importActual) => ({
   publishMessage: (...args: unknown[]) => publishMessage(...args),
 }));
 
-const { pageTools } = await import("./run-tools-pages.js");
+const { holdSharedPageSave, pageTools } = await import("./run-tools-pages.js");
 const { redactBlocks } = await import("./run-messages.js");
 
 const source = (heading: string) =>
@@ -14,8 +14,9 @@ const source = (heading: string) =>
 
 function context(
   tx: Record<string, unknown>,
-  existing?: { currentVersion: number },
+  existing?: { currentVersion: number; visibility?: "private" | "link" },
   secrets: string[] = [],
+  skipApprovals = false,
 ) {
   const prisma = {
     page: {
@@ -24,6 +25,7 @@ function context(
           ? {
               id: "page-1",
               title: "Plan",
+              visibility: existing.visibility ?? "private",
               currentVersion: existing.currentVersion,
               versions: [{ source: source("Plan") }],
             }
@@ -39,11 +41,20 @@ function context(
     thread: { groupId: null },
     secrets,
     state: { tainted: false },
+    trust: { loadAutoReviewPreference: async () => ({ skipApprovals }) },
   } as never;
 }
 
-const call = (args: Record<string, unknown>) =>
-  ({ args, finish: (result: unknown) => result }) as never;
+const call = (args: Record<string, unknown>, approval: Record<string, unknown> = {}) =>
+  ({ args, bypassApproval: false, ...approval, finish: (result: unknown) => result }) as never;
+
+const request = (args: Record<string, unknown>, nextApprovedTool?: string) =>
+  ({ args, nextApprovedTool, heldForApproval: false, fleetSummary: undefined }) as {
+    args: Record<string, unknown>;
+    nextApprovedTool: string | undefined;
+    heldForApproval: boolean;
+    fleetSummary: { title: string; lines: string[] } | undefined;
+  };
 
 describe("save_page", () => {
   beforeEach(() => publishMessage.mockReset());
@@ -168,5 +179,72 @@ describe("save_page", () => {
     });
     expect(JSON.stringify(tx.pageVersion.create.mock.calls)).not.toContain(secret);
     expect(JSON.stringify(publishMessage.mock.calls)).not.toContain(secret);
+  });
+});
+
+describe("saving a page shared by link", () => {
+  const edit = { find: "Hi", replace: "Hello" };
+
+  it("holds a change to a shared page for approval, showing what changes", async () => {
+    const held = request({ pageId: "page-1", edits: [edit] });
+    await holdSharedPageSave(context({}, { currentVersion: 1, visibility: "link" }), held as never);
+    expect(held.heldForApproval).toBe(true);
+    expect(held.fleetSummary).toEqual({
+      title: "Update shared page “Plan”?",
+      lines: ["- Hi", "+ Hello"],
+    });
+  });
+
+  it("does not hold a private page, a read, a new page, or any save under Never ask", async () => {
+    const cases = [
+      [request({ pageId: "page-1", edits: [edit] }), context({}, { currentVersion: 1 })],
+      [request({ pageId: "page-1" }), context({}, { currentVersion: 1, visibility: "link" })],
+      [request({ title: "New", source: source("New") }), context({})],
+      [
+        request({ pageId: "page-1", edits: [edit] }),
+        context({}, { currentVersion: 1, visibility: "link" }, [], true),
+      ],
+    ] as const;
+    for (const [held, ctx] of cases) {
+      await holdSharedPageSave(ctx, held as never);
+      expect(held.heldForApproval).toBe(false);
+    }
+  });
+
+  it("keeps an approved replay held so it claims its approval", async () => {
+    const held = request({ pageId: "page-1", edits: [edit] }, "save_page");
+    await holdSharedPageSave(context({}, { currentVersion: 1 }), held as never);
+    expect(held.heldForApproval).toBe(true);
+  });
+
+  it("saves an unapproved change only while the page is still private", async () => {
+    const updateMany = vi.fn(async () => ({ count: 0 }));
+    const tx = { page: { updateMany }, pageVersion: { create: vi.fn() } };
+    const result = (await pageTools.save_page!(
+      context(tx, { currentVersion: 1 }),
+      call({ pageId: "page-1", edits: [edit] }),
+    )) as Record<string, unknown>;
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ visibility: "private" }) }),
+    );
+    // Shared since the check: nothing is published, and the retry asks.
+    expect(result).toMatchObject({ unchanged: true });
+    expect(tx.pageVersion.create).not.toHaveBeenCalled();
+  });
+
+  it("tells the bot a page is shared when it saves an approved change", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const tx = {
+      page: { updateMany, findUniqueOrThrow: vi.fn(async () => ({ title: "Plan" })) },
+      pageVersion: { create: vi.fn() },
+    };
+    const result = (await pageTools.save_page!(
+      context(tx, { currentVersion: 1, visibility: "link" }),
+      call({ pageId: "page-1", edits: [edit] }, { nextApprovedTool: "save_page" }),
+    )) as Record<string, unknown>;
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "page-1", currentVersion: 1 } }),
+    );
+    expect(result).toMatchObject({ version: 2, sharedByLink: true });
   });
 });
