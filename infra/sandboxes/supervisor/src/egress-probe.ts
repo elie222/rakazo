@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { isIPv4 } from "node:net";
 import type Docker from "dockerode";
-import { ATTEST_IMAGE, attestRestrictedEgress } from "./egress-attest.js";
+import { attestRestrictedEgress } from "./egress-attest.js";
 
 /**
  * Restricted egress is enforced by host firewall rules the supervisor cannot see
@@ -93,22 +93,8 @@ export async function verifyRestrictedEgress(
   docker: Docker,
   image: string,
   dns?: string[],
-  ensureAttestImage: () => Promise<void> = async () => {},
+  ensureAttestImage: () => Promise<string> = async () => "rakazo/egress-attest:prebuilt",
 ) {
-  // Restricted computer networks are IPv4-only, so an IPv6 resolver could never be
-  // queried; skipping it silently would make the DNS check pass without testing anything.
-  if (dns?.some((server) => !isIPv4(server))) {
-    throw new Error(
-      "SANDBOX_COMPUTER_DNS must list IPv4 servers: restricted computer networks are IPv4-only (see docs/self-host-docker-computers.md)",
-    );
-  }
-  // Docker's embedded resolver and resolv.conf use at most three servers; a longer
-  // list would be silently truncated, so refuse it rather than check only a prefix.
-  if (dns && dns.length > 3) {
-    throw new Error(
-      "SANDBOX_COMPUTER_DNS lists more than three servers; at most three are used (see docs/self-host-docker-computers.md)",
-    );
-  }
   const suffix = randomBytes(4).toString("hex").slice(0, 7);
   const name = `${EGRESS_PROBE_NETWORK}-${suffix}`;
   const bridge = `rakazo-c${suffix}`;
@@ -157,6 +143,24 @@ export async function verifyRestrictedEgress(
     if (verdict === "metadata-reachable") {
       throw new EgressNotEnforced("a computer bridge reached the metadata endpoint");
     }
+    // The DNS list is validated only now, after the rules are known to be in
+    // place: `auto` on a host without the ruleset must still fall back to open
+    // egress instead of failing every start on a DNS misconfiguration.
+    // Restricted computer networks are IPv4-only, so an IPv6 resolver could never
+    // be queried; skipping it silently would make the check pass without testing.
+    if (dns?.some((server) => !isIPv4(server))) {
+      throw new Error(
+        "SANDBOX_COMPUTER_DNS must list IPv4 servers: restricted computer networks are IPv4-only (see docs/self-host-docker-computers.md)",
+      );
+    }
+    // Docker's embedded resolver and resolv.conf use at most three servers; a
+    // longer list would be silently truncated, so refuse it rather than check
+    // only a prefix.
+    if (dns && dns.length > 3) {
+      throw new Error(
+        "SANDBOX_COMPUTER_DNS lists more than three servers; at most three are used (see docs/self-host-docker-computers.md)",
+      );
+    }
     if (verdict === "dns-unreachable") {
       throw new Error(
         "No SANDBOX_COMPUTER_DNS server answered from a restricted computer network; set servers reachable from there, such as public resolvers (see docs/self-host-docker-computers.md)",
@@ -173,8 +177,7 @@ export async function verifyRestrictedEgress(
     // Behavioral checks passed; now attest the live firewall itself, so a
     // partially removed ruleset cannot pass as verified. The attestation runs
     // the supervisor-built probe image, never the configurable computer image.
-    await ensureAttestImage();
-    await attestRestrictedEgress(docker, ATTEST_IMAGE);
+    await attestRestrictedEgress(docker, await ensureAttestImage());
   } finally {
     await container?.remove({ force: true }).catch(() => undefined);
     await network.remove().catch(() => undefined);

@@ -59,12 +59,23 @@ It takes two parts:
 
 Before each restricted computer starts, the supervisor tests connectivity from a temporary
 `rakazo-c*` bridge and checks the host firewall rules and their order. It uses a short-lived,
-locally built attestation image with host networking and `CAP_NET_ADMIN` to read the host rules.
+locally built attestation image with host networking and `CAP_NET_ADMIN` to read the host rules,
+through whichever iptables backend (nftables or legacy) holds Docker's `DOCKER-USER` chain.
 The first build needs access to the base image and Debian package repositories. Anyone with access
 to the Docker socket can replace the local image and already controls the host. Without the
 ruleset, computers fail to start with an error naming the script instead of running
 unrestricted; run the script (no restart needed) or set `SANDBOX_COMPUTER_EGRESS=open` and
 recreate the supervisor. Firewall changes after the check can still expose running computers.
+
+Tools that insert their own rules at the top of the `FORWARD` chain (Tailscale, libvirt, and
+similar) push the `DOCKER-USER` jump down; the supervisor then refuses restricted starts rather
+than guess whether the rules above it could bypass the managed drops, because the installer does
+not manage `FORWARD`. To restore the expected order, move the jump back to the first rule:
+
+```bash
+sudo iptables -D FORWARD -j DOCKER-USER && sudo iptables -I FORWARD 1 -j DOCKER-USER
+sudo ip6tables -D FORWARD -j DOCKER-USER && sudo ip6tables -I FORWARD 1 -j DOCKER-USER
+```
 
 When `SANDBOX_COMPUTER_EGRESS` is unset, the Compose files use `auto`: the supervisor runs the
 same check and uses restricted egress if the ruleset is in place, otherwise open egress with a
@@ -97,8 +108,8 @@ public resolvers (comma-separated IP addresses, such as `1.1.1.1,1.0.0.1`) and r
 supervisor; each computer picks the servers up on its next provision. When
 `SANDBOX_COMPUTER_DNS` is set, computers with restricted or `auto` egress start only after one
 of its servers answers from a computer network; a start that fails this check retries it on the
-next start. The check runs from an IPv4-only network and rejects IPv6 servers or more than three
-servers rather than silently skipping them.
+next start. Once the ruleset is verified, the check rejects IPv6 servers or more than three
+servers rather than silently skipping them; before that, `auto` still falls back to open egress.
 
 ### Opening egress
 

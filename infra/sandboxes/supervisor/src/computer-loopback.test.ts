@@ -679,6 +679,60 @@ describe("restricted egress rekeying", () => {
     expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(2);
   });
 
+  it("shares one re-check among provisions that waited on the first probe", async () => {
+    // Distinct bots: the lifecycle lock serializes same-bot provisions, so the
+    // waiters must be concurrent provisions for different bots.
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "auto");
+    const network = { remove: vi.fn().mockResolvedValue(undefined) };
+    const container = {
+      id: "new-container-id",
+      start: vi.fn().mockResolvedValue(undefined),
+      inspect: vi.fn().mockResolvedValue({
+        State: { Running: true },
+        HostConfig: { PortBindings: {} },
+      }),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.docker.getImage.mockReturnValue({ inspect: vi.fn().mockResolvedValue({ Id: "image" }) });
+    mocks.docker.createNetwork.mockResolvedValue(network);
+    mocks.docker.createContainer.mockResolvedValue(container);
+    mocks.docker.listContainers.mockResolvedValue([]);
+    // The first probe settles auto mode to restricted; the re-check it triggers
+    // is held open so both waiters must share it instead of each probing again.
+    let releaseRecheck: () => void = () => {};
+    const recheck = new Promise<void>((resolve) => {
+      releaseRecheck = resolve;
+    });
+    mocks.verifyRestrictedEgress.mockResolvedValueOnce(undefined).mockReturnValueOnce(recheck);
+    const { supervisorApp } = await import("./index.js");
+    const provision = (botId: string) =>
+      supervisorApp.request("/computers", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+          "content-type": "application/json",
+          "x-rakazo-bot-id": botId,
+          "x-rakazo-space-id": "space-1",
+        },
+        body: JSON.stringify({
+          botId,
+          spaceId: "space-1",
+          homePath: path.join(process.env.DATA_DIR!, "homes", botId),
+        }),
+      });
+    const requests = [provision("bot-one"), provision("bot-two"), provision("bot-three")];
+    await vi.waitFor(() => expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(2));
+    // Give any straggler request time to reach the gate while the re-check is
+    // still held: a waiter that failed to share would add a third call here.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(2);
+    releaseRecheck();
+    for (const response of await Promise.all(requests)) {
+      expect(response.status).toBe(200);
+    }
+    expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(2);
+  });
+
   it("resumes a computer whose network has the named bridge", async () => {
     vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
     const botNet = computerNetworkNameFor("bot");

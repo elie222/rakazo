@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { REQUIRED_V4_DROPS, REQUIRED_V6_DROPS } from "./egress-attest.js";
 import {
   cleanupAbandonedProbeNetworks,
+  EgressNotEnforced,
   egressProbeScript,
   egressProbeVerdict,
   verifyRestrictedEgress,
@@ -207,6 +208,18 @@ describe("egress probe", () => {
     await expect(
       verifyRestrictedEgress(docker, "computer:test", ["1.1.1.1", "2606:4700::1111"]),
     ).rejects.toThrow("SANDBOX_COMPUTER_DNS must list IPv4 servers");
+  });
+
+  it("lets auto fall back to open despite unusable DNS settings when the rules are missing", async () => {
+    // The DNS list is validated only once the rules are shown to be in place,
+    // so a pre-ruleset install with a long or IPv6 DNS list keeps working.
+    const { docker } = fakeDocker({ statusCode: 3 });
+    await expect(
+      verifyRestrictedEgress(docker, "computer:test", ["2606:4700::1111"]),
+    ).rejects.toBeInstanceOf(EgressNotEnforced);
+    await expect(
+      verifyRestrictedEgress(docker, "computer:test", ["1.1.1.1", "1.0.0.1", "9.9.9.9", "8.8.8.8"]),
+    ).rejects.toBeInstanceOf(EgressNotEnforced);
   });
 
   describe.skipIf(process.platform !== "linux")("DNS check", () => {

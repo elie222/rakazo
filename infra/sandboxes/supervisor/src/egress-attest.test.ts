@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,6 +9,7 @@ import type Docker from "dockerode";
 import { describe, expect, it, vi } from "vitest";
 import {
   ATTEST_IMAGE,
+  ATTEST_SCRIPT,
   attestImageEnsurer,
   attestRestrictedEgress,
   parseAttestation,
@@ -75,6 +77,17 @@ describe("egress attestation", () => {
     expect(() => verifyAttestation(withForeign)).not.toThrow(EgressNotEnforced);
   });
 
+  it("rejects a foreign rule at the head of INPUT without falling back to open", () => {
+    // A Tailscale or libvirt rule inserted at the top of INPUT must not read as
+    // "rules not installed" in auto mode.
+    const withForeign = managedIptables().replace(
+      "==RAKAZO-V4INPUT==\n",
+      "==RAKAZO-V4INPUT==\n-A INPUT -i tailscale0 -j ACCEPT\n",
+    );
+    expect(() => verifyAttestation(withForeign)).toThrow(/precedes the managed rule/);
+    expect(() => verifyAttestation(withForeign)).not.toThrow(EgressNotEnforced);
+  });
+
   it("rejects a missing DOCKER-USER chain", () => {
     const missing = managedIptables().replace(
       "==RAKAZO-V4USER==\n",
@@ -98,6 +111,16 @@ describe("egress attestation", () => {
     expect(() => verifyAttestation(globalV6)).toThrow(/could not read v6 iptables/);
   });
 
+  it("accepts a host where /proc/net/if_inet6 is absent (IPv6 disabled)", () => {
+    // The kernel without IPv6 has no if_inet6 file at all; the install script
+    // reads that as "no IPv6" and skips the v6 rules, so verification must too.
+    const noV6 = managedIptables().replace(
+      "==RAKAZO-IFINET6==\n",
+      "==RAKAZO-IFINET6==\nifinet6-absent\n",
+    );
+    expect(() => verifyAttestation(noV6)).not.toThrow();
+  });
+
   it("refuses unreadable or malformed host IPv6 state", () => {
     for (const value of ["ifinet6-unreadable", "malformed"]) {
       const output = managedIptables().replace(
@@ -116,31 +139,72 @@ describe("egress attestation", () => {
     );
   });
 
-  it("builds the probe image from the repository context only when missing", async () => {
+  it("builds the probe image from the repository context only when its tag is missing", async () => {
     const context = mkdtempSync(path.join(tmpdir(), "rakazo-attest-"));
     writeFileSync(path.join(context, "Dockerfile"), "FROM scratch\n");
+    const expectedTag = createHash("sha256")
+      .update(readFileSync(path.join(context, "Dockerfile")))
+      .digest("hex")
+      .slice(0, 16);
+    const expectedImage = `${ATTEST_IMAGE}:${expectedTag}`;
     const buildImage = vi.fn().mockResolvedValue(Readable.from(['{"stream":"built"}\n']));
     const present = {
       getImage: vi.fn().mockReturnValue({ inspect: vi.fn().mockResolvedValue({}) }),
       buildImage,
     } as unknown as Docker;
-    await expect(attestImageEnsurer(present, context)()).resolves.toBeUndefined();
+    await expect(attestImageEnsurer(present, context)()).resolves.toBe(expectedImage);
     expect(buildImage).not.toHaveBeenCalled();
     const inspect = vi.fn().mockRejectedValueOnce({ statusCode: 404 }).mockResolvedValue({});
     const missing = {
       getImage: vi.fn().mockReturnValue({ inspect }),
       buildImage,
     } as unknown as Docker;
-    await expect(attestImageEnsurer(missing, context)()).resolves.toBeUndefined();
+    await expect(attestImageEnsurer(missing, context)()).resolves.toBe(expectedImage);
     expect(buildImage).toHaveBeenCalledWith(
       { context, src: ["Dockerfile"] },
       expect.objectContaining({
-        t: ATTEST_IMAGE,
+        t: expectedImage,
         version: "2",
         abortSignal: expect.any(AbortSignal),
       }),
     );
     expect(inspect).toHaveBeenCalledTimes(2);
+  });
+
+  it("rebuilds the probe image when the Dockerfile content changes", async () => {
+    const context = mkdtempSync(path.join(tmpdir(), "rakazo-attest-"));
+    writeFileSync(path.join(context, "Dockerfile"), "FROM scratch\n");
+    const firstTag = createHash("sha256")
+      .update(readFileSync(path.join(context, "Dockerfile")))
+      .digest("hex")
+      .slice(0, 16);
+    const inspect = vi
+      .fn()
+      .mockRejectedValueOnce({ statusCode: 404 }) // first build
+      .mockResolvedValueOnce({}) // first build verified
+      .mockRejectedValueOnce({ statusCode: 404 }) // changed Dockerfile
+      .mockResolvedValueOnce({}); // second build verified
+    const buildImage = vi
+      .fn()
+      .mockResolvedValueOnce(Readable.from(['{"stream":"built"}\n']))
+      .mockResolvedValueOnce(Readable.from(['{"stream":"built again"}\n']));
+    const docker = {
+      getImage: vi.fn().mockReturnValue({ inspect }),
+      buildImage,
+    } as unknown as Docker;
+    const first = await attestImageEnsurer(docker, context)();
+    expect(first).toBe(`${ATTEST_IMAGE}:${firstTag}`);
+    // A host that already has the first build still rebuilds after the context
+    // changes: the new content hashes to a new tag the engine does not have.
+    writeFileSync(path.join(context, "Dockerfile"), "FROM scratch AS changed\n");
+    const second = await attestImageEnsurer(docker, context)();
+    const secondTag = createHash("sha256")
+      .update(readFileSync(path.join(context, "Dockerfile")))
+      .digest("hex")
+      .slice(0, 16);
+    expect(second).toBe(`${ATTEST_IMAGE}:${secondTag}`);
+    expect(second).not.toBe(first);
+    expect(buildImage).toHaveBeenCalledTimes(2);
   });
 
   it("fails closed when the build reports an error in its progress stream", async () => {
@@ -209,9 +273,20 @@ describe("egress attestation", () => {
       "==RAKAZO-V4FORWARD==\n-A FORWARD -i rakazo-c+ -j ACCEPT\n",
     );
     expect(() => verifyAttestation(shadowed)).toThrow(
-      /FORWARD chain filters traffic before DOCKER-USER/,
+      /rules above the DOCKER-USER jump .* could bypass the managed rules/,
     );
     expect(() => verifyAttestation(shadowed)).not.toThrow(EgressNotEnforced);
+  });
+
+  it("treats an ambiguous iptables backend as unverifiable", () => {
+    // When both the nft and legacy views hold a FORWARD and DOCKER-USER chain,
+    // there is no telling which one Docker filters through.
+    const ambiguous = managedIptables()
+      .replace("==RAKAZO-V4USER==\n", "==RAKAZO-V4USER==\niptables-ambiguous\n")
+      .replace("==RAKAZO-V4INPUT==\n", "==RAKAZO-V4INPUT==\niptables-ambiguous\n")
+      .replace("==RAKAZO-V4FORWARD==\n", "==RAKAZO-V4FORWARD==\niptables-ambiguous\n");
+    expect(() => verifyAttestation(ambiguous)).toThrow(/could not read v4 iptables/);
+    expect(() => verifyAttestation(ambiguous)).not.toThrow(EgressNotEnforced);
   });
 
   it("treats an ip6tables command failure as unverifiable", () => {
@@ -275,6 +350,7 @@ describe("egress attestation", () => {
         CapDrop: ["ALL"],
         CapAdd: ["NET_ADMIN"],
         ReadonlyRootfs: true,
+        Tmpfs: { "/run": "rw" },
       }),
     );
     expect(options.Labels).toEqual({ "rakazo.egressProbe": "true" });
@@ -294,6 +370,96 @@ describe("egress attestation", () => {
     await expect(attestRestrictedEgress(docker, "computer:test")).rejects.toThrow(
       /attestation probe exited 1/,
     );
+  });
+
+  it("fails closed when the attestation logs never finish streaming", async () => {
+    // A log stream that never ends must not hold the provision (and its
+    // cleanup) forever: the deadline covers the log request, not just the exit.
+    vi.useFakeTimers();
+    try {
+      const container = {
+        start: vi.fn().mockResolvedValue(undefined),
+        wait: vi.fn().mockResolvedValue({ StatusCode: 0 }),
+        logs: vi.fn().mockImplementation((_options, callback) => {
+          callback(null, new EventEmitter());
+        }),
+        remove: vi.fn().mockResolvedValue(undefined),
+      };
+      const docker = {
+        createContainer: vi.fn().mockResolvedValue(container),
+      } as unknown as Docker;
+      const probe = attestRestrictedEgress(docker, "computer:test");
+      const assertion = expect(probe).rejects.toThrow(/did not finish streaming/);
+      await vi.advanceTimersByTimeAsync(31_000);
+      await assertion;
+      expect(container.remove).toHaveBeenCalledWith({ force: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The attest script must read the same iptables backend Docker and the
+  // installer wrote to: Debian's default `iptables` is the nft variant, so the
+  // script picks per family the variant whose FORWARD and DOCKER-USER chains
+  // exist. Stubs mirror that split: legacy holds the managed rules, nft has no
+  // Docker chains, and `cat` stands in for /proc/net/if_inet6.
+  it("reads the rules through the iptables backend that holds Docker's chains", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "rakazo-attest-"));
+    for (const tool of ["iptables-nft", "ip6tables-nft", "ip6tables-legacy"]) {
+      writeFileSync(path.join(dir, tool), "#!/usr/bin/env bash\nexit 1\n", { mode: 0o755 });
+    }
+    const dump = [
+      'case "$4" in',
+      "  DOCKER-USER)",
+      "    printf '%s\\n' '-A DOCKER-USER -i rakazo-c+ -o rakazo-c+ -j RETURN' " +
+        REQUIRED_V4_DROPS.map((cidr) => `'-A DOCKER-USER -i rakazo-c+ -d ${cidr} -j DROP'`).join(
+          " ",
+        ) +
+        "    ;;",
+      "  INPUT)",
+      "    printf '%s\\n' '-A INPUT -i rakazo-c+ -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT' '-A INPUT -i rakazo-c+ -j DROP'",
+      "    ;;",
+      "  FORWARD)",
+      "    echo '-A FORWARD -j DOCKER-USER'",
+      "    ;;",
+      "esac",
+    ].join("\n");
+    writeFileSync(path.join(dir, "iptables-legacy"), `#!/usr/bin/env bash\n${dump}\n`, {
+      mode: 0o755,
+    });
+    writeFileSync(
+      path.join(dir, "cat"),
+      "#!/usr/bin/env bash\necho '00000000000000000000000000000001 01 80 10 80 lo'\n",
+      { mode: 0o755 },
+    );
+    const run = spawnSync("bash", ["-c", ATTEST_SCRIPT], {
+      encoding: "utf8",
+      env: { PATH: `${dir}:/usr/bin:/bin` },
+    });
+    expect(run.status).toBe(0);
+    // The nft stub fails, so any v4 output can only come from the legacy one.
+    expect(run.stdout).toContain("-A FORWARD -j DOCKER-USER");
+    expect(run.stdout).toContain("iptables-failed");
+    expect(() => verifyAttestation(run.stdout)).not.toThrow();
+  });
+
+  it("treats a host with both iptables backends as unverifiable", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "rakazo-attest-"));
+    for (const tool of ["iptables-nft", "iptables-legacy", "ip6tables-nft", "ip6tables-legacy"]) {
+      writeFileSync(path.join(dir, tool), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
+    }
+    writeFileSync(
+      path.join(dir, "cat"),
+      "#!/usr/bin/env bash\necho '00000000000000000000000000000001 01 80 10 80 lo'\n",
+      { mode: 0o755 },
+    );
+    const run = spawnSync("bash", ["-c", ATTEST_SCRIPT], {
+      encoding: "utf8",
+      env: { PATH: `${dir}:/usr/bin:/bin` },
+    });
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("iptables-ambiguous");
+    expect(() => verifyAttestation(run.stdout)).toThrow(/could not read v4 iptables/);
   });
 
   // The required rule lists and the installer must never drift apart: run the

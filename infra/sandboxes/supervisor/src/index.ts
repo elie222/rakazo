@@ -1348,6 +1348,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
 // In both modes, once the rules are in place, a configured SANDBOX_COMPUTER_DNS that no server
 // answers fails the provision the same way, so the next one probes again.
 let autoEgressSettled: Promise<void> | undefined;
+// One shared re-check for provisions that waited on an earlier probe: each
+// waiter must be covered by a verification that finished after it arrived, but
+// a burst of concurrent starts shares one re-check instead of each running its
+// own probe; the next provision after it settles starts a new one.
+let autoEgressRecheck: Promise<void> | undefined;
 async function ensureRestrictedEgressEnforced() {
   if (screenNetworkMode === "internal") return;
   if (computerEgressSetting === "auto") {
@@ -1374,7 +1379,15 @@ async function ensureRestrictedEgressEnforced() {
     );
     await autoEgressSettled;
     if (!firstProbe && computerEgressMode === "restricted") {
-      await verifyRestrictedEgress(docker, COMPUTER_IMAGE, computerDns, ensureAttestImage);
+      autoEgressRecheck ??= verifyRestrictedEgress(
+        docker,
+        COMPUTER_IMAGE,
+        computerDns,
+        ensureAttestImage,
+      ).finally(() => {
+        autoEgressRecheck = undefined;
+      });
+      await autoEgressRecheck;
     }
     return;
   }
