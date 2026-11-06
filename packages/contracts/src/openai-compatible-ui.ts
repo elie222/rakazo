@@ -1,4 +1,4 @@
-import type { CompatibleEndpointPreset, ModelCatalogEntry } from "./domain.js";
+import type { CompatibleEndpointPreset, ModelCatalogEntry } from "./model-connections.js";
 
 /** Every hosted service the catalog offers for compatible connections. */
 export function compatibleEndpointPresets(

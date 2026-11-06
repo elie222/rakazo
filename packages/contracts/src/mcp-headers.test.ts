@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { McpServerConfigInput } from "./domain.js";
-import { McpHeadersSchema } from "./mcp.js";
+import { McpHeadersSchema, McpServerConfigInput } from "./mcp.js";
 
 describe("MCP headers", () => {
   it.each(["streamable_http", "sse"])("accepts underscore headers for %s", (transport) => {

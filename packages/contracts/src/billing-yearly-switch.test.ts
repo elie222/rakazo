@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { BillingStatus } from "./domain.js";
-import { byokYearlySwitchSavings } from "./domain.js";
+import type { BillingStatus } from "./billing.js";
+import { byokYearlySwitchSavings } from "./billing.js";
 
 function status(overrides: Partial<BillingStatus> = {}): BillingStatus {
   return {
