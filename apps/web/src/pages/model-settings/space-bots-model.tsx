@@ -19,18 +19,21 @@ export function SpaceBotsModelButton({ mainModelKey }: { mainModelKey: string })
   const [pending, setPending] = useState(false);
   const shownKey = useRef<string | null>(null);
   const latest = useRef(0);
+  const known = useRef<Bot[]>([]);
 
   // Only the newest list counts, so a slow earlier one cannot bring back old overrides.
+  // A replaced request gives undefined; a failed one, the last list that loaded.
   const load = useCallback(() => {
     const request = ++latest.current;
-    return rpc.bots
-      .list()
-      .then((next) => {
-        if (request !== latest.current) return null;
+    return rpc.bots.list().then(
+      (next) => {
+        if (request !== latest.current) return undefined;
+        known.current = next;
         setBots(next);
         return next;
-      })
-      .catch(() => null);
+      },
+      () => (request === latest.current ? known.current : undefined),
+    );
   }, [rpc]);
 
   const pinned = bots ? botsWithOwnModel(bots) : [];
@@ -54,12 +57,10 @@ export function SpaceBotsModelButton({ mainModelKey }: { mainModelKey: string })
       const failed = targets.filter((_, index) => results[index]?.status === "rejected");
       // Switched bots drop off at once, even if the refresh below fails.
       const switched = new Set(targets.filter((bot) => !failed.includes(bot)).map((bot) => bot.id));
-      setBots(
-        (current) =>
-          current?.map((bot) =>
-            switched.has(bot.id) ? { ...bot, modelProvider: null, modelId: null } : bot,
-          ) ?? null,
+      known.current = known.current.map((bot) =>
+        switched.has(bot.id) ? { ...bot, modelProvider: null, modelId: null } : bot,
       );
+      setBots(known.current);
       if (failed.length) {
         const failedNames = failed.map((bot) => bot.name).join(", ");
         toast.error(t`Could not switch ${failedNames}. Try again.`);

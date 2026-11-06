@@ -124,6 +124,14 @@ it("asks only when the main model changes and some bots would not follow", async
   expect(toast.dismiss).toHaveBeenCalledWith("space-bots-model");
 });
 
+it("still names the bots when the list fails right after the main model changes", async () => {
+  bots.list.mockResolvedValueOnce(list).mockRejectedValue(new Error("offline"));
+  const { rerender, unmount } = await render();
+  await rerender("s:a:two");
+  expect(toast).toHaveBeenCalledWith("Archie, Inbox keep their own model", expect.anything());
+  unmount();
+});
+
 it("drops switched bots even when the refresh after the switch fails", async () => {
   bots.list.mockResolvedValueOnce(list).mockRejectedValue(new Error("offline"));
   bots.update.mockResolvedValue({});
