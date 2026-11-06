@@ -231,6 +231,8 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "ask_user",
   "connect_app",
   "attach_file",
+  // Only confirms the bot's own address.
+  "claim_email_address",
   "delete_email",
   "end_call",
   "feedback",

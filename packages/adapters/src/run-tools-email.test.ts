@@ -504,5 +504,7 @@ describe("claim_email_address", () => {
       "claim_email_address",
     );
     expect(toolRequiresExplicitApproval("claim_email_address")).toBe(true);
+    // Its result is the bot's own address, so a later preference change in the run still works.
+    expect(toolResultTaintsRun("claim_email_address")).toBe(false);
   });
 });
