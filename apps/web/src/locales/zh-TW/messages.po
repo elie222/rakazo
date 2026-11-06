@@ -18,11 +18,6 @@ msgstr ""
 msgid " (unread)"
 msgstr "（未讀）"
 
-#. placeholder {0}: pinned.length
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
-msgstr "{0, plural, one {# 個機器人使用自己的模型：} other {# 個機器人使用自己的模型：}}"
-
 #. placeholder {0}: servers.length
 #: src/pages/PluginsOverlay.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
@@ -63,11 +58,6 @@ msgstr "{0, plural, other {# 個空間}}"
 #: src/pages/McpServersOverlay.tsx
 msgid "{0, plural, one {# tool} other {# tools}}"
 msgstr "{0, plural, other {# 個工具}}"
-
-#. placeholder {0}: pinned.length
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
-msgstr "{0, plural, one {將 # 個機器人切換為空間預設模型？} other {將 # 個機器人切換為空間預設模型？}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/model-settings/connection-controls.tsx
@@ -235,10 +225,6 @@ msgstr "{label}，空白"
 msgid "{minutes}m ago"
 msgstr "{minutes} 分鐘前"
 
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
-msgstr "{moved, plural, one {# 個機器人已改用空間預設模型。} other {# 個機器人已改用空間預設模型。}}"
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "{name} (same name as a built-in skill)"
 msgstr "{name}（與內建技能同名）"
@@ -269,6 +255,14 @@ msgstr "{name} 選項"
 #: src/lib/browser-notifications.ts
 msgid "{name} stopped"
 msgstr "{name} 已停止"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{names} keep their own model"
+msgstr ""
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{names} keeps its own model"
+msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -1168,10 +1162,6 @@ msgstr "機器人"
 msgid "Bot is watching, not acting"
 msgstr "機器人只觀察，不操作"
 
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Bot models"
-msgstr "機器人模型"
-
 #: src/pages/shell/computer-overlay.tsx
 msgid "Bot screen"
 msgstr "機器人螢幕"
@@ -1203,6 +1193,10 @@ msgstr ""
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
 msgstr "擁有專屬電腦與瀏覽器的機器人"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Bots with their own model"
+msgstr ""
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Brain label"
@@ -1250,6 +1244,10 @@ msgstr "撥號中…"
 msgid "Calls"
 msgstr "通話"
 
+#: src/pages/settings-nav.ts
+msgid "Calls, dictation, and replies read aloud."
+msgstr ""
+
 #: src/components/pages/SharePopover.tsx
 msgid "Can view without signing in"
 msgstr "無需登入即可檢視"
@@ -1278,7 +1276,6 @@ msgstr "無法讀取影像"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
@@ -1383,6 +1380,10 @@ msgstr "聊天設定"
 msgid "Chat with your bot from Slack."
 msgstr "在 Slack 與你的機器人聊天。"
 
+#: src/pages/settings-nav.ts
+msgid "Chat with your bots from other apps."
+msgstr ""
+
 #: src/lib/localized-provider-hint.ts
 msgid "ChatGPT subscription"
 msgstr "ChatGPT 訂閱"
@@ -1456,6 +1457,10 @@ msgstr "選擇機器人形狀和顏色，或上傳圖片"
 #: src/pages/shell/composer-error.tsx
 msgid "Choose a model"
 msgstr "選擇模型"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Choose a model that can see the screen"
+msgstr ""
 
 #: src/pages/Auth.tsx
 msgid "Choose a new password"
@@ -1706,6 +1711,10 @@ msgstr "電腦已停止"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Computer-use model"
 msgstr "電腦操作模型"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model…"
+msgstr ""
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4003,6 +4012,10 @@ msgstr ""
 
 #: src/components/vault/kinds.tsx
 msgid "Logins"
+msgstr ""
+
+#: src/pages/settings-nav.ts
+msgid "Logins and keys your bots can use."
 msgstr ""
 
 #: src/pages/shell/agent-import.tsx
@@ -6503,7 +6516,6 @@ msgid "Supports thinking"
 msgstr "支援思考"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "切換"
 
@@ -6605,6 +6617,10 @@ msgstr ""
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
 msgstr "瀏覽器反覆中斷麥克風連線。請重新啟動語音輸入。"
 
+#: src/pages/settings-nav.ts
+msgid "The computer your bots work on."
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "連線超時。"
@@ -6655,10 +6671,6 @@ msgstr "共用連結將失效"
 #: src/components/ModelCredits.tsx
 msgid "The unused difference is credited to your next invoice."
 msgstr "未使用的差額將抵扣到你的下一張帳單。"
-
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Their own model is cleared. You can pick one again in each bot."
-msgstr "已清除機器人的個別模型設定。你可以隨時為各機器人重新選擇模型。"
 
 #: src/pages/shell/agent-import.tsx
 msgid "These files are too large to import."
@@ -6991,6 +7003,14 @@ msgstr "請重試測試。"
 msgid "Tuesday"
 msgstr "週二"
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Turn off"
+msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Turn on"
+msgstr ""
+
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Type"
@@ -7159,6 +7179,10 @@ msgstr "在此機器人中使用"
 msgid "Use letters, numbers, dots, dashes or underscores"
 msgstr "請使用字母、數字、點、連字號或底線"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Use main model"
+msgstr ""
+
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
 msgstr "使用我的訂閱或 API 金鑰"
@@ -7170,10 +7194,6 @@ msgstr "輸入密碼時，請使用受保護的輸入。"
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
 msgstr "使用 Rakazo 額度"
-
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Use space default"
-msgstr "使用空間預設模型"
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Use up to 512 letters, digits, _ or -."
@@ -7359,6 +7379,10 @@ msgstr "回傳內容"
 msgid "What to watch"
 msgstr "監視內容"
 
+#: src/pages/settings-nav.ts
+msgid "What your bots remember between chats."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "When a webhook fires"
 msgstr "當 Webhook 觸發時"
@@ -7366,6 +7390,10 @@ msgstr "當 Webhook 觸發時"
 #: src/pages/RoutineEditor.tsx
 msgid "When an email arrives"
 msgstr "收到電子郵件時"
+
+#: src/pages/settings-nav.ts
+msgid "When bots check with you before acting."
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
@@ -7388,6 +7416,14 @@ msgstr "何時使用"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "機器人應在哪裡執行？"
+
+#: src/pages/settings-nav.ts
+msgid "Where your bots pay from."
+msgstr ""
+
+#: src/pages/settings-nav.ts
+msgid "Which LLMs your bots use."
+msgstr ""
 
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
