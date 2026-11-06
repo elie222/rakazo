@@ -334,7 +334,9 @@ describe("egress attestation", () => {
       .replace("==RAKAZO-V4USER==\n", "==RAKAZO-V4USER==\niptables-ambiguous\n")
       .replace("==RAKAZO-V4INPUT==\n", "==RAKAZO-V4INPUT==\niptables-ambiguous\n")
       .replace("==RAKAZO-V4FORWARD==\n", "==RAKAZO-V4FORWARD==\niptables-ambiguous\n");
-    expect(() => verifyAttestation(ambiguous)).toThrow(/could not read v4 iptables/);
+    expect(() => verifyAttestation(ambiguous)).toThrow(
+      /both the nft and legacy v4 iptables backends hold Docker chains/,
+    );
     expect(() => verifyAttestation(ambiguous)).not.toThrow(EgressNotEnforced);
   });
 
@@ -511,7 +513,9 @@ describe("egress attestation", () => {
     });
     expect(run.status).toBe(0);
     expect(run.stdout).toContain("iptables-ambiguous");
-    expect(() => verifyAttestation(run.stdout)).toThrow(/could not read v4 iptables/);
+    expect(() => verifyAttestation(run.stdout)).toThrow(
+      /both the nft and legacy v4 iptables backends hold Docker chains/,
+    );
   });
 
   // The strongest form of the single-source check: an attestation dump built

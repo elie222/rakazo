@@ -282,6 +282,13 @@ function verifyIptablesFamily(sections: Record<string, string>, family: "v4" | "
     ] as const
   ).find(([, section]) => !chainReadable(section));
   if (failed) {
+    if (failed[1]?.startsWith("iptables-ambiguous")) {
+      // A host that switched backends without a reboot can hold Docker chains
+      // in both views; which one filters traffic cannot be told apart.
+      throw new Error(
+        `cannot verify restricted egress: both the nft and legacy ${family} iptables backends hold Docker chains; flush the stale backend's Docker chains (or reboot), restart Docker, and re-run infra/compose/restrict-computer-egress.sh (see docs/self-host-docker-computers.md)`,
+      );
+    }
     // An unreadable chain does not prove enforcement is absent. In particular,
     // a failed ip6tables command is not evidence that IPv6 rules are missing.
     throw new Error(

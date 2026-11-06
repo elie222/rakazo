@@ -86,6 +86,11 @@ libvirt can also insert) is repaired the same way the installer repairs a stale 
 `sudo bash infra/compose/restrict-computer-egress.sh`, which re-inserts the managed rules at the
 top. The start error names the rules it found above them.
 
+A host that switched iptables backends without a reboot can hold Docker chains in both the nft
+and legacy views; the supervisor then refuses restricted starts rather than guess which backend
+filters traffic. Flush the stale backend's Docker chains (or reboot), restart Docker, and re-run
+the installer.
+
 When `SANDBOX_COMPUTER_EGRESS` is unset, the Compose files use `auto`: the supervisor runs the
 same check and uses restricted egress if the ruleset is in place, otherwise open egress with a
 warning in its log. It keeps the first completed answer; a check that could not finish (a Docker
