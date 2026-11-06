@@ -77,6 +77,8 @@ async function runTurn(
     graphical?: boolean;
     /** The bot has a linked messaging chat. */
     linkedChat?: boolean;
+    /** Who made the bot, and so whose chat it is linked to; the run is user-1's. */
+    botUserId?: string;
     replyMode?: "chat" | "messages";
     /** The run belongs to a group chat; `optional` is whether the send named nobody. */
     group?: { optional: boolean; namedWhileRunning?: boolean };
@@ -172,6 +174,7 @@ async function runTurn(
     bot: {
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.botId,
+        userId: options.botUserId ?? "user-1",
         name: "Assistant",
         title: "Assistant",
         description: "Test assistant",
@@ -791,6 +794,7 @@ describe("notes that can't be posted as messages", () => {
       linkedChat = true,
       intent: "request" | "question" | "fyi" = "request",
       failMessageOnce?: Error,
+      botUserId?: string,
     ) => {
       const results: unknown[] = [];
       let seen: AgentRunRequest | undefined;
@@ -799,6 +803,7 @@ describe("notes that can't be posted as messages", () => {
         trigger,
         linkedChat,
         failMessageOnce,
+        botUserId,
         runtime: async function* (request) {
           seen = request;
           offered = request.tools.some((tool) => tool.name === "notify_owner");
@@ -874,6 +879,16 @@ describe("notes that can't be posted as messages", () => {
       );
       expect(other.notices).toEqual([]);
     }
+    // In a shared Space the linked chat is the bot maker's; another member's turn stays in the app.
+    const member = await turn("bot_message", true, "request", undefined, "user-2");
+    expect(member.offered).toBe(false);
+    expect(member.results).toEqual(
+      Array(5).fill({
+        error:
+          "notify_owner needs a turn answering another bot's request or question, and a linked chat.",
+      }),
+    );
+    expect(member.notices).toEqual([]);
     expect((await turn("user")).instructions).toContain("mirrored to their chat");
     expect((await turn("bot_message", true, "fyi")).instructions).toContain(
       "mirrored to their chat",

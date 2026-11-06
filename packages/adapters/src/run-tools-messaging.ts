@@ -285,6 +285,7 @@ export const messagingTools: ToolHandlers = {
     const { reply } = ctx.state;
     if (
       !answersAnotherBot(run.trigger, ctx.source.peerMessage) ||
+      run.userId !== bot.userId ||
       !(await deps.messaging?.hasIdentity(bot.id))
     )
       return call.finish({

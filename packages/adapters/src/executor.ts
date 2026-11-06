@@ -1427,7 +1427,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
-            linkedChat: hasMessagingIdentity && answersAnotherBot(run.trigger, peerMessage),
+            // The chat link is the bot maker's, so another member's turn has no chat to notify.
+            linkedChat:
+              hasMessagingIdentity &&
+              run.userId === bot.userId &&
+              answersAnotherBot(run.trigger, peerMessage),
             voiceCall,
             // Every member already got a message that names nobody, so a handoff only repeats it.
             disabledBuiltinTools: groupReplyOptional
