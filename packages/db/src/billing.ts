@@ -98,7 +98,7 @@ export type ByokTrialCheckoutHold = {
  * it. Returns null when a fresh hold for another organization wins the race.
  */
 export async function reserveByokTrialCheckout(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   organizationId: string,
 ): Promise<ByokTrialCheckoutHold | null> {
   const owners = await prisma.member.findMany({
@@ -162,7 +162,7 @@ export async function extendByokTrialCheckout(
 
 /** Releases every hold the organization's open checkout sessions had on their owners' trial. */
 export async function releaseByokTrialCheckouts(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   organizationId: string,
 ): Promise<void> {
   await prisma.user.updateMany({
@@ -333,6 +333,23 @@ export async function renewCheckoutLease(
     data: { checkoutLeaseExpiresAt: new Date(now.getTime() + ttlMs) },
   });
   return count > 0;
+}
+
+/**
+ * Locks the lease row while this holder still has the checkout lease, so no other claimant
+ * can take it until the transaction ends. Returns false once the lease is lost.
+ */
+export async function lockCheckoutLease(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  leaseId: string,
+): Promise<boolean> {
+  const rows = await tx.$queryRaw<unknown[]>(Prisma.sql`
+    SELECT 1 FROM billing_accounts
+    WHERE "organizationId" = ${organizationId} AND "checkoutLeaseId" = ${leaseId}
+      AND "checkoutLeaseExpiresAt" > ${new Date()}
+    FOR UPDATE`);
+  return rows.length > 0;
 }
 
 /** Whether the checkout lease is still recorded for this holder. */
