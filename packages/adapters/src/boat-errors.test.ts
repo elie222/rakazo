@@ -1,6 +1,11 @@
 import type * as TimersPromises from "node:timers/promises";
 import { FetchError, ResponseError } from "@boatdev/sdk";
-import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import {
+  SandboxProviderAccountError,
+  SandboxRateLimitError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
+import { COMPUTER_PROVIDER_UNAVAILABLE_ERROR } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BoatApiError, BoatRequestGate, boatResponseError, wrapBoatCall } from "./boat-errors.js";
 import { BoatSandboxProvider } from "./boat-sandbox.js";
@@ -349,7 +354,9 @@ describe("Boat API errors", () => {
     expect((edge as Error).cause).toMatchObject({ response: { status: 525 } });
 
     const billing = await failing(402, "billing_required")().catch((failure: unknown) => failure);
+    expect(billing).toBeInstanceOf(SandboxProviderAccountError);
     expect(billing).toBeInstanceOf(SandboxUnresponsiveError);
+    expect((billing as Error).message).toBe(COMPUTER_PROVIDER_UNAVAILABLE_ERROR);
     expect((billing as Error).cause).toMatchObject({ code: "billing_required" });
 
     const forbidden = await failing(403, "api_key_action_forbidden")().catch(
