@@ -17,7 +17,7 @@ import {
 } from "@rakazo/ui-web/components/ui/collapsible";
 import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
-import { ComputerModePicker } from "./bot-panel";
+import { ComputerModePicker } from "./bot-settings-sections";
 import { useImportStatusText } from "./import-status";
 import type { AgentImportSource } from "./use-agent-import-source";
 

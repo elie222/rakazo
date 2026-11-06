@@ -4,13 +4,19 @@ import { isModelCredentialRejected } from "@rakazo/adapter-kit";
 import { containsSecret, redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  kickModelCredentialRefresh,
+  refreshExpiredModelCredential,
+  refreshStoredModelCredential,
+  resolveStoredModelAuth,
+} from "./model-credential-refresh.js";
+import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
 import { PiRuntimeCredentialStore } from "./pi-credentials.js";
 import type { PiOAuthBegin } from "./pi-oauth.js";
 import {
   CHATGPT_OAUTH_PROVIDER,
   COPILOT_OAUTH_PROVIDER,
   isRetiredModelCredentialError,
-  kickModelCredentialRefresh,
   loadProviderOAuth,
   matchesFailedOAuthSecret,
   OAUTH_ACCOUNT_CHANGED_ERROR,
@@ -18,15 +24,9 @@ import {
   oauthCredentialAccountId,
   oauthCredentialEmail,
   PiOAuthLogins,
-  parseModelSecret,
   RetiredModelCredentialError,
-  refreshExpiredModelCredential,
-  refreshStoredModelCredential,
   resolveModelApiKey,
   resolveModelAuth,
-  resolveStoredModelAuth,
-  secretValuesToRedact,
-  serializeModelSecret,
   terminalOAuthRefreshErrorMarker,
   tryRetireModelCredential,
   XAI_OAUTH_PROVIDER,
@@ -1291,7 +1291,7 @@ describe("refreshExpiredModelCredential", () => {
     for (let index = 0; index < 3; index += 1) {
       vi.resetModules();
       processes.push({
-        oauth: await import("./pi-oauth.js"),
+        refresh: await import("./model-credential-refresh.js"),
         credentials: await import("./pi-credentials.js"),
       });
     }
@@ -1352,7 +1352,7 @@ describe("refreshExpiredModelCredential", () => {
       held,
       undefined,
       undefined,
-      c.oauth.refreshStoredModelCredential(
+      c.refresh.refreshStoredModelCredential(
         prisma,
         secretStore,
         scope,
@@ -1365,7 +1365,7 @@ describe("refreshExpiredModelCredential", () => {
     );
 
     const [, started, running] = await Promise.all([
-      a.oauth.refreshExpiredModelCredential(
+      a.refresh.refreshExpiredModelCredential(
         prisma,
         secretStore,
         scope,
@@ -1375,7 +1375,7 @@ describe("refreshExpiredModelCredential", () => {
           oauth,
         },
       ),
-      b.oauth.resolveStoredModelAuth(
+      b.refresh.resolveStoredModelAuth(
         prisma,
         secretStore,
         scope,
