@@ -481,6 +481,52 @@ async function closePage(page: Page) {
   await expect(page.getByTestId("page-view")).toBeHidden();
 }
 
+test("in the macOS app a page's top row sits below the window controls and its close button clicks", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("rakazo.uiAppearance", "dark"));
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-mac-${Date.now()}@rakazo.test`, "password12", "Page Owner");
+  await completeOnboarding(page);
+  const title = "Test dashboard (example data)";
+  await send(
+    page,
+    `call save_page with ${JSON.stringify({ title, source: dashboard("2.1%") })}\nthen say done.`,
+  );
+  await expect(page.getByTestId("page-card")).toHaveCount(1, { timeout: 30_000 });
+  // The desktop app's bridge on macOS, whose traffic lights sit 16px in from the top left.
+  await page.addInitScript(() => {
+    (window as unknown as { rakazoDesktop: { platform: string } }).rakazoDesktop = {
+      platform: "darwin",
+    };
+  });
+  await page.reload();
+  await page
+    .getByTestId("page-card")
+    .getByRole("button", { name: `Open ${title}` })
+    .click();
+  const view = page.getByTestId("page-view");
+  await expect(
+    pageFrame(page, title).getByRole("heading", { name: "Test dashboard", level: 1 }),
+  ).toBeVisible();
+  const close = view.getByRole("button", { name: "Close page" });
+  // Below the 12px traffic lights at y 16, and outside the window's drag areas, which Electron
+  // applies through anything drawn over them.
+  expect((await close.boundingBox())!.y).toBeGreaterThanOrEqual(36);
+  for (const control of [
+    close,
+    view.getByRole("button", { name: title }),
+    view.getByRole("button", { name: "Share" }),
+  ]) {
+    expect(
+      await control.evaluate((el) => getComputedStyle(el).getPropertyValue("app-region")),
+    ).not.toBe("drag");
+  }
+  await captureScreenshot(page, testInfo, "page-full-screen-macos");
+  await close.click();
+  await expect(view).toBeHidden();
+});
+
 test("a page's failures, a deleted page's card, and the Library's Share, search and rename", async ({
   page,
 }, testInfo) => {
