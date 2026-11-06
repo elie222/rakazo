@@ -9,28 +9,34 @@ import { describe, expect, it, vi } from "vitest";
 import { commitBotUpdate } from "./bot-update.js";
 import type { PrismaClient } from "./client.js";
 import { CrossSpaceCommunicationBlockedError } from "./cross-space-communication.js";
-import type { AnswerRunInput } from "./events.js";
+import { followThreadEvents } from "./event-stream.js";
 import {
-  AnswerTooLongError,
-  answerRunInput,
-  answerWaitingRunWithTextInTransaction,
   appendEvent,
-  claimSteering,
   clearThread,
   completedRunBlocks,
-  createPendingSteeringRun,
-  discardAnsweredSteering,
-  finalizeComputerControlRelease,
   finalizeRun,
-  followThreadEvents,
-  pauseRunForInput,
-  pauseRunForTakeover,
   sendUserMessage,
-  settleReleasedTakeoverCards,
 } from "./events.js";
 import { endTakeoverWaits } from "./expire-stuck-run.js";
 import { partialReplyClientNonce, RunHistoryWriteError } from "./messages.js";
 import { installSecurityEventStore } from "./security-events.js";
+import type { AnswerRunInput } from "./thread-ask.js";
+import {
+  AnswerTooLongError,
+  answerRunInput,
+  answerWaitingRunWithTextInTransaction,
+  pauseRunForInput,
+} from "./thread-ask.js";
+import {
+  claimSteering,
+  createPendingSteeringRun,
+  discardAnsweredSteering,
+} from "./thread-steering.js";
+import {
+  finalizeComputerControlRelease,
+  pauseRunForTakeover,
+  settleReleasedTakeoverCards,
+} from "./thread-takeover.js";
 
 class TestFanout implements RealtimeFanout {
   subscriber: ((payload: string) => void) | undefined;
