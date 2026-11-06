@@ -14,6 +14,7 @@ import {
   signInWithCode,
   signUp,
 } from "./api-auth";
+import type * as Endpoint from "./endpoint";
 import type { NativeActionButtonProps } from "./native-controls";
 import { passkeysAvailable, signInWithPasskey } from "./passkey";
 import { loadSessionToken } from "./session";
@@ -128,7 +129,7 @@ vi.mock("./api", () => ({
   rpc: vi.fn(),
 }));
 vi.mock("./endpoint", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./endpoint")>()),
+  ...(await importOriginal<typeof Endpoint>()),
   displayApiHost: () => "example.invalid",
   usesCustomApiBase: () => false,
 }));

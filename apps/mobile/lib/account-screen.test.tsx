@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
+import type * as Api from "./api";
 import type * as ApiAuth from "./api-auth";
 import {
   deleteAccount,
@@ -16,9 +17,11 @@ import {
   requestAccountDeletionCode,
   signOut,
 } from "./api-auth";
+import type * as ApiServer from "./api-server";
 import { replaceWithSignIn } from "./auth-routing";
 import { endCallBeforeSessionEnd } from "./call-session";
 import { promptAccountDeletion } from "./delete-account-prompt";
+import type * as Session from "./session";
 import { registerSettingsSheet } from "./settings-sheet";
 import type * as ThreadFeedback from "./thread-feedback";
 import { hasUnsentSends } from "./thread-feedback";
@@ -216,11 +219,11 @@ vi.mock("../components/settings-group", () => ({
   useStackedSettings: () => false,
 }));
 vi.mock("./api-server", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./api-server")>()),
+  ...(await importOriginal<typeof ApiServer>()),
 }));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./api")>()),
+  ...(await importOriginal<typeof Api>()),
   currentApiBase: () => "http://127.0.0.1:3100",
   rpc: vi.fn(async (method: string) =>
     method === "me"
@@ -244,7 +247,7 @@ vi.mock("./api-auth", () => ({
   updateAccountName: vi.fn(),
 }));
 vi.mock("./session", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./session")>()),
+  ...(await importOriginal<typeof Session>()),
   loadSessionToken: vi.fn(async () => "token"),
 }));
 vi.mock("./app-version", () => ({
