@@ -111,18 +111,19 @@ export async function listSpaceRuns(
   }));
 }
 
-/** Recent lists chats, so one busy chat must not push the others out of the limit. */
+/** Recent lists chats keyed like `activitySections`, so one busy chat must not push the others out of the limit. */
 async function latestFinishedRunPerChat(prisma: PrismaClient, actor: Actor): Promise<string[]> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id FROM (
-      SELECT DISTINCT ON (r."threadId") r.id, r."completedAt", r."updatedAt"
+      SELECT DISTINCT ON (COALESCE(t."groupId", r."botId")) r.id, r."completedAt", r."updatedAt"
       FROM runs r
+      JOIN threads t ON t.id = r."threadId"
       JOIN bots b ON b.id = r."botId"
       WHERE r."spaceId" = ${actor.spaceId}
         AND b."archivedAt" IS NULL
         AND r.trigger NOT IN (${Prisma.join([...BACKGROUND_RUN_TRIGGERS])})
         AND r.status IN (${Prisma.join([...TERMINAL_STATUSES])})
-      ORDER BY r."threadId", r."completedAt" DESC, r."updatedAt" DESC, r.id DESC
+      ORDER BY COALESCE(t."groupId", r."botId"), r."completedAt" DESC, r."updatedAt" DESC, r.id DESC
     ) latest
     ORDER BY "completedAt" DESC, "updatedAt" DESC, id DESC
     LIMIT ${RECENT_LIMIT}`;

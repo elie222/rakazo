@@ -152,7 +152,16 @@ describeRunsList("runs.list activity tracker", () => {
     });
     await seedRun(prisma, quiet.id, "completed", "quiet run", new Date(Date.now() - 86_400_000));
     for (let i = 0; i < 21; i += 1) {
-      await seedRun(prisma, busy.id, "completed", `busy ${i}`, new Date(Date.now() - i * 1_000));
+      // Bridged team-chat conversations get their own threads but are still the bot's chat.
+      const thread = await bridgedThread(prisma, busy.id, `busy-${stamp}-${i}`);
+      await seedRun(
+        prisma,
+        busy.id,
+        "completed",
+        `busy ${i}`,
+        new Date(Date.now() - i * 1_000),
+        thread.id,
+      );
     }
 
     const recent = await rpc<{ runs: RunActivityRow[] }>(app, cookie, "runs/list", {
@@ -281,8 +290,11 @@ async function seedRun(
   status: "queued" | "running" | "completed",
   prompt: string,
   completedAt?: Date | null,
+  threadId?: string,
 ) {
-  const thread = await prisma.thread.findUniqueOrThrow({ where: { botId } });
+  const thread = await prisma.thread.findUniqueOrThrow({
+    where: threadId ? { id: threadId } : { botId },
+  });
   const task = await prisma.task.create({
     data: {
       spaceId: thread.spaceId,
@@ -337,4 +349,22 @@ async function raw(app: App, cookie: string, proc: string, body: unknown) {
     },
     body: JSON.stringify({ json: body }),
   });
+}
+
+async function bridgedThread(prisma: PrismaClient, botId: string, externalKey: string) {
+  const direct = await prisma.thread.findUniqueOrThrow({ where: { botId } });
+  const conversation = await prisma.externalConversation.create({
+    data: {
+      provider: "team-chat",
+      workspaceId: "workspace",
+      externalKey,
+      conversationId: externalKey,
+      spaceId: direct.spaceId,
+      botId,
+      userId: direct.userId,
+      thread: { create: { spaceId: direct.spaceId, userId: direct.userId } },
+    },
+    include: { thread: true },
+  });
+  return conversation.thread!;
 }
