@@ -247,8 +247,7 @@ export function PluginsOverlay({
   const mcpQuery = useQuery(mcpOptions);
   const mcpServers = mcpQuery.data ?? [];
   const sourcePresets =
-    useQuery(queries.capabilities.sourcePresets.queryOptions({ staleTime: Infinity })).data ??
-    NO_PRESETS;
+    useQuery(queries.capabilities.sourcePresets.queryOptions()).data ?? NO_PRESETS;
   const mcpError = mcpQuery.error ? errorText(mcpQuery.error, t`Could not load MCP servers`) : null;
   async function loadIntegrations() {
     // The catalog call reconciles connection rows, so list them after it settles.
@@ -716,7 +715,7 @@ export function PluginsOverlay({
         source: sourceUrl.trim(),
         credential: credential.trim() || undefined,
         config: sourcePreset
-          ? { preset: sourcePreset.id, auth: { type: "bearer" } }
+          ? { preset: sourcePreset.id }
           : sourceKind === "api"
             ? { openApi: true, auth }
             : sourceKind === "graphql"

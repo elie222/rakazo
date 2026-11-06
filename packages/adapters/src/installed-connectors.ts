@@ -73,8 +73,8 @@ export const MCP_SOURCE_PRESETS: McpSourcePreset[] = [
   { id: "treg", name: "Treg", url: "https://treg.to/mcp/" },
 ];
 
-/** Applies a preset named in an MCP install: its fixed URL and bearer auth. Stored configs
- * keep only fixed-URL preset ids; the rest store as custom. */
+/** Applies a preset named in an MCP install: its fixed URL and bearer auth, so clients send
+ * only the id. Stored configs keep only fixed-URL preset ids; the rest store as custom. */
 export function applyMcpSourcePreset(
   source: string,
   config: Record<string, unknown>,
@@ -87,8 +87,12 @@ export function applyMcpSourcePreset(
   };
 }
 
+const FIXED_URL_PRESET_IDS = MCP_SOURCE_PRESETS.flatMap((preset) =>
+  preset.url ? [preset.id] : [],
+);
+
 const McpConfigSchema = z.object({
-  preset: z.enum(["treg", "custom"]).default("custom"),
+  preset: z.enum(["custom", ...FIXED_URL_PRESET_IDS]).default("custom"),
   auth: McpAuthSchema,
   headers: PublicHeadersSchema,
 });

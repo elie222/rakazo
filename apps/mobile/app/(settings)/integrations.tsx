@@ -320,6 +320,7 @@ export default function Integrations() {
       setMcpError(null);
       setDetailKey(null);
       setLabelDrafts({});
+      setSourcePresets([]);
     }
     cacheScope.current = scope;
     if (!previous || previous.userId !== scope.userId || previous.spaceId !== scope.spaceId) {
@@ -365,12 +366,18 @@ export default function Integrations() {
         }
       })
       .catch(() => undefined);
+    // A server without presets (or a failed request) offers none, never another server's.
+    const applyPresets = (presets: McpSourcePreset[]) => {
+      if (
+        mounted.current &&
+        isIntegrationsScopeCurrent(scope) &&
+        sourceGeneration === sourcesGeneration.current
+      )
+        setSourcePresets(presets);
+    };
     void rpc("capabilities/sourcePresets")
-      .then((presets) => {
-        if (mounted.current && sourceGeneration === sourcesGeneration.current)
-          setSourcePresets(presets);
-      })
-      .catch(() => undefined);
+      .then(applyPresets)
+      .catch(() => applyPresets([]));
     void rpc("marketplace/catalog", { query: "" })
       .then((result) => {
         if (
@@ -1002,7 +1009,7 @@ export default function Integrations() {
           source: url.trim(),
           credential: (sourceAuth !== "none" && credential.trim()) || undefined,
           config: sourcePreset
-            ? { preset: sourcePreset.id, auth: { type: "bearer" } }
+            ? { preset: sourcePreset.id }
             : sourceKind === "api"
               ? { openApi: true, auth }
               : sourceKind === "graphql"
