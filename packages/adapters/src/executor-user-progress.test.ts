@@ -300,6 +300,7 @@ async function runTurn(
       updateManyAndReturn: vi.fn(async () => [{ fence: 1 }]),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => [{ id: "row-1", scope: "dedicated" }]),
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => {
       const messageCount = messages.length;

@@ -440,10 +440,10 @@ describePostgres("account import (PostgreSQL)", () => {
     const thread = child.thread!;
     expect(thread).toMatchObject({
       nextMessageSeq: 2,
-      lastReadSeq: 1,
-      unread: false,
       historyCompactionSummary: "summary of the secret plan",
     });
+    // Imported history reads as caught up: nobody has an unread mark on it.
+    await expect(system.threadRead.count({ where: { threadId: thread.id } })).resolves.toBe(0);
     const messages = await system.message.findMany({
       where: { threadId: thread.id },
       orderBy: { seq: "asc" },
