@@ -579,12 +579,14 @@ async function handleTranscript(raw: string): Promise<void> {
     releasePendingSend = callSends.track(turnCallId, sendRequest);
     const runId = await sendRequest;
     if (state?.botId === botId && callId === turnCallId) {
-      callRunId = runId ?? null;
+      // A later turn already set what it expects; this older request must not undo it.
+      if (turnSeq === cueTurn) callRunId = runId ?? null;
       if (hangUpAfterReply) farewellSent = true;
     }
   } catch (error) {
     if (state?.botId !== botId || callId !== turnCallId) return;
-    if (next.kind === "answer" || next.kind === "follow_up") callRunId = previousCallRunId;
+    if ((next.kind === "answer" || next.kind === "follow_up") && turnSeq === cueTurn)
+      callRunId = previousCallRunId;
     if (error instanceof AiConsentBlocked) {
       // Bot already closed server-side: do not clear its hang-up into a muted stuck call.
       if (botEndedCall) {
@@ -661,6 +663,8 @@ function onThread(next: MobileSnapshot): void {
   thread = next;
   if (!state) return;
   if (pendingCallSecretAsk(next)) {
+    // Also when the mic never opened (the thread loaded late): the caller still needs to know.
+    if (heldForCode) set({ caption: t("Hang up, then enter the code on screen.") });
     if (!micOpen) return;
     heldForCode = true;
     turn?.abort();

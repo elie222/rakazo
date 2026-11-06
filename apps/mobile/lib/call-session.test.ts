@@ -530,6 +530,15 @@ describe("mobile call session", () => {
       expect(fake.recordings.length).toBeGreaterThanOrEqual(listening);
     });
 
+    it("tells the caller to enter a code when the thread loads with one pending", async () => {
+      const fake = fakes({ loadThread: false });
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      fake.thread(waitingOn([{ kind: "ask", text: "Code?", input: "secret", status: "pending" }]));
+      expect(fake.recordings).toHaveLength(0);
+      expect(getSnapshot()?.caption).toBe("Hang up, then enter the code on screen.");
+    });
+
     it("keeps the microphone shut until it knows whether the bot waits on a code", async () => {
       const fake = fakes({ loadThread: false });
       startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
