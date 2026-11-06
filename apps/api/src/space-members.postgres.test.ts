@@ -12,11 +12,11 @@ import {
   createThreadEvents,
   ensureComputerRecord,
   installAuditEventStore,
+  leaveInvitedSpaces,
   MAX_OPEN_SPACE_INVITES,
   organizationForMember,
   organizationSeatCount,
   personalOrganizationIds,
-  leaveInvitedSpaces,
   recordAuditEvent,
   runAsTenant,
 } from "@rakazo/db";
