@@ -41,7 +41,12 @@ import {
   teachRecordingTtlMs,
 } from "@rakazo/core";
 import type { createRepos, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { clearEndedRunState, expireComputerExecutionLeases, IsolationError } from "@rakazo/db";
+import {
+  clearEndedRunState,
+  expireComputerExecutionLeases,
+  IsolationError,
+  isUniqueViolation,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 export interface TaughtSkillsDeps {
@@ -428,11 +433,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         });
       } catch (error) {
         if (error instanceof ORPCError) throw error;
-        if (
-          error instanceof Error &&
-          "code" in error &&
-          (error as { code?: string }).code === "P2002"
-        ) {
+        if (isUniqueViolation(error)) {
           throw new ORPCError("CONFLICT", { message: "A teaching session is already active" });
         }
         throw error;

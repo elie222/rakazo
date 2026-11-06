@@ -75,6 +75,7 @@ export const Transcript = memo(function Transcript({
   dismissableAskIds,
   running,
   workingBots,
+  workingRoutine,
   userBubble,
   onCallBack,
   onLoadOlder,
@@ -94,6 +95,7 @@ export const Transcript = memo(function Transcript({
   onAddRoutine,
   voiceReady,
   speakingMessageId,
+  callHoldsSpeaker,
   onSpeak,
   onOpenComputer,
   onOpenImportSetup,
@@ -116,6 +118,7 @@ export const Transcript = memo(function Transcript({
   dismissableAskIds: Set<string>;
   running: boolean;
   workingBots: GroupAvatarMember[];
+  workingRoutine?: string;
   /** Your bubbles take the bot's color in its own chat. */
   userBubble?: { background: string; foreground: string };
   /** Calls the bot back from a missed call in the transcript. */
@@ -145,6 +148,7 @@ export const Transcript = memo(function Transcript({
   onAddRoutine: (name: string, prompt: string) => void;
   voiceReady: boolean;
   speakingMessageId: string | null;
+  callHoldsSpeaker: boolean;
   onSpeak: (message: ThreadMessage) => void;
   onOpenComputer: (botId?: string) => void;
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
@@ -234,7 +238,8 @@ export const Transcript = memo(function Transcript({
   );
   const separatorIds = timeSeparatorIds(shownMessages);
   const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor);
-  const workingLabel = liveActivityLine(messages) ?? t`Working…`;
+  const workingLabel =
+    liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
   const [quoteDraft, setQuoteDraft] = useState<{
     message: ThreadMessage;
     text: string;
@@ -625,6 +630,7 @@ export const Transcript = memo(function Transcript({
                       onAddRoutine={onAddRoutine}
                       voiceReady={voiceReady}
                       speaking={speakingMessageId === message.id}
+                      callHoldsSpeaker={callHoldsSpeaker}
                       onSpeak={onSpeak}
                       onOpenComputer={onOpenComputer}
                       onOpenImportSetup={onOpenImportSetup}

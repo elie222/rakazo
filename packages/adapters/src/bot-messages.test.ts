@@ -30,6 +30,7 @@ function deps(
     /** Simulate a unique (threadId, clientNonce) race after both retries miss. */
     uniqueConflictOnCommit?: boolean;
     transactionConflictOnce?: boolean;
+    deletingSpace?: boolean;
   } = {},
 ) {
   const enqueue = vi.fn().mockResolvedValue(undefined);
@@ -43,6 +44,11 @@ function deps(
     );
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue([{ id: "thread" }]),
+    space: {
+      findUnique: vi
+        .fn()
+        .mockResolvedValue({ deletingAt: options.deletingSpace ? new Date() : null }),
+    },
     run: {
       findFirst: vi
         .fn()
@@ -102,6 +108,18 @@ function deps(
 describe("messaging another bot", () => {
   beforeEach(() => vi.stubEnv("BOT_MESSAGE_MAX_HOPS", undefined));
   afterEach(() => vi.unstubAllEnvs());
+
+  it("starts no run for the target while the Space is being deleted", async () => {
+    const harness = deps({ deletingSpace: true });
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "chart the q3 numbers",
+    });
+
+    expect(sent).toMatchObject({ ok: false });
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  });
 
   it("delivers into the target's own chat without marking either thread unread", async () => {
     const harness = deps();
@@ -317,7 +335,8 @@ describe("messaging another bot", () => {
       { allowTerminalSource: true },
     );
     expect(sent.ok).toBe(true);
-    expect(harness.tx.$queryRaw).toHaveBeenCalledTimes(2);
+    // The Space's lock, then both thread rows.
+    expect(harness.tx.$queryRaw).toHaveBeenCalledTimes(3);
     expect(harness.tx.message.create).toHaveBeenLastCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

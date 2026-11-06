@@ -5,7 +5,7 @@ import { ThinkingLevelSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { findDefaultVoiceCredential } from "@rakazo/db";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
-import { modelLabel } from "./fleet-tools.js";
+import { botModelLabel } from "./fleet-tools.js";
 import { connectedModelChoices, echoedQuery, resolveModelChoice, words } from "./model-choice.js";
 import { prepareAllowedThinkingLevels, validateBotModelChange } from "./model-selection.js";
 import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "./openai-compatible-voice.js";
@@ -76,7 +76,7 @@ export async function readOwnBotSettings(
     avatar: bot.color.startsWith("data:image/") ? "image" : bot.color,
     notifyOnFinish: bot.notifyOnFinish,
     dailyCheckIns: bot.dailyCheckIns,
-    model: `${modelLabel(effective.provider, effective.model)}${bot.modelId ? "" : " (default)"}`,
+    model: botModelLabel(bot, effective),
     thinkingLevel: bot.thinkingLevel ?? "default",
     readAloud: bot.autoSpeak,
     voice: bot.voiceId ?? "default",

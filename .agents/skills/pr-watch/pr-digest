@@ -52,9 +52,16 @@ check_runs() {
     --jq '.check_runs[] | {name, status, conclusion, html_url}' | jq -s .
 }
 
+# Fork PRs always carry Vercel's "Authorization required to deploy." failure,
+# which AGENTS.md says to ignore; counting it would wake every watch at once.
+# On a same-repo PR the same status is a real deploy problem, so it still counts.
+FORK=false
 commit_statuses() {
   api --paginate "repos/$1/commits/$2/status?per_page=100" \
-    --jq '.statuses[] | {context, state}' | jq -s .
+    --jq '.statuses[] | {context, state, description}' |
+    jq -s --argjson fork "$FORK" '[.[]
+      | select($fork and .context == "Vercel" and .description == "Authorization required to deploy." | not)
+      | {context, state}]'
 }
 
 logs() {
@@ -348,6 +355,9 @@ main() {
     || die "could not resolve authenticated user"
   case $viewer in ''|null|\{*) die "could not resolve authenticated user" ;; esac
   [ -n "$pr" ] || pr=$(gh pr view --json number --jq .number 2>/dev/null) || die "no PR for this branch"
+  FORK=$(gh pr view "$pr" --repo "$repo" --json isCrossRepository --jq .isCrossRepository) \
+    || die "could not read PR $pr"
+  [ "$FORK" = true ] || FORK=false
 
   if [ "$watch" -eq 1 ]; then
     local started=$SECONDS head runs statuses empty=0 left baseline="" first=1 seen

@@ -4,7 +4,14 @@ import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
 import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
 import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
-import { Id, MemoryScope, RunStatus, SandboxKind, ThinkingLevelSchema } from "./ids.js";
+import {
+  Id,
+  MemoryScope,
+  ReplyModeSchema,
+  RunStatus,
+  SandboxKind,
+  ThinkingLevelSchema,
+} from "./ids.js";
 import {
   McpHeadersSchema,
   McpRemoteEndpointSchema,
@@ -131,6 +138,7 @@ export const BotSchema = z.object({
   crossSpaceCommunication: z.boolean().optional(),
   dailyCheckIns: z.boolean().optional(),
   fleetManagement: z.boolean().default(true),
+  replyMode: ReplyModeSchema.default("chat"),
   disabledBuiltinTools: z.array(z.string()).default([]),
   webhookConfigured: z.boolean(),
   /** Present when created with an idempotency key (e.g. onboarding:first). */
@@ -492,6 +500,7 @@ export const UpdateBotInput = z
     crossSpaceCommunication: z.boolean().optional(),
     dailyCheckIns: z.boolean().optional(),
     fleetManagement: z.boolean().optional(),
+    replyMode: ReplyModeSchema.optional(),
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),
     /** Write only while these settings still hold, as an undo does. */
     expectedSettings: BotSettingsValuesSchema.optional(),
@@ -555,6 +564,13 @@ export function routineModelIssues(
 
 export const ROUTINE_MENTION_BATCH_MAX = 100;
 
+export const ROUTINE_TRIGGER_REQUIRED =
+  "Add a schedule, webhook, GitHub, message, email, or change trigger";
+
+/** Whose authenticated mail starts an email routine: the bot owner, or anyone at the owner's domain. */
+export const RoutineEmailSendersSchema = z.enum(["owner", "domain"]);
+export type RoutineEmailSenders = z.infer<typeof RoutineEmailSendersSchema>;
+
 export const RoutineSchema = z.object({
   id: Id,
   botId: Id,
@@ -572,6 +588,8 @@ export const RoutineSchema = z.object({
     .max(50)
     .regex(/^[a-z0-9._-]+$/i)
     .nullable(),
+  /** Null unless mail to the bot's address starts this routine. Absent on older servers. */
+  emailSenders: RoutineEmailSendersSchema.nullable().default(null),
   /** Null runs this routine on its bot's model. */
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
@@ -607,6 +625,7 @@ export const CreateRoutineInput = z
       .regex(/^[a-z0-9._-]+$/i)
       .nullable()
       .default(null),
+    emailSenders: RoutineEmailSendersSchema.nullable().default(null),
     modelProvider: z.string().trim().min(1).max(80).nullable().default(null),
     modelId: z.string().trim().min(1).max(200).nullable().default(null),
     thinkingLevel: ThinkingLevelSchema.nullable().default(null),
@@ -619,11 +638,12 @@ export const CreateRoutineInput = z
       !value.webhookEnabled &&
       !value.githubEnabled &&
       !value.messageProvider &&
+      !value.emailSenders &&
       !value.watch
     ) {
       ctx.addIssue({
         code: "custom",
-        message: "Add a schedule, webhook, GitHub, message, or change trigger",
+        message: ROUTINE_TRIGGER_REQUIRED,
         path: ["crons"],
       });
     }
@@ -1103,6 +1123,16 @@ export const IntegrationCatalogResultSchema = z.object({
 });
 export type IntegrationCatalogResult = z.infer<typeof IntegrationCatalogResultSchema>;
 
+/** A remote MCP service that connects with a bearer token. */
+export const McpSourcePresetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** Fixed endpoint; omitted when the person enters their own. */
+  url: z.string().url().optional(),
+  urlPlaceholder: z.string().optional(),
+});
+export type McpSourcePreset = z.infer<typeof McpSourcePresetSchema>;
+
 export type { McpTransport } from "./mcp.js";
 
 const McpServerBaseInput = z.object({
@@ -1457,6 +1487,7 @@ export const RunSchema = z.object({
   status: RunStatus,
   trigger: RunTriggerSchema,
   routineId: Id.nullable(),
+  routineName: z.string().nullable().optional(),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   error: z.string().nullable(),
@@ -1821,6 +1852,8 @@ export const VoiceCatalogEntrySchema = z.object({
   description: z.string(),
   transcribe: z.boolean(),
   keyless: z.boolean().optional(),
+  /** The connection takes an optional speech model id that overrides the provider default. */
+  speechModel: z.boolean().optional(),
 });
 export type VoiceCatalogEntry = z.infer<typeof VoiceCatalogEntrySchema>;
 

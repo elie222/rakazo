@@ -1,6 +1,12 @@
 import { createCipheriv, createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import type { HttpInstance } from "@larksuiteoapi/node-sdk";
-import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  MessagingInboundEvent,
+  MessagingInboundMessage,
+} from "@rakazo/adapter-kit";
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { Message } from "chat";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
@@ -31,6 +37,13 @@ const context: AdapterContext = {
 };
 const token = "test-verification-token";
 const encryptKey = "test-encryption-key";
+// Image bytes the fake message-resource endpoint serves, by image key.
+const images = new Map<string, Buffer>();
+const png = Buffer.concat([
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  Buffer.from("png-body"),
+]);
+const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x01, 0x02, 0x03]);
 
 function createSurface(encrypted = false) {
   const platforms = messagingPlatformsFromEnv(
@@ -63,6 +76,21 @@ function message(chatType = "p2p", sender = "ou-test") {
         message_type: "text",
         content: JSON.stringify({ text: "hello" }),
         create_time: "1700000000000",
+      },
+    },
+  };
+}
+
+function messageWith(messageType: string, content: unknown) {
+  const base = message();
+  return {
+    ...base,
+    event: {
+      ...base.event,
+      message: {
+        ...base.event.message,
+        message_type: messageType,
+        content: JSON.stringify(content),
       },
     },
   };
@@ -104,8 +132,18 @@ function encryptedWebhook(payload: unknown, validSignature = true, pretty = fals
 }
 
 beforeEach(() => {
+  images.clear();
   request.mockReset();
   request.mockImplementation(async ({ url }: { url: string }) => {
+    const resource = /\/im\/v1\/messages\/om-test\/resources\/([^/?]+)$/.exec(url);
+    if (resource) {
+      const bytes = images.get(resource[1]!);
+      if (!bytes) throw new Error(`Image not found: ${resource[1]}`);
+      return {
+        data: Readable.from([bytes]),
+        headers: { "content-type": "application/octet-stream" },
+      };
+    }
     if (url.endsWith("/auth/v3/tenant_access_token/internal")) {
       return { code: 0, tenant_access_token: "test-access-token", expire: 7200 };
     }
@@ -732,5 +770,111 @@ describe("Lark messaging conformance", () => {
       expect.objectContaining({ url: "https://open.larksuite.com/open-apis/im/v1/chats" }),
     );
     expect(adapter.isDM(encodeThreadId({ chatId: "oc-test" }))).toBe(true);
+  });
+});
+
+describe("Lark inbound images", () => {
+  async function deliver(payload: unknown) {
+    const { surface, events } = createSurface();
+    const response = await surface.handleWebhook("lark", webhook(payload));
+    expect(response?.status).toBe(200);
+    return events as MessagingInboundMessage[];
+  }
+
+  it("delivers an image message as an attachment", async () => {
+    images.set("img-1", png);
+    const [event] = await deliver(messageWith("image", { image_key: "img-1" }));
+    expect(event).toMatchObject({
+      content: "",
+      attachments: [{ name: "image-1.png", mimeType: "image/png", size: png.byteLength }],
+    });
+    expect(Buffer.from(await event!.attachments![0]!.fetch())).toEqual(png);
+  });
+
+  it.each([
+    ["gif", "image/gif", Buffer.from("GIF89aimage-body")],
+    ["webp", "image/webp", Buffer.from("RIFFxxxxWEBPimage-body")],
+  ])("recognizes %s images", async (extension, mimeType, bytes) => {
+    images.set("img-1", bytes);
+    const [event] = await deliver(messageWith("image", { image_key: "img-1" }));
+    expect(event?.attachments?.[0]).toMatchObject({ name: `image-1.${extension}`, mimeType });
+  });
+
+  it("preserves code blocks and mentions beside an image", async () => {
+    images.set("img-1", png);
+    const payload = messageWith("post", {
+      content: [
+        [
+          { tag: "text", text: "@_user_1 " },
+          { tag: "code_block", text: "const value = 1;" },
+          { tag: "img", image_key: "img-1" },
+        ],
+      ],
+    });
+    Object.assign(payload.event.message, {
+      mentions: [{ key: "@_user_1", name: "Test bot", id: { open_id: "bot-test" } }],
+    });
+    const [event] = await deliver(payload);
+    expect(event?.content).toContain("@Test bot");
+    expect(event?.content).toContain("const value = 1;");
+    expect(event?.attachments).toHaveLength(1);
+  });
+
+  it("keeps the text of a rich-text post and attaches its images in order", async () => {
+    images.set("img-1", png);
+    images.set("img-2", jpeg);
+    const [event] = await deliver(
+      messageWith("post", {
+        zh_cn: {
+          content: [
+            [{ tag: "text", text: "look" }],
+            [{ tag: "img", image_key: "img-1" }],
+            [{ tag: "img", image_key: "img-2" }],
+            [{ tag: "img", image_key: "img-1" }],
+          ],
+        },
+      }),
+    );
+    expect(event?.content).toBe("look");
+    expect(event?.attachments?.map(({ name, mimeType }) => ({ name, mimeType }))).toEqual([
+      { name: "image-1.png", mimeType: "image/png" },
+      { name: "image-2.jpg", mimeType: "image/jpeg" },
+    ]);
+  });
+
+  it("downloads no more images than a message may carry", async () => {
+    const keys = Array.from({ length: ATTACHMENT_MAX_COUNT + 1 }, (_, index) => `img-${index}`);
+    for (const key of keys) images.set(key, png);
+    const [event] = await deliver(
+      messageWith("post", {
+        content: keys.map((key) => [{ tag: "img", image_key: key }]),
+      }),
+    );
+    expect(event?.attachments).toHaveLength(ATTACHMENT_MAX_COUNT);
+  });
+
+  it.each([
+    ["an unsupported format", () => images.set("img-1", Buffer.from("not an image"))],
+    [
+      "an oversized image",
+      () => images.set("img-1", Buffer.concat([png, Buffer.alloc(ATTACHMENT_MAX_BYTES)])),
+    ],
+    ["a failed download", () => undefined],
+  ])("still delivers the message when %s cannot be read", async (_label, arrange) => {
+    arrange();
+    const [event] = await deliver(messageWith("image", { image_key: "img-1" }));
+    const [attachment] = event?.attachments ?? [];
+    expect(event).toMatchObject({ provider: "lark", handle: "om-test" });
+    // No MIME type and a failing fetch make the inbound handler mark it unavailable.
+    expect(attachment).toMatchObject({ name: "image-1", mimeType: "" });
+    await expect(attachment!.fetch()).rejects.toThrow();
+  });
+
+  it("never requests a resource for a key that is not a plain identifier", async () => {
+    const [event] = await deliver(messageWith("image", { image_key: "../secrets" }));
+    expect(event?.attachments).toBeUndefined();
+    expect(request).not.toHaveBeenCalledWith(
+      expect.objectContaining({ url: expect.stringContaining("/resources/") }),
+    );
   });
 });
