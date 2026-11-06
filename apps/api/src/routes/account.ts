@@ -8,7 +8,7 @@ import {
   PushSessionEndedError,
   settleCallRequest,
 } from "@rakazo/adapters";
-import type { ActionApprovalRule, Actor, ChatAlert, Me, SettingsScope } from "@rakazo/contracts";
+import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
 import {
   approvalModeFromPreference,
   approvalPreferenceFromMode,
@@ -60,7 +60,7 @@ import {
   voiceProviderFor,
 } from "../voice.js";
 import type { RouterContext } from "./context.js";
-import { HEARTBEAT_MS, meDto, SESSION_RECHECK_MS } from "./shared.js";
+import { HEARTBEAT, meDto, withHeartbeats } from "./shared.js";
 
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed } = ctx;
@@ -331,81 +331,29 @@ export function accountRoutes(ctx: RouterContext) {
     },
     notifications: {
       subscribe: authed.notifications.subscribe.handler(async function* ({ context }) {
-        if (!deps.events.followChatAlerts) throw new ORPCError("NOT_FOUND");
+        const { followChatAlerts } = deps.events;
+        if (!followChatAlerts) throw new ORPCError("NOT_FOUND");
         const { spaceId, userId } = context.actor;
-        const controller = new AbortController();
-        const signal = context.signal
-          ? AbortSignal.any([context.signal, controller.signal])
-          : controller.signal;
-        const alerts = deps.events.followChatAlerts(userId, spaceId, signal);
-        let pending: Promise<IteratorResult<ChatAlert>> | undefined;
-        let authorizedAt = Date.now();
-        try {
-          while (!context.signal?.aborted) {
-            pending ??= alerts.next();
-            let timer: ReturnType<typeof setTimeout> | undefined;
-            const next = await Promise.race([
-              pending,
-              new Promise<"heartbeat">((resolve) => {
-                timer = setTimeout(() => resolve("heartbeat"), HEARTBEAT_MS);
-              }),
-            ]).finally(() => clearTimeout(timer));
-            if (context.stillAuthorized && Date.now() - authorizedAt >= SESSION_RECHECK_MS) {
-              if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");
-              authorizedAt = Date.now();
-            }
-            if (next === "heartbeat") {
-              yield { type: "heartbeat" as const };
-              continue;
-            }
-            pending = undefined;
-            if (next.done) return;
-            if (next.value.spaceId !== spaceId) continue;
-            yield { type: "alert" as const, alert: next.value };
-          }
-        } finally {
-          controller.abort();
-          await alerts.return(undefined);
+        const alerts = withHeartbeats(context, (signal) =>
+          followChatAlerts(userId, spaceId, signal),
+        );
+        for await (const next of alerts) {
+          if (next === HEARTBEAT) yield { type: "heartbeat" as const };
+          else if (next.spaceId === spaceId) yield { type: "alert" as const, alert: next };
         }
       }),
       subscribeCalls: authed.notifications.subscribeCalls.handler(async function* ({ context }) {
-        if (!deps.env?.phoneCallsEnabled || !deps.events.followIncomingCalls)
-          throw new ORPCError("NOT_FOUND");
-        const controller = new AbortController();
-        const signal = context.signal
-          ? AbortSignal.any([context.signal, controller.signal])
-          : controller.signal;
-        const signals = deps.events.followIncomingCalls(context.actor.userId, signal);
-        let pending: Promise<IteratorResult<void>> | undefined;
-        let authorizedAt = Date.now();
-        try {
-          while (!context.signal?.aborted) {
-            pending ??= signals.next();
-            let timer: ReturnType<typeof setTimeout> | undefined;
-            const next = await Promise.race([
-              pending,
-              new Promise<"heartbeat">((resolve) => {
-                timer = setTimeout(() => resolve("heartbeat"), HEARTBEAT_MS);
-              }),
-            ]).finally(() => clearTimeout(timer));
-            if (context.stillAuthorized && Date.now() - authorizedAt >= SESSION_RECHECK_MS) {
-              if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");
-              authorizedAt = Date.now();
-            }
-            if (next === "heartbeat") {
-              yield { type: "heartbeat" as const };
-              continue;
-            }
-            pending = undefined;
-            if (next.done) return;
-            yield {
-              type: "incoming.calls" as const,
-              payload: { calls: await loadUserIncomingCalls(deps.prisma, context.actor.userId) },
-            };
-          }
-        } finally {
-          controller.abort();
-          await signals.return(undefined);
+        const { followIncomingCalls } = deps.events;
+        if (!deps.env?.phoneCallsEnabled || !followIncomingCalls) throw new ORPCError("NOT_FOUND");
+        const { userId } = context.actor;
+        const signals = withHeartbeats(context, (signal) => followIncomingCalls(userId, signal));
+        for await (const next of signals) {
+          yield next === HEARTBEAT
+            ? { type: "heartbeat" as const }
+            : {
+                type: "incoming.calls" as const,
+                payload: { calls: await loadUserIncomingCalls(deps.prisma, userId) },
+              };
         }
       }),
       declineIncomingCall: authed.notifications.declineIncomingCall.handler(

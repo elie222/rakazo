@@ -1,64 +1,40 @@
 import { useLingui } from "@lingui/react/macro";
-import type {
-  Me,
-  ModelApiProtocol,
-  ModelHeaderRow,
-  OpenAiCompatiblePreset,
-  SettingsScope,
-  ThinkingLevel,
-} from "@rakazo/contracts";
+import type { Me, OpenAiCompatiblePreset, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import {
-  CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  cloudflareModelRouting,
   compatibleConnectionName,
   connectionDisplayName,
-  DEFAULT_MODEL_CONTEXT_WINDOW,
-  DEFAULT_MODEL_MAX_TOKENS,
-  isCloudflareModelProvider,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
-  modelHeadersInput,
-  OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleKeyRequired,
   openAiCompatiblePresetFor,
-  openAiCompatibleProbeSuccessMessage,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
-import type { ConnectionFormFields } from "@rakazo/core";
 import {
   clampCatalogThinkingLevel,
   compatibleConnectionReady,
   compatibleModelRows,
-  compatibleThinkingLevels,
   connectionFormFields,
   connectionFormModelId,
   connectionMaxTokensField,
-  createModelProbe,
-  initialModelProbeState,
   modelConnectRequest,
   popularModelProvidersFirst,
-  probedModelFields,
   savedCompatibleModelIds,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
 import { providerDisplayName } from "../../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
-import type { ModelPreflightFailure } from "../../lib/model-connection-preflight";
 import {
-  classifyModelConnectionFailure,
   loadStoredModelAuth,
-  modelPreflightSuccessMessage,
   runModelConnectionPreflight,
-  unavailableSelectedModel,
 } from "../../lib/model-connection-preflight";
 import { useSpaceQueries } from "../../lib/query";
 import { useSpaceRpc } from "../../lib/space-rpc";
 import { useModelOAuthSignIn } from "../../lib/use-model-oauth-signin";
-import { useProbeModelInfo } from "../../lib/use-probe-model-info";
 import { errorText } from "../../lib/user-error";
+import { useModelConnectionForm } from "./use-model-connection-form";
 
 const NO_CATALOG: ModelCatalogEntry[] = [];
 const NO_CREDENTIALS: never[] = [];
@@ -106,7 +82,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   const catalog = useQuery(catalogQuery).data ?? NO_CATALOG;
   const credentials = useQuery(credentialsQuery).data ?? NO_CREDENTIALS;
   const me: Me | null = useQuery(meQuery).data ?? null;
-  const [provider, setProvider] = useState("");
   // The connection the dialog edits; null connects a new one.
   const [credentialId, setCredentialIdState] = useState<string | null>(null);
   const credentialIdRef = useRef(credentialId);
@@ -114,30 +89,46 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     credentialIdRef.current = next;
     setCredentialIdState(next);
   };
-  const [modelId, setModelId] = useState("");
-  const modelIdRef = useRef(modelId);
-  modelIdRef.current = modelId;
-  const [enabledModelIds, setEnabledModelIds] = useState<string[]>([]);
-  const [apiKey, setApiKey] = useState("");
-  const [accountId, setAccountId] = useState("");
-  const [gatewayId, setGatewayId] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
-  const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
-  const [reasoning, setReasoning] = useState(false);
-  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
-  const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
-  const [contextWindow, setContextWindow] = useState(String(DEFAULT_MODEL_CONTEXT_WINDOW));
-  const [supportsImages, setSupportsImages] = useState(false);
-  const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
-  const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
-  const [modelProbe] = useState(() => createModelProbe(setProbe));
-  const probeInfo = useProbeModelInfo();
-  const clearProbeInfo = probeInfo.clear;
-  const resetOpenAiCompatibleProbe = useCallback(() => {
-    modelProbe.reset();
-    clearProbeInfo();
-  }, [modelProbe, clearProbeInfo]);
+  const credential = credentialId
+    ? credentials.find((entry) => entry.id === credentialId)
+    : undefined;
+  const form = useModelConnectionForm({ rpc, catalog, credential });
+  const {
+    accountId,
+    apiKey,
+    apiProtocol,
+    applyFields,
+    baseUrl,
+    contextWindow,
+    enabledModelIds,
+    gatewayId,
+    headerRows,
+    invalidatePreflight,
+    isCloudflare,
+    isOpenAiCompatible,
+    maxImagesPerPrompt,
+    maxTokens,
+    modelId,
+    modelProbe,
+    modelsForProvider,
+    openConnection,
+    probeInfoRef,
+    probeModels,
+    provider,
+    reasoning,
+    resetOpenAiCompatibleProbe,
+    runPreflight,
+    selected,
+    setApiKey,
+    setError,
+    setHeaderRows,
+    setModelId,
+    setNotice,
+    setProvider,
+    setThinkingLevel,
+    supportsImages,
+    thinkingLevel,
+  } = form;
   const [codeCopied, copyOAuthCode] = useCopyText();
   const [loading, setLoading] = useState(
     () =>
@@ -147,15 +138,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   );
   const [pending, setPending] = useState<"connect" | "settings" | "disconnect" | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [preflightTesting, setPreflightTesting] = useState(false);
-  const [preflightTarget, setPreflightTarget] = useState<
-    "api-key" | "sign-in" | "compatible" | null
-  >(null);
-  const [preflightSuccess, setPreflightSuccess] = useState<string | null>(null);
-  const [preflightFailure, setPreflightFailure] = useState<ModelPreflightFailure | null>(null);
-  const preflightRevisionRef = useRef(0);
   const refreshRevisionRef = useRef(0);
   const selectionRevisionRef = useRef(0);
   const formRevisionRef = useRef(0);
@@ -246,20 +228,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     }
   }
 
-  function applyFields(fields: ConnectionFormFields) {
-    setEnabledModelIds(fields.enabledModelIds);
-    setBaseUrl(fields.baseUrl);
-    setApiProtocol(fields.apiProtocol);
-    setReasoning(fields.reasoning);
-    setThinkingLevel(fields.thinkingLevel);
-    setMaxTokens(fields.maxTokens);
-    setContextWindow(fields.contextWindow);
-    setSupportsImages(fields.supportsImages);
-    setMaxImagesPerPrompt(fields.maxImagesPerPrompt);
-    setAccountId(fields.accountId);
-    setGatewayId(fields.gatewayId);
-  }
-
   useLayoutEffect(() => {
     const cachedCatalog = queryClient.getQueryData(catalogQuery.queryKey);
     const cachedCredentials = queryClient.getQueryData(credentialsQuery.queryKey);
@@ -302,17 +270,12 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     () => new Map(credentials.map((entry) => [entry.provider, entry])),
     [credentials],
   );
-  const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
-  const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   selectedLabelRef.current = selected?.label;
   const selectedProviderName = compatibleConnectionName(
     presets,
     baseUrl,
     groups.find((group) => group.id === provider)?.name ?? provider,
   );
-  const credential = credentialId
-    ? credentials.find((entry) => entry.id === credentialId)
-    : undefined;
   const selectedConnectionName = credential
     ? connectionDisplayName(
         credential,
@@ -322,11 +285,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     : selectedProviderName;
   const disconnectName = selectedConnectionName;
   const hostCredentialSource = me?.hostCredentialSource ?? "";
-  const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
-  const isCloudflare = isCloudflareModelProvider(provider);
-  const cloudflareRoutingReady =
-    !isCloudflare || cloudflareModelRouting({ provider, accountId, gatewayId }) !== undefined;
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
@@ -368,100 +326,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
         (accountId.trim() !== (credential?.accountId ?? "") ||
           gatewayId.trim() !== (credential?.gatewayId ?? ""))));
 
-  function invalidatePreflight() {
-    preflightRevisionRef.current += 1;
-    setPreflightTesting(false);
-    setPreflightTarget(null);
-    setPreflightSuccess(null);
-    setPreflightFailure(null);
-  }
-
-  function preflightStillCurrent(revision: number): boolean {
-    return revision === preflightRevisionRef.current;
-  }
-
-  function updateBaseUrl(nextBaseUrl: string) {
-    setBaseUrl(nextBaseUrl);
-    setHeaderRows(null);
-    // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
-    setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
-    resetOpenAiCompatibleProbe();
-    invalidatePreflight();
-    setError(null);
-    setNotice(null);
-  }
-
-  function updateApiKey(nextApiKey: string) {
-    setApiKey(nextApiKey);
-    resetOpenAiCompatibleProbe();
-    invalidatePreflight();
-  }
-
-  function updateApiProtocol(nextProtocol: ModelApiProtocol) {
-    setApiProtocol(nextProtocol);
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        thinkingLevel,
-        reasoning ? compatibleThinkingLevels(nextProtocol) : [],
-      ) as ThinkingLevel | null,
-    );
-    resetOpenAiCompatibleProbe();
-    invalidatePreflight();
-  }
-
-  /**
-   * What the model listing says about a model replaces the form's guesses (images, thinking,
-   * context limit); the toggles stay editable. A model the listing does not describe leaves
-   * them as they are. Returns whether thinking is on for the model afterwards.
-   */
-  function applyProbedModelFields(id: string): boolean {
-    const probed = probedModelFields(probeInfo.infoRef.current.get(id), maxTokens);
-    if (probed.supportsImages !== undefined) setSupportsImages(probed.supportsImages);
-    if (probed.reasoning !== undefined) setReasoning(probed.reasoning);
-    if (probed.reasoning === false) setThinkingLevel(null);
-    if (probed.contextWindow !== undefined) setContextWindow(probed.contextWindow);
-    if (probed.maxTokens !== undefined) setMaxTokens(probed.maxTokens);
-    return probed.reasoning ?? reasoning;
-  }
-
-  /** Whether this is the model the saved connection runs, on the endpoint it was saved for. */
-  function isSavedCompatibleModel(id: string): boolean {
-    return (
-      credential?.modelId === id && savedCompatibleEndpointMatches(baseUrl, credential.baseUrl)
-    );
-  }
-
-  /**
-   * Picks the model on screen. The connection's saved model keeps the settings its owner chose:
-   * the listing's guesses are skipped, and the saved values come back after another model's
-   * guesses were filled in. Any other model takes what the listing says about it.
-   */
-  function stageCompatibleModelId(nextModelId: string) {
-    setModelId(nextModelId);
-    if (credential && isSavedCompatibleModel(nextModelId)) {
-      const saved = connectionFormFields({
-        catalog,
-        provider: OPENAI_COMPATIBLE_PROVIDER_ID,
-        modelId: nextModelId,
-        credential,
-      });
-      setReasoning(saved.reasoning);
-      setSupportsImages(saved.supportsImages);
-      setMaxImagesPerPrompt(saved.maxImagesPerPrompt);
-      setMaxTokens(saved.maxTokens);
-      setContextWindow(saved.contextWindow);
-      setThinkingLevel(saved.thinkingLevel);
-      return;
-    }
-    const nextReasoning = applyProbedModelFields(nextModelId);
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        credential?.modelId === nextModelId ? credential.thinkingLevel : null,
-        nextReasoning ? compatibleThinkingLevels(apiProtocol) : [],
-      ) as ThinkingLevel | null,
-    );
-  }
-
   /** Opens a connection (by id) or a new one (null) for the provider. */
   function chooseProvider(
     nextProvider: string,
@@ -481,9 +345,9 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       credential: nextCredential,
       defaults: me,
     });
-    setProvider(nextProvider);
-    setModelId(nextModelId);
-    applyFields(
+    openConnection(
+      nextProvider,
+      nextModelId,
       connectionFormFields({
         catalog,
         provider: nextProvider,
@@ -492,117 +356,27 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
         presetBaseUrl,
       }),
     );
-    setApiKey("");
-    setHeaderRows(null);
-    resetOpenAiCompatibleProbe();
-    invalidatePreflight();
-    setError(null);
-    setNotice(null);
-  }
-
-  async function probeServerModels() {
-    if (!baseUrl.trim()) return;
-    const revision = preflightRevisionRef.current;
-    setError(null);
-    setNotice(null);
-    setPreflightSuccess(null);
-    setPreflightFailure(null);
-    setPreflightTarget("compatible");
-    await modelProbe.probe({
-      baseUrl,
-      apiKey,
-      request: (input) =>
-        probeInfo.record(
-          rpc.models.probeOpenAiCompatible({
-            ...input,
-            apiProtocol,
-            headers: modelHeadersInput(headerRows),
-            credentialId: credential?.id,
-          }),
-        ),
-      onSuccess: (models) => {
-        if (!preflightStillCurrent(revision)) return;
-        const current = modelIdRef.current;
-        const next = current.trim() || models[0] || "";
-        // A saved connection keeps its own settings for the model it already runs.
-        const keepSaved = next === current && isSavedCompatibleModel(current);
-        if (next !== current) stageCompatibleModelId(next);
-        else {
-          setModelId(next);
-          if (!keepSaved) applyProbedModelFields(next);
-        }
-        const unavailable = unavailableSelectedModel(current, models);
-        if (unavailable) {
-          setPreflightFailure(unavailable);
-          setNotice(null);
-          return;
-        }
-        setPreflightTarget(null);
-        setPreflightFailure(null);
-        setNotice(openAiCompatibleProbeSuccessMessage(models.length));
-      },
-      onError: (err) => {
-        if (!preflightStillCurrent(revision)) return;
-        setPreflightFailure(classifyModelConnectionFailure(err, { modelId }));
-        setNotice(null);
-      },
-    });
-  }
-
-  async function testApiKeyConnection() {
-    if (!selected?.catalogProbe) return;
-    const revision = preflightRevisionRef.current;
-    setPreflightTarget("api-key");
-    setPreflightTesting(true);
-    setPreflightSuccess(null);
-    setPreflightFailure(null);
-    setError(null);
-    setNotice(null);
-    const result = await runModelConnectionPreflight({
-      authKind: "api-key",
-      provider: selected.provider,
-      apiKey,
-      modelId: selected.id,
-      catalogProbe: true,
-      probeCatalog: rpc.models.probeCatalog,
-    });
-    if (!preflightStillCurrent(revision)) return;
-    setPreflightTesting(false);
-    if (result.ok) {
-      setPreflightSuccess(modelPreflightSuccessMessage(result.discoveredModels.length));
-      return;
-    }
-    setPreflightFailure(result.failure);
   }
 
   async function testOAuthConnection() {
     if (!selected) return;
-    const revision = preflightRevisionRef.current;
-    setPreflightTarget("sign-in");
-    setPreflightTesting(true);
-    setPreflightSuccess(null);
-    setPreflightFailure(null);
-    setError(null);
-    setNotice(null);
-    const stored = await loadStoredModelAuth(
-      selected.provider,
-      () => rpc.models.credentials(),
-      selected.id,
-      credentialIdRef.current,
-    );
-    if (!preflightStillCurrent(revision)) return;
-    const result = await runModelConnectionPreflight({
-      authKind: "oauth",
-      provider: selected.provider,
-      ...stored,
+    await runPreflight("sign-in", async (stillCurrent) => {
+      const stored = await loadStoredModelAuth(
+        selected.provider,
+        () => rpc.models.credentials(),
+        selected.id,
+        credentialIdRef.current,
+      );
+      if (!stillCurrent()) return undefined;
+      const result = await runModelConnectionPreflight({
+        authKind: "oauth",
+        provider: selected.provider,
+        ...stored,
+      });
+      return result.ok
+        ? { success: t`A subscription credential is stored securely.` }
+        : { failure: result.failure };
     });
-    if (!preflightStillCurrent(revision)) return;
-    setPreflightTesting(false);
-    if (result.ok) {
-      setPreflightSuccess(t`A subscription credential is stored securely.`);
-      return;
-    }
-    setPreflightFailure(result.failure);
   }
 
   // settingsOnly saves a connected catalog provider's limits and gateway ids
@@ -632,7 +406,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       credential,
       credentialId: credential?.id ?? null,
       settingsOnly,
-      probedModels: probeInfo.infoRef.current,
+      probedModels: probeInfoRef.current,
       ...(intent ? { makeDefault: { makeDefault: intent.makeDefault, scope } } : {}),
     });
     if (request.status === "incomplete") return;
@@ -648,8 +422,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       );
       return;
     }
-    const { savingLimitOnly, activeModelId } = request;
-    const { input } = request;
+    const { input, savingLimitOnly, activeModelId } = request;
     setError(null);
     setNotice(null);
     setPending(settingsOnly ? "settings" : "connect");
@@ -730,29 +503,21 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   }
 
   return {
+    ...form,
     intentRef,
     refresh,
-    resetOpenAiCompatibleProbe,
-    headerRows,
-    setHeaderRows,
     savedHeaderEndpointMatches,
     acceptsKey,
-    accountId,
-    apiKey,
-    apiProtocol,
-    baseUrl,
     beginSelectedSubscriptionSignIn,
     busy,
     cancelOAuthAttempt,
     catalog,
     catalogThinkingLevels,
     chooseProvider,
-    cloudflareRoutingReady,
     codeCopied,
     compatibleRows,
     confirmDisconnect,
     connectKey,
-    contextWindow,
     copyOAuthCode,
     credential,
     credentialByProvider,
@@ -762,71 +527,29 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     disconnectCredential,
     disconnectName,
     effectiveBaseUrl,
-    enabledModelIds,
-    error,
-    gatewayId,
     groups,
     handleClose,
     hostCredentialSource,
     hostedPreset,
-    invalidatePreflight,
-    isCloudflare,
-    isCloudflareGateway,
-    isOpenAiCompatible,
     keyRequired,
     loading,
-    maxImagesPerPrompt,
-    maxTokens,
     me,
-    modelId,
-    modelsForProvider,
-    notice,
     oauth,
     oauthPending,
     openAiCompatibleReady,
     pasteCode,
     pending,
     popupBlocked,
-    preflightFailure,
-    preflightSuccess,
-    preflightTarget,
-    preflightTesting,
     presets,
-    probeInfoById: probeInfo.infoById,
-    probeModels,
-    probeServerModels,
-    probing,
-    provider,
-    reasoning,
-    selected,
     selectedConnectionName,
     selectedProviderName,
     selectionRevisionRef,
-    setAccountId,
     setConfirmDisconnect,
-    setContextWindow,
-    setEnabledModelIds,
-    setError,
-    setGatewayId,
-    setMaxImagesPerPrompt,
-    setMaxTokens,
-    setModelId,
-    setNotice,
     setPasteCode,
-    setReasoning,
-    setSupportsImages,
-    setThinkingLevel,
     settingsDirty,
-    stageCompatibleModelId,
     submitOAuthCode,
     subscriptionSignIn,
-    supportsImages,
-    testApiKeyConnection,
     testOAuthConnection,
-    thinkingLevel,
-    updateApiKey,
-    updateApiProtocol,
-    updateBaseUrl,
     usingServerCredentials,
   };
 }
