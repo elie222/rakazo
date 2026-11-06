@@ -1096,7 +1096,9 @@ function EmailTriggerCard({
                   }}
                   className="min-w-0 flex-1 font-mono text-label"
                 />
-                <span className="shrink-0 font-mono text-label text-muted-foreground">@{domain}</span>
+                <span className="shrink-0 font-mono text-label text-muted-foreground">
+                  @{domain}
+                </span>
               </div>
               <Button type="submit" variant="secondary" size="sm" disabled={claiming || !name}>
                 <Trans>Claim</Trans>

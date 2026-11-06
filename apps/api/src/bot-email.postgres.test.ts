@@ -56,7 +56,7 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
 
   afterAll(async () => {
     if (!db) return;
-    await system.botEmailAddress.deleteMany({ where: { localPart: { in: names } } });
+    await system.botEmailAddress.deleteMany({ where: { name: { in: names } } });
     await system.organization.deleteMany({
       where: { members: { some: { userId: { in: users } } } },
     });

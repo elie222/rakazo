@@ -62,7 +62,7 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   if (!target) return ignored("not this server's domain");
 
   const claimed = await deps.prisma.botEmailAddress.findUnique({
-    where: { localPart: target },
+    where: { name: target },
     select: {
       bot: {
         select: {

@@ -15,9 +15,9 @@ export async function botEmailAddress(
   if (!domain) return null;
   const row = await prisma.botEmailAddress.findUnique({
     where: { botId },
-    select: { localPart: true },
+    select: { name: true },
   });
-  return { domain, address: row ? `${row.localPart}@${domain}` : null };
+  return { domain, address: row ? `${row.name}@${domain}` : null };
 }
 
 /**
@@ -33,19 +33,19 @@ export async function claimBotEmailAddress(
   if (!domain) throw new ORPCError("BAD_REQUEST", { message: EMAIL_NOT_RECEIVED });
   const existing = await prisma.botEmailAddress.findUnique({
     where: { botId },
-    select: { localPart: true },
+    select: { name: true },
   });
-  if (existing && existing.localPart !== name) {
+  if (existing && existing.name !== name) {
     throw new ORPCError("CONFLICT", { message: "This bot already has an address." });
   }
   if (!existing) {
     try {
-      await prisma.botEmailAddress.create({ data: { localPart: name, botId } });
+      await prisma.botEmailAddress.create({ data: { name, botId } });
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
       // Either the name is taken, or a concurrent claim for this bot won with this same name.
       const winner = await prisma.botEmailAddress.findUnique({
-        where: { localPart: name },
+        where: { name },
         select: { botId: true },
       });
       if (winner?.botId !== botId) {
