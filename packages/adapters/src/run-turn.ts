@@ -613,6 +613,9 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
 async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
   const { deps, run, runId, bot, thread, workerId, fence } = ctx;
   const { reply } = ctx.state;
+  // Otherwise the model keeps calling tools while the stop is saved. The run's own signal stays
+  // live, so the save still finishes.
+  ctx.runtimeAbortController.abort();
   ctx.tools.approvedReplays.assertDrained();
   flushPendingTools(reply);
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
@@ -643,7 +646,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
   if (!stopped) return;
   ctx.stopHeartbeatAfterCompletion();
   if (run.trigger === "routine" && run.routineId) {
-    await clearRoutineBackoff(deps, run.routineId);
+    await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
   }
   if (stopped.continuationRunId) {
     await deps.jobs
@@ -906,7 +909,7 @@ export async function completeRun(ctx: RunContext) {
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();
   if (run.trigger === "routine" && run.routineId) {
-    await clearRoutineBackoff(deps, run.routineId);
+    await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
   }
   const { screenRelease } = ctx.state.computerUse;
   if (screenRelease) screenRelease.keepWarm = true;
@@ -959,7 +962,7 @@ export async function completeRun(ctx: RunContext) {
         COMPACTION_BATCH_SIZE,
       )
     ) {
-      await deps.jobs.enqueue(historyCompactJob(thread.id));
+      await deps.jobs.enqueue(historyCompactJob(thread.id, run.userId));
     }
   } catch (error) {
     getLogger().error("history.compact enqueue failed", error);
@@ -1086,7 +1089,12 @@ export async function failRun(
     run.routineId &&
     (refusal || error instanceof SandboxAllowanceUsedError)
   ) {
-    await backOffRoutineAfterAccountError(deps, run.routineId, new Date(), refusal?.resetAt);
+    await backOffRoutineAfterAccountError(
+      deps,
+      { routineId: run.routineId, userId: run.userId },
+      new Date(),
+      refusal?.resetAt,
+    );
   }
   const retrying = !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
   // Nobody asked for a check-in, so its failure is not news to the user.

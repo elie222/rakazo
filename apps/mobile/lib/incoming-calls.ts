@@ -157,11 +157,11 @@ async function loadRoster() {
 
 /**
  * Resolves the caller for a native or notification answer. The account stream knows callers
- * across every organization; the roster covers only the active one. Return a roster hit without
- * waiting on the stream so same-organization answers are not delayed on a cold start. Wait briefly
- * for the stream's first snapshot only when the roster does not know the caller. Returns undefined
- * when the lookup's feed or session is gone: the answer belongs to neither, so its caller abandons
- * it without answering or completing the native action.
+ * across every organization; the roster covers only the active one. A cached roster entry
+ * answers at once. Otherwise the roster load races the stream's first snapshot, which a cold
+ * start may not have yet, for a few seconds, and the first source to name the caller answers.
+ * Returns undefined when the lookup's feed or session is gone: the answer belongs to neither,
+ * so its caller abandons it without answering or completing the native action.
  */
 async function callerFor(
   botId: string,
@@ -172,13 +172,11 @@ async function callerFor(
   const stale = () => feed !== startedFeed || !running || generation !== currentSessionGeneration();
   const fromStream = () =>
     calls.find((entry) => entry.id === botId && entry.incomingCall.callId === callId) ?? null;
-  const streamed = fromStream();
-  if (streamed) return streamed;
-  // Active-organization callers do not need the stream; answer them before any snapshot wait.
-  if (!roster.has(botId)) await loadRoster();
-  if (stale()) return undefined;
-  const known = roster.get(botId);
+  const known = fromStream() ?? roster.get(botId);
   if (known) return known;
+  // Whichever source names the caller first answers; a failed load surfaces only if neither does.
+  const rostered = loadRoster();
+  rostered.catch(() => undefined);
   if (streamSnapshot) {
     let stopWaiting: (() => void) | undefined;
     let giveUp: ReturnType<typeof setTimeout> | undefined;
@@ -193,15 +191,32 @@ async function callerFor(
         new Promise<void>((resolve) => {
           giveUp = setTimeout(resolve, SNAPSHOT_WAIT_MS);
         }),
+        new Promise<void>((resolve) => {
+          rostered.then(
+            () => {
+              if (roster.has(botId)) resolve();
+            },
+            () => undefined,
+          );
+        }),
       ]);
     } finally {
       clearTimeout(giveUp);
       if (stopWaiting) snapshotWaiters.delete(stopWaiting);
     }
     if (stale()) return undefined;
-    const late = fromStream();
+    const late = fromStream() ?? roster.get(botId);
     if (late) return late;
   }
+  // The stream may name the caller after an empty snapshot, so a failed load throws only after it.
+  const failure = await rostered.then(
+    () => null,
+    (error: unknown) => ({ error }),
+  );
+  if (stale()) return undefined;
+  const caller = fromStream() ?? roster.get(botId);
+  if (caller) return caller;
+  if (failure) throw failure.error;
   return null;
 }
 

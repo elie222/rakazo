@@ -4,6 +4,7 @@ import {
   buildFeaturedConnectorTiles,
   featuredConnectorProvidersMatch,
   filterConnectionCatalogItems,
+  integrationCatalogsReady,
   matchFeaturedConnectorId,
   resolveFeaturedCatalogItem,
 } from "./featured-connectors.js";
@@ -18,6 +19,21 @@ function item(slug: string, name: string, connected = false): ConnectionCatalogI
     noAuth: false,
   };
 }
+
+it.each([
+  [false, false, false, false, false],
+  [true, false, false, false, false],
+  [true, true, true, false, false],
+  [true, false, true, true, false],
+  [true, false, true, false, true],
+])(
+  "allows empty states only when both catalogs are available (%s, %s, %s, %s)",
+  (catalogLoaded, catalogFailed, pluginsLoaded, pluginsUnavailable, expected) => {
+    expect(
+      integrationCatalogsReady({ catalogLoaded, catalogFailed, pluginsLoaded, pluginsUnavailable }),
+    ).toBe(expected);
+  },
+);
 
 describe("featured connectors", () => {
   it("maps gmail aliases to the same featured id", () => {

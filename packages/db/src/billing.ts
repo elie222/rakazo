@@ -3,6 +3,7 @@ import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
 import { BYOK_TIERS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { IsolationError } from "./scope.js";
 
 const ACCESS_STATUSES = new Set(["trialing", "active", "past_due"]);
 
@@ -181,24 +182,48 @@ export async function releaseByokTrialCheckouts(
   });
 }
 
+const MODEL_ACCESS_SELECT = {
+  modelCredits: { select: { mode: true, balanceMicros: true, byokFreeUntil: true } },
+  billing: { select: { status: true } },
+} as const;
+
+function organizationModelAccess(organization: {
+  modelCredits: { mode: string | null; balanceMicros: bigint; byokFreeUntil: Date | null } | null;
+  billing: { status: string | null } | null;
+}) {
+  return hasModelAccess(
+    organization.modelCredits ?? { mode: null, balanceMicros: 0n, byokFreeUntil: null },
+    organization.billing?.status ?? null,
+  );
+}
+
 export async function spaceHasModelAccess(prisma: PrismaClient, spaceId: string) {
   const space = await prisma.space.findUnique({
     where: { id: spaceId },
-    select: {
-      organization: {
-        select: {
-          modelCredits: { select: { mode: true, balanceMicros: true, byokFreeUntil: true } },
-          billing: { select: { status: true } },
-        },
-      },
-    },
+    select: { organization: { select: MODEL_ACCESS_SELECT } },
   });
-  if (!space) return false;
-  const { modelCredits, billing } = space.organization;
-  return hasModelAccess(
-    modelCredits ?? { mode: null, balanceMicros: 0n, byokFreeUntil: null },
-    billing?.status ?? null,
-  );
+  return space ? organizationModelAccess(space.organization) : false;
+}
+
+/** Access for one person's run: their own organization's plan when they are a guest. */
+export async function memberHasModelAccess(
+  prisma: PrismaClient,
+  scope: { spaceId: string; userId: string },
+) {
+  // A member's org is the Space's, read with the membership in one query.
+  const membership = await prisma.spaceMember.findUnique({
+    where: { spaceId_userId: scope },
+    select: { member: { select: { role: true, organization: { select: MODEL_ACCESS_SELECT } } } },
+  });
+  if (!membership) return false;
+  if (membership.member.role !== GUEST_ROLE) {
+    return organizationModelAccess(membership.member.organization);
+  }
+  const organization = await prisma.organization.findUnique({
+    where: { id: await ownedOrganizationId(prisma, scope.userId) },
+    select: MODEL_ACCESS_SELECT,
+  });
+  return organization ? organizationModelAccess(organization) : false;
 }
 
 export function billingAccountForOrganization(
@@ -299,6 +324,41 @@ export async function releaseCheckoutLease(
   });
 }
 
+/**
+ * Extends the lease while its holder is still the recorded owner and the lease has not lapsed;
+ * a lapsed lease is left to the next claimant instead of being resurrected.
+ */
+export async function renewCheckoutLease(
+  prisma: PrismaClient,
+  organizationId: string,
+  leaseId: string,
+  ttlMs: number,
+): Promise<boolean> {
+  const now = new Date();
+  const { count } = await prisma.billingAccount.updateMany({
+    where: {
+      organizationId,
+      checkoutLeaseId: leaseId,
+      checkoutLeaseExpiresAt: { gt: now },
+    },
+    data: { checkoutLeaseExpiresAt: new Date(now.getTime() + ttlMs) },
+  });
+  return count > 0;
+}
+
+/** Whether the checkout lease is still recorded for this holder. */
+export async function checkoutLeaseHeld(
+  prisma: PrismaClient,
+  organizationId: string,
+  leaseId: string,
+): Promise<boolean> {
+  const held = await prisma.billingAccount.findFirst({
+    where: { organizationId, checkoutLeaseId: leaseId },
+    select: { organizationId: true },
+  });
+  return held !== null;
+}
+
 /** The subscription exists but has no access until the owner settles it in the billing portal. */
 export function needsBillingPortal(status: string | null): boolean {
   return status === "unpaid" || status === "paused";
@@ -358,15 +418,47 @@ export async function syncBillingSnapshot(
   return (await prisma.billingAccount.count({ where: { customerId } })) > 0;
 }
 
-/** Billable seats: every organization member, never fewer than one. */
+/** Billable seats: every organization member but guests, never fewer than one. */
 export async function organizationSeatCount(
   prisma: PrismaClient,
   organizationId: string,
 ): Promise<number> {
-  const members = await prisma.member.count({ where: { organizationId } });
+  const members = await prisma.member.count({
+    where: { organizationId, role: { not: GUEST_ROLE } },
+  });
   return Math.max(1, members);
 }
 
+/** An organization that is not being deleted: its default Space is not being torn down. */
+export const LIVE_ORGANIZATION: Prisma.OrganizationWhereInput = {
+  spaces: { some: { isDefault: true, deletingAt: null } },
+};
+
+/** The org role of someone who belongs to an organization only through Spaces they were invited to. */
+export const GUEST_ROLE = "guest";
+
+/** The oldest organization the user owns that is not being deleted, where their own Spaces live. */
+export async function ownedOrganizationId(
+  db: Pick<PrismaClient, "member">,
+  userId: string,
+): Promise<string> {
+  const memberships = await db.member.findMany({
+    where: {
+      userId,
+      organization: LIVE_ORGANIZATION,
+    },
+    select: { organizationId: true, role: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const owned = memberships.find((membership) => isOwnerRole(membership.role));
+  if (!owned) throw new IsolationError();
+  return owned.organizationId;
+}
+
+/**
+ * The organization that pays for this person's work in a Space: the Space's own, or for a guest
+ * their own oldest organization, so a shared Space never bills its owner for someone else.
+ */
 export async function organizationForMember(
   prisma: PrismaClient,
   input: { spaceId: string; userId: string },
@@ -383,6 +475,9 @@ export async function organizationForMember(
     select: { role: true },
   });
   if (!member) return null;
+  if (member.role === GUEST_ROLE) {
+    return { organizationId: await ownedOrganizationId(prisma, input.userId), isOwner: true };
+  }
   return { organizationId: space.organizationId, isOwner: isOwnerRole(member.role) };
 }
 
@@ -471,7 +566,8 @@ export async function organizationOwnerHadTrial(
   return false;
 }
 
-function isOwnerRole(role: string): boolean {
+/** Better Auth stores roles as a comma-separated list. */
+export function isOwnerRole(role: string): boolean {
   return role
     .split(",")
     .map((value) => value.trim())

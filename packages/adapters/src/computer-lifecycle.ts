@@ -35,6 +35,7 @@ import {
   clearInactiveUserComputerControl,
   expireComputerControl,
   hasActiveComputerControl,
+  holdsUserControl,
   isIdleOwnComputerTakeover,
   revokeScreenControl,
 } from "./computer-control.js";
@@ -533,6 +534,7 @@ export async function provisionComputer(
               ...(!activeControl
                 ? {
                     controlLeaseId: null,
+                    controlUserId: null,
                     controlLeaseExpiresAt: null,
                     controlBotId: null,
                     controlRunId: null,
@@ -1017,8 +1019,12 @@ export async function replaceComputer(
   ) {
     throw new ComputerBusyError();
   }
+  // Only the person holding the screen can hand it back by resetting; another member's
+  // session is never claimed out from under them.
   const handBackIdleTakeover =
-    options?.handBackIdleTakeover === true && isIdleOwnComputerTakeover(existing, botId);
+    options?.handBackIdleTakeover === true &&
+    isIdleOwnComputerTakeover(existing, botId) &&
+    holdsUserControl(existing, context.userId);
   if (!handBackIdleTakeover && existing.controlLeaseId && !hasActiveComputerControl(existing)) {
     if (options?.handBackIdleTakeover && existing.controlRunId) throw new ComputerBusyError();
     const expired = await expireComputerControl(deps, existing.id, existing.controlLeaseId);
@@ -1079,6 +1085,7 @@ export async function replaceComputer(
         controlLeaseId: existing.controlLeaseId,
         controlLeaseExpiresAt: existing.controlLeaseExpiresAt,
         controlBotId: existing.controlBotId,
+        controlUserId: existing.controlUserId,
         controlRunId: null,
       }
     : null;
@@ -1117,6 +1124,7 @@ export async function replaceComputer(
         ? {
             controlHolder: "none" as const,
             controlLeaseId: null,
+            controlUserId: null,
             controlLeaseExpiresAt: null,
             controlBotId: null,
             controlRunId: null,
@@ -1263,6 +1271,7 @@ export async function replaceComputer(
         providerRef: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,

@@ -206,7 +206,13 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeDisabled();
   await captureScreenshot(page, testInfo, "memory-honcho-user-peer-reserved");
   await userPeer.fill("user-alex");
+  await expect(
+    memory.getByText("Recall from this peer; save to Rakazo’s own peers."),
+  ).toBeVisible();
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
+  await memory
+    .getByText("Recall from this peer; save to Rakazo’s own peers.")
+    .evaluate((element) => element.scrollIntoView({ block: "center" }));
   await captureScreenshot(page, testInfo, "memory-honcho-filled");
   await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
   await expect(memory.getByLabel("Base URL", { exact: true })).toHaveValue("");

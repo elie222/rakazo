@@ -59,3 +59,10 @@ name: Workspace
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 09-space-settings
+- openLink: "rakazo:///space-members?spaceId=${RAKAZO_SCREENSHOT_TEAM_SPACE_ID}"
+- extendedWaitUntil:
+    visible: "Owner"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 10-space-members

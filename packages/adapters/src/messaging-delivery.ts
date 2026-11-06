@@ -126,7 +126,9 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   const identity = await deps.prisma.messagingIdentity.findUnique({
     where: { botId: run.botId },
   });
-  if (!identity) return;
+  // The linked DM is one person's chat. In a shared Space another member's run on this bot, such
+  // as a reply to their message_bot, stays in the app instead of reaching that person's chat app.
+  if (!identity || identity.userId !== run.userId) return;
 
   // bot_message runs can carry the bot's user-facing reply after a delegate wake.
   // extractText keeps only text and page titles, so inter-bot chatter blocks never leak out.

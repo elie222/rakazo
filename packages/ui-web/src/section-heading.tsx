@@ -6,7 +6,7 @@ import { cn } from "./lib/utils.js";
 const sectionHeadingVariants = cva("font-medium", {
   variants: {
     variant: {
-      title: "text-[15px] leading-[22px] text-foreground",
+      title: "text-body-lg text-foreground",
       label: "text-label text-muted-foreground",
     },
   },

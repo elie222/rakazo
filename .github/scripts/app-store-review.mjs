@@ -14,6 +14,17 @@ const EDITABLE = new Set([
 
 const base64url = (value) => Buffer.from(value).toString("base64url");
 
+function errorDetails(errors) {
+  const details = [];
+  for (const error of errors) {
+    if (error.detail || error.title) details.push(error.detail ?? error.title);
+    for (const associated of Object.values(error.meta?.associatedErrors ?? {})) {
+      details.push(...errorDetails([associated].flat()));
+    }
+  }
+  return details;
+}
+
 export function appStoreToken({ keyId, issuerId, privateKey }, now = Date.now()) {
   const iat = Math.floor(now / 1000);
   const header = base64url(JSON.stringify({ alg: "ES256", kid: keyId, typ: "JWT" }));
@@ -29,7 +40,9 @@ export function appStoreToken({ keyId, issuerId, privateKey }, now = Date.now())
 
 export function appStoreClient(credentials, fetchImpl = fetch) {
   return async (method, path, data) => {
-    const response = await fetchImpl(`${API}${path}`, {
+    const url = new URL(path, API);
+    if (url.origin !== API) throw new Error("Refusing an App Store pagination URL outside Apple");
+    const response = await fetchImpl(url.href, {
       method,
       headers: {
         Authorization: `Bearer ${appStoreToken(credentials)}`,
@@ -40,11 +53,21 @@ export function appStoreClient(credentials, fetchImpl = fetch) {
     const text = await response.text();
     const body = text ? JSON.parse(text) : {};
     if (!response.ok) {
-      const detail = body.errors?.map((error) => error.detail ?? error.title).join("; ");
-      throw new Error(`${method} ${path} failed with ${response.status}: ${detail ?? text}`);
+      const detail = [...new Set(errorDetails(body.errors ?? []))].join("; ");
+      throw new Error(`${method} ${path} failed with ${response.status}: ${detail || text}`);
     }
     return body;
   };
+}
+
+async function allPages(request, path) {
+  const result = [];
+  while (path) {
+    const page = await request("GET", path);
+    result.push(...page.data);
+    path = page.links?.next;
+  }
+  return result;
 }
 
 async function processedBuild(request, { appId, version, buildNumber, sleep, timeoutMs }) {
@@ -81,12 +104,19 @@ export async function submitForReview(request, options) {
       `/v1/apps/${appId}/appStoreVersions?filter[platform]=IOS&filter[versionString]=${version}`,
     )
   ).data[0];
-  if (existing && !EDITABLE.has(existing.attributes.appStoreState)) {
+  const ready = existing?.attributes.appStoreState === "READY_FOR_REVIEW";
+  if (existing && !EDITABLE.has(existing.attributes.appStoreState) && !ready) {
     console.log(`${version} is already ${existing.attributes.appStoreState}; nothing to submit`);
     return;
   }
   let versionId = existing?.id;
-  if (versionId) {
+  if (ready) {
+    const selected = await request("GET", `/v1/appStoreVersions/${versionId}/build`);
+    if (selected.data?.id !== build.id)
+      throw new Error(
+        "The review-ready version has a different build attached; leave it unchanged",
+      );
+  } else if (versionId) {
     await request("PATCH", `/v1/appStoreVersions/${versionId}`, {
       type: "appStoreVersions",
       id: versionId,
@@ -102,30 +132,55 @@ export async function submitForReview(request, options) {
     versionId = created.data.id;
   }
 
-  const localizations = await request(
-    "GET",
-    `/v1/appStoreVersions/${versionId}/appStoreVersionLocalizations`,
-  );
-  for (const localization of localizations.data) {
-    await request("PATCH", `/v1/appStoreVersionLocalizations/${localization.id}`, {
-      type: "appStoreVersionLocalizations",
-      id: localization.id,
-      attributes: { whatsNew: notes },
-    });
+  if (!ready) {
+    const localizations = await request(
+      "GET",
+      `/v1/appStoreVersions/${versionId}/appStoreVersionLocalizations`,
+    );
+    for (const localization of localizations.data) {
+      await request("PATCH", `/v1/appStoreVersionLocalizations/${localization.id}`, {
+        type: "appStoreVersionLocalizations",
+        id: localization.id,
+        attributes: { whatsNew: notes },
+      });
+    }
   }
 
-  const submission = await request("POST", "/v1/reviewSubmissions", {
+  const drafts = await allPages(request, `/v1/apps/${appId}/reviewSubmissions`);
+  let submission;
+  let emptyDraft;
+  let attached = false;
+  for (const draft of drafts) {
+    if (draft.attributes.platform !== "IOS" || draft.attributes.state !== "READY_FOR_REVIEW")
+      continue;
+    const items = await allPages(
+      request,
+      `/v1/reviewSubmissions/${draft.id}/items?include=appStoreVersion`,
+    );
+    if (items.length === 0) {
+      emptyDraft ??= draft;
+      continue;
+    }
+    if (items.length === 1 && items[0].relationships?.appStoreVersion?.data?.id === versionId) {
+      submission = { data: draft };
+      attached = true;
+      break;
+    }
+  }
+  if (!submission && emptyDraft) submission = { data: emptyDraft };
+  submission ??= await request("POST", "/v1/reviewSubmissions", {
     type: "reviewSubmissions",
     attributes: { platform: "IOS" },
     relationships: { app: { data: { type: "apps", id: appId } } },
   });
-  await request("POST", "/v1/reviewSubmissionItems", {
-    type: "reviewSubmissionItems",
-    relationships: {
-      reviewSubmission: { data: { type: "reviewSubmissions", id: submission.data.id } },
-      appStoreVersion: { data: { type: "appStoreVersions", id: versionId } },
-    },
-  });
+  if (!attached)
+    await request("POST", "/v1/reviewSubmissionItems", {
+      type: "reviewSubmissionItems",
+      relationships: {
+        reviewSubmission: { data: { type: "reviewSubmissions", id: submission.data.id } },
+        appStoreVersion: { data: { type: "appStoreVersions", id: versionId } },
+      },
+    });
   await request("PATCH", `/v1/reviewSubmissions/${submission.data.id}`, {
     type: "reviewSubmissions",
     id: submission.data.id,

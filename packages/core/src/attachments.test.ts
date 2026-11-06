@@ -288,6 +288,21 @@ describe("peer message history", () => {
       ]),
     ).toBe("[to Analyst] chart it");
   });
+
+  it("keeps a group-chat line's sender", () => {
+    expect(
+      blocksToAgentHistoryText([
+        {
+          kind: "channel_message",
+          provider: "imessage",
+          channelId: "channel-1",
+          fromAddress: "+15550100",
+          fromLabel: "Ana",
+          text: "dinner at 8?",
+        },
+      ]),
+    ).toBe("[from Ana] dinner at 8?");
+  });
 });
 
 describe("ask history", () => {

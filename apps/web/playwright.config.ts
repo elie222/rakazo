@@ -8,6 +8,9 @@ const boatSandbox = process.env.SANDBOX_PROVIDER === "boat";
 // Pull-request CI leaves visual and edge-case coverage to the nightly run: these whole files, plus
 // any test tagged @nightly. Unit and Postgres suites already cover their behavior.
 const skipNightly = Boolean(process.env.E2E_SKIP_NIGHTLY);
+// CI pulls these into their own jobs so they do not share a shard with each other and set the floor.
+const skipHeavy = process.env.E2E_SKIP_HEAVY === "1";
+const heavySpecs = ["page-browser", "pages"];
 const nightlySpecs = [
   "activity-list",
   "agent-connection-approval",
@@ -73,13 +76,27 @@ const reporters = [
     : (["html", { open: "never", outputFolder: "../../playwright-report" }] as const),
 ];
 
+const ignoredSpecs = [...(skipNightly ? nightlySpecs : []), ...(skipHeavy ? heavySpecs : [])].map(
+  (name) => `**/${name}.spec.ts`,
+);
+
 export default defineConfig({
   testDir: "./e2e",
-  testIgnore: skipNightly ? nightlySpecs.map((name) => `**/${name}.spec.ts`) : undefined,
+  testIgnore: ignoredSpecs.length ? ignoredSpecs : undefined,
   grepInvert: skipNightly ? /@nightly/ : undefined,
   forbidOnly: Boolean(process.env.CI),
-  fullyParallel: false,
-  workers: realSandbox ? 1 : undefined,
+  // Specs that must stay ordered opt into test.describe.configure({ mode: "serial" }).
+  // CI keeps two workers per shard: GitHub's 4-vCPU runners starve at four concurrent Chromiums,
+  // and wall clock drops more from extra shards (separate machines) than from packing one box.
+  // Heavy page-browser runs alone with one worker so its second Chromium is not fighting a peer.
+  fullyParallel: !realSandbox,
+  workers: realSandbox
+    ? 1
+    : process.env.E2E_WORKERS
+      ? Number(process.env.E2E_WORKERS)
+      : process.env.CI
+        ? 2
+        : undefined,
   timeout: boatSandbox ? 600_000 : realSandbox ? 300_000 : 120_000,
   expect: { timeout: boatSandbox ? 300_000 : realSandbox ? 90_000 : 20_000 },
   reporter: reporters,
@@ -87,7 +104,8 @@ export default defineConfig({
     baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
-    video: "retain-on-failure",
+    // Video encodes every test on CI; screenshots and the failure trace are enough to debug.
+    video: process.env.CI ? "off" : "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {

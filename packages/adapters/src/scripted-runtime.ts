@@ -415,6 +415,27 @@ export function inferScript(
       },
     ];
   }
+  // A wallet purchase: the wallet owner approves it in the wallet, so no card asks here.
+  if (lower.includes("buy from the fixture shop")) {
+    return [
+      {
+        assistant: "i will ask your wallet for that purchase.",
+        toolCalls: [
+          {
+            name: "request_purchase",
+            args: {
+              merchantName: "Fixture Shop",
+              merchantUrl: "https://shop.example.test/checkout",
+              amount: 2_340,
+              currency: "usd",
+              reason:
+                "The owner asked to buy the groceries already in the cart at this shop, and the checkout page shows this total.",
+            },
+          },
+        ],
+      },
+    ];
+  }
   // The site is not in the message, so the owner did not name it and the call asks.
   const paidRequest = /paid request card(?: on (\w+))?/.exec(lower);
   if (paidRequest) {

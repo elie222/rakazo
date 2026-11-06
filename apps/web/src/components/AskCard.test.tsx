@@ -275,6 +275,14 @@ it("starts an ID and a phone visible and a PIN hidden, and the person can flip e
   expect(dialog()).toBeNull();
 });
 
+it("says the bot's browser stays signed in for everyone in a shared space", async () => {
+  const line = "The bot's browser stays signed in for everyone in this space";
+  await render({ ...loginCard, sharedBrowser: true });
+  expect(container.textContent).toContain(line);
+  await render(loginCard);
+  expect(container.textContent).not.toContain(line);
+});
+
 it("starts every field hidden when no label names an identifier", async () => {
   await render({ ...loginCard, loginFields: ["Memorable word", "Card number"] });
   await openEditor();
@@ -389,6 +397,25 @@ it("sizes approval buttons like the other card buttons", async () => {
     expect(button(label)?.classList.contains("min-h-8")).toBe(true);
     expect(button(label)?.classList.contains("py-3")).toBe(false);
   }
+});
+
+it("offers Always allow only when the approval card does", async () => {
+  const card: AskBlock = {
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Review before schedule_create",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "always", label: "Always allow this tool" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+  const labels = () => [...container.querySelectorAll("button")].map((item) => item.textContent);
+  await render(card);
+  expect(labels()).toEqual(["Allow once", "Always allow this tool", "Deny"]);
+  await render({ ...card, actions: card.actions!.filter((action) => action.id !== "always") });
+  expect(labels()).toEqual(["Allow once", "Deny"]);
 });
 
 it.each(["Allow in this space", "Allow for this chat"])(
@@ -856,4 +883,49 @@ it("sends Undo to the chat's space, not the one selected in another tab", async 
   expect(spaceRpc.bots.update).toHaveBeenCalledTimes(1);
   expect(rpc.bots.restoreInstructions).not.toHaveBeenCalled();
   expect(rpc.bots.update).not.toHaveBeenCalled();
+});
+
+it("draws a payment's order as a receipt in place of the text detail", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Pay on freshcart.test?",
+    detail: "Bananas × 6: $3.00",
+    detailFormat: "text",
+    receipt: {
+      button: "Place order",
+      items: [
+        { name: "Bananas × 6", amount: "$3.00" },
+        { name: "Delivery", amount: "$6.00" },
+        // A page line named like the card's own row is left out.
+        { name: "On the button", amount: "$1.00" },
+      ],
+      more: { count: 23, atLeast: true },
+      amount: "$20.00",
+      amountSource: "button",
+      total: "$17.40",
+    },
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+  await render(block);
+  const receipt = container.querySelector('[data-testid="ask-receipt"]');
+  expect([...receipt!.querySelectorAll("li")].map((row) => row.textContent)).toEqual([
+    "Bananas × 6$3.00",
+    "Delivery$6.00",
+    "23+ more",
+    "Total$17.40",
+    "On the button$20.00",
+  ]);
+  expect(receipt?.textContent).toContain("Button “Place order” · read from the page, not checked");
+  expect(container.querySelector('[data-testid="ask-detail"]')).toBeNull();
+
+  await render({ ...block, receipt: { items: [], amount: "$20.00", amountSource: "page" } });
+  expect(
+    [...container.querySelectorAll('[data-testid="ask-receipt"] li')].map((row) => row.textContent),
+  ).toEqual(["Total$20.00"]);
+  expect(container.textContent).toContain("Read from the page, not checked");
 });

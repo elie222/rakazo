@@ -140,6 +140,7 @@ import {
   requireMembership,
   rowSecurityWarning,
   runAsSystem,
+  SpaceOwnerRequiredError,
   securityEventRetentionDays,
   verifyContentKeys,
 } from "@rakazo/db";
@@ -613,8 +614,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     extraOrigins: MOBILE_AUTH_ORIGINS,
     androidAppCertFingerprints: env.passkeyAndroidCertFingerprints,
     beforeDeleteUser: async (userId) => {
-      // First, so a provider failure aborts deletion before anything is destroyed.
-      await billing?.cancelForDeletedUser(userId);
+      // Billing cancels inside, after the account's spaces are claimed and before anything is
+      // destroyed, so a provider failure aborts deletion with the account as it was.
       await deleteAccountContent(
         {
           prisma,
@@ -625,6 +626,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           dataDir: env.dataDir,
           messagingInstallations,
           secrets,
+          events,
+          billing,
         },
         userId,
       );
@@ -909,6 +912,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       integrationsCatalogUrl: env.integrationsCatalogUrl,
       mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
       desktopHostChoiceEnabled: Boolean(env.desktopStackToken),
+      computerSettingsEnabled: env.computerSettingsEnabled,
       mcpStdioEnabled: env.mcpStdioEnabled,
       mcpStdioAllowedCommands: env.mcpStdioAllowedCommands,
     },
@@ -1695,6 +1699,9 @@ export function handleRpcError(
   if (error instanceof IsolationError) {
     getLogger().warn(`rpc ${path.join("/")} not found`, { "error.stack": error.stack });
     throw new ORPCError("NOT_FOUND", { message: error.message, cause: error });
+  }
+  if (error instanceof SpaceOwnerRequiredError) {
+    throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });
   }
   // The user's own voice account refused the request: theirs to fix.
   if (error instanceof VoiceAccountError) {
