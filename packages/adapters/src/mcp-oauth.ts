@@ -30,6 +30,7 @@ import { readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { advisoryLock } from "./advisory-lock.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import {
@@ -1010,8 +1011,12 @@ type MaterialSnapshot = {
   secret: { id: string; ciphertext: string } | null;
 };
 
-function lockMaterial(tx: Prisma.TransactionClient, serverId: string): Promise<number> {
-  return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${serverId}))`;
+/** Serializes changes to one MCP server's stored credential across the API and worker. */
+export function lockMcpOAuthMaterial(
+  tx: Prisma.TransactionClient,
+  serverId: string,
+): Promise<unknown> {
+  return advisoryLock(tx, "mcp-oauth-material", serverId);
 }
 
 /** One refresh-token grant against the stored authorization server. */
@@ -1382,7 +1387,7 @@ export class McpOAuthBroker {
     // default transaction timeout.
     const { revision } = await withRefreshLock(
       this.prisma,
-      (tx) => lockMaterial(tx, pending.serverId),
+      (tx) => lockMcpOAuthMaterial(tx, pending.serverId),
       async (tx) => {
         const endpoint = pending.stdio ? null : pending.endpoint;
         const snapshot = await this.snapshot(tx, pending.serverId, input, endpoint);
@@ -1546,7 +1551,7 @@ export class McpOAuthBroker {
         () =>
           withRefreshLock(
             this.prisma,
-            (tx) => lockMaterial(tx, serverId),
+            (tx) => lockMcpOAuthMaterial(tx, serverId),
             async (tx) => {
               const snapshot = await this.snapshot(tx, serverId, context, endpoint);
               const material = snapshot.secret
@@ -1704,7 +1709,7 @@ export class McpOAuthBroker {
         stored,
         () =>
           this.prisma.$transaction(async (tx) => {
-            await lockMaterial(tx, serverId);
+            await lockMcpOAuthMaterial(tx, serverId);
             return this.commitMaterial(
               tx,
               serverId,
