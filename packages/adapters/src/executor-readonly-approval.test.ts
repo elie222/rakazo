@@ -2085,6 +2085,46 @@ describe("own settings through update_bot", () => {
     expect(f.results[0]).toMatchObject({ error: expect.stringContaining("outside content") });
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
   });
+  it("treats its own id in bot_id as its own settings", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([
+      { args: { bot_id: " bot-1 ", name: "Scout" }, executionId: "call-1" },
+      { args: { bot_id: "bot-1", readAloud: true }, executionId: "call-2" },
+    ]);
+    await f.run();
+    // Not refused as bot management (off here), and its own edit counts as no outside content.
+    expect(f.results).toEqual([
+      expect.objectContaining({ ok: true, name: "Scout" }),
+      { ok: true, readAloud: true },
+    ]);
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "bot-1", autoSpeak: false },
+        data: { autoSpeak: true },
+      }),
+    );
+    for (const effect of f.effects) expect(effect.request).not.toHaveProperty("bot_id");
+  });
+  it("holds instructions sent with its own id in bot_id like any own change", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([
+      { args: { bot_id: "bot-1", instructions: "Reply in short notes." }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.effects).toEqual([
+      expect.objectContaining({
+        kind: "update_bot",
+        status: "intended",
+        request: {
+          instructions: "Reply in short notes.",
+          reason: "Set in chat",
+          previousInstructions: "Draft only",
+          previousInstructionsFromBaseline: true,
+        },
+      }),
+    ]);
+  });
   it("reads its settings when called with no fields", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.setCalls([{ args: { name: null, model: "" }, executionId: "call-1" }]);

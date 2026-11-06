@@ -67,6 +67,16 @@ export async function applyTool(
   _route?: unknown,
   observer?: AgentToolExecutionObserver,
 ) {
+  // A bot naming itself in bot_id means its own settings. Dropping it here sends the call down
+  // the own path everywhere: preparation, the stored approval, the handler and the check below.
+  if (
+    name === "update_bot" &&
+    typeof args.bot_id === "string" &&
+    args.bot_id.trim() === ctx.bot.id
+  ) {
+    const { bot_id: _self, ...own } = args;
+    args = own;
+  }
   try {
     return await dispatchTool(ctx, name, args, executionId, observer);
   } finally {
