@@ -166,6 +166,8 @@ describe("mobile API authentication", () => {
       await expect(authenticate("new@example.test", "password", "New User")).rejects.toThrow(
         "Could not save your sign-in on this device. Try again.",
       );
+      // A sign-in that reports failure leaves no session in use.
+      expect((await authHeaders()).authorization).toBeUndefined();
     });
 
     it("preserves human storage error messages", async () => {

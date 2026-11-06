@@ -83,10 +83,10 @@ import {
   clearSessionToken,
   currentSessionGeneration,
   loadSessionToken,
-  replaceSessionTokenIfCurrent,
   restoreSessionToken,
   rotateSessionTokenIfCurrent,
   saveRotatedSessionToken,
+  saveSessionToken,
   saveVerifiedIntegrationsScope,
   snapshotSessionToken,
   tokenFromAuthResponse,
@@ -680,12 +680,12 @@ async function authenticate(
     try {
       if (!(await clearSpace()))
         throw new Error(t("Could not save your sign-in on this device. Try again."));
-      saved =
-        apiBase === currentApiBase() &&
-        (await replaceSessionTokenIfCurrent(generation, token)) &&
+      // Checked in the same tick the save starts; a failed write leaves no session behind.
+      if (apiBase === currentApiBase() && generation === currentSessionGeneration()) {
+        await saveSessionToken(token);
         // A change that lands while the token is being written clears it again.
-        currentSessionGeneration() === generation + 1 &&
-        apiBase === currentApiBase();
+        saved = currentSessionGeneration() === generation + 1 && apiBase === currentApiBase();
+      }
     } catch (error) {
       throw new Error(sessionSaveErrorText(error));
     }
