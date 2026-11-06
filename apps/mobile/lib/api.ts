@@ -83,10 +83,10 @@ import {
   clearSessionToken,
   currentSessionGeneration,
   loadSessionToken,
+  replaceSessionTokenIfCurrent,
   restoreSessionToken,
   rotateSessionTokenIfCurrent,
   saveRotatedSessionToken,
-  saveSessionToken,
   saveVerifiedIntegrationsScope,
   snapshotSessionToken,
   tokenFromAuthResponse,
@@ -639,11 +639,13 @@ export async function captureApiRequestContext(
   return { apiBase, headers, sessionGeneration: generation };
 }
 
-async function postAuth(path: string, input: Record<string, string>) {
+async function postAuth(path: string, input: Record<string, string>, apiBase = currentApiBase()) {
   return fetchMobileJson<unknown>(
-    `${currentApiBase()}/api/auth/${path}`,
+    `${apiBase}/api/auth/${path}`,
     {
       method: "POST",
+      // The app authenticates by bearer token only; a server's cookie must not outlive a switch.
+      credentials: "omit",
       // Emails sent before an account has a language follow the one this app shows.
       headers: {
         "content-type": "application/json",
@@ -661,7 +663,9 @@ async function authenticate(
   input: Record<string, string>,
   missingSession: string,
 ): Promise<{ verificationRequired: boolean }> {
-  const { response, body, invalidJson } = await postAuth(path, input);
+  const apiBase = currentApiBase();
+  const generation = currentSessionGeneration();
+  const { response, body, invalidJson } = await postAuth(path, input, apiBase);
   if (!response.ok || invalidJson) {
     throw new Error(authResponseErrorText(response.status, body, invalidJson));
   }
@@ -669,12 +673,22 @@ async function authenticate(
   if (path === "sign-up/email" && signupRequiresEmailVerification(body))
     return { verificationRequired: true };
   if (!token) throw new Error(missingSession);
-  try {
-    if (!(await clearSpace()))
-      throw new Error(t("Could not save your sign-in on this device. Try again."));
-    await saveSessionToken(token);
-  } catch (error) {
-    throw new Error(sessionSaveErrorText(error));
+  // A server switch or sign-out while the request was in flight: this token belongs to a server
+  // the app no longer uses, so it is never saved and its session is ended there.
+  let saved = false;
+  if (apiBase === currentApiBase() && generation === currentSessionGeneration()) {
+    try {
+      if (!(await clearSpace()))
+        throw new Error(t("Could not save your sign-in on this device. Try again."));
+      saved =
+        apiBase === currentApiBase() && (await replaceSessionTokenIfCurrent(generation, token));
+    } catch (error) {
+      throw new Error(sessionSaveErrorText(error));
+    }
+  }
+  if (!saved) {
+    void postSignOut(apiBase, { ...clientBuild.headers(), authorization: `Bearer ${token}` });
+    throw new Error(t("Could not continue"));
   }
   return { verificationRequired: false };
 }
@@ -897,22 +911,22 @@ export async function fetchMobileJson<T>(
   }
 }
 
-export async function signOut() {
-  await rpc("notifications/unregisterPush").catch(() => undefined);
-  const headers = await authHeaders();
+/** Best-effort: ends the session these headers carry on `apiBase`; failures are ignored. */
+async function postSignOut(apiBase: string, headers: Record<string, string>): Promise<void> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
   try {
     await withAbort(
       fetchServer(
-        `${currentApiBase()}/api/auth/sign-out`,
+        `${apiBase}/api/auth/sign-out`,
         {
           method: "POST",
           headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
           body: "{}",
+          credentials: "omit",
           signal: controller.signal,
         },
-        currentApiBase(),
+        apiBase,
       ),
       controller.signal,
       "Request timed out",
@@ -920,6 +934,11 @@ export async function signOut() {
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function signOut() {
+  await rpc("notifications/unregisterPush").catch(() => undefined);
+  await postSignOut(currentApiBase(), await authHeaders());
   const sessionCleared = await clearSessionToken();
   const spaceCleared = await clearSpace();
   if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
