@@ -1702,23 +1702,25 @@ describe("own instructions through update_bot", () => {
       long,
     );
   });
-  it("rejects an instructions offset that is not a plain read", async () => {
+  it("reads when an instructions offset comes with other fields, and names them", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     const long = "x".repeat(19_000);
     f.instructionState.instructions = long;
     f.setCalls([
       { args: { instructions_offset: -1 }, executionId: "call-1" },
       { args: { instructions_offset: 1.5 }, executionId: "call-2" },
-      { args: { instructions_offset: 0, name: "New name" }, executionId: "call-3" },
+      { args: { instructions_offset: 8000, name: "New name" }, executionId: "call-3" },
       { args: { instructions_offset: 19_000 }, executionId: "call-4" },
     ]);
     await f.run();
     expect(f.results).toEqual([
       { error: "instructions_offset must be a whole number of 0 or more." },
       { error: "instructions_offset must be a whole number of 0 or more." },
-      {
-        error: "instructions_offset only works on a read: call update_bot with no other fields.",
-      },
+      expect.objectContaining({
+        name: "Assistant",
+        instructionsOffset: 8000,
+        ignoredFields: expect.stringContaining('name="New name"'),
+      }),
       { error: "instructions_offset is past the end of your instructions." },
     ]);
     expect(f.instructionState.instructions).toBe(long);
@@ -2021,6 +2023,23 @@ describe("own settings through update_bot", () => {
       expect(f.effects).toEqual([]);
     },
   );
+  it("answers a paged read that also names a model or instructions, even outside the owner's chat", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([
+      {
+        args: { instructions_offset: 1, model: "Claude Sonnet", instructions: "Rewrite" },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([
+      expect.objectContaining({
+        instructions: "Draft only",
+        ignoredFields: expect.stringContaining('model="Claude Sonnet"'),
+      }),
+    ]);
+    expect(f.instructionState.instructions).toBe("Draft only");
+  });
   it("changes read-aloud only while it is unchanged and posts the undo card", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
@@ -3516,7 +3535,10 @@ describe("user_computer_shell", () => {
     f.setCalls([call("ls")]);
     await f.run();
     expect(f.results).toEqual([
-      { error: "The user's computer is not connected. Ask them to open the Rakazo desktop app." },
+      {
+        error:
+          'The user\'s computer is not connected. If the task needs it, ask them to open the Rakazo desktop app and turn on "Let bots use this computer" in its settings.',
+      },
     ]);
     expect(requests).toEqual([]);
   });

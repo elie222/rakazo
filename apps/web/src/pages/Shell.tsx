@@ -19,6 +19,7 @@ import {
   memberName,
   newClientId,
   otherAuthor,
+  workingRoutineName,
 } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
@@ -1162,6 +1163,7 @@ function SpaceShell() {
               dismissableAskIds={dismissableAskIds}
               running={transcriptRunning}
               workingBots={workingBots}
+              workingRoutine={workingRoutineName(workingRuns)}
               userBubble={userBubble}
               onCallBack={
                 bootstrapMe?.phoneCallsEnabled && !inGroup && active

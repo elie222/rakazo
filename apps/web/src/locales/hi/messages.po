@@ -866,6 +866,10 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "Anyone at @{ownerDomain}"
+msgstr "@{ownerDomain} पर कोई भी"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Anyone with the link"
 msgstr "लिंक वाला कोई भी"
@@ -1159,6 +1163,10 @@ msgstr "बॉट"
 msgid "Bot"
 msgstr "बॉट"
 
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Bot email addresses"
+msgstr "बॉट के ईमेल पते"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Bot is watching, not acting"
 msgstr "बॉट देख रहा है, कार्रवाई नहीं कर रहा"
@@ -1359,6 +1367,7 @@ msgid "Chart failed to render: {error}"
 msgstr "चार्ट रेंडर नहीं हो सका: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1481,6 +1490,10 @@ msgstr ""
 #: src/components/vault/VaultItemEditor.tsx
 msgid "City"
 msgstr ""
+
+#: src/components/BotEmailAddressField.tsx
+msgid "Claim"
+msgstr "लें"
 
 #: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
@@ -1892,14 +1905,17 @@ msgstr "{0} के साथ जारी रखें"
 msgid "Conversations"
 msgstr ""
 
+#: src/components/BotEmailAddressField.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
+#: src/components/vault/BotEmailAddresses.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
 msgstr "कॉपी किया गया"
 
@@ -1909,6 +1925,11 @@ msgstr "कॉपी किया गया"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "कॉपी करें"
+
+#: src/components/BotEmailAddressField.tsx
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Copy {address}"
+msgstr "{address} कॉपी करें"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -3037,6 +3058,15 @@ msgstr "प्रोफ़ाइल संपादित करें"
 msgid "Email"
 msgstr "ईमेल"
 
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "ईमेल"
+
+#: src/components/BotEmailAddressField.tsx
+msgid "Email address"
+msgstr "ईमेल पता"
+
 #: src/lib/user-error.ts
 msgid "Email is not allowed to register"
 msgstr "इस ईमेल को पंजीकरण की अनुमति नहीं है"
@@ -3425,6 +3455,10 @@ msgstr ""
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "सामान्य"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Get an email address"
+msgstr "ईमेल पता पाएँ"
 
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
@@ -4198,6 +4232,10 @@ msgstr "संदेश…"
 msgid "Messaged {peer}"
 msgstr "{peer} को संदेश भेजा"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr ""
@@ -4775,6 +4813,10 @@ msgstr ""
 #: src/components/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Only me"
+msgstr "सिर्फ़ मैं"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5452,6 +5494,10 @@ msgstr "{site} हटाएं"
 msgid "Remove change trigger"
 msgstr "बदलाव ट्रिगर हटाएँ"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Remove email trigger"
+msgstr "ईमेल ट्रिगर हटाएँ"
+
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -5531,6 +5577,10 @@ msgstr "कुंजी बदलें"
 #: src/components/SecretAskCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Replaces the login saved for {0}"
+msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
 msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
@@ -5733,6 +5783,10 @@ msgstr "चल रहा है"
 #: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "चल रहा है"
+
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "{workingRoutine} चल रहा है…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
@@ -6559,6 +6613,10 @@ msgstr ""
 msgid "Testing…"
 msgstr "परीक्षण हो रहा है…"
 
+#: src/components/BotEmailAddressField.tsx
+msgid "That address isn't available"
+msgstr "यह पता उपलब्ध नहीं है"
+
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "बॉट फ़ाइल का उपयोग कर सकता है, लेकिन तस्वीर नहीं देख पाएगा।"
@@ -7096,6 +7154,10 @@ msgstr "{hostLabel} का उपयोग करें"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "एक्सेस टोकन के लिए {oauthEnvReference} का उपयोग करें।"
 
+#: src/components/BotEmailAddressField.tsx
+msgid "Use 2 to 64 characters"
+msgstr "2 से 64 अक्षर इस्तेमाल करें"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7116,6 +7178,10 @@ msgstr "{label} के लिए अपने डिफ़ॉल्ट इस्
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr ""
+
+#: src/components/BotEmailAddressField.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "अक्षर, अंक, बिंदु, डैश या अंडरस्कोर इस्तेमाल करें"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7321,6 +7387,10 @@ msgstr "किसकी निगरानी करें"
 msgid "When a webhook fires"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "When an email arrives"
+msgstr "जब ईमेल आए"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
 msgstr "जब काम पूरा हो या आपकी जानकारी चाहिए"
@@ -7346,6 +7416,10 @@ msgstr "बॉट कहां चलने चाहिए?"
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
 msgstr "यह पेज कौन खोल सकता है"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Who can start it"
+msgstr "कौन शुरू कर सकता है"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

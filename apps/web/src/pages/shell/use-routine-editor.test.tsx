@@ -23,6 +23,7 @@ const routine: Routine = {
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
+  emailSenders: null,
   modelProvider: null,
   modelId: null,
   thinkingLevel: null,

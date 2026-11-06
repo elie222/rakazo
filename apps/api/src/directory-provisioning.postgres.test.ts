@@ -1,11 +1,11 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import { FakeSandboxProvider } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, createRepos } from "@rakazo/db";
+import { asSystem, bootstrapUserSpace, createRepos } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AppHandles } from "./app.js";
 import { createApp } from "./app.js";
@@ -340,6 +340,126 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     const again = await scim("POST", "/Users", userResource(address, "directory-grace"));
     expect(again.status).toBe(201);
     expect(await accountOf(address)).toMatchObject({ id: grace.id, deactivatedAt: null });
+  });
+
+  it("takes a turned-off person out of spaces they were invited into, keeping ones they own", async () => {
+    const owner = await system.user.create({
+      data: { id: randomUUID(), name: "Olive", email: "olive@example.test", emailVerified: true },
+    });
+    const personal = await bootstrapUserSpace(system, owner, {
+      signupsEnabled: "true",
+      signupAllowlist: "",
+    });
+    const { organizationId } = await system.space.findUniqueOrThrow({
+      where: { id: personal.spaceId },
+    });
+    const spaceId = randomUUID();
+    await system.space.create({
+      data: { id: spaceId, organizationId, name: "Launch", createdByUserId: owner.id },
+    });
+    await system.spaceMember.create({
+      data: {
+        id: randomUUID(),
+        spaceId,
+        organizationId,
+        userId: owner.id,
+        role: "owner",
+        createdAt: new Date(),
+      },
+    });
+    const address = "nora@example.test";
+    const resource = (await (
+      await scim("POST", "/Users", userResource(address, "directory-nora"))
+    ).json()) as { id: string };
+    const nora = await accountOf(address);
+    // A full member of the owner's organization: invited into Launch, and owner of a space of
+    // her own there that the owner joined.
+    const joined = { organizationId, userId: nora.id, createdAt: new Date() };
+    await system.member.create({ data: { id: randomUUID(), ...joined, role: "member" } });
+    await system.spaceMember.create({
+      data: { id: randomUUID(), ...joined, spaceId, role: "member" },
+    });
+    const notes = randomUUID();
+    await system.space.create({
+      data: { id: notes, organizationId, name: "Field notes", createdByUserId: nora.id },
+    });
+    await system.spaceMember.create({
+      data: { id: randomUUID(), ...joined, spaceId: notes, role: "owner" },
+    });
+    await system.spaceMember.create({
+      data: {
+        id: randomUUID(),
+        organizationId,
+        userId: owner.id,
+        spaceId: notes,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    const bot = await createRepos(system).createBot(
+      { userId: nora.id, spaceId, email: address, isDeploymentOwner: false },
+      { name: "Scout", description: "", instructions: "", notifyOnFinish: false },
+    );
+    const thread = await system.thread.findFirstOrThrow({ where: { botId: bot.id } });
+    // Nora's run is working in the shared chat, and the owner's next message waits behind it.
+    const shared = { spaceId, botId: bot.id, threadId: thread.id, userId: nora.id };
+    const task = await system.task.create({
+      data: { ...shared, prompt: "fixture", status: "running" },
+    });
+    const running = await system.run.create({
+      data: { ...shared, taskId: task.id, trigger: "user", status: "running" },
+    });
+    const waiting = await system.message.create({
+      data: {
+        threadId: thread.id,
+        seq: 1_000,
+        role: "user",
+        authorUserId: owner.id,
+        blocks: [{ kind: "text", text: "Also this" }],
+      },
+    });
+    await system.steeringMessage.create({
+      data: { messageId: waiting.id, botId: bot.id, userId: owner.id },
+    });
+
+    const off = await scim("PATCH", `/Users/${resource.id}`, {
+      schemas: [PATCH_SCHEMA],
+      Operations: [{ op: "Replace", path: "active", value: "False" }],
+    });
+    expect([200, 204]).toContain(off.status);
+    expect(await system.spaceMember.count({ where: { spaceId, userId: nora.id } })).toBe(0);
+    // The space she owns stays hers, and with it her place in the organization.
+    expect(
+      await system.spaceMember.findUniqueOrThrow({
+        where: { spaceId_userId: { spaceId: notes, userId: nora.id } },
+      }),
+    ).toMatchObject({ role: "owner" });
+    expect(await system.member.count({ where: { organizationId, userId: nora.id } })).toBe(1);
+    expect(await system.bot.findUniqueOrThrow({ where: { id: bot.id } })).toMatchObject({
+      userId: owner.id,
+      spaceId,
+    });
+    expect(await system.thread.findFirstOrThrow({ where: { botId: bot.id } })).toMatchObject({
+      userId: owner.id,
+    });
+    expect((await system.run.findUniqueOrThrow({ where: { id: running.id } })).status).toBe(
+      "cancelled",
+    );
+    // Started for the owner; the worker may already have picked it up.
+    expect(
+      await system.run.findFirstOrThrow({
+        where: { threadId: thread.id, sourceMessageId: waiting.id },
+      }),
+    ).toMatchObject({ userId: owner.id });
+
+    // Turning them back on restores sign-in, not the membership: the owner invites them again.
+    const on = await scim("PATCH", `/Users/${resource.id}`, {
+      schemas: [PATCH_SCHEMA],
+      Operations: [{ op: "Replace", path: "active", value: "True" }],
+    });
+    expect([200, 204]).toContain(on.status);
+    expect((await accountOf(address)).deactivatedAt).toBeNull();
+    expect(await system.spaceMember.count({ where: { spaceId, userId: nora.id } })).toBe(0);
   });
 
   it("takes over an existing account without changing it, and leaves others alone", async () => {

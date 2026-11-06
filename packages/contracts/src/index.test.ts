@@ -307,6 +307,13 @@ describe("contracts", () => {
     );
   });
 
+  it("accepts a known reply mode on bot updates", () => {
+    expect(UpdateBotInput.parse({ botId: "bot-1", replyMode: "messages" }).replyMode).toBe(
+      "messages",
+    );
+    expect(UpdateBotInput.safeParse({ botId: "bot-1", replyMode: "quiet" }).success).toBe(false);
+  });
+
   it("drops a title that installed apps still send", () => {
     expect(CreateBotInput.parse({ name: "Chief", title: "Lead" })).not.toHaveProperty("title");
     expect(UpdateBotInput.parse({ botId: "bot-1", title: "Lead" })).toEqual({ botId: "bot-1" });

@@ -24,6 +24,7 @@ import {
 import { RunHistoryWriteError, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
+import { MAX_APPROVAL_DETAIL_LENGTH, truncate } from "./approval-ask.js";
 import { isToolPauseResult } from "./approval-effect.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
@@ -57,6 +58,7 @@ import {
   flushPendingTools,
   flushProgress,
   mayBeSilentEnding,
+  narrationBecomesMessages,
   nextProgressNonce,
   progressHeldForSilence,
   publishMidTurnNarration,
@@ -337,6 +339,10 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
   const { deps, run } = ctx;
   const { reply } = ctx.state;
   reply.assistantTurnBreakPending = true;
+  if (ctx.replyMode === "messages") {
+    await flushProgress(ctx);
+    await showNarrationStatus(ctx, await publishMidTurnNarration(ctx));
+  }
   if (!event.fromRunUser) return;
   const now = Date.now();
   if (
@@ -362,7 +368,7 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
   await flushProgress(ctx);
   const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
   const text = redactSecretsAfter(reply.narrationSoFar, before.text, ctx.secrets).trim();
-  if (text && runPromotesMidTurnNarration(run.trigger) && !mayBeSilentEnding(ctx, text)) {
+  if (text && narrationBecomesMessages(ctx) && !mayBeSilentEnding(ctx, text)) {
     reply.narrationSoFar += before.text;
     reply.messageSegments = before.remaining;
     reply.currentTextSegment = "";
@@ -393,7 +399,10 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
   await publishNarrationBeforeAsk(ctx);
   const safeText = redactSecrets(event.text, ctx.secrets);
-  const safeDetail = event.detail ? redactSecrets(event.detail, ctx.secrets) : event.detail;
+  // The bot's own words under its question, capped like an approval card's detail.
+  const safeDetail = event.detail
+    ? truncate(redactSecrets(event.detail, ctx.secrets), MAX_APPROVAL_DETAIL_LENGTH)
+    : event.detail;
   const safeActions = event.actions?.map((action) => ({
     id: action.id,
     label: redactSecrets(action.label, ctx.secrets),
@@ -414,6 +423,8 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
         kind: "ask",
         text: safeText,
         detail: safeDetail,
+        // A runtime ask's detail is prose the bot wrote, never tool arguments.
+        ...(safeDetail ? { detailFormat: "text" as const } : {}),
         status: "pending",
         actions: safeActions,
       },
@@ -791,6 +802,9 @@ export async function completeRun(ctx: RunContext) {
   // Persisting peer results here also lets outcome delivery retry after completion.
   recordExplicitNoResponse(reply, reply.lastDiscardedMidTurnNarration);
   // When nothing follows the last step, the notes since the last interim message are the reply.
+  // Messages mode keeps only the latest one; the earlier ones were private working.
+  const fallbackNotes =
+    ctx.replyMode === "messages" ? reply.workingNotes.slice(-1) : reply.workingNotes;
   if (
     !isBackgroundRunTrigger(run.trigger) &&
     !ctx.state.handedOff &&
@@ -799,11 +813,8 @@ export async function completeRun(ctx: RunContext) {
     !reply.textSinceLastStep.trim()
   ) {
     flushPendingTools(reply);
-    reply.messageSegments = withoutLastToolStepNotes(
-      reply.messageSegments,
-      reply.workingNotes.length,
-    );
-    const notes = reply.workingNotes.join("\n\n");
+    reply.messageSegments = withoutLastToolStepNotes(reply.messageSegments, fallbackNotes.length);
+    const notes = fallbackNotes.join("\n\n");
     const separator = assistantTurnSeparator(reply.assembled, notes);
     reply.assembled += separator + notes;
     reply.currentTextSegment += separator + notes;

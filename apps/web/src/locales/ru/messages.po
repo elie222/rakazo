@@ -866,6 +866,10 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "Anyone at @{ownerDomain}"
+msgstr "Любой из @{ownerDomain}"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Anyone with the link"
 msgstr "Все, у кого есть ссылка"
@@ -1159,6 +1163,10 @@ msgstr "Бот"
 msgid "Bot"
 msgstr "Бот"
 
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Bot email addresses"
+msgstr "Адреса почты ботов"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Bot is watching, not acting"
 msgstr "Бот наблюдает, но не действует"
@@ -1359,6 +1367,7 @@ msgid "Chart failed to render: {error}"
 msgstr "Не удалось отобразить диаграмму: {error}."
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1481,6 +1490,10 @@ msgstr ""
 #: src/components/vault/VaultItemEditor.tsx
 msgid "City"
 msgstr ""
+
+#: src/components/BotEmailAddressField.tsx
+msgid "Claim"
+msgstr "Занять"
 
 #: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
@@ -1892,14 +1905,17 @@ msgstr "Продолжить с {0}"
 msgid "Conversations"
 msgstr ""
 
+#: src/components/BotEmailAddressField.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
+#: src/components/vault/BotEmailAddresses.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
 msgstr "Скопировано"
 
@@ -1909,6 +1925,11 @@ msgstr "Скопировано"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Копировать"
+
+#: src/components/BotEmailAddressField.tsx
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Copy {address}"
+msgstr "Скопировать {address}"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -3037,6 +3058,15 @@ msgstr "Редактировать профиль"
 msgid "Email"
 msgstr "Электронная почта"
 
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "Почта"
+
+#: src/components/BotEmailAddressField.tsx
+msgid "Email address"
+msgstr "Адрес почты"
+
 #: src/lib/user-error.ts
 msgid "Email is not allowed to register"
 msgstr "Регистрация с этим адресом электронной почты запрещена"
@@ -3425,6 +3455,10 @@ msgstr ""
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "Общие"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Get an email address"
+msgstr "Получить адрес почты"
 
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
@@ -4198,6 +4232,10 @@ msgstr "Сообщение…"
 msgid "Messaged {peer}"
 msgstr "Отправлено сообщение {peer}"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "Обмен сообщениями"
@@ -4775,6 +4813,10 @@ msgstr ""
 #: src/components/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Only me"
+msgstr "Только я"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5452,6 +5494,10 @@ msgstr "Удалить {site}"
 msgid "Remove change trigger"
 msgstr "Удалить триггер изменений"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Remove email trigger"
+msgstr "Удалить триггер почты"
+
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -5531,6 +5577,10 @@ msgstr "Заменить ключ"
 #: src/components/SecretAskCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Replaces the login saved for {0}"
+msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
 msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
@@ -5733,6 +5783,10 @@ msgstr "выполняется"
 #: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "Выполняется"
+
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "Выполняется {workingRoutine}…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
@@ -6559,6 +6613,10 @@ msgstr ""
 msgid "Testing…"
 msgstr "Проверка…"
 
+#: src/components/BotEmailAddressField.tsx
+msgid "That address isn't available"
+msgstr "Этот адрес недоступен"
+
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "Бот сможет использовать файл, но не увидит изображение."
@@ -7096,6 +7154,10 @@ msgstr "Используйте {hostLabel}"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "Используйте {oauthEnvReference} для токена доступа."
 
+#: src/components/BotEmailAddressField.tsx
+msgid "Use 2 to 64 characters"
+msgstr "Используйте от 2 до 64 символов"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7116,6 +7178,10 @@ msgstr "Использовать ваши настройки: {label}"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr ""
+
+#: src/components/BotEmailAddressField.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "Используйте буквы, цифры, точки, дефисы или подчёркивания"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7321,6 +7387,10 @@ msgstr "Что отслеживать"
 msgid "When a webhook fires"
 msgstr "Когда срабатывает вебхук"
 
+#: src/pages/RoutineEditor.tsx
+msgid "When an email arrives"
+msgstr "Когда приходит письмо"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
 msgstr "Когда бот завершает работу или ждёт ответа"
@@ -7346,6 +7416,10 @@ msgstr "Где должны работать боты?"
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
 msgstr "Кто может открыть эту страницу"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Who can start it"
+msgstr "Кто может запустить"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

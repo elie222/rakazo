@@ -146,6 +146,9 @@ jobs:
       - name: Dependency update patch safety tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/dependency-update-patch.test.py
+      - name: Issue triage labeling tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 .github/scripts/apply-issue-triage.test.py
       - name: Changed-area classification tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/changed-areas.test.py
@@ -255,7 +258,7 @@ jobs:
       - run: pnpm --filter @rakazo/desktop build
         env:
           electron_config_cache: ${{ runner.temp }}/electron-cache
-      - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/host-computer.test.ts
+      - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/file-handle-path.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/host-computer.test.ts
       - name: Screen control on a real Windows desktop
         if: runner.os == 'Windows'
         run: pnpm exec vitest run apps/desktop/src/host-screen.windows.test.ts
