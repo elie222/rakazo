@@ -403,8 +403,9 @@ async function listen(): Promise<void> {
 /** Opens one microphone session, unless one is already running or the call is muted. */
 async function openMic(): Promise<void> {
   if (!state || micOpen || state.muted) return;
-  // A code is typed on screen: the call must not hear or transcribe it.
-  if (pendingCallSecretAsk(thread)) {
+  // A code is typed on screen: the call must not hear or transcribe it. Until the thread's
+  // first snapshot arrives, the call cannot tell, so it waits for that too.
+  if (!thread || pendingCallSecretAsk(thread)) {
     heldForCode = true;
     return;
   }
@@ -550,6 +551,10 @@ async function handleTranscript(raw: string): Promise<void> {
     hangUpTimer = setTimeout(endCall, CALL_FAREWELL_TIMEOUT_MS);
   }
   let releasePendingSend: (() => void) | undefined;
+  // An answer resumes the question's run, whose reply can reach the feed before the request
+  // returns, so expect that run from the start.
+  const runBeforeAnswer = callRunId;
+  if (next.kind === "answer") callRunId = next.runId;
   try {
     const clientNonce = callClientNonce(turnCallId);
     // A follow-up may be answered by a continuation run, so any reply in the call counts.
@@ -573,6 +578,7 @@ async function handleTranscript(raw: string): Promise<void> {
     }
   } catch (error) {
     if (state?.botId !== botId || callId !== turnCallId) return;
+    if (next.kind === "answer") callRunId = runBeforeAnswer;
     if (error instanceof AiConsentBlocked) {
       // Bot already closed server-side: do not clear its hang-up into a muted stuck call.
       if (botEndedCall) {
@@ -658,7 +664,8 @@ function onThread(next: MobileSnapshot): void {
     set({ heard: "" });
     return;
   }
-  // The code was entered on screen: listen again unless the bot is about to speak.
+  // The first snapshot arrived, or the code was entered on screen: listen again unless the
+  // bot is about to speak.
   if (!heldForCode) return;
   heldForCode = false;
   if (state.phase === "listening" && !micOpen && !opening) void listen();

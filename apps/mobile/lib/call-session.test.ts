@@ -126,7 +126,11 @@ function deferred<T>(): Deferred<T> {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function fakes(opts: { onDevice?: boolean } = {}) {
+function idleThread(botId: string): MobileSnapshot {
+  return { threadId: "thread-1", botId, cursor: 0, olderCursor: null, run: null, messages: [] };
+}
+
+function fakes(opts: { onDevice?: boolean; loadThread?: boolean } = {}) {
   const recordings: Array<Deferred<CallClip | null>> = [];
   const signals: AbortSignal[] = [];
   const speeches: Array<Deferred<void>> = [];
@@ -186,10 +190,12 @@ function fakes(opts: { onDevice?: boolean } = {}) {
       speeches.push(next);
       return next.promise;
     },
-    watch: (_botId, onReply, onCallEnded, onThread) => {
+    watch: (botId, onReply, onCallEnded, onThread) => {
       reply = onReply;
       ended = onCallEnded;
       threadUpdate = onThread;
+      // The real watcher hands over the loaded thread first; the microphone waits for it.
+      if (opts.loadThread !== false) onThread(idleThread(botId));
       return unwatch;
     },
   };
@@ -415,6 +421,27 @@ describe("mobile call session", () => {
       expect(fake.spoken).toEqual(["Shipped."]);
     });
 
+    it("speaks the answered run's reply even before the answer request returns", async () => {
+      const fake = fakes();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      // An earlier spoken turn started run-0; the question belongs to run-1.
+      fake.send.mockResolvedValueOnce("run-0");
+      fake.say("start");
+      await flush();
+      const answered = deferred<undefined>();
+      fake.answer.mockReturnValueOnce(answered.promise);
+      fake.thread(waitingOn([{ kind: "ask", text: "Ship it?", status: "pending" }]));
+      fake.replyWith("start-reply", "Started.", "run-0");
+      fake.speeches[0]?.resolve();
+      await flush();
+      fake.say("yes");
+      await flush();
+      fake.replyWith("reply", "Shipped.", "run-1");
+      expect(fake.spoken).toEqual(["Started.", "Shipped."]);
+      answered.resolve(undefined);
+    });
+
     it("steers a run that is still working", async () => {
       const fake = fakes();
       startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
@@ -457,6 +484,16 @@ describe("mobile call session", () => {
         caption: "Approve or deny it on screen.",
       });
       expect(fake.recordings).toHaveLength(2);
+    });
+
+    it("keeps the microphone shut until it knows whether the bot waits on a code", async () => {
+      const fake = fakes({ loadThread: false });
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      expect(fake.recordings).toHaveLength(0);
+      fake.thread(idleThread("bot-1"));
+      await flush();
+      expect(fake.recordings).toHaveLength(1);
     });
 
     it("keeps the microphone shut while the bot waits on a code typed on screen", async () => {
