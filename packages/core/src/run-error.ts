@@ -1,6 +1,7 @@
 import type { RunErrorKind } from "@rakazo/contracts";
 import {
   COMPUTER_ALLOWANCE_USED_ERROR,
+  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
   providerQuotaResetAt,
 } from "@rakazo/contracts";
@@ -115,6 +116,7 @@ const APP_RUN_ERRORS = new Set([
   MODEL_ACCESS_REQUIRED_RUN_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
   COMPUTER_ALLOWANCE_USED_ERROR,
+  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   ...stuckWorkStatusMessages(),
 ]);
 
