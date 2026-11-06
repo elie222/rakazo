@@ -562,6 +562,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Slack message": "Slack 訊息",
   "Message event": "訊息事件",
   "When something changes": "有變化時",
+  "When an email arrives": "收到電子郵件時",
   "Teams not enabled": "未啟用 Teams",
   "Slack not enabled": "未啟用 Slack",
   "Teams message": "Teams 訊息",

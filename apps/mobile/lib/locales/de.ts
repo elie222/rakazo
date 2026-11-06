@@ -517,6 +517,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Git event": "Git-Ereignis",
   "Message event": "Nachrichtenereignis",
   "When something changes": "Wenn sich etwas ändert",
+  "When an email arrives": "Wenn eine E-Mail eingeht",
   "Open conversation": "Unterhaltung öffnen",
   Paused: "Pausiert",
   Prompt: "Prompt",

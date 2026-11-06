@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => ({
   failStatus: false,
   loadDevice: vi.fn(),
   reads: [] as string[],
+  rpc: null as null | ((method: string) => Promise<unknown>),
+  typed: {} as Record<string, (value: string) => void>,
   t: (text: string) => text,
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
@@ -41,6 +43,7 @@ vi.mock("./api", () => ({
   selectedSpaceId: () => "space-fixture",
   captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
   rpc: async (method: string) => {
+    if (mocks.rpc) return mocks.rpc(method);
     if (mocks.failStatus && method === "voice/status") throw new Error("offline");
     mocks.reads.push(method);
     if (method === "voice/catalog")
@@ -91,7 +94,21 @@ vi.mock("react-native", () => {
     ScrollView: View,
     Text: View,
     ActivityIndicator: () => null,
-    TextInput: () => null,
+    TextInput: (props: {
+      accessibilityLabel?: string;
+      value?: string;
+      onChangeText?: (value: string) => void;
+    }) => {
+      if (props.accessibilityLabel && props.onChangeText)
+        mocks.typed[props.accessibilityLabel] = props.onChangeText;
+      return (
+        <input
+          aria-label={props.accessibilityLabel}
+          value={props.value ?? ""}
+          onChange={(event) => props.onChangeText?.(event.target.value)}
+        />
+      );
+    },
     Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) => (
       <button type="button" onClick={onPress}>
         {children}
@@ -112,6 +129,7 @@ beforeEach(() => {
   mocks.failStatus = false;
   mocks.loadDevice.mockReset().mockResolvedValue(false);
   mocks.reads.length = 0;
+  mocks.rpc = null;
   mocks.calls.mockResolvedValue(true);
   mocks.waiting.mockResolvedValue(true);
   mocks.saveCalls.mockResolvedValue(undefined);
@@ -260,4 +278,53 @@ it("keeps a device-voice read error after Retry reloads the providers", async ()
   await act(async () => retry()!.click());
   expect(container.textContent).toContain("ElevenLabs");
   expect(container.textContent).toContain("device read failed");
+});
+
+it("drops a speech model typed for the provider an opening refresh replaces", async () => {
+  const catalog = [
+    { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true, speechModel: true },
+    { id: "elevenlabs", name: "ElevenLabs", description: "", transcribe: true, speechModel: true },
+  ];
+  const credentials = [
+    { provider: "fish-audio", speechModel: "s1" },
+    { provider: "elevenlabs", speechModel: "eleven_v3" },
+  ];
+  let status: Promise<unknown> = Promise.resolve({
+    configured: true,
+    ready: true,
+    provider: "fish-audio",
+  });
+  mocks.rpc = async (method) =>
+    method === "voice/catalog"
+      ? catalog
+      : method === "voice/credentials"
+        ? credentials
+        : method === "voice/status"
+          ? status
+          : [];
+  await render();
+  const field = () =>
+    container.querySelector<HTMLInputElement>('input[aria-label="Speech model"]')!;
+  expect(field().value).toBe("s1");
+
+  mocks.focused = false;
+  await render();
+  let switched!: (value: unknown) => void;
+  status = new Promise((resolve) => {
+    switched = resolve;
+  });
+  mocks.focused = true;
+  await render();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field(), "s2");
+    field().dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(field().value).toBe("s2");
+  // The handler of the field as it showed Fish Audio, for typing that lands after the switch.
+  const typeIntoFish = mocks.typed["Speech model"]!;
+
+  await act(async () => switched({ configured: true, ready: true, provider: "elevenlabs" }));
+  expect(field().value).toBe("eleven_v3");
+  await act(async () => typeIntoFish("s3"));
+  expect(field().value).toBe("eleven_v3");
 });

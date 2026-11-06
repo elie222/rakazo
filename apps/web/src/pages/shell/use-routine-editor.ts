@@ -92,6 +92,7 @@ export function useRoutineEditor({
   }
   const editorProps = active
     ? ({
+        bot: { id: active.id, name: active.name },
         draft: routineDraft,
         onChange: setRoutineDraft,
         editing: editingRoutine,
@@ -127,6 +128,7 @@ export function useRoutineEditor({
             !routineDraft.webhookEnabled &&
             !routineDraft.githubEnabled &&
             !routineDraft.messageProvider &&
+            !routineDraft.emailSenders &&
             !routineDraft.watch
           ) {
             setRoutineError(t`Add a trigger to run this routine.`);
@@ -188,6 +190,7 @@ export function useRoutineEditor({
                 webhookEnabled: routineDraft.webhookEnabled,
                 githubEnabled: routineDraft.githubEnabled,
                 messageProvider: routineDraft.messageProvider,
+                emailSenders: routineDraft.emailSenders,
                 watch,
                 ...(routineModel.modelProvider !== targetRoutine.modelProvider ||
                 routineModel.modelId !== targetRoutine.modelId ||
@@ -208,6 +211,7 @@ export function useRoutineEditor({
                 webhookEnabled: routineDraft.webhookEnabled,
                 githubEnabled: routineDraft.githubEnabled,
                 messageProvider: routineDraft.messageProvider,
+                emailSenders: routineDraft.emailSenders,
                 watch,
                 ...routineModel,
               });

@@ -155,6 +155,7 @@ const routine = (id: string, name: string, partial: Partial<Routine> = {}): Rout
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
+  emailSenders: null,
   modelProvider: null,
   modelId: null,
   thinkingLevel: null,

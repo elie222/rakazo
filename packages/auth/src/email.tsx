@@ -55,14 +55,27 @@ const LOCALES = Object.keys(CATALOGS);
  */
 export function emailLocale(saved: string | null | undefined, headers?: Headers | null): string {
   if (saved) return matchUiLocale(saved, LOCALES);
-  // Browsers list languages best first: take the first one emails are written in.
+  // Keep the first supported language at the highest acceptable quality.
+  let bestLocale = "en";
+  let bestQuality = 0;
   for (const part of headers?.get("accept-language")?.split(",") ?? []) {
-    const tag = part.split(";")[0]?.trim() ?? "";
-    if (/^en(?:-|$)/i.test(tag)) return "en";
-    const locale = matchUiLocale(tag, LOCALES);
-    if (locale !== "en") return locale;
+    const match = part
+      .trim()
+      .match(
+        /^([a-z]{1,8}(?:[-_][a-z0-9]{1,8})*|\*)(?:\s*;\s*q\s*=\s*(0(?:\.\d{0,3})?|1(?:\.0{0,3})?))?$/i,
+      );
+    if (!match) continue;
+    const tag = match[1] ?? "";
+    const quality = match[2] === undefined ? 1 : Number(match[2]);
+    if (quality <= bestQuality) continue;
+    const isEnglish = /^en(?:[-_]|$)/i.test(tag);
+    const locale = isEnglish ? "en" : matchUiLocale(tag, LOCALES);
+    // matchUiLocale also returns English for unsupported tags (including *).
+    if (locale === "en" && !isEnglish) continue;
+    bestLocale = locale;
+    bestQuality = quality;
   }
-  return "en";
+  return bestLocale;
 }
 
 /** The language to email an account in, given the headers of the request that asked. */
