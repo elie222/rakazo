@@ -57,16 +57,21 @@ It takes two parts:
    connections still flow), and installs a systemd oneshot so the rules return after a
    reboot. `--print` shows the exact rules without changing anything; `--remove` uninstalls.
 
-Before the first restricted computer starts, the supervisor checks that the host drops
-connections from a `rakazo-c*` bridge. Without the ruleset, computers fail to start with an
-error naming the script instead of running unrestricted; run the script (no restart needed)
-or set `SANDBOX_COMPUTER_EGRESS=open` and recreate the supervisor.
+Before each restricted computer starts, the supervisor tests connectivity from a temporary
+`rakazo-c*` bridge and checks the host firewall rules and their order. It uses a short-lived,
+locally built attestation image with host networking and `CAP_NET_ADMIN` to read the host rules.
+The first build needs access to the base image and Debian package repositories. Anyone with access
+to the Docker socket can replace the local image and already controls the host. Without the
+ruleset, computers fail to start with an error naming the script instead of running
+unrestricted; run the script (no restart needed) or set `SANDBOX_COMPUTER_EGRESS=open` and
+recreate the supervisor. Firewall changes after the check can still expose running computers.
 
 When `SANDBOX_COMPUTER_EGRESS` is unset, the Compose files use `auto`: the supervisor runs the
 same check and uses restricted egress if the ruleset is in place, otherwise open egress with a
 warning in its log. It keeps the first completed answer; a check that could not finish (a Docker
 error or timeout) fails that computer's start and runs again on the next one. With the ruleset
-in place, so does a configured `SANDBOX_COMPUTER_DNS` that no server answers (see below). An
+in place, every restricted provision is checked again; so is a configured
+`SANDBOX_COMPUTER_DNS` that no server answers (see below). An
 install from before the ruleset existed therefore keeps working when it upgrades. After
 installing the ruleset, recreate the supervisor, or set `restricted` to refuse computers
 whenever the rules are missing. A host-run supervisor (`pnpm dev`) and the desktop app's
@@ -91,9 +96,9 @@ times out while connections by IP still work. In those cases set `SANDBOX_COMPUT
 public resolvers (comma-separated IP addresses, such as `1.1.1.1,1.0.0.1`) and recreate the
 supervisor; each computer picks the servers up on its next provision. When
 `SANDBOX_COMPUTER_DNS` is set, computers with restricted or `auto` egress start only after one
-of its first three servers (Docker uses no more) answers from a computer network; a start that
-fails this check retries it on the next start. The check runs from an IPv4-only network and
-skips IPv6 servers, so if those three are all IPv6 nothing is checked.
+of its servers answers from a computer network; a start that fails this check retries it on the
+next start. The check runs from an IPv4-only network and rejects IPv6 servers or more than three
+servers rather than silently skipping them.
 
 ### Opening egress
 

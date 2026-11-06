@@ -614,7 +614,28 @@ describe("restricted egress rekeying", () => {
       expect.anything(),
       COMPUTER_IMAGE,
       ["1.1.1.1", "9.9.9.9"],
+      expect.any(Function),
     );
+  });
+
+  it("rechecks restricted egress before every provision", async () => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
+    const { existing } = setupExisting(computerNetworkNameFor("bot"));
+    mocks.verifyRestrictedEgress
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("firewall missing"));
+    mocks.docker.getNetwork.mockReturnValue({
+      inspect: vi.fn().mockResolvedValue({
+        Id: "bot-network",
+        Options: { "com.docker.network.bridge.name": computerBridgeNameFor("bot") },
+      }),
+    });
+    expect((await provision()).status).toBe(200);
+    const rejected = await provision();
+    expect(rejected.status).toBe(500);
+    expect(await rejected.json()).toEqual({ error: "firewall missing" });
+    expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(2);
+    expect(existing.remove).not.toHaveBeenCalled();
   });
 
   it("refuses restricted computers until the host ruleset is verified", async () => {
