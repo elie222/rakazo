@@ -93,7 +93,16 @@ jobs:
           fi
           if [ "$CHANGED" != "true" ]; then
             if [ -n "$pr" ]; then
-              gh pr close "$pr" --delete-branch --comment "The catalogs on main are current."
+              # Delete only the bot commit checked above: a translator's push since then fails the
+              # lease and keeps the PR open. Deleting its head branch also closes the PR.
+              gh auth setup-git
+              checked="$(git rev-parse "origin/$BRANCH")"
+              if git push --force-with-lease="refs/heads/$BRANCH:$checked" origin ":refs/heads/$BRANCH"; then
+                gh pr comment "$pr" --body "The catalogs on main are current."
+                gh pr close "$pr" 2>/dev/null || true
+              else
+                echo "::notice::$BRANCH changed since it was checked; leaving #$pr open."
+              fi
             fi
             exit 0
           fi
