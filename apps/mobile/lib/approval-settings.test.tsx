@@ -202,14 +202,20 @@ afterEach(() => {
 
 it("shows the mode as the row's value and saves a pick from the menu at once", async () => {
   await render();
-  expect(row()).toBe("Approvals | Ask");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
   // Named outright, so the menu symbol beside the value isn't read out.
-  expect(spoken()).toBe("Approvals, Ask");
+  expect(spoken()).toBe(
+    "Approvals, Ask, Asks before sending, spending or changing anything in your apps.",
+  );
   expect(choices()).toEqual(["Never ask", "Ask*"]);
 
   await act(async () => choice("Never ask").click());
   expect(sets()).toEqual([["autoReview/set", { scope: "account", mode: "never" }]]);
-  expect(row()).toBe("Approvals | Never ask");
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
   expect(choices()).toEqual(["Never ask*", "Ask"]);
 
   // Picking the current mode saves nothing.
@@ -240,7 +246,9 @@ it("offers a retry in the row when the first load fails", async () => {
   expect(choices()).toEqual([]);
 
   await act(async () => container.querySelector("span")!.click());
-  expect(row()).toBe("Approvals | Ask");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
   expect(choices()).toEqual(["Never ask", "Ask*"]);
 });
 
@@ -263,7 +271,9 @@ it("goes back to the stored mode and alerts when a save fails", async () => {
 
   await act(async () => choice("Never ask").click());
   expect(state.alert).toHaveBeenCalledWith("Could not save that preference", "Try again.");
-  expect(row()).toBe("Approvals | Ask");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
   expect(choices()).toEqual(["Never ask", "Ask*"]);
   // If what is stored can't be read either, the row shows no mode and offers to read it again.
   await act(async () => finishRead());
@@ -274,7 +284,9 @@ it("goes back to the stored mode and alerts when a save fails", async () => {
   stored = "never";
   await act(async () => container.querySelector("span")!.click());
   await act(async () => finishRead());
-  expect(row()).toBe("Approvals | Never ask");
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
 });
 
 it("shows the saved mode when a read started during the save lands after it", async () => {
@@ -287,7 +299,9 @@ it("shows the saved mode when a read started during the save lands after it", as
   await act(async () => state.refocus());
   await act(async () => slow.finish());
   for (const read of slow.reads.splice(0)) await act(async () => read());
-  expect(row()).toBe("Approvals | Never ask");
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
   // It reads again once the save is done, so the rule count is fresh too.
   expect(reads()).toBe(2);
 });
@@ -304,7 +318,9 @@ it("drops a save that lands after the Space went back to following the account",
   state.settings = { ...state.settings, mode: "ask" };
   await render(target, true);
   await act(async () => slow.finish());
-  expect(row()).toBe("Approvals | Ask");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
 });
 
 it("tells screen readers the row is unavailable while loading or saving", async () => {
@@ -331,7 +347,9 @@ it("offers a retry when a refresh fails after the mode loaded", async () => {
   expect(row()).toBe("Approvals | Retry | Something went wrong. Try again.");
 
   await act(async () => container.querySelector("span")!.click());
-  expect(row()).toBe("Approvals | Ask");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
 });
 
 it("holds the menu while a save is in flight", async () => {
@@ -359,7 +377,9 @@ it("holds the menu while a save is in flight", async () => {
   expect(sets()).toHaveLength(2);
 
   await act(async () => finish());
-  expect(row()).toBe("Approvals | Ask");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
   expect(choice("Never ask").disabled).toBe(false);
 });
 
@@ -381,7 +401,9 @@ it("keeps a saved mode when a read that started before the save lands after it",
   await act(async () => state.refocus());
   await act(async () => choice("Never ask").click());
   await act(async () => resolveRead(stale));
-  expect(row()).toBe("Approvals | Never ask");
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
   // The rules it read are still current, so the count follows them.
   expect(container.querySelector("output")?.textContent).toBe("1");
 });
@@ -403,9 +425,13 @@ it.each(["autoReview/get", "approvalRules/list"])(
     await act(async () => state.refocus());
     await act(async () => choice("Never ask").click());
     expect(state.settings.mode).toBe("never");
-    expect(row()).toBe("Approvals | Never ask");
+    expect(row()).toBe(
+      "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+    );
     await act(async () => rejectRead(new Error("offline")));
-    expect(row()).toBe("Approvals | Never ask");
+    expect(row()).toBe(
+      "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+    );
     expect(choices()).toEqual(["Never ask*", "Ask"]);
   },
 );
@@ -426,11 +452,15 @@ it("ignores an older refresh failure while a save is pending", async () => {
   await act(async () => state.refocus());
   await act(async () => choice("Never ask").click());
   await act(async () => rejectRead(new Error("offline")));
-  expect(row()).toBe("Approvals | Never ask");
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
   expect(held()).toBe("true");
   await act(async () => slow.finish());
   expect(state.settings.mode).toBe("never");
-  expect(row()).toBe("Approvals | Never ask");
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
 });
 
 it("shows a refresh failure from a read started after a successful save", async () => {
@@ -442,7 +472,9 @@ it("shows a refresh failure from a read started after a successful save", async 
   await act(async () => state.refocus());
   expect(row()).toBe("Approvals | Retry | Something went wrong. Try again.");
   await act(async () => container.querySelector("span")!.click());
-  expect(row()).toBe("Approvals | Never ask");
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
 });
 
 it("reads and saves a Space's own copy, and nothing while the Space follows the account", async () => {

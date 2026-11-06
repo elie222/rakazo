@@ -105,6 +105,54 @@ describePostgres("the operator's account status command (PostgreSQL)", { timeout
     ).toMatchObject({ actorType: "system", actorLabel: "operator", targetLabel: user.email });
   });
 
+  it("takes a deactivated person out of a teammate's space", async () => {
+    const owner = await person("liam@example.test");
+    const { user: mia } = await person("mia@example.test");
+    const { organizationId } = await system.space.findUniqueOrThrow({
+      where: { id: owner.queued.spaceId },
+    });
+    const spaceId = randomUUID();
+    await system.space.create({
+      data: { id: spaceId, organizationId, name: "Launch", createdByUserId: owner.user.id },
+    });
+    const at = new Date();
+    await system.spaceMember.create({
+      data: {
+        id: randomUUID(),
+        spaceId,
+        organizationId,
+        userId: owner.user.id,
+        role: "owner",
+        createdAt: at,
+      },
+    });
+    await system.member.create({
+      data: { id: randomUUID(), organizationId, userId: mia.id, role: "guest", createdAt: at },
+    });
+    await system.spaceMember.create({
+      data: {
+        id: randomUUID(),
+        spaceId,
+        organizationId,
+        userId: mia.id,
+        role: "member",
+        createdAt: at,
+      },
+    });
+    const bot = await createRepos(system).createBot(
+      { userId: mia.id, spaceId, email: mia.email, isDeploymentOwner: false },
+      { name: "Scout", description: "", instructions: "", notifyOnFinish: false },
+    );
+
+    expect((await command("deactivate", mia.email)).stdout.trim()).toBe("Deactivated");
+    expect(await system.spaceMember.count({ where: { spaceId, userId: mia.id } })).toBe(0);
+    expect((await system.bot.findUniqueOrThrow({ where: { id: bot.id } })).userId).toBe(
+      owner.user.id,
+    );
+    // Their own space stays theirs.
+    expect(await system.spaceMember.count({ where: { userId: mia.id } })).toBe(1);
+  });
+
   it("refuses an unknown email or action", async () => {
     await expect(command("deactivate", "nobody@example.test")).rejects.toMatchObject({
       stderr: expect.stringContaining("No single account has that email"),

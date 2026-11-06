@@ -11,6 +11,8 @@ import { queryClient } from "./query";
 const mocks = vi.hoisted(() => ({
   calls: vi.fn(),
   waiting: vi.fn(),
+  greeting: vi.fn(),
+  saveGreeting: vi.fn(),
   saveCalls: vi.fn(),
   saveWaiting: vi.fn(),
   cue: vi.fn(),
@@ -34,6 +36,8 @@ vi.mock("expo-router", () => ({
 vi.mock("./call-sounds", () => ({
   loadCallSoundsEnabled: mocks.calls,
   loadWaitSoundEnabled: mocks.waiting,
+  loadCallGreetingEnabled: mocks.greeting,
+  saveCallGreetingEnabled: mocks.saveGreeting,
   saveCallSoundsEnabled: mocks.saveCalls,
   saveWaitSoundEnabled: mocks.saveWaiting,
   playCallCue: mocks.cue,
@@ -132,6 +136,8 @@ beforeEach(() => {
   mocks.rpc = null;
   mocks.calls.mockResolvedValue(true);
   mocks.waiting.mockResolvedValue(true);
+  mocks.greeting.mockResolvedValue(true);
+  mocks.saveGreeting.mockResolvedValue(undefined);
   mocks.saveCalls.mockResolvedValue(undefined);
   mocks.saveWaiting.mockResolvedValue(undefined);
   mocks.cue.mockResolvedValue(undefined);
@@ -154,6 +160,7 @@ function toggle(label: string) {
 it.each([
   ["Call sounds", "calls", "Waiting sound"],
   ["Waiting sound", "waiting", "Call sounds"],
+  ["Call greeting", "greeting", "Call sounds"],
 ] as const)("keeps %s off and disabled when its read fails", async (label, read, other) => {
   mocks[read].mockRejectedValue(new Error("Could not load voice settings"));
   await render();
@@ -185,6 +192,17 @@ it("previews only when call sounds are turned on and saved", async () => {
   await act(async () => toggle("Call sounds").click());
   expect(mocks.saveCalls).toHaveBeenLastCalledWith(false);
   expect(mocks.cue).toHaveBeenCalledTimes(1);
+});
+
+it("saves the call greeting switch without a preview", async () => {
+  await render();
+  expect(toggle("Call greeting").checked).toBe(true);
+  await act(async () => toggle("Call greeting").click());
+  expect(mocks.saveGreeting).toHaveBeenCalledWith(false);
+  expect(toggle("Call greeting").checked).toBe(false);
+  await act(async () => toggle("Call greeting").click());
+  expect(mocks.saveGreeting).toHaveBeenLastCalledWith(true);
+  expect(mocks.cue).not.toHaveBeenCalled();
 });
 
 it("rolls a failed save back without playing a preview", async () => {

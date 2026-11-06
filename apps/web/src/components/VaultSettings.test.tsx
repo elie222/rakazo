@@ -15,6 +15,8 @@ const vault = vi.hoisted(() => ({
   remove: vi.fn(),
   reveal: vi.fn(),
 }));
+// No bot has an email address unless a test gives it one.
+const bots = vi.hoisted(() => ({ emailAddresses: vi.fn(async (): Promise<unknown> => null) }));
 
 // The dialog itself is tested on its own; here it is a pair of buttons that settle it.
 vi.mock("./ConfirmIdentityDialog", async () => {
@@ -45,9 +47,9 @@ vi.mock("./ConfirmIdentityDialog", async () => {
 });
 
 vi.mock("../lib/rpc", () => ({
-  rpc: { vault },
-  rpcForSpace: () => ({ vault }),
-  createSpaceRpc: () => ({ vault }),
+  rpc: { vault, bots },
+  rpcForSpace: () => ({ vault, bots }),
+  createSpaceRpc: () => ({ vault, bots }),
   selectedSpaceId: () => null,
 }));
 vi.mock("@lingui/react/macro", () => {
@@ -230,6 +232,20 @@ describe("VaultSettings list", () => {
     expect(find("vault-new")).not.toBeNull();
     expect(find("vault-card")).toBeNull();
     expect(find("vault-filter-all")).toBeNull();
+  });
+
+  it("lists the bots' email addresses in the account's vault only", async () => {
+    vault.list.mockResolvedValue([]);
+    bots.emailAddresses.mockResolvedValue({
+      domain: "bots.test",
+      addresses: [{ botId: "bot-1", botName: "Scout", address: "scout@bots.test" }],
+    });
+    await render("space");
+    expect(find("vault-bot-emails")).toBeNull();
+
+    await render();
+    expect(byTestId("vault-bot-emails").textContent).toContain("scout@bots.test");
+    expect(document.querySelector('button[aria-label="Copy scout@bots.test"]')).not.toBeNull();
   });
 
   it("filters by kind once there are two kinds, and searches once there are many", async () => {

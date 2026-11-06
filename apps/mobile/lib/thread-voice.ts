@@ -12,6 +12,7 @@ import {
   setCallProviderTranscribe,
   startCall,
 } from "./call-session";
+import { loadCallGreetingEnabled } from "./call-sounds";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { available as dictationAvailable } from "./dictation";
 import { useI18n } from "./i18n";
@@ -213,13 +214,14 @@ export function useThreadVoiceCall({
     voiceCallStarting.current = true;
     const loadVoiceStatus = () => rpc("voice/status");
     try {
-      const [plan, callerName] = await Promise.all([
+      const [plan, callerName, greet] = await Promise.all([
         resolveVoiceCallPlan({
           loadDeviceVoiceEnabled,
           dictationAvailable,
           loadVoiceStatus,
         }),
         loadCallCallerName(() => rpc("me")),
+        loadCallGreetingEnabled().catch(() => true),
       ]);
       if (activeBotId.current !== targetBotId) return;
       if (plan.kind === "settings") {
@@ -247,7 +249,7 @@ export function useThreadVoiceCall({
         botColor: mentionBots.find((bot) => bot.id === targetBotId)?.color,
         botAvatarSet: mentionBots.find((bot) => bot.id === targetBotId)?.avatarSet,
         transcribe: plan.transcribe,
-        greeting: callGreeting(botName, callerName, switchedHere),
+        greeting: greet ? callGreeting(botName, callerName, switchedHere) : undefined,
         session: setupSession,
         requestContext,
         switchBot: (text) => {

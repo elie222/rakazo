@@ -4,6 +4,7 @@ import type {
   ModelCatalogEntry,
   ModelCredential,
   Routine,
+  RoutineEmailSenders,
   RoutineWatch,
   RoutineWatchInput,
 } from "@rakazo/contracts";
@@ -43,6 +44,7 @@ import {
   Eye,
   GitBranch,
   Globe,
+  Mail,
   MessageSquare,
   Pause,
   Plus,
@@ -50,6 +52,8 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { BotEmailAddressField } from "../components/BotEmailAddressField";
+import { authClient } from "../lib/auth";
 import { cronLabels } from "../lib/cron";
 import {
   connectedModelOptions,
@@ -95,6 +99,7 @@ export type RoutineDraftState = {
   webhookEnabled: boolean;
   githubEnabled: boolean;
   messageProvider: string | null;
+  emailSenders: RoutineEmailSenders | null;
   active: boolean;
   runAtLocal: string;
   /** Empty runs this routine on the bot's model. */
@@ -191,6 +196,7 @@ export function emptyRoutineDraft(): RoutineDraftState {
     webhookEnabled: false,
     githubEnabled: false,
     messageProvider: null,
+    emailSenders: null,
     active: true,
     runAtLocal: "",
     modelKey: "",
@@ -207,6 +213,7 @@ export function draftFromRoutine(routine: Routine): RoutineDraftState {
     webhookEnabled: routine.webhookEnabled,
     githubEnabled: routine.githubEnabled,
     messageProvider: routine.messageProvider,
+    emailSenders: routine.emailSenders,
     active: routine.active,
     runAtLocal: routineNeedsOneShotArm(routine, routine.crons) ? defaultArmRunAtLocal() : "",
     modelKey:
@@ -229,6 +236,7 @@ export function routineTriggerSummary(
   if (routine.messageProvider === "slack") parts.push(t`Slack message`);
   else if (routine.messageProvider === "teams") parts.push(t`Teams message`);
   else if (routine.messageProvider) parts.push(t`Message event`);
+  if (routine.emailSenders) parts.push(t({ message: "Email", context: "routine trigger" }));
   for (const cron of routine.crons) parts.push(formatCron(cron, labels));
   if (routine.watch) parts.push(t`When something changes`);
   return parts.length > 0 ? parts.join(", ") : t`No trigger`;
@@ -333,6 +341,7 @@ function RoutineListRow({
 }
 
 export function RoutineEditor({
+  bot,
   draft,
   onChange,
   editing,
@@ -350,6 +359,7 @@ export function RoutineEditor({
   onDelete,
   onEnsureWebhook,
 }: {
+  bot: { id: string; name: string };
   draft: RoutineDraftState;
   onChange: (next: RoutineDraftState) => void;
   editing: Routine | null;
@@ -376,6 +386,8 @@ export function RoutineEditor({
     refetchInterval: 15_000,
     select: (routines) => routines.find((routine) => routine.id === editing?.id) ?? null,
   });
+  // Null when this server receives no email or the bot is another member's, which hides the trigger.
+  const email = useQuery(queries.bots.emailAddress.queryOptions({ input: { botId: bot.id } })).data;
   const scheduleDelayed =
     !scheduleStatus.isError &&
     (scheduleStatus.data === undefined
@@ -416,6 +428,7 @@ export function RoutineEditor({
     draft.webhookEnabled ||
     draft.githubEnabled ||
     Boolean(draft.messageProvider) ||
+    Boolean(draft.emailSenders) ||
     Boolean(draft.watch);
   const canTest = Boolean(editing) && !saving && !running;
   const needsOneShotArm =
@@ -669,6 +682,19 @@ export function RoutineEditor({
             />
           ) : null}
 
+          {/* Shown without email too, so a server that stopped receiving mail still lets it go. */}
+          {draft.emailSenders ? (
+            <EmailTriggerCard
+              key={bot.id}
+              bot={bot}
+              domain={email?.domain ?? null}
+              address={email?.address ?? null}
+              senders={draft.emailSenders}
+              onChange={(emailSenders) => onChange({ ...draft, emailSenders })}
+              onRemove={() => onChange({ ...draft, emailSenders: null })}
+            />
+          ) : null}
+
           {needsOneShotArm ? (
             <label htmlFor={`${fieldId}-run-at`} className="block text-body text-muted-foreground">
               <Trans>Run at</Trans>
@@ -729,6 +755,16 @@ export function RoutineEditor({
               <Eye />
               <Trans>When something changes</Trans>
             </DropdownMenuItem>
+
+            {email ? (
+              <DropdownMenuItem
+                disabled={Boolean(draft.emailSenders)}
+                onClick={() => onChange({ ...draft, emailSenders: "owner" })}
+              >
+                <Mail />
+                {t({ message: "Email", context: "routine trigger" })}
+              </DropdownMenuItem>
+            ) : null}
 
             <DropdownMenuItem disabled={draft.githubEnabled} onClick={() => void addGithub()}>
               <GitBranch />
@@ -940,6 +976,63 @@ function MessageTriggerCard({ provider, onRemove }: { provider: string; onRemove
       <p className="mt-2.5 text-body text-muted-foreground/70">
         <Trans>Runs when this bot receives a verified message from this provider.</Trans>
       </p>
+    </div>
+  );
+}
+
+function EmailTriggerCard({
+  bot,
+  domain,
+  address,
+  senders,
+  onChange,
+  onRemove,
+}: {
+  bot: { id: string; name: string };
+  /** Null while loading, or when this server no longer receives email. */
+  domain: string | null;
+  address: string | null;
+  senders: RoutineEmailSenders;
+  onChange: (senders: RoutineEmailSenders) => void;
+  onRemove: () => void;
+}) {
+  const { t } = useLingui();
+  const ownerEmail = authClient.useSession().data?.user.email ?? "";
+  const ownerDomain = ownerEmail.slice(ownerEmail.lastIndexOf("@") + 1);
+
+  return (
+    <div className="rounded-xl border border-border p-3">
+      <div className="flex items-center gap-2.5 px-0.5">
+        <Mail size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
+        <span className="flex-1 text-body-lg text-foreground">
+          <Trans>When an email arrives</Trans>
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={t`Remove email trigger`}
+          onClick={onRemove}
+          className="text-muted-foreground"
+        >
+          <X />
+        </Button>
+      </div>
+      {domain ? (
+        <div className="mt-2.5 space-y-2.5 text-body">
+          <BotEmailAddressField bot={bot} domain={domain} address={address} />
+          {ownerDomain ? (
+            <NativeSelect
+              aria-label={t`Who can start it`}
+              className="w-full"
+              value={senders}
+              onChange={(event) => onChange(event.target.value as RoutineEmailSenders)}
+            >
+              <NativeSelectOption value="owner">{t`Only me`}</NativeSelectOption>
+              <NativeSelectOption value="domain">{t`Anyone at @${ownerDomain}`}</NativeSelectOption>
+            </NativeSelect>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

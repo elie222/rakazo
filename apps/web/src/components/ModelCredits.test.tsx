@@ -98,7 +98,7 @@ async function renderChoice() {
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<CreditChoice status={status as never} />);
+    root.render(<CreditChoice status={status as never} client={{ billing } as never} />);
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
   return { container, root };
