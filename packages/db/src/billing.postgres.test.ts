@@ -74,15 +74,6 @@ describePostgres("billing accounts (PostgreSQL)", () => {
   });
 
   it("reads model access from a whole run row, not just its key", async () => {
-    await prisma.spaceMember.create({
-      data: {
-        id: `sm-${memberId}`,
-        spaceId,
-        organizationId,
-        userId: memberId,
-        createdAt: new Date(),
-      },
-    });
     const run = { id: "run-1", spaceId, userId: memberId, botId: "bot-1" };
     await expect(memberHasModelAccess(prisma, run)).resolves.toBe(false);
   });
