@@ -44,6 +44,8 @@ export function createCallSendTracker() {
 /** The parts of the call's thread that decide what a spoken turn does. */
 export type CallThread = {
   run: { id: string; status: string } | null;
+  /** Every active run; `run` is only the one the thread shows first. */
+  activeRuns?: readonly { id: string; status: string }[];
   messages: readonly { id: string; runId?: string; blocks: readonly MessageBlock[] }[];
 };
 
@@ -63,8 +65,10 @@ export type CallTurn =
   | { kind: "send" };
 
 export function callTurn(thread: CallThread | null, text: string): CallTurn {
-  const ask = pendingCallAsk(thread);
-  if (ask?.blocks.some(isSecretAskBlock)) return { kind: "enter_code" };
+  const asks = pendingCallAsks(thread);
+  // A code asked by any waiting run is never spoken, even while another run is shown first.
+  if (asks.some((ask) => ask.blocks.some(isSecretAskBlock))) return { kind: "enter_code" };
+  const ask = asks[0];
   if (ask?.blocks.some(isApprovalAskBlock)) {
     return { kind: "approve_on_screen", messageId: ask.message.id, runId: ask.runId };
   }
@@ -77,17 +81,24 @@ export function callTurn(thread: CallThread | null, text: string): CallTurn {
 
 /** The bot is waiting on a code or password, which the call must not listen for. */
 export function pendingCallSecretAsk(thread: CallThread | null): boolean {
-  return Boolean(pendingCallAsk(thread)?.blocks.some(isSecretAskBlock));
+  return pendingCallAsks(thread).some((ask) => ask.blocks.some(isSecretAskBlock));
 }
 
-/** The newest card the waiting run asked, with its unanswered asks. */
-function pendingCallAsk(thread: CallThread | null) {
-  const run = thread?.run;
-  if (run?.status !== "waiting_input") return undefined;
-  const message = thread?.messages.findLast(
-    (candidate) => candidate.runId === run.id && candidate.blocks.some(unansweredAsk),
+/** Each waiting run's newest card with unanswered asks, the run the thread shows first leading. */
+function pendingCallAsks(thread: CallThread | null) {
+  if (!thread) return [];
+  const runs = [thread.run, ...(thread.activeRuns ?? [])].filter(
+    (run, index, all): run is { id: string; status: string } =>
+      run?.status === "waiting_input" && all.findIndex((other) => other?.id === run.id) === index,
   );
-  return message && { message, runId: run.id, blocks: message.blocks.filter(unansweredAsk) };
+  return runs.flatMap((run) => {
+    const message = thread.messages.findLast(
+      (candidate) => candidate.runId === run.id && candidate.blocks.some(unansweredAsk),
+    );
+    return message
+      ? [{ message, runId: run.id, blocks: message.blocks.filter(unansweredAsk) }]
+      : [];
+  });
 }
 
 function unansweredAsk(block: MessageBlock): boolean {

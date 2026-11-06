@@ -442,6 +442,26 @@ describe("mobile call session", () => {
       answered.resolve(undefined);
     });
 
+    it("speaks a follow-up's reply even before the follow-up request returns", async () => {
+      const fake = fakes();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      fake.send.mockResolvedValueOnce("run-0");
+      fake.say("start");
+      await flush();
+      const followed = deferred<undefined>();
+      fake.followUp.mockReturnValueOnce(followed.promise);
+      fake.thread(waitingOn([], "running"));
+      fake.replyWith("start-reply", "On it.", "run-0");
+      fake.speeches[0]?.resolve();
+      await flush();
+      fake.say("also check the tests");
+      await flush();
+      fake.replyWith("more", "Tests pass.", "run-5");
+      expect(fake.spoken).toEqual(["On it.", "Tests pass."]);
+      followed.resolve(undefined);
+    });
+
     it("steers a run that is still working", async () => {
       const fake = fakes();
       startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);

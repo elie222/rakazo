@@ -110,6 +110,27 @@ describe("call turn", () => {
     expect(callTurn(null, "hello")).toEqual({ kind: "send" });
   });
 
+  it("withholds a code another waiting run asks for while a working run is shown", () => {
+    const thread: CallThread = {
+      run: { id: "run-1", status: "running" },
+      activeRuns: [
+        { id: "run-1", status: "running" },
+        { id: "run-2", status: "waiting_input" },
+      ],
+      messages: [{ id: "code", runId: "run-2", blocks: [secret] }],
+    };
+    expect(pendingCallSecretAsk(thread)).toBe(true);
+    expect(callTurn(thread, "one two three")).toEqual({ kind: "enter_code" });
+    // A plain question on that run is answered there.
+    const asked = { ...thread, messages: [{ id: "q", runId: "run-2", blocks: [question] }] };
+    expect(callTurn(asked, "yes")).toEqual({
+      kind: "answer",
+      messageId: "q",
+      runId: "run-2",
+      answer: "yes",
+    });
+  });
+
   it("ignores asks left by another run", () => {
     const thread = waiting([question]);
     expect(

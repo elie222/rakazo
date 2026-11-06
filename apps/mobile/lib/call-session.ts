@@ -557,8 +557,10 @@ async function handleTranscript(raw: string): Promise<void> {
   let releasePendingSend: (() => void) | undefined;
   // An answer resumes the question's run, whose reply can reach the feed before the request
   // returns, so expect that run from the start.
+  // A follow-up may be answered by a continuation run, so any reply in the call counts.
   const runBeforeAnswer = callRunId;
   if (next.kind === "answer") callRunId = next.runId;
+  else if (next.kind === "follow_up") callRunId = null;
   try {
     const clientNonce = callClientNonce(turnCallId);
     // A follow-up may be answered by a continuation run, so any reply in the call counts.
@@ -582,7 +584,7 @@ async function handleTranscript(raw: string): Promise<void> {
     }
   } catch (error) {
     if (state?.botId !== botId || callId !== turnCallId) return;
-    if (next.kind === "answer") callRunId = runBeforeAnswer;
+    if (next.kind === "answer" || next.kind === "follow_up") callRunId = runBeforeAnswer;
     if (error instanceof AiConsentBlocked) {
       // Bot already closed server-side: do not clear its hang-up into a muted stuck call.
       if (botEndedCall) {
@@ -1042,8 +1044,13 @@ function watchReplies(
         retry = FEED_RETRY_MIN_MS;
         failure = undefined;
       } catch (error) {
-        // A 4xx other than 408/429 is the server's answer; asking again only polls it.
-        if (controller.signal.aborted || !isRetryableError(error)) return;
+        if (controller.signal.aborted) return;
+        // A 4xx other than 408/429 is the server's answer; asking again only polls it. Without
+        // a first snapshot the microphone stays shut, so the call cannot go on: hang it up.
+        if (!isRetryableError(error)) {
+          if (!snapshot) onEnded({ callId: watchedCallId ?? undefined });
+          return;
+        }
         retry = Math.min(FEED_RETRY_MAX_MS, retry * 2);
         failure = error;
       }
