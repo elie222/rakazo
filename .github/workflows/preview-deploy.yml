@@ -225,8 +225,8 @@ jobs:
           set -euo pipefail
           [[ $PR =~ ^[0-9]+$ ]] || { echo "Bad pull request number" >&2; exit 1; }
           [[ $HEAD_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "Bad commit" >&2; exit 1; }
-          if [[ $(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .head.sha) != "$HEAD_SHA" ]]; then
-            echo "The pull request has a newer commit; skipping."
+          if [[ $(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '"\(.state) \(.head.sha)"') != "open $HEAD_SHA" ]]; then
+            echo "The pull request closed or has a newer commit; skipping."
             exit 0
           fi
           shots="$RUNNER_TEMP/shots"

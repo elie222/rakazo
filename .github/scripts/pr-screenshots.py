@@ -78,7 +78,8 @@ def splice(body: str, new_section: str) -> str:
         before = body[:start].rstrip()
         after = body[end + len(END) :].lstrip()
     else:
-        before, after = body.rstrip(), ""
+        # A start marker without an end would pair with the next section's end later.
+        before, after = body.replace(START, "").rstrip(), ""
     parts = [part for part in (before, new_section, after) if part]
     return "\n\n".join(parts).rstrip() + "\n"
 

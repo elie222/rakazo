@@ -108,9 +108,13 @@ class SpliceTest(unittest.TestCase):
         body = f"## What\nx\n\n{shots.START}\nold\n{shots.END}\n\nfooter"
         self.assertEqual(shots.splice(body, ""), "## What\nx\n\nfooter\n")
 
-    def test_unterminated_marker_appends(self):
-        body = f"x\n{shots.START}\n"
-        self.assertTrue(shots.splice(body, self.new).endswith(f"{self.new}\n"))
+    def test_orphan_start_marker_keeps_author_text_across_updates(self):
+        body = f"x\n{shots.START}\nauthor text\n"
+        once = shots.splice(body, self.new)
+        self.assertEqual(once.count(shots.START), 1)
+        twice = shots.splice(once, f"{shots.START}\nnewer\n{shots.END}")
+        self.assertIn("author text", twice)
+        self.assertNotIn("\nnew\n", twice)
 
 
 class CliTest(unittest.TestCase):
