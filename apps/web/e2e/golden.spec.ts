@@ -390,14 +390,15 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     timeout: 30_000,
   });
   await expect(composer).toHaveAttribute("placeholder", "Message Chief");
-  // While the bot works the composer keeps one control: Stop, which turns into Send once there
-  // is something to steer the bot with.
+  // While the bot works, Send and Stop share one button: Stop, which turns into Send once there
+  // is something to steer the bot with. The microphone is unchanged.
   await expect(page.getByRole("button", { name: "Send", exact: true })).toHaveCount(0);
   const holdToTalk = page
     .getByTestId("composer-bar")
     .getByRole("button", { name: "Hold to talk", exact: true });
-  await expect(holdToTalk).toHaveCount(0);
+  await expect(holdToTalk).toBeVisible();
   await composer.fill("Use the newer report and keep the answer short.");
+  await expect(holdToTalk).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
   // Stop can arrive over the live stream before the first send returns; Send stays disabled
   // until then, and Tab would skip it.

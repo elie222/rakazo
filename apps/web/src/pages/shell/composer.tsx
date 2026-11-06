@@ -1120,37 +1120,42 @@ const ComposerBody = memo(function Composer({
           {talk.recording?.locked ? (
             <HoldToTalkControls talk={talk} />
           ) : running ? (
-            // While a bot works the composer keeps one control: Stop, which turns into Send once
-            // there is something to steer the bot with, and back after it is sent.
-            canSend ? (
-              <Button
-                key="send"
-                size="icon"
-                aria-label={t`Send`}
-                disabled={sending || disabled}
-                onClick={() => {
-                  void send();
-                  // Stop takes the button's place; keep typing where the sent words were.
-                  textareaRef.current?.focus({ preventScroll: true });
-                }}
-                style={sendStyle}
-                className={`${sendClassName} animate-in fade-in-0 zoom-in-90 duration-150 motion-reduce:animate-none`}
-              >
-                <ArrowUp size={16} strokeWidth={2.2} />
-              </Button>
-            ) : (
-              <Button
-                key="stop"
-                variant="outline"
-                size="icon"
-                aria-label={t`Stop`}
-                disabled={sending}
-                onClick={() => void onStop()}
-                className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground animate-in fade-in-0 zoom-in-90 duration-150 motion-reduce:animate-none"
-              >
-                <Square size={11} strokeWidth={0} fill="currentColor" />
-              </Button>
-            )
+            <>
+              {phoneCallsEnabled && draft.trim().length === 0 ? (
+                <HoldToTalkControls talk={talk} disabled={disabled || onCall} />
+              ) : null}
+              {/* While a bot works, Send and Stop share one button: Stop, which turns into Send
+                  once there is something to steer the bot with, and back after it is sent. */}
+              {canSend ? (
+                <Button
+                  key="send"
+                  size="icon"
+                  aria-label={t`Send`}
+                  disabled={sending || disabled}
+                  onClick={() => {
+                    void send();
+                    // Stop takes the button's place; keep typing where the sent words were.
+                    textareaRef.current?.focus({ preventScroll: true });
+                  }}
+                  style={sendStyle}
+                  className={`${sendClassName} animate-in fade-in-0 zoom-in-90 duration-150 motion-reduce:animate-none`}
+                >
+                  <ArrowUp size={16} strokeWidth={2.2} />
+                </Button>
+              ) : (
+                <Button
+                  key="stop"
+                  variant="outline"
+                  size="icon"
+                  aria-label={t`Stop`}
+                  disabled={sending}
+                  onClick={() => void onStop()}
+                  className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground animate-in fade-in-0 zoom-in-90 duration-150 motion-reduce:animate-none"
+                >
+                  <Square size={11} strokeWidth={0} fill="currentColor" />
+                </Button>
+              )}
+            </>
           ) : (
             <>
               {phoneCallsEnabled && draft.trim().length === 0 ? (
