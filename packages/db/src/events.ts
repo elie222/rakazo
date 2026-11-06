@@ -402,6 +402,13 @@ export async function clearThread(
   realtime?: RealtimeFanout,
 ): Promise<ClearThreadResult> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Group before thread, the order every group writer uses (see lockOwnedGroup).
+    if (input.groupId) {
+      await tx.$queryRaw`
+        SELECT id FROM chat_groups
+        WHERE id = ${input.groupId} AND "spaceId" = ${input.spaceId}
+        FOR NO KEY UPDATE`;
+    }
     const thread = await tx.thread.update({
       where: {
         id: input.threadId,

@@ -34,6 +34,7 @@ import {
   UpdateTicketInput,
 } from "./board.js";
 import { BotAvatarSetSchema } from "./bot-avatar.js";
+import { BotEmailAddressesSchema, BotEmailAddressSchema, BotEmailNameSchema } from "./bot-email.js";
 import {
   BotSecretMetadata,
   BotSecretPutInput,
@@ -125,6 +126,8 @@ import {
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
   ROUTINE_MENTION_BATCH_MAX,
+  ROUTINE_TRIGGER_REQUIRED,
+  RoutineEmailSendersSchema,
   RoutineSchema,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
@@ -597,6 +600,11 @@ export const appContract = {
     remove: oc
       .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
       .output(z.object({ ok: z.literal(true) })),
+    emailAddress: oc.input(botId).output(BotEmailAddressSchema),
+    emailAddresses: oc.output(BotEmailAddressesSchema),
+    claimEmailAddress: oc
+      .input(z.object({ botId: Id, name: BotEmailNameSchema }))
+      .output(z.object({ address: z.string() })),
     rotateWebhookSecret: oc.input(botId).output(
       z.object({
         secret: z.string(),
@@ -898,6 +906,8 @@ export const appContract = {
               .regex(/^[a-z0-9._-]+$/i)
               .nullable()
               .optional(),
+            /** Null removes the email trigger. */
+            emailSenders: RoutineEmailSendersSchema.nullable().optional(),
             /** Null clears the routine's own model and runs it on the bot's. */
             modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
             modelId: z.string().trim().min(1).max(200).nullable().optional(),
@@ -914,11 +924,12 @@ export const appContract = {
               value.webhookEnabled === false &&
               value.githubEnabled === false &&
               value.messageProvider === null &&
+              value.emailSenders === null &&
               value.watch === null
             ) {
               ctx.addIssue({
                 code: "custom",
-                message: "Add a schedule, webhook, GitHub, message, or change trigger",
+                message: ROUTINE_TRIGGER_REQUIRED,
                 path: ["crons"],
               });
             }

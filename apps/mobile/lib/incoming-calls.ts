@@ -298,7 +298,8 @@ async function drainNative() {
   if (state.token) await registerCallPushToken({ voipToken: state.token }).catch(() => undefined);
   for (const ring of state.ringing ?? []) {
     if (!callIsRinging(ring)) continue;
-    if (!roster.has(ring.botId)) await loadRoster();
+    // A failed roster load only leaves this ring unshown; it must not drop the actions below.
+    if (!roster.has(ring.botId)) await loadRoster().catch(() => undefined);
     const bot = roster.get(ring.botId);
     if (bot) update(bot, { ...ring, reason: "", opening: "" });
   }
@@ -312,7 +313,7 @@ async function drainNative() {
       await native?.finishAnswer(action.callId, false);
       continue;
     }
-    const bot = await callerFor(action.botId, action.callId);
+    const bot = await callerFor(action.botId, action.callId).catch(() => null);
     // A stale lookup answers nothing and completes no native action: a newer feed owns it.
     if (bot === undefined) continue;
     if (!bot) {
@@ -426,7 +427,8 @@ export function startIncomingCalls() {
               started = false;
             });
         }
-        await loadRoster();
+        // A pending answer must not wait for the roster: callerFor races it with the stream.
+        void loadRoster().catch(() => undefined);
         await drainNative();
       })
       .catch(() => undefined);
