@@ -120,6 +120,8 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "FeedbackReport",
   "PaymentWallet",
   "Purchase",
+  "SpendingLimit",
+  "Payment",
   "TaughtSkill",
   "AgentSkill",
   "AgentSkillSpace",
@@ -137,6 +139,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "BotMcpServer",
   "Computer",
   "ComputerRun",
+  "HomeDeletionNotice",
   "Board",
   "Ticket",
   "TicketComment",
@@ -159,6 +162,8 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "UserActionAutoReviewPreference",
   "SecurityEvent",
   "AuditEvent",
+  "Page",
+  "PageVersion",
 ]);
 
 /**

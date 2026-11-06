@@ -34,6 +34,10 @@ import { SettingsScopeSchema } from "./settings-scope.js";
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
 export type ComputerMode = z.infer<typeof ComputerModeSchema>;
 
+/** How big a machine a cloud computer runs on. Providers without sizes ignore it. */
+export const ComputerSizeSchema = z.enum(["standard", "large", "xlarge"]);
+export type ComputerSize = z.infer<typeof ComputerSizeSchema>;
+
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
 
@@ -77,6 +81,7 @@ export const AppLocaleSchema = z.enum([
   "he",
   "nl",
   "ja",
+  "pl",
 ]);
 export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
 
@@ -124,6 +129,7 @@ export const BotSchema = z.object({
   threadId: Id,
   preview: z.string(),
   status: z.string(),
+  threadStatus: z.string().optional(),
   runErrorId: Id.nullable().default(null),
   computerMode: ComputerModeSchema,
   updatedAt: z.string(),
@@ -167,6 +173,18 @@ export const IncomingBotCallSchema = BotSchema.pick({
   incomingCall: BotSchema.shape.incomingCall.unwrap().unwrap(),
 });
 export type IncomingBotCall = z.infer<typeof IncomingBotCallSchema>;
+
+/** A run alert the server also pushes to phones, already filtered by the chat's mute settings. */
+export const ChatAlertSchema = z.object({
+  kind: z.enum(["completion", "failure", "help", "takeover"]),
+  title: z.string(),
+  body: z.string(),
+  spaceId: Id,
+  botId: Id,
+  threadId: Id,
+  groupId: Id.optional(),
+});
+export type ChatAlert = z.infer<typeof ChatAlertSchema>;
 
 export const ReorderBotsInput = z.object({
   botIds: z
@@ -280,6 +298,7 @@ export const SpaceBotSchema = BotSchema.pick({
   parentBotId: true,
   preview: true,
   status: true,
+  threadStatus: true,
   runErrorId: true,
   updatedAt: true,
 });
@@ -374,6 +393,8 @@ export const SpaceSchema = z.object({
   canRename: z.boolean().optional(),
   /** True only when the current member may delete this non-default space. */
   canDelete: z.boolean().optional(),
+  /** True when more than one person belongs to the space. */
+  shared: z.boolean().optional(),
   /** Every bot deleting the space removes, archived and other members' included. */
   botCount: z.number().int().nonnegative().optional(),
   bots: z.array(SpaceBotSchema),
@@ -382,6 +403,43 @@ export const SpaceSchema = z.object({
   botSections: z.array(BotSectionSchema),
 });
 export type Space = z.infer<typeof SpaceSchema>;
+
+export const SpaceRoleSchema = z.enum(["owner", "member"]);
+export type SpaceRole = z.infer<typeof SpaceRoleSchema>;
+
+export const SpaceMemberSchema = z.object({
+  userId: Id,
+  name: z.string(),
+  email: z.string(),
+  image: z.string().nullable(),
+  role: SpaceRoleSchema,
+});
+export type SpaceMember = z.infer<typeof SpaceMemberSchema>;
+
+export const SpaceMembersSchema = z.object({
+  spaceName: z.string(),
+  members: z.array(SpaceMemberSchema),
+  /** True when the current member owns the space and may invite or remove people. */
+  canManage: z.boolean(),
+  /** For the owner: links created but not yet used or expired. */
+  openInvites: z.number().int().nonnegative().optional(),
+});
+export type SpaceMembers = z.infer<typeof SpaceMembersSchema>;
+
+export const SpaceInviteLinkSchema = z.object({
+  url: z.string().url(),
+  expiresAt: z.string(),
+});
+export type SpaceInviteLink = z.infer<typeof SpaceInviteLinkSchema>;
+
+export const SpaceInvitePreviewSchema = z.object({
+  spaceId: Id,
+  spaceName: z.string(),
+  inviterName: z.string(),
+  /** True when the signed-in person already belongs to the space. */
+  alreadyMember: z.boolean(),
+});
+export type SpaceInvitePreview = z.infer<typeof SpaceInvitePreviewSchema>;
 
 export const SpaceNavigationSchema = z.object({
   current: z.object({
@@ -413,6 +471,7 @@ export const CreateBotInput = z.object({
   dailyCheckIns: z.boolean().optional(),
   fleetManagement: z.boolean().optional(),
   color: BotAvatarValueSchema.optional(),
+  /** Ignored: a new bot takes its owner's set. Older apps still send one. */
   avatarSet: BotAvatarSetSchema.optional(),
   /** Organic body family (0-9); the server picks a matching id unless one is reserved. */
   avatarFamily: z.number().int().min(0).max(9).optional(),
@@ -537,8 +596,10 @@ export const RoutineSchema = z.object({
   watchState: RoutineWatchStateSchema.nullable(),
   lastRunAt: z.string().nullable(),
   nextRunAt: z.string().nullable(),
+  /** Computed by the server; absent on older servers. Not a worker-health diagnosis. */
+  scheduleDelayed: z.boolean().optional(),
   createdAt: z.string(),
-  /** False when another Space member created it; only its creator can change it. */
+  /** Older servers send false for another member's routine; any member can now change it. */
   editable: z.boolean().optional(),
 });
 export type Routine = z.infer<typeof RoutineSchema>;
@@ -1045,6 +1106,9 @@ export const IntegrationCatalogSurfaceSchema = z.object({
 });
 export type IntegrationCatalogSurface = z.infer<typeof IntegrationCatalogSurfaceSchema>;
 
+/** The longest query the integration catalog search accepts. */
+export const CATALOG_SEARCH_QUERY_MAX_LENGTH = 253;
+
 export const IntegrationCatalogResultSchema = z.object({
   domain: z.string(),
   name: z.string(),
@@ -1184,6 +1248,33 @@ export const McpServerSchema = z.object({
 });
 export type McpServer = z.infer<typeof McpServerSchema>;
 
+export type McpServerConnection =
+  | "disabled"
+  | "needs_client"
+  | "needs_sign_in"
+  | "not_working"
+  | "connected"
+  | "not_connected";
+
+/** The one state every client shows for a saved server. */
+export function mcpServerConnection(
+  server: Pick<McpServer, "enabled" | "health" | "oauthClientId" | "oauthStatus">,
+): McpServerConnection {
+  if (!server.enabled) return "disabled";
+  if (server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId)
+    return "needs_client";
+  if (server.oauthStatus === "reconnect") return "needs_sign_in";
+  if (server.health.status === "error") return "not_working";
+  if (server.oauthStatus === "connected" || server.health.status === "ok") return "connected";
+  return "not_connected";
+}
+
+/** Whether Sign in or Reconnect can help: on, not connected, not signed in (even if failing). */
+export function mcpServerNeedsSignIn(server: Parameters<typeof mcpServerConnection>[0]): boolean {
+  const state = mcpServerConnection(server);
+  return state !== "disabled" && state !== "connected" && server.oauthStatus !== "connected";
+}
+
 export const BotMcpServerSchema = z.object({
   id: Id,
   botId: Id,
@@ -1299,6 +1390,12 @@ export const ComputerStatusSchema = z.object({
   busyBotName: z.string().nullable(),
   canUpdate: z.boolean(),
   terminalAvailable: z.boolean(),
+  /** Set only while the user should see that the disk is nearly full. */
+  diskFullPercent: z.number().int().min(0).max(100).optional(),
+  /** True when other people share the Space, and with it this computer and its browser sign-ins. */
+  shared: z.boolean().optional(),
+  /** True when another person in the Space has control, so this viewer only watches. */
+  controlledByOther: z.boolean().optional(),
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 
@@ -1511,6 +1608,8 @@ export const ModelCredentialSchema = z.object({
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
   /** Openai-compatible only; always contains `modelId` when set. */
   enabledModelIds: z.array(z.string()).optional(),
+  /** The connection's enabled models that accept images, where it declares them per model. */
+  visionModelIds: z.array(z.string()).optional(),
   /** Stored secret kind. Absent when the secret could not be read. */
   authKind: z.enum(["api_key", "oauth", "openai_compatible"]).optional(),
   /**
@@ -1726,6 +1825,8 @@ export const VoiceCatalogEntrySchema = z.object({
   description: z.string(),
   transcribe: z.boolean(),
   keyless: z.boolean().optional(),
+  /** The connection takes an optional speech model id that overrides the provider default. */
+  speechModel: z.boolean().optional(),
 });
 export type VoiceCatalogEntry = z.infer<typeof VoiceCatalogEntrySchema>;
 
@@ -1772,6 +1873,39 @@ export const DeploymentSettingsSchema = z.object({
   canChooseHostComputer: z.boolean(),
   sandboxProvider: z.string(),
 });
+
+/** Public metadata only; adapter validation and constructor options stay server-side. */
+export const ComputerProviderFieldSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  kind: z.enum(["text", "secret", "url", "select"]),
+  required: z.boolean(),
+  options: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
+  validation: z.enum(["public-https"]).optional(),
+  /** A saved credential must be re-entered when its destination changes. */
+  destination: z.string().optional(),
+});
+export type ComputerProviderField = z.infer<typeof ComputerProviderFieldSchema>;
+export const ComputerProviderDescriptorSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  fields: z.array(ComputerProviderFieldSchema),
+  capabilities: z.object({ perAccount: z.boolean() }),
+});
+export type ComputerProviderDescriptor = z.infer<typeof ComputerProviderDescriptorSchema>;
+export const ComputerProviderSettingsSchema = z.object({
+  provider: z.string(),
+  defaultProvider: z.string(),
+  providers: z.array(ComputerProviderDescriptorSchema),
+  values: z.record(z.string(), z.string()),
+  savedSecrets: z.record(z.string(), z.boolean()),
+});
+export type ComputerProviderSettings = z.infer<typeof ComputerProviderSettingsSchema>;
+export const ComputerProviderUpdateSchema = z.object({
+  provider: z.string().trim().min(1).max(64),
+  values: z.record(z.string().max(64), z.string().trim().max(4096)).default({}),
+});
+export type ComputerProviderUpdate = z.infer<typeof ComputerProviderUpdateSchema>;
 
 export const ServerUpdateSourceSchema = z.object({
   repoUrl: z.string().max(400),
@@ -1898,9 +2032,13 @@ export const MeSchema = z.object({
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
   sandboxProvider: z.string(),
+  /** Whether Settings may choose where computers run. Absent from older servers. */
+  computerSettingsEnabled: z.boolean().optional(),
   /** Whether this account can add stdio MCP servers here. Absent from older servers. */
   mcpStdioEnabled: z.boolean().default(false),
   avatarStyle: AvatarStyleSchema,
+  /** The icon set new and unpinned bots wear. Absent from servers that predate it. */
+  botAvatarSet: BotAvatarSetSchema.optional(),
   /**
    * The user's IANA timezone, or null when unset (bots then see UTC only).
    * Absent from servers that predate it.
@@ -1920,10 +2058,85 @@ export const MeSchema = z.object({
 export type Me = z.infer<typeof MeSchema>;
 
 export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000, 50000] as const;
-/** Monthly price in cents of running bots on your own model connection; `null` makes it free. */
-export const BYOK_MONTHLY_PRICE_CENTS: number | null = 1500;
-/** Yearly price in cents of the same plan; `null` offers it monthly only. */
-export const BYOK_ANNUAL_PRICE_CENTS: number | null = 14400;
+
+/** The vCPUs and memory each computer size provides. */
+export const COMPUTER_SIZE_SPECS: Record<ComputerSize, { vcpus: number; memoryGb: number }> = {
+  standard: { vcpus: 4, memoryGb: 8 },
+  large: { vcpus: 8, memoryGb: 16 },
+  xlarge: { vcpus: 16, memoryGb: 32 },
+};
+
+/**
+ * What an hour of a billed computer counts against the allowance, $0.20, whatever its size: above
+ * a small cloud machine's raw price, so the allowance also covers storage and saves.
+ */
+export const SANDBOX_HOURLY_COST_MICROS = 200_000;
+/** What a trial may spend on computers, in cents; ending the trial early starts the full allowance. */
+export const TRIAL_SANDBOX_ALLOWANCE_CENTS = 200;
+/** The share of a monthly credit plan an organization may also spend on computers. */
+export const CREDITS_SANDBOX_ALLOWANCE_PERCENT = 20;
+
+/** Computer hours an allowance in cents buys. */
+export function sandboxAllowanceHours(allowanceCents: number): number {
+  return (allowanceCents * 10_000) / SANDBOX_HOURLY_COST_MICROS;
+}
+
+export const ByokTierSchema = z.enum(["standard", "pro", "max"]);
+export type ByokTier = z.infer<typeof ByokTierSchema>;
+
+export interface ByokTierTerms {
+  name: string;
+  /** Monthly price in cents; `null` on Standard makes the own-model plan free, and hides any other tier. */
+  monthlyPriceCents: number | null;
+  /** Yearly price in cents; `null` offers the tier monthly only. */
+  annualPriceCents: number | null;
+  /** What the organization may spend on computers each month, in cents. */
+  computerAllowanceCents: number;
+  computerSize: ComputerSize;
+}
+
+/**
+ * The own-model plan's tiers, in order. Standard is the plan new organizations start on; the
+ * others add bigger computers and more computer hours.
+ */
+export const BYOK_TIERS: Record<ByokTier, ByokTierTerms> = {
+  standard: {
+    name: "Standard",
+    monthlyPriceCents: 1500,
+    annualPriceCents: 14400,
+    computerAllowanceCents: 500,
+    computerSize: "standard",
+  },
+  pro: {
+    name: "Pro",
+    monthlyPriceCents: 4900,
+    annualPriceCents: 46800,
+    computerAllowanceCents: 2000,
+    computerSize: "large",
+  },
+  max: {
+    name: "Max",
+    monthlyPriceCents: 9900,
+    annualPriceCents: 94800,
+    computerAllowanceCents: 4000,
+    computerSize: "xlarge",
+  },
+};
+
+/** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */
+export function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): number | null {
+  if (BYOK_TIERS.standard.monthlyPriceCents === null) return null;
+  const terms = BYOK_TIERS[tier];
+  if (terms.monthlyPriceCents === null) return null;
+  return interval === "year" ? terms.annualPriceCents : terms.monthlyPriceCents;
+}
+/**
+ * An invited friend's first trial, in weeks; the invite copy and the trial both read it. The copy
+ * is written for a plural number of weeks, so check its wording in every language if this changes.
+ */
+export const INVITED_TRIAL_WEEKS = 2;
+/** Length of a new organization's free trial of the own-model plan, in days. */
+export const TRIAL_DAYS = 7;
 export const ByokIntervalSchema = z.enum(["month", "year"]);
 export type ByokInterval = z.infer<typeof ByokIntervalSchema>;
 export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 3000;
@@ -1979,8 +2192,23 @@ export const BillingStatusSchema = z.object({
   byokPriceCents: z.number().int().positive().nullable().optional(),
   /** How often `byokPriceCents` bills. Absent from older servers, which bill monthly. */
   byokInterval: ByokIntervalSchema.optional(),
-  /** Yearly price of the own-key plan for new subscriptions, when offered. */
+  /** Yearly price of the own-key plan's tier for new subscriptions, when offered. */
   byokAnnualPriceCents: z.number().int().positive().nullable().optional(),
+  /** The own-key plan's tier: the subscribed one, else Standard. Absent from older servers. */
+  byokTier: ByokTierSchema.optional(),
+  /** The tiers on offer, in order; absent when the own-key plan is free. */
+  byokTiers: z
+    .array(
+      z.object({
+        tier: ByokTierSchema,
+        name: z.string(),
+        monthlyPriceCents: z.number().int().positive(),
+        annualPriceCents: z.number().int().positive().nullable(),
+        computerSize: ComputerSizeSchema,
+        computerHours: z.number().nonnegative(),
+      }),
+    )
+    .optional(),
   /** End of an unpaid own-key organization's free period. */
   byokFreeUntil: z.string().nullable().optional(),
   access: z.boolean(),
@@ -2047,6 +2275,23 @@ export function byokYearlySwitchSavings(status: BillingStatus): number | null {
   return savings > 0 ? savings : null;
 }
 
+/**
+ * Whether an owner can move the own-key plan to another tier: a paid-up plan with no monthly
+ * credits that is not cancelling, and another tier to move to.
+ */
+export function byokTierChangeOffered(status: BillingStatus): boolean {
+  return Boolean(
+    status.canManage &&
+      status.funding === "byok" &&
+      !status.byokFreeUntil &&
+      !status.monthlyAmountCents &&
+      !status.cancelAtPeriodEnd &&
+      (status.state === "active" || status.state === "trialing") &&
+      status.byokPriceCents &&
+      (status.byokTiers?.length ?? 0) > 1,
+  );
+}
+
 export const AppBootstrapSchema = z.object({
   me: MeSchema,
   bots: z.array(BotSchema),
@@ -2057,6 +2302,8 @@ export const AppBootstrapSchema = z.object({
   thread: ThreadSnapshotSchema.nullable(),
   routines: z.array(RoutineSchema),
   spaces: z.array(SpaceSchema),
+  /** Set when the requested bot is the caller's but lives in another of their Spaces. */
+  botSpaceId: Id.optional(),
 });
 export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 

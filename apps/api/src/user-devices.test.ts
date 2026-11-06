@@ -32,6 +32,8 @@ function fakePrisma() {
   const events: Array<{ type: string; userId: string | null; metadata: object }> = [];
   /** Live sessions by id, with their expiry. Every test user starts signed in. */
   const sessions = new Map<string, Date>();
+  /** Users with no sign-in left at all. */
+  const signedOutUsers = new Set<string>();
   const signedIn = (id: string) =>
     sessions.get(id) ?? (id.endsWith("-ended") ? null : new Date(Date.now() + 60_000));
   type Where = Partial<Row> & { OR?: Partial<Row>[] };
@@ -94,20 +96,40 @@ function fakePrisma() {
       findUnique: async () => null,
     },
     session: {
-      findMany: async ({ where }: { where: { id: { in: string[] }; expiresAt: { gt: Date } } }) =>
-        where.id.in
-          .filter((id) => {
-            const expiresAt = signedIn(id);
-            return expiresAt !== null && expiresAt > where.expiresAt.gt;
-          })
-          .map((id) => ({ id })),
+      findFirst: async ({ where }: { where: { id?: string; userId?: string } }) => {
+        if (where.id) return signedIn(where.id) ? { id: where.id } : null;
+        return signedOutUsers.has(where.userId!) ? null : { id: `${where.userId}-session` };
+      },
+      findMany: async ({
+        where,
+      }: {
+        where: { id?: { in: string[] }; userId?: { in: string[] }; expiresAt: { gt: Date } };
+      }) =>
+        where.userId
+          ? where.userId.in
+              .filter((userId) => !signedOutUsers.has(userId))
+              .map((userId) => ({ userId }))
+          : where
+              .id!.in.filter((id) => {
+                const expiresAt = signedIn(id);
+                return expiresAt !== null && expiresAt > where.expiresAt.gt;
+              })
+              .map((id) => ({ id })),
     },
     securityEvent: {
       create: async ({ data }: { data: (typeof events)[number] }) => events.push(data),
     },
+    $executeRaw: async () => 1,
     $transaction: (run: (tx: unknown) => Promise<unknown>) => run(prisma),
   };
-  return { prisma: prisma as unknown as PrismaClient, rows, events, connections, sessions };
+  return {
+    prisma: prisma as unknown as PrismaClient,
+    rows,
+    events,
+    connections,
+    sessions,
+    signedOutUsers,
+  };
 }
 
 class FakeSocket extends EventEmitter implements UserDeviceSocket {
@@ -332,15 +354,91 @@ describe("device sessions", () => {
     await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
   });
 
-  it("ends a device paired before sessions were recorded with the user's next session", async () => {
-    const { pair, store, rows } = setup();
+  it("keeps a device paired before sessions were recorded until the user has no sign-in left", async () => {
+    const { pair, store, rows, signedOutUsers } = setup();
     await pair("user-1", { session: "desktop" });
     rows[0]!.sessionId = null;
     await pair("user-2");
     rows[1]!.sessionId = null;
 
     await endUserDeviceSession(store, { id: "phone", userId: "user-1" });
+    expect(rows.map((row) => row.revokedAt === null)).toEqual([true, true]);
+
+    signedOutUsers.add("user-1");
+    await endUserDeviceSession(store, { id: "desktop", userId: "user-1" });
     expect(rows.map((row) => row.revokedAt === null)).toEqual([false, true]);
+  });
+
+  it("refuses a device paired before sessions were recorded once no sign-in is left", async () => {
+    const { pair, hub, rows, signedOutUsers } = setup();
+    const { token } = await (await pair("user-1")).json();
+    rows[0]!.sessionId = null;
+    await expect(hub.authenticate(`Bearer ${token}`)).resolves.toMatchObject({ userId: "user-1" });
+
+    signedOutUsers.add("user-1");
+    await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
+    expect(rows[0]).toMatchObject({ revokedBy: "session" });
+  });
+
+  it("leaves a device a new sign-in tied while the old sign-out was ending it", async () => {
+    const { pair, store, rows, signedOutUsers, prisma } = setup();
+    await pair("user-1");
+    rows[0]!.sessionId = null;
+    signedOutUsers.add("user-1");
+    const findMany = prisma.userDevice.findMany.bind(prisma.userDevice);
+    prisma.userDevice.findMany = (async (args: Parameters<typeof findMany>[0]) => {
+      const found = await findMany(args);
+      rows[0]!.sessionId = "desktop-2";
+      return found;
+    }) as typeof findMany;
+
+    await endUserDeviceSession(store, { id: "phone", userId: "user-1" });
+    expect(rows[0]).toMatchObject({ sessionId: "desktop-2", revokedAt: null });
+  });
+
+  it("ties a device paired before sessions were recorded to its desktop's sign-in", async () => {
+    const { pair, app, store, rows, events } = setup();
+    const { deviceId, token } = await (await pair("user-1", { session: "desktop" })).json();
+    rows[0]!.sessionId = null;
+    const tie = (user: string | null, authorization = `Bearer ${token}`, session = "desktop") =>
+      app.request("/api/devices/self/session", {
+        method: "POST",
+        headers: {
+          authorization,
+          ...(user ? { "x-test-user": user, "x-test-session": session } : {}),
+        },
+      });
+
+    expect((await tie(null)).status).toBe(401);
+    expect((await tie("user-1", "Bearer wrong")).status).toBe(401);
+    expect((await tie("user-2")).status).toBe(403);
+    expect(rows[0]!.sessionId).toBeNull();
+
+    expect((await tie("user-1")).status).toBe(204);
+    expect((await tie("user-1", `Bearer ${token}`, "phone")).status).toBe(204);
+    expect(rows[0]!.sessionId).toBe("desktop");
+    expect(events.filter((event) => event.type === "device.tied")).toMatchObject([
+      { type: "device.tied", userId: "user-1", metadata: { deviceId } },
+    ]);
+
+    await endUserDeviceSession(store, { id: "desktop", userId: "user-1" });
+    expect(rows[0]!.revokedAt).toBeInstanceOf(Date);
+  });
+
+  it("ends a computer tied to a sign-in that signed out while it was tying", async () => {
+    const { pair, app, rows } = setup();
+    const { token } = await (await pair("user-1")).json();
+    rows[0]!.sessionId = null;
+    const response = await app.request("/api/devices/self/session", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "x-test-user": "user-1",
+        "x-test-session": "desktop-ended",
+      },
+    });
+    expect(response.status).toBe(401);
+    expect(rows[0]).toMatchObject({ sessionId: "desktop-ended", revokedBy: "session" });
   });
 
   it("never accepts a device paired by a sign-in that already ended", async () => {

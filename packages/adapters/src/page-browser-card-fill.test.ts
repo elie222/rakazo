@@ -201,7 +201,7 @@ describe("browser_act fill_card", () => {
     [
       "a fill_card without its purchase",
       { kind: "fill_card", ref: "e1", field: "number" },
-      "browser_act fill_card needs purchase: the id of an approved purchase",
+      "browser_act fill_card needs purchase: the id of an approved purchase, or card: the name of a saved card",
     ],
     [
       "a fill_card without its field",

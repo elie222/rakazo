@@ -15,6 +15,7 @@ import { useThreadMentionCatalog } from "./thread-mention-catalog";
 const dimensions = vi.hoisted(() => ({ fontScale: 1 }));
 
 const input = vi.hoisted(() => ({
+  clear: vi.fn(),
   change: (_value: string) => {},
   key: (_event: { nativeEvent: { key: string } }) => {},
   select: (_event: { nativeEvent: { selection: { start: number; end: number } } }) => {},
@@ -160,7 +161,12 @@ vi.mock("react-native", () => {
       input.select = onSelectionChange ?? (() => {});
       const segments = Children.toArray(children).filter(isValidElement);
       return createElement("input", {
-        ref,
+        // The native input's own clear(), which empties the field it shows.
+        ref: (element: HTMLInputElement | null) => {
+          if (element) Object.assign(element, { clear: input.clear });
+          if (typeof ref === "function") ref(element);
+          else if (ref) ref.current = element;
+        },
         value: segments.map(nativeText).join(""),
         "data-mentions": JSON.stringify(
           segments.filter((segment) => (segment.props as { style?: object }).style).map(nativeText),
@@ -460,6 +466,33 @@ describe("thread composer isolation", () => {
     expect(pickerRows().map((row) => row.textContent)).toEqual(["everyone"]);
     type("@zzz");
     expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
+  });
+
+  it("adds a page's reply on the same line as the draft, without sending it", () => {
+    act(() => composer.current!.addReply("Pick B"));
+    expect(composer.current!.snapshot().promptText).toBe("Pick B");
+    type("then  ");
+    act(() => composer.current!.addReply("Pick B"));
+    expect(composer.current!.snapshot().promptText).toBe("then Pick B");
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
+  it("moves the caret after an added reply", () => {
+    type("then");
+    select(1);
+    act(() => composer.current!.addReply("Pick B"));
+    expect(JSON.parse(field().dataset.selection!)).toEqual({ start: 11, end: 11 });
+  });
+
+  it("says when the user deletes the last of its text", () => {
+    const onEmptied = vi.fn();
+    render({ onEmptied });
+    act(() => composer.current!.addReply("Pick B"));
+    onEmptied.mockClear();
+    type("Pick");
+    expect(onEmptied).not.toHaveBeenCalled();
+    type("");
+    expect(onEmptied).toHaveBeenCalledTimes(1);
   });
 
   it("keeps inserted text when backspacing into a mention afterwards", () => {
@@ -1098,6 +1131,14 @@ describe("thread composer isolation", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("empties the native field when a send resets the composer, so a tall draft shrinks back", () => {
+    type("First line\nSecond line\nThird line\nFourth line");
+    expect(input.clear).not.toHaveBeenCalled();
+    act(() => composer.current!.reset());
+    expect(input.clear).toHaveBeenCalledOnce();
+    expect(field().value).toBe("");
   });
 
   it("keeps edits during send and clears an unchanged composition, including popovers", () => {

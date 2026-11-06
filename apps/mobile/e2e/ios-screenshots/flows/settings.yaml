@@ -98,6 +98,13 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 11-routine
+- openLink: "rakazo:///routine-runs?routineId=${RAKAZO_SCREENSHOT_ROUTINE_ID}&botName=Researcher"
+- extendedWaitUntil:
+    visible: ".*Run history.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 11b-routine-runs
 - openLink: "rakazo:///bot-settings?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
 - scrollUntilVisible:
     element: "Advanced"
@@ -107,20 +114,40 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 12-bot-settings
+- openLink: "rakazo:///bot-profile?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: ".*Routines.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 13-bot-profile
+- tapOn: "Bot actions"
+- extendedWaitUntil:
+    visible: "Clear conversation"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 14-bot-profile-menu
 - openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
 - extendedWaitUntil:
     visible: ".*Delete group.*"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 13-group-settings
+- takeScreenshot: 15-group-settings
 - openLink: "rakazo:///computer?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
 - extendedWaitUntil:
     visible: ".*Take control.*|.*Open computer.*"
     timeout: 20000
+# The computer boots and its desktop loads after the page opens; Maestro cannot see inside the
+# screen, so give it a few seconds before the shot.
+- extendedWaitUntil:
+    visible: "Desktop never shows this text"
+    timeout: 8000
+    optional: true
 - waitForAnimationToEnd:
-    timeout: 3000
-- takeScreenshot: 14-computer
+    timeout: 5000
+- takeScreenshot: 16-computer
 - openLink: "rakazo:///account"
 - scrollUntilVisible:
     element: ".*Delete account.*"
@@ -133,7 +160,7 @@ name: Settings
     timeout: 10000
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 15-delete-prompt
+- takeScreenshot: 17-delete-prompt
 - tapOn: "Cancel"
 # Account reopens where it was scrolled, below Language.
 - openLink: "rakazo:///account"
@@ -149,7 +176,7 @@ name: Settings
     timeout: 10000
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 16-language
+- takeScreenshot: 18-language
 - openLink: "rakazo:///account"
 - scrollUntilVisible:
     element: "Artifacts"
@@ -158,7 +185,7 @@ name: Settings
 - assertVisible: "Artifacts"
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 17-account-artifacts
+- takeScreenshot: 19-account-artifacts
 - tapOn: "Artifacts"
 # Only the Artifacts screen has the search field; the sheet must have closed.
 - extendedWaitUntil:
@@ -167,4 +194,23 @@ name: Settings
 - assertNotVisible: ".*Change password.*"
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 18-artifacts
+- takeScreenshot: 20-artifacts
+- openLink: "rakazo:///account"
+- scrollUntilVisible:
+    element: "Haptics"
+    direction: UP
+    timeout: 15000
+    visibilityPercentage: 100
+    centerElement: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 21-haptics
+- tapOn:
+    text: "Haptics"
+    index: 1
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 22-haptics-toggled
+- tapOn:
+    text: "Haptics"
+    index: 1

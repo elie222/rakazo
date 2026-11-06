@@ -9,6 +9,7 @@ import {
   createPendingSteeringRun,
   discardAnsweredSteering,
   notifyRealtime,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   transientRunEventsWhere,
 } from "./events.js";
 import { createThreadMessageInTransaction } from "./messages.js";
@@ -171,14 +172,16 @@ export async function endTakeoverWaits(
   let ended = 0;
   for (const wait of waits) {
     const expired = await withTransactionRetry(() =>
-      prisma.$transaction((tx) =>
-        expireStuckRun(tx, {
-          runId: wait.id,
-          threadId: wait.threadId,
-          status: "waiting_takeover",
-          updatedAt: wait.updatedAt,
-          now: new Date(),
-        }),
+      prisma.$transaction(
+        (tx) =>
+          expireStuckRun(tx, {
+            runId: wait.id,
+            threadId: wait.threadId,
+            status: "waiting_takeover",
+            updatedAt: wait.updatedAt,
+            now: new Date(),
+          }),
+        THREAD_LOCK_TRANSACTION_OPTIONS,
       ),
     );
     if (!expired) continue;

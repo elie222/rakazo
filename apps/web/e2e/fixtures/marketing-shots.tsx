@@ -86,6 +86,7 @@ function inboxBot(): Bot {
     createdAt: "2026-10-07T00:00:00.000Z",
     voiceId: null,
     autoSpeak: false,
+    replyMode: "chat",
     modelProvider: "openai",
     modelId: "gpt-4.1",
     thinkingLevel: null,
@@ -93,6 +94,9 @@ function inboxBot(): Bot {
     teamChatRules: "",
     webhookConfigured: false,
     spawnKey: null,
+    runErrorId: null,
+    fleetManagement: true,
+    disabledBuiltinTools: [],
   };
 }
 
@@ -109,7 +113,7 @@ function CreateShot() {
       }
       fill(name, "Inbox");
       document.querySelector<HTMLButtonElement>('button[aria-label="Shape 1"]')?.click();
-      document.querySelector<HTMLButtonElement>('button[aria-label="Color #8B5CF6"]')?.click();
+      document.querySelector<HTMLButtonElement>('button[aria-label="Color #A97EFE"]')?.click();
       setReady(true);
     };
     fillWhenOpen();
@@ -117,7 +121,11 @@ function CreateShot() {
   }, []);
   return (
     <main data-ready={ready ? "true" : "false"} className="min-h-screen bg-background">
-      <CreateBotDialog onCreate={async () => undefined} onCancel={() => undefined} />
+      <CreateBotDialog
+        avatarSet="organic"
+        onCreate={async () => undefined}
+        onCancel={() => undefined}
+      />
     </main>
   );
 }
@@ -161,6 +169,9 @@ function RoutineShot() {
     messageProvider: null,
     active: true,
     runAtLocal: "",
+    modelKey: "",
+    thinkingLevel: "",
+    watch: null,
   });
   return (
     <main data-ready="true" className="mx-auto max-w-[760px] bg-background p-8 text-foreground">
@@ -191,6 +202,8 @@ function ApprovalShot() {
     <main data-ready="true" className="mx-auto max-w-[760px] bg-background p-8 text-foreground">
       <AskCard
         canAnswer
+        canDismiss={false}
+        onDismiss={async () => undefined}
         onAnswer={async () => undefined}
         block={{
           kind: "ask",
@@ -218,6 +231,7 @@ const subscriptionMe: Me = {
   name: "Ada",
   spaceId: "space-demo",
   isDeploymentOwner: true,
+  isAdmin: false,
   needsModel: false,
   defaultProvider: "anthropic",
   defaultModel: "claude-sonnet-5-5",
@@ -302,6 +316,8 @@ function SubscriptionShot() {
         memoryConfig={null}
         onMemoryConfigChange={() => undefined}
         onUsageOpen={() => undefined}
+        timezone="UTC"
+        onTimezoneChange={async () => undefined}
         onClose={() => undefined}
       />
     </main>

@@ -1,41 +1,86 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
-import type { LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
-import {
-  BOT_INSTRUCTIONS_MAX_LENGTH,
-  commandVariableName,
-  LoginSecretValue,
-  loginCardFields,
-  normalizeOneTimeCode,
-} from "@rakazo/contracts";
+import type { AskReceipt, LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
+import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
   isApprovalAskBlock,
   isSecretAskBlock,
+  receiptItems,
   resolveAskChoice,
   selectedAskActionLabel,
 } from "@rakazo/core";
-import { Button, Input, Label, Switch, Textarea } from "@rakazo/ui-web";
+import { Button, Input, Textarea } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
-import { useEffect, useId, useState } from "react";
-import { rpc } from "../lib/rpc";
+import { useState } from "react";
+import type { RpcClient } from "../lib/rpc";
+import { rpc as selectedSpaceRpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { BuiCard } from "./ai/primitives";
-import { LoginFieldValue } from "./LoginFields";
 import { OptionRow, optionLetter } from "./OptionRow";
+import { SecretAskCard } from "./SecretAskCard";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
+
+function ReceiptRow({
+  name,
+  amount,
+  className,
+}: {
+  name: string;
+  amount: string;
+  className?: string;
+}) {
+  return (
+    <li className={`flex items-baseline justify-between gap-4 ${className ?? ""}`}>
+      <span className="min-w-0 break-words">{name}</span>
+      <span className="shrink-0 tabular-nums">{amount}</span>
+    </li>
+  );
+}
+
+/** A payment's order as the page shows it: its lines, then what is paid, then where it came from. */
+function AskReceiptView({ receipt }: { receipt: AskReceipt }) {
+  const { button, more, amount, total } = receipt;
+  const items = receiptItems(receipt.items, [t`Total`, t`On the button`]);
+  const count = more ? `${more.count}${more.atLeast ? "+" : ""}` : "";
+  const lines = items.length > 0 || more || total;
+  return (
+    <div data-testid="ask-receipt" className="mt-3 text-body-lg leading-[1.5] text-foreground">
+      {lines ? (
+        <ul className="space-y-1 border-b border-border pb-2.5">
+          {items.map((item, index) => (
+            // Page lines can repeat, so their place is their key.
+            <ReceiptRow key={index} name={item.name} amount={item.amount} />
+          ))}
+          {more ? <li className="text-muted-foreground">{t`${count} more`}</li> : null}
+          {total ? <ReceiptRow name={t`Total`} amount={total} /> : null}
+        </ul>
+      ) : null}
+      {amount ? (
+        <ul className={lines ? "pt-2.5" : undefined}>
+          <ReceiptRow
+            className="font-medium"
+            name={receipt.amountSource === "button" ? t`On the button` : t`Total`}
+            amount={amount}
+          />
+        </ul>
+      ) : null}
+      <p className="mt-2.5 text-body-sm leading-[1.45] text-muted-foreground">
+        {button
+          ? t`Button “${button}” · read from the page, not checked`
+          : t`Read from the page, not checked`}
+      </p>
+    </div>
+  );
+}
 
 function formatAnsweredState(
   answer: string | undefined,
   approval: boolean,
-  secret: boolean,
   outcome?: "created" | "cancelled",
   actions?: AskBlock["actions"],
-  dismissed?: boolean,
-  remembered?: false,
 ): string {
-  if (secret) return dismissed ? t`Dismissed` : remembered === false ? t`Sent` : t`Saved`;
   if (!answer) return t`Answered`;
   if (!approval) return answer === "approved" ? t`Sent` : selectedAskActionLabel(answer, actions);
   if (outcome === "created") return t`Created`;
@@ -70,19 +115,7 @@ function approvalActionLabel(
   return fallback;
 }
 
-function secretFieldLabel(purpose: AskBlock["purpose"]): string {
-  if (purpose === "password") return t`Password`;
-  if (purpose === "api_key") return t`API key`;
-  return t`Code`;
-}
-
-export function AskCard({
-  block,
-  canAnswer,
-  canDismiss,
-  onAnswer,
-  onDismiss,
-}: {
+export type AskCardProps = {
   block: AskBlock;
   canAnswer: boolean;
   canDismiss: boolean;
@@ -90,27 +123,30 @@ export function AskCard({
   onAnswer: (text: string, fields?: LoginFieldInput[], remember?: false) => Promise<void>;
   /** Turns down a secret request without a value. */
   onDismiss: () => Promise<void>;
-}) {
+  /** The chat's space; Undo goes there even if another tab selects a different space. */
+  rpc?: RpcClient;
+};
+
+/** A question, approval or protected-input request from the bot. */
+export function AskCard(props: AskCardProps) {
+  return isSecretAskBlock(props.block) ? (
+    <SecretAskCard {...props} />
+  ) : (
+    <PromptAskCard {...props} />
+  );
+}
+
+function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: AskCardProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
   const [answer, setAnswer] = useState(block.instructionUpdate?.after ?? "");
-  const [dismissed, setDismissed] = useState(false);
   const [acceptedAnswer, setAcceptedAnswer] = useState<string>();
-  const [acceptedRemembered, setAcceptedRemembered] = useState<false>();
   const [undone, setUndone] = useState(false);
-  const emptyLogin = () => loginCardFields(block.loginFields);
-  const [login, setLogin] = useState(emptyLogin);
-  const [remember, setRemember] = useState(true);
-  const rememberId = useId();
-  const [secretField, setSecretField] = useState<HTMLInputElement | null>(null);
-  const [pastedLines, setPastedLines] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const submitting = pendingAction !== null;
-  const answered = block.status === "answered" || acceptedAnswer !== undefined || dismissed;
+  const answered = block.status === "answered" || acceptedAnswer !== undefined;
   const displayedAnswer = block.status === "answered" ? block.answer : acceptedAnswer;
-  const displayedDismissed = block.status === "answered" ? block.dismissed : dismissed;
-  const displayedRemembered = block.status === "answered" ? block.remembered : acceptedRemembered;
   const approvalActions = isApprovalAskBlock(block) ? block.actions : undefined;
   const askActions = block.actions;
   const displayActions = block.instructionUpdate
@@ -118,9 +154,8 @@ export function AskCard({
         action.id === "allow" ? [action, { id: "edit", label: t`Edit` }] : [action],
       )
     : askActions;
-  const secretInput = isSecretAskBlock(block);
   const optionQuestion =
-    !approvalActions && !block.instructionUpdate && !secretInput && Boolean(askActions?.length);
+    !approvalActions && !block.instructionUpdate && Boolean(askActions?.length);
   const chosenOption =
     answered && displayedAnswer ? resolveAskChoice(displayedAnswer, askActions) : undefined;
   // An edited draft is shown in the user's words, so the card reads as answered. A typed reply to
@@ -129,84 +164,20 @@ export function AskCard({
     answered &&
     !optionQuestion &&
     !approvalActions &&
-    !secretInput &&
     !block.instructionUpdate &&
     displayedAnswer !== "approved"
       ? displayedAnswer
       : undefined;
-  // A login, credential or code is for the run's user, so only they can fill one in; others see
-  // the card without fields or buttons.
-  const ownerOnly = secretInput && Boolean(block.credential || block.oneTimeCode) && !canDismiss;
-  const loginInput = secretInput && block.credential?.auth.type === "login";
-  const shownLoginLabels = block.loginFields ?? [t`Username`, t`Password`];
-  const loginReady = LoginSecretValue.safeParse({ fields: login }).success;
-  const secretLabel = secretFieldLabel(block.purpose);
-  const commandInput = secretInput && block.credential?.auth.type === "command";
-  const codeInput = secretInput && Boolean(block.oneTimeCode);
-  const codeHost = block.oneTimeCode ? new URL(block.oneTimeCode.origin).host : undefined;
-
-  // A password field can't hold line breaks, so it would flatten a multi-line command variable
-  // such as an SSH private key. That text is kept as is and the field turns read-only, so what
-  // is saved is exactly what was pasted; Clear makes it editable again.
-  useEffect(() => {
-    if (!commandInput || !secretField) return;
-    const field = secretField;
-    const keepLineBreaks = (event: InputEvent) => {
-      const text = (event.data ?? event.dataTransfer?.getData("text/plain") ?? "").replace(
-        /\r\n?/g,
-        "\n",
-      );
-      if (field.readOnly || !event.cancelable || !text.trim().includes("\n")) return;
-      event.preventDefault();
-      const start = field.selectionStart ?? field.value.length;
-      const end = field.selectionEnd ?? start;
-      setAnswer(field.value.slice(0, start) + text + field.value.slice(end));
-      setPastedLines(true);
-    };
-    field.addEventListener("beforeinput", keepLineBreaks);
-    return () => field.removeEventListener("beforeinput", keepLineBreaks);
-  }, [commandInput, secretField]);
-
-  async function submitAnswer(value: string, fields?: LoginFieldInput[]) {
-    if (submitting) return;
-    if (fields ? !loginReady : secretInput ? value.length === 0 : !value.trim()) return;
-    const submitValue = secretInput ? value : value.trim();
-    setPendingAction(secretInput ? "submit" : submitValue);
+  async function submitAnswer(value: string) {
+    if (submitting || !value.trim()) return;
+    const submitValue = value.trim();
+    setPendingAction(submitValue);
     setError(null);
-    if (secretInput) {
-      setAnswer("");
-      setLogin(emptyLogin());
-      setPastedLines(false);
-    }
     try {
-      if (fields && !remember) await onAnswer(submitValue, fields, false);
-      else await onAnswer(submitValue, fields);
-      if (fields && !remember) setAcceptedRemembered(false);
-      setAcceptedAnswer(secretInput ? "" : submitValue);
+      await onAnswer(submitValue);
+      setAcceptedAnswer(submitValue);
     } catch (err) {
-      // A secret answer's failure may echo the secret, so never show its message.
-      setError(
-        secretInput
-          ? t`Could not submit this answer`
-          : errorText(err, t`Could not submit this answer`),
-      );
-    } finally {
-      setPendingAction(null);
-    }
-  }
-
-  async function dismissSecret() {
-    if (submitting) return;
-    setPendingAction("dismiss");
-    setError(null);
-    setAnswer("");
-    setLogin(emptyLogin());
-    setPastedLines(false);
-    try {
-      await onDismiss();
-      setDismissed(true);
-    } catch {
-      setError(t`Could not submit this answer`);
+      setError(errorText(err, t`Could not submit this answer`));
     } finally {
       setPendingAction(null);
     }
@@ -238,7 +209,7 @@ export function AskCard({
   if (undo)
     return (
       <BuiCard className="px-5 py-4">
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex items-center gap-2 text-body">
           {undo.label}
           <Button
             variant="link"
@@ -265,50 +236,25 @@ export function AskCard({
 
   return (
     <BuiCard
-      data-testid={
-        secretInput
-          ? "secret-ask-card"
-          : block.instructionUpdate
-            ? "instruction-approval-card"
-            : undefined
-      }
+      data-testid={block.instructionUpdate ? "instruction-approval-card" : undefined}
       className="w-full min-w-0 max-w-xl px-5 py-4"
     >
-      <div className="text-[15.5px] leading-[1.5] text-foreground">
+      <div className="text-body-lg leading-[1.5] text-foreground">
         {block.instructionUpdate ? (
           <Trans>Update instructions?</Trans>
         ) : (
           <ChatMarkdown>{block.text}</ChatMarkdown>
         )}
       </div>
-      {secretInput && (block.credential || block.oneTimeCode) ? (
-        <div
-          data-testid="secret-ask-destination"
-          // A code's line is a sentence, so it wraps between words; an address breaks anywhere.
-          className={`mt-2 ${codeHost ? "wrap-anywhere" : "break-all"} text-[13px] text-muted-foreground`}
-        >
-          {block.credential?.auth.type === "command" ? (
-            <span className="flex flex-wrap gap-x-2">
-              <span>{t`Command variable`}</span>
-              <span>${commandVariableName(block.credential.name)}</span>
-            </span>
-          ) : codeHost ? (
-            t`Only enter a code ${codeHost} sent you.`
-          ) : (
-            block.credential?.origin
-          )}
-        </div>
-      ) : null}
-      {codeInput && block.detail ? (
-        <div className="mt-2 break-words text-[13px] text-muted-foreground">{block.detail}</div>
-      ) : null}
-      {block.detail && !secretInput ? (
+      {block.receipt ? (
+        <AskReceiptView receipt={block.receipt} />
+      ) : block.detail ? (
         <pre
           data-testid="ask-detail"
           className={
             block.detailFormat === "text"
-              ? "mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words font-sans text-[15.5px] leading-[1.5] text-foreground"
-              : "mt-2.5 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background px-3 py-2 font-mono text-[13px] leading-[1.6] text-foreground"
+              ? "mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words font-sans text-body-lg leading-[1.5] text-foreground"
+              : "mt-2.5 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background px-3 py-2 font-mono text-body-sm leading-[1.6] text-foreground"
           }
         >
           {block.detail}
@@ -353,14 +299,13 @@ export function AskCard({
       ) : typedAnswer ? (
         <blockquote
           data-testid="ask-answer"
-          className="mt-3 whitespace-pre-wrap break-words border-s-2 border-border ps-3 text-[15px] leading-[1.5] text-muted-foreground"
+          className="mt-3 whitespace-pre-wrap break-words border-s-2 border-border ps-3 text-body-lg leading-[1.5] text-muted-foreground"
         >
           {typedAnswer}
         </blockquote>
       ) : answered ? (
-        <div className="mt-3.5 flex items-center gap-1.5 text-[13.5px] font-medium text-muted-foreground">
+        <div className="mt-3.5 flex items-center gap-1.5 text-body font-medium text-muted-foreground">
           {displayedAnswer === "deny" ||
-          displayedDismissed ||
           approvalActions?.find((action) => action.id === displayedAnswer)?.outcome ===
             "cancelled" ? null : (
             <Check aria-hidden className="size-4" />
@@ -372,19 +317,15 @@ export function AskCard({
             : formatAnsweredState(
                 displayedAnswer,
                 Boolean(approvalActions),
-                secretInput,
                 approvalActions?.find((action) => action.id === displayedAnswer)?.outcome,
                 askActions,
-                displayedDismissed,
-                // A code is used once, never saved.
-                codeInput ? false : displayedRemembered,
               )}
         </div>
       ) : !canAnswer ? (
-        <div className="mt-3.5 text-[13.5px] font-medium text-muted-foreground">
+        <div className="mt-3.5 text-body font-medium text-muted-foreground">
           <Trans>No longer active</Trans>
         </div>
-      ) : ownerOnly ? null : displayActions?.length ? (
+      ) : displayActions?.length ? (
         <div className="mt-3.5 flex flex-wrap gap-2">
           {displayActions.map((action) => (
             <Button
@@ -415,108 +356,6 @@ export function AskCard({
             </Button>
           ))}
         </div>
-      ) : secretInput ? (
-        <form
-          className="mt-3.5 flex flex-col gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (loginInput) void submitAnswer("", login);
-            else void submitAnswer(answer);
-          }}
-        >
-          {loginInput ? (
-            login.map((field, index) => (
-              <LoginFieldValue
-                key={field.label}
-                label={shownLoginLabels[index] ?? field.label}
-                field={field}
-                disabled={submitting}
-                onChange={(change) =>
-                  setLogin((current) =>
-                    current.map((field, at) => (at === index ? { ...field, ...change } : field)),
-                  )
-                }
-              />
-            ))
-          ) : (
-            <Input
-              ref={setSecretField}
-              className="w-full"
-              aria-label={secretLabel}
-              type="password"
-              autoComplete={codeInput ? "one-time-code" : "off"}
-              spellCheck={false}
-              disabled={submitting}
-              readOnly={pastedLines}
-              value={pastedLines ? answer.replaceAll("\n", " ") : answer}
-              onChange={(event) => setAnswer(event.target.value)}
-              placeholder={secretLabel}
-            />
-          )}
-          {pastedLines ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="self-start"
-              disabled={submitting}
-              onClick={() => {
-                setAnswer("");
-                setPastedLines(false);
-                secretField?.focus();
-              }}
-            >
-              <Trans>Clear</Trans>
-            </Button>
-          ) : null}
-          {loginInput ? (
-            <div className="mt-1 flex items-center gap-2">
-              <Switch
-                id={rememberId}
-                size="sm"
-                checked={remember}
-                disabled={submitting}
-                onCheckedChange={setRemember}
-              />
-              <Label htmlFor={rememberId} className="text-[13px] font-normal text-muted-foreground">
-                <Trans>Save to Vault</Trans>
-              </Label>
-            </div>
-          ) : null}
-          <div className="flex gap-2">
-            <Button
-              type="submit"
-              disabled={
-                (loginInput
-                  ? !loginReady
-                  : codeInput
-                    ? !normalizeOneTimeCode(answer)
-                    : answer.length === 0) || submitting
-              }
-            >
-              {(loginInput && !remember) || codeInput ? (
-                pendingAction === "submit" ? (
-                  <Trans>Sending…</Trans>
-                ) : (
-                  <Trans>Continue</Trans>
-                )
-              ) : pendingAction === "submit" ? (
-                <Trans>Saving…</Trans>
-              ) : (
-                <Trans>Save</Trans>
-              )}
-            </Button>
-            {canDismiss ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={submitting}
-                onClick={() => void dismissSecret()}
-              >
-                <Trans>Dismiss</Trans>
-              </Button>
-            ) : null}
-          </div>
-        </form>
       ) : editing ? (
         <form
           className="mt-3.5 flex flex-col gap-2"
@@ -557,7 +396,7 @@ export function AskCard({
           </Button>
         </div>
       )}
-      {error ? <p className="mt-3 text-[13px] text-destructive">{error}</p> : null}
+      {error ? <p className="mt-3 text-body-sm text-destructive">{error}</p> : null}
     </BuiCard>
   );
 }

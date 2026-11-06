@@ -15,9 +15,6 @@ vi.mock("./appearance", () => ({ mobileTokens: () => ({ foreground: "#000" }) })
 vi.mock("./native-controls", () => ({ iosAtLeast: () => true }));
 vi.mock("./split-view", () => ({ setInboxHidden }));
 vi.mock("./thread-edges", () => ({ threadEdgeOptions: () => ({ headerTransparent: true }) }));
-vi.mock("../components/thread-header-styles", () => ({
-  createThreadHeaderStyles: () => ({ headerActions: {} }),
-}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/chat-header-title", () => ({ ChatHeaderTitle: () => null }));
 vi.mock("../components/sheet-header", () => ({
@@ -32,22 +29,30 @@ beforeEach(() => {
 });
 const t = (text: string) => text;
 const alone: ChatSplit = { split: false, inboxHidden: false };
-const header = (params: object, split = alone) =>
-  chatRouteHeader({ key: "thread-1", params }, t, split);
+const header = (params: object, split = alone, canInvite = false) =>
+  chatRouteHeader({ key: "thread-1", params }, t, split, canInvite);
 const rightItems = (options: ReturnType<typeof chatRouteHeader>) =>
   options.unstable_headerRightItems?.({ tintColor: undefined } as never) ?? [];
 const leftItems = (options: ReturnType<typeof chatRouteHeader>) =>
   options.unstable_headerLeftItems?.({ tintColor: undefined } as never) ?? [];
 
-it("declares a bot chat's title and its … menu when the screen is created", () => {
-  const options = header({ botId: "bot-1", name: "Helper" });
+it("declares a bot chat's title and its invite gift when the screen is created", () => {
+  const options = header({ botId: "bot-1", name: "Helper" }, alone, true);
   expect(options.headerTitle).toBeTypeOf("function");
   expect(options.headerTitleAlign).toBe("center");
   expect(options.headerTransparent).toBe(true);
   const [item] = rightItems(options);
-  expect(item).toMatchObject({ type: "menu", icon: { type: "sfSymbol", name: "ellipsis" } });
+  expect(item).toMatchObject({ type: "button", icon: { type: "sfSymbol", name: "gift" } });
+  (item as { onPress: () => void }).onPress();
+  expect(push).toHaveBeenCalledWith("/invite");
   expect(options.headerRight).toBeTypeOf("function");
   expect(options.headerBackVisible).toBe(true);
+});
+
+it("leaves a bot chat's right side empty when the account cannot invite", () => {
+  const options = header({ botId: "bot-1", name: "Helper" });
+  expect(rightItems(options)).toEqual([]);
+  expect(options.headerRight).toBeUndefined();
 });
 
 it("declares a group chat's settings button, which opens the group's settings", () => {
@@ -62,8 +67,8 @@ it("declares a group chat's settings button, which opens the group's settings", 
   });
 });
 
-it("declares an archived chat's Restore button in place of the … menu", () => {
-  const options = header({ botId: "bot-1", readOnly: "1" });
+it("declares an archived chat's Restore button in place of the gift", () => {
+  const options = header({ botId: "bot-1", readOnly: "1" }, alone, true);
   expect(options.headerTitle).toBeTypeOf("function");
   expect(rightItems(options)).toEqual([{ type: "button", label: "Restore" }]);
 });

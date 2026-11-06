@@ -10,10 +10,11 @@ import {
   computerControlExpireJobKey,
   SandboxAllowanceUsedError,
   SandboxRateLimitError,
+  SandboxSizeUnavailableError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
-import type { ComputerUpdate } from "@rakazo/contracts";
+import type { ComputerSize, ComputerUpdate } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   abortableDelay,
@@ -25,6 +26,7 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   expireComputerExecutionLeases,
   parseComputerMode,
+  planComputerSize,
   recordComputerRunEnd,
   recordComputerRunStart,
 } from "@rakazo/db";
@@ -33,6 +35,7 @@ import {
   clearInactiveUserComputerControl,
   expireComputerControl,
   hasActiveComputerControl,
+  holdsUserControl,
   isIdleOwnComputerTakeover,
   revokeScreenControl,
 } from "./computer-control.js";
@@ -250,9 +253,10 @@ export async function provisionComputer(
   }
 
   // A computer that bills starts only while its organization has allowance left this period.
-  const startKind = (await deps.sandbox.provisionKind?.()) ?? existing.kind;
+  const startKind = (await deps.sandbox.provisionKind?.(existing.homeKey)) ?? existing.kind;
   if (await sandboxAllowanceUsedUp(deps, { spaceId: existing.spaceId, kind: startKind }))
     throw new SandboxAllowanceUsedError();
+  const size = await planComputerSize(deps.prisma, existing.spaceId);
 
   // If we first observe abandoned "booting", remember that stamp before waiting. A concurrent
   // reclaim bumps updatedAt while state stays "booting"; fencing the claim on the pre-wait
@@ -383,14 +387,16 @@ export async function provisionComputer(
     await cache?.forgetMissingCache(existing.homeKey);
     const hydrated =
       cache !== undefined &&
-      mountsServerHome((await deps.sandbox.provisionKind?.()) ?? deps.sandbox.describe().id);
+      mountsServerHome(
+        (await deps.sandbox.provisionKind?.(existing.homeKey)) ?? deps.sandbox.describe().id,
+      );
     if (hydrated)
       await cache.hydrate(existing.homeKey, {
         keepLiveCache: reconnecting && existing.kind === "docker",
       });
     await mkdir(homePath, { recursive: true });
     await onProgress?.("recreating");
-    const provision = () =>
+    const provisionAt = (startSize: ComputerSize | undefined) =>
       getLogger().withContext(
         { "computer.id": computerId, "run.id": context.runId, previousState: existing.state },
         () =>
@@ -405,10 +411,21 @@ export async function provisionComputer(
                 existing.homeRevision === "empty"
                   ? undefined
                   : (existing.homeRevisionAt ?? undefined),
+              size: startSize,
             },
             context,
           ),
       );
+    // A provider that cannot move the computer to the plan's size starts it at the size it has.
+    const provision = async () => {
+      try {
+        return await provisionAt(size);
+      } catch (error) {
+        if (!(error instanceof SandboxSizeUnavailableError)) throw error;
+        log.warn("computer.size_unavailable", { size, reason: error.reason });
+        return provisionAt(undefined);
+      }
+    };
     // A new machine under the stored name, or any machine of a reclaimed boot, is incomplete until
     // restored. Mark it as soon as the provider returns it, so a start that fails or dies after that
     // point leaves the row marked; a failed start records the mark even if this write did not land.
@@ -517,6 +534,7 @@ export async function provisionComputer(
               ...(!activeControl
                 ? {
                     controlLeaseId: null,
+                    controlUserId: null,
                     controlLeaseExpiresAt: null,
                     controlBotId: null,
                     controlRunId: null,
@@ -966,6 +984,7 @@ export function computerSupportsTerminal(kind: string): boolean {
     kind === "daytona" ||
     kind === "boat" ||
     kind === "kubernetes" ||
+    kind === "incus" ||
     kind === "fake"
   );
 }
@@ -1000,8 +1019,12 @@ export async function replaceComputer(
   ) {
     throw new ComputerBusyError();
   }
+  // Only the person holding the screen can hand it back by resetting; another member's
+  // session is never claimed out from under them.
   const handBackIdleTakeover =
-    options?.handBackIdleTakeover === true && isIdleOwnComputerTakeover(existing, botId);
+    options?.handBackIdleTakeover === true &&
+    isIdleOwnComputerTakeover(existing, botId) &&
+    holdsUserControl(existing, context.userId);
   if (!handBackIdleTakeover && existing.controlLeaseId && !hasActiveComputerControl(existing)) {
     if (options?.handBackIdleTakeover && existing.controlRunId) throw new ComputerBusyError();
     const expired = await expireComputerControl(deps, existing.id, existing.controlLeaseId);
@@ -1062,6 +1085,7 @@ export async function replaceComputer(
         controlLeaseId: existing.controlLeaseId,
         controlLeaseExpiresAt: existing.controlLeaseExpiresAt,
         controlBotId: existing.controlBotId,
+        controlUserId: existing.controlUserId,
         controlRunId: null,
       }
     : null;
@@ -1100,6 +1124,7 @@ export async function replaceComputer(
         ? {
             controlHolder: "none" as const,
             controlLeaseId: null,
+            controlUserId: null,
             controlLeaseExpiresAt: null,
             controlBotId: null,
             controlRunId: null,
@@ -1246,11 +1271,15 @@ export async function replaceComputer(
         providerRef: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
         // The replacement is a new machine; damage to the old one is no reason to hold it back.
         autoRecoveredAt: null,
+        diskUsedBytes: null,
+        diskFreeBytes: null,
+        diskDismissedPercent: null,
         updatedAt: claimStamp,
       },
     });

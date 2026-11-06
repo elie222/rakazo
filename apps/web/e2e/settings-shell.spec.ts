@@ -99,7 +99,7 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await page.getByTestId("user-menu-trigger").click();
   const menu = page.locator('[data-slot="popover-content"]');
   await expect(menu.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
-  await expect(menu.getByRole("button", { name: "Usage", exact: true })).toBeVisible();
+  await expect(menu.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);
   await expect(menu.getByRole("button", { name: "Log out", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-account-menu-lean");
   await page.keyboard.press("Escape");
@@ -206,7 +206,13 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeDisabled();
   await captureScreenshot(page, testInfo, "memory-honcho-user-peer-reserved");
   await userPeer.fill("user-alex");
+  await expect(
+    memory.getByText("Recall from this peer; save to Rakazo’s own peers."),
+  ).toBeVisible();
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
+  await memory
+    .getByText("Recall from this peer; save to Rakazo’s own peers.")
+    .evaluate((element) => element.scrollIntoView({ block: "center" }));
   await captureScreenshot(page, testInfo, "memory-honcho-filled");
   await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
   await expect(memory.getByLabel("Base URL", { exact: true })).toHaveValue("");

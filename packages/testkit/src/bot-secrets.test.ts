@@ -2,8 +2,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
-import { ScriptedAgentRuntime } from "@rakazo/adapters";
+import { EncryptedSecretStore, ScriptedAgentRuntime } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
+import { resolveEncryptionKey } from "@rakazo/core";
 import { answerRunInput, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
@@ -105,10 +106,16 @@ describeIntegration("reusable credential lifecycle", () => {
         );
         const approve = async (runId: string, interruptBeforeCard = false) => {
           if (!requireApproval) return;
-          const message = await db.message.findFirstOrThrow({
-            where: { runId, role: "bot" },
-            orderBy: { createdAt: "desc" },
-          });
+          // A just-continued run can still sit requeued while the previous run's
+          // worker releases the computer lease, so the card may land a moment later.
+          const message = await vi.waitFor(
+            async () =>
+              db.message.findFirstOrThrow({
+                where: { runId, role: "bot" },
+                orderBy: { createdAt: "desc" },
+              }),
+            { timeout: 15_000 },
+          );
           expect(message.blocks).toEqual(
             expect.arrayContaining([
               expect.objectContaining({ approvalEffectId: expect.any(String) }),
@@ -275,10 +282,15 @@ describeIntegration("reusable credential lifecycle", () => {
           request,
         ]);
         await approve(useRun);
-        expect(await db.run.findUniqueOrThrow({ where: { id: useRun } })).toMatchObject({
-          status: "completed",
-          error: null,
-        });
+        await vi.waitFor(
+          async () => {
+            expect(await db.run.findUniqueOrThrow({ where: { id: useRun } })).toMatchObject({
+              status: "completed",
+              error: null,
+            });
+          },
+          { timeout: 15_000 },
+        );
         expect(fetch).toHaveBeenCalledTimes(1);
         expect(
           await db.externalEffect.findFirstOrThrow({
@@ -298,9 +310,14 @@ describeIntegration("reusable credential lifecycle", () => {
             args: { label: "API key", purpose: "api_key", credential: destination, replace: true },
           },
         ]);
-        expect(await db.run.findUniqueOrThrow({ where: { id: rotateRun } })).toMatchObject({
-          status: "waiting_input",
-        });
+        await vi.waitFor(
+          async () => {
+            expect(await db.run.findUniqueOrThrow({ where: { id: rotateRun } })).toMatchObject({
+              status: "waiting_input",
+            });
+          },
+          { timeout: 15_000 },
+        );
         await approve(rotateRun, true);
         expect(await db.run.findUniqueOrThrow({ where: { id: rotateRun } })).toMatchObject({
           status: "waiting_input",
@@ -314,12 +331,35 @@ describeIntegration("reusable credential lifecycle", () => {
         expect(
           await db.vaultCredential.findUniqueOrThrow({ where: { id: stored.id } }),
         ).not.toMatchObject({ ciphertext: stored.ciphertext });
-        await nextRun([request]);
+        const rotatedUse = await nextRun([request]);
+        await vi.waitFor(
+          async () => {
+            expect(await db.run.findUniqueOrThrow({ where: { id: rotatedUse } })).toMatchObject({
+              status: "completed",
+              error: null,
+            });
+          },
+          { timeout: 15_000 },
+        );
         expect(new Headers(fetch.mock.calls.at(-1)?.[1]?.headers).get("Authorization")).toBe(
           `Bearer ${key}-rotated`,
         );
         const count = fetch.mock.calls.length;
-        await nextRun([{ name: "forget_secret", args: { name: destination.name } }, request]);
+        const forgotten = await nextRun([
+          { name: "forget_secret", args: { name: destination.name } },
+          request,
+        ]);
+        // The deletion alone does not prove the run finished: the trailing use request and
+        // its writes can still be pending. Wait for the run itself, then assert the effects.
+        await vi.waitFor(
+          async () => {
+            expect(await db.run.findUniqueOrThrow({ where: { id: forgotten } })).toMatchObject({
+              status: "completed",
+              error: null,
+            });
+          },
+          { timeout: 15_000 },
+        );
         expect(await db.vaultCredential.count({ where: { userId: seeded.me.userId } })).toBe(0);
         expect(fetch).toHaveBeenCalledTimes(count);
         const [messages, events, effects, tasks] = await Promise.all([
@@ -419,7 +459,15 @@ describeIntegration("reusable credential lifecycle", () => {
 
       // Another name for the same site gets the saved login's name, without a card.
       const reused = await nextRun(seeded, [requestLogin("my_site_account")]);
-      expect(reused).toMatchObject({ status: "completed", error: null });
+      await vi.waitFor(
+        async () => {
+          expect(await db.run.findUniqueOrThrow({ where: { id: reused.id } })).toMatchObject({
+            status: "completed",
+            error: null,
+          });
+        },
+        { timeout: 15_000 },
+      );
       expect(
         await db.externalEffect.findFirstOrThrow({
           where: { runId: reused.id, kind: "request_secret" },
@@ -429,14 +477,28 @@ describeIntegration("reusable credential lifecycle", () => {
         result: { saved: true, name: "site_login", origin: site, auth: { type: "login" } },
       });
       // The host without www. is another site.
-      expect(
-        await nextRun(seeded, [requestLogin("bare_login", "https://login.example.test")]),
-      ).toMatchObject({ status: "waiting_input" });
+      const bare = await nextRun(seeded, [
+        requestLogin("bare_login", "https://login.example.test"),
+      ]);
+      await vi.waitFor(
+        async () => {
+          expect(await db.run.findUniqueOrThrow({ where: { id: bare.id } })).toMatchObject({
+            status: "waiting_input",
+          });
+        },
+        { timeout: 15_000 },
+      );
       // Another member's vault is not searched.
       const other = await seedRun("site-login-other", "Sign in to the site");
-      expect(await nextRun(other, [requestLogin("my_site_account")])).toMatchObject({
-        status: "waiting_input",
-      });
+      const otherRun = await nextRun(other, [requestLogin("my_site_account")]);
+      await vi.waitFor(
+        async () => {
+          expect(await db.run.findUniqueOrThrow({ where: { id: otherRun.id } })).toMatchObject({
+            status: "waiting_input",
+          });
+        },
+        { timeout: 15_000 },
+      );
       expect(await db.vaultCredential.count({ where: { origin: site } })).toBe(1);
 
       const [messages, events, effects] = await Promise.all([
@@ -445,6 +507,130 @@ describeIntegration("reusable credential lifecycle", () => {
         db.externalEffect.findMany({ where: { spaceId: seeded.me.spaceId } }),
       ]);
       expect(JSON.stringify({ seen, messages, events, effects })).not.toContain(password);
+    } finally {
+      runtime.mockRestore();
+    }
+  });
+
+  it("moves a saved login to the site of the card answered last, with that card's value", async () => {
+    const www = { name: "acme", origin: "https://www.acme.example.test", auth: { type: "login" } };
+    const sites = {
+      login: { ...www, origin: "https://login.acme.example.test" },
+      other: { ...www, origin: "https://acme-insure.example.test" },
+    };
+    const runtime = vi
+      .spyOn(ScriptedAgentRuntime.prototype, "run")
+      .mockImplementation(async function* (request): AsyncIterable<AgentRuntimeEvent> {
+        const credential = request.runId === runs.login.runId ? sites.login : sites.other;
+        yield {
+          type: "tool",
+          name: "request_secret",
+          args: { label: "Sign in", purpose: "password", credential, replace: true },
+          executionId: `${request.runId}:0`,
+        };
+        yield { type: "done", text: "Done" };
+      });
+    const runs = {} as Record<keyof typeof sites, { runId: string; botId: string; card: string }>;
+    try {
+      const seeded = await seedRun("login-replace", "Sign in");
+      const { userId, spaceId } = seeded.me;
+      await rpc(seeded.cookie, "vault/put", {
+        destination: www,
+        value: JSON.stringify({ username: "fake-user", password: "fake-password-www" }),
+      });
+      const saved = await db.vaultCredential.findFirstOrThrow({ where: { userId } });
+      // A second bot of the same member asks to replace the same login for another site.
+      const bot = await rpc<{ id: string }>(seeded.cookie, "bots/create", {
+        name: "Executor login-replace 2",
+        title: "",
+        description: "",
+        instructions: "",
+        notifyOnFinish: false,
+      });
+      const thread = await db.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+      const task = await db.task.create({
+        data: {
+          userId,
+          spaceId,
+          botId: bot.id,
+          threadId: thread.id,
+          prompt: "Sign in",
+          status: "queued",
+        },
+      });
+      const run = await db.run.create({
+        data: {
+          userId,
+          spaceId,
+          botId: bot.id,
+          threadId: thread.id,
+          taskId: task.id,
+          trigger: "user",
+          status: "queued",
+        },
+      });
+      runs.login = { runId: seeded.run.id, botId: seeded.bot.id, card: "" };
+      runs.other = { runId: run.id, botId: bot.id, card: "" };
+      for (const site of ["login", "other"] as const) {
+        await runAsSystem("background job run.continue", () =>
+          handles.executor.continueRun(runs[site].runId, "test-worker"),
+        );
+        const message = await db.message.findFirstOrThrow({
+          where: { runId: runs[site].runId, role: "bot" },
+          orderBy: { seq: "desc" },
+        });
+        expect(message.blocks).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              credential: sites[site],
+              replaces: { id: saved.id, origin: www.origin },
+            }),
+          ]),
+        );
+        runs[site].card = message.id;
+      }
+      expect(await db.vaultCredential.findMany({ where: { userId } })).toEqual([saved]);
+
+      // Both answered at once, as the apps send them.
+      const results = await Promise.all(
+        (["login", "other"] as const).map(async (site) => {
+          const response = await handles.app.request("/rpc/threads/answer", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              origin: "http://127.0.0.1:5173",
+              cookie: seeded.cookie,
+            },
+            body: JSON.stringify({
+              json: {
+                botId: runs[site].botId,
+                runId: runs[site].runId,
+                messageId: runs[site].card,
+                answer: "",
+                fields: [
+                  { label: "Username", value: "fake-user", hidden: false },
+                  { label: "Password", value: `fake-password-${site}`, hidden: true },
+                ],
+              },
+            }),
+          });
+          return response.status;
+        }),
+      );
+      expect(results).toEqual([200, 200]);
+      // One row, the same one, with the site and value of whichever card was saved last.
+      const rows = await db.vaultCredential.findMany({ where: { userId } });
+      expect(rows).toEqual([expect.objectContaining({ id: saved.id, name: www.name })]);
+      const last = rows[0]!.origin === sites.login.origin ? "login" : "other";
+      expect(rows[0]!.origin).toBe(sites[last].origin);
+      const value = await new EncryptedSecretStore(resolveEncryptionKey()).load(
+        rows[0]!.ciphertext,
+        rows[0]!.id,
+      );
+      expect(value).toContain(`fake-password-${last}`);
+      for (const other of ["www", last === "login" ? "other" : "login"]) {
+        expect(value).not.toContain(`fake-password-${other}`);
+      }
     } finally {
       runtime.mockRestore();
     }

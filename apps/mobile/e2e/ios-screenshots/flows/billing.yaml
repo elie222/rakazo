@@ -12,10 +12,35 @@ name: Billing
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 01-billing
+- tapOn: "Standard"
+- extendedWaitUntil:
+    visible: "Max · .*"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-billing-tiers
 - openLink: "rakazo:///wallet"
 - extendedWaitUntil:
     visible: "Disconnect"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 02-wallet
+- takeScreenshot: 03-wallet
+- openLink: "rakazo:///spending-limit"
+- extendedWaitUntil:
+    visible: "Amount.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 04-spending-limit-none
+- tapOn: "Amount.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+- inputText: "200"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 05-spending-limit-amount
+# Maestro's taps miss the system prompt's buttons; saving is covered by unit and web tests.
+- tapOn:
+    text: "Cancel"
+    optional: true

@@ -127,7 +127,6 @@ it("publishes the members the chat loads to its title", () => {
       titleName: "Duo",
       groupMembers: members,
       composingBots: "",
-      styles: {} as Parameters<typeof useThreadHeader>[0]["styles"],
       onCleared: vi.fn(),
     });
     return null;

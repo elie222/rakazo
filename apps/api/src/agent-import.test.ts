@@ -233,7 +233,7 @@ describe("an imported server asked for twice", () => {
 
 describe("portable avatar appearance on import", () => {
   it.each([undefined, "organic", "rakazo"] as const)(
-    "preserves explicit sets and keeps legacy imports organic (set=%s)",
+    "preserves explicit sets and leaves the rest to the owner's default (set=%s)",
     async (avatarSet) => {
       const createBot = vi.fn<AgentImportServices["createBot"]>(async (_actor, request) => {
         await request.seed(fakeDb(), bot.id);
@@ -244,10 +244,8 @@ describe("portable avatar appearance on import", () => {
         color: "#8B5CF6::shape_3",
         avatarSet,
       });
-      expect(createBot.mock.calls[0]![1]).toMatchObject({
-        color: "#8B5CF6::shape_3",
-        avatarSet: avatarSet ?? "organic",
-      });
+      expect(createBot.mock.calls[0]![1]).toMatchObject({ color: "#8B5CF6::shape_3" });
+      expect(createBot.mock.calls[0]![1].avatarSet).toBe(avatarSet);
     },
   );
 });

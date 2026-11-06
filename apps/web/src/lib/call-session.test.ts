@@ -121,6 +121,19 @@ describe("call session", () => {
     expect(listen).toHaveBeenCalledTimes(2);
   });
 
+  it("reopens listening when a finished turn transcribes to nothing", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: true });
+    // The dictation session ends an empty attempt by publishing idle, then the final.
+    const watcher = vi.mocked(dictation.subscribe).mock.calls.at(-1)?.[0];
+    watcher?.({ status: "idle", transcript: "" });
+    await heard("");
+
+    expect(listen).toHaveBeenCalledTimes(2);
+    expect(send).not.toHaveBeenCalled();
+    expect(followUp).not.toHaveBeenCalled();
+    expect(getSnapshot()?.phase).toBe("listening");
+  });
+
   it("keeps recovered active work when an older call refresh finishes late", async () => {
     await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
     const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];

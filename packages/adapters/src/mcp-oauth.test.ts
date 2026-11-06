@@ -9,6 +9,7 @@ import {
   oauthMaterialSecrets,
   StoredMcpOAuthProvider,
 } from "./mcp-oauth.js";
+import { recordMcpServerHealth } from "./mcp-server-health.js";
 import { McpSession } from "./mcp-transport.js";
 
 afterEach(() => {
@@ -226,7 +227,7 @@ describe("MCP OAuth", () => {
    * held until the transaction that took it ends.
    */
   function sharedCredentials(
-    material: OAuthMaterial,
+    material: OAuthMaterial | null,
     endpoint: string | null = "https://mcp.example.test/mcp",
   ) {
     const values = new Map<string, string>();
@@ -247,18 +248,62 @@ describe("MCP OAuth", () => {
       }),
     };
     const rows: Array<{ id: string; ciphertext: string }> = [];
+    const sessions: Array<{
+      id: string;
+      serverId: string;
+      spaceId: string;
+      userId: string;
+      endpoint: string;
+      redirectUri: string;
+      oauthCiphertext: string;
+      createdAt: Date;
+    }> = [];
     const server = {
       id: "server-1",
       endpoint,
       secretId: null as string | null,
+      revision: 1,
     };
     let lock = Promise.resolve();
+    let credentialLocked = false;
     const lockSettings: string[] = [];
+    const transactionOptions: unknown[] = [];
     const tables = {
+      mcpOAuthSession: {
+        count: async () => sessions.length,
+        findFirst: async ({ where }: { where: { id: string } }) =>
+          sessions.find((session) => session.id === where.id) ?? null,
+        create: async ({ data }: { data: Omit<(typeof sessions)[number], "createdAt"> }) => {
+          sessions.push({ ...data, createdAt: new Date() });
+          return data;
+        },
+        deleteMany: async ({
+          where,
+        }: {
+          where: { id?: string; serverId?: string; createdAt?: { lt: Date } };
+        }) => {
+          const doomed = sessions.filter((session) =>
+            where.id
+              ? session.id === where.id
+              : where.serverId
+                ? session.serverId === where.serverId
+                : where.createdAt
+                  ? session.createdAt < where.createdAt.lt
+                  : true,
+          );
+          for (const session of doomed) sessions.splice(sessions.indexOf(session), 1);
+          return { count: doomed.length };
+        },
+      },
       mcpServer: {
         findFirst: async () => ({ ...server }),
-        update: async ({ data }: { data: { secretId: string | null } }) => {
-          server.secretId = data.secretId;
+        update: async ({
+          data,
+        }: {
+          data: { secretId?: string | null; revision?: { increment: number } };
+        }) => {
+          if (data.secretId !== undefined) server.secretId = data.secretId;
+          if (data.revision) server.revision += data.revision.increment;
           return { ...server };
         },
       },
@@ -284,7 +329,8 @@ describe("MCP OAuth", () => {
     };
     const prisma = {
       ...tables,
-      $transaction: async <T>(callback: (tx: unknown) => Promise<T>) => {
+      $transaction: async <T>(callback: (tx: unknown) => Promise<T>, options?: unknown) => {
+        transactionOptions.push(options);
         let release: (() => void) | undefined;
         const tx = {
           ...tables,
@@ -297,21 +343,26 @@ describe("MCP OAuth", () => {
               release = resolve;
             });
             await held;
+            credentialLocked = true;
             return 1;
           },
         };
         try {
           return await callback(tx);
         } finally {
+          if (release) credentialLocked = false;
           release?.();
         }
       },
     };
-    const ready = (async () => {
-      const record = await secrets.put(JSON.stringify(material));
-      rows.push(record);
-      server.secretId = record.id;
-    })();
+    const ready =
+      material === null
+        ? Promise.resolve()
+        : (async () => {
+            const record = await secrets.put(JSON.stringify(material));
+            rows.push(record);
+            server.secretId = record.id;
+          })();
     const stored = async (): Promise<OAuthMaterial> => {
       const row = rows.find((candidate) => candidate.id === server.secretId);
       return row ? JSON.parse(await secrets.load(row.ciphertext)) : {};
@@ -336,7 +387,38 @@ describe("MCP OAuth", () => {
       rows.push(record);
       server.secretId = record.id;
     };
-    return { startProcess, stored, replaceStored, server, context, lockSettings, tables };
+    /** A sign-in `begin` would leave behind for the given flow state. */
+    const beginSession = async (flow: OAuthMaterial) => {
+      const snapshot = await secrets.put(JSON.stringify(flow));
+      const session = {
+        id: `session-${sessions.length + 1}`,
+        serverId: server.id,
+        spaceId: context.spaceId,
+        userId: context.userId,
+        endpoint: endpoint ?? "https://auth.example.test",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        oauthCiphertext: snapshot.ciphertext,
+        createdAt: new Date(),
+      };
+      sessions.push(session);
+      return session;
+    };
+    return {
+      startProcess,
+      stored,
+      replaceStored,
+      beginSession,
+      secrets,
+      prisma,
+      server,
+      context,
+      lockSettings,
+      transactionOptions,
+      get credentialLocked() {
+        return credentialLocked;
+      },
+      tables,
+    };
   }
 
   /** A public-client authorization server: each refresh token works once. */
@@ -371,6 +453,37 @@ describe("MCP OAuth", () => {
   }
 
   const EXPIRED = () => Date.now() - 3 * 60 * 60 * 1000;
+
+  /** A public authorization server that registers clients and issues tokens for any code. */
+  function issuingAuthServer() {
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = logicalHref(input, init);
+      if (url === "https://auth.example.test/.well-known/oauth-authorization-server") {
+        return Response.json({
+          issuer: "https://auth.example.test",
+          authorization_endpoint: "https://auth.example.test/authorize",
+          token_endpoint: "https://auth.example.test/token",
+          registration_endpoint: "https://auth.example.test/register",
+          response_types_supported: ["code"],
+          grant_types_supported: ["authorization_code", "refresh_token"],
+          code_challenge_methods_supported: ["S256"],
+        });
+      }
+      if (url === "https://auth.example.test/register") {
+        return Response.json({ client_id: "dynamic-1" });
+      }
+      if (url === "https://auth.example.test/token") {
+        return Response.json({
+          access_token: "issued-access",
+          refresh_token: "issued-refresh",
+          token_type: "Bearer",
+          expires_in: 7200,
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    return { fetch };
+  }
 
   it("renews an expired token once and stores the rotated grant", async () => {
     const server = rotatingAuthServer();
@@ -686,6 +799,436 @@ describe("MCP OAuth", () => {
 
     expect(await shared.stored()).toEqual({ headers: { "X-Team": "blue" } });
     expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+  });
+
+  it("keeps a disconnect when the authorization's tokens land after it", async () => {
+    const shared = sharedCredentials({
+      oauth: { codeVerifier: "verifier", redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback" },
+    });
+    const { provider, broker } = await shared.startProcess(
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+
+    // The caller resets health for exactly the revision the disconnect committed.
+    expect(await broker.disconnect({ serverId: "server-1", ...shared.context })).toBe(2);
+    await provider.saveTokens({ access_token: "issued-access", token_type: "Bearer" });
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+    // A second late write from the same flow stays discarded too.
+    await provider.saveTokens({ access_token: "issued-again", token_type: "Bearer" });
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+  });
+
+  it("rejects a sign-in session the disconnect ended", async () => {
+    const shared = sharedCredentials({
+      oauth: { codeVerifier: "verifier", redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback" },
+    });
+    const { broker } = await shared.startProcess(
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+    const session = await shared.beginSession({
+      oauth: { codeVerifier: "verifier", redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback" },
+    });
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+
+    await expect(
+      broker.complete({
+        sessionId: session.id,
+        code: "authorization-code",
+        state: session.id,
+        spaceId: shared.context.spaceId,
+        userId: shared.context.userId,
+      }),
+    ).rejects.toThrow("MCP OAuth session is invalid or expired");
+  });
+
+  it("keeps a reconnection's client when the earlier flow's tokens land late", async () => {
+    const redirectUri = "http://127.0.0.1:5173/mcp/oauth/callback";
+    const discoveryState = {
+      authorizationServerUrl: "https://auth.example.test",
+      authorizationServerMetadata: {
+        issuer: "https://auth.example.test",
+        authorization_endpoint: "https://auth.example.test/authorize",
+        token_endpoint: "https://auth.example.test/token",
+        response_types_supported: ["code"],
+      },
+    };
+    const shared = sharedCredentials({
+      oauth: {
+        codeVerifier: "verifier-a",
+        redirectUri,
+        clientInformation: { client_id: "client-a" },
+        discoveryState,
+      },
+    });
+    const offline = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const { provider: stale, broker } = await shared.startProcess(offline);
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+    // A fresh authorization connects with its own dynamically registered client.
+    const reconnected: OAuthMaterial = {
+      oauthGeneration: 1,
+      oauth: {
+        redirectUri,
+        tokens: {
+          access_token: "access-b",
+          refresh_token: "refresh-b",
+          token_type: "Bearer",
+          expires_in: 7200,
+        },
+        obtainedAt: Date.now() - 3 * 60 * 60 * 1000,
+        clientInformation: { client_id: "client-b" },
+        discoveryState,
+      },
+    };
+    await shared.replaceStored(reconnected);
+
+    await stale.saveTokens({
+      access_token: "issued-a",
+      refresh_token: "issued-a-refresh",
+      token_type: "Bearer",
+    });
+
+    expect(await shared.stored()).toEqual(reconnected);
+
+    // The next refresh must send the stored client with the stored refresh token.
+    const server = rotatingAuthServer("refresh-b");
+    const { provider } = await shared.startProcess(server.fetch);
+    await expect(provider.tokens()).resolves.toMatchObject({ access_token: "access-1" });
+    expect(server.requests[0]?.get("client_id")).toBe("client-b");
+    expect(server.requests[0]?.get("refresh_token")).toBe("refresh-b");
+  });
+
+  it("ends a reconnection that began before a late second disconnect", async () => {
+    const shared = sharedCredentials({
+      oauth: { codeVerifier: "verifier", redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback" },
+    });
+    const offline = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const { broker } = await shared.startProcess(offline);
+    // What the second disconnect races past: an earlier disconnect already committed
+    // (generation 1) and a fresh authorization connected at that generation.
+    const reconnected: OAuthMaterial = {
+      oauthGeneration: 1,
+      oauth: {
+        codeVerifier: "verifier-b",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+      },
+    };
+    let flowB: Awaited<ReturnType<typeof shared.startProcess>> | undefined;
+    let parked = true;
+    const put = shared.secrets.put;
+    shared.secrets.put = vi.fn(async (plaintext: string) => {
+      if (parked) {
+        // Between the disconnect's read and its commit, the reconnect lands.
+        parked = false;
+        await shared.replaceStored(reconnected);
+        flowB = await shared.startProcess(offline);
+      }
+      return put(plaintext);
+    });
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+    await flowB!.provider.saveTokens({ access_token: "issued-b", token_type: "Bearer" });
+
+    expect(await shared.stored()).toEqual({ oauthGeneration: 2 });
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+  });
+
+  it("ends a first authorization in flight when the server had no stored credential", async () => {
+    const shared = sharedCredentials(null, null);
+    const broker = new McpOAuthBroker(shared.prisma as never, shared.secrets as never, {
+      fetch: issuingAuthServer().fetch,
+      resolveHostname: TEST_NETWORK.resolveHostname,
+    });
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+    // The sign-in began before the disconnect and registered its client; its session
+    // row lands only now.
+    const session = await shared.beginSession({
+      oauth: {
+        codeVerifier: "verifier",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        clientInformation: { client_id: "dynamic-1" },
+        discoveryState: {
+          authorizationServerUrl: "https://auth.example.test",
+          authorizationServerMetadata: {
+            issuer: "https://auth.example.test",
+            authorization_endpoint: "https://auth.example.test/authorize",
+            token_endpoint: "https://auth.example.test/token",
+            response_types_supported: ["code"],
+          },
+        },
+      },
+    });
+
+    await expect(
+      broker.complete({
+        sessionId: session.id,
+        code: "authorization-code",
+        state: session.id,
+        spaceId: shared.context.spaceId,
+        userId: shared.context.userId,
+      }),
+    ).rejects.toThrow("MCP OAuth session is invalid or expired");
+    expect(await shared.stored()).toEqual({ oauthGeneration: 1 });
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+  });
+
+  it("rejects completing a sign-in that outlives its disconnect", async () => {
+    const discoveryState = {
+      authorizationServerUrl: "https://auth.example.test",
+      authorizationServerMetadata: {
+        issuer: "https://auth.example.test",
+        authorization_endpoint: "https://auth.example.test/authorize",
+        token_endpoint: "https://auth.example.test/token",
+        response_types_supported: ["code"],
+      },
+    };
+    const flow: OAuthMaterial = {
+      oauthClient: { client_id: "client-1" },
+      oauth: {
+        codeVerifier: "verifier",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        discoveryState,
+      },
+    };
+    const shared = sharedCredentials(flow, null);
+    const { broker } = await shared.startProcess(issuingAuthServer().fetch);
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+    // The sign-in began before the disconnect; its session row lands only now.
+    const session = await shared.beginSession(flow);
+    // A new authorization connects while the old sign-in is still in flight.
+    const reconnected: OAuthMaterial = {
+      oauthClient: { client_id: "client-1" },
+      oauthGeneration: 1,
+      oauth: {
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        tokens: {
+          access_token: "access-b",
+          refresh_token: "refresh-b",
+          token_type: "Bearer",
+          expires_in: 7200,
+        },
+        obtainedAt: Date.now(),
+        clientInformation: { client_id: "client-1" },
+        discoveryState,
+      },
+    };
+    await shared.replaceStored(reconnected);
+
+    await expect(
+      broker.complete({
+        sessionId: session.id,
+        code: "authorization-code",
+        state: session.id,
+        spaceId: shared.context.spaceId,
+        userId: shared.context.userId,
+      }),
+    ).rejects.toThrow("MCP OAuth session is invalid or expired");
+    // The check may wait on a remote secret read, so it does not run on the default timeout.
+    expect(shared.transactionOptions.at(-1)).toMatchObject({ timeout: 60_000 });
+    expect(shared.lockSettings.at(-2)).toContain("lock_timeout");
+    // The newer connection is left intact.
+    expect(await shared.stored()).toEqual(reconnected);
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("connected");
+  });
+
+  it.each([
+    ["after its tokens were saved, refusing the sign-in", "saved", undefined, 2],
+    ["after it committed", "committed", 2, 3],
+  ] as const)("keeps the check of an edit made %s", async (_, when, completedAt, editedAt) => {
+    const flow: OAuthMaterial = {
+      oauthClient: { client_id: "client-1" },
+      oauth: {
+        codeVerifier: "verifier",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        discoveryState: {
+          authorizationServerUrl: "https://auth.example.test",
+          authorizationServerMetadata: {
+            issuer: "https://auth.example.test",
+            authorization_endpoint: "https://auth.example.test/authorize",
+            token_endpoint: "https://auth.example.test/token",
+            response_types_supported: ["code"],
+          },
+        },
+      },
+    };
+    const shared = sharedCredentials(flow, null);
+    const { broker } = await shared.startProcess(issuingAuthServer().fetch);
+    const session = await shared.beginSession(flow);
+    const health = { status: "unknown" };
+    // The settings API changes the endpoint and that edit's check fails.
+    const edit = () => {
+      shared.server.endpoint = "https://different.example.test/mcp";
+      shared.server.revision += 1;
+      health.status = "error";
+    };
+    const update = shared.tables.mcpServer.update;
+    vi.spyOn(shared.tables.mcpServer, "update").mockImplementation(async (args) => {
+      const result = await update(args);
+      if (when === "saved" && health.status === "unknown" && (await shared.stored()).oauth?.tokens)
+        edit();
+      return result;
+    });
+    const transaction = shared.prisma.$transaction;
+    shared.prisma.$transaction = async (callback, options) => {
+      const settings = shared.lockSettings.length;
+      const result = await transaction(callback, options);
+      // Completion's own locked step is the one that sets a lock timeout.
+      const completing = shared.lockSettings
+        .slice(settings)
+        .some((sql) => sql.includes("lock_timeout"));
+      if (when === "committed" && completing) edit();
+      return result;
+    };
+    const prisma = {
+      mcpServer: {
+        updateMany: async (args: {
+          where: { revision?: number };
+          data: { healthStatus: string };
+        }) => {
+          if (args.where.revision !== shared.server.revision) return { count: 0 };
+          health.status = args.data.healthStatus;
+          return { count: 1 };
+        },
+      },
+    };
+
+    // What the complete route does with the result.
+    const completed = await broker
+      .complete({ sessionId: session.id, state: session.id, code: "code", ...shared.context })
+      .catch(() => undefined);
+    if (completed)
+      await recordMcpServerHealth(
+        prisma as never,
+        completed.serverId,
+        { status: "unknown" },
+        completed.revision,
+      );
+
+    expect(health.status).toBe("error");
+    expect(shared.server.revision).toBe(editedAt);
+    expect(completed?.revision).toBe(completedAt);
+  });
+
+  it.each([0, 1])(
+    "reads the completion generation consistently with a concurrent credential save (session generation %s)",
+    async (generation) => {
+      const flow: OAuthMaterial = {
+        oauthClient: { client_id: "client-1" },
+        oauth: {
+          codeVerifier: "verifier",
+          redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+          discoveryState: {
+            authorizationServerUrl: "https://auth.example.test",
+            authorizationServerMetadata: {
+              issuer: "https://auth.example.test",
+              authorization_endpoint: "https://auth.example.test/authorize",
+              token_endpoint: "https://auth.example.test/token",
+              response_types_supported: ["code"],
+            },
+          },
+        },
+      };
+      const shared = sharedCredentials(flow, null);
+      const auth = issuingAuthServer();
+      const { broker } = await shared.startProcess(auth.fetch);
+      await broker.disconnect({ serverId: "server-1", ...shared.context });
+      // The old flow's session can land after disconnect; a fresh flow starts at generation 1.
+      const session = await shared.beginSession({ ...flow, oauthGeneration: generation });
+      await shared.replaceStored({
+        ...expiringMaterial(Date.now()),
+        oauthClient: flow.oauthClient,
+        oauthGeneration: 1,
+      });
+      const { provider: writer } = await shared.startProcess(auth.fetch);
+      let savedExchange = false;
+      const saveTokens = StoredMcpOAuthProvider.prototype.saveTokens;
+      vi.spyOn(StoredMcpOAuthProvider.prototype, "saveTokens").mockImplementation(async function (
+        this: StoredMcpOAuthProvider,
+        tokens,
+      ) {
+        await saveTokens.call(this, tokens);
+        if (tokens.access_token === "issued-access") savedExchange = true;
+      });
+      let attempted = false;
+      let saving: Promise<void> | undefined;
+      let replacedSecretId: string | null = null;
+      const findServer = shared.tables.mcpServer.findFirst;
+      vi.spyOn(shared.tables.mcpServer, "findFirst").mockImplementation(async () => {
+        const snapshot = await findServer();
+        if (savedExchange && !attempted) {
+          attempted = true;
+          replacedSecretId = snapshot.secretId;
+          saving = writer.saveTokens({ access_token: "concurrent-access", token_type: "Bearer" });
+          // Without the lock, replace and delete the referenced row before the secret read.
+          // With the lock, the competing save must wait until the consistent read finishes.
+          if (!shared.credentialLocked) await saving;
+        }
+        return snapshot;
+      });
+
+      try {
+        const completing = broker.complete({
+          sessionId: session.id,
+          code: "authorization-code",
+          state: session.id,
+          ...shared.context,
+        });
+        if (generation === 0) {
+          await expect(completing).rejects.toThrow("MCP OAuth session is invalid or expired");
+        } else {
+          await expect(completing).resolves.toEqual({
+            serverId: shared.server.id,
+            revision: expect.any(Number),
+          });
+        }
+      } finally {
+        await saving;
+      }
+      expect(attempted).toBe(true);
+      expect(await shared.tables.secret.findFirst({ where: { id: replacedSecretId! } })).toBeNull();
+      expect(await shared.stored()).toMatchObject({
+        oauthGeneration: 1,
+        oauth: { tokens: { access_token: "concurrent-access" } },
+      });
+      expect(await broker.statusFor(shared.server, shared.context)).toBe("connected");
+    },
+  );
+
+  it("does not bind the stored client through a cancelled flow's write", async () => {
+    const shared = sharedCredentials({
+      oauthClient: { client_id: "client-1" },
+      oauth: {
+        codeVerifier: "verifier",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        discoveryState: { authorizationServerUrl: "https://auth.example.test" },
+      },
+    });
+    const { provider, broker } = await shared.startProcess(
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+    // The flow binds its copy of the client to the authorization server it found.
+    provider.clientInformation();
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+    await provider.saveTokens({ access_token: "issued-access", token_type: "Bearer" });
+
+    expect(await shared.stored()).toEqual({
+      oauthClient: { client_id: "client-1" },
+      oauthGeneration: 1,
+    });
   });
 
   it.each(["disconnect", "client changed", "server mismatch", "server gone", "endpoint changed"])(
@@ -1143,7 +1686,7 @@ describe("MCP OAuth", () => {
           .map((value) => JSON.parse(value))
           .some((value) => value.oauth?.tokens?.access_token === "access-token"),
       ).toBe(true);
-      expect(prisma.mcpServer.update).toHaveBeenCalledWith({
+      expect(tx.mcpServer.update).toHaveBeenCalledWith({
         where: { id: "server-1" },
         data: { revision: { increment: 1 } },
       });
@@ -1751,7 +2294,7 @@ describe("MCP OAuth", () => {
 
       await broker.disconnect({ serverId: "server-1", ...shared.context });
 
-      expect(await shared.stored()).toEqual({ oauthClient });
+      expect(await shared.stored()).toEqual({ oauthClient, oauthGeneration: 1 });
       expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
     });
 
@@ -1762,7 +2305,7 @@ describe("MCP OAuth", () => {
 
       await broker.disconnect({ serverId: "server-1", ...shared.context });
 
-      expect(await shared.stored()).toEqual({ files });
+      expect(await shared.stored()).toEqual({ files, oauthGeneration: 1 });
     });
 
     it("refuses tokens from an authorization started before the client was changed", async () => {
@@ -2541,6 +3084,13 @@ describe("MCP OAuth", () => {
       mcpOAuthSession: sessions,
       $transaction: vi.fn().mockResolvedValue([]),
     };
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback({
+        ...prisma,
+        $executeRaw: vi.fn().mockResolvedValue(1),
+        $queryRaw: vi.fn().mockResolvedValue([]),
+      }),
+    );
     const secrets = {
       load: vi.fn((ciphertext: string) =>
         JSON.stringify(
@@ -2605,6 +3155,7 @@ describe("MCP OAuth", () => {
           ciphertext: "encrypted-current",
         }),
       },
+      mcpOAuthSession: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     };
     const secrets = {

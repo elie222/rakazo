@@ -7,9 +7,9 @@ import { parseArgs } from "node:util";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema, ReplyModeSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { BOT_FILES_EVAL_CASES, BOT_FILES_FIXTURE_VERSION } from "../evals/bot-files.js";
 import type { EvalCase } from "../evals/cases.js";
-import { EVAL_CASES, HISTORY_EVAL_CASES } from "../evals/cases.js";
+import { EVAL_CASES, HISTORY_EVAL_CASES, wakesRoutines } from "../evals/cases.js";
 import {
   DELIBERATION_EVAL_CASES,
   DELIBERATION_FIXTURE_VERSION,
@@ -22,9 +22,16 @@ import {
   GROUP_JUDGE_CALIBRATION,
   GROUP_JUDGE_VERSION,
 } from "../evals/group.js";
+import { GROUP_ROUTING_EVAL_CASES, GROUP_ROUTING_FIXTURE_VERSION } from "../evals/group-routing.js";
 import { HISTORY_FIXTURE_VERSION } from "../evals/history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
 import { observeSyntheticHistory } from "../evals/history-observer.js";
+import {
+  INITIATIVE_EVAL_CASES,
+  INITIATIVE_FIXTURE_VERSION,
+  INITIATIVE_JUDGE_CALIBRATION,
+  INITIATIVE_JUDGE_VERSION,
+} from "../evals/initiative.js";
 import type { EvalJudge, JudgeInput } from "../evals/judge.js";
 import { createEvalJudge } from "../evals/judge.js";
 import type { CacheDecisionMeasurement, EvalPricing, MeasuredCall } from "../evals/measurement.js";
@@ -35,6 +42,12 @@ import {
   MEMORY_JUDGE_CALIBRATION,
   MEMORY_JUDGE_VERSION,
 } from "../evals/memory.js";
+import {
+  RECALL_EVAL_CASES,
+  RECALL_FIXTURE_VERSION,
+  RECALL_JUDGE_CALIBRATION,
+  RECALL_JUDGE_VERSION,
+} from "../evals/recall.js";
 import { emptyTrial, redact, summarize, validateControls } from "../evals/report.js";
 import {
   SILENCE_EVAL_CASES,
@@ -48,6 +61,7 @@ import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
 import { runApprovalSuite } from "./approval-eval.js";
+import type { DisposablePostgres } from "./postgres.js";
 import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
 async function main() {
@@ -108,10 +122,20 @@ async function main() {
       fixtureVersion: SILENCE_FIXTURE_VERSION,
       judge: { version: SILENCE_JUDGE_VERSION, calibration: SILENCE_JUDGE_CALIBRATION },
     },
+    initiative: {
+      cases: INITIATIVE_EVAL_CASES,
+      fixtureVersion: INITIATIVE_FIXTURE_VERSION,
+      judge: { version: INITIATIVE_JUDGE_VERSION, calibration: INITIATIVE_JUDGE_CALIBRATION },
+    },
     memory: {
       cases: MEMORY_EVAL_CASES,
       fixtureVersion: MEMORY_FIXTURE_VERSION,
       judge: { version: MEMORY_JUDGE_VERSION, calibration: MEMORY_JUDGE_CALIBRATION },
+    },
+    recall: {
+      cases: RECALL_EVAL_CASES,
+      fixtureVersion: RECALL_FIXTURE_VERSION,
+      judge: { version: RECALL_JUDGE_VERSION, calibration: RECALL_JUDGE_CALIBRATION },
     },
     deliberation: {
       cases: DELIBERATION_EVAL_CASES,
@@ -123,11 +147,16 @@ async function main() {
       fixtureVersion: GROUP_FIXTURE_VERSION,
       judge: { version: GROUP_JUDGE_VERSION, calibration: GROUP_JUDGE_CALIBRATION },
     },
+    "group-routing": {
+      cases: GROUP_ROUTING_EVAL_CASES,
+      fixtureVersion: GROUP_ROUTING_FIXTURE_VERSION,
+    },
     "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
+    "bot-files": { cases: BOT_FILES_EVAL_CASES, fixtureVersion: BOT_FILES_FIXTURE_VERSION },
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, group, silence, deliberation, memory, tool-choice, or approval",
+      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, or approval",
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;
@@ -485,7 +514,7 @@ async function main() {
   }
   // This CLI owns a disposable database. Never migrate or evaluate against an inherited database.
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-evals-"));
-  let postgres: StartedPostgreSqlContainer | undefined;
+  let postgres: DisposablePostgres | undefined;
   let stopRequested = false;
   const stop = new AbortController();
   const requestStop = () => {
@@ -495,8 +524,9 @@ async function main() {
   process.on("SIGINT", requestStop);
   process.on("SIGTERM", requestStop);
   try {
-    postgres = await startPostgres(stop.signal);
-    const databaseUrl = postgres.getConnectionUri();
+    const started = await startPostgres(stop.signal);
+    postgres = started;
+    const databaseUrl = started.getConnectionUri();
     Object.assign(process.env, {
       ...disposableDatabaseEnv(databaseUrl),
       WAKEUP_DRIVER: "memory",
@@ -594,21 +624,27 @@ async function main() {
                 });
               },
               modelCallObserver: {
+                // Other models the product calls, such as the Auto Review checker, run too, but
+                // only ever at their own pricing: the eval model's rates would undercharge them
+                // whenever their provider reports no cost.
                 beforeCall: ({
                   inputTokensEstimate,
                   maxOutputTokens,
                   provider,
                   modelId,
                   cacheWriteRetention,
+                  maxCostUsd,
                 }) => {
-                  if (provider !== connection.provider || modelId !== connection.modelId)
-                    throw new Error("Eval model has no configured pricing");
                   if (!acceptingCalls) throw new Error("Eval trial stopped scheduling inference");
-                  return liveBudget.reserve(
-                    inputTokensEstimate,
-                    maxOutputTokens,
-                    cacheWriteRetention,
-                  );
+                  if (provider === connection.provider && modelId === connection.modelId)
+                    return liveBudget.reserve(
+                      inputTokensEstimate,
+                      maxOutputTokens,
+                      cacheWriteRetention,
+                    );
+                  if (typeof maxCostUsd !== "number")
+                    throw new Error("Other model has no configured pricing");
+                  return liveBudget.reserveCostBound(maxCostUsd);
                 },
                 afterCall: (id, usage) => liveBudget.settleUsage(id, usage),
               },
@@ -639,7 +675,7 @@ async function main() {
               wakeupDriver: "memory",
               composio,
               messaging,
-              ...(scenario.routine ? witnesses : {}),
+              ...(wakesRoutines(scenario) ? witnesses : {}),
               messagingOpenSignup: false,
               defaultProvider: connection.provider,
               defaultModel: connection.modelId!,

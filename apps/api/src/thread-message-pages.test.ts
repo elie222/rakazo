@@ -10,6 +10,50 @@ import {
 } from "./thread-message-pages.js";
 
 describe("thread message pages", () => {
+  it("names each message's author with one lookup and omits deleted accounts", async () => {
+    const row = (id: string, seq: number, authorUserId: string | null, replyTo?: unknown) => ({
+      id,
+      threadId: "thread-1",
+      seq,
+      role: "user",
+      blocks: [{ kind: "text", text: id }],
+      botId: null,
+      authorUserId,
+      replyToMessageId: replyTo ? "first" : null,
+      replyQuote: null,
+      replyTo: replyTo ?? null,
+      runId: null,
+      createdAt: new Date("2026-10-22T00:00:00.000Z"),
+    });
+    const first = row("first", 1, "user-a");
+    const rows = [
+      row("gone", 3, "user-deleted"),
+      row("reply", 2, "user-b", { ...first, threadId: "thread-1" }),
+      first,
+    ];
+    const users = vi.fn(async (_args: unknown) => [
+      { id: "user-a", name: "Ana" },
+      { id: "user-b", name: "Bea" },
+    ]);
+    const prisma = {
+      message: { findMany: vi.fn(async () => rows) },
+      user: { findMany: users },
+    } as unknown as PrismaClient;
+
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 3);
+
+    expect(users).toHaveBeenCalledTimes(1);
+    expect(users.mock.calls[0]?.[0]).toEqual({
+      where: { id: { in: expect.arrayContaining(["user-deleted", "user-b", "user-a"]) } },
+      select: { id: true, name: true },
+    });
+    const byId = new Map(page.messages.map((message) => [message.id, message]));
+    expect(byId.get("first")?.author).toEqual({ id: "user-a", name: "Ana" });
+    expect(byId.get("reply")?.author).toEqual({ id: "user-b", name: "Bea" });
+    expect(byId.get("reply")?.replyPreview?.author).toEqual({ id: "user-a", name: "Ana" });
+    expect(byId.get("gone")).not.toHaveProperty("author");
+  });
+
   it("caches peer-run classification for live events", async () => {
     const findUnique = vi.fn(async () => ({ trigger: "bot_message" }));
     const prisma = { run: { findUnique } } as unknown as PrismaClient;
@@ -49,7 +93,9 @@ describe("thread message pages", () => {
     "forwards peer charts in %s while keeping background output hidden",
     (type) => {
       const chart = { kind: "chart", name: "Results", spec: {}, data: [] };
-      for (const blocks of [[chart], [{ kind: "text", text: "Results" }, chart]]) {
+      // A page a peer run saved is its reply too.
+      const page = { kind: "page", pageId: "page-1", version: 1, title: "Results" };
+      for (const blocks of [[chart], [{ kind: "text", text: "Results" }, chart], [page]]) {
         expect(shouldForwardPeerThreadEvent({ type, payload: { blocks } })).toBe(true);
         expect(shouldForwardBackgroundThreadEvent({ type, payload: { blocks } })).toBe(false);
       }
@@ -78,10 +124,15 @@ describe("thread message pages", () => {
           blocks: [{ kind: "text", text: "Results" }, chart],
         },
         { id: "peer-chart", runId: "run-peer", blocks: [chart] },
+        {
+          id: "peer-page",
+          runId: "run-peer",
+          blocks: [{ kind: "page", pageId: "page-1", version: 1, title: "Results" }],
+        },
       ].map((row, index) => ({
         ...row,
         threadId: "thread-1",
-        seq: 4 - index,
+        seq: 5 - index,
         role: "bot",
         botId: "bot-1",
         replyToMessageId: null,
@@ -101,10 +152,15 @@ describe("thread message pages", () => {
         },
       } as unknown as PrismaClient;
 
-      const page = await loadMessagePage(prisma, "thread-1", undefined, 4, around);
+      const page = await loadMessagePage(prisma, "thread-1", undefined, 5, around);
 
-      expect(page.messages.map((message) => message.id)).toEqual(["peer-chart", "peer-mixed"]);
+      expect(page.messages.map((message) => message.id)).toEqual([
+        "peer-page",
+        "peer-chart",
+        "peer-mixed",
+      ]);
       expect(page.messages.map((message) => message.blocks)).toEqual([
+        rows[4]?.blocks,
         rows[3]?.blocks,
         rows[2]?.blocks,
       ]);
@@ -671,7 +727,9 @@ describe("thread message pages", () => {
 
     expect(findMany).toHaveBeenCalledWith({
       include: {
-        replyTo: { select: { threadId: true, role: true, botId: true, blocks: true } },
+        replyTo: {
+          select: { threadId: true, role: true, botId: true, authorUserId: true, blocks: true },
+        },
       },
       where: { threadId: "thread-1", seq: { lt: 6 } },
       orderBy: { seq: "desc" },
@@ -747,7 +805,9 @@ describe("thread message pages", () => {
     expect(page.coveredThroughSeq).toBe(7);
     expect(findMany).toHaveBeenCalledWith({
       include: {
-        replyTo: { select: { threadId: true, role: true, botId: true, blocks: true } },
+        replyTo: {
+          select: { threadId: true, role: true, botId: true, authorUserId: true, blocks: true },
+        },
       },
       where: { threadId: "thread-1", seq: { gte: 3, lte: 7 } },
       orderBy: { seq: "asc" },
@@ -865,7 +925,9 @@ describe("authoritative reply previews", () => {
       expect.objectContaining({
         where: { threadId: "thread-1" },
         include: {
-          replyTo: { select: { threadId: true, role: true, botId: true, blocks: true } },
+          replyTo: {
+            select: { threadId: true, role: true, botId: true, authorUserId: true, blocks: true },
+          },
         },
       }),
     );

@@ -27,6 +27,12 @@ describe("authErrorText", () => {
     ).toBe("Password must be 128 characters or fewer");
   });
 
+  it("says when a deactivated account tries to sign in", () => {
+    expect(authErrorText({ code: "ACCOUNT_DEACTIVATED" }, "Fallback")).toBe(
+      "This account is deactivated",
+    );
+  });
+
   it("keeps messages from older servers", () => {
     expect(authErrorText({ message: "Registration is closed" }, "Fallback")).toBe(
       "Registration is closed",

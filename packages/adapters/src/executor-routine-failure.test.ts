@@ -92,12 +92,19 @@ async function failRun(scenario: Scenario) {
     throw scenario.error;
   });
   const prisma = {
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => ({ ...run })),
       findFirst: vi.fn(async () => ({
-        bot: { notifyOnFinish: scenario.notifyOnFinish ?? true },
+        bot: {
+          id: "bot-1",
+          name: "Assistant",
+          color: "blue",
+          avatarSet: "default",
+          notifyOnFinish: scenario.notifyOnFinish ?? true,
+        },
         thread: { groupId: null },
       })),
       updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -311,6 +318,17 @@ describe("routine failure notifications", () => {
     );
   });
 
+  it("keeps a failed daily check-in quiet", async () => {
+    const { send } = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: "strategic-initiative:bot-1:1",
+    });
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "failure" }),
+      expect.anything(),
+    );
+  });
+
   it("puts the unread chats across the user's Spaces on the app icon", async () => {
     const { send, prisma } = await failRun({ error: new Error("Invalid API key"), unreadChats: 3 });
     expect(send).toHaveBeenCalledWith(
@@ -318,8 +336,8 @@ describe("routine failure notifications", () => {
       expect.anything(),
     );
     expect(countUnreadInboxChats).toHaveBeenCalledWith(prisma, {
-      userId: "user-1",
       spaceId: "space-1",
+      userId: "user-1",
     });
   });
 
@@ -559,6 +577,7 @@ interface RetryScenario {
   enqueueFails?: boolean;
   routineNotify?: boolean;
   missingRoutine?: boolean;
+  routineOwner?: string;
   missingTask?: boolean;
   pausedBeforeCreate?: boolean;
   archivedBeforeCreate?: boolean;
@@ -612,6 +631,7 @@ function retryHarness(scenario: RetryScenario = {}) {
     },
   };
   const prisma = {
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => failed),
@@ -621,7 +641,16 @@ function retryHarness(scenario: RetryScenario = {}) {
             (scenario.laterRunBeforeCreate && prisma.$transaction.mock.calls.length > 0)
             ? { id: "run-later" }
             : null
-          : { bot: { notifyOnFinish: true }, thread: { groupId: null } },
+          : {
+              bot: {
+                id: "bot-1",
+                name: "Assistant",
+                color: "blue",
+                avatarSet: "default",
+                notifyOnFinish: true,
+              },
+              thread: { groupId: null },
+            },
       ),
     },
     routine: {
@@ -631,6 +660,7 @@ function retryHarness(scenario: RetryScenario = {}) {
           : {
               notify: scenario.routineNotify ?? true,
               active: scenario.active ?? true,
+              userId: scenario.routineOwner ?? "user-1",
               crons: scenario.oneShot ? ["@once"] : ["0 9 * * *"],
               nextRunAt:
                 scenario.nextRunAt === undefined
@@ -668,6 +698,7 @@ describe("running a routine retry", () => {
         prisma.routine.findUnique.mockResolvedValueOnce({
           notify: true,
           active: false,
+          userId: "user-1",
           crons: ["0 9 * * *"],
           nextRunAt: null,
           bot: { archivedAt: null },
@@ -689,6 +720,7 @@ describe("running a routine retry", () => {
     ["paused", { active: false }],
     ["archived", { archived: true }],
     ["missing its routine", { missingRoutine: true }],
+    ["now someone else's", { routineOwner: "user-2" }],
     ["missing its task", { missingTask: true }],
   ] satisfies Array<[string, RetryScenario]>)(
     "notifies when the retry is abandoned because it is %s",
@@ -706,6 +738,7 @@ describe("running a routine retry", () => {
           badge: 1,
           botId: "bot-1",
           threadId: "thread-1",
+          sender: expect.objectContaining({ botId: "bot-1", name: "Assistant" }),
         },
         expect.objectContaining({ userId: "user-1" }),
       );
@@ -761,7 +794,7 @@ describe("running a routine retry", () => {
       await executor.retryRoutineRun("run-1");
 
       expect(tx.routine.updateMany).toHaveBeenCalledWith({
-        where: { id: "routine-1", active: true, bot: { archivedAt: null } },
+        where: { id: "routine-1", userId: "user-1", active: true, bot: { archivedAt: null } },
         data: { active: true },
       });
       expect(tx.task.create).not.toHaveBeenCalled();
@@ -884,6 +917,7 @@ describe("running a routine retry", () => {
     expect(tx.routine.updateMany).toHaveBeenCalledWith({
       where: {
         id: "routine-1",
+        userId: "user-1",
         active: false,
         crons: { equals: ["@once"] },
         bot: { archivedAt: null },

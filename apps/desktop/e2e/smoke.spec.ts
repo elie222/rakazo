@@ -57,6 +57,7 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
       "oauth",
       "passkeys",
       "platform",
+      "server",
       "settings",
       "update",
       "window",
@@ -86,11 +87,23 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
 
     const preferences = await app.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
+      // The installed Electron types do not declare getLastWebPreferences; the runtime has it.
+      const lastPreferences = win
+        ? (
+            win.webContents as Electron.WebContents & {
+              getLastWebPreferences(): {
+                nodeIntegration: boolean;
+                contextIsolation: boolean;
+                sandbox: boolean;
+              };
+            }
+          ).getLastWebPreferences()
+        : undefined;
       return {
         count: BrowserWindow.getAllWindows().length,
-        nodeIntegration: win?.webContents.getLastWebPreferences().nodeIntegration,
-        contextIsolation: win?.webContents.getLastWebPreferences().contextIsolation,
-        sandbox: win?.webContents.getLastWebPreferences().sandbox,
+        nodeIntegration: lastPreferences?.nodeIntegration,
+        contextIsolation: lastPreferences?.contextIsolation,
+        sandbox: lastPreferences?.sandbox,
         state: {
           minimized: win?.isMinimized(),
           maximized: win?.isMaximized(),

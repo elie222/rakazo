@@ -49,7 +49,12 @@ function pendingTimerFixture(reuse = true) {
     computer: { findMany: vi.fn(async () => []) },
     routine: {
       updateMany: vi.fn(async () => ({ count: 1 })),
-      findUnique: vi.fn(async () => ({ modelProvider: null, modelId: null, thinkingLevel: null })),
+      findUnique: vi.fn(async () => ({
+        prompt: "check current work",
+        modelProvider: null,
+        modelId: null,
+        thinkingLevel: null,
+      })),
     },
     run: {
       findMany: vi.fn(async () => (reuse ? [pending] : [])),
@@ -64,6 +69,7 @@ function pendingTimerFixture(reuse = true) {
     },
   };
   const prisma = {
+    user: { findUnique: vi.fn(async () => null) },
     routine: { findUnique: vi.fn(async () => routine) },
     bot: { findUnique: vi.fn(async () => ({ id: "bot-1", thread: { id: "thread-1" } })) },
     agentSkill: { findMany: vi.fn(async () => []) },

@@ -130,7 +130,7 @@ export function HostComputerPrompt({
                 bots work with your local files and tools.
               </Trans>
             </span>
-            <span className="block text-xs text-muted-foreground/80">
+            <span className="block text-label text-muted-foreground/80">
               <Trans>
                 Local access lets bots run commands without asking. Avoid it on shared or public
                 servers.
@@ -139,7 +139,7 @@ export function HostComputerPrompt({
           </DialogDescription>
         </DialogHeader>
         {error ? (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-body text-destructive">
             {error}
           </p>
         ) : null}

@@ -8,7 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { Actor, MessagingInstallationSummary } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, requireMembership, runAsSystem } from "@rakazo/db";
+import { IsolationError, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { credentialDigest } from "./credential-digest.js";
 import { installationSenderAddress } from "./installed-messaging-surface.js";
@@ -22,14 +22,14 @@ export class MessagingInstallations implements MessagingInstallationStore {
     private readonly cleanupJobs?: Pick<JobPublisher, "enqueue">,
   ) {}
 
-  /** Without a chosen bot, the workspace answers as the first bot in the user's default space. */
+  /** Without a chosen bot, the workspace answers as the user's first bot in the current space. */
   async start(actor: Actor, botId?: string): Promise<string> {
     const bot = botId
       ? await this.prisma.bot.findFirst({
           where: { id: botId, spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
           select: { id: true, spaceId: true },
         })
-      : await this.defaultBot(actor.userId);
+      : await this.defaultBot(actor);
     if (!bot) throw new IsolationError("Bot not found");
     const state = randomBytes(32).toString("base64url");
     await runAsSystem("start messaging workspace installation", async () => {
@@ -50,15 +50,14 @@ export class MessagingInstallations implements MessagingInstallationStore {
     return this.provider.authorizeUrl(state);
   }
 
-  private defaultBot(userId: string) {
-    return runAsSystem("resolve default messaging bot", async () => {
-      const { spaceId } = await requireMembership(this.prisma, userId);
-      return this.prisma.bot.findFirst({
-        where: { spaceId, userId, archivedAt: null },
+  private defaultBot(actor: Actor) {
+    return runAsSystem("resolve default messaging bot", () =>
+      this.prisma.bot.findFirst({
+        where: { spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: { id: true, spaceId: true },
-      });
-    });
+      }),
+    );
   }
 
   /** Only the user who started it may finish, so a forwarded authorize link cannot attach their workspace. */

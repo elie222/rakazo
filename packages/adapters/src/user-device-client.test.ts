@@ -96,6 +96,15 @@ describe("user device client", () => {
     await vi.waitFor(() => expect(check()).toBe(true), { timeout: 10_000, interval: 10 });
   }
 
+  it("refuses cleartext non-loopback transport before connecting", () => {
+    // Keep even the failing base-case reproduction on the local machine.
+    const remote = new URL(serverUrl);
+    remote.hostname = "0.0.0.0";
+    serverUrl = remote.href;
+    expect(() => start()).toThrow("Local computer access requires HTTPS or loopback");
+    expect(upgrades).toHaveLength(0);
+  });
+
   it("authenticates outbound and streams request frames back by id", async () => {
     start();
     const ws = await connection();

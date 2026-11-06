@@ -43,6 +43,7 @@ import {
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
 import { chatModelPickerChoices } from "../lib/chat-model";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
+import { notifyConversationCleared } from "../lib/conversation-cleared";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
 import { afterChatNotifyChange } from "../lib/live-notifications";
@@ -860,6 +861,7 @@ export default function BotSettingsScreen() {
                       style: "destructive",
                       onPress: () => {
                         void rpc("threads/clear", { botId })
+                          .then(() => notifyConversationCleared(botId))
                           .then(() => router.back())
                           .catch((err) => setError(errorText(err)));
                       },

@@ -44,6 +44,7 @@ import type { ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
 import { InstructionSettings } from "../../components/InstructionSettings";
+import { PagesList } from "../../components/pages/PagesList";
 import { botProfilePatch } from "../../lib/bot-profile-patch";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
 import { lazyComponent } from "../../lib/preload-recovery";
@@ -60,7 +61,7 @@ const KnowledgeSection = lazyComponent(() =>
   import("../KnowledgeSection").then((module) => module.KnowledgeSection),
 );
 
-const rowLabelClass = "text-sm text-foreground";
+const rowLabelClass = "text-body text-foreground";
 
 /** The advanced fields one Save sends, in the order their saved snapshot keeps them. */
 function advancedValues(bot: Bot) {
@@ -100,9 +101,9 @@ export function ComputerModePicker({
   );
 }
 
-export type BotPanelTab = "computer" | "routines" | "settings";
+export type BotPanelTab = "computer" | "routines" | "pages" | "settings";
 
-/** A bot's profile above its Computer, Routines and Advanced tabs. */
+/** A bot's profile above its Computer, Routines, Pages and Advanced tabs. */
 export function BotSettings({
   bot,
   tab = "settings",
@@ -555,7 +556,7 @@ export function BotSettings({
           editLabel={t`Edit name`}
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
-          className="text-xl font-semibold"
+          className="text-heading2 font-semibold"
           onCommit={(value) => {
             if (!value.trim()) return;
             setName(value.trim());
@@ -571,6 +572,9 @@ export function BotSettings({
           <TabsTrigger value="routines">
             <Trans>Routines</Trans>
           </TabsTrigger>
+          <TabsTrigger value="pages">
+            <Trans>Pages</Trans>
+          </TabsTrigger>
           <TabsTrigger value="settings">
             <Trans>Advanced</Trans>
           </TabsTrigger>
@@ -580,6 +584,9 @@ export function BotSettings({
         </TabsContent>
         <TabsContent value="routines" className="pt-4">
           {routines}
+        </TabsContent>
+        <TabsContent value="pages" className="pt-4">
+          {tab === "pages" ? <PagesList botId={bot.id} /> : null}
         </TabsContent>
         {/* Stays mounted so scratchpad and knowledge drafts survive a tab switch. */}
         <TabsContent value="settings" keepMounted data-testid="bot-settings-advanced">
@@ -592,7 +599,7 @@ export function BotSettings({
                 <label
                   htmlFor={`${ids}-notify-finish`}
                   id={`${ids}-notify-finish-label`}
-                  className="text-sm"
+                  className="text-body"
                 >
                   <Trans>When it finishes or needs input</Trans>
                 </label>
@@ -620,7 +627,7 @@ export function BotSettings({
           </ErrorBoundary>
           <div className="space-y-6 pt-6">
             <div ref={modelRef}>
-              <div className="mb-2 flex items-center justify-between text-xs font-medium text-muted-foreground pe-1">
+              <div className="mb-2 flex items-center justify-between text-label font-medium text-muted-foreground pe-1">
                 <Trans>Model</Trans>
                 {onOpenConnections ? (
                   <Button
@@ -653,7 +660,7 @@ export function BotSettings({
                 {thinkingOptions.length ? (
                   <label
                     htmlFor={`${ids}-thinking`}
-                    className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground"
+                    className="flex min-h-11 items-center justify-between gap-3 text-body text-foreground"
                   >
                     <Trans>Thinking</Trans>
                     <NativeSelect
@@ -678,7 +685,7 @@ export function BotSettings({
             <SettingsGroup label={t`Computer`} plain>
               <ComputerModePicker value={computerMode} onChange={setComputerMode} />
               {memoryProviderConfigured ? (
-                <div className="mt-4 text-sm text-foreground">
+                <div className="mt-4 text-body text-foreground">
                   <Trans>Memory scope</Trans>
                   <div className="mt-2 flex gap-2">
                     {(
@@ -708,7 +715,7 @@ export function BotSettings({
             <SettingsGroup label={t`Voice`}>
               <label
                 htmlFor={`${ids}-auto-speak`}
-                className="flex min-h-11 cursor-pointer items-center justify-between gap-3 text-sm text-foreground"
+                className="flex min-h-11 cursor-pointer items-center justify-between gap-3 text-body text-foreground"
               >
                 <span className={rowLabelClass}>
                   <Trans>Read replies aloud</Trans>
@@ -722,7 +729,7 @@ export function BotSettings({
               {voices?.length ? (
                 <label
                   htmlFor={`${ids}-voice`}
-                  className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground"
+                  className="flex min-h-11 items-center justify-between gap-3 text-body text-foreground"
                 >
                   <Trans>Voice</Trans>
                   <NativeSelect
@@ -742,7 +749,7 @@ export function BotSettings({
               ) : null}
             </SettingsGroup>
             <SettingsGroup label={t`Permissions`}>
-              <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
+              <div className="flex min-h-11 items-center justify-between gap-3 text-body">
                 <label htmlFor={`${ids}-daily-check-ins`} className={rowLabelClass}>
                   <Trans>Daily check-ins on unfinished work</Trans>
                 </label>
@@ -756,7 +763,7 @@ export function BotSettings({
                   }}
                 />
               </div>
-              <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
+              <div className="flex min-h-11 items-center justify-between gap-3 text-body">
                 <label htmlFor={`${ids}-cross-space`} className={rowLabelClass}>
                   <Trans>Allow cross-space bot communication</Trans>
                 </label>
@@ -770,7 +777,7 @@ export function BotSettings({
                   }}
                 />
               </div>
-              <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
+              <div className="flex min-h-11 items-center justify-between gap-3 text-body">
                 <label htmlFor={`${ids}-fleet-management`} className={rowLabelClass}>
                   <Trans>Manage other bots</Trans>
                 </label>
@@ -813,7 +820,7 @@ export function BotSettings({
                 onBlur={() => void enqueueSave()}
                 placeholder={t`What this bot is for`}
                 rows={2}
-                className="min-h-16 resize-none field-sizing-content"
+                className="min-h-16 max-h-96 resize-none field-sizing-content"
               />
             </SettingsGroup>
             <SettingsGroup label={t`Tools`} plain>
@@ -840,7 +847,7 @@ export function BotSettings({
                   {disabledBuiltinTools.map((toolName) => (
                     <div
                       key={toolName}
-                      className="flex min-h-11 items-center justify-between gap-3 text-sm"
+                      className="flex min-h-11 items-center justify-between gap-3 text-body"
                     >
                       <span>{humanizeTool(toolName)}</span>
                       <Button
@@ -865,7 +872,7 @@ export function BotSettings({
             <div className="overflow-hidden rounded-xl bg-muted/50 px-4">
               <button
                 type="button"
-                className="flex min-h-12 w-full items-center justify-between text-sm"
+                className="flex min-h-12 w-full items-center justify-between text-body"
                 onClick={() => {
                   setError(null);
                   onExport().catch((err: unknown) => setError(errorText(err)));
@@ -876,7 +883,7 @@ export function BotSettings({
               </button>
               <button
                 type="button"
-                className="min-h-12 w-full border-t border-border text-start text-sm text-destructive"
+                className="min-h-12 w-full border-t border-border text-start text-body text-destructive"
                 onClick={onClear}
               >
                 <Trans>Clear conversation</Trans>
@@ -901,7 +908,7 @@ export function BotSettings({
           ) : null}
         </TabsContent>
       </Tabs>
-      {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
+      {error ? <p className="mt-2 text-body-sm text-destructive">{error}</p> : null}
     </div>
   );
 }

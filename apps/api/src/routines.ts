@@ -7,6 +7,7 @@ import {
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
+  routineScheduleDelayed,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { IsolationError } from "@rakazo/db";
@@ -116,22 +117,20 @@ export function mapRoutine(row: {
     watchState: parseRoutineWatchState(row.watchState),
     lastRunAt: row.lastRunAt?.toISOString() ?? null,
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
+    scheduleDelayed: routineScheduleDelayed({
+      active: row.active,
+      nextRunAt: row.nextRunAt?.getTime() ?? null,
+    }),
     createdAt: row.createdAt.toISOString(),
   };
 }
 
+/** Any member may change a routine; editing it hands it to them (see routines.update). */
 export async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: string) {
   const rows = await deps.prisma.routine.findMany({
     where: { botId, spaceId: actor.spaceId },
   });
-  return rows.map((row) => routineDto(row, actor));
-}
-
-export function routineDto(
-  row: Parameters<typeof mapRoutine>[0] & { userId: string },
-  actor: Actor,
-) {
-  return { ...mapRoutine(row), editable: row.userId === actor.userId };
+  return rows.map(mapRoutine);
 }
 
 export function createRoutineAnnouncer(deps: RouterDeps) {
@@ -156,7 +155,7 @@ export function createRoutineAnnouncer(deps: RouterDeps) {
   return announceRoutine;
 }
 
-/** The caller's own routine on a bot they may use, the check behind every routine test run. */
+/** A routine in the caller's Space on a bot they may use, the check behind every routine test run. */
 export async function routineTestTarget(
   prisma: PrismaClient,
   repos: RouterContext["repos"],
@@ -164,7 +163,7 @@ export async function routineTestTarget(
   routineId: string,
 ) {
   const routine = await prisma.routine.findFirst({
-    where: { id: routineId, spaceId: actor.spaceId, userId: actor.userId },
+    where: { id: routineId, spaceId: actor.spaceId },
   });
   if (!routine) throw new IsolationError();
   const bot = await repos.getBot(actor, routine.botId);

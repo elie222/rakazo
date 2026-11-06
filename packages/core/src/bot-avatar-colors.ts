@@ -3,100 +3,73 @@ import { parseBotAvatarValue } from "@rakazo/contracts";
 export interface BotColorDef {
   id: string;
   name: string;
-  light: string;
-  dark: string;
-  eyeColor: string;
+  /** The bot's one color: its avatar, name and bubble all start from it. */
   hex: string;
+  /** Deeper value this color was stored as before; existing bots still resolve through it. */
+  previousHex?: string;
 }
 
 export const BOT_COLOR_LIST: BotColorDef[] = [
-  {
-    id: "white",
-    name: "Staff White",
-    light: "#FFFFFF",
-    dark: "#CBD5E1",
-    eyeColor: "#141414",
-    hex: "#FFFFFF",
-  },
+  { id: "white", name: "Staff White", hex: "#FFFFFF" },
   {
     id: "violet",
     name: "Executive Violet",
-    light: "#A97EFE",
-    dark: "#7C3AED",
-    eyeColor: "#FFFFFF",
-    hex: "#8B5CF6",
+    hex: "#A97EFE",
+    previousHex: "#8B5CF6",
   },
   {
     id: "green",
     name: "Emerald",
-    light: "#00C972",
-    dark: "#059669",
-    eyeColor: "#FFFFFF",
-    hex: "#10B981",
+    hex: "#00C972",
+    previousHex: "#10B981",
   },
   {
     id: "orange",
     name: "Forge Orange",
-    light: "#FF781C",
-    dark: "#EA580C",
-    eyeColor: "#FFFFFF",
-    hex: "#F97316",
+    hex: "#FF781C",
+    previousHex: "#F97316",
   },
   {
     id: "cyan",
     name: "Cyber Cyan",
-    light: "#1CC3B0",
-    dark: "#0284C7",
-    eyeColor: "#FFFFFF",
-    hex: "#06B6D4",
+    hex: "#1CC3B0",
+    previousHex: "#06B6D4",
   },
   {
     id: "blue",
     name: "Cobalt Blue",
-    light: "#2A92FE",
-    dark: "#1D4ED8",
-    eyeColor: "#FFFFFF",
-    hex: "#3B82F6",
+    hex: "#2A92FE",
+    previousHex: "#3B82F6",
   },
   {
     id: "yellow",
     name: "Amber Gold",
-    light: "#FFAF38",
-    dark: "#D97706",
-    eyeColor: "#141414",
-    hex: "#EAB308",
+    hex: "#FFAF38",
+    previousHex: "#EAB308",
   },
   {
     id: "brown",
     name: "Caramel Bronze",
-    light: "#A27952",
-    dark: "#78350F",
-    eyeColor: "#FFFFFF",
-    hex: "#8D6E63",
+    hex: "#A27952",
+    previousHex: "#8D6E63",
   },
   {
     id: "red",
     name: "Crimson Red",
-    light: "#FF3E51",
-    dark: "#BE123C",
-    eyeColor: "#FFFFFF",
-    hex: "#EF4444",
+    hex: "#FF3E51",
+    previousHex: "#EF4444",
   },
   {
     id: "magenta",
     name: "Neon Pink",
-    light: "#FF5EB1",
-    dark: "#BE185D",
-    eyeColor: "#FFFFFF",
-    hex: "#EC4899",
+    hex: "#FF5EB1",
+    previousHex: "#EC4899",
   },
   {
     id: "gray",
     name: "Slate Silver",
-    light: "#94A3B8",
-    dark: "#475569",
-    eyeColor: "#FFFFFF",
-    hex: "#64748B",
+    hex: "#94A3B8",
+    previousHex: "#64748B",
   },
 ];
 
@@ -131,18 +104,12 @@ export function resolvePersonaColorDef(
     const clean = explicitColor.toLowerCase();
     const foundById = BOT_COLOR_LIST.find((c) => c.id === clean || c.name.toLowerCase() === clean);
     if (foundById) return foundById;
-    const foundByHex = BOT_COLOR_LIST.find((c) => c.hex.toLowerCase() === clean);
+    const foundByHex = BOT_COLOR_LIST.find(
+      (c) => c.hex.toLowerCase() === clean || c.previousHex?.toLowerCase() === clean,
+    );
     if (foundByHex) return foundByHex;
     if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(explicitColor)) {
-      const isBright = isColorBright(explicitColor);
-      return {
-        id: "custom",
-        name: "Custom",
-        light: explicitColor,
-        dark: darkenHex(explicitColor, 20),
-        eyeColor: isBright ? "#141414" : "#FFFFFF",
-        hex: explicitColor,
-      };
+      return { id: "custom", name: "Custom", hex: explicitColor };
     }
   }
   const seed = (shippedHash(identity) ^ Math.imul(1, 2654435769)) >>> 0;
@@ -155,8 +122,9 @@ const BUBBLE_TEXT_CONTRAST = 4.5;
 const LIGHT_TEXT = "#FFFFFF";
 
 /**
- * Your messages in a bot's chat wear that bot's color, deepened as needed for
- * white body text to meet AA contrast. Photo and white avatars keep the neutral bubble.
+ * Your messages in a bot's chat wear that bot's color under white text, deepened just enough for
+ * AA contrast. The color darkens in OKLCH so it keeps its hue and saturation instead of turning
+ * muddy. Photo and white avatars keep the neutral bubble.
  */
 export function chatUserBubbleColors(
   avatarValue: string,
@@ -167,10 +135,71 @@ export function chatUserBubbleColors(
   const def = resolvePersonaColorDef(identity, parsed.kind === "other" ? undefined : parsed.color);
   if (def.id === "white") return undefined;
   let background = `#${expandHex(def.hex)}`.toUpperCase();
-  while (contrastRatio(background, LIGHT_TEXT) < BUBBLE_TEXT_CONTRAST) {
-    background = darkenHex(background, 5).toUpperCase();
+  const [lightness, chroma, hue] = hexToOklch(background);
+  for (let l = lightness; contrastRatio(background, LIGHT_TEXT) < BUBBLE_TEXT_CONTRAST; ) {
+    l -= 0.01;
+    background = oklchToHex(l, chroma, hue);
   }
   return { background, foreground: LIGHT_TEXT };
+}
+
+function hexToOklch(hex: string): [number, number, number] {
+  const c = expandHex(hex);
+  const [r, g, b] = [0, 2, 4].map((offset) => {
+    const channel = (Number.parseInt(c.substring(offset, offset + 2), 16) || 0) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const lightness = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+  const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const bb = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  return [lightness, Math.hypot(a, bb), Math.atan2(bb, a)];
+}
+
+function oklchToHex(lightness: number, chroma: number, hue: number): string {
+  const a = chroma * Math.cos(hue);
+  const b = chroma * Math.sin(hue);
+  const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const linear = [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+  return `#${linear
+    .map((value) => {
+      const v = Math.min(1, Math.max(0, value));
+      const srgb = v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055;
+      return Math.round(srgb * 255)
+        .toString(16)
+        .padStart(2, "0");
+    })
+    .join("")}`.toUpperCase();
+}
+
+/**
+ * Which ink a bot's eyes take. They are cut-outs in the page color (dark in dark mode, light in
+ * light mode), unless the body is pale or dark enough that the cut-out would fade in one theme;
+ * then they stay the ink that contrasts with the body. Amber, emerald and cyan are pale enough.
+ */
+export function botEyeTone(bodyHex: string): "page" | "dark" | "light" {
+  if (contrastRatio(bodyHex, "#FFFFFF") < 2.4) return "dark";
+  if (contrastRatio(bodyHex, "#000000") < 2) return "light";
+  return "page";
+}
+
+/** The eye ink {@link botEyeTone} picks, on a page with these two colors. */
+export function botEyeInk(bodyColor: string, page: { background: string; foreground: string }) {
+  const tone = botEyeTone(bodyColor);
+  if (tone === "page") return page.background;
+  const [darker, lighter] =
+    contrastRatio(page.background, "#FFFFFF") > contrastRatio(page.foreground, "#FFFFFF")
+      ? [page.background, page.foreground]
+      : [page.foreground, page.background];
+  return tone === "dark" ? darker : lighter;
 }
 
 /** WCAG contrast ratio between two hex colors. */
@@ -197,22 +226,4 @@ function expandHex(hex: string): string {
     return `${r}${r}${g}${g}${b}${b}`;
   }
   return c;
-}
-
-function isColorBright(hex: string): boolean {
-  const c = expandHex(hex);
-  const r = Number.parseInt(c.substring(0, 2), 16) || 0;
-  const g = Number.parseInt(c.substring(2, 4), 16) || 0;
-  const b = Number.parseInt(c.substring(4, 6), 16) || 0;
-  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-  return brightness > 180;
-}
-
-function darkenHex(hex: string, percent: number): string {
-  const num = Number.parseInt(expandHex(hex), 16);
-  const factor = 1 - percent / 100;
-  const r = Math.max(0, Math.floor(((num >> 16) & 255) * factor));
-  const g = Math.max(0, Math.floor(((num >> 8) & 255) * factor));
-  const b = Math.max(0, Math.floor((num & 255) * factor));
-  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }

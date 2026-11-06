@@ -46,7 +46,10 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between pe-1">
-        <label htmlFor={`${id}-instructions`} className="text-xs font-medium text-muted-foreground">
+        <label
+          htmlFor={`${id}-instructions`}
+          className="text-label font-medium text-muted-foreground"
+        >
           <Trans>Instructions</Trans>
         </label>
         {current.instructionHistory?.length ? (
@@ -65,7 +68,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
             </PopoverTrigger>
             <PopoverContent align="end" className="max-h-96 overflow-y-auto">
               {current.instructionHistory.map((version) => (
-                <div key={version.id} className="mt-2 text-sm">
+                <div key={version.id} className="mt-2 text-body">
                   <Disclosure
                     summary={
                       <span className="inline-flex flex-wrap gap-x-2">
@@ -99,7 +102,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
       </div>
       <Textarea
         id={`${id}-instructions`}
-        className="font-normal min-h-20 resize-none field-sizing-content text-foreground rounded-xl border-transparent bg-muted/50 p-4 shadow-none"
+        className="font-normal min-h-20 max-h-96 resize-none field-sizing-content text-foreground rounded-xl border-transparent bg-muted/50 p-4 shadow-none"
         value={instructions}
         maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
         disabled={pending}
@@ -111,7 +114,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
             );
         }}
       />
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? <p className="text-body text-destructive">{error}</p> : null}
       {conflict ? (
         <Button
           variant="outline"

@@ -17,14 +17,14 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.Executors
 
-/** Expo remains the single FCM token owner; non-call messages use its normal delegate. */
+/** Expo remains the single FCM token owner; other messages use its normal delegate unless [SenderPush] renders them. */
 class RakazoMessagingService : ExpoFirebaseMessagingService() {
   override fun onMessageReceived(message: RemoteMessage) {
     val call = runCatching { JSONObject(message.data["body"] ?: "{}") }.getOrNull() ?: JSONObject()
     when (call.optString("kind")) {
       "incoming_call" -> IncomingCalls.report(this, call)
       "incoming_call_ended" -> IncomingCalls.settled(this, call)
-      else -> super.onMessageReceived(message)
+      else -> if (!SenderPush.present(this, call)) super.onMessageReceived(message)
     }
   }
 }

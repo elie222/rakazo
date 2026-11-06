@@ -44,6 +44,7 @@ import {
   controlPortPublicationMatches,
   homeVolumeMatches,
   hostComputerUser,
+  isIpv6NetworkUnavailable,
   legacyNetworkOwnedSolelyBy,
   publishedLoopbackControlHostPort,
   resolveComputerControlEndpoint,
@@ -92,6 +93,7 @@ import {
   parseObservation,
   preferComputerControl,
   quiesceBrowserProfilesCommand,
+  refusedCommand,
   releaseAssignedScreen,
   removeOwnedComputer,
   resetManagedScreensCommand,
@@ -264,11 +266,36 @@ app.post("/computers", async (c) => {
         );
         const botNetwork =
           networkMode === computerNetworkNameFor(body.botId) ? networkMode : undefined;
-        const endpoint = botNetwork ? info.NetworkSettings?.Networks?.[botNetwork] : undefined;
-        const botNetworkInfo =
+        let endpoint = botNetwork ? info.NetworkSettings?.Networks?.[botNetwork] : undefined;
+        let botNetworkInfo =
           botNetwork && (computerEgressMode === "restricted" || !info.State.Running)
             ? await inspectNetworkIfPresent(botNetwork)
             : undefined;
+        // An IPv4-only network left by the daemon fallback outlives a crash (no
+        // /stop to hand it back). Give it back here — the same safe removal the
+        // stop path uses — so the reconnect below recreates it IPv6-first. On a
+        // host without IPv6 this costs one failed dual-stack create plus the
+        // IPv4 create per resume.
+        let recreateForIpv6 = false;
+        if (
+          computerEgressMode !== "restricted" &&
+          botNetwork &&
+          endpoint &&
+          !info.State.Running &&
+          botNetworkInfo &&
+          botNetworkInfo.EnableIPv6 !== true
+        ) {
+          await removeUnusedComputerNetwork(botNetwork, existing.id).catch((error) => {
+            getLogger().error("computer network reclaim failed", error);
+          });
+          recreateForIpv6 = !(await inspectNetworkIfPresent(botNetwork));
+          // A partial cleanup may have disconnected the computer yet left the
+          // network in place; the cached endpoint would then still match the
+          // surviving network and the resume would start with no attachment.
+          // Re-read both and reconnect whenever the endpoint is absent or stale.
+          endpoint = (await existing.inspect()).NetworkSettings?.Networks?.[botNetwork];
+          botNetworkInfo = await inspectNetworkIfPresent(botNetwork);
+        }
         // A stop gives the network back after disconnecting the computer, and a
         // network removed or recreated under a stopped computer leaves its endpoint
         // on the old network ID. Either way it rejoins the network before starting:
@@ -276,7 +303,7 @@ app.post("/computers", async (c) => {
         const reconnect =
           Boolean(botNetwork) &&
           !info.State.Running &&
-          (!endpoint || botNetworkInfo?.Id !== endpoint.NetworkID);
+          (recreateForIpv6 || !endpoint || botNetworkInfo?.Id !== endpoint.NetworkID);
         // A network created while egress was open keeps a generic br-* bridge
         // the host ruleset does not match, so restricted mode must not resume a
         // computer on it — the replace path rekeys the network instead.
@@ -696,6 +723,13 @@ app.post("/computers/:id/browser", async (c) => {
     // purchase check presses nothing and never starts the browser again: no browser has nothing to buy.
     if (reusable.reused && body.command !== "purchase_check" && pageBrowserNotReady(result))
       result = await runHelper(await screen(false));
+    // Exit 2 is the page browser refusing the command before touching the page (an older
+    // computer image does not know it). Pass its reply on, as LinuxDesktop does, so a caller
+    // can tell "cannot check" from a check that failed.
+    if (result.code === 2 && Buffer.byteLength(result.stdout) <= 512 * 1024) {
+      const refused = refusedCommand(result.stdout);
+      if (refused) return c.json(refused);
+    }
     // A nonzero exit or malformed output cannot establish which mutations ran.
     if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {
       throw new Error(
@@ -1228,8 +1262,8 @@ app.delete("/computers/:id", async (c) => {
   }
 });
 
-function startSupervisor() {
-  const logger = createRootLogger(SERVICE_NAMES.supervisor);
+async function startSupervisor() {
+  const logger = await createRootLogger(SERVICE_NAMES.supervisor);
   // Resolve the ceilings before binding the port. They are otherwise parsed inside
   // containerCreateOptions, so a malformed RAKAZO_COMPUTER_* value would let the supervisor start
   // and pass its healthcheck, then fail the first POST /computers with a 500 that reads like a
@@ -1279,7 +1313,8 @@ function closeListeningServer(server: {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  startSupervisor();
+  // A rejected startup keeps Node's default: the error is printed and the process exits.
+  void startSupervisor();
 }
 
 // Enforcement is host-side (DOCKER-USER/INPUT on rakazo-c* bridges); the flag only
@@ -1907,15 +1942,28 @@ async function reclaimComputerNetwork(container: Docker.Container, botId: string
 }
 
 async function ensureBotNetwork(botId: string, owner: string) {
-  return docker
-    .createNetwork(computerNetworkCreateOptions(botId, owner, computerEgressMode))
-    .catch(async (error) => {
-      // Existing networks and concurrent provision requests are both safe.
-      if (!/already exists/i.test(String(error))) throw error;
-      if (computerEgressMode === "restricted") {
-        await rekeyRestrictedBotNetwork(computerNetworkNameFor(botId), botId, owner);
-      }
+  const ensure = (ipv6: boolean) =>
+    docker
+      .createNetwork(computerNetworkCreateOptions(botId, owner, computerEgressMode, ipv6))
+      .catch(async (error) => {
+        // Existing networks and concurrent provision requests are both safe.
+        if (!/already exists/i.test(String(error))) throw error;
+        if (computerEgressMode === "restricted") {
+          await rekeyRestrictedBotNetwork(computerNetworkNameFor(botId), botId, owner);
+        }
+      });
+  return ensure(true).catch(async (error) => {
+    // A daemon that cannot create the dual-stack network (Docker 26, Docker-in-Docker
+    // without ip6_tables, IPv6 off in the kernel) still gets a plain IPv4 one.
+    // Transient errors are left to surface, so the next start retries with IPv6.
+    if (!isIpv6NetworkUnavailable(error)) throw error;
+    getLogger().warn("computer network without IPv6, using IPv4 only", {
+      error: String(error),
     });
+    // The fallback's network handle must reach the caller: the provision rollback
+    // removes the network it created when a later step fails.
+    return ensure(false);
+  });
 }
 
 // A network created before SANDBOX_COMPUTER_EGRESS=restricted has a generic br-*
@@ -1952,6 +2000,8 @@ async function rekeyRestrictedBotNetwork(name: string, botId: string, owner: str
     }
   }
   if (!info || !hasNamedBridge(info)) {
+    // Restricted networks are IPv4-only (see computerNetworkCreateOptions), so
+    // no IPv6 fallback is needed here.
     await docker
       .createNetwork(computerNetworkCreateOptions(botId, owner, "restricted"))
       .catch((error) => {

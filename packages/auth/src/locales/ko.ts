@@ -36,8 +36,8 @@ export const KO_MESSAGES: Record<string, string> = {
   "Have any questions? Reply to this email.": "궁금한 점이 있으신가요? 이 이메일에 답장하세요.",
   Unsubscribe: "수신 거부",
   "Invite a friend": "친구 초대",
-  "Invite a friend to Rakazo and earn a free month when they start a qualifying subscription with a new card.":
-    "친구를 Rakazo에 초대하세요. 친구가 새 카드로 자격 요건을 충족하는 구독을 시작하면 한 달을 무료로 받을 수 있습니다.",
+  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
+    "친구를 Rakazo에 초대하세요. 친구는 {weeks}주 동안 무료로 사용하고, 친구가 새 카드로 대상 구독을 시작하면 나는 한 달 무료를 받아요.",
   "Open Rakazo": "Rakazo를 열고",
   "and choose Invite friends for your link.": "친구 초대를 선택해 링크를 받으세요.",
   "Have any questions? Just reply to this email.":
@@ -67,4 +67,9 @@ export const KO_MESSAGES: Record<string, string> = {
   "Your changes to the {name} page are approved.": "{name} 페이지 변경 사항이 승인되었습니다.",
   "We couldn't approve your changes to the {name} page.":
     "{name} 페이지 변경 사항을 승인하지 못했습니다.",
+  "Your saved computer files will be deleted": "저장된 컴퓨터 파일이 삭제됩니다",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "다시 구독하지 않으면 저장된 컴퓨터 파일이 {date}에 삭제됩니다.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "플랜을 선택하지 않으면 저장된 컴퓨터 파일이 {date}에 삭제됩니다.",
 };
