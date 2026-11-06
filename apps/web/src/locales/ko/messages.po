@@ -146,6 +146,11 @@ msgstr ""
 msgid "{0} TB"
 msgstr "{0} TB"
 
+#. placeholder {0}: schedule(routine.crons)
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "{0}, paused until you turn it on"
+msgstr "{0}, 직접 켤 때까지 일시 중지됨"
+
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr ""
@@ -454,6 +459,100 @@ msgstr "{vcpus} vCPU, {memoryGb} GB, 월 {hours}시간 컴퓨터"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**12 new since 8:00**\n"
+"\n"
+"**Reply needed**\n"
+"1. Priya wants to move Friday's review. Draft: \"Friday works if we start at 2.\"\n"
+"2. Your card expires on the 30th. Draft ready.\n"
+"3. Sam asked about the API limits. Draft ready.\n"
+"\n"
+"**For your information**: a shipping update and a calendar change\n"
+"\n"
+"**Low priority**: 7 newsletters and notifications"
+msgstr "**8:00 이후 새 메일 12개**\n"
+"\n"
+"**답장 필요**\n"
+"1. Priya가 금요일 리뷰 일정을 옮기고 싶어 합니다. 초안: \"2시에 시작하면 금요일 괜찮습니다.\"\n"
+"2. 카드가 30일에 만료됩니다. 초안 준비됨.\n"
+"3. Sam이 API 한도에 대해 문의했습니다. 초안 준비됨.\n"
+"\n"
+"**참고**: 배송 업데이트 1건, 일정 변경 1건\n"
+"\n"
+"**낮은 우선순위**: 뉴스레터 및 알림 7개"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**2 pull requests are waiting on you**\n"
+"\n"
+"**#482 Add retry to webhook delivery**\n"
+"- Retries on 404 too, so a deleted endpoint is retried five times. Retry only 5xx and timeouts?\n"
+"- No test for the backoff cap.\n"
+"\n"
+"Suggested review: request changes.\n"
+"\n"
+"**#479 Fix date parsing in reports**\n"
+"Looks good. Suggested review: approve."
+msgstr "**리뷰를 기다리는 풀 리퀘스트 2개**\n"
+"\n"
+"**#482 웹훅 전송에 재시도 추가**\n"
+"- 404에도 재시도하므로 삭제된 엔드포인트를 다섯 번 다시 호출합니다. 5xx와 타임아웃만 재시도할까요?\n"
+"- 백오프 상한에 대한 테스트가 없습니다.\n"
+"\n"
+"추천 리뷰: 변경 요청.\n"
+"\n"
+"**#479 보고서의 날짜 파싱 수정**\n"
+"문제없어 보입니다. 추천 리뷰: 승인."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**This week**\n"
+"\n"
+"**Open-source AI agents**\n"
+"- A major release adds scheduled tasks (3 days ago)\n"
+"- Two new comparisons; both call memory the main gap\n"
+"\n"
+"**competitor.example**\n"
+"- Pricing: the Team plan went from $20 to $25 per seat\n"
+"\n"
+"Nothing new on battery recycling."
+msgstr "**이번 주**\n"
+"\n"
+"**오픈소스 AI 에이전트**\n"
+"- 주요 릴리스에 예약 작업 기능 추가 (3일 전)\n"
+"- 새 비교 글 2건, 둘 다 메모리를 가장 큰 약점으로 꼽음\n"
+"\n"
+"**competitor.example**\n"
+"- 가격: Team 요금제가 좌석당 $20에서 $25로 인상\n"
+"\n"
+"배터리 재활용 관련 새 소식은 없습니다."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**Thursday**\n"
+"\n"
+"**Calendar**\n"
+"- 10:00 Design review, moved to 11:30\n"
+"- 14:00 Call with Dana\n"
+"\n"
+"**Needs you**\n"
+"- Alex asked for the Q4 numbers by noon\n"
+"- A contract is waiting for your signature\n"
+"\n"
+"**Worth knowing**\n"
+"- Light rain after 4pm\n"
+"- Two stories on the topics you follow"
+msgstr "**목요일**\n"
+"\n"
+"**일정**\n"
+"- 10:00 디자인 리뷰, 11:30으로 변경됨\n"
+"- 14:00 Dana와 통화\n"
+"\n"
+"**확인 필요**\n"
+"- Alex가 정오까지 Q4 수치를 요청함\n"
+"- 서명을 기다리는 계약서 1건\n"
+"\n"
+"**알아 두면 좋은 소식**\n"
+"- 오후 4시 이후 약한 비\n"
+"- 팔로우 중인 주제 관련 기사 2건"
+
 #: src/components/ModelCredits.tsx
 msgid "/ month"
 msgstr "/ 월"
@@ -479,6 +578,10 @@ msgstr ""
 #: src/pages/model-settings/use-model-settings.ts
 msgid "A subscription credential is stored securely."
 msgstr "구독 인증 정보가 안전하게 저장되어 있습니다."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "A weekly digest of what changed on topics you follow"
+msgstr "팔로우하는 주제의 변화를 매주 요약합니다"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "About {kb} KB of memory no longer reaches the bot."
@@ -699,6 +802,10 @@ msgstr ""
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Address line 2"
 msgstr ""
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Adds"
+msgstr "추가 항목"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -1065,6 +1172,7 @@ msgstr "셸 명령에서 {commandVariable}(으)로 사용 가능"
 msgid "Avatar Studio"
 msgstr "아바타 스튜디오"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/vault/VaultPageHeader.tsx
@@ -1186,6 +1294,11 @@ msgstr "Bot 화면 미리보기"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
 msgstr ""
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+#: src/pages/Shell.tsx
+msgid "Bot templates"
+msgstr "Bot 템플릿"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
@@ -1542,6 +1655,10 @@ msgstr "비우는 중…"
 msgid "Close"
 msgstr "닫기"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Close bot templates"
+msgstr "Bot 템플릿 닫기"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
 msgstr "차트 닫기"
@@ -1815,6 +1932,7 @@ msgstr "먼저 이 모델의 제공자를 연결하세요."
 msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
 msgstr "AI 모델에서 자체 API 키를 연결하거나 결제에서 Rakazo 크레딧을 선택하세요."
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/ComputerDeviceSettings.tsx
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
@@ -2087,6 +2205,10 @@ msgstr "섹션을 만들지 못했습니다."
 msgid "Could not create space"
 msgstr "스페이스를 만들 수 없습니다"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not create the bot"
+msgstr "Bot을 만들지 못했습니다"
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "Bot을 만들지 못했습니다."
@@ -2246,6 +2368,10 @@ msgstr "로그인 옵션을 불러올 수 없습니다"
 msgid "Could not load skill"
 msgstr "스킬을 불러오지 못했습니다"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not load templates"
+msgstr "템플릿을 불러오지 못했습니다"
+
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr ""
@@ -2272,6 +2398,10 @@ msgstr "로그아웃하지 못했습니다. 다시 시도해 주세요."
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
 msgstr ""
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not open the bot"
+msgstr "Bot을 열지 못했습니다"
 
 #: src/components/pages/PagesList.tsx
 msgid "Could not pin this page. Try again."
@@ -2590,6 +2720,10 @@ msgstr "새 섹션을 만들고 {0}을 옮깁니다."
 msgid "Create account"
 msgstr "계정 만들기"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Create bot"
+msgstr "Bot 만들기"
+
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "그룹 만들기"
@@ -2616,6 +2750,7 @@ msgstr "Rakazo 계정 만들기"
 msgid "Created"
 msgstr "생성됨"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3686,6 +3821,10 @@ msgstr ""
 msgid "Inbox & email"
 msgstr ""
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Inbox triage"
+msgstr "받은편지함 정리"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Include API keys"
 msgstr "API 키 포함"
@@ -3727,6 +3866,7 @@ msgid "Instruction history"
 msgstr "지침 기록"
 
 #: src/components/AskCard.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/InstructionSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions"
@@ -3985,6 +4125,7 @@ msgstr "미리보기를 불러오는 중…"
 msgid "Loading voice providers…"
 msgstr "음성 서비스를 불러오는 중…"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
@@ -4365,6 +4506,10 @@ msgstr ""
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr "컴퓨터 작업 더보기"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Morning briefing"
+msgstr "아침 브리핑"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -4822,6 +4967,7 @@ msgstr "나만"
 msgid "Only you"
 msgstr "나만"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/pages/PagesList.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
@@ -5175,6 +5321,10 @@ msgstr "채팅에 “변경 없음” 게시"
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr "POST 대상"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "PR reviewer"
+msgstr "PR 리뷰어"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Preferences"
@@ -5685,6 +5835,7 @@ msgid "Restoring your workspace"
 msgstr ""
 
 #: src/components/AccountAccess.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
@@ -5720,6 +5871,10 @@ msgstr "Rakazo로 돌아가기"
 #: src/lib/model-connection-preflight.ts
 msgid "Review provider settings and test again."
 msgstr "서비스 설정을 확인한 뒤 다시 테스트하세요."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Reviews pull requests waiting on you"
+msgstr "리뷰를 기다리는 풀 리퀘스트를 검토합니다"
 
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -6244,6 +6399,10 @@ msgstr ""
 msgid "Sites you sign in to stay signed in for everyone in this space"
 msgstr ""
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Skill"
+msgstr "스킬"
+
 #. placeholder {0}: skill.name
 #: src/pages/shell/composer.tsx
 msgid "Skill {0}"
@@ -6331,6 +6490,10 @@ msgstr "{column} 기준 정렬됨, 오름차순"
 #: src/components/markdown-copy.tsx
 msgid "Sorted by {column}, descending"
 msgstr "{column} 기준 정렬됨, 내림차순"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Sorts new email and drafts the replies"
+msgstr "새 이메일을 분류하고 답장 초안을 작성합니다"
 
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
@@ -6587,6 +6750,11 @@ msgstr "Teams 메시지"
 #: src/components/ComputerProviderSettings.tsx
 msgid "Template"
 msgstr ""
+
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+msgid "Templates"
+msgstr "템플릿"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -6870,6 +7038,10 @@ msgstr ""
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 msgstr "이 구독 로그인 방식은 아직 Rakazo에서 지원되지 않습니다. 서버에 설정된 인증 정보를 사용하거나 다른 서비스를 선택하세요."
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "This template was just updated. Check it again."
+msgstr "이 템플릿이 방금 업데이트되었습니다. 다시 확인하세요."
+
 #: src/pages/Artifacts.tsx
 msgid "This week"
 msgstr ""
@@ -6945,6 +7117,10 @@ msgstr "도구 이름"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr ""
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Topic watch"
+msgstr "주제 모니터링"
 
 #: src/components/AskCard.tsx
 msgid "Total"
@@ -7444,6 +7620,10 @@ msgstr "작업 지침"
 msgid "Working…"
 msgstr "처리 중…"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Works with"
+msgstr "함께 쓰는 앱"
+
 #: src/components/ModelCredits.tsx
 msgid "Works with your ChatGPT or Claude plan."
 msgstr "ChatGPT 또는 Claude 요금제로 사용할 수 있습니다."
@@ -7518,6 +7698,10 @@ msgstr "컴퓨터 디스크가 거의 가득 찼습니다. 더 이상 필요 없
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Your day at a glance, every weekday morning"
+msgstr "평일 아침마다 하루 일정을 한눈에 보여 줍니다"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"

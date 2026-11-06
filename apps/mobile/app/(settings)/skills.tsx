@@ -15,6 +15,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { BotTemplateIcon } from "../../components/bot-template-icon";
 import { NativeActionButton } from "../../components/native-action-button";
 import { PluginIcon } from "../../components/plugin-icon";
 import { Chevron } from "../../components/row-accessories";
@@ -181,6 +182,16 @@ export default function SkillsScreen() {
             <Chevron />
           </Pressable>
         </View>
+        <Pressable
+          testID="open-bot-templates"
+          accessibilityRole="button"
+          onPress={() => router.push("/bot-templates")}
+          style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+        >
+          <BotTemplateIcon size={LOGO_SIZE} />
+          <Text style={[styles.title, styles.grow]}>{t("Templates")}</Text>
+          <Chevron />
+        </Pressable>
         {skillSets.length ? (
           <View testID="plugin-skill-sets" style={styles.list}>
             <Text style={styles.section}>{t("Plugins")}</Text>
