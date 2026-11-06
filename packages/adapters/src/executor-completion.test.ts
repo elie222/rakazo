@@ -621,6 +621,11 @@ describe("runReplyMode", () => {
     expect(runReplyMode("user", "messages", new Set(["message_user"]))).toBe("chat");
   });
 
+  it("keeps a background helper in chat mode, since it cannot message the person", () => {
+    expect(runReplyMode("helper", "messages")).toBe("chat");
+    expect(runReplyMode("helper_result", "messages")).toBe("messages");
+  });
+
   it("gives each mode its own guidance", () => {
     expect(runReplyGuidance("user", "chat")).toBe(longWorkProgressGuidance());
     expect(runReplyGuidance("user", "messages")).toBe(messagesModeReplyGuidance());

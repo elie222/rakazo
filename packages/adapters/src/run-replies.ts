@@ -1,5 +1,9 @@
 import type { MessageBlock, ReplyMode } from "@rakazo/contracts";
-import { isBackgroundRunTrigger, isConversationalRun } from "@rakazo/core";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  isBackgroundRunTrigger,
+  isConversationalRun,
+} from "@rakazo/core";
 import { NO_RESPONSE } from "./silent-reply.js";
 import { messageUserMaxLength } from "./user-progress.js";
 
@@ -36,7 +40,8 @@ export const TICKET_SILENT_REPLY_GUIDANCE =
 
 /**
  * Messages mode only where a person waits on the reply and the bot can message them; every
- * other run keeps chat mode.
+ * other run keeps chat mode. A background helper cannot message anyone: its result goes back
+ * to the bot.
  */
 export function runReplyMode(
   trigger: string,
@@ -46,6 +51,7 @@ export function runReplyMode(
   return botReplyMode === "messages" &&
     isConversationalRun(trigger) &&
     trigger !== "bot_message" &&
+    trigger !== BACKGROUND_HELPER_TRIGGER &&
     !runAllowsSilentEmpty(trigger) &&
     !disabled?.has("message_user")
     ? "messages"
