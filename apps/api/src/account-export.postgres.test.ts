@@ -382,7 +382,6 @@ describePostgres("account export (PostgreSQL)", () => {
     ]);
     // A JSX page carries no format, so an older release still reads the archive.
     expect(owns("page")[0]!.format).toBeUndefined();
-    expect(owns("page_version").map((version) => version.format)).toEqual([undefined, undefined]);
     // A page's link belongs to this install, so nothing of it leaves.
     expect(decode(accountExportPaths.records(ownedSpace))).not.toContain(`share-hash-${suffix}`);
     expect(owns("memory_document")[0]!.content).toBe("Remember TANGERINE");

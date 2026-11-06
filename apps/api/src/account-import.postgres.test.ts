@@ -724,7 +724,6 @@ describePostgres("account import (PostgreSQL)", () => {
       pageId: "src-page",
       version,
       title,
-      ...(format ? { format } : {}),
       source: source(version),
       createdAt: at,
     })),

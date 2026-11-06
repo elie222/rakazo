@@ -96,6 +96,16 @@ describe("htmlPageViewerDocument", () => {
     expect(html).toContain('url.protocol!=="http:"');
   });
 
+  it("leaves room for a docked composer only when the host has one", () => {
+    const docked = htmlPageViewerDocument({ html: page(""), theme: "light", bottomInset: 72 });
+    expect(docked).toContain("<style>:root{padding-bottom:72px}</style>");
+    // Ahead of the author's styles, so a page that sets its own root padding keeps it.
+    expect(docked.indexOf("padding-bottom:72px")).toBeLessThan(docked.indexOf("<html>"));
+    expect(htmlPageViewerDocument({ html: page(""), theme: "light" })).not.toContain(
+      "padding-bottom",
+    );
+  });
+
   it("gives a fragment a document and appends the bridge after its content", () => {
     const html = htmlPageViewerDocument({ html: "<p>content</p>", theme: "light" });
     expect(html.startsWith("<!DOCTYPE html><meta")).toBe(true);
