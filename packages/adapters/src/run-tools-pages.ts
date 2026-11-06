@@ -160,15 +160,22 @@ export async function holdSharedPageSave(
     },
   });
   if (page?.visibility !== "link") return undefined;
-  if (hasTitle && !PageTitleSchema.safeParse(args.title).success) return undefined;
+  const parsedTitle = hasTitle ? PageTitleSchema.safeParse(args.title) : undefined;
+  if (parsedTitle && !parsedTitle.success) return undefined;
   const current = page.versions[0]?.source ?? "";
   const proposed = proposedSource(current, args);
-  if (!proposed.ok || !checkPageSource(proposed.source).ok) return undefined;
+  if (!proposed.ok) return undefined;
+  const check = checkPageSource(proposed.source);
+  if (!check.ok || containsSecret([proposed.source, check.code], ctx.secrets)) return undefined;
   const lines = [
-    ...(hasTitle ? [`Title: ${String(args.title)}`] : []),
+    // The title as it would be stored.
+    ...(parsedTitle
+      ? [`Title: ${redactSecrets(parsedTitle.data, ctx.secrets).slice(0, PAGE_TITLE_MAX_LENGTH)}`]
+      : []),
     ...changedLines(current, proposed.source),
   ];
-  if (lines.join("\n").length > MAX_APPROVAL_DETAIL_LENGTH)
+  // Measured as the card shows it, redacted, so nothing an approval covers is cut off.
+  if (redactSecrets(lines.join("\n"), ctx.secrets).length > MAX_APPROVAL_DETAIL_LENGTH)
     return {
       error:
         "This page is shared by link, and this change is too long to show the user for approval. Save it as several smaller edits.",

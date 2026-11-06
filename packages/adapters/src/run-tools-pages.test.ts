@@ -240,6 +240,18 @@ describe("saving a page shared by link", () => {
     expect(removed!.length).toBeLessThan(120);
   });
 
+  it("shows the title as it will be saved, and skips a save the secret check would refuse", async () => {
+    const shared = { currentVersion: 1, visibility: "link" as const };
+    const titled = request({ pageId: "page-1", title: "  New\nplan ", edits: [edit] });
+    await holdSharedPageSave(context({}, shared), titled as never);
+    expect(titled.fleetSummary?.lines[0]).toBe("Title: New plan");
+
+    const secret = "FAKE_PAGE_SECRET_5521";
+    const leaking = request({ pageId: "page-1", edits: [{ find: "Hi", replace: secret }] });
+    await holdSharedPageSave(context({}, shared, [secret]), leaking as never);
+    expect(leaking.heldForApproval).toBe(false);
+  });
+
   it("refuses a change too long to show on the card", async () => {
     const long = Array.from({ length: 400 }, (_, index) => `<Text>Row ${index}</Text>`).join("\n");
     const held = request({ pageId: "page-1", edits: [{ find: "<Text>Hi</Text>", replace: long }] });
