@@ -41,7 +41,10 @@ function row(overrides: Partial<Row>): Row {
   };
 }
 
-function fakeRun(rows: Row[], options: { runUserId?: string; arriving?: Row } = {}) {
+function fakeRun(
+  rows: Row[],
+  options: { runUserId?: string; arriving?: Row; secrets?: string[] } = {},
+) {
   const inbox = [...rows];
   let listed = 0;
   const copyEarlierFiles = vi.fn();
@@ -93,6 +96,7 @@ function fakeRun(rows: Row[], options: { runUserId?: string; arriving?: Row } = 
     run: { userId: options.runUserId ?? "owner-1" },
     computer: { copyEarlierFiles },
     context: { signal: new AbortController().signal },
+    secrets: options.secrets ?? [],
   };
   const invoke = (name: "read_email" | "delete_email", args: Record<string, unknown>) =>
     emailTools[name]!(
@@ -120,7 +124,7 @@ describe("read_email", () => {
     const result = await call({});
 
     expect(result.untrusted).toBe(true);
-    expect(result.now).toEqual(expect.any(String));
+    expect(result.nextSince).toBe("2026-11-05T10:00:00.000Z");
     expect(result.emails).toEqual([
       expect.objectContaining({ id: "new", from: "Shop <noreply@shop.test>", verified: false }),
       expect.objectContaining({ id: "old", subject: "Old" }),
@@ -142,6 +146,33 @@ describe("read_email", () => {
         (email) => email.id,
       ),
     ).toEqual(["code"]);
+  });
+
+  it("starts the next look after the newest email it returned, or where it was asked to", async () => {
+    const { call } = fakeRun([], { arriving: row({ id: "late", receivedAt: new Date() }) });
+
+    const waited = await call({ waitSeconds: 10 });
+    const again = await call({ since: waited.nextSince });
+
+    expect(waited.emails).toEqual([expect.objectContaining({ id: "late" })]);
+    expect(again.emails).toEqual([]);
+    expect(again.nextSince).toBe(waited.nextSince);
+  });
+
+  it("masks secrets the bot holds when an email repeats them", async () => {
+    const { call } = fakeRun(
+      [row({ id: "email-1", subject: "pw hunter22", text: "Your password is hunter22" })],
+      {
+        secrets: ["hunter22"],
+      },
+    );
+
+    const listed = JSON.stringify(await call({}));
+    const read = JSON.stringify(await call({ id: "email-1" }));
+
+    expect(listed).not.toContain("hunter22");
+    expect(read).not.toContain("hunter22");
+    expect(read).toContain("Your password is");
   });
 
   it("waits for a matching email to arrive", async () => {

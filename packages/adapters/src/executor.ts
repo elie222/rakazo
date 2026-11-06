@@ -1376,9 +1376,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             })
           : null;
         const botEmail = emailName ? `${emailName.name}@${deps.inboundEmailDomain}` : null;
-        // The inbox is the owner's mail: read only in their own runs, never in a group or channel.
+        // The inbox is the owner's mail: read only in their own runs, never in a group or channel, and
+        // never for another bot, which may be answering someone else.
         const emailInbox =
-          Boolean(botEmail) && run.userId === bot.userId && !thread.groupId && !nonOwnerChatRun;
+          Boolean(botEmail) &&
+          run.userId === bot.userId &&
+          run.trigger !== "bot_message" &&
+          !thread.groupId &&
+          !nonOwnerChatRun;
         const userComputerOwnerId = userComputerOwner({
           trigger: run.trigger,
           sourceRole: sourceMessage?.role,

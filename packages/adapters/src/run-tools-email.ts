@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { attachmentComputerPath } from "@rakazo/core";
 import { z } from "zod";
+import { redactConnectorPayload } from "./connector-safety.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 
@@ -76,9 +77,9 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
     );
     // Copied before the bot's next computer tool, where history tools put files too.
     ctx.computer.copyEarlierFiles(kept);
-    return call.finish({
-      untrusted: true,
-      email: {
+    // A service can echo a password or code the bot holds as a secret.
+    const shown = redactConnectorPayload(
+      {
         id: email.id,
         from: sender(email),
         verified: email.verified,
@@ -103,10 +104,12 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
             }
           : {}),
       },
-    });
+      ctx.secrets,
+    );
+    return call.finish({ untrusted: true, email: shown });
   }
 
-  const startedAt = new Date();
+  const startedAt = Date.now();
   const where = {
     botId: bot.id,
     ...(input.since ? { receivedAt: { gt: new Date(input.since) } } : {}),
@@ -135,7 +138,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
       },
     });
   let emails = await list();
-  const deadline = startedAt.getTime() + (input.waitSeconds ?? 0) * 1000;
+  const deadline = startedAt + (input.waitSeconds ?? 0) * 1000;
   // The last look lands on the deadline, so a wait shorter than one poll still waits.
   for (
     let left = deadline - Date.now();
@@ -145,20 +148,24 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
     await sleep(Math.min(POLL_MS, left), undefined, { signal: ctx.context.signal });
     emails = await list();
   }
+  // Where the next look starts, on the inbox's own clock: the newest email shown here, or the
+  // caller's since when nothing new arrived.
+  const nextSince = emails[0]?.receivedAt.toISOString() ?? input.since;
+  const listed = emails.map((email) => ({
+    id: email.id,
+    from: sender(email),
+    verified: email.verified,
+    subject: email.subject,
+    receivedAt: email.receivedAt.toISOString(),
+    preview: email.text.slice(0, PREVIEW_CHARS).replace(/\s+/g, " ").trim(),
+    ...((email.attachments as SavedFile[]).length
+      ? { files: (email.attachments as SavedFile[]).length }
+      : {}),
+  }));
   return call.finish({
     untrusted: true,
-    now: startedAt.toISOString(),
-    emails: emails.map((email) => ({
-      id: email.id,
-      from: sender(email),
-      verified: email.verified,
-      subject: email.subject,
-      receivedAt: email.receivedAt.toISOString(),
-      preview: email.text.slice(0, PREVIEW_CHARS).replace(/\s+/g, " ").trim(),
-      ...((email.attachments as SavedFile[]).length
-        ? { files: (email.attachments as SavedFile[]).length }
-        : {}),
-    })),
+    ...(nextSince ? { nextSince } : {}),
+    emails: redactConnectorPayload(listed, ctx.secrets),
   });
 }
 
