@@ -4,7 +4,7 @@ import {
   DialogClose,
   DialogContent,
   DialogTitle,
-  writeClipboard,
+  useCopyText,
 } from "@rakazo/ui-web";
 import type { ComponentPropsWithoutRef, ReactElement, ReactNode } from "react";
 import {
@@ -79,21 +79,18 @@ export const TableCard = memo(function TableCard({
   const { columns, aligns, rows, schemaKey, dataSignature, numericColumns, minWidths, rowKeys } =
     table;
   const copy = useMarkdownCopy();
-  // The text the failed attempt submitted, or null: streaming or sorting must not change what
-  // the fallback dialog offers.
-  const [copyFailedText, setCopyFailedText] = useState<string | null>(null);
-  const copyAttempt = useRef(0);
+  const [copiedNow, copyText, copyFailed, resetCopy, copyFailedText] = useCopyText();
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  // The data the copy was taken from: the check mark drops once the rows change.
   const [copiedSignature, setCopiedSignature] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
-  const copiedTimer = useRef<number | undefined>(undefined);
   const announceTimer = useRef<number | undefined>(undefined);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-  const copied = copiedSignature === dataSignature;
+  const copied = copiedNow && copiedSignature === dataSignature;
 
   const renderedRowsBySource = useMemo(
     () => new Map(rows.map((row, index) => [row, renderedRows?.[index]])),
@@ -119,15 +116,7 @@ export const TableCard = memo(function TableCard({
     setPage(0);
     setExpanded(false);
   }, [schemaKey]);
-  useEffect(
-    () => () => {
-      // A copy still in flight must not start feedback timers after the table is gone.
-      copyAttempt.current++;
-      window.clearTimeout(copiedTimer.current);
-      window.clearTimeout(announceTimer.current);
-    },
-    [],
-  );
+  useEffect(() => () => window.clearTimeout(announceTimer.current), []);
 
   // Clear then restore so identical successive strings still fire a live-region update.
   const announce = (text: string) => {
@@ -148,28 +137,10 @@ export const TableCard = memo(function TableCard({
   };
 
   const copyRows = () => {
-    const text = tableToTsv(columns, sortedRows);
-    const attempt = ++copyAttempt.current;
-    void writeClipboard(text).then((ok) => {
-      // A newer click or a dismissed dialog superseded this attempt.
-      if (attempt !== copyAttempt.current) return;
-      setCopyFailedText(ok ? null : text);
-      window.clearTimeout(copiedTimer.current);
-      if (!ok) {
-        // An earlier success must not still read as Copied beside the failure.
-        setCopiedSignature(null);
-        return;
-      }
-      setCopiedSignature(dataSignature);
-      announce(copy.copied);
-      copiedTimer.current = window.setTimeout(() => setCopiedSignature(null), 1500);
+    setCopiedSignature(dataSignature);
+    void copyText(tableToTsv(columns, sortedRows)).then((ok) => {
+      if (ok) announce(copy.copied);
     });
-  };
-
-  const dismissCopyFailed = () => {
-    // A copy still in flight must not reopen the dialog with its late failure.
-    copyAttempt.current++;
-    setCopyFailedText(null);
   };
 
   const downloadCsv = () => {
@@ -291,9 +262,9 @@ export const TableCard = memo(function TableCard({
   return (
     <Dialog open={expanded} onOpenChange={setExpanded}>
       <CopyTextFallback
-        open={copyFailedText !== null}
-        onOpenChange={dismissCopyFailed}
-        text={copyFailedText ?? ""}
+        open={copyFailed}
+        onOpenChange={resetCopy}
+        text={copyFailedText}
         label={copy.copyRows}
       />
       <div className="rk-table-card rk-table-box" data-testid="table-card">

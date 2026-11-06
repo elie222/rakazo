@@ -44,10 +44,11 @@ export function writeClipboard(text: string): Promise<boolean> {
  * copy failed so the caller can offer the text to select by hand. Only the newest attempt's
  * outcome counts, and its exact text travels with the failure, so a result that arrives out of
  * order or a content change after the click cannot put different text in the fallback dialog.
+ * `copy` resolves true only when its own attempt succeeded and still counts.
  */
 export function useCopyText(): [
   copied: boolean,
-  copy: (text: string) => void,
+  copy: (text: string) => Promise<boolean>,
   failed: boolean,
   reset: () => void,
   failedText: string,
@@ -71,9 +72,9 @@ export function useCopyText(): [
   const copy = (text: string) => {
     const attempt = ++attemptRef.current;
     if (timerRef.current) window.clearTimeout(timerRef.current);
-    void writeClipboard(text).then((ok) => {
+    return writeClipboard(text).then((ok) => {
       // A newer attempt superseded this one; its outcome decides.
-      if (attempt !== attemptRef.current) return;
+      if (attempt !== attemptRef.current) return false;
       setState({ status: ok ? "copied" : "failed", text: ok ? "" : text });
       if (ok) {
         timerRef.current = window.setTimeout(() => {
@@ -82,6 +83,7 @@ export function useCopyText(): [
           setState({ status: "idle", text: "" });
         }, 2000);
       }
+      return ok;
     });
   };
 
