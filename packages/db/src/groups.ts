@@ -732,4 +732,3 @@ export async function touchGroupUpdatedAt(
     data: { updatedAt: new Date() },
   });
 }
-
