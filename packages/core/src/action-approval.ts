@@ -668,41 +668,26 @@ export function approvalRuleLabel(rule: ActionApprovalRule): string {
   return rule.matchKind === "site" ? rule.matchValue : humanizeToolName(rule.matchValue);
 }
 
-/** Something a person can add a rule for: a connected app, or one of the built-in tools. */
-export type ApprovalRuleChoice = {
-  matchKind: "connector" | "tool";
-  matchValue: string;
-  label: string;
-};
+/** A built-in tool a person can add a rule for. */
+export type ApprovalRuleChoice = { matchKind: "tool"; matchValue: string; label: string };
 
 /**
- * What the rule picker lists: the connected apps, then every built-in tool, leaving out those that
- * already have a rule. A rule for an app covers all of its actions.
+ * What the rule picker lists: every built-in tool that has no rule yet, by name. Apps are left out:
+ * an app rule matches a kind guessed from the action's name, which some providers' actions lack.
  */
-export function approvalRuleChoices(input: {
-  connections: ReadonlyArray<{ provider: string; displayName: string }>;
-  rules: ReadonlyArray<ActionApprovalRule>;
-}): ApprovalRuleChoice[] {
+export function approvalRuleChoices(
+  rules: ReadonlyArray<ActionApprovalRule>,
+): ApprovalRuleChoice[] {
   const taken = new Set(
-    input.rules.map((rule) => `${rule.matchKind}:${rule.matchValue.toLowerCase()}`),
+    rules.filter((rule) => rule.matchKind === "tool").map((rule) => rule.matchValue.toLowerCase()),
   );
-  const byLabel = (a: ApprovalRuleChoice, b: ApprovalRuleChoice) => a.label.localeCompare(b.label);
-  const apps = new Map<string, ApprovalRuleChoice>();
-  for (const connection of input.connections) {
-    const value = connection.provider.toLowerCase();
-    if (!value || apps.has(value) || taken.has(`connector:${value}`)) continue;
-    apps.set(value, {
-      matchKind: "connector",
-      matchValue: value,
-      label: connection.displayName.trim() || humanizeToolName(value),
-    });
-  }
-  const tools = BUILTIN_TOOL_NAMES.filter((name) => !taken.has(`tool:${name}`)).map(
-    (name): ApprovalRuleChoice => ({
-      matchKind: "tool",
-      matchValue: name,
-      label: humanizeToolName(name),
-    }),
-  );
-  return [...[...apps.values()].sort(byLabel), ...tools.sort(byLabel)];
+  return BUILTIN_TOOL_NAMES.filter((name) => !taken.has(name))
+    .map(
+      (name): ApprovalRuleChoice => ({
+        matchKind: "tool",
+        matchValue: name,
+        label: humanizeToolName(name),
+      }),
+    )
+    .sort((a, b) => a.label.localeCompare(b.label));
 }

@@ -195,7 +195,6 @@ beforeEach(() => {
           matchValue: input!.matchValue as string,
         });
       if (proc === "approvalRules/remove") return { ok: true };
-      if (proc === "connections/list") return [{ provider: "gmail", displayName: "Gmail" }];
       throw new Error(`Unexpected RPC: ${proc}`);
     });
   container = document.createElement("div");
@@ -296,26 +295,45 @@ it("offers a retry when the first load fails, then shows the rules", async () =>
   expect(container.textContent).not.toContain("Something went wrong. Try again.");
 });
 
-it("adds a rule from the picker, which searches and leaves out what already has one", async () => {
+it("adds a tool from the picker, which searches and leaves out tools that have a rule", async () => {
   state.rules = [rule({ id: "blocked", effect: "deny", matchValue: "write_file" })];
   await act(async () => root.render(createElement(AddApprovalRule)));
-  const picker = () => rows();
-  expect(picker()).toContain("Apps: Gmail");
-  expect(picker()).toContain("Tools: Shell");
-  expect(picker()).not.toContain("Tools: Write file");
+  const picker = () => [...container.querySelectorAll("span")].map((node) => node.textContent);
+  expect(picker()).toContain("Shell");
+  expect(picker()).not.toContain("Write file");
 
-  await act(async () => state.search!.onChangeText({ nativeEvent: { text: "gma" } }));
-  expect(picker()).toEqual(["Apps: Gmail"]);
+  await act(async () => state.search!.onChangeText({ nativeEvent: { text: "shel" } }));
+  expect(picker()).toEqual(["Shell", "User computer shell"]);
 
-  const gmail = [...container.querySelectorAll("span")].find(
-    (node) => node.textContent === "Gmail",
+  await act(async () => state.search!.onChangeText({ nativeEvent: { text: "zzz" } }));
+  expect(picker()).toEqual([]);
+  expect(container.textContent).toContain("No matches");
+
+  await act(async () => state.search!.onChangeText({ nativeEvent: { text: "shel" } }));
+  const shell = [...container.querySelectorAll("span")].find(
+    (node) => node.textContent === "Shell",
   );
-  await act(async () => gmail!.click());
+  await act(async () => shell!.click());
   expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
     scope: "account",
     effect: "require_approval",
-    matchKind: "connector",
-    matchValue: "gmail",
+    matchKind: "tool",
+    matchValue: "shell",
   });
   expect(state.router.back).toHaveBeenCalled();
+});
+
+it("drops Never ask dimming when a later mode read fails", async () => {
+  state.settings = { ...state.settings, mode: "never" };
+  state.rules = [rule({ id: "allow", matchValue: "send_email" })];
+  await render();
+  expect(container.querySelector("span[data-dimmed]")).not.toBeNull();
+  const fallback = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc: string, ...rest: unknown[]) => {
+    if (proc === "autoReview/get") throw new Error("offline");
+    return fallback(proc, ...(rest as [Record<string, unknown>]));
+  });
+  await act(async () => root.render(createElement("div")));
+  await render();
+  expect(container.querySelector("span[data-dimmed]")).toBeNull();
 });

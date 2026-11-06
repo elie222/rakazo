@@ -43,8 +43,6 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
   const input = { scope };
   const rulesQuery = useQuery(queries.approvalRules.list.queryOptions({ input }));
   const autoReviewQuery = useQuery(queries.autoReview.get.queryOptions({ input }));
-  // Only offers apps in the picker, so a failed read just leaves them out.
-  const connectionsQuery = useQuery(queries.connections.list.queryOptions());
   const rules = rulesQuery.data ?? [];
   const autoReview = autoReviewQuery.data ?? null;
   const loading = rulesQuery.isPending || autoReviewQuery.isPending;
@@ -139,7 +137,7 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
         : autoReview?.mode === "never"
           ? t`Acts without asking, except for purchases. Only Block rules apply.`
           : autoReview?.mode === "ask"
-            ? t`Asks before anything that sends, changes or spends.`
+            ? t`Asks before sending, spending or changing anything in your apps.`
             : null;
   const groupTitles: Record<ActionApprovalRule["effect"], string> = {
     always_allow: t`Always allow`,
@@ -181,7 +179,7 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
       {/* Spending is the person's own across every Space, so it is set with the account's approvals. */}
       {scope === "account" ? <SpendingLimitSettings /> : null}
       <AddRulePicker
-        choices={approvalRuleChoices({ connections: connectionsQuery.data ?? [], rules })}
+        choices={approvalRuleChoices(rules)}
         disabled={loading || Boolean(loadFailed) || saving}
         onPick={(choice) => void addRule(choice)}
       />
@@ -220,7 +218,7 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
   );
 }
 
-/** A searchable list of the apps and tools a rule can name, so nobody types a tool's name. */
+/** A searchable list of the tools a rule can name, so nobody types a tool's name. */
 function AddRulePicker({
   choices,
   disabled,
@@ -236,8 +234,6 @@ function AddRulePicker({
   const { query, setQuery, visible } = useListSearch(choices, {
     text: (choice) => [choice.label, choice.matchValue],
   });
-  const apps = visible.filter((choice) => choice.matchKind === "connector");
-  const tools = visible.filter((choice) => choice.matchKind === "tool");
   const item = (choice: ApprovalRuleChoice) => (
     <CommandItem
       key={`${choice.matchKind}:${choice.matchValue}`}
@@ -266,27 +262,22 @@ function AddRulePicker({
         <Trans>Add rule</Trans>
       </PopoverTrigger>
       <PopoverContent initialFocus={searchRef} className="w-72 gap-0 p-0" align="start">
-        <Command label={t`Search apps and tools`} shouldFilter={false}>
+        <Command label={t`Search tools`} shouldFilter={false}>
           <ListSearchInput
             command
             inputRef={searchRef}
             query={query}
             setQuery={setQuery}
-            label={t`Search apps and tools`}
+            label={t`Search tools`}
             placeholder={t`Search`}
           />
-          <CommandList label={t`Apps and tools`}>
+          <CommandList label={t`Tools`}>
             {visible.length === 0 ? (
               <p className="py-6 text-center text-body-sm text-muted-foreground">
                 <Trans>No matches</Trans>
               </p>
             ) : null}
-            {apps.length > 0 ? (
-              <CommandGroup heading={t`Apps`}>{apps.map(item)}</CommandGroup>
-            ) : null}
-            {tools.length > 0 ? (
-              <CommandGroup heading={t`Tools`}>{tools.map(item)}</CommandGroup>
-            ) : null}
+            <CommandGroup>{visible.map(item)}</CommandGroup>
           </CommandList>
         </Command>
       </PopoverContent>

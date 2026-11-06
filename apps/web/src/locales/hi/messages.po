@@ -969,13 +969,8 @@ msgstr ""
 msgid "Approving…"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Apps"
-msgstr ""
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Apps and tools"
 msgstr ""
 
 #: src/pages/BotContextMenu.tsx
@@ -1004,7 +999,7 @@ msgid "Ask"
 msgstr "पूछें"
 
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Asks before anything that sends, changes or spends."
+msgid "Asks before sending, spending or changing anything in your apps."
 msgstr ""
 
 #: src/pages/shell/computer-panel.tsx
@@ -5927,10 +5922,6 @@ msgstr "खोजें"
 msgid "Search apps"
 msgstr "ऐप खोजें"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Search apps and tools"
-msgstr ""
-
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts"
 msgstr ""
@@ -5972,6 +5963,10 @@ msgstr "रन खोजें"
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Search skills"
+msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Search tools"
 msgstr ""
 
 #: src/components/VaultSettings.tsx

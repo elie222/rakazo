@@ -1,11 +1,13 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "No matches": "没有匹配项",
   "Always ask": "始终询问",
-  "Search apps and tools": "搜索应用和工具",
+  "Search tools": "搜索工具",
   "A model approves routine actions and asks you about the rest.":
     "模型会批准例行操作，其余的会先询问你。",
   "Acts without asking, except for purchases. Only Block rules apply.":
     "不询问就执行，购买除外。只有屏蔽规则会生效。",
-  "Asks before anything that sends, changes or spends.": "在发送、更改或花费任何东西之前先询问。",
+  "Asks before sending, spending or changing anything in your apps.":
+    "在你的应用中发送、花费或更改任何东西之前先询问。",
   Haptics: "触感反馈",
   "Add rule": "添加规则",
   "Tool name": "工具名称",

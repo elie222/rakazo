@@ -202,9 +202,13 @@ afterEach(() => {
 
 it("shows the mode as the row's value and saves a pick from the menu at once", async () => {
   await render();
-  expect(row()).toBe("Approvals | Ask | Asks before anything that sends, changes or spends.");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
   // Named outright, so the menu symbol beside the value isn't read out.
-  expect(spoken()).toBe("Approvals, Ask, Asks before anything that sends, changes or spends.");
+  expect(spoken()).toBe(
+    "Approvals, Ask, Asks before sending, spending or changing anything in your apps.",
+  );
   expect(choices()).toEqual(["Never ask", "Ask*"]);
 
   await act(async () => choice("Never ask").click());
@@ -242,7 +246,9 @@ it("offers a retry in the row when the first load fails", async () => {
   expect(choices()).toEqual([]);
 
   await act(async () => container.querySelector("span")!.click());
-  expect(row()).toBe("Approvals | Ask | Asks before anything that sends, changes or spends.");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
   expect(choices()).toEqual(["Never ask", "Ask*"]);
 });
 
@@ -265,7 +271,9 @@ it("goes back to the stored mode and alerts when a save fails", async () => {
 
   await act(async () => choice("Never ask").click());
   expect(state.alert).toHaveBeenCalledWith("Could not save that preference", "Try again.");
-  expect(row()).toBe("Approvals | Ask | Asks before anything that sends, changes or spends.");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
   expect(choices()).toEqual(["Never ask", "Ask*"]);
   // If what is stored can't be read either, the row shows no mode and offers to read it again.
   await act(async () => finishRead());
@@ -310,7 +318,9 @@ it("drops a save that lands after the Space went back to following the account",
   state.settings = { ...state.settings, mode: "ask" };
   await render(target, true);
   await act(async () => slow.finish());
-  expect(row()).toBe("Approvals | Ask | Asks before anything that sends, changes or spends.");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
 });
 
 it("tells screen readers the row is unavailable while loading or saving", async () => {
@@ -337,7 +347,9 @@ it("offers a retry when a refresh fails after the mode loaded", async () => {
   expect(row()).toBe("Approvals | Retry | Something went wrong. Try again.");
 
   await act(async () => container.querySelector("span")!.click());
-  expect(row()).toBe("Approvals | Ask | Asks before anything that sends, changes or spends.");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
 });
 
 it("holds the menu while a save is in flight", async () => {
@@ -365,7 +377,9 @@ it("holds the menu while a save is in flight", async () => {
   expect(sets()).toHaveLength(2);
 
   await act(async () => finish());
-  expect(row()).toBe("Approvals | Ask | Asks before anything that sends, changes or spends.");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
   expect(choice("Never ask").disabled).toBe(false);
 });
 

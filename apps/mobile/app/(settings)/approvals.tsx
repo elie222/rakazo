@@ -58,7 +58,8 @@ export default function ApprovalRules() {
         .catch((err: unknown) => {
           if (current) setLoadError(errorText(err, t("Something went wrong. Try again.")));
         });
-      // Only dims rules, so a failed read just leaves them as they are.
+      // Dims only once a fresh read confirms Never ask, so a failed one never leaves stale dimming.
+      setNeverAsk(false);
       void rpc("autoReview/get", { scope })
         .then((settings) => {
           if (current) setNeverAsk(settings.mode === "never");

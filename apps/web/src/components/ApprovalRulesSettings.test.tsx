@@ -9,7 +9,6 @@ import { beforeEach, expect, it, vi } from "vitest";
 const rpcMock = vi.hoisted(() => ({
   approvalRules: { list: vi.fn(), set: vi.fn(), remove: vi.fn() },
   autoReview: { get: vi.fn(), set: vi.fn() },
-  connections: { list: vi.fn() },
   spendingLimit: { get: vi.fn(), set: vi.fn(), payments: vi.fn() },
 }));
 vi.mock("../lib/rpc", () => ({
@@ -110,7 +109,6 @@ beforeEach(() => {
   vi.resetAllMocks();
   // Nothing to pay with yet, so the spending limit stays out of the way.
   rpcMock.spendingLimit.get.mockResolvedValue({ limit: null, spent: 0, shown: false });
-  rpcMock.connections.list.mockResolvedValue([]);
 });
 
 async function render(scope: "account" | "space" = "account") {
@@ -147,7 +145,9 @@ it("sets the mode, says what it does, and lists Auto only when an approval model
     await vi.waitFor(() =>
       expect(button(container, "Ask")?.getAttribute("aria-pressed")).toBe("true"),
     );
-    expect(container.textContent).toContain("Asks before anything that sends, changes or spends.");
+    expect(container.textContent).toContain(
+      "Asks before sending, spending or changing anything in your apps.",
+    );
     expect(button(container, "Auto")).toBeUndefined();
     await act(async () => button(container, "Never ask")?.click());
     expect(rpcMock.autoReview.set).toHaveBeenLastCalledWith({ scope: "account", mode: "never" });
@@ -367,47 +367,40 @@ it("reads and writes a Space's own approvals apart from the account's", async ()
   }
 });
 
-it("adds a connected app from the picker, which leaves out anything that has a rule", async () => {
+it("adds a tool from the searchable picker, which leaves out tools that have a rule", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   rpcMock.approvalRules.list.mockResolvedValue([
     { id: "blocked", effect: "deny", matchKind: "tool", matchValue: "write_file" },
   ]);
   rpcMock.autoReview.get.mockResolvedValue(settings);
-  rpcMock.connections.list.mockResolvedValue([
-    { id: "c1", connectorId: "apps", provider: "gmail", displayName: "Gmail", status: "connected" },
-  ]);
   rpcMock.approvalRules.set.mockResolvedValue({
     id: "new",
     effect: "require_approval",
-    matchKind: "connector",
-    matchValue: "gmail",
+    matchKind: "tool",
+    matchValue: "shell",
   });
   const { container, root } = await render("space");
   try {
-    await vi.waitFor(() => expect(pickerItems(container)).toContain("Gmail"));
-    expect(button(container, "Add rule")!.disabled).toBe(false);
-    expect(pickerItems(container)).toContain("Shell");
+    await vi.waitFor(() => expect(button(container, "Add rule")!.disabled).toBe(false));
     expect(pickerItems(container)).not.toContain("Write file");
-    const search = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Search apps and tools"]',
-    )!;
+    const search = container.querySelector<HTMLInputElement>('input[aria-label="Search tools"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         search,
-        "gma",
+        "shel",
       );
       search.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(pickerItems(container)).toEqual(["Gmail"]);
-    await act(async () => button(container, "Gmail", "[data-heading]")!.click());
+    expect(pickerItems(container)).toEqual(["Shell", "User computer shell"]);
+    await act(async () => button(container, "Shell")!.click());
     expect(rpcMock.approvalRules.set).toHaveBeenCalledWith({
       scope: "space",
       effect: "require_approval",
-      matchKind: "connector",
-      matchValue: "gmail",
+      matchKind: "tool",
+      matchValue: "shell",
     });
     await vi.waitFor(() =>
-      expect(container.querySelector(group("require_approval"))?.textContent).toContain("Gmail"),
+      expect(container.querySelector(group("require_approval"))?.textContent).toContain("Shell"),
     );
   } finally {
     await act(async () => root.unmount());
@@ -423,8 +416,8 @@ it("shows why adding a rule failed", async () => {
   rpcMock.approvalRules.set.mockRejectedValue(new Error("Could not save"));
   const { container, root } = await render();
   try {
-    await vi.waitFor(() => expect(pickerItems(container)).toContain("Shell"));
-    await act(async () => button(container, "Shell", "[data-heading]")!.click());
+    await vi.waitFor(() => expect(button(container, "Add rule")!.disabled).toBe(false));
+    await act(async () => button(container, "Shell")!.click());
     await vi.waitFor(() => expect(container.textContent).toContain("Could not save"));
     expect(container.querySelector('[data-testid^="approval-rules-"]')).toBeNull();
   } finally {

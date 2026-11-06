@@ -1,12 +1,13 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "No matches": "Geen resultaten",
   "Always ask": "Altijd vragen",
-  "Search apps and tools": "Apps en tools zoeken",
+  "Search tools": "Tools zoeken",
   "A model approves routine actions and asks you about the rest.":
     "Een model keurt routineacties goed en vraagt jou naar de rest.",
   "Acts without asking, except for purchases. Only Block rules apply.":
     "Handelt zonder te vragen, behalve bij aankopen. Alleen blokkeerregels gelden.",
-  "Asks before anything that sends, changes or spends.":
-    "Vraagt eerst bij alles wat iets verstuurt, wijzigt of uitgeeft.",
+  "Asks before sending, spending or changing anything in your apps.":
+    "Vraagt eerst voordat er iets in je apps wordt verstuurd, uitgegeven of gewijzigd.",
   Haptics: "Haptische feedback",
   "Add rule": "Regel toevoegen",
   "Tool name": "Toolnaam",

@@ -970,14 +970,9 @@ msgstr "已核准"
 msgid "Approving…"
 msgstr "正在核准…"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Apps"
 msgstr "應用程式"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Apps and tools"
-msgstr ""
 
 #: src/pages/BotContextMenu.tsx
 msgid "Archive"
@@ -1005,7 +1000,7 @@ msgid "Ask"
 msgstr "詢問"
 
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Asks before anything that sends, changes or spends."
+msgid "Asks before sending, spending or changing anything in your apps."
 msgstr ""
 
 #: src/pages/shell/computer-panel.tsx
@@ -5928,10 +5923,6 @@ msgstr "搜尋"
 msgid "Search apps"
 msgstr "搜尋應用程式"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Search apps and tools"
-msgstr ""
-
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts"
 msgstr "搜尋成品"
@@ -5974,6 +5965,10 @@ msgstr "搜尋執行紀錄"
 #: src/components/integrations/skills-dialog.tsx
 msgid "Search skills"
 msgstr "搜尋技能"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Search tools"
+msgstr ""
 
 #: src/components/VaultSettings.tsx
 msgid "Search Vault"

@@ -1059,25 +1059,14 @@ describe("receiptItems", () => {
 });
 
 describe("approvalRuleChoices", () => {
-  it("lists connected apps before built-in tools and skips anything that has a rule", () => {
-    const choices = approvalRuleChoices({
-      connections: [
-        { provider: "slack", displayName: "Slack" },
-        { provider: "gmail", displayName: "Gmail" },
-        { provider: "Gmail", displayName: "Gmail (work)" },
-        { provider: "github", displayName: "GitHub" },
-      ],
-      rules: [
-        { effect: "deny", matchKind: "connector", matchValue: "GitHub" },
-        { effect: "require_approval", matchKind: "tool", matchValue: "Web_Search" },
-      ],
-    });
-    expect(choices.slice(0, 2)).toEqual([
-      { matchKind: "connector", matchValue: "gmail", label: "Gmail" },
-      { matchKind: "connector", matchValue: "slack", label: "Slack" },
+  it("lists built-in tools by name and skips any that has a rule", () => {
+    const choices = approvalRuleChoices([
+      { effect: "require_approval", matchKind: "tool", matchValue: "Web_Search" },
+      { effect: "deny", matchKind: "connector", matchValue: "shell" },
     ]);
     expect(choices).toContainEqual({ matchKind: "tool", matchValue: "shell", label: "Shell" });
-    expect(choices.some((choice) => choice.matchValue === "github")).toBe(false);
     expect(choices.some((choice) => choice.matchValue === "web_search")).toBe(false);
+    const labels = choices.map((choice) => choice.label);
+    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
   });
 });

@@ -34,7 +34,7 @@ export function ApprovalModeRow({
         : settings?.mode === "never"
           ? t("Acts without asking, except for purchases. Only Block rules apply.")
           : settings?.mode === "ask"
-            ? t("Asks before anything that sends, changes or spends.")
+            ? t("Asks before sending, spending or changing anything in your apps.")
             : undefined;
   const held = disabled || pending || !settings;
   // A failed read, first or on return, may leave the mode out of date, so offer to read it again.

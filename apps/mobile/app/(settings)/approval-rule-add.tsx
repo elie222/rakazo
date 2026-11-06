@@ -14,7 +14,7 @@ import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 /**
- * Picks the app or tool a new rule names, searchable from the header, so nobody types a tool's
+ * Picks the built-in tool a new rule names, searchable from the header, so nobody types a tool's
  * name. The rule starts as Always ask; the rules screen moves it.
  */
 export default function AddApprovalRule() {
@@ -35,13 +35,9 @@ export default function AddApprovalRule() {
 
   useEffect(() => {
     let current = true;
-    void Promise.all([
-      rpc("approvalRules/list", { scope }),
-      // Only offers apps, so a failed read just leaves them out.
-      rpc("connections/list").catch(() => []),
-    ])
-      .then(([rules, connections]) => {
-        if (current) setChoices(approvalRuleChoices({ connections, rules }));
+    void rpc("approvalRules/list", { scope })
+      .then((rules) => {
+        if (current) setChoices(approvalRuleChoices(rules));
       })
       .catch((err: unknown) => {
         if (current) setError(errorText(err, t("Something went wrong. Try again.")));
@@ -54,7 +50,7 @@ export default function AddApprovalRule() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerSearchBarOptions: {
-        placeholder: t("Search apps and tools"),
+        placeholder: t("Search tools"),
         hideWhenScrolling: false,
         autoCapitalize: "none",
         onChangeText: (event: { nativeEvent: { text: string } }) =>
@@ -121,12 +117,11 @@ export default function AddApprovalRule() {
             {error}
           </Text>
         ) : null}
-        <SettingsGroup label={t("Apps")}>
-          {visible.filter((choice) => choice.matchKind === "connector").map(row)}
-        </SettingsGroup>
-        <SettingsGroup label={t("Tools")}>
-          {visible.filter((choice) => choice.matchKind === "tool").map(row)}
-        </SettingsGroup>
+        {choices && visible.length === 0 ? (
+          <Text style={styles.empty}>{t("No matches")}</Text>
+        ) : (
+          <SettingsGroup>{visible.map(row)}</SettingsGroup>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -138,5 +133,6 @@ function createStyles() {
     screen: { flex: 1, backgroundColor: native.groupedPage },
     content: { width: "100%", padding: 20, gap: 24, paddingBottom: 40 },
     error: { color: tokens.destructive, fontSize: 14 },
+    empty: { color: tokens.mutedForeground, fontSize: 15, textAlign: "center", paddingTop: 24 },
   });
 }
