@@ -227,7 +227,7 @@ const UNVERIFIED_NOTICE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 async function noteUnverifiedOwnerMail(
   deps: EmailInboundDeps,
   bot: { id: string; spaceId: string; threadId: string },
-  localPart: string,
+  name: string,
 ) {
   const due = new Date(Date.now() - UNVERIFIED_NOTICE_INTERVAL_MS);
   const blocks = [{ kind: "meta" as const, text: UNVERIFIED_OWNER_MAIL_NOTE }];
@@ -236,7 +236,7 @@ async function noteUnverifiedOwnerMail(
   const seq = await deps.prisma.$transaction(async (tx) => {
     const claimed = await tx.botEmailAddress.updateMany({
       where: {
-        localPart,
+        name,
         botId: bot.id,
         OR: [{ unverifiedNoticeAt: null }, { unverifiedNoticeAt: { lt: due } }],
       },
