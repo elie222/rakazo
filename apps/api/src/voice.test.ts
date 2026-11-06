@@ -1248,6 +1248,21 @@ describe("persistVoiceCredential", () => {
       expect(verify).not.toHaveBeenCalled();
       expect(put).not.toHaveBeenCalled();
     });
+
+    it("explains a model connection that fails to refresh instead of failing silently", async () => {
+      const { verify } = stubProvider();
+      const { deps, put } = linkedDeps();
+      vi.spyOn(adapters, "resolveVoiceKey").mockRejectedValueOnce(new Error("refresh timed out"));
+
+      await expect(
+        persistVoiceCredential(deps, actor, { provider: "xai", plaintext: "" }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Couldn't use the xAI connection from Models. Try again.",
+      });
+      expect(verify).not.toHaveBeenCalled();
+      expect(put).not.toHaveBeenCalled();
+    });
   });
 });
 

@@ -359,8 +359,18 @@ export async function persistVoiceCredential(
       input.signal,
     );
   } catch (error) {
-    if (!(error instanceof VoiceAccountError)) throw error;
-    throw new ORPCError("BAD_REQUEST", { message: error.message });
+    if (error instanceof VoiceAccountError) {
+      throw new ORPCError("BAD_REQUEST", { message: error.message });
+    }
+    if (input.signal?.aborted) throw error;
+    // A refresh that timed out or failed to reach the provider; its text can quote the provider.
+    getLogger().warn("voice could not use the model connection", {
+      provider: input.provider,
+      reason: error instanceof Error ? error.name : "unknown",
+    });
+    throw new ORPCError("BAD_REQUEST", {
+      message: `Couldn't use the ${voiceCatalogEntry(input.provider)?.name ?? input.provider} connection from Models. Try again.`,
+    });
   }
   const verified = await provider.verify(apiKey, voiceContext(actor, input.signal));
   if (!verified.ok) {
