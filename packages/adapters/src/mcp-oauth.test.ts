@@ -3019,6 +3019,9 @@ describe("MCP OAuth", () => {
       "sk-live-abcdefgh12345678",
     );
     expect(launchArgSecrets(["https://shorttok@git.example.test/"])).toContain("shorttok");
+    expect(launchArgSecrets(["PAT=abc"])).toContain("abc");
+    expect(launchArgSecrets(["--header", "X-Private-Key: abc"])).toContain("abc");
+    expect(launchArgSecrets(["--header", "Accept:Bearer", "/srv/data"])).toEqual([]);
 
     const readable = [
       "--port",

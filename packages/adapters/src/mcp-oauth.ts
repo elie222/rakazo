@@ -111,7 +111,7 @@ export function launchArgSecrets(args: string[]): string[] {
   const add = (value: string | undefined) => addSecret(values, value);
   const addAssignment = (assignment: string) => {
     const match = assignment.match(/^([A-Za-z_][\w.-]*)=([\s\S]*)$/);
-    if (match?.[1] && match[2] && isConfiguredSecret(snakeName(match[1]), match[2])) add(match[2]);
+    if (match?.[1] && match[2] && isLaunchSecret(match[1], match[2])) add(match[2]);
   };
   for (const [index, arg] of args.entries()) {
     for (const url of urlsIn(arg)) values.push(...urlSecrets(url));
@@ -131,7 +131,7 @@ export function launchArgSecrets(args: string[]): string[] {
       const [, headerName, headerValue] = header;
       // `--header Authorization:Bearer <token>` splits the token into the next argument, which
       // may itself start with "-"; only an argument shaped like a flag is not the token.
-      if (/^bearer$/i.test(headerValue)) {
+      if (isAuthHeaderKey(headerName) && /^bearer$/i.test(headerValue)) {
         const token = args[index + 2];
         if (flag[2] === undefined && !/^(--|-.$)/.test(token ?? "")) add(token);
       } else if (
@@ -139,7 +139,7 @@ export function launchArgSecrets(args: string[]): string[] {
         // Custom auth headers (an API gateway's subscription key) have no standard name, so any
         // header but the content-negotiation ones follows the configured-header rule.
         (!/^(accept|content|user-agent|cache-control|connection|host)/i.test(headerName.trim()) &&
-          isConfiguredSecret(headerName, headerValue))
+          isLaunchSecret(headerName, headerValue))
       ) {
         add(headerValue);
       }
@@ -153,6 +153,11 @@ export function launchArgSecrets(args: string[]): string[] {
     }
   }
   return [...new Set(values)];
+}
+
+/** An assignment or header value: the configured env/header rule, or a credential name. */
+function isLaunchSecret(name: string, value: string): boolean {
+  return isConfiguredSecret(snakeName(name), value) || isCredentialArg(name, value);
 }
 
 /** A flag, query, or header value under a credential name. Only explicit credential names
