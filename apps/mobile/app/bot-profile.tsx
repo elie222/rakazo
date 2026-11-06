@@ -15,13 +15,14 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../components/settings-group";
-import type { MobileBot } from "../lib/api";
-import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "../lib/api";
+import { currentApiBase, rpc, selectedSpaceId } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { afterChatNotifyChange } from "../lib/live-notifications";
+import type { MobileBot } from "../lib/mobile-types";
 import { native, useMobileTokens, useThemedStyles } from "../lib/native";
 import { createQueuedSave } from "../lib/queued-save";
 import { useBotRoutines } from "../lib/routine-store";
+import { loadSessionToken } from "../lib/session";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 

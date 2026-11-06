@@ -1,6 +1,7 @@
 import { openAuthSessionAsync, WebBrowserResultType } from "expo-web-browser";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { authHeaders, clearSpace, currentApiBase, fetchMobileJson } from "./api";
+import { authHeaders, currentApiBase, fetchMobileJson } from "./api";
+import { clearSpace } from "./api-server";
 import {
   currentSessionGeneration,
   loadSessionToken,
@@ -13,11 +14,15 @@ vi.mock("expo-web-browser", () => ({
   openAuthSessionAsync: vi.fn(),
   WebBrowserResultType: { CANCEL: "cancel", DISMISS: "dismiss" },
 }));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   authHeaders: vi.fn(async () => ({ authorization: "Bearer old-session" })),
-  clearSpace: vi.fn(async () => true),
   currentApiBase: vi.fn(() => "https://rakazo.example.test"),
   fetchMobileJson: vi.fn(),
+}));
+vi.mock("./api-server", () => ({
+  clearSpace: vi.fn(async () => true),
 }));
 vi.mock("./session", () => ({
   currentSessionGeneration: vi.fn(() => 1),

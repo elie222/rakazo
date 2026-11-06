@@ -10,6 +10,9 @@ import { rpc } from "./api";
 
 const back = vi.fn();
 const navigation = vi.hoisted(() => ({ options: {} as Record<string, unknown> }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({

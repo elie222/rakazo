@@ -44,8 +44,8 @@ import { CompatibleEndpointForm } from "../../components/compatible-endpoint-for
 import { DisclosureRow, LimitField } from "../../components/model-connection-fields";
 import { createModelsStyles } from "../../components/model-connection-styles";
 import { NativeActionButton } from "../../components/native-action-button";
-import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import {
   MODEL_CONNECT_TIMEOUT_MS,
   modelConnectionRequest,
