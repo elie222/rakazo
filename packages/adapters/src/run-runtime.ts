@@ -13,13 +13,10 @@ import { auditLogConfig, createAuditLogReconciler } from "./audit-forwarding.js"
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import { reconcileCloudAgents } from "./cloud-agent-service.js";
 import type { ComposioProvider } from "./composio-connector.js";
-import {
-  ComposioConnector,
-  createConnectorStack,
-  isComposioEnabled,
-} from "./composio-connector.js";
+import { ComposioConnector, isComposioEnabled } from "./composio-connector.js";
 import { createIdleComputerSweeper } from "./computer-idle.js";
 import { reconcileComputerUpdates } from "./computer-update.js";
+import { createConnectorStack } from "./connector-registry.js";
 import { deploymentModelUsageLookup, resolveDeploymentModel } from "./deployment-model.js";
 import { createRunExecutor } from "./executor.js";
 import type { ExecutorDeps } from "./executor-deps.js";
