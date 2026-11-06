@@ -50,8 +50,9 @@ export async function startBackgroundHelper(
   },
 ) {
   const { deps, run, runId, bot, thread } = ctx;
-  // A helper reads the bot's private memory and its result comes back only to the app chat, so
-  // only the owner's own app chat may start one; a result coming back never starts the next.
+  // A helper reads the bot's memory and its result comes back only to the app chat, so only a
+  // turn in the bot's own app chat may start one, by whichever space member sent it; a result
+  // coming back never starts the next.
   if (
     thread.botId !== bot.id ||
     run.trigger === "messaging" ||
