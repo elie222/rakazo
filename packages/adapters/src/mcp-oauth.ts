@@ -249,6 +249,7 @@ function isAuthHeaderKey(key: string): boolean {
   const normalized = key.toLowerCase().replace(/-/g, "_");
   return (
     normalized === "authorization" ||
+    normalized === "proxy_authorization" ||
     normalized === "cookie" ||
     normalized === "set_cookie" ||
     normalized === "x_session" ||

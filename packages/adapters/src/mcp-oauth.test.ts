@@ -3002,6 +3002,7 @@ describe("MCP OAuth", () => {
       ["-H", `X-API-Key: ${T}`],
       ["--header", "Authorization:Bearer", T],
       ["--header", `Authorization: Basic ${T}`],
+      ["--header", `Proxy-Authorization: Bearer ${T}`],
       [`postgres://user:${T}@db.example.test/app`],
       [`DATABASE_URL=postgres://user:${T}@db.example.test/app`],
       [`https://${T}@git.example.test/`],
