@@ -23,6 +23,7 @@ import {
 } from "./computer-provider-registry.js";
 import { manageComputerWorkspaceDirectories } from "./computer-workspace.js";
 import { credentialDigest } from "./credential-digest.js";
+import { sandboxNotFoundError } from "./sandbox-errors.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
 
 export const COMPUTER_PROVIDER_SECRET_KIND = "computer-provider";
@@ -314,9 +315,7 @@ export class ConfiguredSandbox implements SandboxProvider {
     if (!fresh) return this.route(computer, true);
     // No connection reaches it any more, so it is gone: Reset and deletion can clear it and the
     // next start provisions where Settings now says.
-    const gone = new Error("The computer's provider connection is no longer configured");
-    gone.name = "SandboxNotFoundError";
-    throw gone;
+    throw sandboxNotFoundError("The computer's provider connection is no longer configured");
   }
   private async target(homeKey?: string) {
     const own = homeKey ? await this.ownSettings(homeKey) : null;

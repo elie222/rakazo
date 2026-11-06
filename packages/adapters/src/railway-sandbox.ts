@@ -26,7 +26,7 @@ import {
   workspaceCwd,
   workspacePath,
 } from "./computer-support.js";
-import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
+import { PortableFileBatcher } from "./computer-workspace.js";
 import {
   INSTALL_LINUX_BROWSER,
   LinuxDesktop,
@@ -34,6 +34,7 @@ import {
   PREPARE_LINUX_DESKTOP,
 } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
+import { abortedCommandEvents } from "./sandbox-command-events.js";
 import { readBodyCapped } from "./web-ssrf.js";
 import {
   shouldSkipPortableWorkspaceFile,
@@ -249,8 +250,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
       yield { type: "exit", code: result.timedOut ? 124 : (result.exitCode ?? 1) };
     } catch (error) {
       if (!context.signal.aborted) throw error;
-      yield { type: "stderr", data: "command aborted\n" };
-      yield { type: "exit", code: 130 };
+      yield* abortedCommandEvents();
     }
   }
 
@@ -352,9 +352,9 @@ export class RailwaySandboxProvider implements SandboxProvider {
     const entries = result.stdout.split("\0");
     const sandbox = await this.connect(computer, context);
     const { SandboxFileNotFoundError } = await loadRailway();
-    const batches: Array<Array<{ path: string; executable: boolean; size: number }>> = [];
-    let files: Array<{ path: string; executable: boolean; size: number }> = [];
-    let batchBytes = 0;
+    type ExportFile = { path: string; executable: boolean; size: number };
+    const batches: ExportFile[][] = [];
+    const batcher = new PortableFileBatcher<ExportFile>(4, (file) => file.size);
     for (let index = 0; index + 2 < entries.length; index += 3) {
       const filePath = entries[index];
       const mode = entries[index + 1];
@@ -364,22 +364,15 @@ export class RailwaySandboxProvider implements SandboxProvider {
         throw new Error(
           `Railway workspace file exceeds ${this.maxWorkspaceFileBytes} bytes or has an invalid size`,
         );
-      if (
-        files.length &&
-        (files.length >= 4 || batchBytes + size > PORTABLE_TRANSFER_BATCH_BYTES)
-      ) {
-        batches.push(files);
-        files = [];
-        batchBytes = 0;
-      }
-      files.push({
+      const full = batcher.add({
         path: filePath,
         size,
         executable: (Number.parseInt(mode, 8) & 0o111) !== 0,
       });
-      batchBytes += size;
+      if (full?.length) batches.push(full);
     }
-    if (files.length) batches.push(files);
+    const last = batcher.take();
+    if (last.length) batches.push(last);
     const growing: Array<{ path: string; executable: boolean }> = [];
     for (const files of batches) {
       context.signal.throwIfAborted();
@@ -436,32 +429,27 @@ export class RailwaySandboxProvider implements SandboxProvider {
     });
     if (privacy.exitCode !== 0 || privacy.timedOut)
       throw new Error("could not protect Railway workspace permissions");
-    let batch: PortableFile[] = [];
-    let batchBytes = 0;
+    const batcher = new PortableFileBatcher<PortableFile>(4, (file) => file.content.byteLength);
     const permissions = new Map<number, string[]>([
       [0o600, []],
       [0o700, []],
     ]);
-    const flush = async () => {
+    const flush = async (batch: PortableFile[]) => {
       context.signal.throwIfAborted();
       // Passing mode makes the SDK open an exec connection for every file.
       await Promise.all(
         batch.map((file) => sandbox.files.write(workspacePath(WORKSPACE, file.path), file.content)),
       );
-      batch = [];
-      batchBytes = 0;
     };
     for await (const file of files) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       context.signal.throwIfAborted();
-      if (batch.length >= 4 || batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES)
-        await flush();
+      const full = batcher.add(file);
+      if (full) await flush(full);
       const target = workspacePath(WORKSPACE, file.path);
       permissions.get(file.executable ? 0o700 : 0o600)?.push(target);
-      batch.push(file);
-      batchBytes += file.content.byteLength;
     }
-    await flush();
+    await flush(batcher.take());
     for (const [mode, paths] of permissions) {
       for (let offset = 0; offset < paths.length; offset += 64) {
         const result = await sandbox.exec(

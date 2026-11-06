@@ -18,6 +18,13 @@ export function isSandboxGoneError(error: unknown): boolean {
   return false;
 }
 
+/** An error `isSandboxGoneError` recognizes, so callers replace the computer. */
+export function sandboxNotFoundError(message: string, options?: ErrorOptions): Error {
+  const error = new Error(message, options);
+  error.name = "SandboxNotFoundError";
+  return error;
+}
+
 /** A computer whose system cannot start programs, reported as `SandboxDamagedError`. */
 export function isSandboxDamagedError(error: unknown): boolean {
   if (isSandboxUnsafeStopError(error)) return false;

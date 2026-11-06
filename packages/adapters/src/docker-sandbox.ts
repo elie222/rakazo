@@ -32,6 +32,7 @@ import {
   workspaceCwd,
 } from "./computer-support.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
+import { sandboxNotFoundError } from "./sandbox-errors.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
@@ -94,9 +95,7 @@ function encodedFileResponseLimit(maxBytes: number | undefined): number {
 
 /** Named so the API's isSandboxGoneError recognizes it and clears the dead computer row. */
 function sandboxGoneError(computer: ComputerRef): Error {
-  return Object.assign(new Error(`sandbox ${computer.id} is not running`), {
-    name: "SandboxNotFoundError",
-  });
+  return sandboxNotFoundError(`sandbox ${computer.id} is not running`);
 }
 
 export class DockerSandboxProvider implements SandboxProvider {

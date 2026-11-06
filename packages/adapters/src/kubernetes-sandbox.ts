@@ -30,6 +30,7 @@ import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import type { RawExecEvent } from "./exec-computer.js";
 import { ExecComputer, COMPUTER_IMAGE_WORKSPACE as WORKSPACE } from "./exec-computer.js";
 import { LinuxDesktop, onBotScreen } from "./linux-desktop.js";
+import { sandboxNotFoundError } from "./sandbox-errors.js";
 
 const DISPLAY_START = 20;
 const DEFAULT_NAMESPACE = "rakazo-sandboxes";
@@ -704,9 +705,7 @@ function podMountsHome(pod: V1Pod, homeKey: string, claimName: string | undefine
 }
 
 function sandboxGone(name: string, cause?: unknown): Error {
-  const error = new Error(`Kubernetes computer ${name} no longer exists`, { cause });
-  error.name = "SandboxNotFoundError";
-  return error;
+  return sandboxNotFoundError(`Kubernetes computer ${name} no longer exists`, { cause });
 }
 
 function isTerminalPod(pod: V1Pod): boolean {

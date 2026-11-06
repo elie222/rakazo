@@ -18,6 +18,7 @@ import {
   workspacePath,
 } from "./computer-support.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
+import { abortedCommandEvents } from "./sandbox-command-events.js";
 import {
   shouldSkipPortableWorkspaceFile,
   workspaceSaveFindCommand,
@@ -90,8 +91,7 @@ export class ExecComputer {
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
     if (context.signal.aborted) {
-      yield { type: "stderr", data: "command aborted\n" };
-      yield { type: "exit", code: 130 };
+      yield* abortedCommandEvents();
       return;
     }
     const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);

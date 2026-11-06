@@ -30,6 +30,7 @@ import {
   COMPUTER_IMAGE_WORKSPACE as WORKSPACE,
 } from "./exec-computer.js";
 import { LinuxDesktop, onBotScreen } from "./linux-desktop.js";
+import { sandboxNotFoundError } from "./sandbox-errors.js";
 
 const DISPLAY_START = 20;
 const DESKTOP_PORT_START = 6100;
@@ -946,9 +947,7 @@ function isIncusStatus(error: unknown, status: number): boolean {
 }
 
 function sandboxGone(name: string, cause?: unknown): Error {
-  const error = new Error(`Incus computer ${name} no longer exists`, { cause });
-  error.name = "SandboxNotFoundError";
-  return error;
+  return sandboxNotFoundError(`Incus computer ${name} no longer exists`, { cause });
 }
 
 function toBuffer(data: WebSocket.RawData): Buffer {
