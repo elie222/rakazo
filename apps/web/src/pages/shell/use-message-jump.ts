@@ -72,13 +72,22 @@ export function useMessageJump({
   const initiallyScrolledThread = useRef<string | null>(null);
   const searchParamsRef = useRef(searchParams);
   searchParamsRef.current = searchParams;
+  // Leaving the chats (another page) unmounts this hook while its refs still name the last chat.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   /**
    * Strips a finished jump from the address so a refresh does not repeat it. The setter from the
    * render that started the jump navigates to that render's chat, so it runs only while that chat
-   * is still open and still asks for this message.
+   * is still open, on this page, and still asks for this message.
    */
   function clearJumpParam(target: JumpTarget) {
+    if (!mounted.current) return;
     if (target.groupId && activeGroupId.current !== target.groupId) return;
     if (target.botId && activeBotId.current !== target.botId) return;
     const next = new URLSearchParams(searchParamsRef.current);

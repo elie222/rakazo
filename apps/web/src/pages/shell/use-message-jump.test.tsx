@@ -170,3 +170,45 @@ it("strips the jump from the address once it lands in the same chat", async () =
   });
   expect(locations.at(-1)).toBe("/app/bot/bot-a");
 });
+
+function Elsewhere({ locations }: { locations: string[] }) {
+  const location = useLocation();
+  useEffect(() => {
+    locations.push(`${location.pathname}${location.search}`);
+  }, [location.pathname, location.search]);
+  return null;
+}
+
+it.each([
+  { name: "bot", from: "/app/bot/bot-a" },
+  { name: "group", from: "/app/group/group-a" },
+])("stays on another page opened while a $name jump was loading", async ({ from }) => {
+  const { rpc, release } = heldRpc();
+  const locations: string[] = [];
+  const navigateRef: { current: NavigateFunction | null } = { current: null };
+  const container = document.createElement("div");
+  root = createRoot(container);
+  act(() =>
+    root?.render(
+      <MemoryRouter initialEntries={[`${from}?m=message-a`]}>
+        <Routes>
+          <Route path="/app/artifacts" element={<Elsewhere locations={locations} />} />
+          <Route
+            path="/app/:kind/:id"
+            element={<Harness rpc={rpc} locations={locations} navigateRef={navigateRef} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  expect(rpc.threads.get).toHaveBeenCalledTimes(1);
+
+  // The user leaves the chats for another page; the shell and its jump hook unmount.
+  act(() => navigateRef.current?.("/app/artifacts?view=grid"));
+  await act(async () => {
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  expect(locations.at(-1)).toBe("/app/artifacts?view=grid");
+});
