@@ -239,7 +239,7 @@ export async function beginConnection(
       const state = auth.state?.trim();
       const adapterContext = connectionContext(context.actor, "connections.begin", context.signal);
       if (state && state !== input.provider) {
-        // Composio browser OAuth stores an authorization-request id in auth.state.
+        // A provider whose browser OAuth stores an authorization-request id in auth.state.
         // Cancel that request by id so the authorization URL cannot later create an
         // untracked remote; resolve an ACTIVE account id only when cancel is unavailable.
         if (connector.cancelAuthorizationRequest) {
@@ -261,7 +261,7 @@ export async function beginConnection(
           }
         }
       } else if (state === input.provider) {
-        // Pipedream begin only returns the app slug. Drop remotes that no
+        // A provider whose begin only returns the app slug. Drop remotes that no
         // remaining local row still references so a lost race cannot leave
         // an orphan authorization, without wiping sibling accounts.
         if (connector.revokeUnreferencedAccounts) {
@@ -392,8 +392,8 @@ export async function completeConnection(
         if (!settling(current)) return current;
         if (current.status === "revoked") {
           // Authorization URLs from a revoke-win begin can still finish
-          // remotely. Cancel leftover Composio request ids / drop Pipedream
-          // remotes no active local row still references before rejecting.
+          // remotely. Cancel leftover authorization-request ids, or drop slug-scoped
+          // remotes no active local row still references, before rejecting.
           // Not the request signal: clients abort a poll they no longer need, and
           // that must not cut short removing the leftover remote account.
           const revokedContext = connectionContext(context.actor, "connections.complete");
@@ -729,7 +729,7 @@ export async function revokeConnection(
 
       // Slug-only remote delete is provider-wide. Run it before commit while
       // still holding the begin/revoke lock so a new authorization cannot be
-      // created and then wiped by Pipedream's slug-scoped DELETE.
+      // created and then wiped by a provider's slug-scoped DELETE.
       if (!accountSpecific) {
         if (
           !needsProvider ||
