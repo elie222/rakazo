@@ -101,6 +101,12 @@ export function teamBotWorkspaceDirectory(botId: string): string {
   return path.posix.join("bots", normalizeWorkspacePath(botId));
 }
 
+export function teamWorkspaceInstruction(botId: string): string {
+  const home = teamBotWorkspaceDirectory(botId);
+  const sharedFromShell = `${path.posix.relative(home, "shared")}/`;
+  return `Your Team Computer home is ${home}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. File tools resolve shared/ and bots/ from the Team root, but shell commands do not: in a shell command, reach shared work as ${sharedFromShell}. Other bots' folders are visible under bots/; treat them as their working areas.`;
+}
+
 export function resolveBotWorkspacePath(
   scope: ComputerMode,
   botId: string,
