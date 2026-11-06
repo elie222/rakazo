@@ -1,6 +1,7 @@
 import type { LoginFieldInput, MessageReaction } from "@rakazo/contracts";
 import type { SlashActionId } from "@rakazo/core";
 import {
+  applyThreadSendReceipt,
   attachmentsForThread,
   newClientId,
   pageReply,
@@ -261,6 +262,14 @@ export function useThreadSend({
       return;
     }
     if (isCurrentTarget(botTarget, groupTarget)) {
+      // Show the accepted run right away, but only where a refresh follows: if the run already
+      // finished and its terminal event was missed, that refresh drops the queued run shown here.
+      if (botTarget && attempt.acceptedRun) {
+        const shown = history.snapRef.current;
+        const receipt = { botId: botTarget, ...attempt.acceptedRun };
+        const next = applyThreadSendReceipt(shown, receipt, history.terminalRunIds.current);
+        if (next !== shown) history.commitSnap(next);
+      }
       if (history.pinnedAroundRef.current) showLatest();
       void refresh().catch(() => undefined);
     }

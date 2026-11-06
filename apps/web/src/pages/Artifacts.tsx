@@ -6,14 +6,6 @@ import { artifactPreviewKind } from "@rakazo/contracts";
 import { artifactTypeLabel } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   BotAvatar,
   Button,
   buttonVariants,
@@ -56,6 +48,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { VideoPreview } from "../components/ArtifactFileCard";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { IconTooltip } from "../components/IconTooltip";
 import { PdfViewer } from "../components/PdfViewer";
 import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
@@ -362,43 +355,24 @@ export function ArtifactsPage() {
       </div>
 
       {pendingDelete ? (
-        <AlertDialog
-          open
-          onOpenChange={(open) => {
-            if (!open && !deleteBusy) setPendingDelete(null);
-          }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                <Trans>Delete "{pendingDelete.name}"?</Trans>
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {pendingDelete.versionCount > 1 ? (
-                  <Trans>
-                    This deletes all {pendingDelete.versionCount} versions of this artifact. This
-                    can't be undone.
-                  </Trans>
-                ) : (
-                  <Trans>This can't be undone.</Trans>
-                )}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            {deleteError ? <p className="text-body text-destructive">{deleteError}</p> : null}
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={deleteBusy}>
-                <Trans>Cancel</Trans>
-              </AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={deleteBusy}
-                onClick={() => void confirmDelete()}
-              >
-                {deleteBusy ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmDialog
+          onCancel={() => setPendingDelete(null)}
+          title={<Trans>Delete "{pendingDelete.name}"?</Trans>}
+          description={
+            pendingDelete.versionCount > 1 ? (
+              <Trans>
+                This deletes all {pendingDelete.versionCount} versions of this artifact. This can't
+                be undone.
+              </Trans>
+            ) : (
+              <Trans>This can't be undone.</Trans>
+            )
+          }
+          error={deleteError}
+          busy={deleteBusy}
+          onConfirm={() => void confirmDelete()}
+          confirmLabel={deleteBusy ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
+        />
       ) : null}
     </div>
   );

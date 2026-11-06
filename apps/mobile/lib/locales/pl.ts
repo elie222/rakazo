@@ -1,4 +1,13 @@
 export const PL_MESSAGES: Record<string, string> = {
+  "No matches": "Brak wyników",
+  "Always ask": "Zawsze pytaj",
+  "Search tools": "Szukaj narzędzi",
+  "A model approves routine actions and asks you about the rest.":
+    "Model zatwierdza rutynowe działania, a o resztę pyta ciebie.",
+  "Asks only before purchases and the first use of your computer. Only Block rules apply.":
+    "Pyta tylko przed zakupami i pierwszym użyciem twojego komputera. Obowiązują tylko reguły blokowania.",
+  "Asks before sending, spending or changing anything in your apps.":
+    "Pyta przed wysłaniem, wydaniem pieniędzy lub zmianą czegokolwiek w twoich aplikacjach.",
   Haptics: "Haptyka",
   "Add rule": "Dodaj regułę",
   "Tool name": "Nazwa narzędzia",
@@ -673,8 +682,6 @@ export const PL_MESSAGES: Record<string, string> = {
   Added: "Dodano",
   Back: "Wstecz",
   "Bearer token": "Token Bearer",
-  "Connect Executor": "Połącz Executor",
-  "Connect Treg": "Połącz Treg",
   "Connection pending": "Oczekiwanie na połączenie",
   "Could not add source": "Nie udało się dodać źródła",
   "Could not approve this server": "Nie udało się zatwierdzić tego serwera",
@@ -684,7 +691,6 @@ export const PL_MESSAGES: Record<string, string> = {
   "Could not revoke connection": "Nie udało się cofnąć połączenia",
   "Custom connector": "Własne połączenie",
   "Display name": "Wyświetlana nazwa",
-  "Executor token": "Token wykonawcy",
   "Finish connecting in the browser, then refresh this page.":
     "Dokończ łączenie w przeglądarce, a następnie odśwież tę stronę.",
   "GraphQL endpoint": "Punkt końcowy GraphQL",
@@ -700,7 +706,6 @@ export const PL_MESSAGES: Record<string, string> = {
   "Search apps": "Szukaj aplikacji",
   "Show more": "Pokaż więcej",
   Tools: "Narzędzia",
-  "Treg token": "Token Treg",
   Uninstall: "Odinstaluj",
   "Verify and add": "Zweryfikuj i dodaj",
   "Working…": "Praca w toku…",
@@ -708,7 +713,6 @@ export const PL_MESSAGES: Record<string, string> = {
   "https://example.com/graphql": "https://example.com/graphql",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
-  "https://executor.example/mcp": "https://executor.example/mcp",
   "{count} tools": "Narzędzia: {count}",
   "API key": "Klucz API",
   "Account ID": "Identyfikator konta",
@@ -1127,6 +1131,10 @@ export const PL_MESSAGES: Record<string, string> = {
   Credits: "Środki",
   "Available credits": "Dostępne środki",
   "Computer hours left": "Pozostałe godziny pracy komputera",
+  Upgrade: "Ulepsz",
+  "Cancelled trials have no computer hours.":
+    "Anulowane okresy próbne nie mają godzin pracy komputera.",
+  "Renew plan": "Odnów plan",
   "Trials get fewer hours to prevent abuse.":
     "Okres próbny ma mniej godzin, aby zapobiegać nadużyciom.",
   "Start plan now": "Uruchom plan teraz",

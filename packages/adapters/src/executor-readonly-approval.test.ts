@@ -321,6 +321,9 @@ function fixture({
     | undefined;
   const spending = fakeSpendingPrisma(spendingLimit);
   const prisma = {
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
     spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     spendingLimit: spending.client.spendingLimit,
     payment: spending.client.payment,
@@ -685,6 +688,7 @@ function fixture({
       };
       const tx = {
         $queryRaw: vi.fn(async () => []),
+        space: { findUnique: vi.fn(async () => null) },
         thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })) },
         message: {
           create: vi.fn(async () => inboundMessage),
@@ -750,6 +754,11 @@ function fixture({
   };
 }
 
+function askDetail(f: ReturnType<typeof fixture>): string {
+  const calls = f.pauseRunForInput.mock.calls as unknown as [{ blocks: { detail?: string }[] }][];
+  return calls[0]?.[0].blocks[0]?.detail ?? "";
+}
+
 it("enqueues pending work when an approval pauses its current run", async () => {
   const f = fixture({ name: "shell", trigger: "webhook" });
   f.pauseRunForInput.mockResolvedValueOnce({ continuationRunId: "pending-run" });
@@ -788,20 +797,32 @@ describe("connector read-only metadata and approval enforcement", () => {
     reviewMock.mockReset();
   });
 
-  it.each(["shell", "write_file"])(
-    "forces owner approval for webhook-triggered %s despite an allow rule",
-    async (name) => {
+  // Only an Always allow the webhook overrode gets the line; the owner's own Require approval
+  // asks in every run.
+  it.each([
+    ["shell", "always_allow", true],
+    ["write_file", "require_approval", false],
+  ] as const)(
+    "forces owner approval for webhook-triggered %s despite a %s rule",
+    async (name, effect, explained) => {
       const f = fixture({
         name,
         trigger: "webhook",
-        rules: [{ effect: "always_allow", matchKind: "tool", matchValue: name }],
+        rules: [{ effect, matchKind: "tool", matchValue: name }],
       });
       await f.run();
       expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(askDetail(f).startsWith("Asked because a webhook started this run.")).toBe(explained);
+      if (explained)
+        expect(askDetail(f)).toMatch(
+          /^Asked because a webhook started this run\. Always allow doesn't skip this\.(\n|$)/,
+        );
       expect(isApprovalPausedResult(f.results[0])).toBe(true);
       expect(reviewMock).not.toHaveBeenCalled();
-      // The rule still covers this tool outside webhook runs.
-      expect(pausedActionIds(f)).toEqual(["allow", "always", "deny"]);
+      // Always allow can't skip a webhook card, so one that already has the rule doesn't offer it.
+      expect(pausedActionIds(f)).toEqual(
+        explained ? ["allow", "deny"] : ["allow", "always", "deny"],
+      );
     },
   );
 
@@ -1123,12 +1144,17 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(JSON.stringify(f.results[0])).toContain("blocked");
     });
 
-    it("asks before an unlisted write in Ask mode", async () => {
-      const f = fixture({ catalog, name: "demo_send_message" });
-      await f.run();
-      expect(f.execute).not.toHaveBeenCalled();
-      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-    });
+    // Without an allow rule this write asks in any run, so a webhook card does not blame the webhook.
+    it.each(["user", "webhook"])(
+      "asks before an unlisted write in Ask mode (%s)",
+      async (trigger) => {
+        const f = fixture({ catalog, name: "demo_send_message", trigger });
+        await f.run();
+        expect(f.execute).not.toHaveBeenCalled();
+        expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+        expect(askDetail(f)).not.toContain("webhook");
+      },
+    );
 
     it("forces owner approval for webhook-triggered writes despite an allow rule", async () => {
       const f = fixture({
@@ -4112,4 +4138,35 @@ describe("a click that completes a purchase on a website", () => {
     await f.run();
     expect(f.spending.payments).toEqual([expect.objectContaining({ amount: 11_300 })]);
   });
+});
+
+it("does not blame the webhook on cards every run shows", async () => {
+  const space = fixture({ name: "create_space", builtin: true, trigger: "webhook" });
+  space.setCalls([{ args: { name: "Relay" }, executionId: "call-1" }]);
+  await space.run();
+  expect(space.pauseRunForInput).toHaveBeenCalledOnce();
+  expect(askDetail(space)).toMatch(/^Bots, groups, chats/);
+
+  const connection = fixture({
+    name: "respond_agent_connection",
+    builtin: true,
+    trigger: "webhook",
+  });
+  connection.prisma.bot.findUnique.mockResolvedValue({ name: "Other bot" } as never);
+  Object.assign(connection.prisma, {
+    agentConnection: {
+      findFirst: vi.fn(async () => ({
+        id: "connection-1",
+        requestVersion: 1,
+        requesterBotId: "bot-other",
+      })),
+    },
+    messagingIdentity: {
+      findUnique: vi.fn(async () => ({ address: "fake", provider: "telegram" })),
+    },
+  });
+  connection.setCalls([{ args: { accept: true }, executionId: "call-1" }]);
+  await connection.run();
+  expect(connection.pauseRunForInput).toHaveBeenCalledOnce();
+  expect(askDetail(connection)).toBe("Telegram: fake");
 });

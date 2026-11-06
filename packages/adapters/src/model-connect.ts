@@ -10,12 +10,14 @@ import {
   assertHeaderSafeApiKey,
   OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT,
   canonicalPiProviderId,
-  cloudflareModelConfigMessage,
-  cloudflareModelRouting,
-  isCloudflareModelProvider,
   MAX_ENABLED_MODEL_IDS,
   modelOutputLeavesInputRoom,
 } from "@rakazo/contracts";
+import {
+  cloudflareModelConfigMessage,
+  cloudflareModelRouting,
+  isCloudflareModelProvider,
+} from "./cloudflare-ai-gateway.js";
 import { enabledOpenAiCompatibleModelIds } from "./model-selection.js";
 import {
   compatibleModelSeesImages,

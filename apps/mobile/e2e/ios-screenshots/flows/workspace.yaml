@@ -19,6 +19,13 @@ name: Workspace
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 02-approval-rules
+- openLink: "rakazo:///approval-rule-add"
+- extendedWaitUntil:
+    visible: "Browser act"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02b-add-approval-rule
 - openLink: "rakazo:///vault"
 - extendedWaitUntil:
     visible: ".*deploy_token.*"

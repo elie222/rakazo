@@ -1,18 +1,18 @@
 import { normalizeContext } from "@earendil-works/pi-ai";
 import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import {
-  CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
-  CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
-  cloudflareModelConfigMessage,
-  FLEET_TOOL_NAMES,
-} from "@rakazo/contracts";
+import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { isOwnerStartedRun, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
+import {
+  CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+  CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
+  cloudflareModelConfigMessage,
+} from "./cloudflare-ai-gateway.js";
 import { createRunExecutor as createExecutor } from "./executor.js";
 import { UnavailableModelForAuthError, validateConnectedModelChoice } from "./model-selection.js";
 import {
@@ -1309,6 +1309,8 @@ function pinnedRoutineRunPrisma(modelId: string) {
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
   };
 }
 
@@ -1317,21 +1319,19 @@ async function continuePinnedRoutineRun(plaintext: string, modelId: string) {
   const enqueue = vi.fn(async () => undefined);
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const append = vi.fn(async () => undefined);
-  const executor = compatibleExecutor(
-    {
-      ...pinnedRoutineRunPrisma(modelId),
-      ...compatiblePrismaParts("space-model", plaintext),
-    },
-    plaintext,
-    {
-      runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
-      memoryProviders: { resolve: vi.fn(async () => null) },
-      memory: { read: vi.fn(async () => ({ documents: [] })) },
-      events: { append, finalizeRun },
-      jobs: { enqueue },
-      secrets: [],
-    },
-  );
+  const prisma: Record<string, unknown> = {
+    ...pinnedRoutineRunPrisma(modelId),
+    ...compatiblePrismaParts("space-model", plaintext),
+  };
+  prisma.$transaction = vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
+  const executor = compatibleExecutor(prisma, plaintext, {
+    runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
+    memoryProviders: { resolve: vi.fn(async () => null) },
+    memory: { read: vi.fn(async () => ({ documents: [] })) },
+    events: { append, finalizeRun },
+    jobs: { enqueue },
+    secrets: [],
+  });
   // The fixture has no computer stack, so a run that passes model resolution
   // stops at computer setup (requeued, not finalized).
   await executor.continueRun("run-1", "worker-1").catch(() => undefined);
@@ -2122,6 +2122,8 @@ describe("createRunExecutor", () => {
       },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
+          $queryRaw: vi.fn(async () => []),
+          space: { findUnique: vi.fn(async () => null) },
           routine: {
             updateMany,
             findUnique: vi.fn(async () => ({
@@ -2197,6 +2199,8 @@ describe("createRunExecutor", () => {
       },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
+          $queryRaw: vi.fn(async () => []),
+          space: { findUnique: vi.fn(async () => null) },
           routine: {
             updateMany,
             findUnique: vi.fn(async () => ({
@@ -2282,6 +2286,8 @@ describe("createRunExecutor", () => {
         agentSkill: { findMany: vi.fn(async () => []) },
         $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
           callback({
+            $queryRaw: vi.fn(async () => []),
+            space: { findUnique: vi.fn(async () => null) },
             routine: {
               updateMany: vi.fn(async () => ({ count: 1 })),
               // The claimed row carries the prompt alongside the model.
@@ -2435,6 +2441,8 @@ describe("createRunExecutor", () => {
       agentSkill: { findMany: vi.fn(async () => []) },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
+          $queryRaw: vi.fn(async () => []),
+          space: { findUnique: vi.fn(async () => null) },
           routine: {
             updateMany: vi.fn(async () => ({ count: 1 })),
             findUnique: vi.fn(async () => ({
@@ -2513,6 +2521,8 @@ describe("createRunExecutor", () => {
       agentSkill: { findMany: vi.fn(async () => []) },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
+          $queryRaw: vi.fn(async () => []),
+          space: { findUnique: vi.fn(async () => null) },
           routine: {
             updateMany: vi.fn(async () => ({ count: 1 })),
             findUnique: vi.fn(async () => ({
@@ -2609,6 +2619,8 @@ description: Prepare standup notes
       },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
+          $queryRaw: vi.fn(async () => []),
+          space: { findUnique: vi.fn(async () => null) },
           routine: {
             updateMany: claim,
             findUnique: vi.fn(async () => ({
@@ -2678,6 +2690,8 @@ description: Prepare standup notes
       },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
+          $queryRaw: vi.fn(async () => []),
+          space: { findUnique: vi.fn(async () => null) },
           routine: {
             updateMany,
             findUnique: vi.fn(async () => ({
@@ -2745,6 +2759,8 @@ description: Prepare standup notes
         transactionCalls += 1;
         if (transactionCalls === 1) {
           return callback({
+            $queryRaw: vi.fn(async () => []),
+            space: { findUnique: vi.fn(async () => null) },
             routine: {
               updateMany: claimUpdateMany,
               findUnique: vi.fn(async () => ({
@@ -2759,6 +2775,8 @@ description: Prepare standup notes
           });
         }
         return callback({
+          $queryRaw: vi.fn(async () => []),
+          space: { findUnique: vi.fn(async () => null) },
           routine: { updateMany: restoreUpdateMany },
           task: { deleteMany: deleteTaskMany },
           run: { deleteMany: deleteRunMany },
@@ -2781,6 +2799,9 @@ description: Prepare standup notes
   it("consumes a persisted takeover checkpoint when claiming the run", async () => {
     const updateMany = vi.fn(async () => ({ count: 0 }));
     const prisma = {
+      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn(async () => null) },
       user: { findUnique: vi.fn(async () => null) },
       spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {
@@ -2836,6 +2857,9 @@ description: Prepare standup notes
       return { count: matchesClaim(args.where, row) ? 1 : 0 };
     });
     const prisma = {
+      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn(async () => null) },
       user: { findUnique: vi.fn(async () => null) },
       spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {
@@ -2889,7 +2913,12 @@ description: Prepare standup notes
         updateMany,
       },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
-        callback({ $queryRaw: vi.fn(async () => []), user: { findUnique: findUser } }),
+        callback({
+          $queryRaw: vi.fn(async () => []),
+          user: { findUnique: findUser },
+          space: { findUnique: vi.fn(async () => null) },
+          run: { updateMany },
+        }),
       ),
     } as unknown as PrismaClient;
     const executor = createRunExecutor({ prisma } as Parameters<typeof createRunExecutor>[0]);
@@ -2914,6 +2943,9 @@ description: Prepare standup notes
     );
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
+      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn(async () => null) },
       user: { findUnique: vi.fn(async () => null) },
       spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {
@@ -2975,6 +3007,9 @@ description: Prepare standup notes
     );
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
+      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn(async () => null) },
       user: { findUnique: vi.fn(async () => null) },
       spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {
@@ -3034,6 +3069,9 @@ description: Prepare standup notes
     );
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
+      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn(async () => null) },
       user: { findUnique: vi.fn(async () => null) },
       spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {
@@ -3116,6 +3154,9 @@ description: Prepare standup notes
             },
       );
       const prisma = {
+        $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+        $queryRaw: vi.fn(async () => []),
+        space: { findUnique: vi.fn(async () => null) },
         user: { findUnique: vi.fn(async () => null) },
         spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
         run: {
@@ -3236,6 +3277,9 @@ description: Prepare standup notes
       leaseFence: 0,
     };
     const prisma = {
+      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn(async () => null) },
       user: { findUnique: vi.fn(async () => null) },
       spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {
@@ -3343,6 +3387,8 @@ description: Prepare standup notes
       leaseFence: 0,
     };
     const prisma = {
+      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+      $queryRaw: vi.fn(async () => []),
       user: { findUnique: vi.fn(async () => null) },
       // One read answers both "still a member" and "whose plan pays".
       spaceMember: {

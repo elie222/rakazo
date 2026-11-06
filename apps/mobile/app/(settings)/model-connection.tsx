@@ -7,16 +7,14 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
-  CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  cloudflareModelRouting,
   compatibleConnectionName,
   connectionDisplayName,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
-  isCloudflareModelProvider,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   modelHeadersInput,
+  modelRoutingForm,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleKeyRequired,
@@ -282,10 +280,10 @@ export default function ModelConnection() {
   // A hosted preset needs a key and has no setup to explain.
   const hostedPreset = isOpenAiCompatible ? openAiCompatiblePresetFor(presets, baseUrl) : undefined;
   const keyRequired = isOpenAiCompatible && openAiCompatibleKeyRequired(presets, baseUrl);
-  const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
-  const isCloudflare = isCloudflareModelProvider(provider);
-  const cloudflareRoutingReady =
-    !isCloudflare || cloudflareModelRouting({ provider, accountId, gatewayId }) !== undefined;
+  const { needsRouting, needsGateway, routingReady } = modelRoutingForm(selected?.routingFields, {
+    accountId,
+    gatewayId,
+  });
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
     enabledModelIds,
@@ -318,7 +316,7 @@ export default function ModelConnection() {
   const gatewayDirty =
     accountId.trim() !== (credential?.accountId ?? "") ||
     gatewayId.trim() !== (credential?.gatewayId ?? "");
-  const gatewayOnlySave = isCloudflare && Boolean(credential) && !apiKey.trim();
+  const gatewayOnlySave = needsRouting && Boolean(credential) && !apiKey.trim();
   const protocolChoices: { key: ModelApiProtocol; label: string }[] = [
     { key: "chat-completions", label: t("Chat Completions") },
     { key: "responses", label: t("Responses") },
@@ -992,7 +990,7 @@ export default function ModelConnection() {
             )}
             {credential && limitsDirty ? (
               <NativeActionButton
-                disabled={busy || !cloudflareRoutingReady}
+                disabled={busy || !routingReady}
                 label={
                   pending === "connect" && feedbackAnchor === "limits" ? t("Saving…") : t("Save")
                 }
@@ -1090,9 +1088,9 @@ export default function ModelConnection() {
             />
           )
         ) : null}
-        {acceptsKey || isCloudflare ? (
+        {acceptsKey || needsRouting ? (
           <View style={styles.keySection}>
-            {isCloudflare ? (
+            {needsRouting ? (
               <>
                 <Text style={styles.sectionTitle}>{t("Account ID")}</Text>
                 <TextInput
@@ -1108,7 +1106,7 @@ export default function ModelConnection() {
                   style={styles.keyInput}
                   value={accountId}
                 />
-                {isCloudflareGateway ? (
+                {needsGateway ? (
                   <>
                     <Text style={styles.sectionTitle}>{t("Gateway ID")}</Text>
                     <TextInput
@@ -1154,7 +1152,7 @@ export default function ModelConnection() {
             <NativeActionButton
               disabled={
                 busy ||
-                !cloudflareRoutingReady ||
+                !routingReady ||
                 (gatewayOnlySave ? !gatewayDirty : apiKey.trim().length < 8)
               }
               label={

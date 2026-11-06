@@ -1,5 +1,6 @@
 import type { AdapterContext, MessagingSurface } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import { SpaceDeletionInProgressError } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface, MessagingSendError } from "./chat-sdk-surface.js";
 import type { MessagingDeliveryDeps } from "./messaging-delivery.js";
@@ -1350,6 +1351,17 @@ describe("deliverMessagingOutbound channel runs", () => {
       expect.objectContaining({ name: "run.continue", payload: { runId: "run-wake" } }),
     );
     expect(deps.contextMessages).toHaveLength(0);
+  });
+
+  it("skips a mentioned peer whose Space is being deleted", async () => {
+    const deps = createChannelDeps({ text: "@Helper what do you think?" });
+    deps.sendUserMessage.mockRejectedValueOnce(new SpaceDeletionInProgressError());
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+    expect(deps.enqueue).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: "run.continue" }),
+    );
   });
 
   it("wakes an @-mentioned peer even when the casing differs", async () => {
