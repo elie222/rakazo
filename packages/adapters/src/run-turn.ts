@@ -6,6 +6,7 @@ import {
   ModelOutputError,
   runContinueJob,
   SandboxAllowanceUsedError,
+  SandboxProviderAccountError,
   SandboxRateLimitError,
   TransientModelError,
 } from "@rakazo/adapter-kit";
@@ -972,7 +973,8 @@ export async function failRun(
   } catch (computerError) {
     if (
       !(computerError instanceof SandboxRateLimitError) &&
-      !(computerError instanceof SandboxAllowanceUsedError)
+      !(computerError instanceof SandboxAllowanceUsedError) &&
+      !(computerError instanceof SandboxProviderAccountError)
     )
       throw computerError;
     error = computerError;
@@ -1053,11 +1055,14 @@ export async function failRun(
   // A refusal of the deployment's own key is the operator's problem, not the user's.
   const refusal =
     run.trigger === "routine" && model.ownCredential ? modelAccountRefusal(error) : undefined;
-  // A spent computer allowance refuses every run that needs the computer until the period resets.
+  // A spent computer allowance or an unusable provider account refuses every run that needs the
+  // computer until someone fixes it.
   if (
     run.trigger === "routine" &&
     run.routineId &&
-    (refusal || error instanceof SandboxAllowanceUsedError)
+    (refusal ||
+      error instanceof SandboxAllowanceUsedError ||
+      error instanceof SandboxProviderAccountError)
   ) {
     await backOffRoutineAfterAccountError(
       deps,

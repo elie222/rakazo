@@ -987,6 +987,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Hang up": "挂断",
   "Allow microphone access to call a bot.": "请允许使用麦克风，以便与 Bot 通话。",
   "Could not hear that.": "没有听清。",
+  "Approve or deny it on screen.": "请在屏幕上批准或拒绝。",
+  "Hang up, then enter the code on screen.": "请挂断，然后输入屏幕上的代码。",
   "Could not transcribe that.": "无法转写。",
   "Could not speak that.": "无法朗读。",
   "Voice chat": "语音通话",
