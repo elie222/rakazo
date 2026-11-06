@@ -1026,7 +1026,7 @@ function EmailTriggerCard({
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const cellClass =
-    "break-all rounded-lg bg-muted px-2.5 py-1.5 font-mono text-xs text-foreground/75";
+    "break-all rounded-lg bg-muted px-2.5 py-1.5 font-mono text-label text-foreground/75";
 
   async function claim() {
     const parsed = BotEmailNameSchema.safeParse(name);
@@ -1060,7 +1060,7 @@ function EmailTriggerCard({
     <div className="rounded-xl border border-border p-3">
       <div className="flex items-center gap-2.5 px-0.5">
         <Mail size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
-        <span className="flex-1 text-[14.5px] text-foreground">
+        <span className="flex-1 text-body-lg text-foreground">
           <Trans>When an email arrives</Trans>
         </span>
         <Button
@@ -1074,7 +1074,7 @@ function EmailTriggerCard({
         </Button>
       </div>
       {domain ? (
-        <div className="mt-2.5 space-y-2.5 text-[13.5px]">
+        <div className="mt-2.5 space-y-2.5 text-body">
           {address ? (
             <div className={cellClass}>{address}</div>
           ) : (
@@ -1094,9 +1094,9 @@ function EmailTriggerCard({
                     setName(event.target.value);
                     setClaimError(null);
                   }}
-                  className="min-w-0 flex-1 font-mono text-xs"
+                  className="min-w-0 flex-1 font-mono text-label"
                 />
-                <span className="shrink-0 font-mono text-xs text-muted-foreground">@{domain}</span>
+                <span className="shrink-0 font-mono text-label text-muted-foreground">@{domain}</span>
               </div>
               <Button type="submit" variant="secondary" size="sm" disabled={claiming || !name}>
                 <Trans>Claim</Trans>
@@ -1104,7 +1104,7 @@ function EmailTriggerCard({
             </form>
           )}
           {claimError ? (
-            <p role="alert" className="text-[13px] text-destructive">
+            <p role="alert" className="text-body-sm text-destructive">
               {claimError}
             </p>
           ) : null}
