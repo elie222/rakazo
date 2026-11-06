@@ -41,6 +41,7 @@ import type { ArtifactTarget } from "../../lib/artifact-open";
 import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
 import { useCallSession } from "../../lib/call-session";
 import {
+  appendComposerDraftText,
   beginComposerDraftSubmission,
   keepComposerRetryNonce,
   readComposerDraft,
@@ -48,6 +49,7 @@ import {
   readComposerRetryNonce,
   settleComposerDraftSubmission,
   subscribeComposerDraftAccepted,
+  subscribeComposerDraftReplaced,
   subscribeComposerOffer,
   writeComposerDraft,
   writeComposerRetryNonce,
@@ -174,11 +176,17 @@ const ComposerBody = memo(function Composer({
     editSelections.current = [];
     if (persist) writeComposerDraft(draftKey, next.text, undefined, next.bindings);
   }
-  function appendDictation(text: string) {
-    if (!mountedRef.current || draftKeyRef.current !== draftKey) return;
+  /** False when the words went to this chat's saved draft because it is no longer shown. */
+  function appendDictation(text: string): boolean {
+    if (!mountedRef.current || draftKeyRef.current !== draftKey) {
+      // The chat changed while the words were transcribed; they wait in its draft for review.
+      appendComposerDraftText(draftKey, text);
+      return false;
+    }
     const current = compositionRef.current.text;
     editSelections.current = [{ start: current.length, end: current.length }];
     updateDraft(current ? `${current} ${text}` : text);
+    return true;
   }
   const [mentionQuery, setMentionQuery] = useState<string | null>(
     () =>
@@ -203,8 +211,7 @@ const ComposerBody = memo(function Composer({
         compositionRef.current.text.trim().length > 0 ||
         selectedSkill !== null ||
         pendingAttachments.length > 0;
-      appendDictation(text);
-      if (reviewFirst) return;
+      if (!appendDictation(text) || reviewFirst) return;
       const clientNonce = newClientId();
       retryNonce.current = clientNonce;
       setDictationSendDue(editRevision.current);
@@ -219,6 +226,17 @@ const ComposerBody = memo(function Composer({
           commitComposition({ text: "", bindings: [] }, false);
         setMentionQuery(null);
         setSlashQuery(null);
+      }),
+    [draftKey],
+  );
+  // A draft rewritten from elsewhere (a dictation that finished after the chat was left) shows
+  // here, so the next edit keeps it.
+  useEffect(
+    () =>
+      subscribeComposerDraftReplaced(draftKey, (text) => {
+        // An edit like typing: a send still in flight must not restore its older text over it.
+        markEdited();
+        commitComposition({ text, bindings: readComposerDraftBindings(draftKey) }, false);
       }),
     [draftKey],
   );
