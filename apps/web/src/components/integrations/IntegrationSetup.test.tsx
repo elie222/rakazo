@@ -102,9 +102,14 @@ it("signs in to a catalog server for the bot", async () => {
   expect(host.textContent).toContain("Connected");
 });
 
-it("does not count a server that skipped sign-in as connected", async () => {
+it("connects a catalog server that needs no sign-in", async () => {
   connectMcpEndpoint.mockResolvedValue("authorization_not_requested");
   await connectTracker();
-  expect(host.textContent).toContain("This server did not request browser authorization.");
+  expect(host.textContent).toContain("Connected");
+});
+
+it("leaves a catalog server unconnected when sign-in is cancelled", async () => {
+  connectMcpEndpoint.mockResolvedValue("cancelled");
+  await connectTracker();
   expect(host.textContent).not.toContain("Connected");
 });

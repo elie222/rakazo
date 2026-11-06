@@ -63,8 +63,6 @@ export function IntegrationSetup({
   async function connect(name: string, url: string) {
     await run(async () => {
       const result = await connectMcpEndpoint({ name, endpoint: url, botId });
-      if (result === "authorization_not_requested")
-        throw new Error(t`This server did not request browser authorization.`);
       if (result !== "cancelled") setConnected((current) => [...current, url]);
     });
   }

@@ -31,9 +31,12 @@ it("gives the bot a server it is already signed in to", async () => {
   });
 });
 
-it("does not give the bot a server whose sign-in never happened", async () => {
+it("gives the bot a server that needs no sign-in", async () => {
   api.mcp.oauth.begin.mockResolvedValue({ status: "authorization_not_requested" });
 
   await expect(connectMcpEndpoint(tracker)).resolves.toBe("authorization_not_requested");
-  expect(api.mcp.assignments.approve).not.toHaveBeenCalled();
+  expect(api.mcp.assignments.approve).toHaveBeenCalledWith({
+    botId: "bot-1",
+    serverId: "tracker",
+  });
 });
