@@ -2,7 +2,7 @@ import { ORPCError } from "@orpc/server";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
 import { parseRoutineWatch, parseRoutineWatchState, routineRunModelPin } from "@rakazo/adapters";
 import type { Actor, CreateRoutineInput, Routine } from "@rakazo/contracts";
-import { canonicalPiProviderId } from "@rakazo/contracts";
+import { canonicalPiProviderId, RoutineEmailSendersSchema } from "@rakazo/contracts";
 import {
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
@@ -53,6 +53,7 @@ export function routineRowData(actor: Actor, input: CreateRoutineInput, nextRunA
     webhookEnabled: input.webhookEnabled,
     githubEnabled: input.githubEnabled,
     messageProvider: input.messageProvider,
+    emailSenders: input.emailSenders,
     modelProvider: input.modelProvider,
     modelId: input.modelId,
     thinkingLevel: input.thinkingLevel,
@@ -89,6 +90,7 @@ export function mapRoutine(row: {
   webhookEnabled: boolean;
   githubEnabled: boolean;
   messageProvider: string | null;
+  emailSenders: string | null;
   modelProvider: string | null;
   modelId: string | null;
   thinkingLevel: string | null;
@@ -110,6 +112,7 @@ export function mapRoutine(row: {
     webhookEnabled: row.webhookEnabled,
     githubEnabled: row.githubEnabled,
     messageProvider: row.messageProvider,
+    emailSenders: RoutineEmailSendersSchema.safeParse(row.emailSenders).data ?? null,
     modelProvider: row.modelProvider ? canonicalPiProviderId(row.modelProvider) : null,
     modelId: row.modelId ?? null,
     thinkingLevel: (row.thinkingLevel as Routine["thinkingLevel"]) ?? null,

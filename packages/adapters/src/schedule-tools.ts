@@ -730,20 +730,20 @@ async function createWatchFromTool(
   };
 }
 
-/** List bot routines (every member's), optionally restricted to the current group thread. */
+/**
+ * List bot routines (every member's) from every chat. In a group, each says whether it posts
+ * in that group (`inThisChat`), the only ones the group can change.
+ */
 export async function listSchedulesFromTool(
   deps: Pick<ScheduleToolDeps, "prisma">,
-  input: { spaceId: string; botId: string; threadId?: string },
+  input: { spaceId: string; botId: string; groupThreadId?: string },
 ) {
   const rows = await deps.prisma.routine.findMany({
-    where: {
-      spaceId: input.spaceId,
-      botId: input.botId,
-      ...(input.threadId ? { threadId: input.threadId } : {}),
-    },
+    where: { spaceId: input.spaceId, botId: input.botId },
     orderBy: { createdAt: "desc" },
   });
   return {
+    ...(input.groupThreadId ? { note: GROUP_LIST_NOTE } : {}),
     routines: rows.map((row) => ({
       routineId: row.id,
       name: row.name,
@@ -754,7 +754,27 @@ export async function listSchedulesFromTool(
       oneShot: isOneShotRoutineCrons(row.crons),
       ...describeRoutineTiming(row),
       ...(row.watch ? { watch: row.watch, lastCheck: row.watchState ?? null } : {}),
+      ...(input.groupThreadId ? { inThisChat: row.threadId === input.groupThreadId } : {}),
     })),
+  };
+}
+
+const GROUP_LIST_NOTE =
+  "inThisChat marks the routines this group chat can change; change the others from the bot's own chat.";
+
+/**
+ * Why a group run cannot find a routine. One the bot has outside the group (`where`, without the
+ * group's thread) can be changed from the bot's own chat, which reaches all of its routines.
+ */
+async function groupNotFoundError(
+  prisma: ScheduleToolDeps["prisma"],
+  where: Prisma.RoutineWhereInput,
+) {
+  const elsewhere = await prisma.routine.findFirst({ where, select: { id: true } });
+  return {
+    error: elsewhere
+      ? "That routine is not this group chat's. Change it from the bot's own chat."
+      : "Schedule not found.",
   };
 }
 
@@ -823,7 +843,16 @@ export async function updateScheduleFromTool(
   const existing = await deps.prisma.routine.findFirst({
     where: { ...scope, id: routineId, bot: { archivedAt: null } },
   });
-  if (!existing) return { error: "Schedule not found." };
+  if (!existing) {
+    return input.scopeThreadId
+      ? groupNotFoundError(deps.prisma, {
+          spaceId: input.spaceId,
+          botId: input.botId,
+          id: routineId,
+          bot: { archivedAt: null },
+        })
+      : { error: "Schedule not found." };
+  }
 
   let timezone = existing.timezone;
   if (input.timezone !== undefined) {
@@ -958,6 +987,7 @@ export async function cancelScheduleFromTool(
   input: {
     spaceId: string;
     botId: string;
+    /** In a group, only that thread's routines. */
     threadId?: string;
     routineId?: string;
     name?: string;
@@ -977,7 +1007,15 @@ export async function cancelScheduleFromTool(
   const existing = await deps.prisma.routine.findFirst({
     where: { ...scope, ...(routineId ? { id: routineId } : { name: name! }) },
   });
-  if (!existing) return { error: "Schedule not found." };
+  if (!existing) {
+    return input.threadId
+      ? groupNotFoundError(deps.prisma, {
+          spaceId: input.spaceId,
+          botId: input.botId,
+          ...(routineId ? { id: routineId } : { name: name! }),
+        })
+      : { error: "Schedule not found." };
+  }
 
   // The scope is part of the delete, so the routine cannot change hands between the read and it.
   const { count } = await deps.prisma.routine.deleteMany({ where: { ...scope, id: existing.id } });

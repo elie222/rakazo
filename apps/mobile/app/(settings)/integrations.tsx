@@ -47,6 +47,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { BotTemplateIcon } from "../../components/bot-template-icon";
 import { ConnectorIcon } from "../../components/connector-icon";
 import { MenuPicker } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
@@ -1452,6 +1453,18 @@ export default function Integrations() {
             ) : null}
 
             {!detailItem && !filtering ? renderConnected() : null}
+            {!detailItem && !filtering ? (
+              <Pressable
+                testID="open-bot-templates"
+                accessibilityRole="button"
+                onPress={() => router.push("/bot-templates")}
+                style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+              >
+                <BotTemplateIcon size={LOGO_SIZE} />
+                <Text style={[styles.title, styles.grow]}>{t("Templates")}</Text>
+                <Chevron />
+              </Pressable>
+            ) : null}
             {!detailItem && savedServerMatches.length ? (
               <View testID="connected-apps" style={styles.catalogStack}>
                 {savedServerMatches.map(renderSavedServer)}

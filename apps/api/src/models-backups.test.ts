@@ -492,6 +492,22 @@ describe("role-based model settings API", () => {
     });
     expect(refused.response.status).toBe(400);
   });
+  it("says whether the main model reads images, as computer use decides it", async () => {
+    const { call } = setup();
+    const seesImages = async (modelId: string) => {
+      const saved = await call("models/setRole", {
+        role: "main",
+        primary: { provider: "openrouter", modelId },
+      });
+      expect(saved.response.status).toBe(200);
+      const read = await call("models/role", { role: "main" });
+      return (await read.response.json()).json.seesImages;
+    };
+    expect(await seesImages(visionModel.id)).toBe(true);
+    expect(await seesImages(textOnlyModel.id)).toBe(false);
+    const approval = await call("models/role", { role: "approval" });
+    expect((await approval.response.json()).json.seesImages).toBeUndefined();
+  });
   it("offers only image-capable models for computer use", async () => {
     const { call } = setup();
     const { response } = await call("models/forRole", { role: "computer" });

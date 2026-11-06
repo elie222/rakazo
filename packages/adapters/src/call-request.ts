@@ -17,12 +17,13 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  isUniqueViolation,
   runAsSystem,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
-import { isUniqueViolation, publishMessage, runLeaseFor } from "./run-messages.js";
+import { publishMessage, runLeaseFor } from "./run-messages.js";
 
 const REASON_MAX = 120;
 const OPENING_MAX = 240;
@@ -253,7 +254,7 @@ export async function requestUserCall(
         firstResponseRunId: event.firstResponse ? run.id : undefined,
         botName: target.bot.name,
       };
-    }),
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
   if ("error" in result) return result;
   await deps.events
