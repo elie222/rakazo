@@ -1,6 +1,7 @@
 """Check that model output reaches GitHub only as allowlisted labels, using a fake gh."""
 
 import json
+import re
 import os
 import pathlib
 import subprocess
@@ -52,6 +53,12 @@ def run(model_output, labels=(), comments=()):
 
 
 class ApplyIssueTriageTests(unittest.TestCase):
+    def test_workflow_schema_matches_script_allowlist(self):
+        workflow = (SCRIPT.parents[1] / "workflows" / "issue-triage.yml").read_text()
+        schema = json.loads(re.search(r"--json-schema '(.+)'", workflow).group(1))
+        allowlist = json.loads(re.search(r"^TYPES='(.+)'$", SCRIPT.read_text(), re.M).group(1))
+        self.assertEqual(schema["properties"]["type"]["enum"], allowlist)
+
     def test_applies_type_size_priority_and_duplicate(self):
         writes, _ = run(result(type="enhancement", size="large", priority_high=True, duplicate_of=5))
         self.assertEqual(

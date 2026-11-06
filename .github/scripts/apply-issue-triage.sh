@@ -2,14 +2,15 @@
 # Applies the issue-triage model's JSON (RESULT) to ISSUE. Only allowlisted
 # values get through, so a crafted issue can at worst mislabel itself.
 set -euo pipefail
-type=$(jq -r '.type | select(IN("bug","enhancement","question","documentation","self-host"))' <<<"$RESULT")
+TYPES='["bug","enhancement","question","documentation","self-host"]'
+type=$(jq -r --argjson types "$TYPES" '.type as $t | select($types | index([$t])) | $t' <<<"$RESULT")
 size=$(jq -r '.size | select(IN("small","medium","large"))' <<<"$RESULT")
 duplicate=$(jq -r --argjson issue "$ISSUE" '.duplicate_of | numbers | select(. > 0 and . < $issue)' <<<"$RESULT")
 # The summary is not parsed for workflow commands; the log is.
 jq -r '.reason | tostring | .[:500]' <<<"$RESULT" >> "$GITHUB_STEP_SUMMARY"
 
 current=$(gh issue view "$ISSUE" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name]')
-existing_type=$(jq -r 'map(select(IN("bug","enhancement","question","documentation","self-host")))[0] // ""' <<<"$current")
+existing_type=$(jq -r --argjson types "$TYPES" 'map(select(. as $l | $types | index([$l])))[0] // ""' <<<"$current")
 has_size=$(jq 'any(startswith("size:"))' <<<"$current")
 labels=()
 if [[ -n "$type" && -z "$existing_type" ]]; then
