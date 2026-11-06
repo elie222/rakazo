@@ -4,17 +4,17 @@ import { callClientNonce } from "@rakazo/core";
 import type * as MessageQuoteModule from "@rakazo/core/message-quote";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { reactToThreadMessage } from "./thread-reactions.js";
+import { threadSnapshot } from "./thread-snapshot.js";
+import { stopThreadRuns } from "./thread-stop.js";
 import type { ThreadTarget } from "./thread-target.js";
 import {
   cancelSupersededQueuedRuns,
   latestWaitingRun,
-  reactToThreadMessage,
   replyParentBotId,
   sendTargetBotIds,
   sendThreadMessage,
-  stopThreadRuns,
   threadHead,
-  threadSnapshot,
 } from "./thread-target.js";
 
 // Passthrough mock: every hint derives for real except the sentinel that
