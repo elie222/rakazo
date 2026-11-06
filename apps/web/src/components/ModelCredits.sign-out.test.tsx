@@ -93,6 +93,7 @@ it("reports a failed log out from the plan choice as a log-out failure", async (
             trialDays: 7,
           } as never
         }
+        client={{} as never}
       />,
     );
     await new Promise((resolve) => setTimeout(resolve, 0));

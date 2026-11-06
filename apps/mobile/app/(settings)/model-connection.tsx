@@ -5,17 +5,15 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
-  CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  cloudflareModelRouting,
-  compatibleConnectionName,
+  compatibleEndpointPresets,
   connectionDisplayName,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
-  isCloudflareModelProvider,
-  isOllamaCloudBaseUrl,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
+  matchCompatibleEndpointPreset,
   modelHeadersInput,
+  modelRoutingForm,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
@@ -259,17 +257,21 @@ export default function ModelConnection() {
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const credential = credentials.find((entry) => entry.id === credentialId);
   const providerName = selected?.providerName ?? selected?.provider ?? "";
+  const endpointPreset =
+    provider === OPENAI_COMPATIBLE_PROVIDER_ID
+      ? matchCompatibleEndpointPreset(compatibleEndpointPresets(catalog), baseUrl)
+      : undefined;
   const selectedProviderLabel = credential
     ? connectionDisplayName(credential, providerName)
-    : compatibleConnectionName(baseUrl, providerName);
+    : (endpointPreset?.name ?? providerName);
   useLayoutEffect(() => {
     if (selectedProviderLabel) navigation.setOptions({ title: selectedProviderLabel });
   }, [navigation, selectedProviderLabel]);
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
-  const isCloudflare = isCloudflareModelProvider(provider);
-  const cloudflareRoutingReady =
-    !isCloudflare || cloudflareModelRouting({ provider, accountId, gatewayId }) !== undefined;
+  const { needsRouting, needsGateway, routingReady } = modelRoutingForm(selected?.routingFields, {
+    accountId,
+    gatewayId,
+  });
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
     enabledModelIds,
@@ -296,12 +298,13 @@ export default function ModelConnection() {
     modelId,
     headerRows,
     credential,
+    keyRequired: Boolean(endpointPreset),
   });
   const limitsDirty = maxTokens !== connectionMaxTokensField(provider, credential?.maxTokens);
   const gatewayDirty =
     accountId.trim() !== (credential?.accountId ?? "") ||
     gatewayId.trim() !== (credential?.gatewayId ?? "");
-  const gatewayOnlySave = isCloudflare && Boolean(credential) && !apiKey.trim();
+  const gatewayOnlySave = needsRouting && Boolean(credential) && !apiKey.trim();
   const protocolChoices: { key: ModelApiProtocol; label: string }[] = [
     { key: "chat-completions", label: t("Chat Completions") },
     { key: "responses", label: t("Responses") },
@@ -673,7 +676,7 @@ export default function ModelConnection() {
         prominence="secondary"
         style={{ marginTop: 12 }}
       />
-      {!isOllamaCloudBaseUrl(baseUrl) ? (
+      {!endpointPreset ? (
         <>
           {disclosureRow(t("Setup help"), showEndpointHelp, () =>
             setShowEndpointHelp((visible) => !visible),
@@ -882,12 +885,12 @@ export default function ModelConnection() {
   const compatKeySection =
     isOpenAiCompatible && acceptsKey ? (
       <View style={styles.keySection}>
-        {isOllamaCloudBaseUrl(baseUrl) ? (
+        {endpointPreset ? (
           <Text style={styles.sectionTitle}>{t("API key")}</Text>
         ) : (
           disclosureRow(t("API key"), showApiKey, () => setShowApiKey((visible) => !visible))
         )}
-        {showApiKey || isOllamaCloudBaseUrl(baseUrl) ? (
+        {showApiKey || endpointPreset ? (
           <TextInput
             accessibilityLabel={t("API key")}
             autoCapitalize="none"
@@ -897,10 +900,10 @@ export default function ModelConnection() {
             importantForAutofill="no"
             onChangeText={updateApiKey}
             placeholder={
-              isOllamaCloudBaseUrl(baseUrl)
-                ? t("Ollama API key")
-                : credential?.hasKey
-                  ? t("Paste a replacement key")
+              credential?.hasKey
+                ? t("Paste a replacement key")
+                : endpointPreset
+                  ? undefined
                   : t("Optional")
             }
             placeholderTextColor={native.tertiaryLabel}
@@ -949,7 +952,7 @@ export default function ModelConnection() {
             )}
             {credential && limitsDirty ? (
               <NativeActionButton
-                disabled={busy || !cloudflareRoutingReady}
+                disabled={busy || !routingReady}
                 label={
                   pending === "connect" && feedbackAnchor === "limits" ? t("Saving…") : t("Save")
                 }
@@ -1047,9 +1050,9 @@ export default function ModelConnection() {
             />
           )
         ) : null}
-        {acceptsKey || isCloudflare ? (
+        {acceptsKey || needsRouting ? (
           <View style={styles.keySection}>
-            {isCloudflare ? (
+            {needsRouting ? (
               <>
                 <Text style={styles.sectionTitle}>{t("Account ID")}</Text>
                 <TextInput
@@ -1065,7 +1068,7 @@ export default function ModelConnection() {
                   style={styles.keyInput}
                   value={accountId}
                 />
-                {isCloudflareGateway ? (
+                {needsGateway ? (
                   <>
                     <Text style={styles.sectionTitle}>{t("Gateway ID")}</Text>
                     <TextInput
@@ -1111,7 +1114,7 @@ export default function ModelConnection() {
             <NativeActionButton
               disabled={
                 busy ||
-                !cloudflareRoutingReady ||
+                !routingReady ||
                 (gatewayOnlySave ? !gatewayDirty : apiKey.trim().length < 8)
               }
               label={

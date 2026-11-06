@@ -18,6 +18,7 @@ import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { useIdentityConfirmation } from "./ConfirmIdentityDialog";
+import { BotEmailAddresses } from "./vault/BotEmailAddresses";
 import { useVaultKindLabels, useVaultSubtitle, VaultTile } from "./vault/kinds";
 import { VaultItemDetail } from "./vault/VaultItemDetail";
 import type { VaultEditorInitial, VaultEditorResult } from "./vault/VaultItemEditor";
@@ -344,6 +345,7 @@ export function VaultSettings({
           {error}
         </p>
       ) : null}
+      {scope === "account" ? <BotEmailAddresses /> : null}
       {identityDialog}
     </section>
   );

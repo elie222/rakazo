@@ -64,11 +64,15 @@ import {
   partialReplyClientNonce,
   RunHistoryWriteError,
 } from "./messages.js";
+import { isRecordNotFound } from "./prisma-errors.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { recordSecurityEvent } from "./security-events.js";
-import { withTransactionRetry } from "./transaction-retry.js";
+import { SpaceDeletionInProgressError, spaceTakesWork } from "./spaces.js";
+import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
+
+export { THREAD_LOCK_TRANSACTION_OPTIONS };
 
 export const STRATEGIC_INITIATIVE_NONCE_PREFIX = "strategic-initiative";
 
@@ -402,6 +406,13 @@ export async function clearThread(
   realtime?: RealtimeFanout,
 ): Promise<ClearThreadResult> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Group before thread, the order every group writer uses (see lockOwnedGroup).
+    if (input.groupId) {
+      await tx.$queryRaw`
+        SELECT id FROM chat_groups
+        WHERE id = ${input.groupId} AND "spaceId" = ${input.spaceId}
+        FOR NO KEY UPDATE`;
+    }
     const thread = await tx.thread.update({
       where: {
         id: input.threadId,
@@ -534,6 +545,10 @@ export async function sendUserMessage(
 
   const commit = () =>
     prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // Webhooks, texts and other bots can reach a Space until its teardown finishes; one being
+      // deleted takes no new turns. A transcript copy that starts none is still kept.
+      if (input.createRun !== false && !(await spaceTakesWork(tx, input.spaceId)))
+        throw new SpaceDeletionInProgressError();
       // Message first: its thread-row lock serializes the whole send against clearThread, so a
       // concurrent clear either sees the committed run and cancels it, or strictly precedes this
       // transaction. Created in separate transactions, the run could land inside the clear's
@@ -676,7 +691,7 @@ export async function sendUserMessage(
         },
       });
       return { message, task, run, busy, event };
-    });
+    }, THREAD_LOCK_TRANSACTION_OPTIONS);
   const committed = await commit().catch(async (error) => {
     const winner = await replay();
     if (winner) return { replay: winner } as const;
@@ -1757,7 +1772,10 @@ export async function appendEvent(
 ): Promise<ProductEvent> {
   // Concurrent writers in one thread (group members, bot messages) can deadlock on the thread row.
   const event = await withTransactionRetry(() =>
-    prisma.$transaction((tx: Prisma.TransactionClient) => appendEventInTransaction(tx, input)),
+    prisma.$transaction(
+      (tx: Prisma.TransactionClient) => appendEventInTransaction(tx, input),
+      THREAD_LOCK_TRANSACTION_OPTIONS,
+    ),
   );
   if (
     input.runId &&
@@ -1818,14 +1836,6 @@ export function completedRunBlocks(
       : block,
   );
 }
-
-// Transactions that lock the thread row before writing run state share the body budget: the
-// lock is held up to 15s by snapshot reads, Prisma's 5s default counts that wait, and expiring
-// fails a user stop, clear, send, reaction or card answer, a run's steering claim or takeover
-// handoff, or a run whose work already finished. Only the timeout is shared; an explicit
-// maxWait would override the client's longer connection wait, so a saturated pool that frees
-// a connection late would fail the checkout instead of waiting.
-export const THREAD_LOCK_TRANSACTION_OPTIONS = { timeout: 20_000 };
 
 // The thread lock is shared with snapshot reads that may hold it for up to 15s. Prisma's 5s
 // default counts that wait, and expiring would fail a run whose work already finished.
@@ -2019,7 +2029,11 @@ export async function discardAnsweredSteering(
   });
 }
 
-/** Queue one follow-up when this bot still has unclaimed steering and no live run. */
+/**
+ * Queue one follow-up when this bot still has unclaimed steering and no live run. A Space being
+ * deleted gets it too: its messages were accepted, and the executor holds the run until the
+ * deletion ends or is called off.
+ */
 export async function createPendingSteeringRun(
   tx: Prisma.TransactionClient,
   input: { spaceId: string; threadId: string; botId: string },
@@ -2197,10 +2211,6 @@ export async function appendEventInTransaction(
       ).count === 1,
   );
   return { ...event, firstResponse };
-}
-
-function isRecordNotFound(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2025");
 }
 
 /** Timing metadata is returned by the transaction that recorded first output. */

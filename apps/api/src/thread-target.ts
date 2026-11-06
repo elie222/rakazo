@@ -47,10 +47,13 @@ import {
   lockSpaceGroup,
   primaryActiveRun,
   retireWaitingQuestionInTransaction,
+  SpaceDeletionInProgressError,
   spaceIsShared,
+  spaceTakesWork,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
   transientRunEventsWhere,
+  withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -60,7 +63,6 @@ import {
   resolveSendAttachments,
 } from "./artifacts.js";
 import { resolveBusyBotName, toComputerStatus } from "./computer-status.js";
-import { withSerializableRetry } from "./serializable-retry.js";
 import type { ImageAdmissionRun } from "./thread-image-admission.js";
 import { assertThreadImageInput } from "./thread-image-admission.js";
 import { loadMessagePage } from "./thread-message-pages.js";
@@ -472,6 +474,7 @@ export async function threadSnapshot(
                 ],
               },
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              include: { routine: { select: { name: true } } },
             }),
             tx.run.findFirst({
               where: {
@@ -572,6 +575,7 @@ export async function threadSnapshot(
             ],
           },
           orderBy: { createdAt: "desc" },
+          include: { routine: { select: { name: true } } },
         }),
         // Recently updated terminals (completion bumps updatedAt). pickLatestTerminalRun then
         // ranks by completedAt ?? createdAt so null timestamps cannot revive a stale failure.
@@ -699,6 +703,7 @@ function mapRun(run: {
   status: string;
   trigger: string;
   routineId: string | null;
+  routine?: { name: string } | null;
   modelProvider: string | null;
   modelId: string | null;
   error: string | null;
@@ -715,6 +720,7 @@ function mapRun(run: {
     status: run.status as never,
     trigger: run.trigger as never,
     routineId: run.routineId ?? null,
+    ...(run.routine ? { routineName: run.routine.name } : {}),
     modelProvider: run.modelProvider,
     modelId: run.modelId,
     // Same display clamp as live run.failed events so a huge stored error cannot bypass it.
@@ -839,6 +845,8 @@ export async function sendThreadMessage(
 
   const commit = () =>
     deps.prisma.$transaction(async (tx) => {
+      // A Space being deleted takes no new turns; its lock comes before the group and thread rows.
+      if (!(await spaceTakesWork(tx, actor.spaceId))) throw new SpaceDeletionInProgressError();
       const author = await loadMessageAuthor(tx, actor.userId);
       let routineRuns: Array<{ id: string; status: string }> = [];
       let replyToMessageId: string | undefined;
@@ -1334,7 +1342,7 @@ export async function sendThreadMessage(
       return { message, runs, routineRuns, eventSeq: event.seq };
     }, THREAD_LOCK_TRANSACTION_OPTIONS);
 
-  const committed = await withSerializableRetry(commit).catch(async (error) => {
+  const committed = await withTransactionRetry(commit).catch(async (error) => {
     const winner = await replayExistingSend(
       deps,
       target.threadId,
@@ -1390,6 +1398,9 @@ export async function reactToThreadMessage(
   releaseTakeover?: (runId: string) => Promise<void>,
 ) {
   const committed = await deps.prisma.$transaction(async (tx) => {
+    // Group before thread, the order every group writer uses.
+    const members =
+      target.kind === "group" ? await lockAndLoadGroupMembers(tx, actor, target) : undefined;
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
     const parent = await tx.message.findFirst({
       where: { id: input.messageId, threadId: target.threadId },
@@ -1413,8 +1424,6 @@ export async function reactToThreadMessage(
       const run = steering?.run;
       return { eventSeq: null, runs: run?.status === "waiting_takeover" ? [run] : [] };
     }
-    const members =
-      target.kind === "group" ? await lockAndLoadGroupMembers(tx, actor, target) : undefined;
     const currentTarget = members
       ? { ...target, memberBotIds: members.map((member) => member.botId) }
       : target;
@@ -1602,6 +1611,10 @@ export function isStopMessage(input: { text?: string; artifactIds?: string[] }) 
 
 export const STOPPED_BY_MESSAGE_NOTE = "Stopped. Anything already done stays done.";
 
+export function stoppedRoutineNote(routineName: string) {
+  return `Stopped the routine "${routineName}".`;
+}
+
 export async function stopThreadRuns(
   deps: {
     prisma: PrismaClient;
@@ -1638,7 +1651,15 @@ export function cancelThreadRuns(
         status: { in: [...ACTIVE_RUN_STATUSES] },
       },
       data: { status: "cancelled", completedAt: new Date() },
-      select: { id: true, botId: true, userId: true, spaceId: true },
+      select: {
+        id: true,
+        botId: true,
+        userId: true,
+        spaceId: true,
+        trigger: true,
+        routineId: true,
+        routine: { select: { name: true } },
+      },
     });
     const ids = cancelled.map((run) => run.id);
     await clearEndedRunState(tx, ids);
@@ -1694,18 +1715,36 @@ export function cancelThreadRuns(
       });
       eventSeq = event.seq;
     }
-    if (ids.length && note) {
-      const blocks: MessageBlock[] = [{ kind: "meta", text: STOPPED_BY_MESSAGE_NOTE }];
+    const named = (run: (typeof cancelled)[number]) =>
+      run.trigger === "routine" && run.routine && run.routineId ? run.routine.name : undefined;
+    const routineNotes = [
+      ...new Map(
+        cancelled.flatMap((run) => {
+          const name = named(run);
+          return name
+            ? [[run.routineId, { botId: run.botId, text: stoppedRoutineNote(name) }] as const]
+            : [];
+        }),
+      ).values(),
+    ];
+    const notes = [
+      ...routineNotes,
+      ...(note && cancelled.some((run) => !named(run))
+        ? [{ botId: note.botId, text: STOPPED_BY_MESSAGE_NOTE }]
+        : []),
+    ];
+    for (const { botId, text } of notes) {
+      const blocks: MessageBlock[] = [{ kind: "meta", text }];
       const message = await createThreadMessageInTransaction(tx, {
         threadId: target.threadId,
         role: "system",
         blocks,
-        botId: note.botId,
+        botId,
       });
       const event = await appendEventInTransaction(tx, {
         spaceId: actor.spaceId,
         threadId: target.threadId,
-        botId: note.botId,
+        botId,
         type: "thread.message.created",
         payload: { messageId: message.id, role: "system", blocks },
       });
