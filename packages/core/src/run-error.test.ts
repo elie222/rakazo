@@ -1,4 +1,4 @@
-import { COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
+import { COMPUTER_PROVIDER_UNAVAILABLE_ERROR, COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   APPROVED_ACTION_NOT_RUN_ERROR,
@@ -661,12 +661,12 @@ it.each([
   });
 });
 
-it("shows the computer rate limit as written", () => {
-  expect(normalizeRunError(COMPUTER_RATE_LIMIT_ERROR)).toEqual({
-    summary: COMPUTER_RATE_LIMIT_ERROR,
-    details: COMPUTER_RATE_LIMIT_ERROR,
-  });
-});
+it.each([COMPUTER_RATE_LIMIT_ERROR, COMPUTER_PROVIDER_UNAVAILABLE_ERROR])(
+  "shows the computer error %j as written",
+  (message) => {
+    expect(normalizeRunError(message)).toEqual({ summary: message, details: message });
+  },
+);
 
 it("does not expose malformed fallback metadata as user-facing copy", () => {
   expect(

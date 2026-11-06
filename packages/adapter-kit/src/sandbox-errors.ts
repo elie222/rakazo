@@ -1,4 +1,8 @@
-import { COMPUTER_ALLOWANCE_USED_ERROR, COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
+import {
+  COMPUTER_ALLOWANCE_USED_ERROR,
+  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
+  COMPUTER_RATE_LIMIT_ERROR,
+} from "@rakazo/contracts";
 
 /** The sandbox provider refused the request because an account rate limit or quota was hit. */
 export class SandboxRateLimitError extends Error {
@@ -42,6 +46,18 @@ export class SandboxUnresponsiveError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
     this.name = "SandboxUnresponsiveError";
+  }
+}
+
+/**
+ * The deployment's own provider account refused the request, for example because it is unpaid.
+ * Only the operator can fix it, so users get a neutral message and the cause stays in the logs.
+ */
+export class SandboxProviderAccountError extends SandboxUnresponsiveError {
+  readonly code = "SANDBOX_PROVIDER_ACCOUNT";
+  constructor(options?: { cause?: unknown }) {
+    super(COMPUTER_PROVIDER_UNAVAILABLE_ERROR, options);
+    this.name = "SandboxProviderAccountError";
   }
 }
 
