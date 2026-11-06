@@ -3047,6 +3047,10 @@ msgstr "Dictation failed."
 msgid "Did you mean <0>{emailSuggestion}</0>?"
 msgstr "Did you mean <0>{emailSuggestion}</0>?"
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr "Didn't catch that."
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Disable a tool"
@@ -3369,10 +3373,6 @@ msgstr "Everyone here sees its chats, bots and memory"
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr "Everyone in this bot's space can read the chats it gets from {linkApp}."
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Executor token"
-msgstr "Executor token"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
@@ -7180,10 +7180,6 @@ msgstr "Transcription response is too large."
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr "Treat like a person"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "Treg token"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"

@@ -7,6 +7,7 @@ import type {
   IntegrationCatalogSurface,
   McpServer,
   McpServerConnection,
+  McpSourcePreset,
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
 import {
@@ -162,13 +163,14 @@ function ConnectionStatus({ server }: { server: McpServer }) {
   );
 }
 
-type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
+type SourceKind = "mcp" | "api" | "graphql";
 type OverlayView = "browse" | "manage" | "github" | "source" | "browseMcp" | "domain";
 
 const NO_CATALOG: ConnectionCatalogItem[] = [];
 const NO_CONNECTIONS: Connection[] = [];
 const NO_SOURCES: CapabilityInstall[] = [];
 const NO_PLUGINS: PluginMarketplaceEntry[] = [];
+const NO_PRESETS: McpSourcePreset[] = [];
 const SECTION_SIZE = 6;
 const CHIP_COUNT = 6;
 const PLUGIN_PAGE_SIZE = 24;
@@ -212,6 +214,7 @@ export function PluginsOverlay({
   // Only accounts whose label is being edited; the rest follow the saved name.
   const [labelDrafts, setLabelDrafts] = useState<Record<string, string>>({});
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
+  const [sourcePreset, setSourcePreset] = useState<McpSourcePreset | null>(null);
   const [sourceName, setSourceName] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [credential, setCredential] = useState("");
@@ -246,6 +249,8 @@ export function PluginsOverlay({
   const mcpOptions = queries.mcp.servers.list.queryOptions();
   const mcpQuery = useQuery(mcpOptions);
   const mcpServers = mcpQuery.data ?? [];
+  const sourcePresets =
+    useQuery(queries.capabilities.sourcePresets.queryOptions()).data ?? NO_PRESETS;
   const mcpError = mcpQuery.error ? errorText(mcpQuery.error, t`Could not load MCP servers`) : null;
   async function loadIntegrations() {
     // The catalog call reconciles connection rows, so list them after it settles.
@@ -644,18 +649,19 @@ export function PluginsOverlay({
     }
   }
 
-  function beginSource(kind: SourceKind) {
+  function beginSource(kind: SourceKind, preset: McpSourcePreset | null = null) {
     setPlugin(null);
     setDetailKey(null);
     setSourceBack("browse");
     setView("source");
     setSourceKind(kind);
+    setSourcePreset(preset);
     setSourceError(null);
     setSourceHint(null);
-    setSourceName(kind === "treg" ? "Treg" : kind === "executor" ? "Executor" : "");
-    setSourceUrl(kind === "treg" ? "https://treg.to/mcp/" : "");
+    setSourceName(preset?.name ?? "");
+    setSourceUrl(preset?.url ?? "");
     setCredential("");
-    setAuthType(kind === "treg" || kind === "executor" ? "bearer" : "none");
+    setAuthType(preset ? "bearer" : "none");
     setAuthName("x-api-key");
   }
 
@@ -685,6 +691,7 @@ export function PluginsOverlay({
     setSourceBack("domain");
     setView("source");
     setSourceKind(surface.kind === "mcp" ? "mcp" : "api");
+    setSourcePreset(null);
     setSourceName(result.name);
     setSourceUrl(surface.source);
     setCredential("");
@@ -704,29 +711,19 @@ export function PluginsOverlay({
         ...(authType === "header" ? { name: authName.trim() } : {}),
       };
       await rpc.capabilities.install({
-        kind: sourceKind === "treg" || sourceKind === "executor" ? "mcp" : sourceKind,
+        kind: sourceKind,
         name:
           sourceName.trim() ||
-          (sourceKind === "treg"
-            ? "Treg"
-            : sourceKind === "executor"
-              ? "Executor"
-              : sourceKind === "graphql"
-                ? "GraphQL"
-                : "Custom connector"),
+          (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : "Custom connector")),
         source: sourceUrl.trim(),
         credential: credential.trim() || undefined,
-        config:
-          sourceKind === "treg"
-            ? { preset: "treg", auth: { type: "bearer" } }
-            : sourceKind === "api"
-              ? { openApi: true, auth }
-              : sourceKind === "graphql"
-                ? { auth }
-                : {
-                    preset: "custom",
-                    auth: sourceKind === "executor" ? { type: "bearer" } : auth,
-                  },
+        config: sourcePreset
+          ? { preset: sourcePreset.id }
+          : sourceKind === "api"
+            ? { openApi: true, auth }
+            : sourceKind === "graphql"
+              ? { auth }
+              : { preset: "custom", auth },
       });
       setCredential("");
       setSourceKind(null);
@@ -1126,8 +1123,11 @@ export function PluginsOverlay({
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => beginSource("api")}>OpenAPI</DropdownMenuItem>
           <DropdownMenuItem onClick={() => beginSource("graphql")}>GraphQL</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => beginSource("executor")}>Executor</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => beginSource("treg")}>Treg</DropdownMenuItem>
+          {sourcePresets.map((preset) => (
+            <DropdownMenuItem key={preset.id} onClick={() => beginSource("mcp", preset)}>
+              {preset.name}
+            </DropdownMenuItem>
+          ))}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => {
@@ -1210,14 +1210,12 @@ export function PluginsOverlay({
 
   function renderSourceForm() {
     if (!sourceKind) return null;
-    const custom = sourceKind !== "treg" && sourceKind !== "executor";
+    const custom = !sourcePreset;
     return (
       <div data-testid="integrations-source-form" className="max-w-xl space-y-6">
         {renderViewTitle(
-          sourceKind === "treg" ? (
-            "Treg"
-          ) : sourceKind === "executor" ? (
-            "Executor"
+          sourcePreset ? (
+            sourcePreset.name
           ) : sourceKind === "mcp" ? (
             <Trans>MCP server</Trans>
           ) : sourceKind === "graphql" ? (
@@ -1245,7 +1243,7 @@ export function PluginsOverlay({
               autoFocus
             />
           </Field>
-          {sourceKind !== "treg" ? (
+          {!sourcePreset?.url ? (
             <Field>
               <FieldLabel htmlFor="source-url">URL</FieldLabel>
               <Input
@@ -1253,13 +1251,12 @@ export function PluginsOverlay({
                 value={sourceUrl}
                 onChange={(event) => setSourceUrl(event.target.value)}
                 placeholder={
-                  sourceKind === "mcp"
+                  sourcePreset?.urlPlaceholder ??
+                  (sourceKind === "mcp"
                     ? "https://example.com/mcp"
-                    : sourceKind === "executor"
-                      ? "https://executor.example/mcp"
-                      : sourceKind === "graphql"
-                        ? "https://example.com/graphql"
-                        : "https://example.com/openapi.json"
+                    : sourceKind === "graphql"
+                      ? "https://example.com/graphql"
+                      : "https://example.com/openapi.json")
                 }
               />
             </Field>
@@ -1302,13 +1299,7 @@ export function PluginsOverlay({
           {!custom || authType !== "none" ? (
             <Field>
               <FieldLabel htmlFor="source-credential">
-                {sourceKind === "treg" ? (
-                  <Trans>Treg token</Trans>
-                ) : sourceKind === "executor" ? (
-                  <Trans>Executor token</Trans>
-                ) : (
-                  <Trans>Credential</Trans>
-                )}
+                {sourcePreset ? <Trans>Bearer token</Trans> : <Trans>Credential</Trans>}
               </FieldLabel>
               <Input
                 id="source-credential"

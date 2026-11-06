@@ -3047,6 +3047,10 @@ msgstr ""
 msgid "Did you mean <0>{emailSuggestion}</0>?"
 msgstr "האם התכוונת ל-<0>{emailSuggestion}</0>?"
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "השבתת כלי"
@@ -3369,10 +3373,6 @@ msgstr ""
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Executor token"
-msgstr "טוקן Executor"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
@@ -7180,10 +7180,6 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr "התייחסות כמו לאדם"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "טוקן Treg"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"

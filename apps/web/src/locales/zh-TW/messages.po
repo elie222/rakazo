@@ -3048,6 +3048,10 @@ msgstr "語音輸入失敗。"
 msgid "Did you mean <0>{emailSuggestion}</0>?"
 msgstr "你是指 <0>{emailSuggestion}</0> 嗎？"
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "停用工具"
@@ -3370,10 +3374,6 @@ msgstr ""
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Executor token"
-msgstr "Executor 權杖"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
@@ -7181,10 +7181,6 @@ msgstr "轉錄回應過大。"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr "視為真人"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "Treg 權杖"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"

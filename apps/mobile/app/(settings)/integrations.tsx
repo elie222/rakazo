@@ -5,6 +5,7 @@ import type {
   ConnectionCatalogItem,
   McpServer,
   McpServerConnection,
+  McpSourcePreset,
   PluginMarketplaceEntry,
   RpcOutput,
 } from "@rakazo/contracts";
@@ -83,7 +84,7 @@ import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 type SourceAuth = "none" | "bearer" | "header" | "oauth";
-type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
+type SourceKind = "mcp" | "api" | "graphql";
 type ConnectionTool = RpcOutput<"connections/tools">[number];
 
 const LOGO_SIZE = 32;
@@ -128,6 +129,8 @@ export default function Integrations() {
   const [pluginCount, setPluginCount] = useState(PLUGIN_PAGE_SIZE);
   const [gitUrl, setGitUrl] = useState("");
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
+  const [sourcePresets, setSourcePresets] = useState<McpSourcePreset[]>([]);
+  const [sourcePreset, setSourcePreset] = useState<McpSourcePreset | null>(null);
   const [adding, setAdding] = useState<"github" | "source" | null>(null);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
@@ -318,6 +321,7 @@ export default function Integrations() {
       setMcpError(null);
       setDetailKey(null);
       setLabelDrafts({});
+      setSourcePresets([]);
     }
     cacheScope.current = scope;
     if (!previous || previous.userId !== scope.userId || previous.spaceId !== scope.spaceId) {
@@ -363,6 +367,18 @@ export default function Integrations() {
         }
       })
       .catch(() => undefined);
+    // A server without presets (or a failed request) offers none, never another server's.
+    const applyPresets = (presets: McpSourcePreset[]) => {
+      if (
+        mounted.current &&
+        isIntegrationsScopeCurrent(scope) &&
+        sourceGeneration === sourcesGeneration.current
+      )
+        setSourcePresets(presets);
+    };
+    void rpc("capabilities/sourcePresets")
+      .then(applyPresets)
+      .catch(() => applyPresets([]));
     void rpc("marketplace/catalog", { query: "" })
       .then((result) => {
         if (
@@ -929,14 +945,15 @@ export default function Integrations() {
     }
   }
 
-  function beginSource(kind: SourceKind) {
+  function beginSource(kind: SourceKind, preset: McpSourcePreset | null = null) {
     setAdding("source");
     setSourceKind(kind);
+    setSourcePreset(preset);
     setSourceError(null);
-    setName(kind === "treg" ? "Treg" : kind === "executor" ? "Executor" : "");
-    setUrl(kind === "treg" ? "https://treg.to/mcp/" : "");
+    setName(preset?.name ?? "");
+    setUrl(preset?.url ?? "");
     setCredential("");
-    setSourceAuth(kind === "treg" || kind === "executor" ? "bearer" : "none");
+    setSourceAuth(preset ? "bearer" : "none");
     setAuthHeader("x-api-key");
   }
 
@@ -970,13 +987,7 @@ export default function Integrations() {
     setSourceError(null);
     const displayName =
       name.trim() ||
-      (sourceKind === "treg"
-        ? "Treg"
-        : sourceKind === "executor"
-          ? "Executor"
-          : sourceKind === "graphql"
-            ? "GraphQL"
-            : t("Custom connector"));
+      (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : t("Custom connector")));
     const auth =
       sourceAuth === "header"
         ? { type: "header", name: authHeader.trim() }
@@ -994,18 +1005,17 @@ export default function Integrations() {
         setOauthServerId(created.id);
       } else {
         await rpc("capabilities/install", {
-          kind: sourceKind === "treg" || sourceKind === "executor" ? "mcp" : sourceKind,
+          kind: sourceKind,
           name: displayName,
           source: url.trim(),
           credential: (sourceAuth !== "none" && credential.trim()) || undefined,
-          config:
-            sourceKind === "treg"
-              ? { preset: "treg", auth: { type: "bearer" } }
-              : sourceKind === "api"
-                ? { openApi: true, auth }
-                : sourceKind === "graphql"
-                  ? { auth }
-                  : { preset: "custom", auth },
+          config: sourcePreset
+            ? { preset: sourcePreset.id }
+            : sourceKind === "api"
+              ? { openApi: true, auth }
+              : sourceKind === "graphql"
+                ? { auth }
+                : { preset: "custom", auth },
         });
         if (!isCurrent()) return;
       }
@@ -1204,22 +1214,32 @@ export default function Integrations() {
     );
   }
 
-  const addOptions: Array<{ id: "github" | SourceKind; label: string }> = [
-    { id: "github", label: t("From GitHub") },
-    { id: "mcp", label: t("MCP server") },
-    { id: "api", label: "OpenAPI" },
-    { id: "graphql", label: "GraphQL" },
-    { id: "executor", label: "Executor" },
-    { id: "treg", label: "Treg" },
+  const addOptions: Array<{
+    id: string;
+    label: string;
+    kind: "github" | SourceKind;
+    preset?: McpSourcePreset;
+  }> = [
+    { id: "github", label: t("From GitHub"), kind: "github" },
+    { id: "mcp", label: t("MCP server"), kind: "mcp" },
+    { id: "api", label: "OpenAPI", kind: "api" },
+    { id: "graphql", label: "GraphQL", kind: "graphql" },
+    ...sourcePresets.map((preset) => ({
+      id: `preset:${preset.id}`,
+      label: preset.name,
+      kind: "mcp" as const,
+      preset,
+    })),
   ];
 
-  function startAdding(id: "github" | SourceKind) {
+  function startAdding(option: (typeof addOptions)[number] | undefined) {
+    if (!option) return;
     closeDetail();
     setSourceError(null);
-    if (id === "github") {
+    if (option.kind === "github") {
       setSourceKind(null);
       setAdding("github");
-    } else beginSource(id);
+    } else beginSource(option.kind, option.preset);
   }
 
   useLayoutEffect(() => {
@@ -1235,13 +1255,13 @@ export default function Integrations() {
             items: addOptions.map((option) => ({
               type: "action" as const,
               label: option.label,
-              onPress: () => startAdding(option.id),
+              onPress: () => startAdding(option),
             })),
           },
         },
       ],
     } satisfies NativeStackNavigationOptions);
-  }, [navigation, t]);
+  }, [navigation, sourcePresets, t]);
 
   function renderAddMenuFallback() {
     if (iosAtLeast(26)) return null;
@@ -1250,7 +1270,9 @@ export default function Integrations() {
         colorScheme={scheme}
         title={t("Add custom")}
         actions={addOptions.map((option) => ({ id: option.id, title: option.label }))}
-        onPressAction={({ nativeEvent }) => startAdding(nativeEvent.event as "github" | SourceKind)}
+        onPressAction={({ nativeEvent }) =>
+          startAdding(addOptions.find((option) => option.id === nativeEvent.event))
+        }
       >
         {/* A plain view: on Android the menu opens from its own Pressable, which a
             nested Pressable would take the touch from. */}
@@ -1301,15 +1323,13 @@ export default function Integrations() {
         {adding === "source" && sourceKind ? (
           <View style={styles.card}>
             <Text style={styles.title}>
-              {sourceKind === "treg"
-                ? t("Connect Treg")
-                : sourceKind === "executor"
-                  ? t("Connect Executor")
-                  : sourceKind === "mcp"
-                    ? t("Remote MCP server")
-                    : sourceKind === "graphql"
-                      ? t("GraphQL endpoint")
-                      : t("OpenAPI JSON")}
+              {sourcePreset
+                ? t("Connect {name}", { name: sourcePreset.name })
+                : sourceKind === "mcp"
+                  ? t("Remote MCP server")
+                  : sourceKind === "graphql"
+                    ? t("GraphQL endpoint")
+                    : t("OpenAPI JSON")}
             </Text>
             <TextInput
               value={name}
@@ -1318,26 +1338,25 @@ export default function Integrations() {
               placeholderTextColor={native.tertiaryLabel}
               style={styles.input}
             />
-            {sourceKind !== "treg" ? (
+            {!sourcePreset?.url ? (
               <TextInput
                 value={url}
                 onChangeText={setUrl}
                 autoCapitalize="none"
                 autoCorrect={false}
                 placeholder={
-                  sourceKind === "mcp"
+                  sourcePreset?.urlPlaceholder ??
+                  (sourceKind === "mcp"
                     ? t("https://example.com/mcp")
-                    : sourceKind === "executor"
-                      ? t("https://executor.example/mcp")
-                      : sourceKind === "graphql"
-                        ? t("https://example.com/graphql")
-                        : t("https://example.com/openapi.json")
+                    : sourceKind === "graphql"
+                      ? t("https://example.com/graphql")
+                      : t("https://example.com/openapi.json"))
                 }
                 placeholderTextColor={native.tertiaryLabel}
                 style={styles.input}
               />
             ) : null}
-            {sourceKind !== "treg" && sourceKind !== "executor" ? (
+            {!sourcePreset ? (
               <MenuPicker
                 label={t("Authentication")}
                 plain
@@ -1370,15 +1389,7 @@ export default function Integrations() {
                 secureTextEntry
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholder={
-                  sourceKind === "treg"
-                    ? t("Treg token")
-                    : sourceKind === "executor"
-                      ? t("Executor token")
-                      : sourceAuth === "header"
-                        ? t("API key")
-                        : t("Bearer token")
-                }
+                placeholder={sourceAuth === "header" ? t("API key") : t("Bearer token")}
                 placeholderTextColor={native.tertiaryLabel}
                 style={styles.input}
               />
