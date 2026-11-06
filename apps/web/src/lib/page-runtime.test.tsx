@@ -77,7 +77,7 @@ it("builds an HTML page without fetching or running the JSX runtime", async () =
     ),
   );
   expect(shown).toContain("<h1>Inline</h1>");
-  expect(shown).toContain('r.dataset.theme="dark"');
+  expect(shown).toContain('document.documentElement.dataset.theme="dark"');
   expect(shown).toContain('"rakazo-page:height"');
   expect(fetcher).not.toHaveBeenCalled();
   act(() => root.unmount());

@@ -298,6 +298,7 @@ describe("saving a page shared by link", () => {
       { pageId: "page-1", edits: [{ find: "Hi" }] },
       { pageId: "page-1", edits: [{ find: "Missing", replace: "x" }] },
       { pageId: "page-1", source: "not a page" },
+      { pageId: "page-1", format: "html", edits: [edit] },
     ]) {
       const held = request(args);
       expect(await holdSharedPageSave(context({}, shared), held as never)).toBeUndefined();

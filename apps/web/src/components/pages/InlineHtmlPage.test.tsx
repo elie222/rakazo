@@ -57,3 +57,28 @@ it("says a page could not be read instead of leaving its placeholder pulsing", a
   expect(document.body.textContent).toContain("This page couldn't load");
   act(() => root.unmount());
 });
+
+it("keeps a started page running when it scrolls away, so what the reader did stays", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let report: (near: boolean) => void = () => undefined;
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+        report = (near) => callback([{ isIntersecting: near }]);
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(async () => root.render(<InlineHtmlPage title="Calc" document="<p>page</p>" />));
+  // Far down a long chat, a page does not start.
+  expect(document.body.querySelector("iframe")).toBeNull();
+  act(() => report(true));
+  const frame = document.body.querySelector("iframe");
+  expect(frame).not.toBeNull();
+  act(() => report(false));
+  expect(document.body.querySelector("iframe")).toBe(frame);
+  act(() => root.unmount());
+});
