@@ -342,7 +342,7 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     expect(await accountOf(address)).toMatchObject({ id: grace.id, deactivatedAt: null });
   });
 
-  it("takes a turned-off person out of a teammate's space, handing what they made to its owner", async () => {
+  it("takes a turned-off person out of spaces they were invited into, keeping ones they own", async () => {
     const owner = await system.user.create({
       data: { id: randomUUID(), name: "Olive", email: "olive@example.test", emailVerified: true },
     });
@@ -372,11 +372,29 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
       await scim("POST", "/Users", userResource(address, "directory-nora"))
     ).json()) as { id: string };
     const nora = await accountOf(address);
-    // As accepting the owner's invite would: a guest of the organization, a member of the space.
+    // A full member of the owner's organization: invited into Launch, and owner of a space of
+    // her own there that the owner joined.
     const joined = { organizationId, userId: nora.id, createdAt: new Date() };
-    await system.member.create({ data: { id: randomUUID(), ...joined, role: "guest" } });
+    await system.member.create({ data: { id: randomUUID(), ...joined, role: "member" } });
     await system.spaceMember.create({
       data: { id: randomUUID(), ...joined, spaceId, role: "member" },
+    });
+    const notes = randomUUID();
+    await system.space.create({
+      data: { id: notes, organizationId, name: "Field notes", createdByUserId: nora.id },
+    });
+    await system.spaceMember.create({
+      data: { id: randomUUID(), ...joined, spaceId: notes, role: "owner" },
+    });
+    await system.spaceMember.create({
+      data: {
+        id: randomUUID(),
+        organizationId,
+        userId: owner.id,
+        spaceId: notes,
+        role: "member",
+        createdAt: new Date(),
+      },
     });
     const bot = await createRepos(system).createBot(
       { userId: nora.id, spaceId, email: address, isDeploymentOwner: false },
@@ -409,8 +427,14 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
       Operations: [{ op: "Replace", path: "active", value: "False" }],
     });
     expect([200, 204]).toContain(off.status);
-    expect(await system.spaceMember.count({ where: { userId: nora.id } })).toBe(0);
-    expect(await system.member.count({ where: { userId: nora.id } })).toBe(0);
+    expect(await system.spaceMember.count({ where: { spaceId, userId: nora.id } })).toBe(0);
+    // The space she owns stays hers, and with it her place in the organization.
+    expect(
+      await system.spaceMember.findUniqueOrThrow({
+        where: { spaceId_userId: { spaceId: notes, userId: nora.id } },
+      }),
+    ).toMatchObject({ role: "owner" });
+    expect(await system.member.count({ where: { organizationId, userId: nora.id } })).toBe(1);
     expect(await system.bot.findUniqueOrThrow({ where: { id: bot.id } })).toMatchObject({
       userId: owner.id,
       spaceId,
@@ -435,7 +459,7 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     });
     expect([200, 204]).toContain(on.status);
     expect((await accountOf(address)).deactivatedAt).toBeNull();
-    expect(await system.spaceMember.count({ where: { userId: nora.id } })).toBe(0);
+    expect(await system.spaceMember.count({ where: { spaceId, userId: nora.id } })).toBe(0);
   });
 
   it("takes over an existing account without changing it, and leaves others alone", async () => {

@@ -692,6 +692,14 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       data: { spaceId: home, userId: invitee.id, name: "Planner", color: "test" },
     });
 
+    // An account that is active again (reactivated while it was leaving) stays.
+    await expect(
+      leaveInvitedSpaces(prisma, invitee.id, async () => undefined, { deactivated: true }),
+    ).resolves.toEqual([]);
+    expect(await system.spaceMember.count({ where: { spaceId: home, userId: invitee.id } })).toBe(
+      1,
+    );
+
     // The invitee deletes their account first: their bot stays in the shared Space.
     await expect(personalOrganizationIds(prisma, invitee.id)).resolves.toEqual([
       invitee.organizationId,

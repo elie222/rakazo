@@ -240,7 +240,8 @@ group requests are refused. Rotating it means changing the value and restarting 
   they started, skips their routines, and refuses any new sign-in, run, webhook delivery or
   message from their linked chat apps. Their bots, chats, memory, files and connections stay.
   They also leave every shared space someone else invited them into, as if removed: what they
-  made there passes to that space's owner, and their routines there are paused.
+  made there passes to that space's owner, and their routines there are paused. Spaces they own
+  stay theirs.
   Turning them back on restores sign-in and their own spaces, and routines there resume from
   their next scheduled time. Shared spaces they left need a new invite.
 - **Adding a deleted person again** with the same external id finds their existing account.
