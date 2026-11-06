@@ -21,6 +21,16 @@ export function matchAppCatalog(catalog: ConnectionCatalogItem[], app: string) {
   );
 }
 
+/** Like `matchAppCatalog`, but an entry some provider reports connected wins. */
+export function matchConnectedAppCatalog(catalog: ConnectionCatalogItem[], app: string) {
+  return (
+    matchAppCatalog(
+      catalog.filter((entry) => entry.connected),
+      app,
+    ) ?? matchAppCatalog(catalog, app)
+  );
+}
+
 export function appConnectCard(entry: ConnectionCatalogItem): AppConnectBlock {
   const description =
     Object.entries(APP_DESCRIPTIONS).find(

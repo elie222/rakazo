@@ -39,6 +39,7 @@ import {
   expireComputerExecutionLeases,
   InstructionConflictError,
   IsolationError,
+  isRecordNotFound,
   recordComputerRunEnd,
   recordSecurityEvent,
   restoreBotUnderComputerQuota,
@@ -50,17 +51,15 @@ import { getLogger } from "@rakazo/logging";
 import type { AgentImportServices } from "../agent-import.js";
 import { agentImportSetupState, createImportedBot, previewAgentImport } from "../agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
+import { botEmailAddress, botEmailAddresses, claimBotEmailAddress } from "../bot-email-address.js";
 import { changedBotSettings } from "../bot-setting-analytics.js";
+import { createBotFromTemplate, listBotTemplates } from "../bot-templates.js";
 import { requireIdentityConfirmation } from "../identity-confirmation.js";
+import { managedAppCatalog } from "../onboarding.js";
 import type { RouterDeps } from "../router.js";
 import { loadMessagePage } from "../thread-message-pages.js";
 import type { RouterContext } from "./context.js";
-import {
-  computerContext,
-  isRecordNotFound,
-  modelSetup,
-  THREAD_MESSAGE_PAGE_SIZE,
-} from "./shared.js";
+import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
 
 /** Surface a Space deletion race as a retryable conflict instead of a generic failure. */
 function mapSpaceLifecycleError(error: unknown): unknown {
@@ -338,6 +337,23 @@ export function botsRoutes(ctx: RouterContext) {
       importSetupState: authed.bots.importSetupState.handler(async ({ context, input }) =>
         agentImportSetupState(agentImportServices as AgentImportServices, context.actor, input),
       ),
+      templates: authed.bots.templates.handler(async ({ context }) =>
+        listBotTemplates(agentImportServices, context.actor),
+      ),
+      createFromTemplate: authed.bots.createFromTemplate.handler(async ({ context, input }) => {
+        try {
+          // Like an import, the bot starts inert: no intro run, and its routines are paused.
+          return await createBotFromTemplate(
+            agentImportServices,
+            () => managedAppCatalog(deps.connectors, context.actor, "bots.createFromTemplate"),
+            context.actor,
+            input,
+            context.signal,
+          );
+        } catch (error) {
+          throw mapSpaceLifecycleError(error);
+        }
+      }),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
         const duplicate = await repos
@@ -355,6 +371,7 @@ export function botsRoutes(ctx: RouterContext) {
             modelId: source.modelId,
             thinkingLevel: source.thinkingLevel,
             disabledBuiltinTools: source.disabledBuiltinTools,
+            replyMode: source.replyMode,
           })
           .catch((error: unknown) => {
             throw mapSpaceLifecycleError(error);
@@ -427,7 +444,8 @@ export function botsRoutes(ctx: RouterContext) {
           emitBotUpdated:
             botProfileLabelsChanged(input) ||
             input.expectedSettings !== undefined ||
-            input.dailyCheckIns !== undefined,
+            input.dailyCheckIns !== undefined ||
+            input.replyMode !== undefined,
           expectedInstructions: input.expectedInstructions,
           expectedSettings: input.expectedSettings,
           data: {
@@ -458,6 +476,7 @@ export function botsRoutes(ctx: RouterContext) {
             ...(input.fleetManagement !== undefined
               ? { fleetManagement: input.fleetManagement }
               : {}),
+            ...(input.replyMode !== undefined ? { replyMode: input.replyMode } : {}),
             ...(input.disabledBuiltinTools !== undefined
               ? { disabledBuiltinTools: input.disabledBuiltinTools }
               : {}),
@@ -609,6 +628,20 @@ export function botsRoutes(ctx: RouterContext) {
       remove: authed.bots.remove.handler(async ({ context, input }) => {
         await removeBot(context.actor, input.botId, { deleteMemories: input.deleteMemories });
         return { ok: true as const };
+      }),
+      emailAddress: authed.bots.emailAddress.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        // The address and its inbox are the owner's: other members of the Space never see it.
+        if (bot.userId !== context.actor.userId) return null;
+        return botEmailAddress(deps.prisma, deps.env.inboundEmailDomain, bot.id);
+      }),
+      emailAddresses: authed.bots.emailAddresses.handler(async ({ context }) =>
+        botEmailAddresses(deps.prisma, deps.env.inboundEmailDomain, context.actor),
+      ),
+      claimEmailAddress: authed.bots.claimEmailAddress.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
+        return claimBotEmailAddress(deps.prisma, deps.env.inboundEmailDomain, bot.id, input.name);
       }),
       rotateWebhookSecret: authed.bots.rotateWebhookSecret.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);

@@ -5,6 +5,7 @@ import { useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { bootstrapI18n, i18n } from "../../src/lib/i18n";
 import { queryClient } from "../../src/lib/query";
+import { rpc } from "../../src/lib/rpc";
 import {
   getToolActivityEnabled,
   subscribeToolActivity,
@@ -78,6 +79,7 @@ function SettingsFixture() {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <SettingsOverlay
+        shellRpc={rpc}
         email="owner@example.test"
         name="Owner"
         memoryConfig={null}

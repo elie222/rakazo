@@ -19,13 +19,25 @@ import {
   memberName,
   newClientId,
   otherAuthor,
+  workingRoutineName,
 } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
-import { Keyboard, Lock, Monitor, Moon, Plug, Plus, ScrollText, Sun, Users } from "lucide-react";
+import {
+  Keyboard,
+  LayoutTemplate,
+  Lock,
+  Monitor,
+  Moon,
+  Plug,
+  Plus,
+  ScrollText,
+  Sun,
+  Users,
+} from "lucide-react";
 import {
   Suspense,
   useCallback,
@@ -886,6 +898,12 @@ function SpaceShell() {
       onSelect: () => setOverlay({ kind: "integrations" }),
     },
     {
+      id: "bot-templates",
+      label: t`Bot templates`,
+      icon: LayoutTemplate,
+      onSelect: () => setOverlay({ kind: "templates" }),
+    },
+    {
       id: "keyboard-shortcuts",
       label: t`Keyboard shortcuts`,
       icon: Keyboard,
@@ -1162,6 +1180,7 @@ function SpaceShell() {
               dismissableAskIds={dismissableAskIds}
               running={transcriptRunning}
               workingBots={workingBots}
+              workingRoutine={workingRoutineName(workingRuns)}
               userBubble={userBubble}
               onCallBack={
                 bootstrapMe?.phoneCallsEnabled && !inGroup && active
@@ -1392,6 +1411,7 @@ function SpaceShell() {
           activeBotId={activeBotId.current}
           stdioEnabled={bootstrapMe?.mcpStdioEnabled === true}
           onConnectedAppsChange={setFooterLogos}
+          onOpenBot={openCreatedBot}
         />
       </Suspense>
 

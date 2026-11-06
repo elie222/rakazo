@@ -15,7 +15,7 @@
 // RAKAZO_DEV_TAILNET=1 also serves the web app over HTTPS to your other Tailscale devices, at
 // https://<this machine>.<tailnet>.ts.net:<web port>. Everything still listens on loopback; the
 // Tailscale daemon forwards to it, so only devices signed in to your tailnet can reach it.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   constants,
@@ -56,6 +56,29 @@ const fileEnv = existsSync(path.join(root, ".env"))
   : {};
 const setting = (name) => process.env[name] ?? fileEnv[name];
 const log = (message) => process.stdout.write(`[dev] ${message}\n`);
+
+// A command that runs another with secrets added to its environment, such as a secrets manager's
+// `run --`. Values it adds win over `.env`.
+const runWith = setting("RAKAZO_DEV_RUN_WITH")?.trim();
+if (runWith && !setting("RAKAZO_DEV_RUNNING_WITH")) {
+  const [command, ...args] = runWith.split(/\s+/);
+  const self = [process.execPath, fileURLToPath(import.meta.url), ...process.argv.slice(2)];
+  const wrapper = spawn(command, [...args, ...self], {
+    stdio: "inherit",
+    env: { ...process.env, RAKAZO_DEV_RUNNING_WITH: "1" },
+  });
+  for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => wrapper.kill(signal));
+  const [code, signal] = await new Promise((resolve, reject) => {
+    wrapper.once("error", (error) =>
+      reject(new Error(`RAKAZO_DEV_RUN_WITH could not start ${command}`, { cause: error })),
+    );
+    wrapper.once("exit", (...outcome) => resolve(outcome));
+  });
+  if (!signal) process.exit(code ?? 1);
+  process.removeAllListeners(signal);
+  process.kill(process.pid, signal);
+  await new Promise(() => {});
+}
 
 function run(command, args, options = {}) {
   return execFileSync(command, args, { encoding: "utf8", stdio: "pipe", ...options }).trim();

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Connecting an MCP server whose OAuth asks for many permissions, such as PostHog's, no longer fails with "MCP URL exceeds 2048 characters". The browser sign-in link now has its own, larger limit, while MCP server addresses keep the 2,048-character one.
+
 ## [0.8.0] - 2026-11-04
 
 ### Added

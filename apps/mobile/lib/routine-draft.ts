@@ -1,4 +1,4 @@
-import type { Routine, RpcInput } from "@rakazo/contracts";
+import type { Routine, RoutineEmailSenders, RpcInput } from "@rakazo/contracts";
 import type { CronPreset } from "@rakazo/core";
 import { cronFromPreset, isOneShotRoutineCrons, presetFromCron } from "@rakazo/core";
 import { routineTriggerNames } from "./routine";
@@ -11,11 +11,13 @@ export type RoutineDraft = {
   name: string;
   prompt: string;
   schedules: CronPreset[];
+  /** Whose mail starts the routine; null without an email trigger. */
+  emailSenders: RoutineEmailSenders | null;
   active: boolean;
 };
 
 export function emptyRoutineDraft(): RoutineDraft {
-  return { name: "", prompt: "", schedules: [], active: true };
+  return { name: "", prompt: "", schedules: [], emailSenders: null, active: true };
 }
 
 export function draftFromRoutine(routine: Routine): RoutineDraft {
@@ -23,6 +25,7 @@ export function draftFromRoutine(routine: Routine): RoutineDraft {
     name: routine.name,
     prompt: routine.prompt,
     schedules: routine.crons.map(presetFromCron),
+    emailSenders: routine.emailSenders,
     active: routine.active,
   };
 }
@@ -45,13 +48,18 @@ function routineChanges(draft: RoutineDraft, routine: Routine) {
     ...(draft.name !== routine.name ? { name: draft.name.trim() } : {}),
     ...(draft.prompt !== routine.prompt ? { prompt: draft.prompt.trim() } : {}),
     ...(!routineScheduleLocked(routine) && !sameCrons(crons, savedCrons) ? { crons } : {}),
+    ...(draft.emailSenders !== routine.emailSenders ? { emailSenders: draft.emailSenders } : {}),
     ...(draft.active !== routine.active ? { active: draft.active } : {}),
   };
 }
 
 /** Whether there is anything to save: a change to the routine, or anything in a new one. */
 export function routineDraftChanged(draft: RoutineDraft, routine: Routine | null): boolean {
-  if (!routine) return Boolean(draft.name.trim() || draft.prompt.trim() || draft.schedules.length);
+  if (!routine) {
+    return Boolean(
+      draft.name.trim() || draft.prompt.trim() || draft.schedules.length || draft.emailSenders,
+    );
+  }
   return Object.keys(routineChanges(draft, routine)).length > 0;
 }
 
@@ -76,12 +84,23 @@ export function routineSaveRequest(
   if (!name) return { error: "name" };
   if (!prompt) return { error: "prompt" };
   const crons = draft.schedules.map(cronFromPreset);
-  if (!crons.length && !(routine && routineTriggerNames(routine).length)) {
-    return { error: "trigger" };
-  }
+  // Triggers this editor doesn't show still count; the email one counts as the draft has it.
+  const otherTriggers = routine
+    ? routineTriggerNames({ ...routine, emailSenders: null }).length > 0
+    : false;
+  if (!crons.length && !draft.emailSenders && !otherTriggers) return { error: "trigger" };
   if (!routine) {
     return {
-      create: { botId, name, prompt, crons, timezone, active: draft.active, notify: true },
+      create: {
+        botId,
+        name,
+        prompt,
+        crons,
+        timezone,
+        active: draft.active,
+        notify: true,
+        ...(draft.emailSenders ? { emailSenders: draft.emailSenders } : {}),
+      },
     };
   }
   const update = routineChanges(draft, routine);

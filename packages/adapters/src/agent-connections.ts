@@ -13,6 +13,7 @@ import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   crossSpaceCommunicationAllowed,
+  isUniqueViolation,
   runAsSystem,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
@@ -154,7 +155,7 @@ async function requestConnection(
           // Two first-time connects can both miss the pre-read; the unique key
           // serializes them. PostgreSQL aborts the interactive transaction on
           // P2002, so recovery must happen outside — rethrow a marker.
-          if (!isUniqueConstraintError(error)) throw error;
+          if (!isUniqueViolation(error)) throw error;
           throw new ConnectCreateRaceError();
         }
       }
@@ -455,7 +456,7 @@ async function deliverToConnectedAgent(
   } catch (error) {
     // Two concurrent retries can both miss the in-transaction lookup; the
     // loser hits the unique key. Treat that as a successful replay.
-    if (deliveryKey && isUniqueConstraintError(error)) {
+    if (deliveryKey && isUniqueViolation(error)) {
       const winner = await deps.prisma.message.findUnique({
         where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
         select: { id: true },
@@ -495,10 +496,6 @@ async function deliverToConnectedAgent(
     name: target.name,
     note: `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message.`,
   };
-}
-
-function isUniqueConstraintError(error: unknown) {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
 
 /** Marker: unique create raced; recover outside the aborted PG transaction. */

@@ -22,6 +22,7 @@ import {
   AVAILABILITY_SELECT,
   availableInSpace,
   IsolationError,
+  isUniqueViolation,
   itemSecretIn,
   spaceAvailability,
 } from "@rakazo/db";
@@ -64,7 +65,7 @@ import {
   reviewPluginSubmission,
 } from "../plugin-submissions.js";
 import type { RouterContext } from "./context.js";
-import { computerContext, isUniqueViolation } from "./shared.js";
+import { computerContext } from "./shared.js";
 
 export function mcpRoutes(ctx: RouterContext) {
   const {
