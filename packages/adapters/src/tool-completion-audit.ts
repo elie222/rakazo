@@ -1,6 +1,6 @@
 import type { AgentToolCompletion } from "@rakazo/adapter-kit";
 import { TOOL_RESULT_PREVIEW_MAX_CHARS } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
+import { mapStringValues, redactSecrets } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -88,6 +88,9 @@ export function toolCompletionAuditPayload(
  * parts, a plain string, or a plain object (a scripted file action's path and size) as JSON.
  */
 function toolResultPreview(result: unknown, secrets: string[]): string | undefined {
+  // Each string is redacted before JSON escapes it, so a secret with a quote or newline in it
+  // cannot slip past; the joined text is passed once more below.
+  const safe = (text: string) => sanitizeSensitiveText(redactSecrets(text, secrets));
   const content = (result as { content?: unknown } | undefined)?.content;
   const text = (
     typeof result === "string"
@@ -101,14 +104,14 @@ function toolResultPreview(result: unknown, secrets: string[]): string | undefin
             )
             .join("\n")
         : result && typeof result === "object" && Object.keys(result).length > 0
-          ? JSON.stringify(result, null, 2)
+          ? JSON.stringify(mapStringValues(result, safe), null, 2)
           : ""
   ).trim();
   if (!text) return undefined;
-  const safe = sanitizeSensitiveText(redactSecrets(text, secrets));
-  return safe.length > TOOL_RESULT_PREVIEW_MAX_CHARS
-    ? `${safe.slice(0, TOOL_RESULT_PREVIEW_MAX_CHARS)}…`
-    : safe;
+  const redacted = safe(text);
+  return redacted.length > TOOL_RESULT_PREVIEW_MAX_CHARS
+    ? `${redacted.slice(0, TOOL_RESULT_PREVIEW_MAX_CHARS)}…`
+    : redacted;
 }
 
 export async function appendToolCompletionAudit(

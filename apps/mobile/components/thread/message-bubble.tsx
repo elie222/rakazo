@@ -530,6 +530,12 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     })
     .join("\n");
   if (attachments.length > 0) {
+    // A reply that ends in a file still ran tools; its activity card goes above the bubble.
+    const stepBlocks = showToolActivity
+      ? message.blocks.filter(
+          (block): block is Extract<MessageBlock, { kind: "steps" }> => block.kind === "steps",
+        )
+      : [];
     const speaker =
       message.role === "bot" ? (memberName(members, message.botId) ?? botName) : authorName;
     const speakerColor =
@@ -543,7 +549,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       paddingVertical: 12,
       gap: 8,
     } as const;
-    return (
+    const bubble = (
       <View style={hasInlineImages ? { maxWidth: "100%", gap: 8 } : bubbleStyle}>
         {((showBotSenderName || authorName) && speaker) || caption ? (
           <View style={hasInlineImages ? bubbleStyle : undefined}>
@@ -685,6 +691,22 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
             onAccessibilityAction={actionProps.onAccessibilityAction}
           />
         ))}
+      </View>
+    );
+    if (stepBlocks.length === 0) return bubble;
+    return (
+      <View style={{ gap: 8, width: "100%" }}>
+        {stepBlocks.map((block, index) => (
+          <ToolActivityCard
+            key={`${message.id}-steps-${index}`}
+            block={block}
+            live={message.id.startsWith("progress:")}
+            threadId={message.threadId}
+            runId={message.runId}
+            startedAt={message.createdAt}
+          />
+        ))}
+        {bubble}
       </View>
     );
   }

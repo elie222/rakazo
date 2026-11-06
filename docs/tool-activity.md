@@ -41,11 +41,16 @@ API responses are the same with it on or off.
   `durationMs`, all optional, so replies saved before this stay readable.
 - The `agent.tool.called` event carries the call's `detail` and its arguments as bounded,
   redacted JSON (`input`); the `agent.tool.completed` audit carries a bounded, redacted
-  `preview` of the text the tool returned. Shell commands keep
-  streaming their output through `computer.command` events as before.
-- `threads.toolCalls` folds a run's call and completion events, plus the newest shell-output
-  event of each command, into one record per call for the expanded rows. Live runs apply the
-  same events as they arrive and drop a run's live records once it ends.
+  `preview` of the text the tool returned. Every string is redacted before it is serialized,
+  so a secret that JSON would escape cannot slip through. Shell commands keep streaming their
+  output through `computer.command` events as before.
+- A call that finishes before its own event is written carries its `outcome` and `durationMs`
+  on `agent.tool.called`, so its step never stays marked running.
+- `threads.toolCalls` reads a run's first 2,000 calls with their completion and newest
+  shell-output events, folded into one record per call for the expanded rows; a call within
+  the bound is always whole. Live runs apply the same events as they arrive and drop a run's
+  live records once it ends. A thread load leaves `input` and `preview` out of the live events
+  it reads, since the rows fetch them on demand.
 
 ## Platform scope
 

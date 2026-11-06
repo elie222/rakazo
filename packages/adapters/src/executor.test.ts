@@ -54,6 +54,7 @@ import {
   toolCompletionAuditPayload,
   toolCompletionFromResult,
 } from "./tool-completion-audit.js";
+import { toolCallFailed } from "./tool-result-error.js";
 import { parseUpdateBotPatch } from "./update-bot-patch.js";
 
 const createRunExecutor = (deps: Parameters<typeof createExecutor>[0]) =>
@@ -327,8 +328,23 @@ describe("tool completion audit", () => {
     ).toBe("error");
   });
 
-  it("counts a shell command that exited nonzero as failed, but not one still running", async () => {
-    const { toolCallFailed } = await import("./tool-result-error.js");
+  it("redacts a secret inside structured results before JSON escapes it", () => {
+    const secret = 'pa"ss\\word\nline';
+    const payload = toolCompletionAuditPayload(
+      {
+        name: "read_file",
+        executionId: "r",
+        durationMs: 1,
+        result: { content: `token=${secret}`, nested: [{ note: `again ${secret}` }] },
+      },
+      [secret],
+    );
+    expect(String(payload.preview)).not.toContain("pa");
+    expect(String(payload.preview)).toContain("token=[redacted]");
+    expect(String(payload.preview)).toContain("again [redacted]");
+  });
+
+  it("counts a shell command that exited nonzero as failed, but not one still running", () => {
     expect(toolCallFailed(undefined, { stdout: "", stderr: "boom", code: 1 })).toBe(true);
     expect(toolCallFailed(undefined, { details: { stdout: "", stderr: "", code: 2 } })).toBe(true);
     expect(toolCallFailed(undefined, { stdout: "ok", stderr: "", code: 0 })).toBe(false);

@@ -1,6 +1,11 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { isToolActivityBlock, toolStepStatus } from "./tool-activity.js";
+import {
+  formatElapsedSince,
+  isToolActivityBlock,
+  pickToolCallRecord,
+  toolStepStatus,
+} from "./tool-activity.js";
 
 describe("tool activity", () => {
   it.each<MessageBlock>([
@@ -46,5 +51,36 @@ describe("toolStepStatus", () => {
     expect(toolStepStatus({ outcome: "ok" }, true)).toBe("ok");
     expect(toolStepStatus({}, true)).toBe("running");
     expect(toolStepStatus({}, false)).toBe("ok");
+  });
+});
+
+describe("pickToolCallRecord", () => {
+  const live = { executionId: "x1", name: "shell", status: "running" } as const;
+  const read = { executionId: "x1", name: "shell", status: "done", outcome: "succeeded" } as const;
+
+  it("shows the live record while the run is live and reads only without one", () => {
+    expect(pickToolCallRecord(live, undefined, true)).toEqual({ record: live, needsRead: false });
+    expect(pickToolCallRecord(undefined, read, true)).toEqual({ record: read, needsRead: true });
+    expect(pickToolCallRecord(undefined, undefined, false)).toEqual({
+      record: undefined,
+      needsRead: true,
+    });
+  });
+
+  it("reads past a live record the run ended without finishing, and shows the read once it has one", () => {
+    expect(pickToolCallRecord(live, undefined, false)).toEqual({ record: live, needsRead: true });
+    expect(pickToolCallRecord(live, read, false)).toEqual({ record: read, needsRead: true });
+    const done = { ...live, status: "done" } as const;
+    expect(pickToolCallRecord(done, read, false)).toEqual({ record: done, needsRead: false });
+  });
+});
+
+describe("formatElapsedSince", () => {
+  it("formats the time since a start and nothing for a missing or unreadable one", () => {
+    const now = Date.parse("2026-01-01T00:01:05.000Z");
+    expect(formatElapsedSince("2026-01-01T00:00:00.000Z", now)).toBe("1m 05s");
+    expect(formatElapsedSince("2026-01-01T00:02:00.000Z", now)).toBe("0ms");
+    expect(formatElapsedSince(undefined, now)).toBeNull();
+    expect(formatElapsedSince("not a date", now)).toBeNull();
   });
 });

@@ -12,6 +12,7 @@ import {
   isRunTerminalEvent,
   liveActivityLine,
   liveMessageComposing,
+  mapStringValues,
   normalizeResponseStreamingPreference,
   noteLastToolStep,
   projectMessages,
@@ -25,6 +26,7 @@ import {
   stripLiveStreamingProgress,
   toolCallDetail,
   toolCallDetailLine,
+  toolCalledUpdate,
   toolNameFromLabel,
   trackToolCallStreak,
   trackToolNameStreak,
@@ -1263,5 +1265,69 @@ describe("liveActivityLine", () => {
     expect(
       liveActivityLine([{ id: "m1", blocks: [{ kind: "text", text: "Done" }] }]),
     ).toBeUndefined();
+  });
+});
+
+describe("mapStringValues", () => {
+  it("applies the function to every string, nested or not, and leaves other values", () => {
+    expect(
+      mapStringValues({ a: "x", n: 1, list: ["y", { deep: "z", ok: true }], none: null }, (text) =>
+        text.toUpperCase(),
+      ),
+    ).toEqual({ A: "X", N: 1, LIST: ["Y", { DEEP: "Z", OK: true }], NONE: null });
+    expect(mapStringValues("x", (text) => `${text}!`)).toBe("x!");
+    expect(mapStringValues(3, () => "no")).toBe(3);
+  });
+});
+
+describe("toolCalledUpdate", () => {
+  it("carries the result of a call that finished before its own event", () => {
+    expect(
+      toolCalledUpdate({ name: "shell", executionId: "x1", outcome: "error", durationMs: 12.4 }),
+    ).toEqual({ type: "tool", name: "shell", executionId: "x1", outcome: "error", durationMs: 12 });
+    expect(toolCalledUpdate({ name: "shell", executionId: "x1", outcome: "paused" })).toEqual({
+      type: "tool",
+      name: "shell",
+      executionId: "x1",
+    });
+  });
+
+  it("marks the step done from the called event alone", () => {
+    const blocks = reduceLiveMessageBlocks(
+      [],
+      toolCalledUpdate({ name: "shell", executionId: "x1", detail: "ls", outcome: "ok" }),
+    );
+    expect(blocks).toEqual([
+      {
+        kind: "steps",
+        steps: [{ label: "Shell", count: 1, executionId: "x1", detail: "ls", outcome: "ok" }],
+      },
+    ]);
+  });
+});
+
+describe("projectMessages live timing", () => {
+  it("keeps the run's first activity as the live message's start", () => {
+    const [live] = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 1,
+        type: "thread.progress",
+        runId: "r1",
+        payload: { text: "Looking." },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 2,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "shell", executionId: "x1" },
+        createdAt: "2026-01-01T00:00:09.000Z",
+      },
+    ]);
+    expect(live).toMatchObject({ seq: 2, createdAt: "2026-01-01T00:00:01.000Z" });
   });
 });

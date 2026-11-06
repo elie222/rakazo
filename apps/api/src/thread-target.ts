@@ -32,7 +32,7 @@ import {
   runReadsThreadHistory,
 } from "@rakazo/core";
 import { deriveMessageQuote, messageReplyPreview } from "@rakazo/core/message-quote";
-import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
@@ -45,6 +45,7 @@ import {
   IsolationError,
   loadMessageAuthor,
   lockSpaceGroup,
+  Prisma,
   primaryActiveRun,
   retireWaitingQuestionInTransaction,
   spaceIsShared,
@@ -508,26 +509,7 @@ export async function threadSnapshot(
               : null;
           const currentRun = run?.status === "failed" && newestTerminal?.id !== run.id ? null : run;
           const liveRuns = activeRuns.filter((run) => run.trigger !== "bot_message");
-          const liveEvents =
-            liveRuns.length > 0
-              ? await tx.event.findMany({
-                  where: {
-                    threadId: target.threadId,
-                    runId: { in: liveRuns.map((run) => run.id) },
-                    type: {
-                      in: [
-                        "thread.progress",
-                        "thread.subagent",
-                        "run.waiting_input",
-                        "computer.takeover.requested",
-                        "agent.tool.called",
-                        "agent.tool.completed",
-                      ],
-                    },
-                  },
-                  orderBy: { seq: "asc" },
-                })
-              : [];
+          const liveEvents = await loadLiveRunEvents(tx, target.threadId, liveRuns);
           return { messagePage, last, run: currentRun, activeRuns, liveEvents, shared };
         },
         { timeout: 15_000, maxWait: 5_000 },
@@ -587,26 +569,7 @@ export async function threadSnapshot(
           take: 50,
         }),
       ]);
-      const liveEvents =
-        activeRuns.length > 0
-          ? await tx.event.findMany({
-              where: {
-                threadId: target.threadId,
-                runId: { in: activeRuns.map((run) => run.id) },
-                type: {
-                  in: [
-                    "thread.progress",
-                    "thread.subagent",
-                    "run.waiting_input",
-                    "computer.takeover.requested",
-                    "agent.tool.called",
-                    "agent.tool.completed",
-                  ],
-                },
-              },
-              orderBy: { seq: "asc" },
-            })
-          : [];
+      const liveEvents = await loadLiveRunEvents(tx, target.threadId, activeRuns);
       return {
         messagePage,
         last,
@@ -671,6 +634,33 @@ function pickLatestTerminalRun<T extends { id: string; createdAt: Date; complete
     }
     return run.id > best.id ? run : best;
   });
+}
+
+type LiveRunEvent = Parameters<typeof projectMessages>[0][number];
+
+/**
+ * The events that draw a live run's progress, steps and helpers. A tool event also carries the
+ * call's arguments and result for the activity view; those are left out here, since the view
+ * reads them on demand and a long run would otherwise make every open of the thread carry them.
+ */
+async function loadLiveRunEvents(
+  tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  threadId: string,
+  runs: readonly { id: string }[],
+): Promise<LiveRunEvent[]> {
+  if (runs.length === 0) return [];
+  return tx.$queryRaw<LiveRunEvent[]>(Prisma.sql`
+    SELECT id, "threadId", "botId", "runId", type, seq, "createdAt",
+      (payload - 'input' - 'preview') AS payload
+    FROM events
+    WHERE "threadId" = ${threadId}
+      AND "runId" = ANY(${runs.map((run) => run.id)}::text[])
+      AND type IN (
+        'thread.progress', 'thread.subagent', 'run.waiting_input',
+        'computer.takeover.requested', 'agent.tool.called', 'agent.tool.completed'
+      )
+    ORDER BY seq ASC
+  `);
 }
 
 function messagesWithLiveEvents(

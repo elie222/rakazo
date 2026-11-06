@@ -59,6 +59,7 @@ export async function createReplyState(
     narrationSoFar: "",
     narrationStatusShowing: false,
     pendingTools: [],
+    earlyToolOutcomes: new Map(),
     pendingProgress: "",
     lastProgressAt: 0,
     hasStreamedText: false,
@@ -169,10 +170,44 @@ export function recordToolOutcome(
   durationMs: number,
 ) {
   const duration = Math.max(0, Math.round(durationMs));
+  // The call's own event is still on its way: its step takes the result when it is queued.
+  if (!queuedToolCall(reply, executionId)) {
+    reply.earlyToolOutcomes.set(executionId, { outcome, durationMs: duration });
+    return;
+  }
   reply.pendingTools = reply.pendingTools.map((call: ToolCallRef) =>
     call.executionId === executionId ? { ...call, outcome, durationMs: duration } : call,
   );
   reply.messageSegments = completeToolStep(reply.messageSegments, executionId, outcome, duration);
+}
+
+/** The call's pending ref or published step, whichever holds it now; its result once it has one. */
+export function queuedToolCall(
+  reply: Pick<ReplyState, "pendingTools" | "messageSegments">,
+  executionId: string,
+): Pick<ToolCallRef, "outcome" | "durationMs"> | undefined {
+  const pending = reply.pendingTools.find((call) => call.executionId === executionId);
+  if (pending) return pending;
+  for (const block of reply.messageSegments) {
+    if (block.kind !== "steps") continue;
+    const step = block.steps.find((item) => item.executionId === executionId);
+    if (step) return step;
+  }
+  return undefined;
+}
+
+/** The result a queued call already has, for the event that announces the call. */
+export function toolCallResultFields(
+  reply: Pick<ReplyState, "pendingTools" | "messageSegments">,
+  executionId: string,
+): Pick<ToolCallRef, "outcome" | "durationMs"> {
+  const queued = queuedToolCall(reply, executionId);
+  return queued?.outcome === undefined
+    ? {}
+    : {
+        outcome: queued.outcome,
+        ...(queued.durationMs === undefined ? {} : { durationMs: queued.durationMs }),
+      };
 }
 
 /**

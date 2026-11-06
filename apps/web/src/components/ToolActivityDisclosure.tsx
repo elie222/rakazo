@@ -5,7 +5,9 @@ import type { ThreadMessage, ToolCallRecord, ToolStep } from "@rakazo/contracts"
 import type { ToolStepStatus } from "@rakazo/core";
 import {
   formatCompactDuration,
+  formatElapsedSince,
   LIVE_TOOL_STEP_WINDOW,
+  pickToolCallRecord,
   toolCallMarkdown,
   toolStepStatus,
 } from "@rakazo/core";
@@ -164,24 +166,20 @@ function ToolStepRow({
   );
 }
 
-/**
- * The record for one call: the live one while the thread's events carry it, else a read of
- * the run's events. A live record left unfinished by a run that has ended is stale (the
- * client missed its result), so the read wins once it has one.
- */
+/** The record for one call: live from the thread's events, else read from the run's; see pickToolCallRecord. */
 function useToolCallRecord(source: ToolStepSource, executionId: string, runLive: boolean) {
   const live = useSyncExternalStore(subscribeToolCallRecords, () =>
     liveToolCallRecords(source.runId),
   )?.get(executionId);
-  const stale = live !== undefined && !runLive && live.status !== "done";
   const queries = useSpaceQueries();
+  const needsRead = pickToolCallRecord(live, undefined, runLive).needsRead;
   const fetched = useQuery({
     ...queries.threads.toolCalls.queryOptions({ input: source }),
-    enabled: live === undefined || stale,
+    enabled: needsRead,
     staleTime: 0,
   });
   const read = fetched.data?.find((item) => item.executionId === executionId);
-  const record: ToolCallRecord | undefined = stale ? (read ?? live) : (live ?? read);
+  const { record } = pickToolCallRecord(live, read, runLive);
   return { record, loading: live === undefined && fetched.isPending, failed: fetched.isError };
 }
 
@@ -255,16 +253,16 @@ function ToolStepDetail({
 
 /** Time since the run's first visible activity, ticking while it is live. */
 function LiveElapsed({ startedAt }: { startedAt: string }) {
-  const startedAtMs = Date.parse(startedAt);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-  if (!Number.isFinite(startedAtMs)) return null;
+  const elapsed = formatElapsedSince(startedAt, now);
+  if (elapsed === null) return null;
   return (
     <span className="tabular-nums" data-testid="tool-activity-elapsed">
-      {formatCompactDuration(Math.max(0, now - startedAtMs))}
+      {elapsed}
     </span>
   );
 }

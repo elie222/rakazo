@@ -214,6 +214,10 @@ describe("foldToolCallRecords", () => {
       "```console\n$ ls -la\na\nb\n```",
     );
     expect(toolCallMarkdown({ command: "sleep 9" })).toBe("```console\n$ sleep 9\n```");
+    // A shell printed exactly this, so it is not reformatted even when it parses as JSON.
+    expect(toolCallMarkdown({ command: "cat a.json", output: '{"a":1}' })).toBe(
+      '```console\n$ cat a.json\n{"a":1}\n```',
+    );
     expect(toolCallMarkdown({ input: '{"q":1}', output: '{"a":[1]}' })).toBe(
       '```json\n{"q":1}\n```\n\n```json\n{\n  "a": [\n    1\n  ]\n}\n```',
     );

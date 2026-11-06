@@ -3,7 +3,9 @@ import type { MessageBlock, ToolCallRecord, ToolStep } from "@rakazo/contracts";
 import type { ToolStepStatus } from "@rakazo/core";
 import {
   formatCompactDuration,
+  formatElapsedSince,
   LIVE_TOOL_STEP_WINDOW,
+  pickToolCallRecord,
   toolCallMarkdown,
   toolStepStatus,
 } from "@rakazo/core";
@@ -192,11 +194,7 @@ function StepRow({
   );
 }
 
-/**
- * The record for one call: the live one while the thread's events carry it, else a read of
- * the run's events. A live record left unfinished by a run that has ended is stale (the
- * client missed its result), so the read wins once it has one.
- */
+/** The record for one call: live from the thread's events, else read from the run's; see pickToolCallRecord. */
 function useToolCallRecord(
   runId: string,
   executionId: string,
@@ -206,9 +204,9 @@ function useToolCallRecord(
   const live = useSyncExternalStore(toolCallRecords.subscribe, () =>
     toolCallRecords.get(runId),
   )?.get(executionId);
-  const stale = live !== undefined && !runLive && live.status !== "done";
   const [fetched, setFetched] = useState<{ records?: ToolCallRecord[]; failed?: boolean }>();
-  const needsFetch = (live === undefined || stale) && threadId !== undefined;
+  const needsFetch =
+    pickToolCallRecord(live, undefined, runLive).needsRead && threadId !== undefined;
   useEffect(() => {
     if (!needsFetch || !threadId) return;
     let cancelled = false;
@@ -221,7 +219,7 @@ function useToolCallRecord(
     };
   }, [needsFetch, threadId, runId]);
   const read = fetched?.records?.find((item) => item.executionId === executionId);
-  const record = stale ? (read ?? live) : (live ?? read);
+  const { record } = pickToolCallRecord(live, read, runLive);
   return {
     record,
     loading: live === undefined && needsFetch && fetched === undefined,
@@ -318,8 +316,7 @@ function useElapsed(startedAt: string | undefined): string | null {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [startedAt]);
-  const started = startedAt ? Date.parse(startedAt) : Number.NaN;
-  return Number.isFinite(started) ? formatCompactDuration(Math.max(0, now - started)) : null;
+  return formatElapsedSince(startedAt, now);
 }
 
 const styles = StyleSheet.create({

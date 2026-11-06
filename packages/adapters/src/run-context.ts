@@ -8,7 +8,13 @@ import type {
   SemanticMemoryProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
-import type { ComputerMode, MessageBlock, ReplyMode, ToolCallRef } from "@rakazo/contracts";
+import type {
+  ComputerMode,
+  MessageBlock,
+  ReplyMode,
+  ToolCallRef,
+  ToolStepOutcome,
+} from "@rakazo/contracts";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
@@ -116,6 +122,8 @@ export interface ReplyState {
    * sentence boundary, so the step chips never render in the middle of a clause.
    */
   pendingTools: ToolCallRef[];
+  /** Results of calls that finished before their step was queued, applied when it is. */
+  earlyToolOutcomes: Map<string, { outcome: ToolStepOutcome; durationMs: number }>;
   pendingProgress: string;
   lastProgressAt: number;
   hasStreamedText: boolean;

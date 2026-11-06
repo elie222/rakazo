@@ -180,11 +180,12 @@ export function fencedCode(code: string, language: string): string {
 export function toolCallMarkdown(
   record: Pick<ToolCallRecord, "command" | "input" | "output">,
 ): string {
-  const output = prettyToolText(record.output ?? "");
   if (record.command !== undefined) {
+    // A shell printed exactly this; reformatting it would misreport what the command showed.
     const prompt = `$ ${record.command}`;
-    return fencedCode(output ? `${prompt}\n${output}` : prompt, "console");
+    return fencedCode(record.output ? `${prompt}\n${record.output}` : prompt, "console");
   }
+  const output = prettyToolText(record.output ?? "");
   const blocks: string[] = [];
   if (record.input) blocks.push(fencedCode(record.input, "json"));
   if (output) blocks.push(fencedCode(output, output !== record.output ? "json" : "text"));

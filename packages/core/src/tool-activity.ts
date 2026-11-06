@@ -1,4 +1,5 @@
-import type { MessageBlock, ToolStep } from "@rakazo/contracts";
+import type { MessageBlock, ToolCallRecord, ToolStep } from "@rakazo/contracts";
+import { formatCompactDuration } from "./routine-runs.js";
 
 /** While a run is live, only the most recent steps are listed so a long run does not push the chat down. */
 export const LIVE_TOOL_STEP_WINDOW = 6;
@@ -35,4 +36,27 @@ export function normalizeToolActivityPreference(
   raw: string | null | undefined,
 ): ToolActivityPreference {
   return raw?.trim().toLowerCase() === "on" ? "on" : "off";
+}
+
+/**
+ * Which record an opened step shows: the live one while the thread's events carry it, else one
+ * read from the run's events. A live record left unfinished by a run that has ended is stale
+ * (the client missed its result), so a read is needed and wins once it has one.
+ */
+export function pickToolCallRecord(
+  live: ToolCallRecord | undefined,
+  read: ToolCallRecord | undefined,
+  runLive: boolean,
+): { record: ToolCallRecord | undefined; needsRead: boolean } {
+  const stale = live !== undefined && !runLive && live.status !== "done";
+  return {
+    record: stale ? (read ?? live) : (live ?? read),
+    needsRead: live === undefined || stale,
+  };
+}
+
+/** Time since a run's first activity as the compact duration the step rows use; null without a valid start. */
+export function formatElapsedSince(startedAt: string | undefined, nowMs: number): string | null {
+  const started = startedAt ? Date.parse(startedAt) : Number.NaN;
+  return Number.isFinite(started) ? formatCompactDuration(Math.max(0, nowMs - started)) : null;
 }

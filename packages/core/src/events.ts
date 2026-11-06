@@ -108,23 +108,14 @@ export function projectMessages(
     if (event.type === "thread.progress") {
       const live = liveProjection(event, createdAt);
       live.blocks = reduceLiveMessageBlocks(live.blocks, { type: "progress", payload });
-      live.meta = {
-        ...live.meta,
-        seq: event.seq,
-        botId: event.botId ?? undefined,
-        createdAt,
-      };
+      // The run's first activity stays its start, so the live card counts up from it.
+      live.meta = { ...live.meta, seq: event.seq, botId: event.botId ?? undefined };
       continue;
     }
     if (event.type === "agent.tool.called") {
       const live = liveProjection(event, createdAt);
       live.blocks = reduceLiveMessageBlocks(live.blocks, toolCalledUpdate(payload));
-      live.meta = {
-        ...live.meta,
-        seq: event.seq,
-        botId: event.botId ?? undefined,
-        createdAt,
-      };
+      live.meta = { ...live.meta, seq: event.seq, botId: event.botId ?? undefined };
       continue;
     }
     if (event.type === "agent.tool.completed") {
@@ -324,6 +315,13 @@ export function toolCalledUpdate(payload: Record<string, unknown>): LiveMessageU
     name: String(payload.name ?? ""),
     ...(typeof payload.executionId === "string" ? { executionId: payload.executionId } : {}),
     ...(typeof payload.detail === "string" ? { detail: payload.detail } : {}),
+    // A call that finished before its own event was written carries its result with it.
+    ...(payload.outcome === "ok" || payload.outcome === "error"
+      ? { outcome: payload.outcome }
+      : {}),
+    ...(typeof payload.durationMs === "number" && payload.durationMs >= 0
+      ? { durationMs: Math.round(payload.durationMs) }
+      : {}),
   };
 }
 
@@ -773,6 +771,25 @@ export function redactSecrets(value: string, secrets: readonly string[]): string
     offset = end;
   }
   return output + value.slice(offset);
+}
+
+/**
+ * Applies `fn` to every string inside a value, nested arrays and objects included, so a caller
+ * can redact the strings before serializing the whole: a secret with a quote, backslash or
+ * newline in it reads differently once JSON has escaped it and would slip past a text redactor.
+ */
+export function mapStringValues(value: unknown, fn: (text: string) => string): unknown {
+  if (typeof value === "string") return fn(value);
+  if (Array.isArray(value)) return value.map((item) => mapStringValues(item, fn));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        fn(key),
+        mapStringValues(item, fn),
+      ]),
+    );
+  }
+  return value;
 }
 
 /** Redacts `text` as the continuation of `before`, so a value split across the two is hidden too. */
