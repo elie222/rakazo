@@ -2,6 +2,7 @@ import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapt
 import type { ComputerMode } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
+import { PLOT_TOOL_GUIDE, searchChartCatalog } from "@rakazo/core/plot-catalog";
 import { getLogger } from "@rakazo/logging";
 import { JSDOM } from "jsdom";
 import { displayBotWorkspacePath, resolveBotWorkspacePath } from "./computer-support.js";
@@ -10,11 +11,9 @@ import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import type { PlotSpec } from "./plot-tool.js";
 import {
   assertPlotDataWithinLimits,
-  PLOT_TOOL_GUIDE,
   parsePlotData,
   plotSvgToPng,
   renderPlotSpecToSvg,
-  searchChartCatalog,
 } from "./plot-tool.js";
 import { publishMessage } from "./run-messages.js";
 import { attachWorkspaceFileToThread } from "./thread-artifacts.js";

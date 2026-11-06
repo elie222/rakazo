@@ -49,6 +49,11 @@
       "development": "./src/plot/plot-spec.ts",
       "default": "./src/plot/plot-spec.ts"
     },
+    "./plot-catalog": {
+      "types": "./src/plot/plot-catalog.ts",
+      "development": "./src/plot/plot-catalog.ts",
+      "default": "./src/plot/plot-catalog.ts"
+    },
     "./node/desktop-runtime": {
       "types": "./src/node/desktop-runtime.ts",
       "development": "./src/node/desktop-runtime.ts",
