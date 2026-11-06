@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { authHeaders, clearSpace, currentApiBase, fetchMobileJson } from "./api";
 import {
   currentSessionGeneration,
+  loadSessionToken,
   replaceSessionTokenIfCurrent,
   rotateSessionTokenIfCurrent,
 } from "./session";
@@ -134,6 +135,24 @@ it("keeps unsent messages when reauthentication returns the same account", async
   expect(rotateSessionTokenIfCurrent).toHaveBeenCalledWith(1, "old-session", "new-session");
   expect(replaceSessionTokenIfCurrent).not.toHaveBeenCalled();
   expect(clearSpace).not.toHaveBeenCalled();
+});
+it("moves unsent messages from the token the reauthentication request carried", async () => {
+  vi.mocked(fetchMobileJson).mockReset();
+  vi.mocked(fetchMobileJson)
+    .mockResolvedValueOnce({ response: Response.json({}), body: { user: { id: "user-1" } } })
+    .mockResolvedValueOnce({
+      response: Response.json({}),
+      body: { url: "https://identity.example.test/authorize?state=test-state" },
+    })
+    .mockResolvedValueOnce({ response: Response.json({}), body: { user: { id: "user-1" } } });
+  vi.mocked(openAuthSessionAsync).mockResolvedValue({
+    type: "success",
+    url: `rakazo://account?cookie=${encodeURIComponent("better-auth.session_token=new-session; Path=/; HttpOnly")}`,
+  });
+  // A second read of the session store fails and reads as no session.
+  vi.mocked(loadSessionToken).mockResolvedValueOnce("");
+  await expect(continueWithSso("reauthenticate")).resolves.toBe(true);
+  expect(rotateSessionTokenIfCurrent).toHaveBeenCalledWith(1, "old-session", "new-session");
 });
 it("starts authenticated linking without replacing the session", async () => {
   vi.mocked(openAuthSessionAsync).mockResolvedValue({ type: "success", url: "rakazo://account" });

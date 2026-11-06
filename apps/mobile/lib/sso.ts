@@ -2,7 +2,6 @@ import { authHeaders, clearSpace, currentApiBase, fetchMobileJson } from "./api"
 import { t } from "./i18n";
 import {
   currentSessionGeneration,
-  loadSessionToken,
   replaceSessionTokenIfCurrent,
   rotateSessionTokenIfCurrent,
   tokenFromAuthResponse,
@@ -28,7 +27,9 @@ export async function continueWithSso(
     const headers = action === "sign-in" ? {} : await authHeaders();
     requireCurrentSession();
     const previous = action === "reauthenticate" ? await sessionUser(apiBase, headers) : undefined;
-    const previousToken = action === "reauthenticate" ? await loadSessionToken() : "";
+    // The token the server replaces is the one these requests carry; a second read could differ.
+    const previousToken = headers.authorization?.slice("Bearer ".length) ?? "";
+    if (action === "reauthenticate" && !previousToken) throw new Error(t("Could not continue"));
     requireCurrentSession();
     const { response, body, invalidJson } = await fetchMobileJson<{ url?: string; code?: string }>(
       `${apiBase}/api/auth/${action === "link" ? "link-social" : "sign-in/social"}`,
