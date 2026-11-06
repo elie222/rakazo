@@ -2522,10 +2522,19 @@ describe("MCP connector stdio OAuth", () => {
   function stubSession() {
     const launches: Array<Record<string, string> | undefined> = [];
     vi.spyOn(McpSession.prototype, "connectStdio").mockImplementation(async (options) => {
-      launches.push(options.env);
+      // Every process also gets its workspace folders; these tests are about the rest.
+      const {
+        TMPDIR: _temp,
+        RAKAZO_OUTPUT_DIR: _out,
+        RAKAZO_INPUT_DIR: _in,
+        ...env
+      } = options.env ?? {};
+      launches.push(options.env && env);
     });
     vi.spyOn(McpSession.prototype, "listTools").mockResolvedValue({ tools: [] });
-    vi.spyOn(McpSession.prototype, "close").mockResolvedValue(undefined);
+    vi.spyOn(McpSession.prototype, "close").mockImplementation(async (afterClose) => {
+      await afterClose?.();
+    });
     return launches;
   }
 
@@ -2866,7 +2875,9 @@ describe("MCP connector stdio credential files", () => {
       const env = options.env ?? {};
       const files: Launch["files"] = {};
       for (const [key, value] of Object.entries(env)) {
-        if (!value.startsWith(tmpdir()) || !existsSync(value)) continue;
+        // Workspace folders (cwd, TMPDIR, ...) are directories, not credential files.
+        if (!value.startsWith(tmpdir()) || !existsSync(value) || !statSync(value).isFile())
+          continue;
         const dir = dirname(value);
         files[key] = {
           content: readFileSync(value, "utf8"),
@@ -2886,7 +2897,9 @@ describe("MCP connector stdio credential files", () => {
   }
 
   const credentialDirs = () =>
-    readdirSync(credentialRoot).filter((name) => name.startsWith("rakazo-mcp-"));
+    readdirSync(credentialRoot).filter(
+      (name) => name.startsWith("rakazo-mcp-") && !name.startsWith("rakazo-mcp-ws-"),
+    );
 
   afterEach(() => {
     vi.restoreAllMocks();

@@ -42,6 +42,7 @@ import {
 import { buildMcpUpdateMaterial, legacyMcpArgs } from "../mcp-material.js";
 import {
   assertMcpOAuthTemplates,
+  assertMcpOutputEnv,
   assertMcpRemoteEndpoint,
   assertMcpStdioAdmin,
   assertMcpStdioCommand,
@@ -494,6 +495,28 @@ export function mcpRoutes(ctx: RouterContext) {
                 Boolean(update.material.oauthClient),
               );
             }
+            // Stdio only; omitted keeps the stored folder variable and null clears it.
+            const outputEnv =
+              config.transport !== "stdio"
+                ? null
+                : config.outputEnv !== undefined
+                  ? config.outputEnv
+                  : existing.transport === "stdio"
+                    ? existing.outputEnv
+                    : null;
+            if (config.transport === "stdio") {
+              const keysOf = (value: unknown) =>
+                value && typeof value === "object" && !Array.isArray(value)
+                  ? Object.keys(value)
+                  : [];
+              assertMcpOutputEnv(
+                outputEnv,
+                Object.keys(config.env),
+                update.action === "store"
+                  ? Object.keys(update.material.files ?? {})
+                  : keysOf(existing.files),
+              );
+            }
             const stored =
               update.action === "store" && Object.keys(update.material).length > 0
                 ? await deps.secrets.put(
@@ -584,6 +607,7 @@ export function mcpRoutes(ctx: RouterContext) {
                         : {}) as Prisma.InputJsonValue,
                       enabled: config.enabled,
                       verbatimResults: config.verbatimResults,
+                      outputEnv,
                       revision: { increment: 1 },
                       // The old verdict is about the old config.
                       healthStatus: "unknown",

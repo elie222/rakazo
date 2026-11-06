@@ -4949,6 +4949,10 @@ msgstr "Anderes Modell…"
 msgid "Output"
 msgstr "Ausgabe"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Output folder variable"
+msgstr "Variable für Ausgabeordner"
+
 #: src/components/pages/SharePopover.tsx
 #: src/components/SpaceMembersSettings.tsx
 #: src/lib/identity-display.ts
@@ -5260,6 +5264,10 @@ msgstr "Rakazo"
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Rakazo gives this variable a private folder. Files the server saves there can be passed to other tools, and are deleted 3 hours after their last use."
+msgstr "Rakazo weist dieser Variable einen privaten Ordner zu. Dateien, die der Server dort speichert, können an andere Tools weitergegeben werden und werden 3 Stunden nach ihrer letzten Verwendung gelöscht."
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."

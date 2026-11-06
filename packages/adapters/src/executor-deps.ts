@@ -23,6 +23,7 @@ import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import type { TicketChangeNotifier } from "./ticket-changes.js";
+import type { ToolFileStore } from "./tool-files.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
 
 export interface ExecutorDeps {
@@ -38,6 +39,8 @@ export interface ExecutorDeps {
   memoryProviders: MemoryProviderResolver;
   home: AgentHomeStore;
   artifacts?: ArtifactStore;
+  /** Temporary files tools hand to each other; placeholders in tool arguments fail without it. */
+  toolFiles?: ToolFileStore;
   connector?: ConnectorProvider;
   connectors?: {
     managed(id: string): ManagedConnectorProvider | undefined;

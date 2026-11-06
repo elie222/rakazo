@@ -26,16 +26,25 @@ export function toolFileUrlPlaceholder(id: string): string {
   return `{{file_url:${id}}}`;
 }
 
-/** Matches both placeholder forms; group 1 is `_url` or empty, group 2 the file id. */
-export const TOOL_FILE_PLACEHOLDER_PATTERN = /\{\{file(_url)?:([A-Za-z0-9_-]{1,64})\}\}/g;
+/**
+ * Placeholder replaced by the absolute path of a private copy of the file, for a local (stdio)
+ * tool that reads a file from disk, such as an email attachment. The copy is deleted once the
+ * call ends.
+ */
+export function toolFilePathPlaceholder(id: string): string {
+  return `{{file_path:${id}}}`;
+}
 
-export type ToolFilePlaceholder = { id: string; form: "base64" | "url"; text: string };
+/** Matches every placeholder form; group 1 is `_url`, `_path` or empty, group 2 the file id. */
+export const TOOL_FILE_PLACEHOLDER_PATTERN = /\{\{file(_url|_path)?:([A-Za-z0-9_-]{1,64})\}\}/g;
+
+export type ToolFilePlaceholder = { id: string; form: "base64" | "url" | "path"; text: string };
 
 /** Every placeholder in a string, in order of appearance. */
 export function toolFilePlaceholders(value: string): ToolFilePlaceholder[] {
   return [...value.matchAll(TOOL_FILE_PLACEHOLDER_PATTERN)].map((match) => ({
     id: match[2] as string,
-    form: match[1] ? "url" : "base64",
+    form: match[1] === "_url" ? "url" : match[1] === "_path" ? "path" : "base64",
     text: match[0],
   }));
 }
@@ -54,6 +63,7 @@ export function toolFileMention(file: ToolFileMentionInput): string {
   return (
     `[file "${file.name}" (${file.mimeType}, ${formatToolFileSize(file.size)}). ` +
     `To pass it to another tool, put ${toolFilePlaceholder(file.id)} where the tool expects ` +
-    `base64 content, or ${toolFileUrlPlaceholder(file.id)} where it expects a URL.]`
+    `base64 content, ${toolFileUrlPlaceholder(file.id)} where it expects a URL, or ` +
+    `${toolFilePathPlaceholder(file.id)} where a local tool expects a file path.]`
   );
 }

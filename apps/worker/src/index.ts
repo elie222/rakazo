@@ -45,6 +45,7 @@ import {
   createRunSecretWriter,
   createStrategicInitiativeReconciler,
   createTicketChangeNotifier,
+  createToolFileStore,
   createWebProvider,
   databaseCapacityBackoffMs,
   deploymentModelUsageLookup,
@@ -81,6 +82,7 @@ import {
   SpaceMemoryProviderResolver,
   sandboxProviderOptionsFromEnv,
   shutdownPiTelemetry,
+  toolFileSweeper,
   UserDevices,
   userDeviceForwardSecret,
   withRunWorker,
@@ -179,6 +181,15 @@ async function main() {
       .map((v) => v.trim())
       .filter(Boolean),
   };
+  const artifacts = createArtifactStore(dataDir, prisma);
+  const maxUploadSizeBytes = uploadSizeFromEnv(process.env);
+  // Signed download links point at the API (same default as its API_URL), which serves them.
+  const toolFiles = createToolFileStore({
+    prisma,
+    artifacts,
+    publicBaseUrl: process.env.API_URL ?? "http://127.0.0.1:3100",
+    maxBytes: maxUploadSizeBytes,
+  });
   const mcp = new McpConnector(
     prisma,
     secrets,
@@ -187,6 +198,7 @@ async function main() {
       ...mcpStdioOptionsFromEnv(process.env),
       events,
       allowPrivateEndpoint,
+      toolFiles,
     },
     mcpOAuth,
   );
@@ -237,7 +249,6 @@ async function main() {
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const home = createAgentHomeStore(dataDir, prisma);
   void home.removeStaleStaging().catch((error) => logger.error("home staging cleanup", error));
-  const artifacts = createArtifactStore(dataDir, prisma);
   const shutdown = new AbortController();
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
   const runs = new RunStarter(realtime, { signal: shutdown.signal });
@@ -266,7 +277,6 @@ async function main() {
   const paymentWallet = await createPaymentWalletProvider();
   // One instance: the executor submits videos and background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
-  const maxUploadSizeBytes = uploadSizeFromEnv(process.env);
   // Shared with the reconciler so a stuck wait uses the same push path as a finish notice.
   const pushTokens = new PrismaPushTokenStore(prisma, resolveEncryptionKey(process.env));
   const notifications = new ExpoPushProvider(pushTokens, {
@@ -294,6 +304,7 @@ async function main() {
     memoryProviders,
     home,
     artifacts,
+    toolFiles,
     connector: stack.connector,
     connectors: stack.connector,
     listConnectedPluginSlugs: async (userId) => {
@@ -402,6 +413,7 @@ async function main() {
     reconcileHomeStorage: homeStorageSweeper(home),
     reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
     reconcileDeadJobs: inMemoryJobs ? undefined : createDeadJobPruner(pool),
+    reconcileToolFiles: toolFileSweeper(toolFiles),
   });
   let stopHealth: (() => Promise<void>) | undefined;
   let stopping = false;

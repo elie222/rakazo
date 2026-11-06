@@ -4950,6 +4950,10 @@ msgstr "其他模型…"
 msgid "Output"
 msgstr "輸出"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Output folder variable"
+msgstr "輸出資料夾變數"
+
 #: src/components/pages/SharePopover.tsx
 #: src/components/SpaceMembersSettings.tsx
 #: src/lib/identity-display.ts
@@ -5261,6 +5265,10 @@ msgstr "Rakazo"
 #: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr "Rakazo 額度"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Rakazo gives this variable a private folder. Files the server saves there can be passed to other tools, and are deleted 3 hours after their last use."
+msgstr "Rakazo 會為此變數提供一個私人資料夾。伺服器儲存到該資料夾的檔案可以傳遞給其他工具，並在最後一次使用 3 小時後刪除。"
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."

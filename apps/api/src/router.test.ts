@@ -1753,6 +1753,85 @@ describe("MCP pre-registered OAuth client", () => {
     expect(checked.oauthStatus).toBe("none");
   });
 
+  describe("stdio output folder variable", () => {
+    const stdio = {
+      transport: "stdio" as const,
+      slug: "gmail",
+      name: "Gmail",
+      command: "npx",
+      args: ["gmail-mcp"],
+      env: {},
+    };
+    const update = { id: "server-1", config: { ...stdio, enabled: true, description: "" } };
+
+    it("stores the variable and returns it", async () => {
+      const { client, server } = harness();
+
+      const created = await client.mcp.servers.create({ ...stdio, outputEnv: "DOWNLOAD_DIR" });
+
+      expect(created.outputEnv).toBe("DOWNLOAD_DIR");
+      expect(server()?.outputEnv).toBe("DOWNLOAD_DIR");
+    });
+
+    it("keeps the variable when an update omits it and clears it on null", async () => {
+      const { client, server } = harness();
+      await client.mcp.servers.create({ ...stdio, outputEnv: "DOWNLOAD_DIR" });
+
+      const kept = await client.mcp.servers.update(update);
+      expect(kept.outputEnv).toBe("DOWNLOAD_DIR");
+      expect(server()?.outputEnv).toBe("DOWNLOAD_DIR");
+
+      const changed = await client.mcp.servers.update({
+        ...update,
+        config: { ...update.config, outputEnv: "SAVE_DIR" },
+      });
+      expect(changed.outputEnv).toBe("SAVE_DIR");
+
+      const cleared = await client.mcp.servers.update({
+        ...update,
+        config: { ...update.config, outputEnv: null },
+      });
+      expect(cleared.outputEnv).toBeNull();
+      expect(server()?.outputEnv).toBeNull();
+    });
+
+    it("rejects a reserved name or one the server already sets", async () => {
+      const { client, secrets } = harness();
+
+      await expect(
+        client.mcp.servers.create({ ...stdio, outputEnv: "PATH" }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringMatching(/PATH.*reserved/),
+      });
+      await expect(
+        client.mcp.servers.create({
+          ...stdio,
+          env: { DOWNLOAD_DIR: "/tmp/mail" },
+          outputEnv: "DOWNLOAD_DIR",
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringMatching(/DOWNLOAD_DIR.*already set/),
+      });
+      expect(secrets.put).not.toHaveBeenCalled();
+    });
+
+    it("has none on a remote server", async () => {
+      const { client, server } = harness();
+
+      const created = await client.mcp.servers.create({
+        transport: "streamable_http",
+        slug: "remote",
+        name: "Remote",
+        endpoint: "https://mcp.example.test/mcp",
+      });
+
+      expect(created.outputEnv).toBeNull();
+      expect(server()?.outputEnv).toBeNull();
+    });
+  });
+
   describe("stdio server with host-managed OAuth", () => {
     const stdio = {
       transport: "stdio" as const,

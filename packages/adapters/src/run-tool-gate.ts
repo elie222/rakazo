@@ -81,6 +81,7 @@ import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer
 import { connectorTrustKeys } from "./run-trust.js";
 import { watchFromTool } from "./schedule-tools.js";
 import { pagePaymentPrecheck, paysWithWallet } from "./spending-gate.js";
+import { readableToolFileArgs } from "./tool-file-args.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
 
@@ -746,6 +747,12 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
   await ctx.computer.checkpoint.flush();
   await persistTurnCheckpoint(ctx, executionId);
   await ctx.settleRunningHelpers();
+  // The card names files passed by placeholder (📎 invoice.pdf (312 KB)), never their content.
+  const shown = await readableToolFileArgs(args, deps.toolFiles, {
+    spaceId: run.spaceId,
+    userId: run.userId,
+    botId: bot.id,
+  });
   const paused = await deps.events.pauseRunForInput({
     spaceId: run.spaceId,
     threadId: run.threadId,
@@ -758,7 +765,9 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
       buildApprovalAskBlock(
         applied!.effect.id,
         name,
-        name === "update_bot" && "previousInstructions" in args ? { ...args, botId: bot.id } : args,
+        name === "update_bot" && "previousInstructions" in shown
+          ? { ...shown, botId: bot.id }
+          : shown,
         ctx.secrets,
         card,
       ),
@@ -815,7 +824,14 @@ async function reviewToolCall(
         : {
             toolName: name,
             connectorKind,
-            args: redactToolArgsForReview(args, ctx.secrets),
+            args: redactToolArgsForReview(
+              await readableToolFileArgs(args, deps.toolFiles, {
+                spaceId: run.spaceId,
+                userId: run.userId,
+                botId: bot.id,
+              }),
+              ctx.secrets,
+            ),
             userTask: redactSecrets(ctx.task.prompt, ctx.secrets),
             botDescription,
             matchingRules: review.matchingRules,

@@ -608,6 +608,7 @@ model Space {
   agentHomes                  AgentHome[]
   browserProfiles             BrowserProfile[]
   artifacts                   Artifact[]
+  toolFileDownloadTokens      ToolFileDownloadToken[]
   pages                       Page[]
   notificationPreferences     NotificationPreference[]
   computers                   Computer[]
@@ -1857,13 +1858,37 @@ model Artifact {
   version        Int        @default(1)
   // Client-chosen per upload so a retried upload that already landed returns this row.
   clientNonce    String?
+  /// Set only on a temporary tool file (one tool's output handed to another, see
+  /// packages/adapters/src/tool-files.ts): pushed back on every use, and the file is deleted
+  /// once it passes. Such files never show in file lists, search or exports.
+  expiresAt      DateTime?
+  downloadTokens ToolFileDownloadToken[]
 
   @@unique([spaceId, userId, clientNonce])
   @@index([spaceId, botId])
   @@index([groupId])
   @@index([rootArtifactId])
   // artifacts_family_version_key is raw SQL: Prisma cannot express COALESCE indexes.
+  // artifacts_expiresAt_idx (temporary files by expiry, for the sweep) is raw SQL: it is partial.
   @@map("artifacts")
+}
+
+/// A short-lived link that serves one temporary tool file to whatever a tool hands it to.
+model ToolFileDownloadToken {
+  id         String   @id @default(cuid())
+  /// sha256 of the link token; the public download looks tokens up by it.
+  tokenHash  String   @unique
+  artifactId String
+  artifact   Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  spaceId    String
+  space      Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  usesLeft   Int
+  createdAt  DateTime @default(now())
+
+  @@index([artifactId])
+  @@index([expiresAt])
+  @@map("tool_file_download_tokens")
 }
 
 /// A page a bot built: a report, dashboard or tracker the user opens from chat and can share.
@@ -2024,6 +2049,9 @@ model McpServer {
   enabled       Boolean           @default(true)
   /// Tool results from this server stay whole. A result that cannot fit fails the turn.
   verbatimResults Boolean         @default(false)
+  /// Stdio only: the env variable that receives a Rakazo-managed output folder; files the
+  /// server writes there become temporary tool files. Null when the server has none.
+  outputEnv     String?
   revision      Int               @default(1)
   /// Last launch/discovery outcome: unknown | installing | ok | error.
   healthStatus    String          @default("unknown")

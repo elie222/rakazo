@@ -18,6 +18,7 @@ import { MAX_SHARED_MEMORY_CHARS } from "./builtin-tools.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { fakeSpendingPrisma } from "./fake-spending.js";
+import { FakeToolFileStore } from "./fake-tool-files.js";
 import { FakeWebProvider } from "./fake-web.js";
 import type * as FleetToolsModule from "./fleet-tools.js";
 import type { HostComputerRequest } from "./host-computer-protocol.js";
@@ -109,7 +110,10 @@ function fixture({
   batch,
   browser,
   spendingLimit = null,
+  toolFiles,
 }: {
+  /** Temporary files tools hand to each other. */
+  toolFiles?: FakeToolFileStore;
   /** A page browser on a graphical computer, so browser_act and computer_act are offered. */
   browser?: BrowserProvider;
   /** The user's spending limit for payments. */
@@ -627,6 +631,7 @@ function fixture({
     shutdownSignal,
     web,
     userDevices,
+    toolFiles,
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
     prisma: transactionalPrisma,
@@ -4052,5 +4057,47 @@ describe("a click that completes a purchase on a website", () => {
     f.setCalls([payCall(undefined, "call-2")]);
     await f.run();
     expect(f.spending.payments).toEqual([expect.objectContaining({ amount: 11_300 })]);
+  });
+});
+
+describe("temporary tool files on approval cards", () => {
+  beforeEach(() => {
+    reviewMock.mockReset();
+  });
+
+  it("shows a file by name and size to the owner and the reviewer, and stores the placeholder", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Uploads a file", model: "mock" });
+    const toolFiles = new FakeToolFileStore();
+    const file = await toolFiles.create({
+      spaceId: "space-1",
+      userId: "user-1",
+      botId: "bot-1",
+      name: "invoice.pdf",
+      mimeType: "application/pdf",
+      bytes: new Uint8Array(312_000).fill(65),
+    });
+    const placeholder = `{{file:${file.id}}}`;
+    const f = fixture({ name: "demo_upload_file", readOnly: false, autoReview: true, toolFiles });
+    f.setCalls([
+      {
+        args: {
+          id: "item-1",
+          data: JSON.stringify({ filename: "invoice.pdf", file: placeholder }),
+        },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    const card = (
+      f.pauseRunForInput.mock.calls as unknown as [{ blocks: Array<{ detail?: string }> }][]
+    )[0]?.[0].blocks[0];
+    expect(card?.detail).toContain("📎 invoice.pdf (305 KB)");
+    expect(card?.detail).not.toContain(placeholder);
+    const reviewed = JSON.stringify(reviewMock.mock.calls[0]?.[0]);
+    expect(reviewed).toContain("📎 invoice.pdf (305 KB)");
+    expect(reviewed).not.toContain("QUFB");
+    // The approved call runs from the stored request, which keeps the placeholder.
+    expect(JSON.stringify(f.effects[0]?.request)).toContain(placeholder);
   });
 });

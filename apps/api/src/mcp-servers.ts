@@ -9,7 +9,7 @@ import {
   recordMcpServerHealth,
 } from "@rakazo/adapters";
 import type { Actor, McpServer, McpServerConfigInput } from "@rakazo/contracts";
-import { mcpOAuthEnvReferences } from "@rakazo/contracts";
+import { commandVariableProblem, mcpOAuthEnvReferences } from "@rakazo/contracts";
 import type { McpServer as McpServerRow, Prisma } from "@rakazo/db";
 import { itemSecretIn, spaceAvailability } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -43,6 +43,7 @@ export function mcpServerDto(
     allBots?: boolean;
     enabled: boolean;
     verbatimResults?: boolean;
+    outputEnv?: string | null;
     revision: number;
     healthStatus: string;
     healthMessage: string | null;
@@ -69,6 +70,7 @@ export function mcpServerDto(
     hasArgs: row.hasArgs || legacyMcpArgs(row.args).length > 0,
     envKeys,
     fileKeys: keysOf(row.files),
+    outputEnv: row.transport === "stdio" ? (row.outputEnv ?? null) : null,
     headerKeys,
     installId: row.installId ?? null,
     // A lone OAuth generation marker keeps a secret row without holding a credential.
@@ -168,6 +170,32 @@ export function assertMcpOAuthTemplates(
         message: `${label} uses {{oauth.${fields[0]}}}, which needs an OAuth client`,
       });
     }
+  }
+}
+
+/**
+ * The output folder variable is set by Rakazo, so it cannot also be one of the server's own
+ * variables or credential files, or a name the process environment depends on.
+ */
+export function assertMcpOutputEnv(
+  outputEnv: string | null | undefined,
+  envKeys: readonly string[],
+  fileKeys: readonly string[],
+): void {
+  if (!outputEnv) return;
+  const problem = commandVariableProblem(outputEnv);
+  if (problem) {
+    throw new ORPCError("BAD_REQUEST", {
+      message:
+        problem === "reserved"
+          ? `${outputEnv} is reserved and cannot receive the output folder`
+          : `${outputEnv} is not a valid environment variable name`,
+    });
+  }
+  if (envKeys.includes(outputEnv) || fileKeys.includes(outputEnv)) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: `${outputEnv} is already set as an environment variable or credential file`,
+    });
   }
 }
 
@@ -296,6 +324,7 @@ export function createMcpServers(
     if (input.transport === "stdio") {
       await assertMcpStdioCommand(input.command, actor, deps);
       assertMcpOAuthTemplates(input.env, input.files ?? {}, Boolean(input.oauthClient));
+      assertMcpOutputEnv(input.outputEnv, Object.keys(input.env), Object.keys(input.files ?? {}));
       await assertMcpRemoteEndpoint(input.oauthClient?.authorizationServer, deps);
     }
     const secretPayload = buildMcpCredentialBlob(input);
@@ -355,6 +384,7 @@ export function createMcpServers(
         secretId: stored?.id,
         enabled: input.enabled,
         verbatimResults: input.verbatimResults,
+        outputEnv: input.transport === "stdio" ? (input.outputEnv ?? null) : null,
       },
     });
   };

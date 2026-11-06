@@ -9,11 +9,13 @@ import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safe
 import { mcpAppViewArguments, mcpAppViewResult } from "./mcp-app.js";
 import { addMcpServerFromTool } from "./mcp-server-tool.js";
 import type { RunContext } from "./run-context.js";
+import { addRunSecrets } from "./run-context.js";
 import { runScopedToolExecutionId } from "./run-effects.js";
 import { publishMessage } from "./run-messages.js";
 import { flushProgress, publishMidTurnNarration, showNarrationStatus } from "./run-progress.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { storeMcpAppHtml } from "./thread-artifacts.js";
+import { restoreToolFilePlaceholders, substituteToolFilePlaceholders } from "./tool-file-args.js";
 import { webFetchFromTool, webSearchFromTool } from "./web-tools.js";
 
 export async function cloudAgentTool(ctx: RunContext, call: ToolCall) {
@@ -35,19 +37,37 @@ export async function connectorTool(ctx: RunContext, call: ToolCall) {
   const { name, args, effectKey, connectorCall } = call;
   if (deps.connector) {
     let result: unknown = { error: `unknown tool ${name}` };
+    // Files named by placeholder are filled in here, after approval, in a copy only the tool
+    // sees: the effect, approval and audit keep the placeholders.
+    // `{{file_path:ID}}` is left for the MCP connector, which writes the copy where its
+    // local server can read it; other connectors refuse it.
+    const prepared = await substituteToolFilePlaceholders(
+      args,
+      deps.toolFiles,
+      { spaceId: run.spaceId, userId: run.userId, botId: bot.id },
+      { allowPaths: connectorCall.route?.connectorId === "mcp" },
+    );
+    if (!prepared.ok) return call.finish({ error: prepared.error });
+    const { substitutions } = prepared;
+    // Signed URLs are short, so the run hides them everywhere it shows or stores text. File
+    // content can be megabytes, too long for the streaming redactor, so wherever the tool
+    // echoes it (or a URL) the placeholder is put back instead.
+    const urls = substitutions.filter((entry) => entry.form === "url").map((entry) => entry.value);
+    if (urls.length > 0) addRunSecrets(ctx, urls);
+    const restore = <T>(value: T): T => restoreToolFilePlaceholders(value, substitutions);
     // Background work posts no cards, so it does not fetch the app either.
     const withApp = Boolean(deps.artifacts) && !isBackgroundRunTrigger(run.trigger);
     for await (const event of deps.connector.execute(
-      { ...connectorCall, tool: name, args, executionId: effectKey, withApp },
+      { ...connectorCall, tool: name, args: prepared.args, executionId: effectKey, withApp },
       context,
     )) {
       if (event.type === "app") {
-        await showConnectorApp(ctx, call, event.app, result);
+        await showConnectorApp(ctx, call, { ...event.app, html: restore(event.app.html) }, result);
         continue;
       }
       if (event.type === "result") {
-        result = event.data;
-        const logIds = collectLogIds(event.data);
+        result = restore(event.data);
+        const logIds = collectLogIds(result);
         for (const logId of logIds) {
           await deps.events.append({
             spaceId: run.spaceId,
@@ -60,7 +80,7 @@ export async function connectorTool(ctx: RunContext, call: ToolCall) {
         }
       }
       if (event.type === "error") {
-        result = { error: event.message };
+        result = { error: restore(event.message) };
         for (const logId of event.logIds ?? []) {
           await deps.events.append({
             spaceId: run.spaceId,
