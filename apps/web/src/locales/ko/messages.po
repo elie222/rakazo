@@ -606,7 +606,7 @@ msgstr "액세스 토큰(선택 사항)"
 msgid "Account"
 msgstr "계정"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Account default"
 msgstr "계정 기본값"
 
@@ -858,7 +858,7 @@ msgstr ""
 msgid "Allow"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Allow cross-space bot communication"
 msgstr ""
 
@@ -1496,7 +1496,7 @@ msgid "Chart failed to render: {error}"
 msgstr "차트를 표시하지 못했습니다: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1651,7 +1651,7 @@ msgid "Clear {0}’s conversation?"
 msgstr "{0}와의 대화 내용을 비울까요?"
 
 #: src/pages/BotContextMenu.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Clear conversation"
 msgstr "대화 내용 비우기"
 
@@ -1818,6 +1818,7 @@ msgstr "완료"
 
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "컴퓨터"
@@ -2850,7 +2851,7 @@ msgstr "봇 아바타 맞춤설정"
 msgid "Daily"
 msgstr "매일"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "미완료 작업 매일 확인"
 
@@ -2893,7 +2894,7 @@ msgstr "기본값"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Default ({0})"
 msgstr "기본값 ({0})"
 
@@ -3055,7 +3056,7 @@ msgstr "<0>{emailSuggestion}</0>을(를) 입력하려고 하셨나요?"
 msgid "Didn't catch that."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Disable a tool"
 msgstr "도구 비활성화"
 
@@ -3248,7 +3249,7 @@ msgid "Email verification required"
 msgstr "이메일 인증이 필요합니다"
 
 #. placeholder {0}: humanizeTool(toolName)
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Enable {0}"
 msgstr "{0} 활성화"
 
@@ -3409,7 +3410,7 @@ msgid "Expiry"
 msgstr ""
 
 #: src/components/AccountDataSettings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Export"
 msgstr "내보내기"
 
@@ -3778,7 +3779,7 @@ msgstr ""
 msgid "How often"
 msgstr "실행 주기"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "How other bots see it"
 msgstr "다른 봇이 이 봇을 보는 방식"
 
@@ -3864,7 +3865,7 @@ msgstr "API 키 포함"
 msgid "Incoming call"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Inherit default"
 msgstr "기본 설정 사용"
 
@@ -3967,7 +3968,7 @@ msgid "Invite link copied"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Isolated"
 msgstr "이 Bot만 사용"
 
@@ -4241,7 +4242,7 @@ msgstr ""
 msgid "Manage MCP servers"
 msgstr "MCP 서버 관리"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Manage other bots"
 msgstr "다른 봇 관리"
 
@@ -4349,7 +4350,7 @@ msgstr "기억 {position}"
 msgid "Memory for {title}"
 msgstr "{title}의 기억"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Memory scope"
 msgstr "기억 사용 범위"
 
@@ -4409,7 +4410,7 @@ msgstr "메시지를 입력하세요"
 msgid "Messaged {peer}"
 msgstr "{peer}에게 메시지 보냄"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Messages"
 msgstr ""
 
@@ -4466,7 +4467,7 @@ msgstr "모드"
 #: src/pages/Onboarding.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model"
 msgstr "모델"
 
@@ -4474,7 +4475,7 @@ msgstr "모델"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "\"{modelId}\" 모델이 목록에 없습니다."
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model connections"
 msgstr "모델 연결"
 
@@ -4929,7 +4930,7 @@ msgstr "작동하지 않음"
 msgid "Nothing remembered yet"
 msgstr "아직 기억한 내용이 없습니다"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Notifications"
 msgstr "알림"
 
@@ -5260,7 +5261,7 @@ msgstr "일시 중지됨"
 msgid "Pending"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Permissions"
 msgstr "권한"
 
@@ -5387,7 +5388,7 @@ msgstr ""
 msgid "Priority"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Private"
 msgstr "Bot 전용"
 
@@ -5454,7 +5455,7 @@ msgstr "반응"
 msgid "Read from the page, not checked"
 msgstr "페이지에서 읽음, 확인 안 됨"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Read replies aloud"
 msgstr "답변을 자동으로 읽기"
 
@@ -5763,7 +5764,7 @@ msgstr "키 교체"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Replies"
 msgstr ""
 
@@ -6323,7 +6324,7 @@ msgstr "공유, 링크가 있는 누구나 볼 수 있음"
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Shared"
 msgstr "함께 사용"
 
@@ -6770,7 +6771,7 @@ msgstr "작업 가르치기"
 msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "작업을 가르치는 중입니다. 새 메시지를 보내려면 먼저 가르치기를 종료하세요."
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Team"
 msgstr "팀 공용"
 
@@ -6908,7 +6909,7 @@ msgstr "친구는 {weeks}주 동안 무료로 사용해요."
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Thinking"
 msgstr "생각 깊이"
 
@@ -7150,7 +7151,7 @@ msgstr "도구 이름"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr ""
 
@@ -7496,7 +7497,7 @@ msgid "View source"
 msgstr ""
 
 #: src/pages/settings-nav.ts
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
@@ -7588,7 +7589,7 @@ msgstr "어떤 작업을 직접 보여줄까요?"
 msgid "What should this routine do each time it runs?"
 msgstr "이 루틴이 실행될 때마다 무엇을 해야 하나요?"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "이 Bot을 언제, 어떤 일에 사용할지 적어주세요"
 
@@ -7617,7 +7618,7 @@ msgstr "이메일이 도착하면"
 msgid "When bots check with you before acting."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "When it finishes or needs input"
 msgstr "작업을 완료하거나 입력이 필요할 때"
 

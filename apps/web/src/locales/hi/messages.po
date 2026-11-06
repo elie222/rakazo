@@ -606,7 +606,7 @@ msgstr "एक्सेस टोकन (वैकल्पिक)"
 msgid "Account"
 msgstr "खाता"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Account default"
 msgstr "खाता डिफ़ॉल्ट"
 
@@ -858,7 +858,7 @@ msgstr ""
 msgid "Allow"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Allow cross-space bot communication"
 msgstr ""
 
@@ -1496,7 +1496,7 @@ msgid "Chart failed to render: {error}"
 msgstr "चार्ट रेंडर नहीं हो सका: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1651,7 +1651,7 @@ msgid "Clear {0}’s conversation?"
 msgstr "{0} की बातचीत साफ़ करें?"
 
 #: src/pages/BotContextMenu.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Clear conversation"
 msgstr "बातचीत साफ़ करें"
 
@@ -1818,6 +1818,7 @@ msgstr "पूर्ण"
 
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "कंप्यूटर"
@@ -2850,7 +2851,7 @@ msgstr "बॉट अवतार अनुकूलित करें"
 msgid "Daily"
 msgstr "रोज़"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "अधूरे काम पर रोज़ पूछें"
 
@@ -2893,7 +2894,7 @@ msgstr "डिफ़ॉल्ट"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Default ({0})"
 msgstr "डिफ़ॉल्ट ({0})"
 
@@ -3055,7 +3056,7 @@ msgstr "क्या आपका मतलब <0>{emailSuggestion}</0> था?"
 msgid "Didn't catch that."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Disable a tool"
 msgstr "टूल अक्षम करें"
 
@@ -3248,7 +3249,7 @@ msgid "Email verification required"
 msgstr "ईमेल सत्यापन आवश्यक है"
 
 #. placeholder {0}: humanizeTool(toolName)
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Enable {0}"
 msgstr "{0} सक्षम करें"
 
@@ -3409,7 +3410,7 @@ msgid "Expiry"
 msgstr ""
 
 #: src/components/AccountDataSettings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Export"
 msgstr "एक्सपोर्ट करें"
 
@@ -3778,7 +3779,7 @@ msgstr ""
 msgid "How often"
 msgstr "कितनी बार"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "How other bots see it"
 msgstr "दूसरे बॉट इसे कैसे देखते हैं"
 
@@ -3864,7 +3865,7 @@ msgstr "API कुंजियाँ शामिल करें"
 msgid "Incoming call"
 msgstr "आने वाली कॉल"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Inherit default"
 msgstr "डिफ़ॉल्ट का पालन करें"
 
@@ -3967,7 +3968,7 @@ msgid "Invite link copied"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Isolated"
 msgstr "पृथक"
 
@@ -4241,7 +4242,7 @@ msgstr ""
 msgid "Manage MCP servers"
 msgstr "MCP सर्वर प्रबंधित करें"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Manage other bots"
 msgstr "अन्य बॉट प्रबंधित करें"
 
@@ -4349,7 +4350,7 @@ msgstr "मेमोरी {position}"
 msgid "Memory for {title}"
 msgstr "{title} के लिए मेमोरी"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Memory scope"
 msgstr "मेमोरी स्कोप"
 
@@ -4409,7 +4410,7 @@ msgstr "संदेश…"
 msgid "Messaged {peer}"
 msgstr "{peer} को संदेश भेजा"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Messages"
 msgstr ""
 
@@ -4466,7 +4467,7 @@ msgstr "मोड"
 #: src/pages/Onboarding.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model"
 msgstr "मॉडल"
 
@@ -4474,7 +4475,7 @@ msgstr "मॉडल"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "मॉडल \"{modelId}\" सूची में नहीं था।"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model connections"
 msgstr "मॉडल कनेक्शन"
 
@@ -4929,7 +4930,7 @@ msgstr "काम नहीं कर रहा"
 msgid "Nothing remembered yet"
 msgstr "अभी तक कुछ याद नहीं किया गया"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Notifications"
 msgstr "सूचनाएं"
 
@@ -5260,7 +5261,7 @@ msgstr ""
 msgid "Pending"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Permissions"
 msgstr "अनुमतियाँ"
 
@@ -5387,7 +5388,7 @@ msgstr ""
 msgid "Priority"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Private"
 msgstr "निजी"
 
@@ -5454,7 +5455,7 @@ msgstr "प्रतिक्रियाएँ"
 msgid "Read from the page, not checked"
 msgstr "पेज से पढ़ा गया, जाँचा नहीं गया"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Read replies aloud"
 msgstr "उत्तर पढ़कर सुनाएं"
 
@@ -5763,7 +5764,7 @@ msgstr "कुंजी बदलें"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Replies"
 msgstr ""
 
@@ -6323,7 +6324,7 @@ msgstr "शेयर करें, लिंक वाला कोई भी �
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Shared"
 msgstr "साझा"
 
@@ -6770,7 +6771,7 @@ msgstr "कोई कार्य सिखाएं"
 msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "सिखाना जारी है। नया संदेश भेजने से पहले सिखाना रोकें।"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Team"
 msgstr "टीम"
 
@@ -6908,7 +6909,7 @@ msgstr "उन्हें {weeks} हफ़्ते मुफ़्त मि�
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Thinking"
 msgstr "सोच रहा है"
 
@@ -7150,7 +7151,7 @@ msgstr "टूल का नाम"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr ""
 
@@ -7496,7 +7497,7 @@ msgid "View source"
 msgstr ""
 
 #: src/pages/settings-nav.ts
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
@@ -7588,7 +7589,7 @@ msgstr "आप कौन-सा परिणाम दिखाकर बता�
 msgid "What should this routine do each time it runs?"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "यह बॉट किस लिए है"
 
@@ -7617,7 +7618,7 @@ msgstr "जब ईमेल आए"
 msgid "When bots check with you before acting."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "When it finishes or needs input"
 msgstr "जब काम पूरा हो या आपकी जानकारी चाहिए"
 

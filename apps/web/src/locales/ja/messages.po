@@ -606,7 +606,7 @@ msgstr "アクセストークン（任意）"
 msgid "Account"
 msgstr "アカウント"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Account default"
 msgstr "アカウントのデフォルト"
 
@@ -858,7 +858,7 @@ msgstr "全期間"
 msgid "Allow"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Allow cross-space bot communication"
 msgstr "スペース間のボット通信を許可"
 
@@ -1496,7 +1496,7 @@ msgid "Chart failed to render: {error}"
 msgstr "チャートを表示できませんでした: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1651,7 +1651,7 @@ msgid "Clear {0}’s conversation?"
 msgstr "{0}との会話をクリアしますか？"
 
 #: src/pages/BotContextMenu.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Clear conversation"
 msgstr "会話をクリア"
 
@@ -1818,6 +1818,7 @@ msgstr "完了"
 
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "コンピューター"
@@ -2850,7 +2851,7 @@ msgstr "ボットのアバターをカスタマイズ"
 msgid "Daily"
 msgstr "毎日"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "未完了の作業を毎日確認"
 
@@ -2893,7 +2894,7 @@ msgstr "デフォルト"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Default ({0})"
 msgstr "デフォルト（{0}）"
 
@@ -3055,7 +3056,7 @@ msgstr "<0>{emailSuggestion}</0> のことですか？"
 msgid "Didn't catch that."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Disable a tool"
 msgstr "ツールを無効にする"
 
@@ -3248,7 +3249,7 @@ msgid "Email verification required"
 msgstr "メールアドレスの確認が必要です"
 
 #. placeholder {0}: humanizeTool(toolName)
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Enable {0}"
 msgstr "{0}を有効にする"
 
@@ -3409,7 +3410,7 @@ msgid "Expiry"
 msgstr ""
 
 #: src/components/AccountDataSettings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Export"
 msgstr "エクスポート"
 
@@ -3778,7 +3779,7 @@ msgstr "Rakazoを何で知りましたか？"
 msgid "How often"
 msgstr "頻度"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "How other bots see it"
 msgstr "他のボットからの見え方"
 
@@ -3864,7 +3865,7 @@ msgstr "APIキーを含める"
 msgid "Incoming call"
 msgstr "着信"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Inherit default"
 msgstr "デフォルトを継承"
 
@@ -3967,7 +3968,7 @@ msgid "Invite link copied"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Isolated"
 msgstr "分離"
 
@@ -4241,7 +4242,7 @@ msgstr "請求を管理"
 msgid "Manage MCP servers"
 msgstr "MCPサーバーを管理"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Manage other bots"
 msgstr "他のボットを管理"
 
@@ -4349,7 +4350,7 @@ msgstr "メモリ {position}"
 msgid "Memory for {title}"
 msgstr "{title}のメモリ"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Memory scope"
 msgstr "メモリの範囲"
 
@@ -4409,7 +4410,7 @@ msgstr "メッセージ…"
 msgid "Messaged {peer}"
 msgstr "{peer}にメッセージを送信しました"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Messages"
 msgstr ""
 
@@ -4466,7 +4467,7 @@ msgstr "モード"
 #: src/pages/Onboarding.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model"
 msgstr "モデル"
 
@@ -4474,7 +4475,7 @@ msgstr "モデル"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "モデル「{modelId}」は一覧にありませんでした。"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Model connections"
 msgstr "モデル接続"
 
@@ -4929,7 +4930,7 @@ msgstr "動作していません"
 msgid "Nothing remembered yet"
 msgstr "記憶はまだありません"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Notifications"
 msgstr "通知"
 
@@ -5260,7 +5261,7 @@ msgstr "一時停止中"
 msgid "Pending"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Permissions"
 msgstr "権限"
 
@@ -5387,7 +5388,7 @@ msgstr "前の設定セクション"
 msgid "Priority"
 msgstr "優先度"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Private"
 msgstr "非公開"
 
@@ -5454,7 +5455,7 @@ msgstr "リアクション"
 msgid "Read from the page, not checked"
 msgstr "ページから読み取り、未確認"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Read replies aloud"
 msgstr "返信を読み上げる"
 
@@ -5763,7 +5764,7 @@ msgstr "キーを置き換え"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Replies"
 msgstr ""
 
@@ -6323,7 +6324,7 @@ msgstr "共有、リンクを知っている人は誰でも閲覧可能"
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Shared"
 msgstr "共有"
 
@@ -6770,7 +6771,7 @@ msgstr "タスクを教える"
 msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "ティーチング中です。新しいメッセージを送信する前にティーチングを停止してください。"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Team"
 msgstr "チーム"
 
@@ -6908,7 +6909,7 @@ msgstr "友だちは{weeks}週間無料で使えます。"
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Thinking"
 msgstr "思考"
 
@@ -7150,7 +7151,7 @@ msgstr "ツール名"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr "ツール"
 
@@ -7496,7 +7497,7 @@ msgid "View source"
 msgstr ""
 
 #: src/pages/settings-nav.ts
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
@@ -7588,7 +7589,7 @@ msgstr "どんな結果を実演しますか？"
 msgid "What should this routine do each time it runs?"
 msgstr "このルーティンは実行のたびに何をしますか？"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "このボットの用途"
 
@@ -7617,7 +7618,7 @@ msgstr "メールを受信したとき"
 msgid "When bots check with you before acting."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/bot-settings-sections.tsx
 msgid "When it finishes or needs input"
 msgstr "完了時または入力が必要なとき"
 
