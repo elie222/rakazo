@@ -7,16 +7,14 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
-  CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  cloudflareModelRouting,
   compatibleConnectionName,
   connectionDisplayName,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
-  isCloudflareModelProvider,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   modelHeadersInput,
+  modelRoutingReady,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleProbeSuccessMessage,
   savedCompatibleEndpointMatches,
@@ -304,10 +302,10 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   const disconnectName = selectedConnectionName;
   const hostCredentialSource = me?.hostCredentialSource ?? "";
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
-  const isCloudflare = isCloudflareModelProvider(provider);
-  const cloudflareRoutingReady =
-    !isCloudflare || cloudflareModelRouting({ provider, accountId, gatewayId }) !== undefined;
+  const routingFields = selected?.routingFields ?? [];
+  const needsRouting = routingFields.length > 0;
+  const needsGateway = routingFields.includes("gatewayId");
+  const routingReady = modelRoutingReady(routingFields, { accountId, gatewayId });
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
@@ -342,7 +340,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     !isOpenAiCompatible &&
     Boolean(credential) &&
     (maxTokens.trim() !== connectionMaxTokensField(provider, credential?.maxTokens) ||
-      (isCloudflare &&
+      (needsRouting &&
         (accountId.trim() !== (credential?.accountId ?? "") ||
           gatewayId.trim() !== (credential?.gatewayId ?? ""))));
 
@@ -671,7 +669,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     catalog,
     catalogThinkingLevels,
     chooseProvider,
-    cloudflareRoutingReady,
+    routingReady,
     codeCopied,
     compatibleRows,
     confirmDisconnect,
@@ -693,8 +691,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     handleClose,
     hostCredentialSource,
     invalidatePreflight,
-    isCloudflare,
-    isCloudflareGateway,
+    needsRouting,
+    needsGateway,
     isOpenAiCompatible,
     loading,
     maxImagesPerPrompt,

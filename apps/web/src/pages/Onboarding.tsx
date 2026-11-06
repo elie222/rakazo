@@ -1,16 +1,14 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
-  CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  cloudflareModelRouting,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
-  isCloudflareModelProvider,
   isOllamaCloudBaseUrl,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   ModelHeaderRowsSchema,
   modelHeadersInput,
+  modelRoutingReady,
   OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
@@ -252,10 +250,10 @@ export function OnboardingPage() {
 
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
-  const isCloudflare = isCloudflareModelProvider(provider);
-  const cloudflareRoutingReady =
-    !isCloudflare || cloudflareModelRouting({ provider, accountId, gatewayId }) !== undefined;
+  const routingFields = selected?.routingFields ?? [];
+  const needsRouting = routingFields.length > 0;
+  const needsGateway = routingFields.includes("gatewayId");
+  const routingReady = modelRoutingReady(routingFields, { accountId, gatewayId });
   const subscriptionSignIn = selected?.signIn !== undefined && providerAuth !== "key";
   const acceptsKey = selected?.auth !== "oauth" && providerAuth !== "sign-in";
   const signInLabel = selected?.oauthLabel ?? t`Sign in`;
@@ -269,7 +267,7 @@ export function OnboardingPage() {
     selected &&
       modelId.trim() &&
       !oauthPending &&
-      cloudflareRoutingReady &&
+      routingReady &&
       (isOpenAiCompatible ? openAiCompatibleReady : acceptsKey && apiKey.trim()),
   );
   // Subscriptions and the common API providers first; every other provider follows by name.
@@ -499,7 +497,7 @@ export function OnboardingPage() {
         await rpc.models.connect({
           provider,
           apiKey,
-          ...(isCloudflare ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
+          ...(needsRouting ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
           modelId,
           label: selected?.providerName ?? provider,
         });
@@ -860,7 +858,7 @@ export function OnboardingPage() {
                     )}
                   </div>
                 ) : null}
-                {isCloudflare && acceptsKey ? (
+                {needsRouting && acceptsKey ? (
                   <div className="mt-4 grid gap-4">
                     <label
                       htmlFor={`${fieldId}-account-id`}
@@ -876,7 +874,7 @@ export function OnboardingPage() {
                         className="mt-2"
                       />
                     </label>
-                    {isCloudflareGateway ? (
+                    {needsGateway ? (
                       <label
                         htmlFor={`${fieldId}-gateway-id`}
                         className="block text-body font-medium text-foreground"
