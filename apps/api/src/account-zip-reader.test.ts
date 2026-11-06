@@ -53,19 +53,67 @@ async function inflateAll(
   return Buffer.concat(chunks);
 }
 
+/**
+ * Rewrites an entry's recorded uncompressed size in the central directory
+ * and its data descriptor, leaving the compressed size and checksum alone,
+ * so the recorded sizes agree with each other but not with the actual data.
+ */
+async function falsifyUncompressedSize(
+  bytes: Uint8Array,
+  name: string,
+  falseSize: number,
+): Promise<Uint8Array> {
+  const mutated = new Uint8Array(bytes);
+  const view = new DataView(mutated.buffer);
+  const entries = await withArchive(bytes, (handle) => parseZipArchive(handle));
+  const entry = entries.find((candidate) => candidate.name === name);
+  if (!entry) throw new Error(`no entry named ${name}`);
+  // Data descriptor: right after the entry's data; signed descriptors carry
+  // the uncompressed size 12 bytes in, unsigned ones 8 bytes in.
+  const descriptor = entry.dataOffset + entry.compressedSize;
+  const signed = view.getUint32(descriptor, true) === 0x08074b50;
+  view.setUint32(descriptor + (signed ? 12 : 8), falseSize, true);
+  // Central directory record: walk the records from the end of central
+  // directory, which sits 22 bytes from the end (no comment in our fixtures).
+  const eocd = bytes.length - 22;
+  let at = view.getUint32(eocd + 16, true);
+  while (view.getUint32(at, true) === 0x02014b50) {
+    const nameLength = view.getUint16(at + 28, true);
+    const extraLength = view.getUint16(at + 30, true);
+    const commentLength = view.getUint16(at + 32, true);
+    const recordName = new TextDecoder().decode(mutated.subarray(at + 46, at + 46 + nameLength));
+    if (recordName === name) {
+      view.setUint32(at + 24, falseSize, true);
+      return mutated;
+    }
+    at += 46 + nameLength + extraLength + commentLength;
+  }
+  throw new Error(`no central directory record named ${name}`);
+}
+
 /** A minimal ZIP64 archive, built by hand: one stored file, ZIP64 end of
- * central directory + locator, ZIP64 extra fields in both headers. */
-function buildZip64Archive(): Uint8Array {
+ * central directory + locator, ZIP64 extra fields in both headers.
+ * With `truncateLocalExtra` / `truncateCentralExtra`, that header's extra
+ * field declares two 8-byte ZIP64 values but holds only one, so its declared
+ * end runs past its actual bytes. */
+function buildZip64Archive(
+  options: { truncateLocalExtra?: boolean; truncateCentralExtra?: boolean } = {},
+): Uint8Array {
   const name = new TextEncoder().encode("a.txt");
   const data = new TextEncoder().encode("hi");
   const crc = crc32(data);
-  const zip64Extra = new Uint8Array(20);
-  const extraView = new DataView(zip64Extra.buffer);
-  extraView.setUint16(0, 0x0001, true);
-  extraView.setUint16(2, 16, true);
-  extraView.setBigUint64(4, 2n, true);
-  extraView.setBigUint64(12, 2n, true);
-  const local = new Uint8Array(30 + name.length + zip64Extra.length + data.length);
+  const buildExtra = (truncate: boolean | undefined): Uint8Array => {
+    const extra = new Uint8Array(truncate ? 12 : 20);
+    const extraView = new DataView(extra.buffer);
+    extraView.setUint16(0, 0x0001, true);
+    extraView.setUint16(2, 16, true);
+    extraView.setBigUint64(4, 2n, true);
+    if (!truncate) extraView.setBigUint64(12, 2n, true);
+    return extra;
+  };
+  const localExtra = buildExtra(options.truncateLocalExtra);
+  const centralExtra = buildExtra(options.truncateCentralExtra);
+  const local = new Uint8Array(30 + name.length + localExtra.length + data.length);
   const localView = new DataView(local.buffer);
   localView.setUint32(0, 0x04034b50, true);
   localView.setUint16(4, 45, true);
@@ -73,12 +121,12 @@ function buildZip64Archive(): Uint8Array {
   localView.setUint32(18, 0xffffffff, true);
   localView.setUint32(22, 0xffffffff, true);
   localView.setUint16(26, name.length, true);
-  localView.setUint16(28, zip64Extra.length, true);
+  localView.setUint16(28, localExtra.length, true);
   local.set(name, 30);
-  local.set(zip64Extra, 30 + name.length);
-  local.set(data, 30 + name.length + zip64Extra.length);
+  local.set(localExtra, 30 + name.length);
+  local.set(data, 30 + name.length + localExtra.length);
   const cdOffset = local.length;
-  const cd = new Uint8Array(46 + name.length + zip64Extra.length);
+  const cd = new Uint8Array(46 + name.length + centralExtra.length);
   const cdView = new DataView(cd.buffer);
   cdView.setUint32(0, 0x02014b50, true);
   cdView.setUint16(4, 45, true);
@@ -87,10 +135,10 @@ function buildZip64Archive(): Uint8Array {
   cdView.setUint32(20, 0xffffffff, true);
   cdView.setUint32(24, 0xffffffff, true);
   cdView.setUint16(28, name.length, true);
-  cdView.setUint16(30, zip64Extra.length, true);
+  cdView.setUint16(30, centralExtra.length, true);
   cdView.setUint32(42, 0, true);
   cd.set(name, 46);
-  cd.set(zip64Extra, 46 + name.length);
+  cd.set(centralExtra, 46 + name.length);
   const zip64EocdOffset = cdOffset + cd.length;
   const zip64Eocd = new Uint8Array(56);
   const zip64View = new DataView(zip64Eocd.buffer);
@@ -124,6 +172,77 @@ function buildZip64Archive(): Uint8Array {
   out.set(locator, locatorOffset);
   out.set(eocd, locatorOffset + locator.length);
   return out;
+}
+
+/**
+ * Builds an archive of many empty stored entries by hand (no compression),
+ * so the entry-count budget can be exercised without a slow build. Counts
+ * above 65,535 need the ZIP64 end of central directory, so this always
+ * writes one.
+ */
+function buildManyEmptyEntries(count: number): Uint8Array {
+  const encoder = new TextEncoder();
+  const names = Array.from({ length: count }, (_, index) => encoder.encode(`file-${index}.txt`));
+  const localSize = names.reduce((sum, name) => sum + 30 + name.length, 0);
+  const cdSize = names.reduce((sum, name) => sum + 46 + name.length, 0);
+  const bytes = new Uint8Array(localSize + cdSize + 56 + 20 + 22);
+  const view = new DataView(bytes.buffer);
+  let at = 0;
+  const offsets: number[] = [];
+  for (const name of names) {
+    offsets.push(at);
+    view.setUint32(at, 0x04034b50, true);
+    view.setUint16(at + 4, 20, true);
+    view.setUint16(at + 8, 0, true);
+    view.setUint16(at + 10, 0, true);
+    view.setUint32(at + 14, 0, true);
+    view.setUint32(at + 18, 0, true);
+    view.setUint32(at + 22, 0, true);
+    view.setUint16(at + 26, name.length, true);
+    view.setUint16(at + 28, 0, true);
+    bytes.set(name, at + 30);
+    at += 30 + name.length;
+  }
+  const cdOffset = at;
+  for (let index = 0; index < names.length; index++) {
+    const name = names[index]!;
+    view.setUint32(at, 0x02014b50, true);
+    view.setUint16(at + 4, 20, true);
+    view.setUint16(at + 6, 20, true);
+    view.setUint16(at + 10, 0, true);
+    view.setUint32(at + 16, 0, true);
+    view.setUint32(at + 20, 0, true);
+    view.setUint32(at + 24, 0, true);
+    view.setUint16(at + 28, name.length, true);
+    view.setUint16(at + 30, 0, true);
+    view.setUint16(at + 32, 0, true);
+    view.setUint32(at + 42, offsets[index]!, true);
+    bytes.set(name, at + 46);
+    at += 46 + name.length;
+  }
+  const zip64EocdOffset = at;
+  view.setUint32(at, 0x06064b50, true);
+  view.setBigUint64(at + 4, 44n, true);
+  view.setUint16(at + 12, 45, true);
+  view.setUint16(at + 14, 45, true);
+  view.setUint32(at + 16, 0, true);
+  view.setUint32(at + 20, 0, true);
+  view.setBigUint64(at + 24, BigInt(count), true);
+  view.setBigUint64(at + 32, BigInt(count), true);
+  view.setBigUint64(at + 40, BigInt(cdSize), true);
+  view.setBigUint64(at + 48, BigInt(cdOffset), true);
+  at += 56;
+  view.setUint32(at, 0x07064b50, true);
+  view.setUint32(at + 4, 0, true);
+  view.setBigUint64(at + 8, BigInt(zip64EocdOffset), true);
+  view.setUint32(at + 16, 1, true);
+  at += 20;
+  view.setUint32(at, 0x06054b50, true);
+  view.setUint16(at + 8, 0xffff, true);
+  view.setUint16(at + 10, 0xffff, true);
+  view.setUint32(at + 12, 0xffffffff, true);
+  view.setUint32(at + 16, 0xffffffff, true);
+  return bytes;
 }
 
 describe("account zip reader", () => {
@@ -216,5 +335,101 @@ describe("account zip reader", () => {
     await expect(
       withArchive(corrupted, (handle) => parseZipArchive(handle)),
     ).rejects.toBeInstanceOf(ZipFormatError);
+  });
+
+  it("rejects a central directory record whose ZIP64 extra field is truncated", async () => {
+    // The field declares two 8-byte values but holds only one; reading the
+    // second must fail as a format error, not a RangeError.
+    await expect(
+      withArchive(buildZip64Archive({ truncateCentralExtra: true }), (handle) =>
+        inflateAll(handle, "a.txt"),
+      ),
+    ).rejects.toBeInstanceOf(ZipFormatError);
+  });
+
+  it("rejects a local header whose ZIP64 extra field is truncated", async () => {
+    await expect(
+      withArchive(buildZip64Archive({ truncateLocalExtra: true }), (handle) =>
+        inflateAll(handle, "a.txt"),
+      ),
+    ).rejects.toBeInstanceOf(ZipFormatError);
+  });
+
+  it("rejects an entry whose recorded size disagrees with its actual data", async () => {
+    // "line\n" is 5 bytes; the central directory and descriptor both claim 4,
+    // with the checksum over the actual 5 bytes.
+    const bytes = buildArchive([["spaces/s1/records.jsonl", "line\n"]]);
+    const mutated = await falsifyUncompressedSize(bytes, "spaces/s1/records.jsonl", 4);
+    await expect(
+      withArchive(mutated, (handle) => inflateAll(handle, "spaces/s1/records.jsonl")),
+    ).rejects.toBeInstanceOf(ZipFormatError);
+  });
+
+  it("rejects a stored entry whose recorded size disagrees with its actual data", async () => {
+    const bytes = buildArchive([["spaces/s1/records.jsonl", "line\n", true]]);
+    const mutated = await falsifyUncompressedSize(bytes, "spaces/s1/records.jsonl", 4);
+    await expect(
+      withArchive(mutated, (handle) => inflateAll(handle, "spaces/s1/records.jsonl")),
+    ).rejects.toBeInstanceOf(ZipFormatError);
+  });
+
+  it("rejects an archive with more entries than the metadata budget allows", async () => {
+    // The reader caps archives at 100,000 entries; one more must be refused
+    // before every record is accumulated, sorted, and validated.
+    const bytes = buildManyEmptyEntries(100_001);
+    await expect(withArchive(bytes, (handle) => parseZipArchive(handle))).rejects.toBeInstanceOf(
+      ZipFormatError,
+    );
+  });
+
+  it("accepts an archive at exactly the entry budget", async () => {
+    const bytes = buildManyEmptyEntries(100_000);
+    await withArchive(bytes, async (handle) => {
+      expect(await parseZipArchive(handle)).toHaveLength(100_000);
+    });
+  });
+
+  it("rejects an archive whose central directory exceeds the metadata budget", async () => {
+    // Few entries, but names long enough to push the central directory past
+    // its 16 MiB budget.
+    const longName = "n".repeat(60_000);
+    const entries: [string, Uint8Array][] = Array.from(
+      { length: 300 },
+      (_, index): [string, Uint8Array] => [`${longName}-${index}`, new Uint8Array(0)],
+    );
+    const bytes = await buildArchive(entries);
+    await expect(withArchive(bytes, (handle) => parseZipArchive(handle))).rejects.toBeInstanceOf(
+      ZipFormatError,
+    );
+  });
+
+  it("drains inflated output between compressed-input reads", async () => {
+    // An entry spanning many compressed slices must be flushed in bounded
+    // batches, not queued whole in memory.
+    const payload = incompressibleBytes(512 * 1024);
+    const bytes = buildArchive([["spaces/s1/records.jsonl", payload, false]]);
+    let flushCalls = 0;
+    let maxPendingBytes = 0;
+    await withArchive(bytes, async (handle) => {
+      const entries = await parseZipArchive(handle);
+      const pending: Uint8Array[] = [];
+      await inflateEntry(
+        handle,
+        entries[0]!,
+        (data) => {
+          pending.push(data);
+        },
+        async () => {
+          flushCalls += 1;
+          maxPendingBytes = Math.max(
+            maxPendingBytes,
+            pending.reduce((sum, chunk) => sum + chunk.byteLength, 0),
+          );
+          pending.length = 0;
+        },
+      );
+    });
+    expect(flushCalls).toBeGreaterThan(1);
+    expect(maxPendingBytes).toBeLessThan(1024 * 1024);
   });
 });
