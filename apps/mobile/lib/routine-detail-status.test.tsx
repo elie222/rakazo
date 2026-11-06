@@ -42,6 +42,10 @@ vi.mock("../components/settings-group", () => ({
   SettingsSwitch: () => null,
 }));
 vi.mock("../components/growing-text-input", () => ({ GrowingTextInput: () => null }));
+vi.mock("../components/routine-email-trigger", () => ({
+  RoutineEmailTrigger: () => null,
+  useBotEmail: () => ({ address: null, ownerDomain: "", setAddress: () => undefined }),
+}));
 vi.mock("../components/routine-schedule-editor", () => ({ RoutineScheduleEditor: () => null }));
 vi.mock("../components/glass-icon-button", () => ({ GlassIconButton: () => null }));
 vi.mock("../components/native-action-button", () => ({ NativeActionButton: () => null }));

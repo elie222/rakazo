@@ -13,6 +13,7 @@ import {
   BotEmailNameSchema,
   ROUTINE_WATCH_DEFAULT_MINUTES,
   ROUTINE_WATCH_MIN_MINUTES,
+  suggestedEmailName,
 } from "@rakazo/contracts";
 import type { CronFreq, CronLabels, CronPreset } from "@rakazo/core";
 import {
@@ -983,21 +984,6 @@ function MessageTriggerCard({ provider, onRemove }: { provider: string; onRemove
       </p>
     </div>
   );
-}
-
-/**
- * A first address suggestion from the bot's name, such as "research-helper". ASCII only, unlike
- * page anchors: many mail servers still refuse non-ASCII addresses.
- */
-export function suggestedEmailName(botName: string): string {
-  return botName
-    .normalize("NFKD")
-    .toLowerCase()
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64)
-    .replace(/-+$/, "");
 }
 
 function EmailTriggerCard({
