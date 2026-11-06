@@ -154,6 +154,11 @@ HTTPS at `https://<machine>.<tailnet>.ts.net:<web port>`, reachable only from de
 tailnet, and stops serving it when you quit. Sign in at that URL on every device, including the
 one running it. The first run may ask you to turn on HTTPS certificates for your tailnet.
 
+To keep keys in a secrets manager instead of `.env`, set `RAKAZO_DEV_RUN_WITH` to the command
+that runs another with your secrets added, for example `op run --env-file=dev.env --` or
+`infisical run --env=dev --projectId=<project> --`. `pnpm dev` then starts inside it, and the
+values it adds win over `.env`.
+
 To run Postgres from the Compose file instead, start it with the `postgres-host` overlay, which
 publishes loopback `127.0.0.1:5433`, and point `DATABASE_URL` and `DATABASE_MIGRATION_URL` at it:
 
