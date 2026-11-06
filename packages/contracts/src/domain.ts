@@ -1662,6 +1662,22 @@ export function modelChoiceListSchema<T extends z.ZodType<ModelBackupChoice>>(ch
 }
 export const ModelBackupListSchema = modelChoiceListSchema(ModelBackupChoiceSchema);
 
+/**
+ * What a model listing says about one model, when the server publishes it (DeepInfra does in
+ * `/models` metadata). Every field is optional: absent means unknown, never "unsupported".
+ * The UI uses it to prefill the connection's image, thinking and context settings.
+ */
+export const OpenAiCompatibleModelInfoSchema = z.object({
+  id: z.string(),
+  /** Accepts image input. */
+  supportsImages: z.boolean().optional(),
+  /** Accepts the standard `reasoning_effort` parameter ("Supports thinking"). */
+  reasoning: z.boolean().optional(),
+  contextWindow: z.number().int().min(1).max(MAX_MODEL_CONTEXT_WINDOW).optional(),
+  cacheCapabilities: CacheCapabilitiesSchema.optional(),
+});
+export type OpenAiCompatibleModelInfo = z.infer<typeof OpenAiCompatibleModelInfoSchema>;
+
 export const OPENAI_COMPATIBLE_PROVIDER_ID = "openai-compatible";
 
 export const MAX_ENABLED_MODEL_IDS = 500;

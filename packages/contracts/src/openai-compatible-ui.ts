@@ -1,16 +1,49 @@
 /** UI preset only; saved connections use the OpenAI-compatible provider. */
 export const OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1";
 
-export function isOllamaCloudBaseUrl(baseUrl: string | undefined): boolean {
+/** UI preset only, like Ollama Cloud: DeepInfra serves its OpenAI-compatible API under /v1/openai. */
+export const DEEPINFRA_BASE_URL = "https://api.deepinfra.com/v1/openai";
+
+/**
+ * Hosted OpenAI-compatible services offered as presets. Each needs an API key, and the
+ * connection is still saved under the OpenAI-compatible provider with the preset's base URL.
+ */
+export const OPENAI_COMPATIBLE_PRESETS = [
+  { id: "ollama-cloud", name: "Ollama Cloud", baseUrl: OLLAMA_CLOUD_BASE_URL },
+  { id: "deepinfra", name: "DeepInfra", baseUrl: DEEPINFRA_BASE_URL },
+] as const;
+export type OpenAiCompatiblePreset = (typeof OPENAI_COMPATIBLE_PRESETS)[number];
+
+function isPresetBaseUrl(baseUrl: string | undefined, presetBaseUrl: string): boolean {
   try {
-    return normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "") === OLLAMA_CLOUD_BASE_URL;
+    return normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "") === presetBaseUrl;
   } catch {
     return false;
   }
 }
 
+/** The hosted preset a base URL points at, if any. */
+export function openAiCompatiblePresetFor(
+  baseUrl: string | undefined,
+): OpenAiCompatiblePreset | undefined {
+  return OPENAI_COMPATIBLE_PRESETS.find((preset) => isPresetBaseUrl(baseUrl, preset.baseUrl));
+}
+
+export function isOllamaCloudBaseUrl(baseUrl: string | undefined): boolean {
+  return isPresetBaseUrl(baseUrl, OLLAMA_CLOUD_BASE_URL);
+}
+
+export function isDeepInfraBaseUrl(baseUrl: string | undefined): boolean {
+  return isPresetBaseUrl(baseUrl, DEEPINFRA_BASE_URL);
+}
+
+/** Hosted presets refuse keyless requests, so the key field is required for them. */
+export function openAiCompatibleKeyRequired(baseUrl: string | undefined): boolean {
+  return openAiCompatiblePresetFor(baseUrl) !== undefined;
+}
+
 export function compatibleConnectionName(baseUrl: string | undefined, fallback: string): string {
-  return isOllamaCloudBaseUrl(baseUrl) ? "Ollama Cloud" : fallback;
+  return openAiCompatiblePresetFor(baseUrl)?.name ?? fallback;
 }
 
 export const OPENAI_COMPATIBLE_BASE_URL_HINT =
@@ -25,7 +58,7 @@ export function openAiCompatibleConnectReady(input: {
   return Boolean(
     input.baseUrl.trim() &&
       input.modelId.trim() &&
-      (!isOllamaCloudBaseUrl(input.baseUrl) || input.apiKey?.trim()),
+      (!openAiCompatibleKeyRequired(input.baseUrl) || input.apiKey?.trim()),
   );
 }
 

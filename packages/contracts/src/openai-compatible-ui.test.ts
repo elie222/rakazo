@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   compatibleConnectionName,
+  DEEPINFRA_BASE_URL,
+  isDeepInfraBaseUrl,
   isOllamaCloudBaseUrl,
   normalizeOpenAiCompatibleBaseUrl,
   OLLAMA_CLOUD_BASE_URL,
   openAiCompatibleConnectReady,
+  openAiCompatibleKeyRequired,
+  openAiCompatiblePresetFor,
   savedCompatibleEndpointMatches,
 } from "./openai-compatible-ui.js";
 
@@ -105,4 +109,34 @@ it.each(["", "https://", "https://other.test", "https://ollama.com/v2"])(
 );
 it("does not match a missing saved endpoint", () => {
   expect(savedCompatibleEndpointMatches(OLLAMA_CLOUD_BASE_URL, undefined)).toBe(false);
+});
+
+describe("hosted OpenAI-compatible presets", () => {
+  it("recognizes DeepInfra's OpenAI-compatible base URL and keeps its /v1/openai path", () => {
+    expect(normalizeOpenAiCompatibleBaseUrl("https://api.deepinfra.com/v1/openai/")).toBe(
+      DEEPINFRA_BASE_URL,
+    );
+    expect(isDeepInfraBaseUrl("https://api.deepinfra.com/v1/openai")).toBe(true);
+    expect(isDeepInfraBaseUrl("https://api.deepinfra.com/v1")).toBe(false);
+    expect(openAiCompatiblePresetFor(DEEPINFRA_BASE_URL)?.id).toBe("deepinfra");
+    expect(openAiCompatiblePresetFor(OLLAMA_CLOUD_BASE_URL)?.id).toBe("ollama-cloud");
+    expect(openAiCompatiblePresetFor("http://127.0.0.1:8000/v1")).toBeUndefined();
+  });
+
+  it("names preset connections and requires a key only for presets", () => {
+    expect(compatibleConnectionName(DEEPINFRA_BASE_URL, "Custom")).toBe("DeepInfra");
+    expect(compatibleConnectionName("http://127.0.0.1:8000/v1", "Custom")).toBe("Custom");
+    expect(openAiCompatibleKeyRequired(DEEPINFRA_BASE_URL)).toBe(true);
+    expect(openAiCompatibleKeyRequired("http://127.0.0.1:8000/v1")).toBe(false);
+    expect(
+      openAiCompatibleConnectReady({ baseUrl: DEEPINFRA_BASE_URL, modelId: "zai-org/GLM-4.7" }),
+    ).toBe(false);
+    expect(
+      openAiCompatibleConnectReady({
+        baseUrl: DEEPINFRA_BASE_URL,
+        modelId: "zai-org/GLM-4.7",
+        apiKey: "key",
+      }),
+    ).toBe(true);
+  });
 });
