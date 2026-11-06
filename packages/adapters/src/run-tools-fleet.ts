@@ -39,7 +39,7 @@ import { mayOpenModelStream } from "./run-lifecycle.js";
 import { publishMessage } from "./run-messages.js";
 import { fleetPrepareDeps } from "./run-model.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
-import { argumentGiven, ignoredFieldsNote } from "./update-bot-patch.js";
+import { argumentGiven, ignoredFieldsNote, updateBotSettingsGiven } from "./update-bot-patch.js";
 
 async function archiveBot(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, thread, context } = ctx;
@@ -255,9 +255,15 @@ export const fleetTools: ToolHandlers = {
   async update_bot(ctx, call) {
     const { deps, run, bot, thread, context } = ctx;
     const { args } = call;
+    const unlistedNote = call.unlistedFields
+      ? ignoredFieldsNote(call.unlistedFields, "unlisted")
+      : undefined;
+    // Every result that applied something names what the call left out of `change`.
+    const withNote = <T extends object>(result: T) =>
+      unlistedNote && !("error" in result) ? { ...result, ignoredFields: unlistedNote } : result;
     if (argumentGiven(args.bot_id)) {
       return call.finish(
-        await updateChildBot({ ...deps, runSecrets: ctx.secrets }, ctx.fleetRun, args),
+        withNote(await updateChildBot({ ...deps, runSecrets: ctx.secrets }, ctx.fleetRun, args)),
       );
     }
     // A held change (see prepareOwnBotUpdate) runs only once the owner or Auto Review approves it.
@@ -269,11 +275,13 @@ export const fleetTools: ToolHandlers = {
       if (args.previousInstructionsFromBaseline !== true)
         return call.finish({ error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR });
       return call.finish(
-        await commitOwnInstructions(ctx, {
-          instructions: String(args.instructions),
-          reason: String(args.reason),
-          previousInstructions: args.previousInstructions,
-        }),
+        withNote(
+          await commitOwnInstructions(ctx, {
+            instructions: String(args.instructions),
+            reason: String(args.reason),
+            previousInstructions: args.previousInstructions,
+          }),
+        ),
       );
     }
     const { instructions, model, thinkingLevel, readAloud, voice, ...profile } = args;
@@ -297,7 +305,7 @@ export const fleetTools: ToolHandlers = {
     // `instructions_offset` pages through long instructions on a read; it is not a write field.
     const instructionsOffsetArg = args.instructions_offset ?? args.instructionsOffset;
     const writeArgs = { ...args, instructions_offset: undefined, instructionsOffset: undefined };
-    const read = !Object.values(writeArgs).some(argumentGiven);
+    const read = updateBotSettingsGiven(writeArgs).length === 0;
     let readOffset = 0;
     // A paged read that also filled in other fields is still a read: a change never pages.
     // Name what was left out, so a real change can be sent again without the offset.
@@ -315,9 +323,10 @@ export const fleetTools: ToolHandlers = {
       if (readOffset > 0 && readOffset >= live.instructions.length)
         return call.finish({ error: "instructions_offset is past the end of your instructions." });
       const settings = await readOwnBotSettings(modelDeps, run, live, readOffset);
+      const notApplied = [ignored, unlistedNote].filter(Boolean).join(" ");
       return call.finish(
-        ignored && settings && typeof settings === "object" && !("error" in settings)
-          ? { ...settings, ignoredFields: ignored }
+        notApplied && settings && typeof settings === "object" && !("error" in settings)
+          ? { ...settings, ignoredFields: notApplied }
           : settings,
       );
     }
@@ -394,6 +403,7 @@ export const fleetTools: ToolHandlers = {
       ...(settings.data.autoSpeak !== undefined ? { readAloud: settings.data.autoSpeak } : {}),
       ...(settings.data.voiceId !== undefined ? { voice: settings.data.voiceId ?? "default" } : {}),
       ...(argumentGiven(instructions) ? { instructions: "updated" } : {}),
+      ...(unlistedNote ? { ignoredFields: unlistedNote } : {}),
     });
   },
   archive_bot: archiveBot,

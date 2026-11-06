@@ -36,8 +36,8 @@ A follow-up counts as yours only when its source message was written by you.
 - `organize_bot`: sets a section (`section`), clears it (`clear_section: true`) or sets a pin on a bot
   or a group.
 - `update_bot` with `bot_id`: edits another bot's name, description, color and
-  notifications. It cannot change another bot's avatar image or instructions. Without `bot_id` it
-  acts on the calling bot as before.
+  notifications, listed in `change` as on the calling bot. It cannot change another bot's avatar
+  image or instructions. Without `bot_id` it acts on the calling bot as before.
 - `set_child_instructions`: replaces another bot's instructions. The bot passes the version it read
   with `list_fleet`.
 - `set_child_bot_model`: sets or clears another bot's model and thinking level.

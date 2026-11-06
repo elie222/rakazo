@@ -72,6 +72,15 @@ type Effect = {
   spaceId?: string;
 };
 
+type FleetBotRow = {
+  id: string;
+  name: string;
+  thread?: { id: string };
+  description?: string;
+  notifyOnFinish?: boolean;
+  archived?: boolean;
+};
+
 function fixture({
   name = "demo_get_item",
   route,
@@ -101,7 +110,7 @@ function fixture({
   existingSharedMemory,
   advanceRevisionAfterRead = false,
   fleetManagement = false,
-  fleetBots = [] as { id: string; name: string; thread?: { id: string } }[],
+  fleetBots = [] as FleetBotRow[],
   secondResource = false,
   routines = [] as { name: string; prompt: string }[],
   connectedApps = [] as string[],
@@ -131,7 +140,7 @@ function fixture({
   /** The switch as the run starts; `liveBot` is what a later read sees. */
   fleetManagement?: boolean;
   /** Other active bots of the same user, found by id or exact name. */
-  fleetBots?: { id: string; name: string; thread?: { id: string } }[];
+  fleetBots?: FleetBotRow[];
   parallelCalls?: boolean;
   sourceRole?: string;
   builtin?: boolean;
@@ -376,18 +385,31 @@ function fixture({
         Object.assign(instructionState, data);
         return { count: 1 };
       }),
-      findMany: vi.fn(async ({ where }: { where?: { id?: unknown; name?: unknown } } = {}) => {
-        const matches = (value: string, condition: unknown) =>
-          condition === undefined ||
-          (typeof condition === "object" && condition !== null && "in" in condition
-            ? (condition as { in: unknown[] }).in.includes(value)
-            : value === condition);
-        if (where?.id === undefined && where?.name === undefined) return [];
-        return fleetBots.filter(
-          (row) => matches(row.id, where.id) && matches(row.name, where.name),
-        );
+      findMany: vi.fn(
+        async ({
+          where,
+        }: {
+          where?: { id?: unknown; name?: unknown; archivedAt?: unknown };
+        } = {}) => {
+          const matches = (value: string, condition: unknown) =>
+            condition === undefined ||
+            (typeof condition === "object" && condition !== null && "in" in condition
+              ? (condition as { in: unknown[] }).in.includes(value)
+              : value === condition);
+          if (where?.id === undefined && where?.name === undefined) return [];
+          return fleetBots.filter(
+            (row) =>
+              matches(row.id, where.id) &&
+              matches(row.name, where.name) &&
+              !(where.archivedAt === null && row.archived),
+          );
+        },
+      ),
+      // A managed bot's own row when the lookup names one; this bot's otherwise.
+      findUnique: vi.fn(async ({ where }: { where?: { id?: unknown } } = {}) => {
+        const managed = fleetBots.find((row) => row.id === where?.id);
+        return managed ? { spaceId: run.spaceId, ...managed } : { ...liveBot };
       }),
-      findUnique: vi.fn(async () => ({ ...liveBot })),
     },
     attempt: {
       create: vi.fn(async () => ({ id: "attempt-1" })),
@@ -537,11 +559,20 @@ function fixture({
       );
     }
     const executeCall = async (call: (typeof calls)[number]) => {
+      const toolName = call.name ?? name;
+      // update_bot applies only the fields listed in change; most calls here mean every field
+      // they set. One that passes `change: null` is an older call that lists nothing.
+      const args =
+        toolName === "update_bot" && call.args.change === undefined
+          ? { ...call.args, change: Object.keys(call.args) }
+          : toolName === "update_bot" && call.args.change === null
+            ? Object.fromEntries(Object.entries(call.args).filter(([key]) => key !== "change"))
+            : call.args;
       const result = call.name
-        ? await request.executeTool!(call.name, call.args, call.executionId)
+        ? await request.executeTool!(call.name, args, call.executionId)
         : await request.executeTool!(
             catalog ? "demo_execute_tool" : name,
-            catalog ? { id: catalogEntries([tool])[0]!.id, arguments: call.args } : call.args,
+            catalog ? { id: catalogEntries([tool])[0]!.id, arguments: args } : args,
             call.executionId,
           );
       results.push(result);
@@ -1738,6 +1769,45 @@ describe("own instructions through update_bot", () => {
     expect(f.effects[0]).toMatchObject({ kind: "update_bot", status: "intended", request: held });
     expect(f.instructionState.instructions).toBe("Draft only");
   });
+  it.each([
+    ["without change", { instructions: first, readAloud: true, change: null }],
+    ["with another change", { instructions: "Other", readAloud: true, change: ["readAloud"] }],
+  ])(
+    "names nothing as not applied once an approved instruction change replays %s",
+    async (_label, replayed) => {
+      const f = fixture({ name: "update_bot", builtin: true });
+      f.setCalls([
+        {
+          args: { instructions: first, readAloud: true, change: ["instructions"] },
+          executionId: "call-1",
+        },
+      ]);
+      await f.run();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(f.effects[0]).toMatchObject({ request: held });
+      f.effects[0]!.status = "approved";
+      f.setCalls([{ args: replayed, executionId: "call-1" }]);
+      await f.run();
+      expect(f.instructionState.instructions).toBe(first);
+      expect(f.results.at(-1)).toEqual(updated);
+    },
+  );
+  it("reads, writing nothing and asking nothing, for an older call without change", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([
+      { args: { instructions: "Rewrite", readAloud: true, change: null }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+    expect(f.instructionState.instructions).toBe("Draft only");
+    expect(f.results).toEqual([
+      expect.objectContaining({
+        instructions: "Draft only",
+        ignoredFields: expect.stringContaining('instructions="Rewrite"'),
+      }),
+    ]);
+  });
   it("asks the owner when Auto Review does, then applies the approved text", async () => {
     reviewMock.mockResolvedValue({ decision: "ask", reason: "Unclear", model: "mock" });
     const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
@@ -2269,6 +2339,40 @@ describe("own settings through update_bot", () => {
     ]);
     expect(f.instructionState.instructions).toBe("Draft only");
   });
+  it("reads and names the fields a call filled in without listing them in change", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([
+      {
+        args: { thinkingLevel: "off", readAloud: true, notifyOnFinish: true, change: [] },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([
+      expect.objectContaining({
+        instructions: "Draft only",
+        ignoredFields: expect.stringContaining("not listed in change"),
+      }),
+    ]);
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+  });
+  it("applies only the listed field when a call fills in others", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([
+      {
+        args: { readAloud: true, thinkingLevel: "off", dailyCheckIns: true, change: ["readAloud"] },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([
+      expect.objectContaining({ ok: true, readAloud: true, ignoredFields: expect.any(String) }),
+    ]);
+    expect(f.prisma.bot.update).toHaveBeenCalledTimes(1);
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { autoSpeak: true } }),
+    );
+  });
   it("changes read-aloud only while it is unchanged and posts the undo card", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
@@ -2515,6 +2619,92 @@ describe("bot management tool gating", () => {
     expect(f.effects).toEqual([]);
   });
 
+  it("changes nothing, and asks nothing, when another bot already has the listed values", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      fleetManagement: true,
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "update_bot" }],
+      fleetBots: [{ id: "child-1", name: "Child", thread: { id: "thread-child" } }],
+    });
+    f.setCalls([
+      { args: { bot_id: "child-1", name: "Child", change: ["name"] }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([{ ok: true, changed: false }]);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.effects).toEqual([]);
+  });
+
+  it.each([
+    ["an archived bot", "child-1"],
+    ["a bot that does not exist", "ghost"],
+  ])("refuses a no-change edit of %s as before", async (_label, botId) => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      fleetManagement: true,
+      fleetBots: [{ id: "child-1", name: "Child", thread: { id: "thread-child" }, archived: true }],
+    });
+    f.setCalls([
+      { args: { bot_id: botId, name: "Child", change: ["name"] }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([{ error: `No bot with id "${botId}". Call list_fleet for ids.` }]);
+  });
+
+  it("names only another bot's unlisted fields that differ from its settings", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      fleetManagement: true,
+      fleetBots: [
+        {
+          id: "child-1",
+          name: "Child",
+          thread: { id: "thread-child" },
+          description: "Same",
+          notifyOnFinish: false,
+        },
+      ],
+    });
+    f.setCalls([
+      {
+        args: {
+          bot_id: "child-1",
+          name: "New name",
+          description: "Same",
+          notifyOnFinish: true,
+          change: ["name"],
+        },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    const note = (f.results[0] as { ignoredFields?: string }).ignoredFields;
+    expect(note).toContain("notifyOnFinish=true");
+    expect(note).not.toContain("description");
+  });
+
+  it("names another bot's fields the call did not list in change", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      fleetManagement: true,
+      fleetBots: [{ id: "child-1", name: "Child", thread: { id: "thread-child" } }],
+    });
+    f.setCalls([
+      {
+        args: { bot_id: "child-1", name: "New name", description: "Unasked", change: ["name"] },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([
+      expect.objectContaining({ ignoredFields: expect.stringContaining('description="Unasked"') }),
+    ]);
+  });
+
   it.each(["switch", "helper", "channel"])(
     "checks restored child arguments against the live %s gate",
     async (gate) => {
@@ -2523,6 +2713,7 @@ describe("bot management tool gating", () => {
         builtin: true,
         fleetManagement: true,
         rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "update_bot" }],
+        fleetBots: [{ id: "child-1", name: "Child", thread: { id: "thread-child" } }],
       });
       f.setCalls([{ args: { bot_id: "child-1", name: "New name" }, executionId: "call-1" }]);
       await f.run();

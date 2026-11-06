@@ -251,9 +251,19 @@ describe("dispatchTool audit outcomes", () => {
 
   it("ends the turn on a repeated update_bot owner-settings refusal", async () => {
     const ctx = dispatchContext(true);
-    const first = await applyTool(ctx as never, "update_bot", { model: "test-model" }, "call-1");
+    const first = await applyTool(
+      ctx as never,
+      "update_bot",
+      { model: "test-model", change: ["model"] },
+      "call-1",
+    );
     expect(first).toEqual({ error: expect.stringContaining("outside content") });
-    const repeat = await applyTool(ctx as never, "update_bot", { model: "test-model" }, "call-2");
+    const repeat = await applyTool(
+      ctx as never,
+      "update_bot",
+      { model: "test-model", change: ["model"] },
+      "call-2",
+    );
     expect(repeat).toMatchObject({
       kind: "agent_tool_result",
       terminate: true,
@@ -267,7 +277,12 @@ describe("dispatchTool audit outcomes", () => {
 
   it("records the shared refusal a repeated update_bot change triggers as a failure", async () => {
     const ctx = dispatchContext(true);
-    const refused = await applyTool(ctx as never, "update_bot", { model: "test-model" }, "call-1");
+    const refused = await applyTool(
+      ctx as never,
+      "update_bot",
+      { model: "test-model", change: ["model"] },
+      "call-1",
+    );
     expect(refused).toEqual({ error: expect.stringContaining("outside content") });
     // The refusal state is shared per run, so the next owner-settings change ends the turn
     // through update_preferences, whose audited call must record the refusal as a failure.

@@ -1,5 +1,65 @@
 import { BOT_DESCRIPTION_MAX_LENGTH, BOT_NAME_MAX_LENGTH } from "@rakazo/contracts";
 
+/**
+ * `update_bot` fields that change a setting. A call applies only those it names in `change`:
+ * some models fill in every field, with `false` or "off" for the ones they mean to leave alone,
+ * so a call meant as a read switched settings off. Without `change` the call is a read.
+ */
+export const UPDATE_BOT_SETTING_FIELDS = [
+  "name",
+  "description",
+  "instructions",
+  "color",
+  "artifact_id",
+  "use_attached_image",
+  "notifyOnFinish",
+  "dailyCheckIns",
+  "model",
+  "thinkingLevel",
+  "readAloud",
+  "voice",
+] as const;
+
+/** Every argument that sets an `update_bot` setting, the `notify_on_finish` alias included. */
+export const UPDATE_BOT_SETTING_KEYS: ReadonlySet<string> = new Set([
+  ...UPDATE_BOT_SETTING_FIELDS,
+  "notify_on_finish",
+]);
+
+/** Whether `key: value` sets something; no picture attached is the default, not a setting. */
+function setsSetting(key: string, value: unknown): boolean {
+  return (
+    UPDATE_BOT_SETTING_KEYS.has(key) &&
+    argumentGiven(value) &&
+    !(key === "use_attached_image" && value === false)
+  );
+}
+
+/** The settings an `update_bot` call's arguments set; none means it only reads. */
+export function updateBotSettingsGiven(args: Record<string, unknown>): string[] {
+  return Object.keys(args).filter((key) => setsSetting(key, args[key]));
+}
+
+/**
+ * Splits an `update_bot` call into the arguments it applies, with the settings it names in
+ * `change`, and the settings it only filled in, which its result names as not applied.
+ */
+export function splitUpdateBotChange(args: Record<string, unknown>): {
+  args: Record<string, unknown>;
+  unlisted: Record<string, unknown> | undefined;
+} {
+  const { change, ...rest } = args;
+  const listed = new Set(Array.isArray(change) ? change.map(String) : []);
+  if (listed.has("notifyOnFinish")) listed.add("notify_on_finish");
+  const kept: Record<string, unknown> = {};
+  const unlisted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rest)) {
+    if (!UPDATE_BOT_SETTING_KEYS.has(key) || listed.has(key)) kept[key] = value;
+    else if (setsSetting(key, value)) unlisted[key] = value;
+  }
+  return { args: kept, unlisted: Object.keys(unlisted).length ? unlisted : undefined };
+}
+
 export type UpdateBotPatch = {
   name?: string;
   description?: string;
@@ -125,8 +185,14 @@ export function dropUnchangedOwnBotArgs(
 const IGNORED_FIELDS_SHOWN = 8;
 const IGNORED_VALUE_PREVIEW = 60;
 
-/** The fields a paged read did not apply, bounded so the read keeps its own size budget. */
-export function ignoredFieldsNote(fields: Record<string, unknown>): string | undefined {
+/**
+ * The fields a call did not apply, bounded so a read keeps its own size budget: a paged read
+ * never writes, and a field missing from `change` is only filled in.
+ */
+export function ignoredFieldsNote(
+  fields: Record<string, unknown>,
+  reason: "paged_read" | "unlisted" = "paged_read",
+): string | undefined {
   const given = Object.entries(fields).filter(([, value]) => argumentGiven(value));
   if (!given.length) return undefined;
   const shown = given.slice(0, IGNORED_FIELDS_SHOWN).map(([key, value]) => {
@@ -134,7 +200,10 @@ export function ignoredFieldsNote(fields: Record<string, unknown>): string | und
     return `${key}=${json.length > IGNORED_VALUE_PREVIEW ? `${json.slice(0, IGNORED_VALUE_PREVIEW)}…` : json}`;
   });
   const more = given.length - shown.length;
-  return `This was a read, so these were not applied: ${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}. To change one, call update_bot with just that field and no instructions_offset.`;
+  const list = `${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
+  return reason === "paged_read"
+    ? `This was a read, so these were not applied: ${list}. To change one, call update_bot with just that field, listed in change, and no instructions_offset.`
+    : `These were not listed in change, so they were not applied: ${list}. To change one, list it in change.`;
 }
 
 /** Providers send omitted optional fields as null or blank; only anything else counts as given. */

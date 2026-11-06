@@ -1167,6 +1167,16 @@ async function resolveBot(prisma: PrismaClient, run: FleetRun, args: Record<stri
   );
 }
 
+/** The active bot `update_bot` with `bot_id` edits, or the refusal its handler gives. */
+export async function resolveUpdateBotTarget(
+  prisma: PrismaClient,
+  run: FleetRun,
+  botId: unknown,
+): Promise<{ id: string } | { error: string }> {
+  const bot = await resolveBot(prisma, run, { bot_id: botId });
+  return "error" in bot ? { error: bot.error } : { id: bot.id };
+}
+
 /** One active group of the space, by `group_id` or exact `group_name`. Groups have no creator. */
 async function resolveGroup(prisma: PrismaClient, run: FleetRun, args: Record<string, unknown>) {
   const id = text(args.group_id);

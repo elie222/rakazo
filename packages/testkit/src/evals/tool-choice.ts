@@ -1,3 +1,4 @@
+import { splitUpdateBotChange, updateBotSettingsGiven } from "@rakazo/adapters/update-bot-patch";
 import { z } from "zod";
 import type { Criterion, EvalCase, Evidence } from "./cases.js";
 import { readCasesFile } from "./cases.js";
@@ -95,8 +96,14 @@ function matches(expected: Matcher, actual: unknown): boolean {
 
 function callMatches(expected: CallExpectation, call: { name: string; args: unknown }) {
   if (expected.tool !== call.name) return false;
-  const args = (call.args ?? {}) as Record<string, unknown>;
+  const args = appliedArgs(call);
   return Object.entries(expected.args ?? {}).every(([key, value]) => matches(value, args[key]));
+}
+
+/** What a call applies: update_bot leaves out every setting it does not list in `change`. */
+function appliedArgs(call: { name: string; args: unknown }) {
+  const args = (call.args ?? {}) as Record<string, unknown>;
+  return call.name === "update_bot" ? splitUpdateBotChange(args).args : args;
 }
 
 const describeCall = (call: CallExpectation) =>
@@ -166,15 +173,20 @@ export function gradeToolChoice(expect: ToolChoiceExpect, evidence: Evidence): C
   return criteria;
 }
 
-/** `update_bot` with no fields only reads; providers may send omitted fields as null or blank. */
+/**
+ * A settings call that applies no field only reads; providers may send omitted fields as null or
+ * blank, and update_bot applies only the settings listed in `change`.
+ */
 function isSettingsRead(calls: Evidence["toolCalls"], name: string) {
   return calls
     .filter((call) => call.name === name)
-    .every((call) =>
-      Object.values((call.args ?? {}) as Record<string, unknown>).every(
+    .every((call) => {
+      const args = appliedArgs(call);
+      if (name === "update_bot") return updateBotSettingsGiven(args).length === 0;
+      return Object.values(args).every(
         (value) => value === null || (typeof value === "string" && !value.trim()),
-      ),
-    );
+      );
+    });
 }
 
 export function toolChoiceEvalCase(definition: ToolChoiceCase): EvalCase {

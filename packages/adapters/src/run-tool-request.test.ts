@@ -19,12 +19,24 @@ function ownBotUpdateCall() {
             fleetManagement: true,
             modelProvider: "openrouter",
             modelId: "current-model",
+            autoSpeak: false,
           }),
           findUniqueOrThrow: async () => ({ instructions: "" }),
+          // The managed bots update_bot with bot_id can resolve.
+          findMany: async ({ where }: { where: { id?: string } }) =>
+            where.id === "bot-2" ? [{ id: "bot-2", name: "Scout", thread: null }] : [],
         },
       },
     },
     run: { trigger: "user", threadId: "thread-1" },
+    fleetRun: {
+      spaceId: "space-1",
+      userId: "user-1",
+      botId: "bot-1",
+      groupId: null,
+      threadId: "thread-1",
+      runId: "run-1",
+    },
     bot: { id: "bot-1" },
     source: { ownerStartedRun: true },
     state: { tainted: true, earlierAttempt: Promise.resolve(false) },
@@ -36,7 +48,7 @@ function ownBotUpdateCall() {
   };
   const request: ToolRequest = {
     name: "update_bot",
-    args: { model: "test-model" },
+    args: { model: "test-model", change: ["model"] },
     executionId: JSON.stringify(["pi-tool", "main", "call-1"]),
     connectorCall: {
       tool: "update_bot",
@@ -77,6 +89,37 @@ describe("prepareToolRequest: update_bot owner settings after outside content", 
       ],
     });
     expect(JSON.stringify(repeat)).not.toContain("outside content");
+  });
+
+  it("neither refuses nor applies settings the call did not list in change", async () => {
+    const { ctx, request } = ownBotUpdateCall();
+    const read = { ...request(), args: { model: "test-model", readAloud: false } };
+    await expect(prepareToolRequest(ctx as never, read)).resolves.toBeUndefined();
+    // Only the value that differs from the current settings is named, and never as an argument.
+    expect(read.args).toEqual({});
+    expect(read.unlistedFields).toEqual({ model: "test-model" });
+  });
+
+  it("keeps another bot's unlisted fields aside and refuses a change that lists nothing", async () => {
+    const { ctx, request } = ownBotUpdateCall();
+    ctx.state.tainted = false;
+    const child = { ...request(), args: { bot_id: "bot-2", name: "Scout", readAloud: true } };
+    await expect(prepareToolRequest(ctx as never, child)).resolves.toEqual({
+      error: expect.stringContaining("not listed in change"),
+    });
+    const listed = {
+      ...request(),
+      args: { bot_id: "bot-2", name: "Scout", readAloud: true, change: ["name"] },
+    };
+    await prepareToolRequest(ctx as never, listed);
+    expect(listed.args).toEqual({ bot_id: "bot-2", name: "Scout" });
+    expect(listed.unlistedFields).toEqual({ readAloud: true });
+    // A value the bot already has (autoSpeak is false) is neither applied nor named.
+    const same = { ...request(), args: { bot_id: "bot-2", readAloud: false } };
+    await expect(prepareToolRequest(ctx as never, same)).resolves.toEqual({
+      ok: true,
+      changed: false,
+    });
   });
 
   it("keeps preparing the change while the run is untainted", async () => {
