@@ -2023,6 +2023,23 @@ describe("own settings through update_bot", () => {
       expect(f.effects).toEqual([]);
     },
   );
+  it("answers a paged read that also names a model or instructions, even outside the owner's chat", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([
+      {
+        args: { instructions_offset: 1, model: "Claude Sonnet", instructions: "Rewrite" },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([
+      expect.objectContaining({
+        instructions: "Draft only",
+        ignoredFields: expect.stringContaining('model="Claude Sonnet"'),
+      }),
+    ]);
+    expect(f.instructionState.instructions).toBe("Draft only");
+  });
   it("changes read-aloud only while it is unchanged and posts the undo card", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
