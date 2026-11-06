@@ -4,10 +4,10 @@ import type * as KmsSdk from "@aws-sdk/client-kms";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { AwsKmsKeyProvider } from "./aws-kms-key-provider.js";
 
-const kms = vi.hoisted(() => ({ endpoint: "" }));
+const kms = vi.hoisted(() => ({ endpoint: "", maxAttempts: 1, requestTimeout: 200 }));
 
-// Keeps the provider's client settings, pointed at a local KMS that never answers and with a
-// shorter request limit so the test stays fast.
+// Keeps the provider's client settings, pointed at a local KMS and with a shorter request
+// limit so the test stays fast.
 vi.mock("@aws-sdk/client-kms", async (importOriginal) => {
   const sdk = await importOriginal<typeof KmsSdk>();
   class KMSClient extends sdk.KMSClient {
@@ -16,8 +16,8 @@ vi.mock("@aws-sdk/client-kms", async (importOriginal) => {
       super({
         ...config,
         endpoint: kms.endpoint,
-        maxAttempts: 1,
-        requestHandler: { ...requestHandler, requestTimeout: 200 },
+        maxAttempts: kms.maxAttempts,
+        requestHandler: { ...requestHandler, requestTimeout: kms.requestTimeout },
       });
     }
   }
@@ -32,23 +32,34 @@ const stalled = createServer((_request, response) => {
   response.writeHead(200, { "content-type": "application/x-amz-json-1.1", "content-length": "64" });
   response.write('{"CiphertextBlob":"');
 });
-let ports: { silent: number; stalled: number };
+let slowRequests = 0;
+const slow = createServer((_request, response) => {
+  // The first two attempts get no answer; the third answers just within its request limit.
+  if (++slowRequests <= 2) return;
+  setTimeout(() => {
+    response.writeHead(200, { "content-type": "application/x-amz-json-1.1" });
+    response.end(JSON.stringify({ CiphertextBlob: Buffer.from("wrapped").toString("base64") }));
+  }, 480);
+});
+let ports: { silent: number; stalled: number; slow: number };
 
 beforeAll(async () => {
-  for (const server of [silent, stalled])
+  for (const server of [silent, stalled, slow])
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   ports = {
     silent: (silent.address() as AddressInfo).port,
     stalled: (stalled.address() as AddressInfo).port,
+    slow: (slow.address() as AddressInfo).port,
   };
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  Object.assign(kms, { maxAttempts: 1, requestTimeout: 200 });
 });
 
 afterAll(async () => {
-  for (const server of [silent, stalled]) {
+  for (const server of [silent, stalled, slow]) {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   }
@@ -87,3 +98,17 @@ it("gives up on a KMS that stops sending the response body", async () => {
     /aborted/,
   );
 }, 3_000);
+
+it("leaves the deadline room for every attempt and its backoff", async () => {
+  // Every limit runs 20 times faster than in production: 10 s requests take 500 ms here.
+  Object.assign(kms, { maxAttempts: 3, requestTimeout: 500 });
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => timeout(ms / 20));
+  // The longest backoff the SDK draws between attempts.
+  vi.spyOn(Math, "random").mockReturnValue(0.999);
+
+  await expect(provider(ports.slow).wrap(new Uint8Array(32), context)).resolves.toMatchObject({
+    wrappedKey: Buffer.from("wrapped").toString("base64url"),
+  });
+  expect(slowRequests).toBe(3);
+}, 5_000);
