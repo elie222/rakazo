@@ -191,9 +191,10 @@ describe("temporary receipt lifecycle", () => {
     };
     const receipts = createMessagingReceipts(messaging);
     receipts.acknowledge("sendblue:dm-1", "h-1", unhandled);
-    receipts.stop();
+    const stopped = receipts.stop();
     release();
     await vi.advanceTimersByTimeAsync(0);
+    await stopped;
     expect(clear).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -206,9 +207,91 @@ describe("temporary receipt lifecycle", () => {
       .mockRejectedValueOnce(new Error("database unavailable"))
       .mockResolvedValue(true);
     createMessagingReceipts(messaging).acknowledge("sendblue:dm-1", "h-1", handled);
-    await vi.advanceTimersByTimeAsync(3_000);
+    await vi.advanceTimersByTimeAsync(3_500);
+    expect(clear).toHaveBeenCalledTimes(3);
+    expect(error).toHaveBeenCalledTimes(4);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("retries a transient deletion failure without checking delivery again", async () => {
+    vi.spyOn(getLogger(), "error");
+    const { clear, messaging } = temporary();
+    clear.mockRejectedValueOnce(new Error("temporary outage"));
+    const handled = vi.fn(async () => true);
+    createMessagingReceipts(messaging).acknowledge("sendblue:dm-1", "h-1", handled);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(clear).toHaveBeenCalledTimes(2);
+    expect(handled).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("expires even when the completion query never returns", async () => {
+    const { clear, messaging } = temporary();
+    let release = (_done: boolean) => {};
+    const handled = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          release = resolve;
+        }),
+    );
+    createMessagingReceipts(messaging).acknowledge("sendblue:dm-1", "h-1", handled);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(clear).toHaveBeenCalledOnce();
-    expect(error).toHaveBeenCalledTimes(2);
+    release(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(clear).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("waits for an in-flight deletion during shutdown without deleting twice", async () => {
+    const { clear, messaging } = temporary();
+    let release = () => {};
+    clear.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const receipts = createMessagingReceipts(messaging);
+    receipts.acknowledge("sendblue:dm-1", "h-1", async () => true);
+    await vi.advanceTimersByTimeAsync(0);
+    let finished = false;
+    const stopped = receipts.stop().then(() => {
+      finished = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(finished).toBe(false);
+    expect(clear).toHaveBeenCalledOnce();
+    release();
+    await stopped;
+    expect(finished).toBe(true);
+    expect(clear).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("bounds retries when deletions never settle", async () => {
+    const error = vi.spyOn(getLogger(), "error");
+    const { clear, messaging } = temporary();
+    clear.mockImplementation(() => new Promise<void>(() => {}));
+    const receipts = createMessagingReceipts(messaging);
+    receipts.acknowledge("sendblue:dm-1", "h-1", unhandled);
+    await vi.advanceTimersByTimeAsync(0);
+    const stopped = receipts.stop();
+    await vi.advanceTimersByTimeAsync(6_500);
+    await stopped;
+    expect(clear).toHaveBeenCalledTimes(3);
+    expect(error).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("bounds shutdown when a receipt create never returns", async () => {
+    const error = vi.spyOn(getLogger(), "error");
+    const messaging = { ...fakeMessaging(), acknowledge: vi.fn(() => new Promise<void>(() => {})) };
+    const receipts = createMessagingReceipts(messaging);
+    receipts.acknowledge("sendblue:dm-1", "h-1", unhandled);
+    const stopped = receipts.stop();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await stopped;
+    expect(error).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
   });
 });

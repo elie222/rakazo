@@ -12,9 +12,24 @@ const RECEIPT_DELAY_MS: Record<MessagingReceipt, number> = {
 
 const RECEIPT_TIMEOUT_MS = 2000;
 
+/** Bound external cleanup and teardown even if their underlying operation stalls. */
+async function within(operation: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Messaging receipt operation timed out")), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface MessagingReceipts {
   acknowledge(threadId: string, handle: string, handled: () => Promise<boolean>): void;
-  stop(): void;
+  stop(): Promise<void>;
 }
 
 export function createMessagingReceipts(
@@ -22,32 +37,70 @@ export function createMessagingReceipts(
 ): MessagingReceipts {
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const cleanups = new Set<() => Promise<void>>();
+  const pendingSends = new Set<Promise<void>>();
   let stopped = false;
+  let stopping: Promise<void> | undefined;
+  const logFailure = (error: unknown) => getLogger().error("messaging receipt error", error);
 
   const track = (cleanup: () => Promise<void>, handled: () => Promise<boolean>) => {
-    const deadline = Date.now() + 10 * 60_000;
-    const clear = async () => {
-      if (!cleanups.delete(clear)) return;
-      await cleanup();
+    let clearing: Promise<void> | undefined;
+    let poll: ReturnType<typeof setTimeout> | undefined;
+    let expiry: ReturnType<typeof setTimeout> | undefined;
+    const cancel = (timer: ReturnType<typeof setTimeout> | undefined) => {
+      if (timer) {
+        clearTimeout(timer);
+        timers.delete(timer);
+      }
+    };
+    const clear = () => {
+      clearing ??= (async () => {
+        cancel(poll);
+        cancel(expiry);
+        try {
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              await within(cleanup(), RECEIPT_TIMEOUT_MS);
+              return;
+            } catch (error) {
+              logFailure(error);
+              if (attempt < 2) await new Promise<void>((resolve) => setTimeout(resolve, 250));
+            }
+          }
+        } finally {
+          cleanups.delete(clear);
+        }
+      })();
+      return clearing;
     };
     cleanups.add(clear);
     const check = async () => {
       try {
-        if (stopped || Date.now() >= deadline || (await handled())) {
+        if (await handled()) {
           await clear();
           return;
         }
       } catch (error) {
         logFailure(error);
       }
-      if (!cleanups.has(clear)) return;
-      const timer = setTimeout(() => {
-        timers.delete(timer);
+      if (clearing || stopped) return;
+      poll = setTimeout(() => {
+        timers.delete(poll!);
         void check();
       }, 3_000);
-      timer.unref?.();
-      timers.add(timer);
+      poll.unref?.();
+      timers.add(poll);
     };
+    if (stopped) {
+      void clear();
+      return;
+    }
+    // Expiry must not depend on a delivery query completing.
+    expiry = setTimeout(() => {
+      timers.delete(expiry!);
+      void clear();
+    }, 10 * 60_000);
+    expiry.unref?.();
+    timers.add(expiry);
     void check();
   };
 
@@ -66,7 +119,11 @@ export function createMessagingReceipts(
     });
     if (cleanup) track(cleanup, handled);
   };
-  const logFailure = (error: unknown) => getLogger().error("messaging receipt error", error);
+  const launch = (operation: Promise<void>) => {
+    const settled = operation.catch(logFailure);
+    pendingSends.add(settled);
+    void settled.then(() => pendingSends.delete(settled));
+  };
 
   return {
     acknowledge(threadId, handle, handled) {
@@ -77,24 +134,37 @@ export function createMessagingReceipts(
       if (!receipt) return;
       const delay = RECEIPT_DELAY_MS[receipt];
       if (delay <= 0) {
-        send(threadId, handle, handled).catch(logFailure);
+        launch(send(threadId, handle, handled));
         return;
       }
       const timer = setTimeout(() => {
         timers.delete(timer);
-        (async () => {
-          if ((await handled()) || stopped) return;
-          await send(threadId, handle, handled);
-        })().catch(logFailure);
+        launch(
+          (async () => {
+            if ((await handled()) || stopped) return;
+            await send(threadId, handle, handled);
+          })(),
+        );
       }, delay);
       timer.unref?.();
       timers.add(timer);
     },
     stop() {
-      stopped = true;
-      for (const timer of timers) clearTimeout(timer);
-      timers.clear();
-      for (const cleanup of cleanups) void cleanup().catch(logFailure);
+      stopping ??= (async () => {
+        stopped = true;
+        for (const timer of timers) clearTimeout(timer);
+        timers.clear();
+        // Start existing deletions immediately, then include creates still on the wire.
+        for (const cleanup of cleanups) void cleanup();
+        await within(
+          (async () => {
+            await Promise.allSettled([...pendingSends]);
+            await Promise.allSettled([...cleanups].map((cleanup) => cleanup()));
+          })(),
+          10_000,
+        ).catch(logFailure);
+      })();
+      return stopping;
     },
   };
 }
