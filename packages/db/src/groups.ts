@@ -644,22 +644,29 @@ export function createGroupRepos(prisma: PrismaClient) {
 
     async removeGroup(actor: Actor, groupId: string) {
       return prisma.$transaction(async (tx) => {
+        await lockOwnedGroup(tx, actor, groupId);
+        // Wait out the thread's writers before taking the group row exclusively: their
+        // foreign-key share on the group would otherwise wait on this transaction.
+        const thread = await tx.thread.findUnique({ where: { groupId }, select: { id: true } });
+        if (thread) {
+          await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
+        }
+        // Exclusive from here, so no upload can reference the group after the snapshot below.
         await lockOwnedGroup(tx, actor, groupId, { forDelete: true });
         const group = await tx.chatGroup.findUnique({
           where: { id: groupId },
           select: {
             artifacts: { select: { storageKey: true } },
             members: { orderBy: groupMemberOrder, take: 1, select: { botId: true } },
-            thread: { select: { id: true } },
           },
         });
         const contextBotId = group?.members[0]?.botId;
         if (!contextBotId) throw new IsolationError();
         // The thread's runs cascade away with the group, but their computer leases don't:
         // cancel them first so the route can stop their work and release the leases.
-        const activeRuns = group.thread
+        const activeRuns = thread
           ? await tx.run.findMany({
-              where: { threadId: group.thread.id, status: { in: activeRunStatuses } },
+              where: { threadId: thread.id, status: { in: activeRunStatuses } },
               select: { id: true, taskId: true, userId: true, spaceId: true },
             })
           : [];
@@ -687,8 +694,8 @@ export function createGroupRepos(prisma: PrismaClient) {
  * Serializes writers of one group. Callers lock the group before its thread, while a
  * thread writer that writes the thread row twice (message, then event counter) takes a
  * foreign-key share on the group row under its thread lock. FOR NO KEY UPDATE lets that
- * share through so the two orders cannot deadlock; only deleting the group needs
- * FOR UPDATE, which also keeps new rows from referencing it.
+ * share through so the two orders cannot deadlock. Deleting the group locks its thread
+ * next and only then upgrades to FOR UPDATE, which keeps new rows from referencing it.
  */
 export async function lockOwnedGroup(
   prisma: Pick<Prisma.TransactionClient, "$queryRaw">,
@@ -725,4 +732,3 @@ export async function touchGroupUpdatedAt(
     data: { updatedAt: new Date() },
   });
 }
-
