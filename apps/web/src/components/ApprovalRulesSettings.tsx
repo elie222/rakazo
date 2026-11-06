@@ -266,7 +266,7 @@ function AddRulePicker({
         <Trans>Add rule</Trans>
       </PopoverTrigger>
       <PopoverContent initialFocus={searchRef} className="w-72 gap-0 p-0" align="start">
-        <Command label={t`Add rule`} shouldFilter={false}>
+        <Command label={t`Search apps and tools`} shouldFilter={false}>
           <ListSearchInput
             command
             inputRef={searchRef}
