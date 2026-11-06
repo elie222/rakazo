@@ -3047,6 +3047,10 @@ msgstr "Dyktowanie nie powiodło się."
 msgid "Did you mean <0>{emailSuggestion}</0>?"
 msgstr "Czy chodziło o <0>{emailSuggestion}</0>?"
 
+#: src/lib/dictation.ts
+msgid "Didn't catch that."
+msgstr "Nie udało się tego rozpoznać."
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Wyłącz narzędzie"
@@ -3369,10 +3373,6 @@ msgstr "Wszyscy tutaj widzą jej czaty, boty i pamięć"
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr "Wszyscy w przestrzeni tego bota mogą czytać czaty, które otrzymuje z {linkApp}."
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Executor token"
-msgstr "Token wykonawcy"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
@@ -7180,10 +7180,6 @@ msgstr "Odpowiedź transkrypcji jest zbyt duża."
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr "Traktuj jak osobę"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "Token Treg"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"

@@ -78,6 +78,7 @@ export function FixtureTranscript({
         scrollRequest={null}
         onScrollRequestHandled={noop}
         followRequest={0}
+        callHoldsSpeaker={false}
         artifactTarget={{ botId: BOT.botId }}
         transcript={transcript}
         showToolActivity={showToolActivity}

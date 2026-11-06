@@ -398,9 +398,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Uses this server's own {source} credentials to access {provider}.":
     "使用此伺服器自己的 {source} 憑證存取 {provider}。",
   "Connect API key": "連線 API 金鑰",
-  "Connect Executor": "連線 Executor",
   "Connect MCP server {name}": "連線 MCP 伺服器 {name}",
-  "Connect Treg": "連線 Treg",
   Connected: "已連線",
   "Connected. Its tools are available from your next message.":
     "已連線。從你的下一條訊息起即可使用它的工具。",
@@ -558,7 +556,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "OTA · {id} · {date}": "OTA · {id} · {date}",
   "Enter a server URL": "請輸入伺服器網址",
   "Enter this code in your browser:": "請在瀏覽器中輸入以下驗證碼：",
-  "Executor token": "Executor 權杖",
   Failed: "失敗",
   "Failed to refresh": "重新整理失敗",
   "Failed to send message": "傳送訊息失敗",
@@ -802,7 +799,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Thread: "對話",
   Title: "標題",
   "Try again.": "請重試。",
-  "Treg token": "Treg 權杖",
   "Type your answer": "輸入你的回答",
   Pinned: "置頂",
   Unassigned: "未分組",
@@ -867,7 +863,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "http://localhost:53692/callback?code=…": "http://localhost:53692/callback?code=…",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
-  "https://executor.example/mcp": "https://executor.example/mcp",
   Diagram: "圖表",
   Image: "圖片",
   "Message from {peer}": "來自 {peer} 的訊息",
