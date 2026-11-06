@@ -30,16 +30,23 @@ const DeleteEmailSchema = z
   })
   .strict();
 
+/** A tool call's argument problems, on one line. */
+function argsError(error: z.ZodError): string {
+  return error.issues
+    .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
+    .join(" ");
+}
+
+function sender(email: { fromName: string; fromAddress: string }): string {
+  return email.fromName ? `${email.fromName} <${email.fromAddress}>` : email.fromAddress;
+}
+
 type SavedFile = { name: string; artifactId?: string; mimeType?: string; size?: number };
 
 async function readEmail(ctx: RunContext, call: ToolCall) {
   const parsed = ReadEmailSchema.safeParse(call.args);
   if (!parsed.success) {
-    return call.finish({
-      error: parsed.error.issues
-        .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
-        .join(" "),
-    });
+    return call.finish({ error: argsError(parsed.error) });
   }
   const input = parsed.data;
   const { deps, bot, run } = ctx;
@@ -73,7 +80,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
       untrusted: true,
       email: {
         id: email.id,
-        from: email.fromName ? `${email.fromName} <${email.fromAddress}>` : email.fromAddress,
+        from: sender(email),
         verified: email.verified,
         to: email.to,
         ...(email.cc.length ? { cc: email.cc } : {}),
@@ -143,7 +150,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
     now: startedAt.toISOString(),
     emails: emails.map((email) => ({
       id: email.id,
-      from: email.fromName ? `${email.fromName} <${email.fromAddress}>` : email.fromAddress,
+      from: sender(email),
       verified: email.verified,
       subject: email.subject,
       receivedAt: email.receivedAt.toISOString(),
@@ -158,11 +165,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
 async function deleteEmail(ctx: RunContext, call: ToolCall) {
   const parsed = DeleteEmailSchema.safeParse(call.args);
   if (!parsed.success) {
-    return call.finish({
-      error: parsed.error.issues
-        .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
-        .join(" "),
-    });
+    return call.finish({ error: argsError(parsed.error) });
   }
   const { deps, bot, run } = ctx;
   if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });

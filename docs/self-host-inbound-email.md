@@ -134,7 +134,9 @@ channel, and what it reads counts as outside data.
 Rakazo checks each message's DKIM signature itself and does not trust results a relay added. A
 message is verified only when it is signed by the domain in its **From** address and that
 signature covers its **To** and **Cc**. Many services sign with another domain, so their mail is
-saved as unverified: the bot can still read it but is told its sender could be forged.
+saved as unverified: the bot can still read it but is told its sender could be forged. Signed
+mail that doesn't name the bot in **To** or **Cc**, such as a BCC or a message replayed from
+someone else's inbox, is saved as unverified too, without its files.
 
 Only verified mail that names the bot in **To** or **Cc** starts anything, and never an automatic
 reply or mailing-list mail. The owner's own mail sent **To** the bot starts it in its chat, once

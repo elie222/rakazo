@@ -318,6 +318,26 @@ describe("inbound email route", () => {
     expect(saveEmail.mock.calls[0]?.[0].data.attachments).toEqual([{ name: "a.pdf" }]);
   });
 
+  it("saves signed mail that doesn't name the bot as unverified, without its files", async () => {
+    const storeAttachment = vi.fn<NonNullable<EmailInboundDeps["storeAttachment"]>>();
+    const { post, saveEmail } = setup({
+      storeAttachment,
+      message: email({
+        from: { address: "noreply@shop.test", name: "Shop" },
+        to: ["someone@example.test"],
+        attachments: [{ name: "a.pdf", mimeType: "application/pdf", bytes: new Uint8Array([1]) }],
+      }),
+    });
+
+    await post();
+
+    expect(storeAttachment).not.toHaveBeenCalled();
+    expect(saveEmail.mock.calls[0]?.[0].data).toMatchObject({
+      verified: false,
+      attachments: [{ name: "a.pdf" }],
+    });
+  });
+
   it("starts the bot on the owner's own mail when no routine is waiting for it", async () => {
     const { post, sendUserMessage } = setup({ routines: [] });
 

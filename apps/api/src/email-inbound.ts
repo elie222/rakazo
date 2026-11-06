@@ -162,7 +162,12 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
 
   // Every message is saved, whoever sent it: sign-up codes and receipts come from strangers. The
   // daily cap stops only a flood of mail that starts nothing, never the owner's own.
-  const saved = await saveToInbox(deps, bot, email, email.from, { capped: !starts });
+  // A signed message replayed or BCC'd to the bot is real mail, but not mail for this bot: its
+  // codes and links could be someone else's, so it is saved as unverified.
+  const saved = await saveToInbox(deps, bot, email, email.from, {
+    capped: !starts,
+    verified: email.authenticated && addressed,
+  });
   if (!saved) return ignored("inbox full");
   if (!starts) {
     // BCC'd mail never starts anything whatever its signature, so it never earns a note either.
@@ -238,7 +243,7 @@ async function saveToInbox(
   bot: { id: string; spaceId: string; userId: string },
   email: InboundEmail,
   from: NonNullable<InboundEmail["from"]>,
-  options: { capped: boolean },
+  options: { capped: boolean; verified: boolean },
 ): Promise<{ id: string; files: InboxFile[] } | null> {
   const where = { botId_key: { botId: bot.id, key: email.key } };
   const select = { id: true, attachments: true } as const;
@@ -252,7 +257,7 @@ async function saveToInbox(
   }
 
   // Files cost the owner storage, so only a sender who proved their address gets them kept.
-  const files = email.authenticated
+  const files = options.verified
     ? await storeAttachments(deps, bot, email)
     : email.attachments.map((file) => ({ name: file.name.slice(0, HEADER_MAX_CHARS) }));
   try {
@@ -265,7 +270,7 @@ async function saveToInbox(
         references: email.references,
         fromAddress: from.address,
         fromName: from.name.slice(0, HEADER_MAX_CHARS),
-        verified: email.authenticated,
+        verified: options.verified,
         to: email.to.slice(0, LIST_STORED_MAX),
         cc: email.cc.slice(0, LIST_STORED_MAX),
         subject: email.subject.slice(0, HEADER_MAX_CHARS),
