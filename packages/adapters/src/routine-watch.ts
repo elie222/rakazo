@@ -97,7 +97,7 @@ export function parseRoutineWatchState(value: unknown): RoutineWatchState | null
   return parsed.success ? parsed.data : null;
 }
 
-export function nextRoutineWatchAt(watch: RoutineWatch, from: Date): Date {
+export function nextRoutineWatchAt(watch: Pick<RoutineWatch, "everyMinutes">, from: Date): Date {
   return new Date(from.getTime() + watch.everyMinutes * 60_000);
 }
 
@@ -730,7 +730,7 @@ export async function tickRoutineWatch(
     if (error instanceof RoutineWatchRetry) {
       const retryAt = new Date(now.getTime() + RETRY_AFTER_MS);
       const deferred = await deps.prisma.routine.updateMany({
-        where: { id: routine.id, active: true, nextRunAt: scheduledAt },
+        where: { id: routine.id, userId: routine.userId, active: true, nextRunAt: scheduledAt },
         data: { nextRunAt: retryAt },
       });
       if (deferred.count === 1) await deps.jobs.enqueue(routineWakeupJob(routine.id, retryAt));
@@ -738,7 +738,7 @@ export async function tickRoutineWatch(
     }
     const reason = error instanceof Error ? error.message : String(error);
     const paused = await deps.prisma.routine.updateMany({
-      where: { id: routine.id, active: true, nextRunAt: scheduledAt },
+      where: { id: routine.id, userId: routine.userId, active: true, nextRunAt: scheduledAt },
       data: {
         active: false,
         nextRunAt: null,
@@ -775,7 +775,7 @@ export async function tickRoutineWatch(
     };
   }
   const claimed = await deps.prisma.routine.updateMany({
-    where: { id: routine.id, active: true, nextRunAt: scheduledAt },
+    where: { id: routine.id, userId: routine.userId, active: true, nextRunAt: scheduledAt },
     data: { nextRunAt, watchState: outcome.state },
   });
   if (claimed.count !== 1) return { run: false };

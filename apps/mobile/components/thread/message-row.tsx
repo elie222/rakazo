@@ -79,6 +79,8 @@ type MessageRowProps = {
   headerAdjacent: boolean;
   unreadDivider: boolean;
   markedUnread: boolean;
+  /** Someone else in a shared space wrote this message. */
+  authorName?: string;
   replyAuthor: string;
   replyFallbackText?: string;
   waitingForUser: boolean;
@@ -116,6 +118,7 @@ export const MessageRow = memo(function MessageRow({
   headerAdjacent,
   unreadDivider,
   markedUnread,
+  authorName,
   replyAuthor,
   replyFallbackText,
   messageReactions,
@@ -433,6 +436,7 @@ export const MessageRow = memo(function MessageRow({
                 botId={bubbleBotId}
                 groupId={groupId}
                 message={message}
+                authorName={authorName}
                 botName={botName}
                 showBotSenderName={showBotSenderName}
                 bots={bots}

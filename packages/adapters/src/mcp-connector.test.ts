@@ -927,6 +927,128 @@ describe("MCP connector session cache", () => {
       }
     });
 
+    it.each([
+      [
+        "a failure",
+        "ok",
+        (): Promise<Response> => Promise.resolve(new Response("unauthorized", { status: 401 })),
+      ],
+      ["a success", "error", null],
+    ] as const)(
+      "keeps %s from a discovery begun before sign-in off the new revision",
+      async (_case, fresh, answer) => {
+        let release!: () => void;
+        let entered!: () => void;
+        const waiting = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const started = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const server = mcpFetch({ failNext: false, initializations: 0 }, SERVER.endpoint);
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+            entered();
+            await waiting;
+            return answer ? answer() : server(input, init);
+          }),
+        );
+        const row = { revision: 1, healthStatus: "unknown" };
+        const writes = vi.fn(
+          async ({
+            where,
+            data,
+          }: {
+            where: { revision?: number };
+            data: { healthStatus: string };
+          }) => {
+            if (where.revision !== undefined && where.revision !== row.revision)
+              return { count: 0 };
+            row.healthStatus = data.healthStatus;
+            return { count: 1 };
+          },
+        );
+        const connector = new McpConnector(
+          {
+            botMcpServer: { findMany: vi.fn(async () => [ASSIGNMENT]) },
+            mcpServer: { ...NO_SHARED_SERVERS, updateMany: writes },
+          } as never,
+          {} as never,
+          { network: TEST_NETWORK },
+        );
+        try {
+          const discovering = connector.discoverTools(context);
+          await started;
+          // Sign-in bumps the revision and the new revision's check records its own result.
+          row.revision = 2;
+          row.healthStatus = fresh;
+          release();
+          await discovering;
+          await vi.waitFor(() => expect(writes).toHaveBeenCalled());
+          expect(row.healthStatus).toBe(fresh);
+        } finally {
+          release();
+          vi.restoreAllMocks();
+          await connector.close();
+        }
+      },
+    );
+
+    it("writes an identical observation again once the revision changes", async () => {
+      vi.stubGlobal("fetch", mcpFetch({ failNext: false, initializations: 0 }, SERVER.endpoint));
+      const server = { ...SERVER };
+      const writes = vi.fn().mockResolvedValue({ count: 1 });
+      const connector = new McpConnector(
+        {
+          botMcpServer: { findMany: vi.fn(async () => [{ ...ASSIGNMENT, server }]) },
+          mcpServer: { ...NO_SHARED_SERVERS, updateMany: writes },
+        } as never,
+        {} as never,
+        { network: TEST_NETWORK },
+      );
+      const revisions = () => writes.mock.calls.map(([call]) => call.where.revision);
+      try {
+        await connector.discoverTools(context);
+        await connector.discoverTools(context);
+        // The same result for the same revision within a minute is not rewritten.
+        await vi.waitFor(() => expect(revisions()).toEqual([1]));
+        // Signing in bumps the revision; its first, identical result must still be recorded.
+        server.revision = 2;
+        await connector.discoverTools(context);
+        await vi.waitFor(() => expect(revisions()).toEqual([1, 2]));
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("records a check only for the revision it probed", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("unauthorized", { status: 401 })),
+      );
+      const writes = vi.fn().mockResolvedValue({ count: 0 });
+      const connector = new McpConnector(
+        {
+          botMcpServer: { findMany: vi.fn(async () => []) },
+          mcpServer: { ...NO_SHARED_SERVERS, updateMany: writes },
+        } as never,
+        {} as never,
+        { network: TEST_NETWORK },
+      );
+      try {
+        // Signing in bumps the revision, so a check of revision 1 must not land on revision 2.
+        await connector.probe({ ...SERVER, revision: 1 } as never, { spaceId: "w1", userId: "u1" });
+        expect(writes).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: SERVER.id, revision: 1 } }),
+        );
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
     it("warns when the host no longer resolves, and waits for a new address", async () => {
       vi.stubGlobal("fetch", mcpFetch({ failNext: false, initializations: 0 }));
       const resolveHostname = vi.fn(async () => {

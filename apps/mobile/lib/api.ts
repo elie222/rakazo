@@ -30,7 +30,7 @@ import {
 } from "@rakazo/contracts";
 import type { ThreadHistory } from "@rakazo/core";
 import {
-  aiConsentTarget,
+  aiConsentTargets,
   aiDataUsesForProcedure,
   cancelResponseBody,
   displayIdentityEvent,
@@ -45,6 +45,7 @@ import {
   mergeThreadHistory,
   messagingProviderLabel,
   parseRetryAfter,
+  payloadAuthor,
   prependThreadHistoryPage,
   progressMessageId,
   readBoundedJsonResponse,
@@ -136,6 +137,21 @@ function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
   // Another Space can belong to another organization, with its own invite link.
   selectedSpaceChanged();
+}
+
+const confirmedSpaceSwitchListeners = new Set<() => void>();
+
+/** Fires when a selection change to another Space is confirmed durable; a
+ * rollback after a failed switch, or selecting the same Space again, does not. */
+export function subscribeConfirmedSpaceSwitch(listener: () => void): () => void {
+  confirmedSpaceSwitchListeners.add(listener);
+  return () => {
+    confirmedSpaceSwitchListeners.delete(listener);
+  };
+}
+
+function noteConfirmedSpaceSwitch(): void {
+  for (const listener of [...confirmedSpaceSwitchListeners]) listener();
 }
 
 /** Keeps a timeout or cancel reason; turns transport and parsing detail into copy. */
@@ -239,6 +255,12 @@ export async function selectSpace(id: string) {
     }
     return false;
   }
+  // Playback belongs to the conversation being left; the listener in voice.ts
+  // stops it once a switch to another Space is confirmed. A fallback that
+  // failed to persist left its origin pending; this confirmed switch consumes
+  // it, so the fallback's retry cannot stop this Space's later playback.
+  if ((pendingFallbackSwitchFrom ?? previousSpaceId) !== id) noteConfirmedSpaceSwitch();
+  pendingFallbackSwitchFrom = null;
   await resumeSelectedSpaceNotifications(id, claimGeneration);
   return true;
 }
@@ -264,7 +286,15 @@ export function selectedSpaceId(): string | null {
  * storage could not replace it. Neutralize any same-endpoint rollback before
  * writing the replacement selection so a cleanup failure cannot leave the new
  * id beside a stale record that recoverSpaceRollback would prefer on restart. */
+/** The Space the user was actually on before a fallback adoption that has not
+ * landed yet; a retry that persists must still count as leaving it. */
+let pendingFallbackSwitchFrom: string | null = null;
+
 export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
+  const previousSpaceId = cachedSpaceId;
+  if (pendingFallbackSwitchFrom === null && previousSpaceId !== id) {
+    pendingFallbackSwitchFrom = previousSpaceId;
+  }
   cachedSpaceId = id;
   bumpSpaceSelectionGeneration();
   // Neutralize any same-endpoint rollback before writing SPACE_KEY. Writing the
@@ -272,10 +302,16 @@ export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   // would prefer on restart if later cleanup fails.
   const rollbackNeutralized =
     (await clearStoredValue(SPACE_ROLLBACK_KEY)) || (await saveSpaceRollback(id));
+  // Playback belongs to the conversation being left; the fallback too is a
+  // confirmed switch once it durably adopts another Space. A failed attempt
+  // already claimed the replacement in memory, so the Space remembered before
+  // the first attempt, not the claim, decides whether one was left behind.
   if (rollbackNeutralized && (await writeStoredValue(SPACE_KEY, id))) {
     // SPACE_KEY is authoritative; drop a rollback we may have written only to
     // overwrite a stale record (best-effort).
     await clearStoredValue(SPACE_ROLLBACK_KEY);
+    if ((pendingFallbackSwitchFrom ?? previousSpaceId) !== id) noteConfirmedSpaceSwitch();
+    pendingFallbackSwitchFrom = null;
     await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
       () => undefined,
     );
@@ -290,7 +326,13 @@ export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   );
   // Only treat a cleared selection as durable success when no same-endpoint
   // rollback remains to override it after restart.
-  return recoverySaved || (staleSelectionCleared && (await clearStoredValue(SPACE_ROLLBACK_KEY)));
+  const durable =
+    recoverySaved || (staleSelectionCleared && (await clearStoredValue(SPACE_ROLLBACK_KEY)));
+  if (durable && (pendingFallbackSwitchFrom ?? previousSpaceId) !== id) {
+    noteConfirmedSpaceSwitch();
+  }
+  if (durable) pendingFallbackSwitchFrom = null;
+  return durable;
 }
 
 export async function selectInitialSpace(id: string) {
@@ -920,7 +962,9 @@ export function subscribeSessionRejected(listener: () => void): () => void {
 }
 
 async function rejectSession() {
-  await clearSessionToken();
+  // The server ended the session; the user never asked to leave. Keep the unsent
+  // queue, so the app can report those messages before a sign-in deletes them.
+  await clearSessionToken({ keepUnsent: true });
   for (const listener of sessionRejectedListeners) listener();
 }
 
@@ -956,24 +1000,25 @@ async function request(
   const requestSessionGeneration = currentSessionGeneration();
   const requestApiBase = options.requestContext?.apiBase ?? currentApiBase();
   const uses = aiDataUsesForProcedure(proc, body);
-  const consentTarget = aiConsentTarget(body);
   const consentContext =
     options.requestContext ?? (uses.length ? await captureApiRequestContext() : undefined);
-  await ensureAiDataConsent({
-    uses,
-    status: () =>
-      rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
-    prompt: promptAiConsent,
-    allow: (input) =>
-      rpc(
-        "aiConsent/allow",
-        consentTarget.settingsScope
-          ? { ...input, settingsScope: consentTarget.settingsScope }
-          : input,
-        { requestContext: consentContext },
-      ),
-    coalesceKey: consentContext ? aiConsentCoalesceKey(consentContext) : undefined,
-  });
+  for (const consentTarget of aiConsentTargets(body)) {
+    await ensureAiDataConsent({
+      uses,
+      status: () =>
+        rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
+      prompt: promptAiConsent,
+      allow: (input) =>
+        rpc(
+          "aiConsent/allow",
+          consentTarget.settingsScope
+            ? { ...input, settingsScope: consentTarget.settingsScope }
+            : input,
+          { requestContext: consentContext },
+        ),
+      coalesceKey: consentContext ? aiConsentCoalesceKey(consentContext) : undefined,
+    });
+  }
   // Abort with an explicit reason so every consumer of the signal (the fetch, the bounded body
   // read, and nested recovery calls that share this signal) reports the same cause.
   const controller = new AbortController();
@@ -1375,6 +1420,7 @@ export function blockText(message: MobileMessage) {
         return `${block.status === "archived" ? "Archived" : block.status === "deleted" ? "Deleted" : "Bot"} ${block.name ?? ""}`;
       }
       if (block.kind === "chart") return `[chart: ${block.name ?? "chart"}]`;
+      if (block.kind === "app") return `[app: ${block.server}]`;
       if (block.kind === "page") return `[page: ${block.title}]`;
       if (block.kind === "image") return `[image: ${block.name ?? "attachment"}]`;
       if (block.kind === "file") {
@@ -1921,6 +1967,7 @@ export function applyMobileThreadEvent(
       callId: typeof event.payload?.callId === "string" ? event.payload.callId : known?.callId,
       blocks: (event.payload?.blocks as MobileMessage["blocks"]) ?? [],
       botId: event.botId ?? (event.payload?.botId ? String(event.payload.botId) : undefined),
+      ...payloadAuthor(event.payload ?? {}, known),
       ...replyMetadata(event.payload ?? {}, known),
     };
     return {

@@ -15,7 +15,9 @@ import type { MobileBot, MobileMessage, MobileSnapshot } from "./api";
 import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "./api";
 import { findSwitchTarget } from "./bot-switch";
 import { chatSettingsRoute } from "./chat-settings-route";
+import { subscribeComposerOffer } from "./composer-offer";
 import { cancelFocusPrompt } from "./focus-prompt";
+import { hapticImpact, hapticSuccess } from "./haptics";
 import { useI18n } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
 import { takePageReply } from "./pages";
@@ -105,6 +107,14 @@ export function useThreadSend({
     setReplyQuote(null);
     replyPage.current = reply.page;
   }, [threadKey]);
+  // An app card in this chat offers its text straight into the open composer.
+  useEffect(
+    () =>
+      threadKey
+        ? subscribeComposerOffer(threadKey, (text) => composerRef.current?.addReply(text))
+        : undefined,
+    [threadKey],
+  );
   const composerEmptied = useCallback(() => {
     replyPage.current = null;
   }, []);
@@ -152,6 +162,7 @@ export function useThreadSend({
       return;
     }
     preparingSend.current = true;
+    hapticImpact();
     try {
       await prepareUnsentSends();
     } catch (error) {
@@ -241,6 +252,7 @@ export function useThreadSend({
       !navigation.isFocused()
     )
       return;
+    hapticSuccess();
     if (reroutedToGroup && groupTarget) {
       router.push({
         pathname: "/group-thread",
@@ -297,14 +309,23 @@ export function useThreadSend({
       remember?: false,
     ) =>
       answerThreadMessage(
-        { botId, groupId, readOnly, rpc, isCurrentTarget, refresh, markRead: markCaughtUp },
+        {
+          botId,
+          groupId,
+          readOnly,
+          rpc,
+          isCurrentTarget,
+          isFocused: () => navigation.isFocused(),
+          refresh,
+          markRead: markCaughtUp,
+        },
         message,
         answer,
         fields,
         dismiss,
         remember,
       ),
-    [botId, groupId, readOnly],
+    [botId, groupId, readOnly, navigation],
   );
 
   async function react(message: MobileMessage, reaction: MessageReaction) {

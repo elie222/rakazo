@@ -29,7 +29,7 @@ function threadStore(initial: Row, beforeWrite?: (row: Row) => void) {
     return { count: 1 };
   });
   const findFirst = vi.fn(async ({ where }: { where: Record<string, string> }) =>
-    where.userId === actor.userId && where.spaceId === actor.spaceId ? { ...row } : null,
+    where.spaceId === actor.spaceId ? { ...row } : null,
   );
   // Message 4 of this thread; any other id or thread is unknown.
   const message = {
@@ -50,7 +50,6 @@ describe("markThreadRead", () => {
       where: {
         id: "thread-1",
         spaceId: "space-1",
-        userId: "user-1",
         lastReadSeq: 3,
         nextMessageSeq: 7,
       },
@@ -107,6 +106,11 @@ describe("markThreadRead", () => {
     await expect(markThreadRead(prisma, actor, target)).resolves.toBe(3);
     expect(updateMany).toHaveBeenCalledTimes(3);
     expect(queryRaw).toHaveBeenCalledOnce();
+    // The locked fallback waits on the same snapshot-held lock as every other write,
+    // so it runs on the explicit budget rather than the default.
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
     expect(row).toEqual({ unread: false, lastReadSeq: 9, nextMessageSeq: 10 });
   });
 

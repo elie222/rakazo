@@ -9,13 +9,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDeps } from "./voice.js";
 import {
   disconnectVoiceCredential,
-  fishSpeechModelValue,
   isVoiceProviderFailure,
   MAX_SPEAK_REQUEST_BYTES,
   MAX_TRANSCRIBE_REQUEST_BYTES,
   mountVoiceHttpRoutes,
   persistVoiceCredential,
   prepareVoice,
+  speechModelValue,
   synthesizeVoice,
   toVoiceCredential,
   toVoiceStatus,
@@ -318,28 +318,27 @@ describe("isVoiceProviderFailure", () => {
   });
 });
 
-describe("fishSpeechModelValue", () => {
-  it("trims a Fish model id and treats blank as no override", () => {
-    expect(fishSpeechModelValue("  s1  ")).toBe("s1");
-    expect(fishSpeechModelValue(" ")).toBeNull();
+describe("speechModelValue", () => {
+  it("trims a model id and treats blank as no override", () => {
+    expect(speechModelValue("  s1  ")).toBe("s1");
+    expect(speechModelValue(" eleven_v4 ")).toBe("eleven_v4");
+    expect(speechModelValue(" ")).toBeNull();
   });
 
-  it("rejects a model id that cannot be a Fish header", () => {
-    expect(() => fishSpeechModelValue("s1\ninjected")).toThrow(
-      "That speech model id is not valid.",
-    );
+  it("rejects a model id that cannot be a header or a JSON model id", () => {
+    expect(() => speechModelValue("s1\ninjected")).toThrow("That speech model id is not valid.");
   });
 });
 
 describe("updateVoiceSpeechModel", () => {
   function speechDeps(
     preference: { voiceId: string; isDefault: boolean } | null,
-    { overridden = false } = {},
+    { overridden = false, provider = "fish-audio" } = {},
   ) {
     const credential = {
       id: "cred-1",
       userId: actor.userId,
-      provider: "fish-audio",
+      provider,
       secretId: "secret-1",
     };
     const table = () => ({
@@ -391,6 +390,24 @@ describe("updateVoiceSpeechModel", () => {
     });
     expect(account.updateMany).not.toHaveBeenCalled();
     expect(space.upsert).not.toHaveBeenCalled();
+  });
+
+  it("stores an ElevenLabs speech model", async () => {
+    const { deps, account } = speechDeps(
+      { voiceId: "rachel", isDefault: true },
+      { provider: "elevenlabs" },
+    );
+
+    await expect(
+      updateVoiceSpeechModel(deps, actor, { provider: "elevenlabs", speechModel: "eleven_v4" }),
+    ).resolves.toMatchObject({
+      provider: "elevenlabs",
+      voiceId: "rachel",
+      speechModel: "eleven_v4",
+    });
+    expect(account.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: { speechModel: "eleven_v4" } }),
+    );
   });
 
   it("clears the override when the model is blank", async () => {
@@ -446,8 +463,8 @@ describe("updateVoiceSpeechModel", () => {
     const { deps, account } = speechDeps({ voiceId: "voice-1", isDefault: true });
 
     await expect(
-      updateVoiceSpeechModel(deps, actor, { provider: "elevenlabs", speechModel: "s1" }),
-    ).rejects.toThrow("Speech model applies to Fish Audio.");
+      updateVoiceSpeechModel(deps, actor, { provider: "openai", speechModel: "s1" }),
+    ).rejects.toThrow("This voice provider has no speech model.");
     expect(account.upsert).not.toHaveBeenCalled();
   });
 });

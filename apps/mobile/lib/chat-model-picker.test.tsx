@@ -18,6 +18,7 @@ import { modelPickerRequest } from "./model-picker-selection";
 import { queryClient } from "./query";
 
 const mocks = vi.hoisted(() => ({
+  showMenu: vi.fn(),
   scrollToLocation: vi.fn(),
   scrollTo: vi.fn(),
   reportVisibleRows: true,
@@ -264,13 +265,17 @@ vi.mock("react-native", () => {
     accessibilityLabel,
     accessibilityRole,
     accessibilityValue,
+    onAccessibilityAction,
   }: {
     children?: ReactNode;
     accessibilityLabel?: string;
     accessibilityRole?: string;
     accessibilityValue?: { text: string };
-  }) =>
-    createElement(
+    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+  }) => {
+    if (accessibilityLabel && onAccessibilityAction)
+      mocks.rowAccessibilityActions.set(accessibilityLabel, onAccessibilityAction);
+    return createElement(
       "div",
       {
         "aria-label": accessibilityLabel,
@@ -279,6 +284,7 @@ vi.mock("react-native", () => {
       },
       children,
     );
+  };
   return {
     AccessibilityInfo: { announceForAccessibility: mocks.announce },
     ActivityIndicator: () => createElement("i", { "data-loading": true }),
@@ -549,16 +555,19 @@ vi.mock("../components/text-only-mark", () => ({
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("@expo/ui/community/menu", () => ({
   MenuView: ({
+    ref,
     title,
     actions,
     onPressAction,
     children,
   }: {
+    ref?: Ref<{ show: () => void }>;
     title: string;
     actions: { id: string; title: string }[];
     onPressAction: (event: { nativeEvent: { event: string } }) => void;
     children: ReactNode;
   }) => {
+    useImperativeHandle(ref, () => ({ show: () => mocks.showMenu(title) }), [title]);
     mocks.menus.set(title, { actions, onPressAction });
     return createElement("section", { "data-menu": title }, children);
   },
@@ -1042,6 +1051,24 @@ describe("model role lists", () => {
     [...section(title).querySelectorAll<HTMLButtonElement>("button")].find((button) =>
       button.textContent?.includes(name),
     )!;
+
+  it("opens Android model options from accessibility activation", async () => {
+    mocks.platform = "android";
+    mocks.primary = model(1);
+    await renderModels();
+    const activate = mocks.rowAccessibilityActions.get("Model 1 (OpenRouter) options")!;
+    act(() => activate({ nativeEvent: { actionName: "activate" } }));
+    expect(mocks.showMenu).toHaveBeenCalledExactlyOnceWith("Model 1");
+  });
+
+  it("keeps the native menu outside the model picker's press target", async () => {
+    mocks.primary = model(1);
+    await renderModels();
+    const menu = section("Main model").querySelector('[data-menu="Model 1"]')!;
+    expect(menu.closest("button")).toBeNull();
+    act(() => rowButton("Main model", "Model 1").click());
+    expect(mocks.push).toHaveBeenCalledWith(expect.objectContaining({ pathname: "/model-picker" }));
+  });
 
   it("numbers the main model and its fallbacks, then offers Add fallback", async () => {
     mocks.primary = { ...model(1), thinkingLevel: "high" };
@@ -1685,6 +1712,11 @@ describe("several connections for one provider", () => {
     expect(
       [...section("Main model").querySelectorAll("button")].map((button) => button.textContent),
     ).toEqual(["1Model 1OpenRouter", "2Model 1OpenRouter (Work)", "Add fallback"]);
+    expect(
+      [...section("Main model").querySelectorAll('[role="button"]')].map((button) =>
+        button.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Model 1 (OpenRouter) options", "Model 1 (OpenRouter, Work) options"]);
     const menu = [...mocks.menus.entries()].filter(([title]) => title === "Model 1");
     expect(menu).toHaveLength(1);
     await act(async () =>

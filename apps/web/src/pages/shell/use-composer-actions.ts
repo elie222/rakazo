@@ -409,10 +409,11 @@ export function useComposerActions({
             navigate(`/app/g/${groupTarget}`);
             return true;
           }
+          // The routine is saved; live events reconcile a failed refresh.
           if (groupTarget && activeGroupId.current === groupTarget) {
-            await refreshGroupThreadRef.current(groupTarget);
+            void refreshGroupThreadRef.current(groupTarget).catch(() => undefined);
           } else if (botTarget && activeBotId.current === botTarget) {
-            await refreshThreadRef.current(botTarget);
+            void refreshThreadRef.current(botTarget).catch(() => undefined);
           }
           return true;
         }

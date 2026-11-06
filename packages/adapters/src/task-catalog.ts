@@ -38,7 +38,6 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
     listSchedulesFromTool(deps, {
       spaceId: input.spaceId,
       botId: input.botId,
-      userId: input.userId,
       ...(input.threadId ? { threadId: input.threadId } : {}),
     }),
     deps.prisma.taughtSkill.findMany({

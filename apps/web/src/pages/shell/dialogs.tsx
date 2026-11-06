@@ -108,7 +108,7 @@ export function NewSpaceDialog({
             {created.items.map((item) => (
               <div
                 key={key(item)}
-                className="flex items-center gap-3 rounded-lg px-1 py-1.5 text-[14px] text-foreground"
+                className="flex items-center gap-3 rounded-lg px-1 py-1.5 text-body text-foreground"
               >
                 <Checkbox
                   id={`new-space-item-${key(item)}`}
@@ -128,7 +128,7 @@ export function NewSpaceDialog({
               </div>
             ))}
           </div>
-          {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
+          {error ? <p className="text-body text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button disabled={saving} onClick={finish}>
               {saving ? <Trans>Saving…</Trans> : <Trans>Continue</Trans>}
@@ -152,7 +152,7 @@ export function NewSpaceDialog({
             <Trans>New space</Trans>
           </DialogTitle>
         </DialogHeader>
-        <label htmlFor={nameId} className="block text-[13.5px] text-foreground/75">
+        <label htmlFor={nameId} className="block text-body text-foreground/75">
           <Trans>Name</Trans>
           <Input
             id={nameId}
@@ -170,7 +170,7 @@ export function NewSpaceDialog({
             className="mt-2"
           />
         </label>
-        {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
+        {error ? <p className="text-body text-destructive">{error}</p> : null}
         <DialogFooter>
           <Button variant="outline" disabled={saving} onClick={onCancel}>
             <Trans>Cancel</Trans>
@@ -224,7 +224,7 @@ export function NewBotSectionDialog({
               <Trans>Create a section and move {bot.name} into it.</Trans>
             </DialogDescription>
           </DialogHeader>
-          <label htmlFor={nameId} className="block text-[13.5px] text-foreground/75">
+          <label htmlFor={nameId} className="block text-body text-foreground/75">
             <Trans>Name</Trans>
             <Input
               id={nameId}
@@ -234,7 +234,7 @@ export function NewBotSectionDialog({
               className="mt-2"
             />
           </label>
-          {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
+          {error ? <p className="text-body text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>
               <Trans>Cancel</Trans>
@@ -287,7 +287,7 @@ export function RenameBotSectionDialog({
               <Trans>Rename section</Trans>
             </DialogTitle>
           </DialogHeader>
-          <label htmlFor={nameId} className="block text-[13.5px] text-foreground/75">
+          <label htmlFor={nameId} className="block text-body text-foreground/75">
             <Trans>Name</Trans>
             <Input
               id={nameId}
@@ -298,7 +298,7 @@ export function RenameBotSectionDialog({
               autoFocus
             />
           </label>
-          {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
+          {error ? <p className="text-body text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>
               <Trans>Cancel</Trans>
@@ -340,7 +340,7 @@ export function ClearConversationDialog({
             </Trans>
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
+        {error ? <p className="text-body text-destructive">{error}</p> : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={clearing}>
             <Trans>Cancel</Trans>
@@ -395,7 +395,7 @@ export function DeleteBotDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-2">
-          <p id={memoriesLabelId} className="mb-2 text-[13.5px] text-foreground/75">
+          <p id={memoriesLabelId} className="mb-2 text-body text-foreground/75">
             <Trans>What about its memories?</Trans>
           </p>
           <RadioGroup
@@ -407,10 +407,10 @@ export function DeleteBotDialog({
             <label className="flex cursor-pointer gap-3 rounded-lg border border-border p-3">
               <RadioGroupItem value="keep" className="mt-0.5" />
               <span>
-                <span className="block text-[14px] text-foreground">
+                <span className="block text-body text-foreground">
                   <Trans>Keep memories</Trans>
                 </span>
-                <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
+                <span className="mt-0.5 block text-body-sm text-muted-foreground">
                   <Trans>Move them to your shared memory.</Trans>
                 </span>
               </span>
@@ -419,17 +419,17 @@ export function DeleteBotDialog({
             <label className="flex cursor-pointer gap-3 rounded-lg border border-border p-3">
               <RadioGroupItem value="delete" className="mt-0.5" />
               <span>
-                <span className="block text-[14px] text-foreground">
+                <span className="block text-body text-foreground">
                   <Trans>Delete memories too</Trans>
                 </span>
-                <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
+                <span className="mt-0.5 block text-body-sm text-muted-foreground">
                   <Trans>This cannot be undone.</Trans>
                 </span>
               </span>
             </label>
           </RadioGroup>
         </div>
-        {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
+        {error ? <p className="text-body text-destructive">{error}</p> : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={deleting}>
             <Trans>Cancel</Trans>
@@ -522,7 +522,7 @@ export function DeleteItemDialog({
             {description ?? <Trans>This cannot be undone.</Trans>}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
+        {error ? <p className="text-body text-destructive">{error}</p> : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={deleting}>
             <Trans>Cancel</Trans>

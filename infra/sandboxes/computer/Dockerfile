@@ -1,4 +1,6 @@
 FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS capture-builder
+COPY apt-security.sh /tmp/apt-security.sh
+RUN /tmp/apt-security.sh && rm -f /tmp/apt-security.sh
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libx11-dev \
@@ -14,6 +16,8 @@ RUN cc -O3 -fPIC -shared -Wall -Wextra -Werror -o librakazo-xcapture.so xcapture
     -lX11 -lXext -lXdamage -lXfixes -lXtst -lpng
 
 FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+COPY apt-security.sh /tmp/apt-security.sh
+RUN /tmp/apt-security.sh
 # Dev tools let bots clone repos and fetch artifacts; containers run uid 1000
 # with no privilege escalation, so nothing can be installed at runtime.
 # Compilers stay in the builder stage; heavier toolchains are a separate call.
@@ -172,6 +176,7 @@ RUN ldconfig \
 # Agent-authored scripts often use the unversioned name. Keep it on the installed Python 3.
 RUN ln -s /usr/bin/python3 /usr/local/bin/python \
   && python -c 'import sys; assert sys.version_info.major == 3'
+RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 EXPOSE 7070 6080 6081 6082 6083 6084 6085 6086 6087 6088 6089 6090 6091 6092 6093 6094 6095
 # Docker exec does not inherit PID 1's exports, so every process gets the same
 # identity lookup. Startup creates these private files for the effective UID/GID.

@@ -110,7 +110,7 @@ export function ComputerMaintenanceActions({
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
+        {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
         <AlertDialogFooter>
           <AlertDialogCancel>
             <Trans>Cancel</Trans>
@@ -198,7 +198,7 @@ export function ComputerMaintenanceActions({
                   <Trans>Recover computer</Trans>
                 )}
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-label text-muted-foreground">
                 <Trans>Recreate a computer that is not working.</Trans>
               </span>
             </DropdownMenuItem>
@@ -213,7 +213,7 @@ export function ComputerMaintenanceActions({
               <span>
                 {pending === "reset" ? <Trans>Resetting…</Trans> : <Trans>Reset computer</Trans>}
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-label text-muted-foreground">
                 <Trans>Restore the last saved workspace.</Trans>
               </span>
             </DropdownMenuItem>
@@ -229,12 +229,12 @@ export function ComputerMaintenanceActions({
               <span>
                 {pending === "update" ? <Trans>Updating…</Trans> : <Trans>Update computer</Trans>}
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-label text-muted-foreground">
                 <Trans>Save the workspace and install current software.</Trans>
               </span>
             </DropdownMenuItem>
           ) : null}
-          {error ? <p className="px-1.5 py-1 text-[12.5px] text-destructive">{error}</p> : null}
+          {error ? <p className="px-1.5 py-1 text-body-sm text-destructive">{error}</p> : null}
         </DropdownMenuContent>
       </DropdownMenu>
       {confirmationDialog}

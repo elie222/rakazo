@@ -98,6 +98,36 @@ describe("group handoff ownership", () => {
     expect(runCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ trigger: "follow_up" }) }),
     );
+    expect(deps.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
+  });
+
+  it("carries files on the handoff the next bot starts from", async () => {
+    const { deps, messageCreate } = harness([{ kind: "text", text: "user request" }]);
+    const file = {
+      kind: "file" as const,
+      artifactId: "artifact-zip",
+      name: "project.zip",
+      mimeType: "application/zip",
+      size: 19_000,
+    };
+
+    await expect(
+      handoffToGroupBot(deps as never, run, "group-1", {
+        bot_id: "bot-b",
+        message: "Deploy this",
+        files: [file],
+      }),
+    ).resolves.toMatchObject({ ok: true, botId: "bot-b" });
+
+    expect(messageCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          blocks: [expect.objectContaining({ kind: "handoff" }), file],
+        }),
+      }),
+    );
   });
 
   it("does not hand off from an attempt a newer claim superseded", async () => {
@@ -401,7 +431,7 @@ describe("explicit group destinations", () => {
     expect(h.deps.events.notify).toHaveBeenCalledWith("group-thread", 1);
   });
 
-  it("rejects unavailable, unowned, or cross-space groups", async () => {
+  it("rejects unavailable or cross-space groups", async () => {
     const h = privateTurn();
     h.tx.$queryRaw.mockResolvedValue([]);
     await expect(
@@ -411,7 +441,7 @@ describe("explicit group destinations", () => {
       }),
     ).resolves.toMatchObject({ error: "group is no longer available" });
     expect(h.messageCreate).not.toHaveBeenCalled();
-    expect(h.tx.$queryRaw.mock.calls[0]?.slice(1)).toEqual(["group-1", run.spaceId, run.userId]);
+    expect(h.tx.$queryRaw.mock.calls[0]?.slice(1)).toEqual(["group-1", run.spaceId]);
   });
 
   it("requires both bots to be active members of the destination", async () => {
@@ -446,7 +476,7 @@ describe("explicit group destinations", () => {
   });
 });
 
-it("discovers only active groups the bot belongs to under the same owner and space", async () => {
+it("discovers only active groups the bot belongs to in its space, whoever created them", async () => {
   const findMany = vi.fn(async () => []);
   await expect(
     loadBotGroupDirectory({ chatGroup: { findMany } } as unknown as PrismaClient, run),
@@ -455,7 +485,6 @@ it("discovers only active groups the bot belongs to under the same owner and spa
     expect.objectContaining({
       where: {
         spaceId: run.spaceId,
-        userId: run.userId,
         archivedAt: null,
         members: { some: { botId: run.botId, bot: { archivedAt: null } } },
         thread: { isNot: null },

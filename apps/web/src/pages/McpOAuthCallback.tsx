@@ -46,7 +46,7 @@ export function McpOAuthCallbackPage() {
   return (
     <div className="grid min-h-screen place-items-center bg-background p-6 text-center">
       <div>
-        <div className="text-lg text-foreground">
+        <div className="text-heading3 text-foreground">
           {error ? (
             <Trans>OAuth connection failed</Trans>
           ) : done ? (
@@ -55,13 +55,13 @@ export function McpOAuthCallbackPage() {
             <Trans>Finishing MCP connection…</Trans>
           )}
         </div>
-        {error ? <p className="mt-2 max-w-md text-sm text-muted-foreground">{error}</p> : null}
+        {error ? <p className="mt-2 max-w-md text-body text-muted-foreground">{error}</p> : null}
         {showReturn ? (
           <Button type="button" className="mt-5" onClick={() => navigate("/app")}>
             <Trans>Return to Rakazo</Trans>
           </Button>
         ) : (
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="mt-2 text-body text-muted-foreground">
             {error || done ? (
               <Trans>You can close this window.</Trans>
             ) : (

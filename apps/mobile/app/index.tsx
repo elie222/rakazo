@@ -16,6 +16,7 @@ import {
   Alert,
   AppState,
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   Text,
@@ -60,6 +61,7 @@ import type { CreateAction } from "../lib/create-chooser";
 import { createInboxBot } from "../lib/create-inbox-bot";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
+import { hapticImpact, hapticSelection } from "../lib/haptics";
 import { getActiveUiLocale, t, useI18n } from "../lib/i18n";
 import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox-spaces";
@@ -223,6 +225,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   );
 
   const toggleActivityMode = useCallback(() => {
+    hapticSelection();
     setActivityMode((on) => {
       const next = !on;
       void saveActivityMode(next);
@@ -696,18 +699,25 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [deleteInboxSpace, t],
   );
 
-  const createQuickBot = useCallback(async () => {
-    if (creatingBotRef.current || spaceActionRef.current.busy || spaceActionRef.current.recoveryId)
-      return;
-    creatingBotRef.current = true;
-    try {
-      await createInboxBot({ refreshBots, openChat });
-    } catch (err) {
-      setError(errorText(err, t("Could not create bot")));
-    } finally {
-      creatingBotRef.current = false;
-    }
-  }, [openChat, refreshBots, t]);
+  const createQuickBot = useCallback(
+    async (spaceId?: string) => {
+      if (
+        creatingBotRef.current ||
+        spaceActionRef.current.busy ||
+        spaceActionRef.current.recoveryId
+      )
+        return;
+      creatingBotRef.current = true;
+      try {
+        await createInboxBot({ refreshBots, openChat, spaceId });
+      } catch (err) {
+        setError(errorText(err, t("Could not create bot")));
+      } finally {
+        creatingBotRef.current = false;
+      }
+    },
+    [openChat, refreshBots, t],
+  );
 
   const runCreateAction = useCallback(
     (action: CreateAction) => {
@@ -778,6 +788,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         return;
       }
       if (!target) return;
+      if (Platform.OS === "android") hapticImpact();
       setOrganizeTarget(target);
       void loadBots();
     },
@@ -806,6 +817,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     botSections,
     chooseInboxSpace,
     confirmDeleteSpace,
+    createBotInSpace: createQuickBot,
     day,
     deleteSection,
     editSectionFromMenu,

@@ -35,6 +35,7 @@ let root: Root;
 let latest: ReturnType<typeof useComposerActions>;
 let pageSession: PageSession;
 let activeChat: string;
+let refreshThread: (id: string) => Promise<ThreadSnapshot>;
 let activeSnapshot: ThreadSnapshot | null;
 // One stable ref object per value, like the real Shell: a fresh object per
 // render would leave stale closures reading the previous chat. The same goes
@@ -49,6 +50,7 @@ const updateSnapshot = () => undefined;
 const commitComputer = () => undefined;
 const clearReadBoundary = () => undefined;
 const flushPendingBrowserNotifications = () => undefined;
+const refreshThreadRef = ref((id: string) => refreshThread(id));
 
 function ref<T>(current: T) {
   return { current };
@@ -69,7 +71,7 @@ function Harness({ extras }: { extras?: Record<string, unknown> }) {
     activeSnapshot,
     navigate: navigate as never,
     refreshBots,
-    refreshThreadRef: ref(async () => ({}) as ThreadSnapshot),
+    refreshThreadRef,
     refreshGroupThreadRef: ref(async () => ({}) as ThreadSnapshot),
     updateSnapshot,
     terminalRunReceipts,
@@ -98,6 +100,7 @@ beforeEach(() => {
   me = null;
   navigate = vi.fn();
   activeChat = "bot-1";
+  refreshThread = async () => ({}) as ThreadSnapshot;
   activeSnapshot = null;
   activeBotId.current = activeChat;
   activeGroupId.current = undefined;
@@ -318,6 +321,16 @@ it("runs routines without text in one request", async () => {
   expect(rpc.threads.send).not.toHaveBeenCalled();
 });
 
+it("counts a routines-only send as sent when its follow-up refresh fails", async () => {
+  rpc.threads.sendWithRoutines.mockResolvedValue({ routineRunIds: ["routine-run"] });
+  // The routine is already running; only the thread read that follows the send fails.
+  refreshThread = () => Promise.reject(new TypeError("Failed to fetch"));
+
+  expect(await send("@digest", [digest])).toBe(true);
+
+  expect(latest.sendError).toBeNull();
+});
+
 it("opens a mentioned group without running anything", async () => {
   const team = { kind: "group" as const, id: "group-2", name: "Team" };
   let accepted!: boolean;
@@ -383,6 +396,27 @@ it("names the open page only on text the chat itself sends", async () => {
   await send("@digest and notes", [digest]);
   expect(rpc.threads.sendWithRoutines).toHaveBeenLastCalledWith(
     expect.objectContaining({ botId: "bot-1", text: "[Sales](page:p1)\nand notes" }),
+  );
+});
+
+it("reuses an attachment's upload nonce across send retries", async () => {
+  const file = new File(["a"], "a.txt", { type: "text/plain" });
+  rpc.artifacts.create.mockResolvedValue({ id: "artifact-1" });
+  rpc.threads.send.mockRejectedValueOnce(new Error("offline"));
+  act(() => void latest.onAttachmentPick([file]));
+
+  await act(async () => void (await latest.sendMessage("hello", [], "nonce-1")));
+  // The failed send keeps its attachment; an edited draft retries under a new
+  // send nonce and must still reach the artifact the first upload created.
+  expect(await latest.sendMessage("hello again", [], "nonce-2")).toBe(true);
+
+  expect(rpc.artifacts.create).toHaveBeenCalledTimes(2);
+  const firstCall = rpc.artifacts.create.mock.calls[0]![0] as { clientNonce?: string };
+  const retryCall = rpc.artifacts.create.mock.calls[1]![0] as { clientNonce?: string };
+  expect(firstCall.clientNonce).toBe(retryCall.clientNonce);
+  expect(firstCall.clientNonce).toContain("bot-1");
+  expect(rpc.threads.send).toHaveBeenLastCalledWith(
+    expect.objectContaining({ artifactIds: ["artifact-1"] }),
   );
 });
 
@@ -478,27 +512,6 @@ it("keeps a newer excerpt of the same message picked while its older send is in 
 
   expect(latest.replyTarget).toBe(message);
   expect(latest.replyQuote).toBe("second excerpt");
-});
-
-it("reuses an attachment's upload nonce across send retries", async () => {
-  const file = new File(["a"], "a.txt", { type: "text/plain" });
-  rpc.artifacts.create.mockResolvedValue({ id: "artifact-1" });
-  rpc.threads.send.mockRejectedValueOnce(new Error("offline"));
-  act(() => void latest.onAttachmentPick([file]));
-
-  await act(async () => void (await latest.sendMessage("hello", [], "nonce-1")));
-  // The failed send keeps its attachment; an edited draft retries under a new
-  // send nonce and must still reach the artifact the first upload created.
-  expect(await latest.sendMessage("hello again", [], "nonce-2")).toBe(true);
-
-  expect(rpc.artifacts.create).toHaveBeenCalledTimes(2);
-  const firstCall = rpc.artifacts.create.mock.calls[0]![0] as { clientNonce?: string };
-  const retryCall = rpc.artifacts.create.mock.calls[1]![0] as { clientNonce?: string };
-  expect(firstCall.clientNonce).toBe(retryCall.clientNonce);
-  expect(firstCall.clientNonce).toContain("bot-1");
-  expect(rpc.threads.send).toHaveBeenLastCalledWith(
-    expect.objectContaining({ artifactIds: ["artifact-1"] }),
-  );
 });
 
 it("clears a reply re-picked as a fresh object after a thread refresh", async () => {

@@ -177,7 +177,7 @@ export function ConfirmIdentityDialog({
             </>
           ) : null}
           {error ? (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="text-body text-destructive">
               {error}
             </p>
           ) : null}

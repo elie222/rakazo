@@ -33,6 +33,7 @@ import { getLogger } from "@rakazo/logging";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import { secureFetch, validateUrl, withEndpointOriginFallback } from "./mcp-transport.js";
+import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "./refresh-lock.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
 import { deleteSecretBestEffort, holdSecretNotifications } from "./secret-store-factory.js";
@@ -849,16 +850,6 @@ type MaterialSnapshot = {
   secret: { id: string; ciphertext: string } | null;
 };
 
-/**
- * A refresh holds the credential lock across one token request and the write.
- * The lock wait runs inside the transaction, so it gets its own cap. Whatever
- * is left after the wait and the request goes to the secret write: a rotated
- * token that never commits is lost.
- */
-const REFRESH_LOCK_WAIT_MS = 10_000;
-const REFRESH_REQUEST_TIMEOUT_MS = 15_000;
-const REFRESH_TRANSACTION_MS = 60_000;
-
 function lockMaterial(tx: Prisma.TransactionClient, serverId: string): Promise<number> {
   return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${serverId}))`;
 }
@@ -1126,7 +1117,7 @@ export class McpOAuthBroker {
     state: string;
     spaceId: string;
     userId: string;
-  }): Promise<void> {
+  }): Promise<{ serverId: string; revision: number }> {
     await this.sweepExpiredPending();
     if (input.state !== input.sessionId) {
       throw new Error("MCP OAuth session is invalid or expired");
@@ -1222,31 +1213,32 @@ export class McpOAuthBroker {
     } finally {
       await networkFetch.close().catch(() => undefined);
     }
+    const tokens = await pending.provider.tokens();
     // A disconnect raised the stored generation after this sign-in began, so its tokens
     // cannot connect the server; reject the completion instead of reporting it, however
-    // the exchange itself went.
+    // the exchange itself went. So is an endpoint edit since. The revision is bumped under
+    // the same lock, so runtime sessions rebuild and a later edit keeps its newer revision.
     // The secret read can be a remote call, so the lock gets refresh's limits, not the
     // default transaction timeout.
-    const generation = await this.prisma.$transaction(
+    const { revision } = await withRefreshLock(
+      this.prisma,
+      (tx) => lockMaterial(tx, pending.serverId),
       async (tx) => {
-        await tx.$executeRaw`SELECT set_config('lock_timeout', ${`${REFRESH_LOCK_WAIT_MS}ms`}, true)`;
-        await lockMaterial(tx, pending.serverId);
-        const snapshot = await this.snapshot(tx, pending.serverId, input);
+        const endpoint = pending.stdio ? null : pending.endpoint;
+        const snapshot = await this.snapshot(tx, pending.serverId, input, endpoint);
         const material = snapshot.secret
           ? await this.read(snapshot.secret.ciphertext, snapshot.secret.id)
           : {};
-        return material.oauthGeneration ?? 0;
+        if ((material.oauthGeneration ?? 0) !== pending.generation)
+          throw new Error("MCP OAuth session is invalid or expired");
+        if (!tokens) throw new Error("MCP OAuth authorization failed");
+        return tx.mcpServer.update({
+          where: { id: pending.serverId },
+          data: { revision: { increment: 1 } },
+        });
       },
-      { maxWait: REFRESH_LOCK_WAIT_MS, timeout: REFRESH_TRANSACTION_MS },
     );
-    if (generation !== pending.generation)
-      throw new Error("MCP OAuth session is invalid or expired");
-    if (!(await pending.provider.tokens())) throw new Error("MCP OAuth authorization failed");
-    // Bump the revision so cached runtime sessions rebuild with the fresh tokens.
-    await this.prisma.mcpServer.update({
-      where: { id: pending.serverId },
-      data: { revision: { increment: 1 } },
-    });
+    return { serverId: pending.serverId, revision };
   }
 
   private async sweepExpiredPending(): Promise<void> {
@@ -1266,7 +1258,12 @@ export class McpOAuthBroker {
     this.pending.delete(sessionId);
   }
 
-  async disconnect(input: { serverId: string; spaceId: string; userId: string }): Promise<void> {
+  /** Returns the revision the disconnect committed, or undefined when the server is not found. */
+  async disconnect(input: {
+    serverId: string;
+    spaceId: string;
+    userId: string;
+  }): Promise<number | undefined> {
     // End this actor's pending sign-ins for the server too, so a callback that lands after
     // the disconnect cannot finish an authorization the user called off.
     for (const [sessionId, pending] of this.pending) {
@@ -1283,7 +1280,7 @@ export class McpOAuthBroker {
     const server = await this.prisma.mcpServer.findFirst({
       where: { id: input.serverId, ...availableInSpace(input) },
     });
-    if (!server) return;
+    if (!server) return undefined;
     // With no stored credential the generation is still raised, so a first authorization
     // still in flight cannot connect the server after the disconnect.
     const row = server.secretId
@@ -1296,10 +1293,15 @@ export class McpOAuthBroker {
     // The generation is raised from the stored value inside each retry of the write, so
     // this disconnect ends every flow still in flight, including one that began after an
     // earlier disconnect committed.
+    let revision: number | undefined;
     await this.replaceMaterial(server.id, material, input, {
       incrementRevision: true,
       raiseGeneration: true,
+      onCommitted: (committed) => {
+        revision = committed;
+      },
     });
+    return revision;
   }
 
   private async loadMaterial(
@@ -1382,10 +1384,10 @@ export class McpOAuthBroker {
         this.secrets,
         undefined,
         () =>
-          this.prisma.$transaction(
+          withRefreshLock(
+            this.prisma,
+            (tx) => lockMaterial(tx, serverId),
             async (tx) => {
-              await tx.$executeRaw`SELECT set_config('lock_timeout', ${`${REFRESH_LOCK_WAIT_MS}ms`}, true)`;
-              await lockMaterial(tx, serverId);
               const snapshot = await this.snapshot(tx, serverId, context, endpoint);
               const material = snapshot.secret
                 ? await this.read(snapshot.secret.ciphertext, snapshot.secret.id)
@@ -1418,7 +1420,6 @@ export class McpOAuthBroker {
                 throw new Error("MCP credentials changed during refresh; retry");
               return { grant, record: { id: stored.id, ref: stored.ciphertext, material } };
             },
-            { maxWait: REFRESH_LOCK_WAIT_MS, timeout: REFRESH_TRANSACTION_MS },
           ),
         (result) => {
           if (result.record) onPersisted?.(result.record);
@@ -1466,6 +1467,7 @@ export class McpOAuthBroker {
       /** Raise the stored authorization generation from the value each retry re-reads. */
       raiseGeneration?: boolean;
       onKept?: (grant: TokenGrant) => void;
+      onCommitted?: (revision: number) => void;
     } = {},
   ): Promise<TokenGrant | undefined> {
     // Take a DB-only snapshot, then do provider I/O with no transaction open.
@@ -1561,7 +1563,10 @@ export class McpOAuthBroker {
             });
         },
       );
-      if (committed) return kept;
+      if (committed) {
+        options.onCommitted?.(committed.revision);
+        return kept;
+      }
     }
     throw new McpCredentialRefusedError("MCP credentials changed during authorization; retry");
   }
@@ -1611,7 +1616,7 @@ export class McpOAuthBroker {
     snapshot: MaterialSnapshot,
     stored: { id: string; ciphertext: string } | undefined,
     incrementRevision = false,
-  ): Promise<boolean> {
+  ): Promise<false | { revision: number }> {
     const server = await tx.mcpServer.findFirst({
       where: { id: serverId, ...availableInSpace(context) },
       select: { endpoint: true, secretId: true, spaceId: true, allSpaces: true },
@@ -1645,7 +1650,7 @@ export class McpOAuthBroker {
           ciphertext: stored.ciphertext,
         },
       });
-    await tx.mcpServer.update({
+    const { revision } = await tx.mcpServer.update({
       where: { id: serverId },
       data: {
         secretId: stored?.id ?? null,
@@ -1654,7 +1659,7 @@ export class McpOAuthBroker {
     });
     if (server.secretId && server.secretId !== stored?.id)
       await tx.secret.deleteMany({ where: { id: server.secretId } });
-    return true;
+    return { revision };
   }
 
   private async read(ciphertext: string, recordId: string): Promise<OAuthMaterial> {
