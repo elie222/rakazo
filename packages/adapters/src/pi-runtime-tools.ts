@@ -867,6 +867,13 @@ export function redactAskUserDetailInMessage(
   for (const part of message.content) {
     const call = part as { type?: string; name?: string; arguments?: unknown };
     if (call?.type !== "toolCall") continue;
+    // A use_tool wrapper can carry ask_user's arguments as a bare string, which argument
+    // preparation rejects but the message keeps; redact it whole so no kept copy holds a raw
+    // secret. (Unparseable direct arguments reach here as {} plus the parser's argumentsError.)
+    const wrapper = call.name === USE_TOOL ? asObject(call.arguments) : undefined;
+    if (wrapper?.name === "ask_user" && typeof wrapper.arguments === "string") {
+      wrapper.arguments = redactSecrets(wrapper.arguments, secrets ?? []);
+    }
     const args = askUserScrubTarget(call);
     if (!args) continue;
     if (typeof args.detail === "string") {

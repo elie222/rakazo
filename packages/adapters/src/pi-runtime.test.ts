@@ -160,4 +160,18 @@ describe("redactAskUserDetailInMessage", () => {
       { detail: "token [redacted]" },
     ]);
   });
+
+  it("redacts secrets in ask_user arguments a use_tool wrapper carries as a bare string", () => {
+    const content = [
+      {
+        type: "toolCall",
+        name: "use_tool",
+        arguments: { name: "ask_user", arguments: "send sk-test-1?" },
+      },
+    ];
+    redactAskUserDetailInMessage({ role: "assistant", content }, ["sk-test-1"]);
+    expect(content.map((part) => part.arguments)).toEqual([
+      { name: "ask_user", arguments: "send [redacted]?" },
+    ]);
+  });
 });
