@@ -2999,6 +2999,7 @@ describe("MCP OAuth", () => {
       ["--header", `Authorization: Bearer ${T}`],
       ["-H", `X-API-Key: ${T}`],
       ["--header", "Authorization:Bearer", T],
+      ["--header", `Authorization: Basic ${T}`],
       [`postgres://user:${T}@db.example.test/app`],
       [`DATABASE_URL=postgres://user:${T}@db.example.test/app`],
       [`https://${T}@git.example.test/`],
@@ -3025,6 +3026,7 @@ describe("MCP OAuth", () => {
       "0",
     ];
     expect(launchArgSecrets(readable)).toEqual([]);
+    expect(launchArgSecrets(["--header", "Authorization:Bearer", "--verbose"])).toEqual([]);
 
     // The server may echo a query value spelled as it was passed, not as it decodes.
     for (const spelled of ["abc%2fDEF123456", "Abc+DEF123456"])

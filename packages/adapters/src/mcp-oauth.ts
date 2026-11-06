@@ -97,11 +97,11 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
   return [...new Set(values)];
 }
 
-/** Registers a credential and, for a bearer value, the token on its own. */
+/** Registers a credential and, for a Bearer or Basic value, the credential on its own. */
 function addSecret(values: string[], value: string | undefined): void {
   if (!value) return;
   values.push(value);
-  const bearer = value.match(/^Bearer\s+(.+)$/i);
+  const bearer = value.match(/^(?:Bearer|Basic)\s+(.+)$/i);
   if (bearer?.[1]) values.push(bearer[1]);
 }
 
@@ -132,7 +132,8 @@ export function launchArgSecrets(args: string[]): string[] {
       const [, headerName, headerValue] = header;
       // `--header Authorization:Bearer <token>` splits the token into the next argument.
       if (/^bearer$/i.test(headerValue)) {
-        if (flag[2] === undefined) add(args[index + 2]);
+        const token = args[index + 2];
+        if (flag[2] === undefined && !token?.startsWith("-")) add(token);
       } else if (isAuthHeaderKey(headerName) || isCredentialArg(headerName, headerValue)) {
         add(headerValue);
       }
