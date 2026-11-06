@@ -115,17 +115,14 @@ export async function listSpaceRuns(
 async function latestFinishedRunPerChat(prisma: PrismaClient, actor: Actor): Promise<string[]> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id FROM (
-      SELECT DISTINCT ON (COALESCE('group:' || t."groupId", 'bot:' || r."botId"))
-        r.id, r."completedAt", r."updatedAt"
+      SELECT DISTINCT ON (r."threadId") r.id, r."completedAt", r."updatedAt"
       FROM runs r
-      JOIN threads t ON t.id = r."threadId"
       JOIN bots b ON b.id = r."botId"
       WHERE r."spaceId" = ${actor.spaceId}
         AND b."archivedAt" IS NULL
         AND r.trigger NOT IN (${Prisma.join([...BACKGROUND_RUN_TRIGGERS])})
         AND r.status IN (${Prisma.join([...TERMINAL_STATUSES])})
-      ORDER BY COALESCE('group:' || t."groupId", 'bot:' || r."botId"),
-        r."completedAt" DESC, r."updatedAt" DESC, r.id DESC
+      ORDER BY r."threadId", r."completedAt" DESC, r."updatedAt" DESC, r.id DESC
     ) latest
     ORDER BY "completedAt" DESC, "updatedAt" DESC, id DESC
     LIMIT ${RECENT_LIMIT}`;
