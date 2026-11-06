@@ -200,6 +200,12 @@ export type GroupMember = z.infer<typeof GroupMemberSchema>;
 /** Selected-text excerpt carried by a reply; capped so a quote stays a quote. */
 export const REPLY_QUOTE_MAX_LENGTH = 2_000;
 
+/**
+ * One chat message's text. Far above anything the composer produces, but bounded so one
+ * oversized send cannot dominate persistence and every viewer's markdown processing.
+ */
+export const THREAD_MESSAGE_TEXT_MAX_LENGTH = 100_000;
+
 /** Cap an excerpt at the quote limit without splitting a surrogate pair. */
 export function truncateReplyQuote(value: string): string {
   const truncated = value.slice(0, REPLY_QUOTE_MAX_LENGTH);
