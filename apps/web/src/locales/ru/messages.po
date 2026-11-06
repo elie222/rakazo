@@ -3374,10 +3374,6 @@ msgstr ""
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Executor token"
-msgstr "Токен Executor"
-
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "Развернуть"
@@ -7184,10 +7180,6 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr "Считать человеком"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "Токен Treg"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"

@@ -3374,10 +3374,6 @@ msgstr ""
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Executor token"
-msgstr "Token de Executor"
-
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "Expandir"
@@ -7184,10 +7180,6 @@ msgstr "La respuesta de la transcripción es demasiado grande."
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr "Tratar como a una persona"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "Token de Treg"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"
