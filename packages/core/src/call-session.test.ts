@@ -110,6 +110,23 @@ describe("call turn", () => {
     expect(callTurn(null, "hello")).toEqual({ kind: "send" });
   });
 
+  it("withholds speech while any waiting run asks for a code, but answers only the shown run", () => {
+    const thread: CallThread = {
+      run: { id: "run-1", status: "running" },
+      activeRuns: [
+        { id: "run-1", status: "running" },
+        { id: "run-2", status: "waiting_input" },
+      ],
+      messages: [{ id: "code", runId: "run-2", blocks: [secret] }],
+    };
+    expect(pendingCallSecretAsk(thread)).toBe(true);
+    expect(callTurn(thread, "one two three")).toEqual({ kind: "enter_code" });
+    // A plain question on that run is not answered by voice: it may be another member's.
+    const asked = { ...thread, messages: [{ id: "q", runId: "run-2", blocks: [question] }] };
+    expect(pendingCallSecretAsk(asked)).toBe(false);
+    expect(callTurn(asked, "yes")).toEqual({ kind: "follow_up" });
+  });
+
   it("ignores asks left by another run", () => {
     const thread = waiting([question]);
     expect(

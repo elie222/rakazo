@@ -44,6 +44,8 @@ export function createCallSendTracker() {
 /** The parts of the call's thread that decide what a spoken turn does. */
 export type CallThread = {
   run: { id: string; status: string } | null;
+  /** Every active run; `run` is only the one the thread shows first. */
+  activeRuns?: readonly { id: string; status: string }[];
   messages: readonly { id: string; runId?: string; blocks: readonly MessageBlock[] }[];
 };
 
@@ -63,8 +65,9 @@ export type CallTurn =
   | { kind: "send" };
 
 export function callTurn(thread: CallThread | null, text: string): CallTurn {
-  const ask = pendingCallAsk(thread);
-  if (ask?.blocks.some(isSecretAskBlock)) return { kind: "enter_code" };
+  // A code asked by any waiting run is never spoken, whichever run the thread shows first.
+  if (pendingCallSecretAsk(thread)) return { kind: "enter_code" };
+  const ask = pendingCallAsk(thread, thread?.run);
   if (ask?.blocks.some(isApprovalAskBlock)) {
     return { kind: "approve_on_screen", messageId: ask.message.id, runId: ask.runId };
   }
@@ -77,15 +80,21 @@ export function callTurn(thread: CallThread | null, text: string): CallTurn {
 
 /** The bot is waiting on a code or password, which the call must not listen for. */
 export function pendingCallSecretAsk(thread: CallThread | null): boolean {
-  return Boolean(pendingCallAsk(thread)?.blocks.some(isSecretAskBlock));
+  // Every waiting run counts, so a code is never heard. In a shared space that includes other
+  // members' runs: holding the mic for their code is the safe way to be wrong.
+  const runs = [thread?.run, ...(thread?.activeRuns ?? [])];
+  return runs.some((run) => pendingCallAsk(thread, run)?.blocks.some(isSecretAskBlock));
 }
 
 /**
- * The newest card the run the thread shows first asked, with its unanswered asks. Other active
- * runs can belong to other members of a shared space, who alone may answer them.
+ * The newest card `run` asked while waiting, with its unanswered asks. Spoken answers go only to
+ * the run the thread shows first: other active runs can belong to other members of a shared
+ * space, who alone may answer them.
  */
-function pendingCallAsk(thread: CallThread | null) {
-  const run = thread?.run;
+function pendingCallAsk(
+  thread: CallThread | null,
+  run: { id: string; status: string } | null | undefined,
+) {
   if (run?.status !== "waiting_input") return undefined;
   const message = thread?.messages.findLast(
     (candidate) => candidate.runId === run.id && candidate.blocks.some(unansweredAsk),

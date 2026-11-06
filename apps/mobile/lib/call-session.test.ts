@@ -549,6 +549,38 @@ describe("mobile call session", () => {
       expect(fake.recordings).toHaveLength(1);
     });
 
+    it("keeps the microphone shut for a code another waiting run asks for", async () => {
+      const fake = fakes();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      expect(fake.recordings).toHaveLength(1);
+      fake.thread({
+        threadId: "thread-1",
+        botId: "bot-1",
+        cursor: 5,
+        olderCursor: null,
+        run: { id: "run-1", status: "running" },
+        activeRuns: [
+          { id: "run-1", status: "running" },
+          { id: "run-2", status: "waiting_input" },
+        ],
+        messages: [
+          {
+            id: "code",
+            runId: "run-2",
+            role: "bot",
+            blocks: [{ kind: "ask", text: "Code?", input: "secret", status: "pending" }],
+          },
+        ],
+      });
+      expect(fake.signals[0]?.aborted).toBe(true);
+      expect(getSnapshot()?.caption).toBe("Hang up, then enter the code on screen.");
+      fake.say("one two three");
+      await flush();
+      expect(fake.send).not.toHaveBeenCalled();
+      expect(fake.followUp).not.toHaveBeenCalled();
+    });
+
     it("keeps the microphone shut while the bot waits on a code typed on screen", async () => {
       const fake = fakes();
       startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
