@@ -329,6 +329,22 @@ describe("mobile incoming calls", () => {
     expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-b", true);
     expect(getIncomingCall()).toBeNull();
   });
+  it("shows a new native ring when an older empty snapshot arrives during the native read", async () => {
+    const reading = deferred<{ token: string; actions: never[]; ringing: unknown[] }>();
+    fake.native.incomingState.mockReturnValue(reading.promise);
+    stop = startIncomingCalls();
+    await tick();
+    // A snapshot fetched before the call existed lands while the native state is read.
+    fake.onEvent?.([]);
+    const ring = { ...block(), callId: "call-new" };
+    reading.resolve({
+      token: "",
+      actions: [],
+      ringing: [{ callId: "call-new", botId: bot.id, expiresAt: ring.expiresAt }],
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(getIncomingCall()?.incomingCall.callId).toBe("call-new");
+  });
   it("shares one roster request between a refresh and a ringing call", async () => {
     const answer = fake.rpc.getMockImplementation()!;
     let inFlight = 0;

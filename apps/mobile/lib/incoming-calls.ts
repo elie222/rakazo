@@ -58,10 +58,13 @@ let responding = false;
 let activeNativeCall: string | undefined;
 /** Native calls that ended while their answer was still joining. */
 let nativeEnded = new Set<string>();
-/** Counts account stream snapshots, so a native state read before the latest one can be told apart. */
-let streamSnapshots = 0;
-/** The calls the latest snapshot lists as ringing; a ring it leaves out has ended. */
+/** The calls the latest snapshot lists as ringing. */
 let streamCallIds = new Set<string>();
+/**
+ * Calls the stream listed and then dropped: they ended on the server. A snapshot that never
+ * listed a call proves nothing, since it may predate it.
+ */
+let endedInStream = new Set<string>();
 /** Resolves when the account stream has delivered its first snapshot, which covers every organization. */
 let streamSnapshot: Promise<void> | undefined;
 let snapshotArrived: (() => void) | undefined;
@@ -129,8 +132,10 @@ async function follow(controller: AbortController) {
       await subscribeIncomingCallEvents((incoming) => {
         // Ignore events from an aborted feed so a late callback cannot resolve a newer wait.
         if (controller.signal.aborted || feed !== controller) return;
-        streamSnapshots += 1;
-        streamCallIds = new Set(incoming.map((call) => call.incomingCall.callId));
+        const listed = new Set(incoming.map((call) => call.incomingCall.callId));
+        for (const id of streamCallIds) if (!listed.has(id)) endedInStream.add(id);
+        for (const id of listed) endedInStream.delete(id);
+        streamCallIds = listed;
         snapshotArrived?.();
         for (const previous of calls) {
           if (!incoming.some((call) => call.incomingCall.callId === previous.incomingCall.callId))
@@ -308,7 +313,6 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
 
 async function drainNative() {
   const generation = currentSessionGeneration();
-  const snapshotsBefore = streamSnapshots;
   const state = await native?.incomingState();
   // A sign-out during the read belongs to the old session; the new one drains for itself.
   if (!state || !running || generation !== currentSessionGeneration()) return;
@@ -340,9 +344,9 @@ async function drainNative() {
     if (!callIsRinging(ring)) continue;
     // A failed roster load only leaves this ring unshown.
     if (!roster.has(ring.botId)) await loadRoster().catch(() => undefined);
-    // A snapshot newer than this read is the server's word: a ring it no longer lists has ended,
-    // for example answered on another phone while the answers above were joining.
-    if (streamSnapshots !== snapshotsBefore && !streamCallIds.has(ring.callId)) continue;
+    // A ring the stream listed and then dropped has ended, for example answered on another
+    // phone while the answers above were joining; the older native state must not bring it back.
+    if (endedInStream.has(ring.callId)) continue;
     const bot = roster.get(ring.botId);
     if (bot) update(bot, { ...ring, reason: "", opening: "" });
   }
@@ -389,6 +393,7 @@ export function stopIncomingCalls() {
   streamSnapshot = undefined;
   snapshotArrived = undefined;
   streamCallIds = new Set();
+  endedInStream = new Set();
   // Cancel cold-start waits now; a continuation from this feed must not resume later.
   for (const stopWaiting of snapshotWaiters) stopWaiting();
   snapshotWaiters.clear();
