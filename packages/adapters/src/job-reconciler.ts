@@ -12,6 +12,7 @@ import { returnBotMessageOutcome } from "./bot-messages.js";
 import { reconcileCallRequests } from "./call-request.js";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
 import { findRunRecoveryBlockers } from "./run-recovery.js";
+import { messageBlocksText } from "./run-replies.js";
 import { reconcileStuckWork } from "./stuck-work.js";
 import { isLoopGuardStopText } from "./tool-loop.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
@@ -597,9 +598,5 @@ async function botRunOutcomeText(
 
 function messageText(blocks: unknown): string {
   if (!Array.isArray(blocks)) return "";
-  return (blocks as MessageBlock[])
-    .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
-    .map((block) => block.text)
-    .join("")
-    .trim();
+  return messageBlocksText(blocks as MessageBlock[]).trim();
 }

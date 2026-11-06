@@ -26,6 +26,7 @@ import {
 import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
 import { BROWSER_ACT_KINDS } from "./browser-tools.js";
+import { SCHEDULE_TIMING_FIELDS } from "./schedule-tools.js";
 import { messageUserMaxLength } from "./user-progress.js";
 import { MAX_WEB_FETCH_OFFSET } from "./web-limits.js";
 
@@ -124,15 +125,7 @@ const scheduleCreateProperties = {
   timezone: { type: "string", description: "IANA timezone (default: the user's timezone)." },
 };
 
-const scheduleTimingNames = [
-  "cron",
-  "every",
-  "unit",
-  "runAt",
-  "delayMinutes",
-  "delaySeconds",
-  "watch",
-] as const;
+const scheduleTimingNames = [...SCHEDULE_TIMING_FIELDS, "watch"] as const;
 
 /**
  * Model serializers often emit unused optional fields as null or "". Those are

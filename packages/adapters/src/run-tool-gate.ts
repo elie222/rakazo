@@ -5,7 +5,6 @@ import type {
   ConnectorCall,
   ToolBatch,
 } from "@rakazo/adapter-kit";
-import { runContinueJob } from "@rakazo/adapter-kit";
 import {
   applyJudgeDecision,
   approvalModeFromPreference,
@@ -32,7 +31,6 @@ import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { AuditEventInput } from "@rakazo/db";
 import { recordAuditEvent, runSecretKind } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "./approval-ask.js";
 import {
@@ -72,7 +70,7 @@ import {
   recordEffect,
   uncertainEffectError,
 } from "./run-effects.js";
-import { renewRunLease } from "./run-lifecycle.js";
+import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import { notifyRun } from "./run-notifications.js";
 import { resolveCompletedSecretLeftover } from "./run-secret.js";
 import type { ToolRequest } from "./run-tool-request.js";
@@ -809,11 +807,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
   if (!paused) {
     throw new Error("Could not pause this run for approval; try sending again.");
   }
-  if (paused.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(paused.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, paused.continuationRunId);
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs approval`,

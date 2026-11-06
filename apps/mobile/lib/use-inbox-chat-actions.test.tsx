@@ -3,19 +3,22 @@
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { MobileBot, MobileGroup, MobileSpace } from "./api";
 import { rpc } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
 import { confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
 import type { InboxRowAction } from "./inbox-swipe";
 import { applyUnreadOverrides, withoutArchiving } from "./inbox-swipe";
 import { afterChatNotifyChange, dismissThreadNotifications } from "./live-notifications";
+import type { MobileBot, MobileGroup, MobileSpace } from "./mobile-types";
 import { removeFromSearchInbox } from "./search-inbox";
 import { useInboxChatActions } from "./use-inbox-chat-actions";
 
 const session = vi.hoisted(() => ({ space: "space-a", generation: 1, alert: vi.fn() }));
 
 vi.mock("react-native", () => ({ Alert: { alert: session.alert } }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   captureApiRequestContext: async () => ({
     apiBase: "",
@@ -23,7 +26,6 @@ vi.mock("./api", () => ({
     sessionGeneration: session.generation,
   }),
   currentApiBase: () => "",
-  loadSessionToken: async () => null,
   rpc: vi.fn(),
   selectedSpaceId: () => session.space,
 }));
@@ -40,7 +42,10 @@ vi.mock("./live-notifications", () => ({
 }));
 vi.mock("./search-inbox", () => ({ removeFromSearchInbox: vi.fn() }));
 vi.mock("./section-name-prompt", () => ({ promptSectionName: vi.fn() }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
+vi.mock("./session", () => ({
+  loadSessionToken: async () => null,
+  currentSessionGeneration: () => session.generation,
+}));
 vi.mock("./user-error", () => ({ errorText: (_error: unknown, fallback: string) => fallback }));
 
 type Actions = ReturnType<typeof useInboxChatActions>;

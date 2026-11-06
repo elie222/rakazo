@@ -10,10 +10,10 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import type { MobileBot, MobileSnapshot } from "../../lib/api";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
+import type { MobileBot, MobileSnapshot } from "../../lib/mobile-types";
 import { useResolvedAppearance } from "../../lib/native";
 import type { UserBubble } from "../../lib/user-bubble";
 import { withUserBubble } from "../../lib/user-bubble";

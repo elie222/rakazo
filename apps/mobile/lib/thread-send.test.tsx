@@ -20,9 +20,11 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ push: vi.fn() }),
   useNavigation: () => navigation,
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example",
-  loadSessionToken: async () => "token",
   rpc: vi.fn(),
   selectedSpaceId: () => null,
 }));
@@ -31,6 +33,8 @@ vi.mock("./live-notifications", () => ({ resumeLiveNotifications: async () => un
 vi.mock("./focus-prompt", () => ({ cancelFocusPrompt: () => undefined }));
 vi.mock("./unsent-sends", () => ({ prepareUnsentSends: async () => undefined }));
 vi.mock("./session", () => ({
+  loadSessionToken: async () => "token",
+
   currentSessionGeneration: () => 1,
   registerSessionDiskCache: () => undefined,
 }));

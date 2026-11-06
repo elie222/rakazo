@@ -22,26 +22,24 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
 import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
-import type { PasswordResetCapabilities } from "../lib/api";
+import { currentApiBase, rpc } from "../lib/api";
+import type { PasswordResetCapabilities } from "../lib/api-auth";
 import {
-  currentApiBase,
-  displayApiHost,
-  loadSessionToken,
   passwordResetCapabilities,
   requestPasswordReset,
-  rpc,
   sendSignInCode,
   signIn,
   signInWithCode,
   signUp,
-  usesCustomApiBase,
-} from "../lib/api";
+} from "../lib/api-auth";
 import type { AuthMode } from "../lib/auth-routing";
 import { initialAuthMode } from "../lib/auth-routing";
+import { displayApiHost, usesCustomApiBase } from "../lib/endpoint";
 import { useI18n } from "../lib/i18n";
 import { hasIncomingShare } from "../lib/incoming-share";
 import { useMobileTokens } from "../lib/native";
 import { passkeysAvailable, signInWithPasskey } from "../lib/passkey";
+import { loadSessionToken } from "../lib/session";
 import { continueWithSso } from "../lib/sso";
 import { credentialIssueText, errorText } from "../lib/user-error";
 

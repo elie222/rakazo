@@ -8,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import { Linking } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as Api from "./api";
-import type { MobileMessage } from "./api";
+import type { MobileMessage } from "./mobile-types";
 
 vi.mock("react-native", async () => {
   const { createElement, useImperativeHandle } = await import("react");

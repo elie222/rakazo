@@ -12,9 +12,9 @@ import type {
 import { Platform } from "react-native";
 import { KeyboardController } from "react-native-keyboard-controller";
 import { useReducedMotion } from "react-native-reanimated";
-import type { MobileMessage } from "./api";
 import { helperHeaderOffset, helperOpenTarget } from "./helper-header-offset";
 import { KeyboardScrollBack } from "./keyboard-scroll-back";
+import type { MobileMessage } from "./mobile-types";
 import type { ThreadHistory } from "./thread-history";
 import type { ThreadRowKey, ThreadScrollAction, ThreadScrollState } from "./thread-scroll";
 import { ThreadScrollBehavior } from "./thread-scroll";

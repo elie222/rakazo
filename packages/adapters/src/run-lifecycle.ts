@@ -107,11 +107,7 @@ export async function failRunBeforeTurn(
     error: message,
   });
   if (!failed) return false;
-  if (failed.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(failed.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, failed.continuationRunId);
   if (run.trigger === "bot_message") {
     await returnBotMessageOutcome(
       deps,
@@ -137,6 +133,17 @@ export async function failRunBeforeTurn(
     });
   }
   return true;
+}
+
+/** Queues the steered run that was waiting on this one, if any; a failed enqueue is logged, not thrown. */
+export async function enqueueSteeringContinuation(
+  deps: Pick<ExecutorDeps, "jobs">,
+  continuationRunId: string | null,
+): Promise<void> {
+  if (!continuationRunId) return;
+  await deps.jobs
+    .enqueue(runContinueJob(continuationRunId))
+    .catch((error) => getLogger().error("steering continuation enqueue", error));
 }
 
 export async function renewRunLease(

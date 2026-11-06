@@ -13,6 +13,7 @@ import { countUnreadInboxChats } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notificationIdentity } from "./notification-identity.js";
+import { messageBlocksText } from "./run-replies.js";
 
 const COMPLETION_NOTIFICATION_MAX_CHARS = 180;
 
@@ -148,10 +149,7 @@ export function runSendsFinishNotification(trigger: string): boolean {
 /** User-facing text for completion notifications; empty when only tool/step activity remains. */
 export function completionNotificationBody(assembled: string, blocks: MessageBlock[]): string {
   if (assembled) return assembled;
-  return blocks
-    .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
-    .map((block) => block.text)
-    .join("");
+  return messageBlocksText(blocks);
 }
 
 /** Push body: Markdown stripped, then truncated so a cut cannot land inside a marker. */
