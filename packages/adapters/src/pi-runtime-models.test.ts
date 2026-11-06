@@ -238,6 +238,17 @@ describe("reasoning efforts an endpoint refuses", () => {
     expect(
       acceptedReasoningEfforts(model({}), "400: Unsupported reasoning effort"),
     ).toBeUndefined();
+    for (const message of [
+      "400: Invalid reasoning effort",
+      "400: reasoning_effort is not supported for this model",
+    ])
+      expect(acceptedReasoningEfforts(model({ off: "none" }), message)).toEqual({ off: null });
+    expect(
+      acceptedReasoningEfforts(
+        model({ off: "none" }),
+        "400: reasoning_effort is supported; tool schema is invalid",
+      ),
+    ).toBeUndefined();
   });
 
   it.each([

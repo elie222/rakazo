@@ -229,8 +229,9 @@ export function withOutputBudget(
   };
 }
 
+/** "Unsupported reasoning effort", "invalid reasoning_effort", "reasoning effort is not supported". */
 const UNSUPPORTED_REASONING_EFFORT =
-  /\bunsupported reasoning[ _]effort\b|\breasoning[ _]effort\b[\s\S]{0,80}?\b(?:not supported|unsupported|invalid)\b/i;
+  /\b(?:unsupported|invalid) reasoning[ _]effort\b|\breasoning[ _]effort\b[^.;:\n]{0,30}?\b(?:not supported|unsupported|invalid)\b/i;
 
 const REASONING_EFFORT_CHOICES =
   /\breasoning_effort\b[\s\S]{0,120}?\b(?:one of|supported values are)\b([^.}"]*)/i;
