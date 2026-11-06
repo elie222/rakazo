@@ -3,6 +3,7 @@ import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
 import { BYOK_TIERS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { isUniqueViolation } from "./prisma-errors.js";
 import { IsolationError } from "./scope.js";
 
 const ACCESS_STATUSES = new Set(["trialing", "active", "past_due"]);
@@ -246,7 +247,7 @@ export async function createBillingAccount(
     });
   } catch (error) {
     // An empty update is not a native upsert, so a concurrent create can still collide.
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
+    if (!isUniqueViolation(error)) {
       throw error;
     }
     const existing = await billingAccountForOrganization(prisma, input.organizationId);

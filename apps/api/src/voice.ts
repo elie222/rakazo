@@ -38,12 +38,12 @@ import {
   saveVoicePreference,
   selectVoicePreference,
   voicePreferenceTarget,
+  withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
-import { withSerializableRetry } from "./serializable-retry.js";
 import type { SpeechSummarizer } from "./speech-summary.js";
 
 export interface VoiceDeps {
@@ -310,7 +310,7 @@ export async function persistVoiceCredential(
     validVoiceIds = voices.map((voice) => voice.id);
   }
   const stored = await deps.secrets.put(plaintext, voiceContext(actor, input.signal));
-  const cred = await withSerializableRetry(() =>
+  const cred = await withTransactionRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
         const existing = await tx.userVoiceCredential.findFirst({
@@ -409,7 +409,7 @@ export async function disconnectVoiceCredential(
   if (!provider) {
     throw new ORPCError("BAD_REQUEST", { message: "Unknown voice provider." });
   }
-  await withSerializableRetry(() =>
+  await withTransactionRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
         const existing = await tx.userVoiceCredential.findMany({
@@ -446,7 +446,7 @@ export async function updateVoiceSpeechModel(
     throw new ORPCError("BAD_REQUEST", { message: "Speech model applies to Fish Audio." });
   }
   const speechModel = fishSpeechModelValue(input.speechModel);
-  return withSerializableRetry(() =>
+  return withTransactionRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
         const found = await tx.userVoiceCredential.findFirst({

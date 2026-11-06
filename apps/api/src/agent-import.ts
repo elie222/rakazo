@@ -42,6 +42,7 @@ import {
   appendEventInTransaction,
   availableInSpace,
   createThreadMessageInTransaction,
+  isUniqueViolation,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
@@ -781,8 +782,4 @@ function freeSlug(slug: string, used: Set<string>): string {
 /** Daily logs and other notes first (in plan order, oldest first), then USER.md, then MEMORY.md. */
 function curatedRank(path: string): number {
   return path === MEMORY_INDEX_PATH ? 2 : path === "USER.md" ? 1 : 0;
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }

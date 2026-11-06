@@ -22,6 +22,7 @@ import {
   createRepos,
   InstructionConflictError,
   IsolationError,
+  isRecordNotFound,
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -975,7 +976,7 @@ export async function setChildBotModel(
       },
     });
   } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "P2025")
+    if (isRecordNotFound(error))
       return { error: "That bot's model changed since you approved; ask again." };
     throw error;
   }
