@@ -546,6 +546,7 @@ const ComposerBody = memo(function Composer({
     const removed = removeComposerSlashQuery(draft, slashQuery, mentionBindings);
     commitComposition({ text: removed.text, bindings: removed.bindings });
     setSlashQuery(null);
+    pendingCaret.current = { start: removed.caret, end: removed.caret };
     onSlashAction?.(action);
   }
 
@@ -621,7 +622,6 @@ const ComposerBody = memo(function Composer({
     const nonceRecoverable =
       !replyTarget &&
       pendingAttachments.length === 0 &&
-      selectedSkill === null &&
       openPageId === null;
     const clientNonce =
       retryNonce.current ??

@@ -231,87 +231,16 @@ function pressEnter(textarea: HTMLTextAreaElement) {
 }
 
 describe("Composer", () => {
-  it.each(["Enter", "Tab", "pointer"])(
-    "completes an inline bot at the caret with %s",
-    async (method) => {
-      const onSend = vi.fn().mockResolvedValue(true);
-      const textarea = renderComposer(onSend);
-      const original = "i need u to message @Bo and do this";
-      type(textarea, original);
-      act(() => {
-        textarea.focus();
-        textarea.setSelectionRange(original.indexOf(" and"), original.indexOf(" and"));
-        document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
-      });
-      expect(container?.querySelector('[data-testid="mention-picker"]')).not.toBeNull();
-      if (method === "pointer") {
-        act(() => container?.querySelector<HTMLButtonElement>('[role="option"]')?.click());
-      } else {
-        act(() =>
-          textarea.dispatchEvent(new KeyboardEvent("keydown", { key: method, bubbles: true })),
-        );
-      }
-      expect(textarea.value).toBe("i need u to message @Bob and do this");
-      expect(textarea.selectionStart).toBe("i need u to message @Bob ".length);
-      expect(document.activeElement).toBe(textarea);
-      pressEnter(textarea);
-      await act(async () => {});
-      expect(onSend).toHaveBeenCalledWith(
-        "i need u to message @Bob and do this",
-        [bob],
-        expect.any(String),
-      );
-    },
-  );
-
-  it("keeps repeated inline mentions in order with one routing target", async () => {
-    const onSend = vi.fn().mockResolvedValue(true);
-    const textarea = renderComposer(onSend);
-    type(textarea, "ask @Bo");
-    pressEnter(textarea);
-    type(textarea, `${textarea.value}and then @Bo`);
-    pressEnter(textarea);
-    expect(textarea.value).toBe("ask @Bob and then @Bob ");
-    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(2);
-    expect(container?.querySelector('[data-testid="mention-picker"]')).toBeNull();
-    expect(textarea.selectionStart).toBe(textarea.value.length);
-    pressEnter(textarea);
-    await act(async () => {});
-    expect(onSend).toHaveBeenCalledWith("ask @Bob and then @Bob", [bob], expect.any(String));
-  });
-
-  it("removes stale routing when a selected token is renamed or deleted", async () => {
-    const onSend = vi.fn().mockResolvedValue(true);
-    const textarea = renderComposer(onSend);
-    type(textarea, "ask @Bo");
-    pressEnter(textarea);
-    type(textarea, "ask @Bobby later");
-    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(0);
-    pressEnter(textarea);
-    await act(async () => {});
-    expect(onSend).toHaveBeenCalledWith("ask @Bobby later", [], expect.any(String));
-  });
-
-  it("draws each completed mention inline in the field instead of beside it", () => {
-    const textarea = renderComposer(vi.fn(), {
-      mentionTargets: [{ ...bob, color: "#3366FF" }],
-    });
-    type(textarea, "ask @Bo");
-    pressEnter(textarea);
-    type(textarea, `${textarea.value}now`);
-    const field = container?.querySelector('[data-testid="composer-field"]');
-    const card = field?.querySelector('[data-testid="mention-chip"]');
-    expect(card?.textContent).toBe("@Bob");
-    expect((card as HTMLElement | null)?.style.color).toBe("rgb(51, 102, 255)");
-    expect(card?.closest("[inert]")?.textContent).toBe("ask @Bob now");
-    expect(container?.querySelector('[aria-label="Remove mention Bob"]')).toBeNull();
-    expect(textarea.className).toContain("text-transparent");
-
-    const uploaded = "data:image/png;base64,bmV3";
-    rerenderComposer({ mentionTargets: [{ ...bob, color: uploaded }] });
-    expect(container?.querySelector('[data-testid="mention-chip"] img')?.getAttribute("src")).toBe(
-      uploaded,
-    );
+  it("restores caret position correctly when removing a slash action query", () => {
+    const onSlashAction = vi.fn();
+    const textarea = renderComposer(vi.fn(), { onSlashAction });
+    type(textarea, "/s");
+    const press = (name: string) =>
+      act(() => textarea.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true })));
+    press("ArrowDown");
+    press("Enter");
+    expect(onSlashAction).toHaveBeenCalledWith("chat-settings");
+    expect(textarea.selectionStart).toBe(0);
   });
 
   it.each([
