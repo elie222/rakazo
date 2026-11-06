@@ -9,6 +9,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createBillingService } from "./billing.js";
+import { watchCheckoutLeaseClaims } from "./checkout-lease.test-support.js";
 
 const dbTests =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
@@ -273,17 +274,19 @@ dbTests("checkout and organization deletion", () => {
   it("expires a checkout that was still opening when the cancellation ran", async () => {
     const { organizationId, actor } = await organizationFor("cancel");
     const provider = new GatedCheckoutEmulator(`deletion-cancel-${stamp}`, false);
-    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    const watched = watchCheckoutLeaseClaims(prisma);
+    const service = createBillingService({
+      prisma: watched.prisma,
+      provider,
+      webOrigin: "https://example.test",
+    });
     provider.releaseCustomer(); // This test gates the checkout call, not the customer create.
     const pending = service.checkout(actor);
     await provider.providerCallStarted;
     const canceling = service.cancelForDeletedOrganization(organizationId);
     // A cancellation that does not wait runs here, before the session exists; one that waits
-    // for the checkout's lease cannot have run yet, because the checkout holds the lease.
-    await Promise.race([
-      provider.cancellationRan,
-      new Promise((resolve) => setTimeout(resolve, 700)),
-    ]);
+    // finds the checkout holding the lease and queues behind it.
+    await Promise.race([provider.cancellationRan, watched.leaseRefused]);
     provider.releaseCheckout();
     await expect(pending).resolves.toMatchObject({ url: expect.any(String) });
     await canceling;
