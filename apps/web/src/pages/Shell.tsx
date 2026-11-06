@@ -306,6 +306,17 @@ function SpaceShell() {
   const chatColumnRef = useRef<HTMLDivElement>(null);
   // Matches belong to the chat they were found in.
   useEffect(() => setFindOpen(false), [botId, groupId]);
+  const quoteShortcutRef = useRef<(() => boolean) | null>(null);
+  const registerQuoteShortcut = useCallback((handler: (() => boolean) | null) => {
+    quoteShortcutRef.current = handler;
+  }, []);
+  const focusComposer = useCallback(() => {
+    const composer = document.querySelector<HTMLTextAreaElement>(
+      'textarea[name="chat-message"]:not(:disabled)',
+    );
+    composer?.focus();
+    return Boolean(composer);
+  }, []);
   useShellShortcuts({
     run: (shortcut) => {
       switch (shortcut.type) {
@@ -354,6 +365,8 @@ function SpaceShell() {
           return toggleChatPanel();
         case "focus-composer":
           return focusComposer();
+        case "quote-selection":
+          return quoteShortcutRef.current?.() ?? false;
         case "find":
           if (!active && !activeGroup) return false;
           // On a narrow window the drawer makes the chat inert and a side panel covers it, so
@@ -384,13 +397,6 @@ function SpaceShell() {
       focusComposer();
     },
   });
-  function focusComposer() {
-    const composer = document.querySelector<HTMLTextAreaElement>(
-      'textarea[name="chat-message"]:not(:disabled)',
-    );
-    composer?.focus();
-    return Boolean(composer);
-  }
   function toggleChatPanel() {
     if (chatPanelOpen) setPanel(null);
     else if (inGroup) setPanel("group-settings");
@@ -752,8 +758,9 @@ function SpaceShell() {
     (message: ThreadMessage, quote: string) => {
       composer.setReplyTarget(message);
       composer.setReplyQuote(quote);
+      focusComposer();
     },
-    [composer.setReplyQuote, composer.setReplyTarget],
+    [composer.setReplyQuote, composer.setReplyTarget, focusComposer],
   );
   const markMessageUnread = useCallback(
     (message: ThreadMessage) => {
@@ -1053,6 +1060,7 @@ function SpaceShell() {
               onReply={replyToMessage}
               onMarkUnread={markMessageUnread}
               onQuote={quoteMessage}
+              onQuoteShortcutChange={registerQuoteShortcut}
               onReact={composer.reactToMessage}
               onJumpToMessage={jumpToReplyMessage}
               onOpenPeerMessages={openPeerMessages}

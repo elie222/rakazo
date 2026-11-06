@@ -107,6 +107,39 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
   await expect(replyChip).toContainText(/forty two percent/);
   await expect(replyChip).toContainText("**forty two percent**");
 
+  // A new selection replaces the quote even within the same message and focuses the composer.
+  await sourceRow.click();
+  await selectAndRelease(page, sourceRow, "growth");
+  await expect(quoteButton).toBeVisible();
+  await expect(quoteButton).toContainText(/⌘⇧L|Ctrl\+Shift\+L/);
+  await captureScreenshot(page, testInfo, "quote-shortcut-pill");
+  await page.keyboard.press("ControlOrMeta+Shift+L");
+  await expect(quoteButton).toHaveCount(0);
+  await expect(replyChip).toContainText("growth");
+  await expect(replyChip).not.toContainText("**forty two percent**");
+  await expect(composer).toBeFocused();
+  await captureScreenshot(page, testInfo, "quote-shortcut-applied");
+
+  // A bot message quotes the same way as one of my own.
+  const botRow = transcript
+    .locator("[data-message-id]")
+    .filter({ hasText: `done. i handled: quote-source-${stamp}` })
+    .first();
+  await botRow.click();
+  await selectAndRelease(page, botRow, "forty two percent");
+  await expect(quoteButton).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Shift+L");
+  await expect(replyChip).toContainText("forty two percent");
+  await expect(replyChip).not.toContainText("**forty two percent**");
+  await expect(composer).toBeFocused();
+
+  await sourceRow.click();
+  await selectAndRelease(page, sourceRow, "**forty two percent**");
+  await expect(quoteButton).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Shift+L");
+  await expect(replyChip).toContainText("**forty two percent**");
+  await expect(composer).toBeFocused();
+
   const replyText = `quote-reply-${stamp} why this number?`;
   await composer.fill(replyText);
   await composer.press("Enter");

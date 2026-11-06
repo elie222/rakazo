@@ -7,6 +7,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { rpc } from "../../lib/rpc";
+import { useShellShortcuts } from "./shell-shortcuts";
 import { Transcript } from "./transcript";
 
 const stableT = (strings: TemplateStringsArray, ...values: unknown[]) =>
@@ -45,9 +46,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  window.getSelection()?.removeAllRanges();
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 let seq = 0;
@@ -128,6 +131,122 @@ function baseProps(messages: readonly ThreadMessage[]): ComponentProps<typeof Tr
 function render(props: ComponentProps<typeof Transcript>) {
   act(() => root.render(<Transcript {...props} />));
 }
+
+function selectText(element: Element, text: string, notify = true) {
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node && !node.textContent?.includes(text)) node = walker.nextNode();
+  if (!node) throw new Error(`Text not found: ${text}`);
+  const range = document.createRange();
+  const start = node.textContent!.indexOf(text);
+  range.setStart(node, start);
+  range.setEnd(node, start + text.length);
+  window.getSelection()?.removeAllRanges();
+  window.getSelection()?.addRange(range);
+  if (notify) act(() => document.dispatchEvent(new Event("selectionchange")));
+}
+
+it("shares the armed quote action with the pill and replaces quotes on new selections", () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux");
+  Range.prototype.getBoundingClientRect = () =>
+    ({ top: 100, bottom: 120, left: 100, width: 40 }) as DOMRect;
+  const props = baseProps(history());
+  const armed: { current: (() => boolean) | null } = { current: null };
+  const register = (handler: (() => boolean) | null) => {
+    armed.current = handler;
+  };
+  function Harness() {
+    useShellShortcuts({
+      run: (shortcut) => shortcut.type === "quote-selection" && (armed.current?.() ?? false),
+      onTyping: () => {},
+    });
+    return <Transcript {...props} onQuoteShortcutChange={register} />;
+  }
+  act(() => root.render(<Harness />));
+  const press = () => {
+    const event = new KeyboardEvent("keydown", {
+      key: "L",
+      ctrlKey: true,
+      shiftKey: true,
+      cancelable: true,
+    });
+    act(() => {
+      window.dispatchEvent(event);
+    });
+    return event;
+  };
+  expect(armed.current).toBeNull();
+  expect(press().defaultPrevented).toBe(false);
+  selectText(container.querySelector('[data-message-id="m2"]')!, "cabins near");
+  expect(armed.current).not.toBeNull();
+  expect(press().defaultPrevented).toBe(true);
+  expect(props.onQuote).toHaveBeenLastCalledWith(
+    expect.objectContaining({ id: "m2" }),
+    "cabins near",
+  );
+  expect(window.getSelection()?.isCollapsed).toBe(true);
+  expect(armed.current).toBeNull();
+  expect(document.querySelector("[data-quote-selection]")).toBeNull();
+
+  selectText(container.querySelector('[data-message-id="m3"]')!, "pick the dates");
+  expect(press().defaultPrevented).toBe(true);
+  expect(props.onQuote).toHaveBeenLastCalledWith(
+    expect.objectContaining({ id: "m3" }),
+    "pick the dates",
+  );
+  selectText(container.querySelector('[data-message-id="m2"]')!, "Zakopane");
+  act(() => document.querySelector<HTMLButtonElement>('[data-testid="quote-selection"]')!.click());
+  expect(props.onQuote).toHaveBeenLastCalledWith(expect.objectContaining({ id: "m2" }), "Zakopane");
+  expect(props.onQuote).toHaveBeenCalledTimes(3);
+});
+
+it("rejects cleared, outside and composer selections even before selectionchange", () => {
+  Range.prototype.getBoundingClientRect = () =>
+    ({ top: 100, bottom: 120, left: 100, width: 40 }) as DOMRect;
+  const props = baseProps(history());
+  const armed: { current: (() => boolean) | null } = { current: null };
+  const register = (handler: (() => boolean) | null) => {
+    armed.current = handler;
+  };
+  render({ ...props, onQuoteShortcutChange: register });
+  const arm = () => selectText(container.querySelector('[data-message-id="m2"]')!, "cabins near");
+  arm();
+  window.getSelection()?.removeAllRanges();
+  expect(armed.current!()).toBe(false);
+  arm();
+  const outside = document.createElement("div");
+  outside.textContent = "Outside text";
+  document.body.append(outside);
+  selectText(outside, "Outside", false);
+  expect(armed.current!()).toBe(false);
+  outside.remove();
+  arm();
+  const composer = document.createElement("textarea");
+  composer.value = "Draft text";
+  document.body.append(composer);
+  composer.focus();
+  composer.setSelectionRange(0, 5);
+  expect(armed.current!()).toBe(false);
+  composer.remove();
+  expect(props.onQuote).not.toHaveBeenCalled();
+  act(() => document.dispatchEvent(new Event("selectionchange")));
+  act(() => root.unmount());
+  expect(armed.current).toBeNull();
+  root = createRoot(container);
+});
+
+it.each([
+  ["MacIntel", "⌘⇧L"],
+  ["Linux", "Ctrl+Shift+L"],
+])("shows the shortcut hint on %s", (platform, hint) => {
+  const platformSpy = vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+  Range.prototype.getBoundingClientRect = () =>
+    ({ top: 100, bottom: 120, left: 100, width: 40 }) as DOMRect;
+  render(baseProps(history()));
+  selectText(container.querySelector('[data-message-id="m2"]')!, "cabins near");
+  expect(document.querySelector('[data-testid="quote-selection"]')?.textContent).toContain(hint);
+  platformSpy.mockRestore();
+});
 
 it("drops the quote pill when a streaming edit replaces the selected nodes", async () => {
   Range.prototype.getBoundingClientRect = () =>

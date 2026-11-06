@@ -3,7 +3,9 @@ import { Button, cn } from "@rakazo/ui-web";
 import { TextQuote } from "lucide-react";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { desktopBridge } from "../../lib/desktop";
 import { isDetachedRange } from "../../lib/quote-selection";
+import { isApplePlatform, quoteShortcutLabel } from "./shell-shortcuts";
 
 export const QuoteSelectionButton = memo(function QuoteSelectionButton({
   range,
@@ -74,6 +76,9 @@ export const QuoteSelectionButton = memo(function QuoteSelectionButton({
       >
         <TextQuote strokeWidth={2} />
         {t`Reply`}
+        <span className="text-label text-muted-foreground">
+          {quoteShortcutLabel({ desktop: Boolean(desktopBridge()), apple: isApplePlatform() })}
+        </span>
       </Button>
     </div>,
     document.body,
