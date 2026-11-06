@@ -29,8 +29,9 @@ export type StoredPreference<T> = {
 
 /**
  * A device-local preference: read once from storage, kept in memory, and shared with every
- * subscriber. `parse` receives `null` when nothing is saved or storage is unreadable, so it also
- * decides the default; `serialize` returning `null` removes the key.
+ * subscriber. A change saved in another tab replaces the value here too. `parse` receives `null`
+ * when nothing is saved or storage is unreadable, so it also decides the default; `serialize`
+ * returning `null` removes the key.
  */
 export function createStoredPreference<T>({
   key,
@@ -53,12 +54,27 @@ export function createStoredPreference<T>({
     return current;
   }
 
+  function notify() {
+    for (const listener of listeners) listener();
+  }
+
   function set(value: T): T {
     current = value;
     loaded = true;
     writeStoredString(key, serialize(value));
-    for (const listener of listeners) listener();
+    notify();
     return value;
+  }
+
+  // Preferences are module singletons, so this listener lives as long as the page.
+  if (typeof window !== "undefined") {
+    window.addEventListener("storage", (event) => {
+      // A null key means another tab cleared all of storage.
+      if (event.key !== key && event.key !== null) return;
+      current = parse(event.key === null ? null : event.newValue);
+      loaded = true;
+      notify();
+    });
   }
 
   function subscribe(listener: () => void): () => void {

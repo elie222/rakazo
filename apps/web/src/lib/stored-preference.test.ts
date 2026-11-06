@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createStoredPreference, readStoredString, writeStoredString } from "./stored-preference";
 
@@ -65,6 +66,25 @@ describe("createStoredPreference", () => {
     preference.set(false);
     expect(store.has("test.flag")).toBe(false);
     expect(listener).toHaveBeenCalledOnce();
+  });
+
+  it("takes a change saved in another tab", () => {
+    vi.stubGlobal("localStorage", memoryStorage().storage);
+    const preference = flagPreference();
+    const listener = vi.fn();
+    preference.subscribe(listener);
+    expect(preference.get()).toBe(false);
+
+    window.dispatchEvent(new StorageEvent("storage", { key: "other.key", newValue: "1" }));
+    expect(listener).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new StorageEvent("storage", { key: "test.flag", newValue: "1" }));
+    expect(preference.get()).toBe(true);
+    expect(listener).toHaveBeenCalledOnce();
+
+    // Another tab cleared all of storage.
+    window.dispatchEvent(new StorageEvent("storage", { key: null }));
+    expect(preference.get()).toBe(false);
   });
 
   it("keeps working in memory when storage is blocked or missing", () => {
