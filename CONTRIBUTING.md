@@ -48,6 +48,16 @@ Ordinary test processes (`NODE_ENV=test`) do not load the checkout's `.env`.
 Verification CLIs load configuration before starting isolated test processes;
 live canaries explicitly enabled with `VERIFY_PROVIDERS` also opt into loading it.
 
+## UI strings and translations
+
+Add or change web strings in code only, with Lingui's `t` or `<Trans>`; leave the
+`messages.po` catalogs alone in feature pull requests. Every production build extracts the
+source strings first, so a new string shows in English until someone translates it. After a
+merge to main, the
+[translation catalogs workflow](.github/workflows/translation-catalogs.yml) keeps one
+"Update translation catalogs" pull request in step with main. Translate by editing `msgstr`
+entries on that pull request, or in a separate translation-only pull request once it merges.
+
 ## Adding a UI language
 
 The web and Electron-hosted UI use Lingui catalogs. To add a locale, register it in

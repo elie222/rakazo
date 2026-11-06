@@ -112,11 +112,6 @@ jobs:
       - name: Lint
         if: github.event_name == 'pull_request'
         run: pnpm lint
-      - name: Check translation catalogs are current
-        if: github.event_name == 'pull_request'
-        run: |
-          pnpm --filter @rakazo/web intl:extract
-          git diff --exit-code -- apps/web/src/locales
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
