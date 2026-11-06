@@ -177,8 +177,18 @@ function looksLikeOpaqueToken(value: string): boolean {
   return /^[\w+=.-]{16,}$/.test(value) && /\d/.test(value) && /[A-Za-z]/.test(value);
 }
 
+/** Each whitespace- or quote-separated word containing `scheme://`, from the scheme on. A scan,
+ * not a global regex, so a long argument cannot make matching quadratic. */
 function urlsIn(text: string): string[] {
-  return text.match(/[a-z][a-z\d+.-]*:\/\/[^\s"'<>]+/gi) ?? [];
+  const urls: string[] = [];
+  for (const word of text.split(/[\s"'<>]+/)) {
+    const separator = word.indexOf("://");
+    let start = separator;
+    while (start > 0 && /[a-z\d+.-]/i.test(word.charAt(start - 1))) start--;
+    while (start < separator && !/[a-z]/i.test(word.charAt(start))) start++;
+    if (start < separator) urls.push(word.slice(start));
+  }
+  return urls;
 }
 
 /** The userinfo of a URL (`user:password@`, or a bare token as the user) and its
