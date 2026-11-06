@@ -1165,7 +1165,9 @@ export function PluginsOverlay({
         >
           <ChevronLeft />
         </Button>
-        <h2 className="text-heading3 font-medium text-foreground">{title}</h2>
+        <SectionHeading as="h2" variant="heading">
+          {title}
+        </SectionHeading>
       </div>
     );
   }
