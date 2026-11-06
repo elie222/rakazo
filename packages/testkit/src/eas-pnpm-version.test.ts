@@ -10,7 +10,9 @@ it("pins the workspace pnpm version in every EAS build profile", () => {
   const pnpm = read("package.json").packageManager.replace(/^pnpm@/, "");
   const profiles: Record<string, { extends?: string; pnpm?: string }> =
     read("apps/mobile/eas.json").build;
-  const resolve = (name: string): string | undefined =>
-    profiles[name].pnpm ?? (profiles[name].extends ? resolve(profiles[name].extends) : undefined);
+  const resolve = (name: string): string | undefined => {
+    const profile = profiles[name];
+    return profile?.pnpm ?? (profile?.extends ? resolve(profile.extends) : undefined);
+  };
   for (const name of Object.keys(profiles)) expect([name, resolve(name)]).toEqual([name, pnpm]);
 });
