@@ -58,6 +58,25 @@ export function messageUnreadFor(
   );
 }
 
+/**
+ * Whether a person's message alerts the rest of the space, by push or on the desktop: typed
+ * text does; a spoken call turn or a file sent alone does not.
+ */
+export function memberMessageAlerts(message: { callId?: unknown; blocks?: unknown }): boolean {
+  const blocks = Array.isArray(message.blocks) ? message.blocks : [];
+  return (
+    typeof message.callId !== "string" &&
+    blocks.some(
+      (block) =>
+        block &&
+        typeof block === "object" &&
+        "text" in block &&
+        typeof block.text === "string" &&
+        block.text.trim() !== "",
+    )
+  );
+}
+
 export function replyLineText(quote?: string, preview?: string, fallback?: string): string {
   return quote ? quote.replace(/\s+/gu, " ") : (preview || fallback || "").split(/\r?\n/u)[0] || "";
 }

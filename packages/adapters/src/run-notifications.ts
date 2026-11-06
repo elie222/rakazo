@@ -83,9 +83,9 @@ export async function notifyRun(
   });
   if (!notice?.enabled) return;
   // A reply is news to everyone in the Space. Only the person whose run it is can answer its
-  // questions, take its screen, or fix what made it fail.
+  // questions, take its screen, or fix what made it fail, and a reply to another bot is theirs.
   const recipients =
-    message.kind === "completion"
+    message.kind === "completion" && run.trigger !== "bot_message"
       ? await spaceMemberIds(deps.prisma, run.spaceId).catch((error) => {
           if (options.retryOnFailure) throw error;
           getLogger().error("notification recipients", error);

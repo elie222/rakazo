@@ -1,5 +1,11 @@
 import type { ProductEvent } from "@rakazo/contracts";
-import { displayName, messageUnreadFor, payloadAuthor, plainTextFromMarkdown } from "@rakazo/core";
+import {
+  displayName,
+  memberMessageAlerts,
+  messageUnreadFor,
+  payloadAuthor,
+  plainTextFromMarkdown,
+} from "@rakazo/core";
 import { i18n } from "./i18n";
 
 export type BrowserNotificationPermission = "default" | "denied" | "granted";
@@ -55,7 +61,7 @@ export function shouldNotifyBrowser(
   const notifiable =
     (event.type === "thread.message.created" &&
       messageUnreadFor(event.payload, context.meId) &&
-      (event.payload.role === "bot" || memberMessageNotifies(event.payload))) ||
+      (event.payload.role === "bot" || memberMessageAlerts(event.payload))) ||
     event.type === "run.failed" ||
     event.type === "run.cancelled";
   return (
@@ -66,22 +72,6 @@ export function shouldNotifyBrowser(
     (!context.pageVisible || !context.windowFocused) &&
     context.permission === "granted" &&
     !context.notifiedEventIds.has(event.id)
-  );
-}
-
-/** A teammate's typed message notifies, as its push does; a spoken call turn or a bare file not. */
-function memberMessageNotifies(payload: Record<string, unknown>): boolean {
-  const blocks = Array.isArray(payload.blocks) ? payload.blocks : [];
-  return (
-    typeof payload.callId !== "string" &&
-    blocks.some(
-      (block) =>
-        block &&
-        typeof block === "object" &&
-        "text" in block &&
-        typeof block.text === "string" &&
-        block.text.trim() !== "",
-    )
   );
 }
 

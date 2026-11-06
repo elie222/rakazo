@@ -31,6 +31,7 @@ import {
   callIdFromClientNonce,
   isConversationalRun,
   MODEL_REQUIRED_SEND_ERROR,
+  memberMessageAlerts,
   mentionedGroupBotIds,
   messageBypassesTakeoverWait,
   messageReaction,
@@ -1380,15 +1381,13 @@ export async function sendThreadMessage(
     // Subscribers catch up from the durable event cursor after a missed realtime wake.
     getLogger().error("thread send realtime notification", error);
   });
-  const text = input.text?.trim();
-  // A spoken turn in a call is not a message to tell teammates about.
-  if (text && !callId) {
+  if (memberMessageAlerts({ callId, blocks: committed.message.blocks })) {
     // Not awaited: the sender's reply does not wait on anyone else's devices.
     void notifyMemberMessage(deps, {
       spaceId: actor.spaceId,
       threadId: target.threadId,
       authorUserId: actor.userId,
-      text,
+      text: input.text?.trim() ?? "",
     }).catch((error) => getLogger().error("member message notification", error));
   }
   if (releaseTakeover) {

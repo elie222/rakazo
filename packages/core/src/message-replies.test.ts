@@ -5,6 +5,7 @@ import { messageReplyPreview } from "./message-quote.js";
 import {
   channelMessageSender,
   isPageOriginReply,
+  memberMessageAlerts,
   messageUnreadFor,
   otherAuthor,
   payloadAuthor,
@@ -134,6 +135,14 @@ describe("message authors", () => {
     expect(messageUnreadFor({ role: "user", author: ana }, "user-a")).toBe(false);
     // A message with no known author, such as a webhook's, leaves the chat as it was.
     expect(messageUnreadFor({ role: "user" }, "user-b")).toBe(false);
+  });
+
+  it("alerts the space for typed text, not a spoken call turn or a file alone", () => {
+    const typed = [{ kind: "text", text: "Saturday works" }];
+    expect(memberMessageAlerts({ blocks: typed })).toBe(true);
+    expect(memberMessageAlerts({ blocks: typed, callId: "call-1" })).toBe(false);
+    expect(memberMessageAlerts({ blocks: [{ kind: "file", name: "plan.pdf" }] })).toBe(false);
+    expect(memberMessageAlerts({ blocks: [{ kind: "text", text: "  " }] })).toBe(false);
   });
 
   it("reads a live event's author and keeps the known one across updates", () => {

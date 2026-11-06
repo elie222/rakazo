@@ -147,6 +147,12 @@ describe("notifications in a shared Space", () => {
     expect(recipients(send).sort()).toEqual([...many].sort());
   });
 
+  it("keeps a reply to another bot with the person whose run it is", async () => {
+    const { value, send } = deps({ members: shared });
+    await notifyRun(value, { ...run, trigger: "bot_message" }, message);
+    expect(recipients(send)).toEqual(["user-1"]);
+  });
+
   it("asks only the person whose run it is to answer, take over, or fix a failure", async () => {
     for (const kind of ["help", "takeover", "failure"] as const) {
       const { value, publish, send } = deps({ members: shared });
