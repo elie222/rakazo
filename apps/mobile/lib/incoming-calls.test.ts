@@ -363,6 +363,45 @@ describe("mobile incoming calls", () => {
     fake.onEvent?.([]);
     expect(endedStreamCallCount()).toBe(0);
   });
+  it("takes over a native ring the app shows only after it became active", async () => {
+    stop = startIncomingCalls();
+    await tick();
+    const ring = { ...block(), callId: "call-x" };
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      actions: [],
+      ringing: [{ callId: "call-x", botId: bot.id, expiresAt: ring.expiresAt }],
+    });
+    // Android: the app comes to the foreground before the stream reports this ring.
+    fake.onAppState?.("active");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(getIncomingCall()?.incomingCall.callId).toBe("call-x");
+    // The in-app screen rings now, so the native notification must stop.
+    expect(fake.native.endIncomingCall).toHaveBeenCalledWith("call-x");
+  });
+  it("takes over a native ring shown after a pending answer joins", async () => {
+    const answering = deferred<{ opening: string }>();
+    const answer = fake.rpc.getMockImplementation()!;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) => {
+      if (path === "threads/answerCall") return answering.promise;
+      return answer(path, ...rest);
+    });
+    stop = startIncomingCalls();
+    await tick();
+    fake.onEvent?.([{ ...orgBot, incomingCall: { ...block(), callId: "call-b" } }]);
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      ringing: [{ callId: "call-x", botId: bot.id, expiresAt: block().expiresAt }],
+      actions: [
+        { action: "answer", callId: "call-b", botId: orgBot.id, expiresAt: block().expiresAt },
+      ],
+    });
+    fake.onAppState?.("active");
+    await vi.waitFor(() => expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-b")));
+    answering.resolve({ opening: "Hello" });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fake.native.endIncomingCall).toHaveBeenCalledWith("call-x");
+  });
   it("shares one roster request between a refresh and a ringing call", async () => {
     const answer = fake.rpc.getMockImplementation()!;
     let inFlight = 0;
