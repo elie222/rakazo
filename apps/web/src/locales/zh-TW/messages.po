@@ -471,6 +471,10 @@ msgstr "什麼都做一點"
 msgid "A command's output"
 msgstr "命令的輸出"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "A model approves routine actions and asks you about the rest."
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -549,6 +553,10 @@ msgstr "啟用"
 #: src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "動態"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Acts without asking, except for purchases. Only Block rules apply."
+msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
@@ -752,7 +760,7 @@ msgstr "不限時間"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
-msgstr "允許"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
@@ -794,6 +802,10 @@ msgstr "已有帳號？"
 msgid "Always act"
 msgstr "一律採取行動"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Always allow"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Always allow {site}"
 msgstr "一律允許 {site}"
@@ -805,6 +817,10 @@ msgstr "一律允許此工具"
 #: src/components/AskCard.tsx
 msgid "Always allowed"
 msgstr "一律允許"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Always ask"
+msgstr ""
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
@@ -950,9 +966,14 @@ msgstr "已核准"
 msgid "Approving…"
 msgstr "正在核准…"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Apps"
 msgstr "應用程式"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Apps and tools"
+msgstr ""
 
 #: src/pages/BotContextMenu.tsx
 msgid "Archive"
@@ -978,6 +999,10 @@ msgstr "成品"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Ask"
 msgstr "詢問"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Asks before anything that sends, changes or spends."
+msgstr ""
 
 #: src/pages/shell/computer-panel.tsx
 msgid "Asleep"
@@ -1124,8 +1149,9 @@ msgstr "帳單週期"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
-msgstr "封鎖"
+msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/lib/ticket-status.ts
 msgid "Blocked"
 msgstr "受阻"
@@ -4552,6 +4578,7 @@ msgstr "沒有符合的機器人"
 msgid "No longer active"
 msgstr "已停用"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""
@@ -5399,7 +5426,6 @@ msgstr "交還控制權"
 msgid "Reload"
 msgstr "重新載入"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SpaceMembersSettings.tsx
 #: src/components/SpendingLimitSettings.tsx
@@ -5424,6 +5450,10 @@ msgstr "移除 {0}"
 #: src/pages/GroupPanel.tsx
 msgid "Remove {0} from the group"
 msgstr "將 {0} 移出群組"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Remove {label}"
+msgstr ""
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Remove {memberName}?"
@@ -5697,10 +5727,6 @@ msgstr "在你離線時執行的例行任務"
 msgid "Row"
 msgstr "列"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Rules"
-msgstr "規則"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "執行時間"
@@ -5751,7 +5777,6 @@ msgstr "與主模型相同"
 msgid "Saturday"
 msgstr "週六"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
@@ -5841,6 +5866,7 @@ msgstr "範圍（選填）"
 msgid "Screen not connected"
 msgstr "螢幕未連線"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -5859,6 +5885,10 @@ msgstr "搜尋"
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
 msgstr "搜尋應用程式"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Search apps and tools"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
@@ -6862,11 +6892,11 @@ msgstr "工具參數必須是 JSON 物件"
 msgid "Tool arguments must be JSON"
 msgstr "工具參數必須是 JSON"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "工具名稱"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"

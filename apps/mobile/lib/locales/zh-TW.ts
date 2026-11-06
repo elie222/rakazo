@@ -1,4 +1,11 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
+  "Always ask": "一律詢問",
+  "Search apps and tools": "搜尋應用程式和工具",
+  "A model approves routine actions and asks you about the rest.":
+    "模型會核准例行動作，其餘的會先詢問你。",
+  "Acts without asking, except for purchases. Only Block rules apply.":
+    "不詢問就執行，購買除外。只有封鎖規則會生效。",
+  "Asks before anything that sends, changes or spends.": "在傳送、變更或花費任何東西之前先詢問。",
   Haptics: "觸覺回饋",
   "Add rule": "新增規則",
   "Tool name": "工具名稱",

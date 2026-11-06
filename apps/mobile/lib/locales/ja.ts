@@ -1,4 +1,12 @@
 export const JA_MESSAGES: Record<string, string> = {
+  "Always ask": "常に確認",
+  "Search apps and tools": "アプリとツールを検索",
+  "A model approves routine actions and asks you about the rest.":
+    "定型的な操作はモデルが承認し、それ以外はあなたに確認します。",
+  "Acts without asking, except for purchases. Only Block rules apply.":
+    "購入以外は確認せずに実行します。適用されるのはブロックのルールだけです。",
+  "Asks before anything that sends, changes or spends.":
+    "送信、変更、支払いを伴う操作の前に確認します。",
   Haptics: "触覚フィードバック",
   "Add rule": "ルールを追加",
   "Tool name": "ツール名",

@@ -78,18 +78,16 @@ test("A change asks without an approval model, and approvals settings shape what
     "aria-pressed",
     "true",
   );
-  const rules = settings.getByTestId("approval-rules");
-  await expect(rules.getByText("Destination.write", { exact: true })).toBeVisible();
-  await expect(rules.getByRole("button", { name: "Allow", exact: true })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  const allowed = settings.getByTestId("approval-rules-always_allow");
+  await expect(allowed.getByText("Destination.write", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "52-approvals-settings");
-  await rules.getByRole("button", { name: "Block", exact: true }).click();
-  await expect(rules.getByRole("button", { name: "Block", exact: true })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await settings
+    .getByRole("group", { name: "Destination.write", exact: true })
+    .getByRole("button", { name: "Block", exact: true })
+    .click();
+  await expect(
+    settings.getByTestId("approval-rules-deny").getByText("Destination.write", { exact: true }),
+  ).toBeVisible();
   await mode.getByRole("button", { name: "Never ask", exact: true }).click();
   await expect(mode.getByRole("button", { name: "Never ask", exact: true })).toHaveAttribute(
     "aria-pressed",

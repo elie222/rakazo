@@ -29,7 +29,13 @@ export function ApprovalModeRow({
   const detail =
     settings?.mode === "auto" && !settings.checkerAvailable
       ? t("Add a model in Settings to use this.")
-      : undefined;
+      : settings?.mode === "auto"
+        ? t("A model approves routine actions and asks you about the rest.")
+        : settings?.mode === "never"
+          ? t("Acts without asking, except for purchases. Only Block rules apply.")
+          : settings?.mode === "ask"
+            ? t("Asks before anything that sends, changes or spends.")
+            : undefined;
   const held = disabled || pending || !settings;
   // A failed read, first or on return, may leave the mode out of date, so offer to read it again.
   if (loadError) {

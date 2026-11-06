@@ -4,6 +4,7 @@ import {
   applyJudgeDecision,
   approvalModeFromPreference,
   approvalPreferenceFromMode,
+  approvalRuleChoices,
   batchActions,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
@@ -1054,5 +1055,29 @@ describe("receiptItems", () => {
       { name: "Bananas", amount: "$3.00" },
       { name: "Gesamtpaket Socken", amount: "$9.00" },
     ]);
+  });
+});
+
+describe("approvalRuleChoices", () => {
+  it("lists connected apps before built-in tools and skips anything that has a rule", () => {
+    const choices = approvalRuleChoices({
+      connections: [
+        { provider: "slack", displayName: "Slack" },
+        { provider: "gmail", displayName: "Gmail" },
+        { provider: "Gmail", displayName: "Gmail (work)" },
+        { provider: "github", displayName: "GitHub" },
+      ],
+      rules: [
+        { effect: "deny", matchKind: "connector", matchValue: "GitHub" },
+        { effect: "require_approval", matchKind: "tool", matchValue: "Web_Search" },
+      ],
+    });
+    expect(choices.slice(0, 2)).toEqual([
+      { matchKind: "connector", matchValue: "gmail", label: "Gmail" },
+      { matchKind: "connector", matchValue: "slack", label: "Slack" },
+    ]);
+    expect(choices).toContainEqual({ matchKind: "tool", matchValue: "shell", label: "Shell" });
+    expect(choices.some((choice) => choice.matchValue === "github")).toBe(false);
+    expect(choices.some((choice) => choice.matchValue === "web_search")).toBe(false);
   });
 });

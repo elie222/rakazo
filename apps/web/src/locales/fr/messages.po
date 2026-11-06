@@ -470,6 +470,10 @@ msgstr "Un peu de tout"
 msgid "A command's output"
 msgstr "La sortie d’une commande"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "A model approves routine actions and asks you about the rest."
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -548,6 +552,10 @@ msgstr "Actif"
 #: src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "Activité"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Acts without asking, except for purchases. Only Block rules apply."
+msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
@@ -751,7 +759,7 @@ msgstr "Toute la période"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
-msgstr "Autoriser"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
@@ -793,6 +801,10 @@ msgstr "Vous avez déjà un compte ?"
 msgid "Always act"
 msgstr "Agir toujours"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Always allow"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Always allow {site}"
 msgstr "Toujours autoriser {site}"
@@ -804,6 +816,10 @@ msgstr "Toujours autoriser cet outil"
 #: src/components/AskCard.tsx
 msgid "Always allowed"
 msgstr "Toujours autorisé"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Always ask"
+msgstr ""
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
@@ -949,8 +965,13 @@ msgstr ""
 msgid "Approving…"
 msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Apps"
+msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Apps and tools"
 msgstr ""
 
 #: src/pages/BotContextMenu.tsx
@@ -977,6 +998,10 @@ msgstr "Artefacts"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Ask"
 msgstr "Demander"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Asks before anything that sends, changes or spends."
+msgstr ""
 
 #: src/pages/shell/computer-panel.tsx
 msgid "Asleep"
@@ -1123,8 +1148,9 @@ msgstr "Période de facturation"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
-msgstr "Bloquer"
+msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/lib/ticket-status.ts
 msgid "Blocked"
 msgstr ""
@@ -4551,6 +4577,7 @@ msgstr "Aucun bot ne correspond"
 msgid "No longer active"
 msgstr "Plus actif"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""
@@ -5398,7 +5425,6 @@ msgstr "Rendre le contrôle"
 msgid "Reload"
 msgstr "Recharger"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SpaceMembersSettings.tsx
 #: src/components/SpendingLimitSettings.tsx
@@ -5422,6 +5448,10 @@ msgstr "Retirer {0}"
 #. placeholder {0}: bot.name
 #: src/pages/GroupPanel.tsx
 msgid "Remove {0} from the group"
+msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Remove {label}"
 msgstr ""
 
 #: src/components/SpaceMembersSettings.tsx
@@ -5696,10 +5726,6 @@ msgstr ""
 msgid "Row"
 msgstr "Ligne"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Rules"
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "Exécuter à"
@@ -5750,7 +5776,6 @@ msgstr "Identique au modèle principal"
 msgid "Saturday"
 msgstr "samedi"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
@@ -5840,6 +5865,7 @@ msgstr "Portées (facultatif)"
 msgid "Screen not connected"
 msgstr "Écran non connecté"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -5858,6 +5884,10 @@ msgstr "Rechercher"
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
 msgstr "Rechercher des applications"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Search apps and tools"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
@@ -6861,11 +6891,11 @@ msgstr "Les arguments doivent être un objet JSON"
 msgid "Tool arguments must be JSON"
 msgstr "Les arguments doivent être au format JSON"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "Nom de l’outil"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"

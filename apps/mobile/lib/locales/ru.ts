@@ -1,4 +1,12 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Always ask": "Всегда спрашивать",
+  "Search apps and tools": "Поиск приложений и инструментов",
+  "A model approves routine actions and asks you about the rest.":
+    "Модель одобряет рутинные действия, а об остальном спрашивает вас.",
+  "Acts without asking, except for purchases. Only Block rules apply.":
+    "Действует без вопросов, кроме покупок. Действуют только правила блокировки.",
+  "Asks before anything that sends, changes or spends.":
+    "Спрашивает перед всем, что отправляет, изменяет или тратит деньги.",
   Haptics: "Тактильный отклик",
   "Add rule": "Добавить правило",
   "Tool name": "Название инструмента",

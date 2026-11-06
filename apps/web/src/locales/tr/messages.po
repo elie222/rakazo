@@ -470,6 +470,10 @@ msgstr "Hepsi biraz"
 msgid "A command's output"
 msgstr "Bir komutun çıktısı"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "A model approves routine actions and asks you about the rest."
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -548,6 +552,10 @@ msgstr "Etkin"
 #: src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "Etkinlik"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Acts without asking, except for purchases. Only Block rules apply."
+msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
@@ -751,7 +759,7 @@ msgstr "Tüm zamanlar"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
-msgstr "İzin ver"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
@@ -793,6 +801,10 @@ msgstr "Zaten hesabın var mı?"
 msgid "Always act"
 msgstr "Her zaman işlem yap"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Always allow"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Always allow {site}"
 msgstr "{site} için her zaman izin ver"
@@ -804,6 +816,10 @@ msgstr "Bu araca her zaman izin ver"
 #: src/components/AskCard.tsx
 msgid "Always allowed"
 msgstr "Her zaman izinli"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Always ask"
+msgstr ""
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
@@ -949,9 +965,14 @@ msgstr "Onaylandı"
 msgid "Approving…"
 msgstr "Onaylanıyor…"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Apps"
 msgstr "Uygulamalar"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Apps and tools"
+msgstr ""
 
 #: src/pages/BotContextMenu.tsx
 msgid "Archive"
@@ -977,6 +998,10 @@ msgstr "Çıktılar"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Ask"
 msgstr "Sor"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Asks before anything that sends, changes or spends."
+msgstr ""
 
 #: src/pages/shell/computer-panel.tsx
 msgid "Asleep"
@@ -1123,8 +1148,9 @@ msgstr "Fatura dönemi"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
-msgstr "Engelle"
+msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/lib/ticket-status.ts
 msgid "Blocked"
 msgstr "Engellendi"
@@ -4551,6 +4577,7 @@ msgstr "Eşleşen bot yok"
 msgid "No longer active"
 msgstr "Artık etkin değil"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr "Eşleşme yok"
@@ -5398,7 +5425,6 @@ msgstr "Kontrolü bırak"
 msgid "Reload"
 msgstr "Yeniden yükle"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SpaceMembersSettings.tsx
 #: src/components/SpendingLimitSettings.tsx
@@ -5423,6 +5449,10 @@ msgstr "{0} kaldır"
 #: src/pages/GroupPanel.tsx
 msgid "Remove {0} from the group"
 msgstr "{0} kişisini gruptan çıkar"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Remove {label}"
+msgstr ""
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Remove {memberName}?"
@@ -5696,10 +5726,6 @@ msgstr "Sen yokken çalışan rutinler"
 msgid "Row"
 msgstr "Satır"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Rules"
-msgstr "Kurallar"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "Çalışma saati"
@@ -5750,7 +5776,6 @@ msgstr "Ana modelle aynı"
 msgid "Saturday"
 msgstr "Cumartesi"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
@@ -5840,6 +5865,7 @@ msgstr "Kapsamlar (isteğe bağlı)"
 msgid "Screen not connected"
 msgstr "Ekran bağlı değil"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -5858,6 +5884,10 @@ msgstr "Ara"
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
 msgstr "Uygulama ara"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Search apps and tools"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
@@ -6861,11 +6891,11 @@ msgstr "Araç bağımsız değişkenleri bir JSON nesnesi olmalıdır"
 msgid "Tool arguments must be JSON"
 msgstr "Araç bağımsız değişkenleri JSON olmalıdır"
 
-#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "Araç adı"
 
+#: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"

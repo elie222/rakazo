@@ -1,4 +1,12 @@
 export const PL_MESSAGES: Record<string, string> = {
+  "Always ask": "Zawsze pytaj",
+  "Search apps and tools": "Szukaj aplikacji i narzędzi",
+  "A model approves routine actions and asks you about the rest.":
+    "Model zatwierdza rutynowe działania, a o resztę pyta ciebie.",
+  "Acts without asking, except for purchases. Only Block rules apply.":
+    "Działa bez pytania, z wyjątkiem zakupów. Obowiązują tylko reguły blokowania.",
+  "Asks before anything that sends, changes or spends.":
+    "Pyta przed wszystkim, co wysyła, zmienia lub wydaje pieniądze.",
   Haptics: "Haptyka",
   "Add rule": "Dodaj regułę",
   "Tool name": "Nazwa narzędzia",

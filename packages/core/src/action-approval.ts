@@ -1,4 +1,6 @@
 import type { ActionApprovalRule as StoredActionApprovalRule } from "@rakazo/contracts";
+import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
+import { humanizeToolName } from "./events.js";
 
 const APPROVAL_EXEMPT_TOOLS = new Set([
   "computer_observe",
@@ -656,4 +658,51 @@ export function receiptItems<Item extends { name: string }>(
       (label) => name.startsWith(label) && !/^[\p{L}\p{N}]/u.test(name.slice(label.length)),
     );
   });
+}
+
+/** The order rule lists group by: what goes through, what asks, what is refused. */
+export const APPROVAL_RULE_EFFECTS = ["always_allow", "require_approval", "deny"] as const;
+
+/** A site reads as itself; a tool, app or older category by its name. */
+export function approvalRuleLabel(rule: ActionApprovalRule): string {
+  return rule.matchKind === "site" ? rule.matchValue : humanizeToolName(rule.matchValue);
+}
+
+/** Something a person can add a rule for: a connected app, or one of the built-in tools. */
+export type ApprovalRuleChoice = {
+  matchKind: "connector" | "tool";
+  matchValue: string;
+  label: string;
+};
+
+/**
+ * What the rule picker lists: the connected apps, then every built-in tool, leaving out those that
+ * already have a rule. A rule for an app covers all of its actions.
+ */
+export function approvalRuleChoices(input: {
+  connections: ReadonlyArray<{ provider: string; displayName: string }>;
+  rules: ReadonlyArray<ActionApprovalRule>;
+}): ApprovalRuleChoice[] {
+  const taken = new Set(
+    input.rules.map((rule) => `${rule.matchKind}:${rule.matchValue.toLowerCase()}`),
+  );
+  const byLabel = (a: ApprovalRuleChoice, b: ApprovalRuleChoice) => a.label.localeCompare(b.label);
+  const apps = new Map<string, ApprovalRuleChoice>();
+  for (const connection of input.connections) {
+    const value = connection.provider.toLowerCase();
+    if (!value || apps.has(value) || taken.has(`connector:${value}`)) continue;
+    apps.set(value, {
+      matchKind: "connector",
+      matchValue: value,
+      label: connection.displayName.trim() || humanizeToolName(value),
+    });
+  }
+  const tools = BUILTIN_TOOL_NAMES.filter((name) => !taken.has(`tool:${name}`)).map(
+    (name): ApprovalRuleChoice => ({
+      matchKind: "tool",
+      matchValue: name,
+      label: humanizeToolName(name),
+    }),
+  );
+  return [...[...apps.values()].sort(byLabel), ...tools.sort(byLabel)];
 }
