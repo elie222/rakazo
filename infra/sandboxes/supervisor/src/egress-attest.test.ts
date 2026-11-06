@@ -297,7 +297,10 @@ describe("egress attestation", () => {
       "==RAKAZO-V4INPUT==\n",
       "==RAKAZO-V4INPUT==\niptables: Permission denied (you must be root)\n",
     );
-    expect(() => verifyAttestation(unreadable)).toThrow(/could not read v4 iptables/);
+    // The error names the failing chain, not a readable one.
+    expect(() => verifyAttestation(unreadable)).toThrow(
+      /could not read v4 iptables rules from the host network namespace \(INPUT: iptables: Permission denied/,
+    );
     expect(() => verifyAttestation(unreadable)).not.toThrow(EgressNotEnforced);
   });
 

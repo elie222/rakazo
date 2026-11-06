@@ -117,6 +117,19 @@ import {
 
 loadRootEnv();
 
+if (process.argv.includes("--print-attest-tag")) {
+  // Offline installs cannot build the attestation image on the Docker host;
+  // this prints the exact content-hash tag to build elsewhere and preload.
+  // Handled before any supervisor configuration, so a plain repository
+  // checkout without credentials can run it.
+  process.stdout.write(
+    `${expectedAttestImage(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../egress-attest"),
+    )}\n`,
+  );
+  process.exit(0);
+}
+
 const dockerSocketPath = resolveDockerSocketPath();
 const docker = dockerSocketPath ? new Docker({ socketPath: dockerSocketPath }) : new Docker();
 const computerContext =
@@ -1336,12 +1349,6 @@ function closeListeningServer(server: {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  if (process.argv.includes("--print-attest-tag")) {
-    // Offline installs cannot build the attestation image on the Docker host;
-    // this prints the exact content-hash tag to build elsewhere and preload.
-    process.stdout.write(`${expectedAttestImage(attestContext)}\n`);
-    process.exit(0);
-  }
   // A rejected startup keeps Node's default: the error is printed and the process exits.
   void startSupervisor();
 }

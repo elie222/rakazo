@@ -274,11 +274,18 @@ function verifyIptablesFamily(sections: Record<string, string>, family: "v4" | "
   const user = sections[`${key}USER`];
   const input = sections[`${key}INPUT`];
   const forward = sections[`${key}FORWARD`];
-  if (!chainReadable(user) || !chainReadable(input) || !chainReadable(forward)) {
+  const failed = (
+    [
+      ["DOCKER-USER", user],
+      ["INPUT", input],
+      ["FORWARD", forward],
+    ] as const
+  ).find(([, section]) => !chainReadable(section));
+  if (failed) {
     // An unreadable chain does not prove enforcement is absent. In particular,
     // a failed ip6tables command is not evidence that IPv6 rules are missing.
     throw new Error(
-      `could not read ${family} iptables rules from the host network namespace (${user ?? input ?? forward ?? "no output"})`,
+      `could not read ${family} iptables rules from the host network namespace (${failed[0]}: ${failed[1] ?? "no output"})`,
     );
   }
   const wanted = requiredRules(family);
