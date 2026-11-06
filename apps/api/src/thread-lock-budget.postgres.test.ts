@@ -259,6 +259,24 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
   );
 
   it(
+    "writes a standalone thread message that waited behind a long thread read",
+    async () => {
+      // The group-invitation note (announceInvite) is one of this helper's callers.
+      const message = await writeBehindHold(() =>
+        runAsTenant({ spaceId, userId }, () =>
+          createThreadMessage(prisma, {
+            threadId,
+            role: "system",
+            blocks: [{ kind: "meta", text: "added to a group while a snapshot held the thread" }],
+          }),
+        ),
+      );
+      expect(await system.message.findUnique({ where: { id: message.id } })).not.toBeNull();
+    },
+    THREAD_LOCK_HOLD_MS * 4,
+  );
+
+  it(
     "sends a message that waited behind a long thread read",
     async () => {
       const target = { kind: "bot", botId, threadId, bot: { computer: null } } as ThreadTarget;
