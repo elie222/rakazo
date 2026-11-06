@@ -785,17 +785,15 @@ it("lets a background refresh update untouched fields but keeps edited ones", as
 
 it("picks a Space's own voice from the account's connections without managing them", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  voice.catalog
-    .mockReset()
-    .mockResolvedValue([
-      {
-        id: "fish-audio",
-        name: "Fish Audio",
-        description: "",
-        transcribe: true,
-        speechModel: true,
-      },
-    ]);
+  voice.catalog.mockReset().mockResolvedValue([
+    {
+      id: "fish-audio",
+      name: "Fish Audio",
+      description: "",
+      transcribe: true,
+      speechModel: true,
+    },
+  ]);
   voice.credentials.mockReset().mockResolvedValue([fish]);
   voice.status.mockReset().mockResolvedValue({ ready: true, provider: "fish-audio" });
   voice.voices.mockReset().mockResolvedValue([
