@@ -130,6 +130,7 @@ import {
   PluginSubmissionSchema,
   PluginSubmissionStatusSchema,
   REPLY_QUOTE_MAX_LENGTH,
+  THREAD_MESSAGE_TEXT_MAX_LENGTH,
   ReorderBotsInput,
   ROUTINE_MENTION_BATCH_MAX,
   ROUTINE_TRIGGER_REQUIRED,
@@ -228,7 +229,7 @@ const structuredMentionTarget = z.discriminatedUnion("kind", [
 
 const threadSendFields = threadTarget.safeExtend({
   imageHandling: z.enum(["confirm", "file"]).optional(),
-  text: z.string().optional(),
+  text: z.string().max(THREAD_MESSAGE_TEXT_MAX_LENGTH).optional(),
   artifactIds: z.array(Id).max(ATTACHMENT_COUNT_CEILING).optional(),
   /** Bare bot ids (legacy) or typed mention chips from the composer. */
   mentions: z
@@ -242,7 +243,7 @@ const threadSendFields = threadTarget.safeExtend({
   clientNonce: z.string().min(1).max(200).optional(),
 });
 
-const threadSendInput = threadSendFields.superRefine((input, ctx) => {
+export const threadSendInput = threadSendFields.superRefine((input, ctx) => {
   const text = input.text?.trim() ?? "";
   const artifactIds = input.artifactIds ?? [];
   if (!text && artifactIds.length === 0) {
