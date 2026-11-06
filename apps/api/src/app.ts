@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { hostname } from "node:os";
 import { ORPCError, onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
@@ -27,70 +26,50 @@ import {
 import type {
   ComposioProvider,
   ConnectorRegistry,
+  createRunExecutor,
   PluginRepoFetcher,
   PluginTextReader,
   RemoteConnectorDependencies,
+  RunRuntimeEnv,
   UserDeviceGateway,
 } from "@rakazo/adapters";
 import {
   applyMessagingOutboundStatus,
-  auditLogConfig,
   ChatSdkMessagingSurface,
   CodexCatalogCache,
-  ComposioConnector,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsVoipProvider,
   createArtifactStore,
-  createAuditLogReconciler,
-  createBackgroundJobHandlers,
   createCloudAgentConnection,
-  createConnectorStack,
-  createIdleComputerSweeper,
-  createJobReconciler,
+  createConnectorRuntime,
   createMediaGenerationProvider,
-  createMessagingContextLoader,
   createMessagingTeamChatHistory,
   createMessagingTeamChatSender,
-  createModelCreditReconciler,
   createPaymentWalletProvider,
   createProductAnalytics,
-  createRunExecutor,
+  createRunReconciler,
+  createRunRuntime,
   createRunSandbox,
   createRunSecretWriter,
   createSecretStore,
-  createStrategicInitiativeReconciler,
   createTicketChangeNotifier,
-  createWebProvider,
-  deploymentModelUsageLookup,
   EmailEmulator,
   ExpoPushProvider,
   GraphileJobPublisher,
   InMemoryJobQueue,
   InMemoryRealtimeFanout,
-  InstalledConnectorProvider,
-  IntegrationProviderSettings,
   installedMessaging,
-  isComposioEnabled,
   isMessagingSurfaceEnabled,
-  isPipedreamEnabled,
-  McpConnector,
-  McpOAuthBroker,
   messagingPlatformsFromEnv,
   ObjectAgentHomeStore,
   PiAgentRuntime,
   PiOAuthLogins,
-  PipedreamConnector,
   PostgresRealtimeFanout,
   PrismaPushTokenStore,
-  pipedreamConfigFromEnv,
   piSessionsRoot,
   RunJobPublisher,
   RunStarter,
-  reconcileCloudAgents,
-  reconcileComputerUpdates,
-  reconcileMediaVideos,
-  reconcilePurchases,
   removePiUserSessions,
   resolveDeploymentModel,
   ScriptedAgentRuntime,
@@ -126,7 +105,6 @@ import {
   createBoardEvents,
   createDb,
   createPool,
-  createSecurityEventPruner,
   createThreadEvents,
   describeRowSecurity,
   IsolationError,
@@ -141,7 +119,6 @@ import {
   runAsSystem,
   SpaceDeletionInProgressError,
   SpaceOwnerRequiredError,
-  securityEventRetentionDays,
   verifyContentKeys,
 } from "@rakazo/db";
 import type { Logger } from "@rakazo/logging";
@@ -304,6 +281,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
+  const runtimeEnv: RunRuntimeEnv = { ...env, inboundEmailDomain: env.inboundEmail?.domain };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
   const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 4);
@@ -423,35 +401,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       prisma,
       secrets,
     }));
-  const mcpOAuth = new McpOAuthBroker(
-    prisma,
-    secrets,
-    remoteConnectors,
-    env.mcpAllowPrivateEndpoint,
-  );
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins(undefined, { prisma, secrets });
   const home = createAgentHomeStore(env.dataDir, prisma);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
   const memory = new MarkdownMemoryStore(prisma);
-  const mcp = new McpConnector(
-    prisma,
-    secrets,
-    {
-      stdioEnabled: env.mcpStdioEnabled,
-      allowedCommands: env.mcpStdioAllowedCommands,
-      ...env.mcpStdio,
-      network: remoteConnectors,
-      events,
-      allowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
-    },
-    mcpOAuth,
-  );
-  const pipedreamConfig = pipedreamConfigFromEnv(env);
-  const pipedream =
-    pipedreamOverride ??
-    (isPipedreamEnabled(pipedreamConfig) ? new PipedreamConnector(pipedreamConfig) : undefined);
   // This process registers the inbound sink, so it must hold Telegram's getUpdates connection.
   const messagingPlatforms = messagingPlatformsFromEnv(env, { pollInboundMessages: true }).filter(
     (platform) => platform.provider !== "slack" || !env.slackClientId,
@@ -504,29 +459,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     },
     update: { modelCreditsEnabled },
   });
-  const installed = new InstalledConnectorProvider(
-    prisma,
-    secrets,
-    remoteConnectors,
-    env.mcpAllowPrivateEndpoint,
+  const connectors = createConnectorRuntime(
+    runtimeEnv,
+    { prisma, secrets, events },
+    {
+      network: remoteConnectors,
+      composio: composioOverride,
+      pipedream: pipedreamOverride,
+      connectors: connectorOverrides,
+    },
   );
-  const integrationSettings = new IntegrationProviderSettings(prisma, secrets, env.encryptionKey, {
-    composio:
-      composioOverride ??
-      (isComposioEnabled(env.composioApiKey)
-        ? new ComposioConnector({ apiKey: env.composioApiKey })
-        : undefined),
-    pipedream,
-  });
-  const stack = createConnectorStack(composioOverride, [
-    installed,
-    ...integrationSettings
-      .providers()
-      .filter((provider) => !composioOverride || provider.describe().id !== "composio"),
-    mcp,
-    ...connectorOverrides,
-  ]);
-  integrationSettings.warmDirectories();
+  const { mcpOAuth, mcp, pipedream, installed, integrationSettings, stack } = connectors;
   const runtime =
     runtimeOverride ??
     (env.agentRuntime === "scripted"
@@ -678,9 +621,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
-  const executor = createRunExecutor({
+  const { executor, jobHandlers } = createRunRuntime(runtimeEnv, connectors, {
     billingEnabled: modelCreditsEnabled,
-    maxUploadSizeBytes: env.maxUploadSizeBytes,
     mediaGeneration,
     contextStrategy,
     prisma,
@@ -691,33 +633,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     memoryProviders,
     home,
     artifacts,
-    connector: stack.connector,
-    connectors: stack.connector,
-    listConnectedPluginSlugs: (userId) => integrationSettings.listConnectedPluginSlugs(userId),
-    secrets: [
-      env.deploymentModelKey ?? "",
-      env.composioApiKey ?? "",
-      env.cursorApiKey ?? "",
-      process.env.TYPESAFE_API_KEY ?? "",
-    ].filter(Boolean),
     secretStore: secrets,
     secretHttp: remoteConnectors,
-    mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
-    deploymentModelKey: env.deploymentModelKey,
-    deploymentModelConfigured: env.deploymentModelConfigured,
-    dataDir: env.dataDir,
     notifications,
     jobs,
     events,
     onTicketChange: ticketChanges,
-    ticketBoardEnabled,
-    phoneCallsEnabled: env.phoneCallsEnabled,
-    phoneCallRingSeconds: env.phoneCallRingSeconds,
-    phoneCallCooldownMinutes: env.phoneCallCooldownMinutes,
-    inboundEmailDomain: env.inboundEmail?.domain,
     email,
-    messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
-    web: createWebProvider(),
+    messaging,
     cloudAgent,
     userDevices: userDevicesOverride ?? userDevices,
     paymentWallet,
@@ -725,57 +648,20 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     now,
   });
 
-  const jobHandlers = createBackgroundJobHandlers({
-    executor,
-    prisma,
-    sandbox,
-    home,
-    artifacts,
-    jobs,
-    events,
-    // Every API container runs node as the same pid, and deploys run old and new side by side.
-    workerId: `${hostname()}:${process.pid}`,
-    runtime,
-    notifications: notifications instanceof ExpoPushProvider ? notifications : undefined,
-    secretStore: secrets,
-    memoryProviders,
-    deploymentModelKey: env.deploymentModelKey,
-    deploymentModelConfigured: env.deploymentModelConfigured,
-    messaging,
-    cloudAgent,
-    paymentWallet,
-    mediaGeneration,
-    maxUploadSizeBytes: env.maxUploadSizeBytes,
-  });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
   }
   runs?.attach(jobHandlers);
   const reconciler = inMemoryJobs
-    ? createJobReconciler({
+    ? createRunReconciler({
         prisma,
         jobs,
         events,
         notifications,
-        reconcileModelCredits: createModelCreditReconciler({
-          prisma,
-          lookup: deploymentModelUsageLookup(),
-        }),
-        reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
-        reconcilePurchases: () => reconcilePurchases({ prisma, jobs, paymentWallet }),
-        reconcileMediaVideos: () => reconcileMediaVideos({ prisma, jobs, mediaGeneration }),
-        reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
-        reconcileStrategicInitiatives: createStrategicInitiativeReconciler({
-          prisma,
-          jobs,
-          billingEnabled: modelCreditsEnabled,
-        }),
-        reconcileSecurityEventRetention: createSecurityEventPruner(
-          prisma,
-          securityEventRetentionDays(),
-        ),
-        reconcileAuditLog: createAuditLogReconciler(prisma, auditLogConfig()),
-        reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
+        cloudAgent,
+        paymentWallet,
+        mediaGeneration,
+        billingEnabled: modelCreditsEnabled,
       })
     : undefined;
   reconciler?.start();
