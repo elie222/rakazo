@@ -33,6 +33,7 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "generate_image",
   "generate_video",
+  "service_call",
   "archive_bot",
   "secret_request",
   "forget_secret",
@@ -79,6 +80,7 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "skill_read",
   "web_fetch",
   "web_search",
+  "service_search",
 ]);
 
 const READ_ONLY_CONNECTOR_PATTERN = /(^|[_-])(get|list|search|find|read)([_-]|$)/i;

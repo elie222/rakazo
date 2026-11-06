@@ -7162,10 +7162,6 @@ msgstr "Odpowiedź transkrypcji jest zbyt duża."
 msgid "Treat like a person"
 msgstr "Traktuj jak osobę"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Treg token"
-msgstr "Token Treg"
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial"
 msgstr "Okres próbny"
