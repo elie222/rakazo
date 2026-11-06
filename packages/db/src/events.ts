@@ -268,19 +268,15 @@ export async function clearThread(
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
     // Helpers start only from the bot's own chat, so every thread the bot's helpers wrote goes
     // with it, including imported ones that have no runs.
-    const helperThreads = input.groupId
-      ? []
-      : await tx.thread.findMany({
-          where: { spaceId: input.spaceId, helperBotId: input.botId },
-          select: { id: true },
-        });
-    const helperThreadIds = helperThreads.map((helper) => helper.id);
-    const cleared = { in: [input.threadId, ...helperThreadIds] };
-    await tx.message.deleteMany({ where: { threadId: cleared } });
-    await tx.event.deleteMany({ where: { threadId: cleared } });
-    if (helperThreadIds.length > 0) {
+    const helperThreads = { spaceId: input.spaceId, helperBotId: input.botId };
+    const cleared = input.groupId
+      ? { threadId: input.threadId }
+      : { OR: [{ threadId: input.threadId }, { thread: helperThreads }] };
+    await tx.message.deleteMany({ where: cleared });
+    await tx.event.deleteMany({ where: cleared });
+    if (!input.groupId) {
       await tx.thread.updateMany({
-        where: { id: { in: helperThreadIds } },
+        where: { ...helperThreads, historyCompactionSummary: { not: null } },
         data: { historyCompactionSummary: null, historyCompactionGeneration: { increment: 1 } },
       });
     }

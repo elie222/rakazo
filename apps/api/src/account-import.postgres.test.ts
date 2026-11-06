@@ -175,7 +175,10 @@ function sourceRecords(): AccountExportRecord[] {
       threadId: "src-thread-helper",
       seq: 0,
       role: "bot",
-      blocks: [{ kind: "text", text: "helper found the venue" }],
+      blocks: [
+        { kind: "text", text: "helper found the venue" },
+        { kind: "subagent", agentId: "a1", name: "Scout", task: "venues", status: "running" },
+      ],
       botId: "src-bot-child",
       replyToMessageId: null,
       replyQuote: null,
@@ -536,7 +539,20 @@ describePostgres("account import (PostgreSQL)", () => {
     });
     expect(helperThread).toMatchObject({ botId: null, groupId: null, nextMessageSeq: 1 });
     expect(helperThread.messages.map((message) => [message.botId, message.blocks])).toEqual([
-      [child.id, [{ kind: "text", text: "helper found the venue" }]],
+      [
+        child.id,
+        [
+          { kind: "text", text: "helper found the venue" },
+          {
+            kind: "subagent",
+            agentId: "a1",
+            name: "Scout",
+            task: "venues",
+            status: "failed",
+            result: "stopped",
+          },
+        ],
+      ],
     ]);
     expect(
       await system.routine.findFirstOrThrow({

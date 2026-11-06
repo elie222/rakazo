@@ -2422,7 +2422,7 @@ describe("computer execution leases", () => {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "run-2" }]),
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
-        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
           .fn()
           .mockResolvedValueOnce({ nextMessageSeq: 0, historyCompactionGeneration: 0 })

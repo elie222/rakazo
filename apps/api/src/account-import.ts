@@ -25,7 +25,7 @@ import {
   attachmentSizeLabel,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
-import { organicAvatarFamily } from "@rakazo/core";
+import { organicAvatarFamily, STOPPED_HELPER_RESULT } from "@rakazo/core";
 import {
   createRepos,
   createSpaceForMember,
@@ -270,6 +270,20 @@ function remapPageLinks(value: unknown, ids: ReadonlyMap<string, string>): unkno
       Object.entries(value).map(([key, item]) => [key, remapPageLinks(item, ids)]),
     );
   return value;
+}
+
+/** No run comes across with an archive, so a helper card still working there shows as stopped. */
+function settleRunningHelpers(blocks: unknown[]): unknown[] {
+  return blocks.map((block) =>
+    block &&
+    typeof block === "object" &&
+    "kind" in block &&
+    block.kind === "subagent" &&
+    "status" in block &&
+    block.status === "running"
+      ? { ...block, status: "failed", result: STOPPED_HELPER_RESULT }
+      : block,
+  );
 }
 
 /** Replaces every string that is exactly a mapped id; ids are random, so text never collides. */
@@ -948,9 +962,8 @@ class AccountImporter implements ArchiveSink {
         threadId,
         seq: record.seq,
         role: record.role,
-        blocks: remapPageLinks(
-          remapIds(record.blocks, space.ids),
-          space.ids,
+        blocks: settleRunningHelpers(
+          remapPageLinks(remapIds(record.blocks, space.ids), space.ids) as unknown[],
         ) as Prisma.InputJsonValue,
         botId: space.optional(record.botId),
         replyToMessageId: space.optional(record.replyToMessageId),
